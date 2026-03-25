@@ -1532,6 +1532,15 @@ class AIAgent:
                     ]
                 elif isinstance(msg.get("tool_calls"), list):
                     tool_calls_data = msg["tool_calls"]
+
+                # Extract provider metadata (e.g., Gemini thought signatures)
+                provider_metadata = None
+                if role == "assistant" and tool_calls_data:
+                    for tc in tool_calls_data:
+                        if isinstance(tc, dict) and tc.get("extra_content"):
+                            provider_metadata = {"extra_content": tc["extra_content"]}
+                            break
+
                 self._session_db.append_message(
                     session_id=self.session_id,
                     role=role,
@@ -1540,6 +1549,7 @@ class AIAgent:
                     tool_calls=tool_calls_data,
                     tool_call_id=msg.get("tool_call_id"),
                     finish_reason=msg.get("finish_reason"),
+                    provider_metadata=provider_metadata,
                 )
             self._last_flushed_db_idx = len(messages)
         except Exception as e:

@@ -26,7 +26,7 @@ from typing import Dict, Any, List, Optional
 
 DEFAULT_DB_PATH = Path(os.getenv("HERMES_HOME", Path.home() / ".hermes")) / "state.db"
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -73,7 +73,8 @@ CREATE TABLE IF NOT EXISTS messages (
     tool_name TEXT,
     timestamp REAL NOT NULL,
     token_count INTEGER,
-    finish_reason TEXT
+    finish_reason TEXT,
+    provider_metadata TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source);
@@ -189,6 +190,13 @@ class SessionDB:
                     except sqlite3.OperationalError:
                         pass
                 cursor.execute("UPDATE schema_version SET version = 5")
+            if current_version < 6:
+                # v6: add provider_metadata column to messages
+                try:
+                    cursor.execute("ALTER TABLE messages ADD COLUMN provider_metadata TEXT")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+                cursor.execute("UPDATE schema_version SET version = 6")
 
         # Unique title index — always ensure it exists (safe to run after migrations
         # since the title column is guaranteed to exist at this point)
@@ -587,6 +595,7 @@ class SessionDB:
         tool_call_id: str = None,
         token_count: int = None,
         finish_reason: str = None,
+        provider_metadata: dict = None,
     ) -> int:
         """
         Append a message to a session. Returns the message row ID.
@@ -597,8 +606,8 @@ class SessionDB:
         with self._lock:
             cursor = self._conn.execute(
                 """INSERT INTO messages (session_id, role, content, tool_call_id,
-                   tool_calls, tool_name, timestamp, token_count, finish_reason)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   tool_calls, tool_name, timestamp, token_count, finish_reason, provider_metadata)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     role,
@@ -609,6 +618,7 @@ class SessionDB:
                     time.time(),
                     token_count,
                     finish_reason,
+                    json.dumps(provider_metadata) if provider_metadata else None,
                 ),
             )
             msg_id = cursor.lastrowid
@@ -660,7 +670,7 @@ class SessionDB:
         """
         with self._lock:
             cursor = self._conn.execute(
-                "SELECT role, content, tool_call_id, tool_calls, tool_name "
+                "SELECT role, content, tool_call_id, tool_calls, tool_name, provider_metadata "
                 "FROM messages WHERE session_id = ? ORDER BY timestamp, id",
                 (session_id,),
             )
@@ -675,6 +685,16 @@ class SessionDB:
             if row["tool_calls"]:
                 try:
                     msg["tool_calls"] = json.loads(row["tool_calls"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            # Restore provider metadata (e.g., Gemini thought signatures)
+            if row["provider_metadata"]:
+                try:
+                    provider_metadata = json.loads(row["provider_metadata"])
+                    # Re-attach extra_content to tool_calls structure
+                    if provider_metadata.get("extra_content") and msg.get("tool_calls"):
+                        for tc in msg["tool_calls"]:
+                            tc["extra_content"] = provider_metadata["extra_content"]
                 except (json.JSONDecodeError, TypeError):
                     pass
             messages.append(msg)

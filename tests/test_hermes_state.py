@@ -177,6 +177,66 @@ class TestMessageStorage:
         messages = db.get_messages("s1")
         assert messages[0]["finish_reason"] == "stop"
 
+    def test_provider_metadata_persistence(self, db):
+        """Provider metadata (e.g., Gemini thought signatures) should persist."""
+        db.create_session(session_id="s1", source="cli")
+        metadata = {"extra_content": "thought_signature_abc123"}
+        tool_calls = [{"id": "call_1", "function": {"name": "search", "arguments": "{}"}}]
+        db.append_message(
+            "s1",
+            role="assistant",
+            content="",
+            tool_calls=tool_calls,
+            provider_metadata=metadata,
+        )
+
+        messages = db.get_messages("s1")
+        assert len(messages) == 1
+        # Raw storage test - verify JSON was saved
+        import json
+        assert messages[0]["provider_metadata"] is not None
+        stored_metadata = json.loads(messages[0]["provider_metadata"])
+        assert stored_metadata == metadata
+
+    def test_provider_metadata_restored_to_tool_calls(self, db):
+        """extra_content should be restored to tool_calls in conversation format."""
+        db.create_session(session_id="s1", source="cli")
+        metadata = {"extra_content": "thought_signature_xyz"}
+        tool_calls = [
+            {"id": "call_1", "function": {"name": "search", "arguments": "{}"}},
+            {"id": "call_2", "function": {"name": "calculate", "arguments": "{}"}},
+        ]
+        db.append_message(
+            "s1",
+            role="assistant",
+            content="",
+            tool_calls=tool_calls,
+            provider_metadata=metadata,
+        )
+
+        conv = db.get_messages_as_conversation("s1")
+        assert len(conv) == 1
+        assert "tool_calls" in conv[0]
+        # extra_content should be re-attached to each tool call
+        for tc in conv[0]["tool_calls"]:
+            assert tc.get("extra_content") == "thought_signature_xyz"
+
+    def test_provider_metadata_backward_compat(self, db):
+        """Messages without provider_metadata should work fine (NULL handling)."""
+        db.create_session(session_id="s1", source="cli")
+        db.append_message("s1", role="user", content="Hello")
+        db.append_message("s1", role="assistant", content="Hi", provider_metadata=None)
+
+        messages = db.get_messages("s1")
+        assert len(messages) == 2
+        assert messages[0]["provider_metadata"] is None
+        assert messages[1]["provider_metadata"] is None
+
+        conv = db.get_messages_as_conversation("s1")
+        assert len(conv) == 2
+        assert conv[0]["content"] == "Hello"
+        assert conv[1]["content"] == "Hi"
+
 
 # =========================================================================
 # FTS5 search
@@ -737,13 +797,19 @@ class TestSchemaInit:
     def test_schema_version(self, db):
         cursor = db._conn.execute("SELECT version FROM schema_version")
         version = cursor.fetchone()[0]
-        assert version == 5
+        assert version == 6
 
     def test_title_column_exists(self, db):
         """Verify the title column was created in the sessions table."""
         cursor = db._conn.execute("PRAGMA table_info(sessions)")
         columns = {row[1] for row in cursor.fetchall()}
         assert "title" in columns
+
+    def test_provider_metadata_column_exists(self, db):
+        """Verify the provider_metadata column was created in the messages table."""
+        cursor = db._conn.execute("PRAGMA table_info(messages)")
+        columns = {row[1] for row in cursor.fetchall()}
+        assert "provider_metadata" in columns
 
     def test_migration_from_v2(self, tmp_path):
         """Simulate a v2 database and verify migration adds title column."""
@@ -793,12 +859,12 @@ class TestSchemaInit:
         conn.commit()
         conn.close()
 
-        # Open with SessionDB — should migrate to v5
+        # Open with SessionDB — should migrate to v6
         migrated_db = SessionDB(db_path=db_path)
 
         # Verify migration
         cursor = migrated_db._conn.execute("SELECT version FROM schema_version")
-        assert cursor.fetchone()[0] == 5
+        assert cursor.fetchone()[0] == 6
 
         # Verify title column exists and is NULL for existing sessions
         session = migrated_db.get_session("existing")
@@ -809,6 +875,107 @@ class TestSchemaInit:
         assert migrated_db.set_session_title("existing", "Migrated Title") is True
         session = migrated_db.get_session("existing")
         assert session["title"] == "Migrated Title"
+
+        # Verify provider_metadata column exists
+        cursor = migrated_db._conn.execute("PRAGMA table_info(messages)")
+        columns = {row[1] for row in cursor.fetchall()}
+        assert "provider_metadata" in columns
+
+        migrated_db.close()
+
+    def test_migration_from_v5(self, tmp_path):
+        """Simulate a v5 database and verify migration adds provider_metadata column."""
+        import sqlite3
+
+        db_path = tmp_path / "migrate_v5_test.db"
+        conn = sqlite3.connect(str(db_path))
+        # Create v5 schema (without provider_metadata column)
+        conn.executescript("""
+            CREATE TABLE schema_version (version INTEGER NOT NULL);
+            INSERT INTO schema_version (version) VALUES (5);
+
+            CREATE TABLE sessions (
+                id TEXT PRIMARY KEY,
+                source TEXT NOT NULL,
+                user_id TEXT,
+                model TEXT,
+                model_config TEXT,
+                system_prompt TEXT,
+                parent_session_id TEXT,
+                started_at REAL NOT NULL,
+                ended_at REAL,
+                end_reason TEXT,
+                message_count INTEGER DEFAULT 0,
+                tool_call_count INTEGER DEFAULT 0,
+                input_tokens INTEGER DEFAULT 0,
+                output_tokens INTEGER DEFAULT 0,
+                cache_read_tokens INTEGER DEFAULT 0,
+                cache_write_tokens INTEGER DEFAULT 0,
+                reasoning_tokens INTEGER DEFAULT 0,
+                billing_provider TEXT,
+                billing_base_url TEXT,
+                billing_mode TEXT,
+                estimated_cost_usd REAL,
+                actual_cost_usd REAL,
+                cost_status TEXT,
+                cost_source TEXT,
+                pricing_version TEXT,
+                title TEXT
+            );
+
+            CREATE TABLE messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT,
+                tool_call_id TEXT,
+                tool_calls TEXT,
+                tool_name TEXT,
+                timestamp REAL NOT NULL,
+                token_count INTEGER,
+                finish_reason TEXT
+            );
+        """)
+        conn.execute(
+            "INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)",
+            ("existing", "cli", 1000.0),
+        )
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+            ("existing", "user", "test message", 1001.0),
+        )
+        conn.commit()
+        conn.close()
+
+        # Open with SessionDB — should migrate to v6
+        migrated_db = SessionDB(db_path=db_path)
+
+        # Verify migration
+        cursor = migrated_db._conn.execute("SELECT version FROM schema_version")
+        assert cursor.fetchone()[0] == 6
+
+        # Verify provider_metadata column exists
+        cursor = migrated_db._conn.execute("PRAGMA table_info(messages)")
+        columns = {row[1] for row in cursor.fetchall()}
+        assert "provider_metadata" in columns
+
+        # Verify existing messages have NULL provider_metadata
+        messages = migrated_db.get_messages("existing")
+        assert len(messages) == 1
+        assert messages[0]["provider_metadata"] is None
+
+        # Verify we can append new messages with provider_metadata
+        migrated_db.append_message(
+            "existing",
+            role="assistant",
+            content="response",
+            provider_metadata={"extra_content": "test_signature"},
+        )
+        messages = migrated_db.get_messages("existing")
+        assert len(messages) == 2
+        import json
+        stored = json.loads(messages[1]["provider_metadata"])
+        assert stored["extra_content"] == "test_signature"
 
         migrated_db.close()
 
