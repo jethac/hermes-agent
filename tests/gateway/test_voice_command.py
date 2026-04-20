@@ -51,6 +51,7 @@ def _ensure_discord_mock():
 
 _ensure_discord_mock()
 
+from gateway.config import Platform
 from gateway.platforms.base import MessageEvent, MessageType, SessionSource
 
 
@@ -58,13 +59,17 @@ from gateway.platforms.base import MessageEvent, MessageType, SessionSource
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_event(text: str = "", message_type=MessageType.TEXT, chat_id="123") -> MessageEvent:
+def _make_event(
+    text: str = "",
+    message_type=MessageType.TEXT,
+    chat_id="123",
+    platform=Platform.TELEGRAM,
+) -> MessageEvent:
     source = SessionSource(
         chat_id=chat_id,
         user_id="user1",
-        platform=MagicMock(),
+        platform=platform,
     )
-    source.platform.value = "telegram"
     source.thread_id = None
     event = MessageEvent(text=text, message_type=message_type, source=source)
     event.message_id = "msg42"
@@ -205,9 +210,8 @@ class TestHandleVoiceCommand:
     @pytest.mark.asyncio
     async def test_platform_isolation(self, runner):
         """Same chat_id on different platforms must not collide (#12542)."""
-        telegram_event = _make_event("/voice on", chat_id="999")
-        slack_event = _make_event("/voice off", chat_id="999")
-        slack_event.source.platform.value = "slack"
+        telegram_event = _make_event("/voice on", chat_id="999", platform=Platform.TELEGRAM)
+        slack_event = _make_event("/voice off", chat_id="999", platform=Platform.SLACK)
 
         await runner._handle_voice_command(telegram_event)
         await runner._handle_voice_command(slack_event)
@@ -344,6 +348,20 @@ class TestAutoVoiceReply:
         }]
         assert self._call(runner, "all", MessageType.TEXT, agent_messages=messages) is False
 
+    def test_line_voice_input_streamed_runner_can_handle_voice_reply(self, runner):
+        runner._voice_mode["line:123"] = "voice_only"
+        event = _make_event(message_type=MessageType.VOICE, platform=Platform.LINE)
+        assert runner._should_send_voice_reply(event, "Hello!", [], already_sent=True) is True
+
+    def test_line_voice_reply_suppresses_followup_text_when_sent(self, runner):
+        event = _make_event(message_type=MessageType.VOICE, platform=Platform.LINE)
+        assert runner._should_suppress_text_after_voice_reply(event, True) is True
+        assert runner._should_suppress_text_after_voice_reply(event, False) is False
+
+    def test_line_text_reply_not_suppressed_by_voice_helper(self, runner):
+        event = _make_event(message_type=MessageType.TEXT, platform=Platform.LINE)
+        assert runner._should_suppress_text_after_voice_reply(event, True) is False
+
     def test_no_dedup_for_other_tools(self, runner):
         messages = [{
             "role": "assistant",
@@ -380,8 +398,9 @@ class TestSendVoiceReply:
              patch("os.path.isfile", return_value=True), \
              patch("os.unlink"), \
              patch("os.makedirs"):
-            await runner._send_voice_reply(event, "Hello world")
+            result = await runner._send_voice_reply(event, "Hello world")
 
+        assert result is True
         mock_adapter.send_voice.assert_called_once()
         call_args = mock_adapter.send_voice.call_args
         assert call_args.kwargs.get("chat_id") == "123"
@@ -392,8 +411,9 @@ class TestSendVoiceReply:
 
         with patch("tools.tts_tool.text_to_speech_tool") as mock_tts, \
              patch("tools.tts_tool._strip_markdown_for_tts", return_value=""):
-            await runner._send_voice_reply(event, "```code only```")
+            result = await runner._send_voice_reply(event, "```code only```")
 
+        assert result is False
         mock_tts.assert_not_called()
 
     @pytest.mark.asyncio
@@ -407,8 +427,9 @@ class TestSendVoiceReply:
              patch("tools.tts_tool._strip_markdown_for_tts", side_effect=lambda t: t), \
              patch("os.path.isfile", return_value=False), \
              patch("os.makedirs"):
-            await runner._send_voice_reply(event, "Hello")
+            result = await runner._send_voice_reply(event, "Hello")
 
+        assert result is False
         mock_adapter.send_voice.assert_not_called()
 
     @pytest.mark.asyncio
@@ -417,8 +438,9 @@ class TestSendVoiceReply:
         with patch("tools.tts_tool.text_to_speech_tool", side_effect=RuntimeError("boom")), \
              patch("tools.tts_tool._strip_markdown_for_tts", side_effect=lambda t: t), \
              patch("os.makedirs"):
-            # Should not raise
-            await runner._send_voice_reply(event, "Hello")
+            result = await runner._send_voice_reply(event, "Hello")
+
+        assert result is False
 
 
 # =====================================================================

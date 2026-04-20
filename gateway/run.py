@@ -4635,8 +4635,11 @@ class GatewayRunner:
 
             # Auto voice reply: send TTS audio before the text response
             _already_sent = bool(agent_result.get("already_sent"))
+            _voice_reply_sent = False
             if self._should_send_voice_reply(event, response, agent_messages, already_sent=_already_sent):
-                await self._send_voice_reply(event, response)
+                _voice_reply_sent = await self._send_voice_reply(event, response)
+            if self._should_suppress_text_after_voice_reply(event, _voice_reply_sent):
+                return None
 
             # If streaming already delivered the response, extract and
             # deliver any MEDIA: files before returning None.  Streaming
@@ -6130,7 +6133,25 @@ class GatewayRunner:
 
         return True
 
-    async def _send_voice_reply(self, event: MessageEvent, text: str) -> None:
+    def _should_suppress_text_after_voice_reply(
+        self,
+        event: MessageEvent,
+        voice_reply_sent: bool,
+    ) -> bool:
+        """Return True when a voice reply should replace the normal text reply.
+
+        LINE billing is per outbound bubble and reply-token usage is quota-sensitive,
+        so voice-in turns should collapse to a single explicit reply whenever auto
+        voice reply succeeds.
+        """
+        if not voice_reply_sent:
+            return False
+        return (
+            event.source.platform == Platform.LINE
+            and event.message_type == MessageType.VOICE
+        )
+
+    async def _send_voice_reply(self, event: MessageEvent, text: str) -> bool:
         """Generate TTS audio and send as a voice message before the text reply."""
         import uuid as _uuid
         audio_path = None
@@ -6140,7 +6161,7 @@ class GatewayRunner:
 
             tts_text = _strip_markdown_for_tts(text[:4000])
             if not tts_text:
-                return
+                return False
 
             # Use .mp3 extension so edge-tts conversion to opus works correctly.
             # The TTS tool may convert to .ogg — use file_path from result.
@@ -6159,7 +6180,7 @@ class GatewayRunner:
             actual_path = result.get("file_path", audio_path)
             if not result.get("success") or not os.path.isfile(actual_path):
                 logger.warning("Auto voice reply TTS failed: %s", result.get("error"))
-                return
+                return False
 
             adapter = self.adapters.get(event.source.platform)
 
@@ -6179,8 +6200,10 @@ class GatewayRunner:
                 if event.source.thread_id:
                     send_kwargs["metadata"] = {"thread_id": event.source.thread_id}
                 await adapter.send_voice(**send_kwargs)
+            return True
         except Exception as e:
             logger.warning("Auto voice reply failed: %s", e, exc_info=True)
+            return False
         finally:
             for p in {audio_path, actual_path} - {None}:
                 try:
