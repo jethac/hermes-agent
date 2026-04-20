@@ -246,22 +246,29 @@ def _handle_send(args):
 
     used_home_channel = False
     if not chat_id:
-        home = config.get_home_channel(platform)
-        if not home and platform_name == "weixin":
-            import os
-            wx_home = os.getenv("WEIXIN_HOME_CHANNEL", "").strip()
-            if wx_home:
-                from gateway.config import HomeChannel
-                home = HomeChannel(platform=platform, chat_id=wx_home, name="Weixin Home")
-        if home:
-            chat_id = home.chat_id
-            used_home_channel = True
+        from gateway.session_context import get_session_env
+
+        session_platform = get_session_env("HERMES_SESSION_PLATFORM", "").strip().lower()
+        session_chat_id = get_session_env("HERMES_SESSION_CHAT_ID", "").strip()
+        if platform_name == "line" and session_platform == "line" and session_chat_id:
+            chat_id = session_chat_id
         else:
-            return json.dumps({
-                "error": f"No home channel set for {platform_name} to determine where to send the message. "
-                f"Either specify a channel directly with '{platform_name}:CHANNEL_NAME', "
-                f"or set a home channel via: hermes config set {platform_name.upper()}_HOME_CHANNEL <channel_id>"
-            })
+            home = config.get_home_channel(platform)
+            if not home and platform_name == "weixin":
+                import os
+                wx_home = os.getenv("WEIXIN_HOME_CHANNEL", "").strip()
+                if wx_home:
+                    from gateway.config import HomeChannel
+                    home = HomeChannel(platform=platform, chat_id=wx_home, name="Weixin Home")
+            if home:
+                chat_id = home.chat_id
+                used_home_channel = True
+            else:
+                return json.dumps({
+                    "error": f"No home channel set for {platform_name} to determine where to send the message. "
+                    f"Either specify a channel directly with '{platform_name}:CHANNEL_NAME', "
+                    f"or set a home channel via: hermes config set {platform_name.upper()}_HOME_CHANNEL <channel_id>"
+                })
 
     duplicate_skip = _maybe_skip_cron_duplicate_send(platform_name, chat_id, thread_id)
     if duplicate_skip:

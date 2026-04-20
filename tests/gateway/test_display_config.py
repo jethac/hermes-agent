@@ -192,6 +192,13 @@ class TestPlatformDefaults:
         for plat in ("slack", "mattermost", "matrix", "feishu", "whatsapp"):
             assert resolve_display_setting({}, plat, "tool_progress") == "new", plat
 
+    def test_line_defaults_to_quiet_budget_mode(self):
+        """LINE defaults to quiet progress to conserve message quota."""
+        from gateway.display_config import resolve_display_setting
+
+        assert resolve_display_setting({}, "line", "tool_progress") == "off"
+        assert resolve_display_setting({}, "line", "streaming") is False
+
     def test_low_tier_platforms(self):
         """Signal, BlueBubbles, etc. default to 'off' tool progress."""
         from gateway.display_config import resolve_display_setting

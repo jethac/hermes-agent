@@ -7,7 +7,7 @@ import json
 import pytest
 
 from gateway.config import GatewayConfig, Platform, PlatformConfig, _apply_env_overrides
-from gateway.platforms.base import MessageType
+from gateway.platforms.base import MessageEvent, MessageType
 from gateway.platforms.line import LineAdapter
 
 
@@ -205,3 +205,97 @@ async def test_send_uses_reply_then_push_batches(monkeypatch):
     assert len(calls[1][1].messages) == 1
     assert calls[0][1].reply_token == "reply-token"
     assert calls[1][1].to == "U123"
+
+
+@pytest.mark.asyncio
+async def test_send_schedules_quota_snapshots_in_background(monkeypatch):
+    adapter = LineAdapter(PlatformConfig(enabled=True, token="token", extra={"channel_secret": "secret"}))
+
+    class DummyMessagingApi:
+        def push_message(self, request, **kwargs):
+            return {"request": request, "kwargs": kwargs}
+
+    adapter._messaging_api = DummyMessagingApi()
+
+    calls = []
+    quota_stages = []
+
+    async def fake_call(func, *args, **kwargs):
+        calls.append((func.__name__, args[0], kwargs))
+        return {"ok": True}
+
+    monkeypatch.setattr(adapter, "_call_sync_api", fake_call)
+    monkeypatch.setattr(adapter, "truncate_message", lambda content, max_length: ["hello"])
+    monkeypatch.setattr(adapter, "_schedule_quota_snapshot", lambda stage, **metadata: quota_stages.append((stage, metadata)))
+
+    result = await adapter.send(chat_id="U123", content="hello")
+
+    assert result.success is True
+    assert [call[0] for call in calls] == ["push_message"]
+    assert [stage for stage, _ in quota_stages] == ["before_send", "after_send"]
+
+
+@pytest.mark.asyncio
+async def test_group_multimodal_batch_is_scoped_by_sender():
+    adapter = LineAdapter(
+        PlatformConfig(
+            enabled=True,
+            token="token",
+            extra={"channel_secret": "secret", "multimodal_grace_period_seconds": 0.01},
+        )
+    )
+
+    source_a = adapter.build_source(chat_id="Cgroup123", chat_name="Cgroup123", chat_type="group", user_id="Ualpha")
+    source_b = adapter.build_source(chat_id="Cgroup123", chat_name="Cgroup123", chat_type="group", user_id="Ubeta")
+
+    event_a = MessageEvent(
+        text="[Image]",
+        message_type=MessageType.PHOTO,
+        source=source_a,
+        message_id="img-a",
+        media_urls=["/tmp/a.jpg"],
+        media_types=["image/jpeg"],
+    )
+    event_b = MessageEvent(
+        text="[Voice message]",
+        message_type=MessageType.VOICE,
+        source=source_b,
+        message_id="audio-b",
+        media_urls=["/tmp/b.m4a"],
+        media_types=["audio/m4a"],
+    )
+
+    captured = []
+
+    async def fake_handle_message(message_event):
+        captured.append(message_event)
+
+    adapter.handle_message = fake_handle_message  # type: ignore[method-assign]
+
+    await adapter._enqueue_multimodal_event(event_a)
+    await adapter._enqueue_multimodal_event(event_b)
+    await asyncio.sleep(0.05)
+
+    assert len(captured) == 2
+    assert {event.source.user_id for event in captured} == {"Ualpha", "Ubeta"}
+    assert sorted(event.message_id for event in captured) == ["audio-b", "img-a"]
+
+
+@pytest.mark.asyncio
+async def test_keep_typing_accepts_stop_event():
+    adapter = LineAdapter(PlatformConfig(enabled=True, token="token", extra={"channel_secret": "secret"}))
+    calls = []
+
+    async def fake_send_typing(chat_id, metadata=None):
+        calls.append((chat_id, metadata))
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(adapter, "send_typing", fake_send_typing)
+    stop_event = asyncio.Event()
+    stop_event.set()
+    try:
+        await adapter._keep_typing("U123", stop_event=stop_event)
+    finally:
+        monkeypatch.undo()
+
+    assert calls == []

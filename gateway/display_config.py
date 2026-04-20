@@ -84,6 +84,9 @@ _PLATFORM_DEFAULTS: dict[str, dict[str, Any]] = {
     "matrix":          _TIER_MEDIUM,
     "feishu":          _TIER_MEDIUM,
 
+    # Tier 2.5 — DM-like surface with quota-sensitive reply/push limits
+    "line":            {**_TIER_LOW, "tool_preview_length": 0},
+
     # Tier 3 — no edit support, progress messages are permanent
     "signal":          _TIER_LOW,
     "whatsapp":        _TIER_MEDIUM,  # Baileys bridge supports /edit

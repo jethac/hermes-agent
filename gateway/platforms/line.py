@@ -336,12 +336,19 @@ class LineAdapter(BasePlatformAdapter):
             timestamp=timestamp,
         )
 
+    def _multimodal_batch_key(self, event: MessageEvent) -> str:
+        chat_id = str(event.source.chat_id or "")
+        user_id = str(getattr(event.source, "user_id", None) or "")
+        if event.source.chat_type == "group" and user_id:
+            return f"{chat_id}:{user_id}"
+        return chat_id
+
     def _has_pending_multimodal_batch(self, event: MessageEvent) -> bool:
-        return event.source.chat_id in self._pending_media_batches
+        return self._multimodal_batch_key(event) in self._pending_media_batches
 
     async def _enqueue_multimodal_event(self, event: MessageEvent, *, flush_immediately: bool = False) -> None:
         """Buffer near-simultaneous LINE events into one multimodal turn."""
-        batch_key = event.source.chat_id
+        batch_key = self._multimodal_batch_key(event)
         existing = self._pending_media_batches.get(batch_key)
         if existing is None:
             self._pending_media_batches[batch_key] = event
@@ -458,6 +465,20 @@ class LineAdapter(BasePlatformAdapter):
         logger.info("[LINE] Quota %s: %s | meta=%s", stage, snapshot, metadata)
         return snapshot
 
+    async def _run_quota_snapshot(self, stage: str, **metadata) -> None:
+        await asyncio.to_thread(self._log_quota_snapshot, stage, **metadata)
+
+    def _schedule_quota_snapshot(self, stage: str, **metadata) -> None:
+        try:
+            task = asyncio.create_task(self._run_quota_snapshot(stage, **metadata))
+        except RuntimeError:
+            return
+        try:
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+        except TypeError:
+            pass
+
     def _pop_reply_token(self, reply_to: Optional[str]) -> Optional[str]:
         if not reply_to:
             return None
@@ -489,7 +510,7 @@ class LineAdapter(BasePlatformAdapter):
         batches = self._build_text_batches(chunks)
         reply_token = self._pop_reply_token(reply_to)
         used_reply_api = bool(reply_token)
-        self._log_quota_snapshot(
+        self._schedule_quota_snapshot(
             "before_send",
             operation="text",
             chat_id=str(chat_id),
@@ -513,7 +534,7 @@ class LineAdapter(BasePlatformAdapter):
                     x_line_retry_key=str(uuid.uuid4()),
                 )
 
-            self._log_quota_snapshot(
+            self._schedule_quota_snapshot(
                 "after_send",
                 operation="text",
                 chat_id=str(chat_id),
@@ -547,7 +568,7 @@ class LineAdapter(BasePlatformAdapter):
 
         reply_token = self._pop_reply_token(reply_to)
         used_reply_api = bool(reply_token)
-        self._log_quota_snapshot(
+        self._schedule_quota_snapshot(
             "before_send",
             operation="voice",
             chat_id=str(chat_id),
@@ -566,7 +587,7 @@ class LineAdapter(BasePlatformAdapter):
                     PushMessageRequest(to=str(chat_id), messages=messages[:MAX_MESSAGES_PER_REQUEST]),
                     x_line_retry_key=str(uuid.uuid4()),
                 )
-            self._log_quota_snapshot(
+            self._schedule_quota_snapshot(
                 "after_send",
                 operation="voice",
                 chat_id=str(chat_id),
@@ -591,7 +612,7 @@ class LineAdapter(BasePlatformAdapter):
             prepared = source.with_suffix(".m4a")
             subprocess.run(
                 [
-                    os.getenv("FFMPEG_BIN", "/opt/homebrew/bin/ffmpeg"),
+                    os.getenv("FFMPEG_BIN", "ffmpeg"),
                     "-y",
                     "-i",
                     str(source),
@@ -610,7 +631,7 @@ class LineAdapter(BasePlatformAdapter):
         try:
             result = subprocess.run(
                 [
-                    os.getenv("FFPROBE_BIN", "/opt/homebrew/bin/ffprobe"),
+                    os.getenv("FFPROBE_BIN", "ffprobe"),
                     "-v",
                     "error",
                     "-show_entries",
@@ -653,12 +674,22 @@ class LineAdapter(BasePlatformAdapter):
         except Exception:
             logger.debug("[LINE] Loading animation unsupported or failed for chat %s", chat_id, exc_info=True)
 
-    async def _keep_typing(self, chat_id: str, interval: float = 2.0, metadata=None) -> None:
+    async def _keep_typing(
+        self,
+        chat_id: str,
+        interval: float = 2.0,
+        metadata=None,
+        stop_event: asyncio.Event | None = None,
+    ) -> None:
         del interval
+        if stop_event is not None and stop_event.is_set():
+            return
         try:
             await self.send_typing(chat_id, metadata=metadata)
-            while True:
-                await asyncio.sleep(60)
+            if stop_event is None:
+                while True:
+                    await asyncio.sleep(60)
+            await stop_event.wait()
         except asyncio.CancelledError:
             raise
 
