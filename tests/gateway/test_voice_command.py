@@ -382,6 +382,10 @@ class TestAutoVoiceReply:
 
     def test_line_text_reply_not_suppressed_by_voice_helper(self, runner):
         event = _make_event(message_type=MessageType.TEXT, platform=Platform.LINE)
+        assert runner._should_suppress_text_after_voice_reply(event, False) is False
+
+    def test_line_text_reply_stays_unsuppressed_when_last_modality_is_text(self, runner):
+        event = _make_event(message_type=MessageType.TEXT, platform=Platform.LINE)
         assert runner._should_suppress_text_after_voice_reply(event, True) is False
 
     def test_line_image_reply_suppresses_text_when_last_modality_was_voice(self, runner):

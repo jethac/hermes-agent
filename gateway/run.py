@@ -6168,13 +6168,15 @@ class GatewayRunner:
     ) -> bool:
         """Return True when a voice reply should replace the normal text reply.
 
-        LINE billing is per outbound bubble and reply-token usage is quota-sensitive,
-        so turns whose desired reply modality is voice should collapse to a single
-        explicit reply whenever voice delivery succeeds.
+        LINE billing is per outbound bubble and reply-token usage is quota-sensitive.
+        Once a LINE voice reply has been sent successfully, suppress the normal text
+        response for turns whose effective reply modality is voice.
         """
         if not voice_reply_sent:
             return False
-        if voice_reply_sent and event.source.platform == Platform.LINE:
+        if event.source.platform == Platform.LINE:
+            if event.message_type in (MessageType.VOICE, MessageType.AUDIO):
+                return True
             return self._line_desired_reply_modality(event) == "voice"
         return False
 
