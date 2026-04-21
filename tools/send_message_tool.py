@@ -250,8 +250,16 @@ def _handle_send(args):
 
         session_platform = get_session_env("HERMES_SESSION_PLATFORM", "").strip().lower()
         session_chat_id = get_session_env("HERMES_SESSION_CHAT_ID", "").strip()
-        if platform_name == "line" and session_platform == "line" and session_chat_id:
-            chat_id = session_chat_id
+        if platform_name == "line":
+            if session_platform == "line" and session_chat_id:
+                chat_id = session_chat_id
+            else:
+                return json.dumps({
+                    "error": (
+                        "LINE send_message requires an explicit target or an active LINE session. "
+                        "It does not support a generic fallback destination."
+                    )
+                })
         else:
             home = config.get_home_channel(platform)
             if not home and platform_name == "weixin":

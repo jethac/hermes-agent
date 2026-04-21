@@ -231,6 +231,30 @@ class TestSendMessageTool:
             media_files=[],
         )
 
+    def test_line_without_active_session_requires_explicit_target_instead_of_home_channel(self):
+        line_cfg = SimpleNamespace(enabled=True, token="line-token", extra={"channel_secret": "secret"})
+        config = SimpleNamespace(
+            platforms={Platform.LINE: line_cfg},
+            get_home_channel=lambda _platform: None,
+        )
+
+        with patch("gateway.config.load_gateway_config", return_value=config), \
+             patch("tools.interrupt.is_interrupted", return_value=False), \
+             patch("gateway.session_context.get_session_env", side_effect=lambda key, default="": default):
+            result = json.loads(
+                send_message_tool(
+                    {
+                        "action": "send",
+                        "target": "line",
+                        "message": "hello",
+                    }
+                )
+            )
+
+        assert "error" in result
+        assert "home channel" not in result["error"].lower()
+        assert "explicit" in result["error"].lower()
+
 
 class TestSendTelegramMediaDelivery:
     def test_sends_text_then_photo_for_media_tag(self, tmp_path, monkeypatch):
