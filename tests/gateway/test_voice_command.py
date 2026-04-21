@@ -82,6 +82,7 @@ def _make_runner(tmp_path):
     runner = object.__new__(GatewayRunner)
     runner.adapters = {}
     runner._voice_mode = {}
+    runner._line_last_non_image_input_modality = {}
     runner._VOICE_MODE_PATH = tmp_path / "gateway_voice_mode.json"
     runner._session_db = None
     runner.session_store = MagicMock()
@@ -353,6 +354,22 @@ class TestAutoVoiceReply:
         event = _make_event(message_type=MessageType.VOICE, platform=Platform.LINE)
         assert runner._should_send_voice_reply(event, "Hello!", [], already_sent=True) is True
 
+    def test_line_text_input_does_not_trigger_voice_reply_in_all_mode(self, runner):
+        runner._voice_mode["line:123"] = "all"
+        event = _make_event(message_type=MessageType.TEXT, platform=Platform.LINE)
+        assert runner._should_send_voice_reply(event, "Hello!", [], already_sent=False) is False
+
+    def test_line_image_turn_reuses_last_non_image_modality_for_voice_reply(self, runner):
+        runner._voice_mode["line:123"] = "all"
+        runner._line_last_non_image_input_modality["123"] = "voice"
+        event = _make_event(message_type=MessageType.PHOTO, platform=Platform.LINE)
+        assert runner._should_send_voice_reply(event, "Hello!", [], already_sent=False) is True
+
+    def test_line_image_turn_defaults_to_text_without_last_modality(self, runner):
+        runner._voice_mode["line:123"] = "all"
+        event = _make_event(message_type=MessageType.PHOTO, platform=Platform.LINE)
+        assert runner._should_send_voice_reply(event, "Hello!", [], already_sent=False) is False
+
     def test_line_voice_reply_suppresses_followup_text_when_sent(self, runner):
         event = _make_event(message_type=MessageType.VOICE, platform=Platform.LINE)
         assert runner._should_suppress_text_after_voice_reply(event, True) is True
@@ -360,6 +377,16 @@ class TestAutoVoiceReply:
 
     def test_line_text_reply_not_suppressed_by_voice_helper(self, runner):
         event = _make_event(message_type=MessageType.TEXT, platform=Platform.LINE)
+        assert runner._should_suppress_text_after_voice_reply(event, True) is False
+
+    def test_line_image_reply_suppresses_text_when_last_modality_was_voice(self, runner):
+        runner._line_last_non_image_input_modality["123"] = "voice"
+        event = _make_event(message_type=MessageType.PHOTO, platform=Platform.LINE)
+        assert runner._should_suppress_text_after_voice_reply(event, True) is True
+
+    def test_line_image_reply_keeps_text_when_last_modality_was_text(self, runner):
+        runner._line_last_non_image_input_modality["123"] = "text"
+        event = _make_event(message_type=MessageType.PHOTO, platform=Platform.LINE)
         assert runner._should_suppress_text_after_voice_reply(event, True) is False
 
     def test_no_dedup_for_other_tools(self, runner):

@@ -718,6 +718,8 @@ class GatewayRunner:
 
         # Per-chat voice reply mode: "off" | "voice_only" | "all"
         self._voice_mode: Dict[str, str] = self._load_voice_modes()
+        # LINE-specific last non-image inbound modality per chat: "text" | "voice"
+        self._line_last_non_image_input_modality: Dict[str, str] = {}
 
         # Track background tasks to prevent garbage collection mid-execution
         self._background_tasks: set = set()
@@ -3042,6 +3044,7 @@ class GatewayRunner:
         7. Return response
         """
         source = event.source
+        self._remember_line_input_modality(event)
 
         # Internal events (e.g. background-process completion notifications)
         # are system-generated and must skip user authorization.
@@ -6079,6 +6082,25 @@ class GatewayRunner:
 
         await adapter.handle_message(event)
 
+    def _remember_line_input_modality(self, event: MessageEvent) -> None:
+        if event.source.platform != Platform.LINE:
+            return
+        if event.message_type == MessageType.TEXT:
+            self._line_last_non_image_input_modality[event.source.chat_id] = "text"
+        elif event.message_type in (MessageType.VOICE, MessageType.AUDIO):
+            self._line_last_non_image_input_modality[event.source.chat_id] = "voice"
+
+    def _line_desired_reply_modality(self, event: MessageEvent) -> str:
+        if event.source.platform != Platform.LINE:
+            return "voice" if event.message_type in (MessageType.VOICE, MessageType.AUDIO) else "text"
+        if event.message_type == MessageType.TEXT:
+            return "text"
+        if event.message_type in (MessageType.VOICE, MessageType.AUDIO):
+            return "voice"
+        if event.message_type == MessageType.PHOTO:
+            return self._line_last_non_image_input_modality.get(event.source.chat_id, "text")
+        return "text"
+
     def _should_send_voice_reply(
         self,
         event: MessageEvent,
@@ -6102,12 +6124,14 @@ class GatewayRunner:
 
         chat_id = event.source.chat_id
         voice_mode = self._voice_mode.get(self._voice_key(event.source.platform, chat_id), "off")
-        is_voice_input = (event.message_type == MessageType.VOICE)
-
-        should = (
-            (voice_mode == "all")
-            or (voice_mode == "voice_only" and is_voice_input)
-        )
+        if event.source.platform == Platform.LINE:
+            should = self._line_desired_reply_modality(event) == "voice" and voice_mode in ("all", "voice_only")
+        else:
+            is_voice_input = (event.message_type == MessageType.VOICE)
+            should = (
+                (voice_mode == "all")
+                or (voice_mode == "voice_only" and is_voice_input)
+            )
         if not should:
             return False
 
@@ -6128,7 +6152,7 @@ class GatewayRunner:
         # When streaming already delivered the text (already_sent=True),
         # the base adapter will receive None and can't run auto-TTS,
         # so the runner must take over.
-        if is_voice_input and not already_sent:
+        if event.message_type == MessageType.VOICE and not already_sent:
             return False
 
         return True
@@ -6141,15 +6165,14 @@ class GatewayRunner:
         """Return True when a voice reply should replace the normal text reply.
 
         LINE billing is per outbound bubble and reply-token usage is quota-sensitive,
-        so voice-in turns should collapse to a single explicit reply whenever auto
-        voice reply succeeds.
+        so turns whose desired reply modality is voice should collapse to a single
+        explicit reply whenever voice delivery succeeds.
         """
         if not voice_reply_sent:
             return False
-        return (
-            event.source.platform == Platform.LINE
-            and event.message_type == MessageType.VOICE
-        )
+        if voice_reply_sent and event.source.platform == Platform.LINE:
+            return self._line_desired_reply_modality(event) == "voice"
+        return False
 
     async def _send_voice_reply(self, event: MessageEvent, text: str) -> bool:
         """Generate TTS audio and send as a voice message before the text reply."""
