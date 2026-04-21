@@ -350,28 +350,23 @@ class TestAutoVoiceReply:
         assert self._call(runner, "all", MessageType.TEXT, agent_messages=messages) is False
 
     def test_line_voice_input_runner_handles_voice_reply_without_streaming(self, runner):
-        runner._voice_mode["line:123"] = "voice_only"
         event = _make_event(message_type=MessageType.VOICE, platform=Platform.LINE)
         assert runner._should_send_voice_reply(event, "Hello!", [], already_sent=False) is True
 
     def test_line_voice_input_streamed_runner_can_handle_voice_reply(self, runner):
-        runner._voice_mode["line:123"] = "voice_only"
         event = _make_event(message_type=MessageType.VOICE, platform=Platform.LINE)
         assert runner._should_send_voice_reply(event, "Hello!", [], already_sent=True) is True
 
-    def test_line_text_input_does_not_trigger_voice_reply_in_all_mode(self, runner):
-        runner._voice_mode["line:123"] = "all"
+    def test_line_text_input_does_not_trigger_voice_reply(self, runner):
         event = _make_event(message_type=MessageType.TEXT, platform=Platform.LINE)
         assert runner._should_send_voice_reply(event, "Hello!", [], already_sent=False) is False
 
     def test_line_image_turn_reuses_last_non_image_modality_for_voice_reply(self, runner):
-        runner._voice_mode["line:123"] = "all"
         runner._line_last_non_image_input_modality["123"] = "voice"
         event = _make_event(message_type=MessageType.PHOTO, platform=Platform.LINE)
         assert runner._should_send_voice_reply(event, "Hello!", [], already_sent=False) is True
 
     def test_line_image_turn_defaults_to_text_without_last_modality(self, runner):
-        runner._voice_mode["line:123"] = "all"
         event = _make_event(message_type=MessageType.PHOTO, platform=Platform.LINE)
         assert runner._should_send_voice_reply(event, "Hello!", [], already_sent=False) is False
 

@@ -6126,7 +6126,11 @@ class GatewayRunner:
         chat_id = event.source.chat_id
         voice_mode = self._voice_mode.get(self._voice_key(event.source.platform, chat_id), "off")
         if event.source.platform == Platform.LINE:
-            should = self._line_desired_reply_modality(event) == "voice" and voice_mode in ("all", "voice_only")
+            # LINE should reply in the user's last-used modality without requiring
+            # a separate /voice mode toggle. Text turns stay text; voice turns and
+            # image turns that inherit voice modality should emit exactly one voice
+            # reply when TTS is available.
+            should = self._line_desired_reply_modality(event) == "voice"
         else:
             is_voice_input = (event.message_type == MessageType.VOICE)
             should = (
