@@ -13292,6 +13292,8 @@ def _realtime_voice_production_launch_review_payload(
     issues = validate_production_review_report(report)
     reviewed_at = report.get("reviewed_at")
     reviewer = report.get("reviewer")
+    evidence = report.get("evidence")
+    evidence = evidence if isinstance(evidence, Mapping) else {}
     return {
         "required": True,
         "configured": True,
@@ -13300,8 +13302,38 @@ def _realtime_voice_production_launch_review_payload(
         "reviewed_at": str(reviewed_at or "") or None,
         "reviewer": str(reviewer or "") or None,
         "required_checks": required_checks,
+        "evidence": _realtime_voice_production_review_evidence_summary(evidence),
         "issues": issues,
     }
+
+
+def _realtime_voice_production_review_evidence_summary(evidence: Mapping[str, Any]) -> Dict[str, Any]:
+    summary: Dict[str, Any] = {}
+    for key in _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS:
+        entry = evidence.get(key)
+        if isinstance(entry, str):
+            summary[key] = {
+                "notes": bool(entry.strip()),
+                "artifacts": 0,
+            }
+            continue
+        if not isinstance(entry, Mapping):
+            summary[key] = {
+                "notes": False,
+                "artifacts": 0,
+            }
+            continue
+        artifacts = entry.get("artifacts")
+        artifact_count = (
+            sum(1 for item in artifacts if str(item or "").strip())
+            if isinstance(artifacts, list)
+            else 0
+        )
+        summary[key] = {
+            "notes": bool(str(entry.get("notes") or "").strip()),
+            "artifacts": artifact_count,
+        }
+    return summary
 
 
 def _realtime_voice_production_evidence_payload(
