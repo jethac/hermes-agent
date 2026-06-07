@@ -16,6 +16,7 @@ from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_reference_sidecar import (
     ReferenceRealtimeVoiceSidecarSession,
     ReferenceSidecarRuntimeConfig,
+    reference_sidecar_health_payload,
 )
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
@@ -606,6 +607,38 @@ def test_reference_sidecar_vllm_audio_frontend(monkeypatch):
     assert captured["timeout"] == 12
     assert captured["body"]["model"] == "google/gemma-4-E4B-it-qat-w4a16-ct"
     assert captured["body"]["messages"][0]["content"][0]["type"] == "audio_url"
+
+
+def test_reference_sidecar_health_payload_is_sanitized():
+    payload = reference_sidecar_health_payload(
+        ReferenceSidecarRuntimeConfig(
+            vllm_base_url="http://user:secret@voice.local:8000/v1",
+            vllm_model="google/gemma-4-E4B-it-qat-w4a16-ct",
+            local_stt_enabled=False,
+            local_tts_enabled=True,
+        )
+    )
+
+    assert payload == {
+        "ok": True,
+        "kind": "reference",
+        "frontend": {
+            "provider": "vllm",
+            "model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+        },
+        "capabilities": {
+            "utterance_stt": True,
+            "streaming_stt": False,
+            "tts": True,
+            "native_s2s": False,
+            "vllm_audio_frontend": True,
+        },
+        "local": {
+            "stt": False,
+            "tts": True,
+        },
+    }
+    assert "secret" not in __import__("json").dumps(payload)
 
 
 def test_session_persists_only_final_and_committed_messages(monkeypatch):

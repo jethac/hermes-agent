@@ -6417,6 +6417,79 @@ class TestRealtimeVoiceWebSocket:
         assert body["sidecar"]["loopback"] is True
         assert body["sidecar"]["healthy"] is False
 
+    def test_status_includes_sanitized_sidecar_health_payload(self, monkeypatch):
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "kind": "reference",
+                        "frontend": {
+                            "provider": "vllm",
+                            "model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                            "base_url": "http://user:secret@voice.local:8000/v1",
+                        },
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": False,
+                            "tts": True,
+                            "native_s2s": False,
+                            "vllm_audio_frontend": True,
+                            "token": "secret",
+                        },
+                        "local": {"stt": False, "tts": True},
+                        "secret": "do-not-leak",
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "frontend_provider": "gemma4",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda url, timeout: FakeResponse())
+
+        response = self.client.get("/api/voice/realtime/status")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["available"] is True
+        assert body["sidecar"]["healthy"] is True
+        assert body["sidecar"]["health"] == {
+            "ok": True,
+            "kind": "reference",
+            "frontend": {
+                "provider": "vllm",
+                "model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+            },
+            "capabilities": {
+                "utterance_stt": True,
+                "streaming_stt": False,
+                "tts": True,
+                "native_s2s": False,
+                "vllm_audio_frontend": True,
+            },
+            "local": {"stt": False, "tts": True},
+        }
+        assert "secret" not in __import__("json").dumps(body["sidecar"]["health"])
+
     def test_status_reports_remote_unhealthy_sidecar_unavailable_and_redacted(self, monkeypatch):
         def fake_urlopen(url, timeout):
             raise self.ws_module.urllib.error.URLError("remote down")

@@ -12717,6 +12717,56 @@ def _realtime_voice_sidecar_healthy(base_url: str, timeout: float = _VOICE_SIDEC
         return False
 
 
+def _realtime_voice_sidecar_health_payload(
+    base_url: str,
+    timeout: float = _VOICE_SIDECAR_HEALTH_TIMEOUT,
+) -> Optional[Dict[str, Any]]:
+    if not base_url:
+        return None
+    try:
+        with urllib.request.urlopen(_realtime_voice_sidecar_health_url(base_url), timeout=timeout) as response:
+            status = int(getattr(response, "status", 200))
+            if status < 200 or status >= 300 or not hasattr(response, "read"):
+                return None
+            raw = response.read()
+    except Exception:
+        return None
+
+    try:
+        payload = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else str(raw))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return _sanitize_realtime_voice_sidecar_health(payload)
+
+
+def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str, Any]:
+    frontend = payload.get("frontend") if isinstance(payload.get("frontend"), dict) else {}
+    capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
+    local = payload.get("local") if isinstance(payload.get("local"), dict) else {}
+
+    return {
+        "ok": payload.get("ok") is True,
+        "kind": str(payload.get("kind") or "") or None,
+        "frontend": {
+            "provider": str(frontend.get("provider") or "") or None,
+            "model": str(frontend.get("model") or "") or None,
+        },
+        "capabilities": {
+            "utterance_stt": capabilities.get("utterance_stt") is True,
+            "streaming_stt": capabilities.get("streaming_stt") is True,
+            "tts": capabilities.get("tts") is True,
+            "native_s2s": capabilities.get("native_s2s") is True,
+            "vllm_audio_frontend": capabilities.get("vllm_audio_frontend") is True,
+        },
+        "local": {
+            "stt": local.get("stt") is True,
+            "tts": local.get("tts") is True,
+        },
+    }
+
+
 def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
     sidecar_host = str(realtime.get("sidecar_host") or "127.0.0.1")
     sidecar_port = str(int(realtime.get("sidecar_port") or 8765))
@@ -12832,6 +12882,11 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     autostart = _realtime_voice_should_autostart_sidecar(realtime, base_url)
     externally_managed = bool(base_url and not autostart)
     healthy = _realtime_voice_sidecar_healthy(base_url) if probe_health and base_url else None
+    health_payload = (
+        _realtime_voice_sidecar_health_payload(base_url)
+        if probe_health and base_url and healthy is True
+        else None
+    )
 
     sidecar_mode = "none"
     if autostart:
@@ -12861,6 +12916,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "autostart": autostart,
             "healthy": healthy,
             "externally_managed": externally_managed,
+            "health": health_payload,
         },
         "native_s2s": {
             "enabled": engine == "native_s2s_oracle",
