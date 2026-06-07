@@ -6,6 +6,7 @@ import { notify, notifyError } from '@/store/notifications'
 
 import {
   type RealtimeVoiceCaption,
+  type RealtimeVoiceFrontendState,
   type RealtimeVoiceLatencyMetrics,
   useRealtimeVoiceSession
 } from './use-realtime-voice-session'
@@ -33,6 +34,7 @@ interface VoiceConversationOptions {
 
 const EMPTY_REALTIME_METRICS: RealtimeVoiceLatencyMetrics = {}
 const EMPTY_REALTIME_CAPTION: RealtimeVoiceCaption | null = null
+const EMPTY_REALTIME_FRONTEND_STATE: RealtimeVoiceFrontendState | null = null
 
 export function useVoiceConversation({
   busy,
@@ -442,6 +444,7 @@ export function useVoiceConversation({
   return {
     caption: EMPTY_REALTIME_CAPTION,
     end,
+    frontendState: EMPTY_REALTIME_FRONTEND_STATE,
     level,
     metrics: EMPTY_REALTIME_METRICS,
     muted,

@@ -9,7 +9,11 @@ import { formatCombo } from '@/lib/keybinds/combo'
 import { cn } from '@/lib/utils'
 
 import type { ConversationStatus } from './hooks/use-voice-conversation'
-import type { RealtimeVoiceCaption, RealtimeVoiceLatencyMetrics } from './hooks/use-realtime-voice-session'
+import type {
+  RealtimeVoiceCaption,
+  RealtimeVoiceFrontendState,
+  RealtimeVoiceLatencyMetrics
+} from './hooks/use-realtime-voice-session'
 import { ModelPill } from './model-pill'
 import type { ChatBarState, VoiceStatus } from './types'
 
@@ -31,6 +35,7 @@ export const PRIMARY_ICON_BTN = cn(
 interface ConversationProps {
   active: boolean
   caption?: null | RealtimeVoiceCaption
+  frontendState?: null | RealtimeVoiceFrontendState
   level: number
   metrics?: RealtimeVoiceLatencyMetrics
   muted: boolean
@@ -156,6 +161,7 @@ export function ComposerControls({
 function ConversationPill({
   caption,
   disabled,
+  frontendState,
   level,
   metrics,
   muted,
@@ -218,6 +224,7 @@ function ConversationPill({
         </Button>
       )}
       {caption?.text && <RealtimeVoiceCaptionPill caption={caption} />}
+      {frontendState && <RealtimeVoiceFrontendStatePill state={frontendState} />}
       {quality && <RealtimeVoiceQualityPill quality={quality} />}
       <Button
         aria-label={c.endConversation}
@@ -251,6 +258,22 @@ function RealtimeVoiceCaptionPill({ caption }: { caption: RealtimeVoiceCaption }
         )}
       >
         <span className="truncate">{caption.text}</span>
+      </span>
+    </Tip>
+  )
+}
+
+function RealtimeVoiceFrontendStatePill({ state }: { state: RealtimeVoiceFrontendState }) {
+  const label = state.status === 'fallback' ? 'Fallback' : 'Degraded'
+  const reason = state.reason ? state.reason.replace(/_/g, ' ') : label
+
+  return (
+    <Tip label={reason}>
+      <span
+        aria-label={`Realtime voice ${label.toLowerCase()}: ${reason}`}
+        className="hidden h-(--composer-control-size) shrink-0 items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 text-[0.65rem] font-medium uppercase text-amber-700 sm:inline-flex dark:text-amber-300"
+      >
+        {label}
       </span>
     </Tip>
   )
