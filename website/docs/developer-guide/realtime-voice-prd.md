@@ -171,6 +171,7 @@ Hermes oracle
 - Median first transcript partial: under 300 ms on LAN.
 - Median first assistant audio after final user speech: under 900 ms for simple responses.
 - Barge-in stop latency: under 150 ms from detected speech to playback cancellation.
+- Realtime server events expose session latency metrics for transcript, first-text, first-audio, and barge-in paths.
 - No durable transcript pollution from partial ASR or abandoned assistant drafts.
 - Existing one-shot voice mode continues to work.
 
