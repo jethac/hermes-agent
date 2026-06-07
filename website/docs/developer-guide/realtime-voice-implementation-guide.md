@@ -127,6 +127,31 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
     ...
 ```
 
+Add a FastAPI status endpoint for desktop preflight and operator diagnostics:
+
+```http
+GET /api/voice/realtime/status
+```
+
+The status endpoint returns `enabled`, `available`, selected engine/codecs, frontend provider/model, native S2S requirement flags, and sanitized sidecar state:
+
+```json
+{
+  "enabled": true,
+  "available": true,
+  "engine": "text_oracle_tts",
+  "frontend_provider": "gemma4",
+  "sidecar": {
+    "mode": "managed_loopback",
+    "base_url": "http://127.0.0.1:8765",
+    "autostart": true,
+    "healthy": false
+  }
+}
+```
+
+A managed loopback sidecar can be `available: true` while `healthy: false` because the websocket path will autostart it. An externally managed remote sidecar that is unhealthy is `available: false`, so the desktop should keep or return to the one-shot voice fallback.
+
 Implementation notes:
 
 - Reuse existing websocket host/origin/auth guards in `web_server.py`.
@@ -134,6 +159,7 @@ Implementation notes:
 - Validate every client event with `validate_client_event`.
 - Never let model-sidecar exceptions kill the process; emit `session.error`, close the engine, then close the websocket.
 - On disconnect, call `engine.close()`.
+- Never expose sidecar bearer tokens, URL credentials, or query-string secrets through the status endpoint.
 
 ## Session State Machine
 

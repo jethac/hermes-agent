@@ -12681,6 +12681,21 @@ def _realtime_voice_sidecar_health_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/health"
 
 
+def _redact_realtime_voice_url(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        parsed = urllib.parse.urlparse(value)
+    except Exception:
+        return value
+
+    netloc = parsed.netloc
+    if "@" in netloc:
+        _, host_part = netloc.rsplit("@", 1)
+        netloc = f"***@{host_part}"
+    return urllib.parse.urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
+
+
 def _realtime_voice_sidecar_healthy(base_url: str, timeout: float = _VOICE_SIDECAR_HEALTH_TIMEOUT) -> bool:
     if not base_url:
         return False
@@ -12789,6 +12804,61 @@ def _ensure_realtime_voice_sidecar(realtime: Dict[str, Any]) -> None:
         raise RuntimeError(f"realtime voice sidecar did not become healthy at {base_url}")
 
 
+def _realtime_voice_config_dict() -> Dict[str, Any]:
+    cfg = load_config()
+    voice = cfg.get("voice") if isinstance(cfg, dict) else {}
+    realtime = voice.get("realtime") if isinstance(voice, dict) else {}
+    return dict(realtime) if isinstance(realtime, dict) else {}
+
+
+def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, Any]:
+    realtime = _realtime_voice_config_dict()
+    enabled = realtime.get("enabled") is True
+    engine = str(realtime.get("engine") or "text_oracle_tts")
+    provider = str(realtime.get("frontend_provider") or "")
+    frontend_model = str(realtime.get("frontend_model") or "")
+    base_url = _realtime_voice_sidecar_base_url(realtime)
+    loopback = _realtime_voice_sidecar_is_loopback(base_url) if base_url else False
+    autostart = _realtime_voice_should_autostart_sidecar(realtime, base_url)
+    externally_managed = bool(base_url and not autostart)
+    healthy = _realtime_voice_sidecar_healthy(base_url) if probe_health and base_url else None
+
+    sidecar_mode = "none"
+    if autostart:
+        sidecar_mode = "managed_loopback"
+    elif externally_managed:
+        sidecar_mode = "external"
+
+    available = enabled
+    if engine == "native_s2s_oracle" and not base_url:
+        available = False
+    if base_url and not autostart and healthy is False:
+        available = False
+
+    return {
+        "enabled": enabled,
+        "available": available,
+        "engine": engine,
+        "input_codec": str(realtime.get("input_codec") or "webm_opus"),
+        "output_codec": str(realtime.get("output_codec") or "opus"),
+        "frontend_provider": provider or None,
+        "frontend_model": frontend_model or None,
+        "sidecar": {
+            "mode": sidecar_mode,
+            "base_url": _redact_realtime_voice_url(base_url),
+            "health_url": _redact_realtime_voice_url(_realtime_voice_sidecar_health_url(base_url)) if base_url else "",
+            "loopback": loopback,
+            "autostart": autostart,
+            "healthy": healthy,
+            "externally_managed": externally_managed,
+        },
+        "native_s2s": {
+            "enabled": engine == "native_s2s_oracle",
+            "sidecar_required": engine == "native_s2s_oracle",
+        },
+    }
+
+
 def _realtime_voice_config_from_request(ws: WebSocket):
     """Build a realtime voice session config from profile config + query params."""
     from agent.realtime_voice import (
@@ -12828,6 +12898,12 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         spark_token=str(spark_token or "") or None,
         metadata={"source": "desktop"},
     )
+
+
+@app.get("/api/voice/realtime/status")
+async def realtime_voice_status() -> Dict[str, Any]:
+    """Return realtime voice capability and sidecar health for preflight UI."""
+    return _realtime_voice_status_payload()
 
 
 @app.websocket("/api/voice/realtime")
