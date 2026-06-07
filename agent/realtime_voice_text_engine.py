@@ -374,16 +374,37 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         speak_tasks: List[asyncio.Task[None]] = []
         speak_chain: Optional[asyncio.Task[None]] = None
         assistant_metadata = dict(metadata)
+        tts_error_reported = False
 
         def queue_speak(text: str) -> None:
-            nonlocal speak_chain
+            nonlocal speak_chain, tts_error_reported
             previous = speak_chain
+
+            async def report_tts_failure(exc: Exception) -> None:
+                nonlocal tts_error_reported
+                if tts_error_reported:
+                    return
+                tts_error_reported = True
+                await self._emit(
+                    VoiceEventType.FRONTEND_STATE,
+                    {
+                        "status": "degraded",
+                        "reason": "tts_failed",
+                        "error": sanitize_realtime_voice_error(exc),
+                        "sidecar": False,
+                    },
+                )
 
             async def speak_after_previous() -> None:
                 if previous is not None:
                     await previous
                 if playback_generation == self._playback_generation:
-                    await self._speak_chunk(text, playback_generation)
+                    try:
+                        await self._speak_chunk(text, playback_generation)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        await report_tts_failure(exc)
 
             speak_chain = asyncio.create_task(speak_after_previous())
             speak_tasks.append(speak_chain)
