@@ -1108,21 +1108,6 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     return true
   }, [clearReconnectTimer, onFatalError])
 
-  const handleRecoverableFailure = useCallback(
-    (reason: string, updatedAtMs = Date.now()) => {
-      if (scheduleReconnect()) {
-        return true
-      }
-
-      const state = realtimeVoiceFailureFrontendState(reason, updatedAtMs)
-      setFrontendState(state)
-      onUnavailable?.(state)
-
-      return false
-    },
-    [onUnavailable, scheduleReconnect]
-  )
-
   const sendEvent = useCallback((type: string, payload: Record<string, unknown> = {}) => {
     const socket = socketRef.current
 
@@ -1325,6 +1310,35 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       playingRef.current = null
     }
   }, [advancePlaybackGeneration])
+
+  const resetTransportForRecoverableFailure = useCallback(() => {
+    stopPlayback(true)
+    cleanupInput()
+    audioInputGenerationRef.current += 1
+    audioSendChainRef.current = Promise.resolve()
+    serverEventChainRef.current = Promise.resolve()
+    heardSpeechRef.current = false
+    silenceStartedAtRef.current = null
+    sentEndOfUtteranceRef.current = false
+    stoppingForSilenceRef.current = false
+    bargeInSpeechStartedAtRef.current = null
+  }, [cleanupInput, stopPlayback])
+
+  const handleRecoverableFailure = useCallback(
+    (reason: string, updatedAtMs = Date.now()) => {
+      resetTransportForRecoverableFailure()
+      if (scheduleReconnect()) {
+        return true
+      }
+
+      const state = realtimeVoiceFailureFrontendState(reason, updatedAtMs)
+      setFrontendState(state)
+      onUnavailable?.(state)
+
+      return false
+    },
+    [onUnavailable, resetTransportForRecoverableFailure, scheduleReconnect]
+  )
 
   const playNext = useCallback(() => {
     if (playingRef.current || !playbackQueueRef.current.length) {

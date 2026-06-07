@@ -12,28 +12,29 @@ import {
   queueRealtimeAudioTask,
   realtimeAudioInputPayload,
   realtimeBinaryAudioInputFrame,
-  realtimeVoiceCloseAction,
   realtimeVoiceBargeInMinSpeechMs,
-  realtimeVoiceInputFrameMs,
+  realtimeVoiceCloseAction,
+  realtimeVoiceConversationQualityFrontendState,
   realtimeVoiceEventGeneration,
   realtimeVoiceFailureFrontendState,
-  realtimeVoicePlaybackGeneration,
-  realtimeVoicePlaybackQueueAction,
+  realtimeVoiceInputFrameMs,
+  type RealtimeVoiceLatencyMetrics,
   realtimeVoiceOutputAudioBlob,
   realtimeVoiceOutputAudioMimeType,
-  realtimeVoicePreRollMs,
+  realtimeVoicePlaybackGeneration,
+  realtimeVoicePlaybackQueueAction,
   realtimeVoicePreRollChunkLimit,
+  realtimeVoicePreRollMs,
+  realtimeVoiceQualityTargets,
+  realtimeVoiceQualityTargetsFromPayload,
   realtimeVoiceReconnectDelayMs,
   realtimeVoiceReconnectFrontendState,
-  realtimeVoiceSpeechLevelThreshold,
   realtimeVoiceSessionErrorAction,
   realtimeVoiceSessionReadyTimeoutMs,
   realtimeVoiceSessionStatus,
   realtimeVoiceSilenceTimeoutMs,
-  realtimeVoiceConversationQualityFrontendState,
+  realtimeVoiceSpeechLevelThreshold,
   realtimeVoiceUnavailableFrontendState,
-  realtimeVoiceQualityTargets,
-  realtimeVoiceQualityTargetsFromPayload,
   realtimeVoiceUrl,
   shouldDropQueuedRealtimeAudioInput,
   shouldDropStaleRealtimeVoiceEvent,
@@ -43,10 +44,9 @@ import {
   shouldSendRealtimeVoiceEndMarker,
   shouldStartRealtimeTurnCapture,
   updateRealtimeVoiceBargeInGate,
-  useRealtimeVoiceSession
+  useRealtimeVoiceSession,
+  type VoiceEvent
 } from './use-realtime-voice-session'
-
-import type { RealtimeVoiceLatencyMetrics, VoiceEvent } from './use-realtime-voice-session'
 
 const { resolveGatewayWsUrlMock } = vi.hoisted(() => ({
   resolveGatewayWsUrlMock: vi.fn(async () => 'ws://127.0.0.1:9119/api/ws?token=t')
@@ -96,6 +96,72 @@ function installRealtimeVoiceWebSocketMock() {
       configurable: true,
       value: originalWebSocket
     })
+  }
+}
+
+class MockRealtimeVoiceMediaRecorder {
+  static instances: MockRealtimeVoiceMediaRecorder[] = []
+  static isTypeSupported = vi.fn(() => true)
+
+  mimeType: string
+  ondataavailable: ((event: BlobEvent) => void) | null = null
+  onstop: (() => void) | null = null
+  requestData = vi.fn()
+  start = vi.fn(() => {
+    this.state = 'recording'
+  })
+  state: RecordingState = 'inactive'
+  stop = vi.fn(() => {
+    this.state = 'inactive'
+    this.onstop?.()
+  })
+
+  constructor(_stream: MediaStream, options?: MediaRecorderOptions) {
+    this.mimeType = options?.mimeType || 'audio/webm;codecs=opus'
+    MockRealtimeVoiceMediaRecorder.instances.push(this)
+  }
+}
+
+function installRealtimeVoiceMediaMock() {
+  const originalMediaRecorder = window.MediaRecorder
+  const originalGlobalMediaRecorder = globalThis.MediaRecorder
+  const originalMediaDevices = navigator.mediaDevices
+  const track = { stop: vi.fn() }
+  const stream = { getTracks: () => [track] } as unknown as MediaStream
+  const getUserMedia = vi.fn(async () => stream)
+
+  MockRealtimeVoiceMediaRecorder.instances = []
+  MockRealtimeVoiceMediaRecorder.isTypeSupported.mockClear()
+  Object.defineProperty(window, 'MediaRecorder', {
+    configurable: true,
+    value: MockRealtimeVoiceMediaRecorder
+  })
+  Object.defineProperty(globalThis, 'MediaRecorder', {
+    configurable: true,
+    value: MockRealtimeVoiceMediaRecorder
+  })
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia }
+  })
+
+  return {
+    getUserMedia,
+    restore: () => {
+      Object.defineProperty(window, 'MediaRecorder', {
+        configurable: true,
+        value: originalMediaRecorder
+      })
+      Object.defineProperty(globalThis, 'MediaRecorder', {
+        configurable: true,
+        value: originalGlobalMediaRecorder
+      })
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: originalMediaDevices
+      })
+    },
+    track
   }
 }
 
@@ -245,6 +311,100 @@ describe('useRealtimeVoiceSession reconnect handling', () => {
 
       unmount()
     } finally {
+      restoreWebSocket()
+    }
+  })
+
+  it('stops active microphone capture before reconnecting after an active websocket close', async () => {
+    const restoreWebSocket = installRealtimeVoiceWebSocketMock()
+    const media = installRealtimeVoiceMediaMock()
+    try {
+      const api = vi.fn(async () => ({
+        available: true,
+        conversation_quality: {
+          live_like: true,
+          mode: 'streaming_text',
+          reason: 'streaming_stt_tts'
+        },
+        enabled: true,
+        quality_targets_ms: {}
+      }))
+      const getConnection = vi.fn(async () => ({ gatewayUrl: 'http://127.0.0.1:9119' }))
+      const requestMicrophoneAccess = vi.fn(async () => true)
+      const onUnavailable = vi.fn()
+
+      Object.defineProperty(window, 'hermesDesktop', {
+        configurable: true,
+        value: { api, getConnection, requestMicrophoneAccess }
+      })
+
+      const { result, unmount } = renderHook(() =>
+        useRealtimeVoiceSession({
+          busy: false,
+          enabled: true,
+          onUnavailable,
+          sessionId: 'voice-test'
+        })
+      )
+
+      await waitFor(() => expect(MockRealtimeVoiceWebSocket.instances).toHaveLength(1))
+      const socket = MockRealtimeVoiceWebSocket.instances[0]
+
+      await act(async () => {
+        socket.readyState = MockRealtimeVoiceWebSocket.OPEN
+        socket.onopen?.(new Event('open'))
+        await Promise.resolve()
+      })
+
+      await act(async () => {
+        socket.onmessage?.(new MessageEvent('message', {
+          data: JSON.stringify({
+            payload: {
+              conversation_quality: {
+                live_like: true,
+                mode: 'streaming_text',
+                reason: 'streaming_stt_tts'
+              },
+              quality_targets_ms: {},
+              session_state: 'listening'
+            },
+            sequence: 1,
+            session_id: 'voice-test',
+            type: 'session.started'
+          })
+        }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      await waitFor(() => expect(MockRealtimeVoiceMediaRecorder.instances).toHaveLength(1))
+      const recorder = MockRealtimeVoiceMediaRecorder.instances[0]
+
+      expect(media.getUserMedia).toHaveBeenCalledTimes(1)
+      expect(requestMicrophoneAccess).toHaveBeenCalledTimes(1)
+      expect(recorder.start).toHaveBeenCalled()
+
+      await act(async () => {
+        socket.readyState = MockRealtimeVoiceWebSocket.CLOSED
+        socket.onclose?.({
+          code: 1011
+        } as CloseEvent)
+        await Promise.resolve()
+      })
+
+      expect(recorder.stop).toHaveBeenCalledTimes(1)
+      expect(media.track.stop).toHaveBeenCalledTimes(1)
+      await waitFor(() =>
+        expect(result.current.frontendState).toMatchObject({
+          reason: 'reconnecting_1',
+          status: 'degraded'
+        })
+      )
+      expect(onUnavailable).not.toHaveBeenCalled()
+
+      unmount()
+    } finally {
+      media.restore()
       restoreWebSocket()
     }
   })
