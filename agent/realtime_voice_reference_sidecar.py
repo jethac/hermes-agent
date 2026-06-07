@@ -205,7 +205,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         if self._closed:
             return
         self._closed = True
-        self._cancel_active_tasks()
+        await self._drain_cancelled_tasks(self._cancel_active_tasks())
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
         await put_realtime_voice_event(self._events, None)
 
@@ -213,10 +213,19 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._active_tasks.add(task)
         task.add_done_callback(self._active_tasks.discard)
 
-    def _cancel_active_tasks(self) -> None:
+    def _cancel_active_tasks(self) -> list[asyncio.Task[None]]:
+        tasks = list(self._active_tasks)
         for task in list(self._active_tasks):
             if not task.done():
                 task.cancel()
+        return tasks
+
+    async def _drain_cancelled_tasks(self, tasks: list[asyncio.Task[None]]) -> None:
+        for task in tasks:
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
 
     async def _append_audio_chunk(self, data: bytes) -> bool:
         config = self.config
@@ -355,6 +364,8 @@ class ReferenceRealtimeVoiceSidecarSession:
 
     async def _emit(self, event_type: VoiceEventType, payload: Mapping[str, Any]) -> None:
         if self.config is None:
+            return
+        if self._closed and event_type != VoiceEventType.SESSION_CLOSED:
             return
         self._sequence += 1
         await put_realtime_voice_event(

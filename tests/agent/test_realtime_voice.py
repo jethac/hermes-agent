@@ -1784,6 +1784,38 @@ def test_reference_sidecar_bounds_utterance_audio_buffer():
     assert transcribe_called is False
 
 
+def test_reference_sidecar_suppresses_worker_events_after_close():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+
+        async def worker():
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                await sidecar._emit(VoiceEventType.TRANSCRIPT_FINAL, {"text": "late transcript"})
+                raise
+
+        task = asyncio.create_task(worker())
+        sidecar._track_task(task)
+        await asyncio.sleep(0)
+
+        await sidecar.close()
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+
+        assert task.done()
+        assert [event.type for event in seen] == [
+            VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.SESSION_CLOSED,
+        ]
+        assert all(event.payload.get("text") != "late transcript" for event in seen)
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_sanitizes_provider_errors():
     def failing_transcribe(path):
         raise RuntimeError("STT failed at http://user:pass@voice.local/v1?token=abc")
