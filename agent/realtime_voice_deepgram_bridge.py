@@ -39,6 +39,7 @@ class DeepgramStreamingSTTBridgeConfig:
     model: str = "nova-3"
     tts_model: str = "aura-2-thalia-en"
     tts_model_by_language: Mapping[str, str] = field(default_factory=dict)
+    output_languages: tuple[str, ...] = ()
     language: Optional[str] = None
     tts_sample_rate_hz: int = 24000
     endpointing_ms: int = 80
@@ -440,6 +441,7 @@ def create_deepgram_streaming_stt_bridge_app(runtime: Optional[DeepgramStreaming
                 "tts": bool(runtime.api_key),
                 "streaming_tts": bool(runtime.api_key),
                 "native_s2s": False,
+                "output_languages": deepgram_tts_output_languages(runtime),
             },
         }
 
@@ -582,6 +584,9 @@ def deepgram_bridge_config_from_env() -> DeepgramStreamingSTTBridgeConfig:
         tts_model_by_language=_parse_tts_model_by_language(
             os.environ.get("HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE") or ""
         ),
+        output_languages=tuple(
+            _parse_language_list(os.environ.get("HERMES_DEEPGRAM_OUTPUT_LANGUAGES") or "")
+        ),
         language=os.environ.get("HERMES_DEEPGRAM_LANGUAGE") or None,
         tts_sample_rate_hz=int(os.environ.get("HERMES_DEEPGRAM_TTS_SAMPLE_RATE_HZ") or 24000),
         endpointing_ms=int(os.environ.get("HERMES_DEEPGRAM_ENDPOINTING_MS") or 80),
@@ -666,6 +671,19 @@ def deepgram_tts_model_for_payload(
     return str(runtime.tts_model or "").strip()
 
 
+def deepgram_tts_output_languages(runtime: DeepgramStreamingSTTBridgeConfig) -> list[str]:
+    languages = set(runtime.output_languages or ())
+    languages.update(
+        _primary_language(language)
+        for language in dict(runtime.tts_model_by_language or {}).keys()
+        if _primary_language(language)
+    )
+    inferred = _infer_language_from_deepgram_model(runtime.tts_model)
+    if inferred:
+        languages.add(inferred)
+    return sorted(language for language in languages if language)
+
+
 def _parse_tts_model_by_language(value: str) -> dict[str, str]:
     result: dict[str, str] = {}
     for item in str(value or "").split(","):
@@ -683,6 +701,30 @@ def _parse_tts_model_by_language(value: str) -> dict[str, str]:
         if language and model:
             result[language] = model
     return result
+
+
+def _parse_language_list(value: str) -> list[str]:
+    result: list[str] = []
+    for item in str(value or "").split(","):
+        language = _primary_language(item)
+        if language and language not in result:
+            result.append(language)
+    return result
+
+
+def _primary_language(value: Any) -> str:
+    language = _clean_language(value).lower()
+    return language.split("-", 1)[0] if language else ""
+
+
+def _infer_language_from_deepgram_model(value: Any) -> str:
+    model = _clean_model_name(value).lower()
+    if not model:
+        return ""
+    suffix = model.rsplit("-", 1)[-1]
+    if suffix.isalpha() and 2 <= len(suffix) <= 3:
+        return suffix
+    return ""
 
 
 def _clean_model_name(value: Any) -> str:
