@@ -24,6 +24,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE", ""),
         help="Comma-separated language:model overrides for streaming TTS, for example ja:<japanese-tts-model>",
     )
+    parser.add_argument(
+        "--output-languages",
+        default=os.environ.get("HERMES_DEEPGRAM_OUTPUT_LANGUAGES", ""),
+        help="Comma-separated output language tags advertised by bridge health, for example en,ja",
+    )
     parser.add_argument("--language", default=os.environ.get("HERMES_DEEPGRAM_LANGUAGE", ""))
     parser.add_argument(
         "--tts-sample-rate-hz",
@@ -72,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["HERMES_DEEPGRAM_TTS_MODEL"] = args.tts_model
     if args.tts_model_by_language:
         os.environ["HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE"] = args.tts_model_by_language
+    if args.output_languages:
+        os.environ["HERMES_DEEPGRAM_OUTPUT_LANGUAGES"] = args.output_languages
     if args.language:
         os.environ["HERMES_DEEPGRAM_LANGUAGE"] = args.language
     if args.tts_sample_rate_hz:
@@ -111,6 +118,10 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "  tts_model_by_language: "
             f"{','.join(sorted(runtime.tts_model_by_language)) if runtime.tts_model_by_language else 'not configured'}"
+        )
+        print(
+            "  output_languages: "
+            f"{','.join(runtime.output_languages) if runtime.output_languages else 'inferred from TTS models'}"
         )
         print(f"  auth_token: {'configured' if runtime.auth_token else 'not configured'}")
         return 0

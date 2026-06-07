@@ -17,11 +17,13 @@ from agent.realtime_voice_deepgram_bridge import (
     DeepgramStreamingSTTBridgeConfig,
     DeepgramStreamingSTTBridgeSession,
     DeepgramStreamingTTSBridgeSession,
+    create_deepgram_streaming_stt_bridge_app,
     deepgram_bridge_config_from_env,
     deepgram_bridge_prerequisite_issues,
     deepgram_listen_url,
     deepgram_result_to_transcript_payload,
     deepgram_tts_model_for_payload,
+    deepgram_tts_output_languages,
     deepgram_tts_url,
 )
 
@@ -114,6 +116,7 @@ def test_deepgram_runtime_reads_env(monkeypatch):
     monkeypatch.setenv("HERMES_DEEPGRAM_TTS_URL", "wss://deepgram.example.test/v1/speak")
     monkeypatch.setenv("HERMES_DEEPGRAM_MODEL", "nova-3")
     monkeypatch.setenv("HERMES_DEEPGRAM_TTS_MODEL", "aura-2-thalia-en")
+    monkeypatch.setenv("HERMES_DEEPGRAM_OUTPUT_LANGUAGES", "en-US,ja-JP,https://bad.example/x,ja")
     monkeypatch.setenv(
         "HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE",
         "ja:aura-2-akiko-ja,en-US=aura-2-thalia-en,https://bad.example/x:secret",
@@ -135,6 +138,7 @@ def test_deepgram_runtime_reads_env(monkeypatch):
         "en-us": "aura-2-thalia-en",
         "ja": "aura-2-akiko-ja",
     }
+    assert runtime.output_languages == ("en", "ja")
     assert runtime.language == "en-US"
     assert runtime.tts_sample_rate_hz == 48000
     assert runtime.endpointing_ms == 120
@@ -181,6 +185,49 @@ def test_deepgram_tts_model_for_payload_uses_locale_then_primary_language():
     )
     assert deepgram_tts_model_for_payload(runtime, {"language": "en-US"}) == "aura-2-thalia-en"
     assert deepgram_tts_model_for_payload(runtime, {"language": "ko-KR"}) == "aura-2-thalia-en"
+
+
+def test_deepgram_tts_output_languages_include_default_and_routes():
+    runtime = DeepgramStreamingSTTBridgeConfig(
+        tts_model="aura-2-thalia-en",
+        tts_model_by_language={
+            "ja": "aura-2-akiko-ja",
+            "en-us": "aura-2-thalia-en",
+        },
+    )
+
+    assert deepgram_tts_output_languages(runtime) == ["en", "ja"]
+
+
+def test_deepgram_tts_output_languages_prefer_explicit_metadata_for_unknown_model():
+    runtime = DeepgramStreamingSTTBridgeConfig(
+        tts_model="custom-provider-voice",
+        output_languages=("en", "ja"),
+    )
+
+    assert deepgram_tts_output_languages(runtime) == ["en", "ja"]
+
+
+def test_deepgram_bridge_health_advertises_output_languages():
+    from fastapi.testclient import TestClient
+
+    client = TestClient(
+        create_deepgram_streaming_stt_bridge_app(
+            DeepgramStreamingSTTBridgeConfig(
+                api_key="deepgram-secret",
+                tts_model="aura-2-thalia-en",
+                tts_model_by_language={"ja": "aura-2-akiko-ja"},
+            )
+        )
+    )
+
+    body = client.get("/health").json()
+
+    assert body["ok"] is True
+    assert body["frontend"]["tts_model_languages"] == ["ja"]
+    assert body["capabilities"]["streaming_stt"] is True
+    assert body["capabilities"]["streaming_tts"] is True
+    assert body["capabilities"]["output_languages"] == ["en", "ja"]
 
 
 def test_deepgram_bridge_cli_check_reports_missing_env(monkeypatch, capsys):
