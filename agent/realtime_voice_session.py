@@ -82,6 +82,8 @@ class RealtimeVoiceSession:
         self._last_barge_in_at: Optional[float] = None
         self._turn_first_assistant_text = False
         self._turn_first_audio_output = False
+        self._quality_target_miss_count = 0
+        self._last_quality_target_miss: Optional[dict] = None
 
     async def start(self) -> None:
         self._started_at_monotonic = time.monotonic()
@@ -221,6 +223,9 @@ class RealtimeVoiceSession:
             misses = self._quality_target_misses(payload["metrics"])
             if misses:
                 payload["quality_target_misses"] = misses
+                self._record_quality_target_misses(misses)
+            if self._quality_target_miss_count > 0:
+                payload["quality_summary"] = self._quality_summary_payload()
         return VoiceEvent(
             type=event.type,
             session_id=event.session_id,
@@ -289,6 +294,18 @@ class RealtimeVoiceSession:
                 continue
             misses.append({"metric": key, "actual_ms": actual, "target_ms": target})
         return sorted(misses, key=lambda item: item["metric"])
+
+    def _record_quality_target_misses(self, misses: List[dict]) -> None:
+        self._quality_target_miss_count += len(misses)
+        self._last_quality_target_miss = dict(misses[-1])
+
+    def _quality_summary_payload(self) -> dict:
+        payload = {
+            "target_miss_count": self._quality_target_miss_count,
+        }
+        if self._last_quality_target_miss is not None:
+            payload["last_target_miss"] = dict(self._last_quality_target_miss)
+        return payload
 
 
 def _payload_generation(payload: dict) -> Optional[int]:
