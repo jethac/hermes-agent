@@ -352,6 +352,22 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._active_task = asyncio.create_task(self._answer_and_speak(transcript, generation))
 
     async def _answer_and_speak(self, transcript: str, playback_generation: int) -> None:
+        speak_tasks: List[asyncio.Task[None]] = []
+        speak_chain: Optional[asyncio.Task[None]] = None
+
+        def queue_speak(text: str) -> None:
+            nonlocal speak_chain
+            previous = speak_chain
+
+            async def speak_after_previous() -> None:
+                if previous is not None:
+                    await previous
+                if playback_generation == self._playback_generation:
+                    await self._speak_chunk(text, playback_generation)
+
+            speak_chain = asyncio.create_task(speak_after_previous())
+            speak_tasks.append(speak_chain)
+
         try:
             oracle = self._oracle or NullRealtimeOracle()
             answer = ""
@@ -369,7 +385,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                             VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                             {"text": planned_chunk, "playback_generation": playback_generation},
                         )
-                        await self._speak_chunk(planned_chunk, playback_generation)
+                        queue_speak(planned_chunk)
 
             if buffer.strip():
                 planned_chunk = self._planner.clean(buffer)
@@ -378,9 +394,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                         {"text": planned_chunk, "playback_generation": playback_generation},
                     )
-                    await self._speak_chunk(planned_chunk, playback_generation)
+                    queue_speak(planned_chunk)
 
             plan = self._planner.plan(answer)
+            if speak_chain is not None:
+                await speak_chain
             if not plan.committed_text:
                 return
             if playback_generation == self._playback_generation:
@@ -389,6 +407,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     {"text": plan.committed_text, "playback_generation": playback_generation},
                 )
         except asyncio.CancelledError:
+            for task in speak_tasks:
+                task.cancel()
+            for task in speak_tasks:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
             if playback_generation == self._playback_generation:
                 await self._emit(
                     VoiceEventType.ASSISTANT_COMMIT,
@@ -426,6 +449,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     pass
 
     async def _speak_chunk(self, text: str, playback_generation: int) -> None:
+        if playback_generation != self._playback_generation:
+            return
         if self._sidecar is not None and self.config is not None:
             event = VoiceEvent(
                 type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
@@ -449,6 +474,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 )
 
         file_path = await asyncio.to_thread(self._tts_sync, text)
+        if playback_generation != self._playback_generation:
+            if file_path:
+                with contextlib.suppress(OSError):
+                    os.unlink(file_path)
+            return
         if not file_path:
             return
         try:

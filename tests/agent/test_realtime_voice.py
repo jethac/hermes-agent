@@ -414,9 +414,11 @@ def test_text_engine_speaks_stable_phrase_before_sentence_ends(monkeypatch):
 
     async def run():
         spoken = []
+        spoke = asyncio.Event()
 
         async def fake_speak(self, text, playback_generation):
             spoken.append(text)
+            spoke.set()
 
         monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
 
@@ -437,6 +439,7 @@ def test_text_engine_speaks_stable_phrase_before_sentence_ends(monkeypatch):
             if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
                 break
 
+        await asyncio.wait_for(spoke.wait(), timeout=1)
         assert spoken[0] == "This response starts with a stable opening phrase,"
         assert seen[-1].payload["text"] == "This response starts with a stable opening phrase,"
         await engine.close()
@@ -516,6 +519,59 @@ def test_text_engine_speaks_before_oracle_stream_finishes(monkeypatch):
             )
         )
 
+        async for event in engine.events():
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                await engine.close()
+                break
+
+        assert spoken == ["First sentence.", "Second sentence."]
+
+    asyncio.run(run())
+
+
+def test_text_engine_does_not_block_oracle_stream_on_local_tts(monkeypatch):
+    class StreamingOracle:
+        async def stream_answer(self, transcript: str):
+            yield "First sentence. "
+            yield "Second sentence."
+
+    async def run():
+        spoken = []
+        first_tts_started = asyncio.Event()
+        release_first_tts = asyncio.Event()
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+            if text == "First sentence.":
+                first_tts_started.set()
+                await release_first_tts.wait()
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        engine = TextOracleTTSEngine(oracle=StreamingOracle())
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello"},
+            )
+        )
+
+        partials = []
+        async for event in engine.events():
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                partials.append(event.payload["text"])
+                if len(partials) == 1:
+                    await asyncio.wait_for(first_tts_started.wait(), timeout=1)
+                if len(partials) == 2:
+                    break
+
+        assert partials == ["First sentence.", "Second sentence."]
+        assert spoken == ["First sentence."]
+
+        release_first_tts.set()
         async for event in engine.events():
             if event.type == VoiceEventType.ASSISTANT_COMMIT:
                 await engine.close()
