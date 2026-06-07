@@ -56,6 +56,8 @@ Current limits:
 
 The desktop app should only know about Hermes' `/api/voice/realtime` websocket. It should not know whether speech inference is local, a supervised loopback process, a LAN GPU host, or a provider endpoint.
 
+This is a deployment invariant, not an optimization. The desktop must remain portable across laptops, thin clients, and machines without audio-model hardware. Moving Gemma, streaming TTS, or native S2S inference to another host should require only server-side Hermes profile changes and sidecar credentials, not a desktop rebuild or a different browser protocol.
+
 Hermes owns:
 
 - websocket auth and session lifecycle
@@ -69,7 +71,7 @@ The voice inference process owns:
 - streaming TTS or native S2S audio generation
 - model-specific media dependencies and GPU scheduling
 
-This split is why `sidecar_base_url` remains server-side configuration. The desktop cannot point Hermes at an arbitrary inference host through query params.
+This split is why `sidecar_base_url` remains server-side configuration. The desktop cannot point Hermes at an arbitrary inference host through query params, and public docs/settings should describe sidecars by capability (`local`, `reference`, `gemma4`, `vllm`, `native_s2s`) rather than by a specific workstation or accelerator name.
 
 ## Target File Layout
 
@@ -174,7 +176,7 @@ Implementation notes:
 - Create one `RealtimeVoiceSession` per websocket.
 - Validate every client event with `validate_client_event`.
 - Never let recoverable model-sidecar failures kill the process; emit `frontend.state` with `status: "fallback"` or `status: "degraded"` and continue through local/provider STT/TTS where possible. Use `session.error` only for unrecoverable session failures.
-- Sanitize exception text before sending websocket events or close reasons to the desktop. Runtime voice events must not expose bearer tokens, URL credentials, query-string secrets, or provider keys.
+- Sanitize exception text before sending websocket events or close reasons to the desktop, including errors after the websocket has already been accepted. Runtime voice events must not expose bearer tokens, URL credentials, query-string secrets, or provider keys.
 - On disconnect, call `engine.close()`.
 - Never expose sidecar bearer tokens, URL credentials, or query-string secrets through the status endpoint.
 - Use the configured sidecar bearer token for both websocket sessions and `/health` probes.

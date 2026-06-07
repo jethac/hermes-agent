@@ -6534,6 +6534,48 @@ class TestRealtimeVoiceWebSocket:
 
         assert ensured["provider"] == "reference"
 
+    def test_websocket_sanitizes_session_start_errors(self, monkeypatch):
+        from starlette.websockets import WebSocketDisconnect
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {"voice": {"realtime": {"enabled": True, "engine": "text_oracle_tts"}}},
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+        monkeypatch.setattr(self.ws_module, "_ensure_realtime_voice_sidecar", lambda realtime: None)
+
+        class FakeSession:
+            def __init__(self, config):
+                self.config = config
+
+            async def start(self):
+                raise RuntimeError(
+                    "failed Bearer secret-token at http://user:pass@voice.local:8765/v1?token=abc"
+                )
+
+            async def close(self):
+                return None
+
+        monkeypatch.setattr("agent.realtime_voice_session.RealtimeVoiceSession", FakeSession)
+
+        with self.client.websocket_connect(self._url(session_id="voice-123")) as websocket:
+            event = websocket.receive_json()
+            assert event["type"] == "session.error"
+            error = event["payload"]["error"]
+            assert "Bearer ***" in error
+            assert "secret-token" not in error
+            assert "user:pass" not in error
+            assert "token=abc" not in error
+
+            with pytest.raises(WebSocketDisconnect) as exc:
+                websocket.receive_json()
+
+        assert exc.value.code == 1011
+        assert "secret-token" not in exc.value.reason
+        assert "user:pass" not in exc.value.reason
+        assert "token=abc" not in exc.value.reason
+
 
 class TestDashboardPluginStaticAssetAllowlist:
     """``/dashboard-plugins/<name>/<path>`` is unauthenticated by design —
