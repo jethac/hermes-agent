@@ -136,6 +136,14 @@ interface RealtimeAudioFrameBackpressureInput {
   maxBufferedBytes?: number
 }
 
+interface RealtimeRecorderStartInput {
+  acceptSpeech: boolean
+  busy: boolean
+  enabled: boolean
+  muted: boolean
+  recorderActive: boolean
+}
+
 interface RealtimeEndMarkerInput {
   closingInput: boolean
   sentEndOfUtterance: boolean
@@ -363,6 +371,16 @@ export function realtimeVoiceSilenceTimeoutMs(value: unknown): number {
     MAX_REALTIME_SILENCE_TIMEOUT_MS,
     Math.max(MIN_REALTIME_SILENCE_TIMEOUT_MS, Math.round(value))
   )
+}
+
+export function shouldStartRealtimeRecorder({
+  acceptSpeech,
+  busy,
+  enabled,
+  muted,
+  recorderActive
+}: RealtimeRecorderStartInput): boolean {
+  return acceptSpeech && enabled && !muted && !busy && !recorderActive
 }
 
 export function shouldSendRealtimeVoiceEndMarker({
@@ -839,7 +857,13 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
             bargeInSpeechStartedAtRef.current = null
           }
 
-          if (acceptSpeech && !recorderRef.current && enabledRef.current && !mutedRef.current && !busyRef.current) {
+          if (shouldStartRealtimeRecorder({
+            acceptSpeech,
+            busy: busyRef.current,
+            enabled: enabledRef.current,
+            muted: mutedRef.current,
+            recorderActive: Boolean(recorderRef.current)
+          })) {
             startRecorder(stream)
             setStatus('listening')
           }
@@ -892,9 +916,8 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     silenceStartedAtRef.current = null
 
     startMeter(stream)
-    startRecorder(stream)
     setStatus('listening')
-  }, [startMeter, startRecorder])
+  }, [startMeter])
 
   const handleEvent = useCallback(
     (event: VoiceEvent) => {
