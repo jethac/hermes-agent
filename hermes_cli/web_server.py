@@ -13009,6 +13009,8 @@ async def realtime_voice_status() -> Dict[str, Any]:
 
 @app.websocket("/api/voice/realtime")
 async def realtime_voice_ws(ws: WebSocket) -> None:
+    from agent.realtime_voice_errors import sanitize_realtime_voice_error
+
     peer = ws.client.host if ws.client else "?"
 
     auth_reason, cred = _ws_auth_reason(ws)
@@ -13040,8 +13042,6 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
     try:
         _ensure_realtime_voice_sidecar(realtime)
     except Exception as exc:
-        from agent.realtime_voice_errors import sanitize_realtime_voice_error
-
         _log.warning("realtime voice sidecar failed to start", exc_info=True)
         await ws.close(code=1011, reason=_ws_close_reason(f"sidecar: {sanitize_realtime_voice_error(exc)}"))
         return
@@ -13049,7 +13049,7 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
     try:
         config = _realtime_voice_config_from_request(ws)
     except Exception as exc:
-        await ws.close(code=4400, reason=_ws_close_reason(f"bad config: {exc}"))
+        await ws.close(code=4400, reason=_ws_close_reason(f"bad config: {sanitize_realtime_voice_error(exc)}"))
         return
 
     await ws.accept()
@@ -13070,15 +13070,16 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
         await session.start()
     except Exception as exc:
         _log.warning("realtime voice session failed to start", exc_info=True)
+        error = sanitize_realtime_voice_error(exc)
         await ws.send_json(
             {
                 "type": "session.error",
                 "session_id": config.session_id,
                 "sequence": 0,
-                "payload": {"error": str(exc)},
+                "payload": {"error": error},
             }
         )
-        await ws.close(code=1011, reason=_ws_close_reason(str(exc)))
+        await ws.close(code=1011, reason=_ws_close_reason(error))
         return
 
     async def pump_events() -> None:
@@ -13097,12 +13098,13 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
     except Exception as exc:
         _log.warning("realtime voice websocket error", exc_info=True)
         try:
+            error = sanitize_realtime_voice_error(exc)
             await ws.send_json(
                 {
                     "type": "session.error",
                     "session_id": config.session_id,
                     "sequence": 0,
-                    "payload": {"error": str(exc)},
+                    "payload": {"error": error},
                 }
             )
         except Exception:
