@@ -12,6 +12,7 @@ import {
   realtimeVoiceCloseAction,
   realtimeVoiceInputFrameMs,
   realtimeVoicePlaybackGeneration,
+  realtimeVoiceSessionReadyTimeoutMs,
   realtimeVoiceSessionStatus,
   realtimeVoiceSilenceTimeoutMs,
   realtimeVoiceUrl,
@@ -367,6 +368,39 @@ describe('realtimeVoiceSilenceTimeoutMs', () => {
     expect(realtimeVoiceSilenceTimeoutMs(799.6)).toBe(800)
     expect(realtimeVoiceSilenceTimeoutMs(100)).toBe(250)
     expect(realtimeVoiceSilenceTimeoutMs(5_000)).toBe(2_000)
+  })
+})
+
+describe('realtimeVoiceSessionReadyTimeoutMs', () => {
+  it('defaults to a bounded wait for session.started', () => {
+    expect(realtimeVoiceSessionReadyTimeoutMs(null)).toBe(12_000)
+    expect(realtimeVoiceSessionReadyTimeoutMs({
+      available: true,
+      enabled: true,
+      engine: 'text_oracle_tts',
+      sidecar: { connect_timeout_seconds: undefined }
+    })).toBe(12_000)
+  })
+
+  it('derives the wait from sidecar connect timeout with guardrails', () => {
+    expect(realtimeVoiceSessionReadyTimeoutMs({
+      available: true,
+      enabled: true,
+      engine: 'text_oracle_tts',
+      sidecar: { connect_timeout_seconds: 2.5 }
+    })).toBe(4_500)
+    expect(realtimeVoiceSessionReadyTimeoutMs({
+      available: true,
+      enabled: true,
+      engine: 'text_oracle_tts',
+      sidecar: { connect_timeout_seconds: 0 }
+    })).toBe(3_000)
+    expect(realtimeVoiceSessionReadyTimeoutMs({
+      available: true,
+      enabled: true,
+      engine: 'text_oracle_tts',
+      sidecar: { connect_timeout_seconds: 90 }
+    })).toBe(30_000)
   })
 })
 

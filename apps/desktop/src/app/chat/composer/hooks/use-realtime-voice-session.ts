@@ -92,6 +92,9 @@ const MAX_REALTIME_INPUT_FRAME_MS = 500
 const DEFAULT_REALTIME_SILENCE_TIMEOUT_MS = 650
 const MIN_REALTIME_SILENCE_TIMEOUT_MS = 250
 const MAX_REALTIME_SILENCE_TIMEOUT_MS = 2_000
+const DEFAULT_REALTIME_SESSION_READY_TIMEOUT_MS = 12_000
+const MIN_REALTIME_SESSION_READY_TIMEOUT_MS = 3_000
+const MAX_REALTIME_SESSION_READY_TIMEOUT_MS = 30_000
 const GENERATION_EVENT_TYPES = new Set([
   'audio.output.chunk',
   'assistant.commit',
@@ -370,6 +373,18 @@ export function realtimeVoiceSilenceTimeoutMs(value: unknown): number {
   return Math.min(
     MAX_REALTIME_SILENCE_TIMEOUT_MS,
     Math.max(MIN_REALTIME_SILENCE_TIMEOUT_MS, Math.round(value))
+  )
+}
+
+export function realtimeVoiceSessionReadyTimeoutMs(status: RealtimeVoiceStatus | null): number {
+  const connectTimeoutSeconds = status?.sidecar?.connect_timeout_seconds
+  if (typeof connectTimeoutSeconds !== 'number' || !Number.isFinite(connectTimeoutSeconds)) {
+    return DEFAULT_REALTIME_SESSION_READY_TIMEOUT_MS
+  }
+
+  return Math.min(
+    MAX_REALTIME_SESSION_READY_TIMEOUT_MS,
+    Math.max(MIN_REALTIME_SESSION_READY_TIMEOUT_MS, Math.round(connectTimeoutSeconds * 1000 + 2_000))
   )
 }
 
@@ -981,6 +996,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     }
     inputFrameMsRef.current = realtimeVoiceInputFrameMs(preflight?.input_frame_ms)
     silenceTimeoutMsRef.current = realtimeVoiceSilenceTimeoutMs(preflight?.silence_timeout_ms)
+    const sessionReadyTimeoutMs = realtimeVoiceSessionReadyTimeoutMs(preflight)
 
     sessionRef.current = sessionId || sessionRef.current
     setCaption(null)
@@ -1062,11 +1078,23 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       return
     }
 
-    const ready = await sessionReady
+    let sessionReadyTimedOut = false
+    const ready = await Promise.race([
+      sessionReady,
+      new Promise<boolean>(resolve => {
+        window.setTimeout(() => {
+          sessionReadyTimedOut = true
+          resolve(false)
+        }, sessionReadyTimeoutMs)
+      })
+    ])
     if (!ready || socketRef.current !== socket || socket.readyState !== WebSocket.OPEN) {
       socket.close()
       if (socketRef.current === socket) {
         socketRef.current = null
+      }
+      if (sessionReadyTimedOut) {
+        onUnavailable?.()
       }
       setStatus('idle')
       return
