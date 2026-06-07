@@ -38,7 +38,7 @@ import zipfile
 from hermes_cli._subprocess_compat import windows_detach_flags, windows_hide_flags
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import yaml
 
@@ -2819,6 +2819,8 @@ _ACTION_RESULTS: Dict[str, Dict[str, Any]] = {}
 _VOICE_SIDECAR_PROC: Optional[subprocess.Popen] = None
 _VOICE_SIDECAR_LOCK = threading.Lock()
 _LOCAL_VOICE_SIDECAR_PROVIDERS = {"local", "reference", "provider", "sidecar", "gemma", "gemma4", "lmstudio", "vllm"}
+_REALTIME_VOICE_DEFAULT_PRODUCTION_LANGUAGES = ("en", "ja")
+_REALTIME_VOICE_DEFAULT_PRODUCTION_SCRIPTS = ("Latn", "Jpan")
 _VOICE_SIDECAR_HEALTH_TIMEOUT = 0.75
 _VOICE_SIDECAR_START_TIMEOUT = 8.0
 
@@ -12853,6 +12855,29 @@ def _sanitize_realtime_voice_health_metadata(value: Any, *, limit: int = 32) -> 
     return sanitized
 
 
+def _realtime_voice_metadata_list_or_default(value: Any, default: Sequence[str]) -> List[str]:
+    sanitized = _sanitize_realtime_voice_health_metadata(value)
+    return sanitized or list(default)
+
+
+def _realtime_voice_language_support_payload(realtime: Dict[str, Any]) -> Dict[str, Any]:
+    production_languages = _realtime_voice_metadata_list_or_default(
+        realtime.get("production_languages") or realtime.get("target_languages"),
+        _REALTIME_VOICE_DEFAULT_PRODUCTION_LANGUAGES,
+    )
+    production_scripts = _realtime_voice_metadata_list_or_default(
+        realtime.get("production_scripts") or realtime.get("target_scripts"),
+        _REALTIME_VOICE_DEFAULT_PRODUCTION_SCRIPTS,
+    )
+    best_effort_languages = _truthy_config(realtime.get("best_effort_languages"), default=True)
+    return {
+        "production_languages": production_languages,
+        "production_scripts": production_scripts,
+        "best_effort_languages": best_effort_languages,
+        "sidecar_languages_are_diagnostics": True,
+    }
+
+
 def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str, Any]:
     frontend = payload.get("frontend") if isinstance(payload.get("frontend"), dict) else {}
     capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
@@ -13052,6 +13077,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     engine = str(realtime.get("engine") or "text_oracle_tts")
     provider = str(realtime.get("frontend_provider") or "")
     frontend_model = str(realtime.get("frontend_model") or "")
+    language_support = _realtime_voice_language_support_payload(realtime)
     base_url = _realtime_voice_sidecar_base_url(realtime)
     connect_timeout_seconds = _positive_float_config(
         realtime.get("sidecar_connect_timeout_seconds"),
@@ -13122,6 +13148,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         ),
         "frontend_provider": provider or None,
         "frontend_model": frontend_model or None,
+        "language_support": language_support,
         "sidecar": {
             "mode": sidecar_mode,
             "base_url": _redact_realtime_voice_url(base_url),
@@ -13180,6 +13207,8 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     env = load_env()
     sidecar_token = _realtime_voice_sidecar_token(realtime, env)
 
+    language_support = _realtime_voice_language_support_payload(realtime)
+
     return RealtimeVoiceSessionConfig(
         session_id=str(session_id),
         engine=RealtimeVoiceEngineKind(str(engine)),
@@ -13201,7 +13230,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         ),
         spark_base_url=str(sidecar_base_url or "") or None,
         spark_token=str(sidecar_token or "") or None,
-        metadata={"source": "desktop"},
+        metadata={"source": "desktop", "language_support": language_support},
     )
 
 
