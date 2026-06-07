@@ -18,6 +18,7 @@ import {
   shouldDropStaleRealtimeVoiceEvent,
   shouldSendRealtimeAudioFrame,
   shouldSendRealtimeVoiceEndMarker,
+  shouldStartRealtimeRecorder,
   updateRealtimeVoiceBargeInGate
 } from './use-realtime-voice-session'
 
@@ -441,6 +442,56 @@ describe('shouldSendRealtimeVoiceEndMarker', () => {
       closingInput: false,
       sentEndOfUtterance: false,
       stoppedForSilence: false
+    })).toBe(false)
+  })
+})
+
+describe('shouldStartRealtimeRecorder', () => {
+  it('starts capture only after accepted speech while realtime is available', () => {
+    expect(shouldStartRealtimeRecorder({
+      acceptSpeech: true,
+      busy: false,
+      enabled: true,
+      muted: false,
+      recorderActive: false
+    })).toBe(true)
+  })
+
+  it('does not start capture while idle, muted, busy, disabled, or already recording', () => {
+    expect(shouldStartRealtimeRecorder({
+      acceptSpeech: false,
+      busy: false,
+      enabled: true,
+      muted: false,
+      recorderActive: false
+    })).toBe(false)
+    expect(shouldStartRealtimeRecorder({
+      acceptSpeech: true,
+      busy: false,
+      enabled: true,
+      muted: true,
+      recorderActive: false
+    })).toBe(false)
+    expect(shouldStartRealtimeRecorder({
+      acceptSpeech: true,
+      busy: true,
+      enabled: true,
+      muted: false,
+      recorderActive: false
+    })).toBe(false)
+    expect(shouldStartRealtimeRecorder({
+      acceptSpeech: true,
+      busy: false,
+      enabled: false,
+      muted: false,
+      recorderActive: false
+    })).toBe(false)
+    expect(shouldStartRealtimeRecorder({
+      acceptSpeech: true,
+      busy: false,
+      enabled: true,
+      muted: false,
+      recorderActive: true
     })).toBe(false)
   })
 })

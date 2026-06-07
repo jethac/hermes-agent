@@ -400,6 +400,7 @@ Responsibilities:
 
 - Capture microphone frames with WebAudio or AudioWorklet.
 - Wait for `session.started` before opening the microphone so remote sidecar/model startup does not capture audio before the backend voice engine is ready.
+- Keep the analyser active while listening, but start the `MediaRecorder` only after accepted speech. Idle silence should not stream into Hermes or a sidecar.
 - Send frames over websocket with monotonically increasing sequence numbers.
 - Serialize asynchronous audio encoding/sends so browser recorder chunks reach Hermes in capture order.
 - Bound browser websocket backpressure by dropping only non-final audio frames when the send buffer is already behind; never drop `end_of_utterance` frames.
