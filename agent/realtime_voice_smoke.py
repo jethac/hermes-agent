@@ -30,6 +30,7 @@ class RealtimeVoiceSidecarSmokeResult:
     final_text: str = ""
     audio_bytes: int = 0
     output_audio_bytes: int = 0
+    audio_after_barge_in_bytes: int = 0
     events: Tuple[str, ...] = ()
     error: str = ""
 
@@ -51,6 +52,7 @@ def realtime_voice_smoke_result_payload(
         "final_text": result.final_text,
         "audio_bytes": result.audio_bytes,
         "output_audio_bytes": result.output_audio_bytes,
+        "audio_after_barge_in_bytes": result.audio_after_barge_in_bytes,
         "events": list(result.events),
         "error": result.error or None,
     }
@@ -274,6 +276,7 @@ def _contains_japanese_script(text: str) -> bool:
 async def run_realtime_voice_sidecar_barge_in_smoke(
     config: RealtimeVoiceSessionConfig,
     *,
+    post_barge_in_quiet_seconds: float = 0.25,
     text: str = "Hello from Hermes.",
     timeout_seconds: float = 5.0,
 ) -> RealtimeVoiceSidecarSmokeResult:
@@ -379,12 +382,47 @@ async def run_realtime_voice_sidecar_barge_in_smoke(
                 ack_ms = int(round((time.perf_counter() - barge_sent_at) * 1000)) if barge_sent_at else elapsed_ms
                 generation = event.payload.get("playback_generation")
                 ok = generation in (None, 2)
+                if not ok:
+                    return RealtimeVoiceSidecarSmokeResult(
+                        ok=False,
+                        ready_ms=ready_ms,
+                        barge_in_ack_ms=ack_ms,
+                        events=tuple(events),
+                        error=f"barge_in ack used stale playback_generation={generation}",
+                    )
+                quiet = await _drain_post_barge_in_audio(
+                    event_queue,
+                    started_at=started_at,
+                    timeout=timeout,
+                    quiet_seconds=post_barge_in_quiet_seconds,
+                    events=events,
+                )
+                if quiet.audio_after_barge_in_bytes > 0:
+                    return RealtimeVoiceSidecarSmokeResult(
+                        ok=False,
+                        ready_ms=ready_ms,
+                        barge_in_ack_ms=ack_ms,
+                        audio_after_barge_in_bytes=quiet.audio_after_barge_in_bytes,
+                        events=tuple(events),
+                        error=(
+                            "audio.output.chunk arrived after barge_in "
+                            f"({quiet.audio_after_barge_in_bytes} byte(s))"
+                        ),
+                    )
+                if quiet.error:
+                    return RealtimeVoiceSidecarSmokeResult(
+                        ok=False,
+                        ready_ms=ready_ms,
+                        barge_in_ack_ms=ack_ms,
+                        events=tuple(events),
+                        error=quiet.error,
+                    )
                 return RealtimeVoiceSidecarSmokeResult(
                     ok=ok,
                     ready_ms=ready_ms,
                     barge_in_ack_ms=ack_ms,
                     events=tuple(events),
-                    error="" if ok else f"barge_in ack used stale playback_generation={generation}",
+                    error="",
                 )
     except Exception as exc:
         return RealtimeVoiceSidecarSmokeResult(
@@ -399,6 +437,50 @@ async def run_realtime_voice_sidecar_barge_in_smoke(
             with contextlib.suppress(asyncio.CancelledError):
                 await reader_task
         await client.close()
+
+
+@dataclass(frozen=True)
+class _PostBargeInQuietResult:
+    audio_after_barge_in_bytes: int = 0
+    error: str = ""
+
+
+async def _drain_post_barge_in_audio(
+    event_queue: asyncio.Queue[VoiceEvent | None],
+    *,
+    events: list[str],
+    quiet_seconds: float,
+    started_at: float,
+    timeout: float,
+) -> _PostBargeInQuietResult:
+    """Verify an interrupted sidecar does not keep emitting audio."""
+
+    quiet_window = max(0.0, min(float(quiet_seconds or 0.0), max(0.0, timeout)))
+    if quiet_window <= 0:
+        return _PostBargeInQuietResult()
+
+    deadline = min(time.perf_counter() + quiet_window, started_at + timeout)
+    while True:
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            return _PostBargeInQuietResult()
+        try:
+            event = await asyncio.wait_for(event_queue.get(), timeout=remaining)
+        except asyncio.TimeoutError:
+            return _PostBargeInQuietResult()
+        if event is None:
+            return _PostBargeInQuietResult()
+        events.append(event.type.value)
+        if event.type == VoiceEventType.SESSION_ERROR:
+            return _PostBargeInQuietResult(
+                error=str(event.payload.get("error") or "sidecar session error after barge_in")
+            )
+        if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+            try:
+                audio_bytes = len(AudioChunk.from_payload(event.payload).data)
+            except Exception:
+                audio_bytes = 0
+            return _PostBargeInQuietResult(audio_after_barge_in_bytes=max(1, audio_bytes))
 
 
 async def _drain_barge_in_startup_events(

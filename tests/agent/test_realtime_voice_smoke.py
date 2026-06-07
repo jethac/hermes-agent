@@ -107,6 +107,7 @@ def test_barge_in_smoke_measures_ack_latency(monkeypatch):
 
     assert result.ok is True
     assert result.barge_in_ack_ms is not None
+    assert result.audio_after_barge_in_bytes == 0
     assert result.events == ("frontend.state", "barge_in")
     assert sent[0].type == VoiceEventType.ASSISTANT_TEXT_PARTIAL
     assert sent[0].payload["speak"] is True
@@ -165,9 +166,68 @@ def test_barge_in_smoke_does_not_count_startup_backlog_as_ack_latency(monkeypatc
     assert result.ready_ms is not None
     assert result.barge_in_ack_ms is not None
     assert result.barge_in_ack_ms < 20
+    assert result.audio_after_barge_in_bytes == 0
     assert result.events == (
         "frontend.state",
         "frontend.state",
         "frontend.state",
         "barge_in",
     )
+
+
+def test_barge_in_smoke_rejects_audio_after_barge_in_ack(monkeypatch):
+    sent = []
+
+    class FakeSidecarClient:
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            sent.append(event)
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.FRONTEND_STATE,
+                session_id=self.config.session_id,
+                sequence=1,
+                payload={"status": "ready"},
+            )
+            while not any(event.type == VoiceEventType.BARGE_IN for event in sent):
+                await asyncio.sleep(0)
+            yield VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id=self.config.session_id,
+                sequence=2,
+                payload={"playback_generation": 2},
+            )
+            yield VoiceEvent(
+                type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                session_id=self.config.session_id,
+                sequence=3,
+                payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"stale").to_payload(),
+            )
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_smoke.RealtimeVoiceSidecarClient",
+        FakeSidecarClient,
+    )
+
+    result = asyncio.run(
+        run_realtime_voice_sidecar_barge_in_smoke(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-smoke",
+                sidecar_base_url="http://voice.example.test:8765",
+            ),
+            post_barge_in_quiet_seconds=0.1,
+            text="Hello from Hermes.",
+            timeout_seconds=1,
+        )
+    )
+
+    assert result.ok is False
+    assert result.audio_after_barge_in_bytes == len(b"stale")
+    assert "audio.output.chunk arrived after barge_in" in result.error
+    assert result.events == ("frontend.state", "barge_in", "audio.output.chunk")
