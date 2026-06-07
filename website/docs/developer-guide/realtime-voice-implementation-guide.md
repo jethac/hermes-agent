@@ -252,6 +252,8 @@ receive audio chunk
   -> streaming TTS emits audio chunks
 ```
 
+The text-oracle engine starts TTS at stable sentence or phrase boundaries instead of waiting for the full response. Prefer punctuation boundaries, but allow long comma/semicolon/colon-delimited phrases to speak early so the local/provider tier can hit first-audio latency targets without a native S2S model.
+
 Provider choices should be config-driven:
 
 ```yaml
