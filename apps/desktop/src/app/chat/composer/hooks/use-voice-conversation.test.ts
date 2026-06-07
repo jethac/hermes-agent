@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { takeVoiceConversationSpeechChunk } from './use-voice-conversation'
+import {
+  shouldStartVoiceConversationFallback,
+  takeVoiceConversationSpeechChunk
+} from './use-voice-conversation'
 
 describe('takeVoiceConversationSpeechChunk', () => {
   it('keeps the existing low-latency English sentence behavior', () => {
@@ -45,5 +48,51 @@ describe('takeVoiceConversationSpeechChunk', () => {
       chunk: 'This is still forming',
       remaining: ''
     })
+  })
+})
+
+describe('shouldStartVoiceConversationFallback', () => {
+  it('starts the one-shot loop when voice is newly enabled without realtime availability', () => {
+    expect(shouldStartVoiceConversationFallback({
+      enabled: true,
+      realtimeEnabled: false,
+      realtimeFallbackStarted: false,
+      realtimeUnavailable: false,
+      wasEnabled: false
+    })).toBe(true)
+  })
+
+  it('starts fallback once when realtime becomes unavailable during an enabled voice session', () => {
+    expect(shouldStartVoiceConversationFallback({
+      enabled: true,
+      realtimeEnabled: true,
+      realtimeFallbackStarted: false,
+      realtimeUnavailable: true,
+      wasEnabled: true
+    })).toBe(true)
+    expect(shouldStartVoiceConversationFallback({
+      enabled: true,
+      realtimeEnabled: true,
+      realtimeFallbackStarted: true,
+      realtimeUnavailable: true,
+      wasEnabled: true
+    })).toBe(false)
+  })
+
+  it('does not start fallback while realtime is still active or voice is disabled', () => {
+    expect(shouldStartVoiceConversationFallback({
+      enabled: true,
+      realtimeEnabled: true,
+      realtimeFallbackStarted: false,
+      realtimeUnavailable: false,
+      wasEnabled: true
+    })).toBe(false)
+    expect(shouldStartVoiceConversationFallback({
+      enabled: false,
+      realtimeEnabled: true,
+      realtimeFallbackStarted: false,
+      realtimeUnavailable: true,
+      wasEnabled: true
+    })).toBe(false)
   })
 })
