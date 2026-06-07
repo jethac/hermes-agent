@@ -13,6 +13,7 @@ import abc
 import asyncio
 import base64
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -82,6 +83,8 @@ SERVER_EVENT_TYPES = frozenset(
 BINARY_AUDIO_FRAME_HEADER_BYTES = 4
 BINARY_AUDIO_FRAME_HEADER_LIMIT = 64 * 1024
 REALTIME_VOICE_EVENT_QUEUE_LIMIT = 256
+TRANSCRIPT_METADATA_KEYS = ("language", "locale", "script")
+TRANSCRIPT_METADATA_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 
 @dataclass(frozen=True)
@@ -375,6 +378,18 @@ def validate_client_event(event: VoiceEvent) -> None:
 def validate_server_event(event: VoiceEvent) -> None:
     if event.type not in SERVER_EVENT_TYPES:
         raise ValueError(f"{event.type.value!r} is not a server event")
+
+
+def transcript_metadata_from_payload(payload: Mapping[str, Any]) -> Dict[str, str]:
+    metadata: Dict[str, str] = {}
+    for key in TRANSCRIPT_METADATA_KEYS:
+        value = payload.get(key)
+        if not isinstance(value, str):
+            continue
+        token = value.strip()
+        if TRANSCRIPT_METADATA_VALUE_RE.fullmatch(token):
+            metadata[key] = token
+    return metadata
 
 
 def _optional_str(value: Any) -> Optional[str]:

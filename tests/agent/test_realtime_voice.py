@@ -70,7 +70,7 @@ class FakeSidecar:
                     type=VoiceEventType.TRANSCRIPT_FINAL,
                     session_id=event.session_id,
                     sequence=2,
-                    payload={"text": "hello hermes", **transcript_payload},
+                    payload={"text": "hello hermes", "language": "ja", "script": "Jpan", **transcript_payload},
                 )
             )
 
@@ -374,7 +374,7 @@ def test_text_engine_accepts_transcript_payload_and_emits_oracle_text(monkeypatc
                 type=VoiceEventType.AUDIO_INPUT_CHUNK,
                 session_id="voice-123",
                 sequence=1,
-                payload={"transcript": "hello hermes"},
+                payload={"transcript": "こんにちは hermes", "language": "ja", "locale": "ja-JP", "script": "Jpan"},
             )
         )
 
@@ -396,7 +396,12 @@ def test_text_engine_accepts_transcript_payload_and_emits_oracle_text(monkeypatc
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
             VoiceEventType.ASSISTANT_COMMIT,
         ]
-        assert seen[-1].payload["text"] == "Answering: hello hermes."
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        assert final.payload["text"] == "こんにちは hermes"
+        assert final.payload["language"] == "ja"
+        assert final.payload["locale"] == "ja-JP"
+        assert final.payload["script"] == "Jpan"
+        assert seen[-1].payload["text"] == "Answering: こんにちは hermes."
 
     asyncio.run(run())
 
@@ -457,7 +462,15 @@ def test_text_engine_keeps_explicit_partial_transcript_out_of_oracle():
                 type=VoiceEventType.AUDIO_INPUT_CHUNK,
                 session_id="voice-123",
                 sequence=1,
-                payload={"transcript": "hello her", "end_of_utterance": False},
+                payload={
+                    "transcript": "こんにちは",
+                    "end_of_utterance": False,
+                    "language": "ja",
+                    "locale": "ja-JP",
+                    "script": "Jpan",
+                    "raw_language_url": "https://voice.local/secret",
+                    "language_url": "https://voice.local/secret",
+                },
             )
         )
 
@@ -467,7 +480,11 @@ def test_text_engine_keeps_explicit_partial_transcript_out_of_oracle():
             VoiceEventType.SESSION_STARTED,
             VoiceEventType.TRANSCRIPT_PARTIAL,
         ]
-        assert events[-1].payload["text"] == "hello her"
+        assert events[-1].payload["text"] == "こんにちは"
+        assert events[-1].payload["language"] == "ja"
+        assert events[-1].payload["locale"] == "ja-JP"
+        assert events[-1].payload["script"] == "Jpan"
+        assert "language_url" not in events[-1].payload
         assert oracle.called is False
         await engine.close()
 
@@ -555,6 +572,8 @@ def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
         assert commit_events[0].payload["playback_generation"] == 1
         final_events = [event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL]
         assert final_events[0].payload["input_generation"] == 1
+        assert final_events[0].payload["language"] == "ja"
+        assert final_events[0].payload["script"] == "Jpan"
         audio_events = [event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK]
         assert audio_events[0].payload["playback_generation"] == 1
 
@@ -1140,7 +1159,13 @@ def test_reference_sidecar_accepts_transcript_payloads_without_gpu():
                 type=VoiceEventType.AUDIO_INPUT_CHUNK,
                 session_id="voice-123",
                 sequence=1,
-                payload={"transcript": "hello hermes", "input_generation": 5},
+                payload={
+                    "transcript": "hello hermes",
+                    "input_generation": 5,
+                    "language": "ja",
+                    "locale": "ja-JP",
+                    "script": "Jpan",
+                },
             )
         )
         await sidecar.receive_event(
@@ -1148,7 +1173,14 @@ def test_reference_sidecar_accepts_transcript_payloads_without_gpu():
                 type=VoiceEventType.AUDIO_INPUT_CHUNK,
                 session_id="voice-123",
                 sequence=2,
-                payload={"transcript": "hello hermes", "end_of_utterance": True, "input_generation": 5},
+                payload={
+                    "transcript": "hello hermes",
+                    "end_of_utterance": True,
+                    "input_generation": 5,
+                    "language": "ja",
+                    "locale": "ja-JP",
+                    "script": "Jpan",
+                },
             )
         )
 
@@ -1166,6 +1198,9 @@ def test_reference_sidecar_accepts_transcript_payloads_without_gpu():
         ]
         assert seen[-1].payload["text"] == "hello hermes"
         assert [event.payload.get("input_generation") for event in seen[1:]] == [5, 5]
+        assert [event.payload.get("language") for event in seen[1:]] == ["ja", "ja"]
+        assert [event.payload.get("locale") for event in seen[1:]] == ["ja-JP", "ja-JP"]
+        assert [event.payload.get("script") for event in seen[1:]] == ["Jpan", "Jpan"]
 
     asyncio.run(run())
 
