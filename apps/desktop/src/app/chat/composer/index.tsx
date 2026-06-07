@@ -701,6 +701,7 @@ export function ChatBar({
       conversation={{
         active: voiceConversationActive,
         level: conversation.level,
+        metrics: conversation.metrics,
         muted: conversation.muted,
         onEnd: endConversation,
         onStart: startConversation,
