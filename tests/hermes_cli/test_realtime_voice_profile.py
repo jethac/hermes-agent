@@ -18,6 +18,8 @@ def test_live_like_profile_contains_portable_streaming_bridge_config():
     assert profile["sidecar_autostart"] is True
     assert profile["streaming_stt_base_url"] == "http://streaming-stt.local:9000"
     assert profile["streaming_tts_base_url"] == "http://streaming-tts.local:9001"
+    assert profile["streaming_stt_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    assert profile["streaming_tts_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
     assert profile["production_languages"] == ["en", "ja"]
     assert profile["production_scripts"] == ["Latn", "Jpan"]
     assert profile["best_effort_languages"] is True

@@ -124,6 +124,8 @@ python -m hermes_cli.realtime_voice_profile \
   --streaming-stt-model nova-3 \
   --streaming-tts-base-url http://127.0.0.1:8766 \
   --streaming-tts-model aura-2-thalia-en \
+  --streaming-stt-token-env HERMES_STREAMING_STT_BRIDGE_TOKEN \
+  --streaming-tts-token-env HERMES_STREAMING_STT_BRIDGE_TOKEN \
   --apply
 ```
 

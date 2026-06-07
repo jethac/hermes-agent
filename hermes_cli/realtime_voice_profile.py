@@ -47,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--streaming-tts-token-env",
-        default="HERMES_STREAMING_TTS_BRIDGE_TOKEN",
+        default="HERMES_STREAMING_STT_BRIDGE_TOKEN",
         help="Environment variable containing the streaming TTS bridge bearer token",
     )
     parser.add_argument("--sidecar-host", default="127.0.0.1")
@@ -108,7 +108,7 @@ def build_realtime_voice_live_like_profile(
     streaming_stt_model: str = DEFAULT_STREAMING_STT_MODEL,
     streaming_tts_model: str = DEFAULT_STREAMING_TTS_MODEL,
     streaming_stt_token_env: str = "HERMES_STREAMING_STT_BRIDGE_TOKEN",
-    streaming_tts_token_env: str = "HERMES_STREAMING_TTS_BRIDGE_TOKEN",
+    streaming_tts_token_env: str = "HERMES_STREAMING_STT_BRIDGE_TOKEN",
     sidecar_host: str = "127.0.0.1",
     sidecar_port: int = 8765,
     production_evidence_report: str = DEFAULT_EVIDENCE_REPORT,
