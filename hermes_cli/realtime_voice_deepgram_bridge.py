@@ -51,6 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="With --check, also require a bridge bearer token",
     )
     parser.add_argument(
+        "--require-output-languages",
+        default=os.environ.get("HERMES_DEEPGRAM_REQUIRE_OUTPUT_LANGUAGES", ""),
+        help="Comma-separated TTS output languages that --check must verify, for example en,ja",
+    )
+    parser.add_argument(
         "--token-env",
         default=None,
         help="Environment variable used for the bridge bearer token",
@@ -106,7 +111,11 @@ def main(argv: list[str] | None = None) -> int:
 
     runtime = deepgram_bridge_config_from_env()
     if args.check:
-        issues = deepgram_bridge_prerequisite_issues(runtime, require_auth_token=bool(args.strict))
+        issues = deepgram_bridge_prerequisite_issues(
+            runtime,
+            require_auth_token=bool(args.strict),
+            required_output_languages=_parse_required_languages(args.require_output_languages),
+        )
         if issues:
             print(f"Deepgram realtime voice bridge check failed: {len(issues)} issue(s)")
             for issue in issues:
@@ -142,6 +151,10 @@ def _load_bridge_env() -> None:
         os.environ.update(load_env())
     except Exception:
         return
+
+
+def _parse_required_languages(value: str) -> list[str]:
+    return [part.strip() for part in str(value or "").replace(" ", ",").split(",") if part.strip()]
 
 
 if __name__ == "__main__":

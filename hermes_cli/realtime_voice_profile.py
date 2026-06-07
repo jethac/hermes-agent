@@ -110,7 +110,10 @@ def main(argv: list[str] | None = None) -> int:
         print("Next:")
         if args.preset == "deepgram":
             print("  python -m hermes_cli.realtime_voice_deepgram_bridge --generate-token")
-            print("  python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict")
+            print(
+                "  python -m hermes_cli.realtime_voice_deepgram_bridge "
+                "--check --strict --require-output-languages en,ja"
+            )
             print("  python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766")
         print("  python -m hermes_cli.realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice")
         print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3")

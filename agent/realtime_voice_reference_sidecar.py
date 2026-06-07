@@ -80,7 +80,14 @@ def reference_sidecar_health_payload(
     streaming_tts_configured = bool(runtime.streaming_tts_base_url)
     streaming_tts_ready = _health_supports_tts(streaming_tts_health)
     input_languages = _sanitize_metadata_list(runtime.input_languages)
-    output_languages = _sanitize_metadata_list(runtime.output_languages)
+    configured_output_languages = _sanitize_metadata_list(runtime.output_languages)
+    bridge_output_languages = _streaming_tts_health_output_languages(streaming_tts_health)
+    tts_model_languages = _streaming_tts_health_model_languages(streaming_tts_health)
+    output_languages = (
+        bridge_output_languages
+        if streaming_tts_configured
+        else configured_output_languages
+    )
     scripts = _sanitize_metadata_list(runtime.scripts)
     frontend_languages = _dedupe_metadata([*input_languages, *output_languages])
 
@@ -116,6 +123,8 @@ def reference_sidecar_health_payload(
             "healthy": streaming_tts_ready,
             "model": runtime.streaming_tts_model or "",
         }
+    if tts_model_languages:
+        payload["frontend"]["tts_model_languages"] = tts_model_languages
     if frontend_languages:
         payload["frontend"]["languages"] = frontend_languages
     if scripts:
@@ -857,6 +866,26 @@ def _health_supports_tts(health: Optional[Mapping[str, Any]]) -> bool:
     if not isinstance(capabilities, Mapping):
         return False
     return capabilities.get("tts") is True
+
+
+def _streaming_tts_health_output_languages(health: Optional[Mapping[str, Any]]) -> list[str]:
+    if not isinstance(health, Mapping) or health.get("ok") is not True:
+        return []
+    capabilities = health.get("capabilities")
+    if not isinstance(capabilities, Mapping):
+        return []
+    return _sanitize_metadata_list(
+        capabilities.get("output_languages", capabilities.get("tts_languages"))
+    )
+
+
+def _streaming_tts_health_model_languages(health: Optional[Mapping[str, Any]]) -> list[str]:
+    if not isinstance(health, Mapping) or health.get("ok") is not True:
+        return []
+    frontend = health.get("frontend")
+    if not isinstance(frontend, Mapping):
+        return []
+    return _sanitize_metadata_list(frontend.get("tts_model_languages"))
 
 
 def _numeric_transcript_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
