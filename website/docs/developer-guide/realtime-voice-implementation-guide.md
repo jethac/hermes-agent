@@ -430,6 +430,7 @@ Responsibilities:
 - Restart the per-utterance `MediaRecorder` immediately when accepted speech begins after a prior silence stop, including barge-in before the previous assistant turn has committed.
 - Track `playback_generation` and drop stale audio, assistant text, assistant commit, and generated final-transcript events from interrupted output.
 - Show the latest realtime latency snapshot while a voice session is active.
+- Treat `session.error` before `session.started` as realtime unavailable and return to the one-shot voice fallback. Treat `session.error` after `session.started` as an active-session fatal error.
 - Fall back to the current MediaRecorder blob loop when realtime mode is unavailable or the websocket closes before `session.started`.
 
 ## Testing Plan

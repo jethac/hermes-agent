@@ -173,6 +173,10 @@ interface RealtimeCloseActionInput {
   sessionStarted: boolean
 }
 
+interface RealtimeSessionErrorActionInput {
+  sessionStarted: boolean
+}
+
 function bytesFromBase64(value: string): Uint8Array {
   const raw = atob(value)
   const bytes = new Uint8Array(raw.length)
@@ -441,6 +445,12 @@ export function realtimeVoiceCloseAction({
   if (!enabled || closeCode === 1000 || sessionFailed) {
     return 'ignore'
   }
+  return sessionStarted ? 'fatal' : 'fallback'
+}
+
+export function realtimeVoiceSessionErrorAction({
+  sessionStarted
+}: RealtimeSessionErrorActionInput): 'fallback' | 'fatal' {
   return sessionStarted ? 'fatal' : 'fallback'
 }
 
@@ -1051,13 +1061,17 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         }
       } else if (event.type === 'session.error') {
         notifyError(new Error(String(event.payload?.error || 'Realtime voice failed')), 'Realtime voice failed')
-        onFatalError?.()
+        if (realtimeVoiceSessionErrorAction({ sessionStarted: sessionStartedRef.current }) === 'fallback') {
+          onUnavailable?.()
+        } else {
+          onFatalError?.()
+        }
       } else if (event.type === 'barge_in') {
         stopPlayback()
         advancePlaybackGeneration(event.payload?.playback_generation)
       }
     },
-    [advancePlaybackGeneration, enqueueAudio, onFatalError, startListening, stopPlayback]
+    [advancePlaybackGeneration, enqueueAudio, onFatalError, onUnavailable, startListening, stopPlayback]
   )
 
   const start = useCallback(async () => {
