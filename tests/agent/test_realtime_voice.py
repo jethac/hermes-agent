@@ -16,6 +16,7 @@ from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_reference_sidecar import (
     ReferenceRealtimeVoiceSidecarSession,
     ReferenceSidecarRuntimeConfig,
+    create_reference_sidecar_app,
     reference_sidecar_health_payload,
 )
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState
@@ -639,6 +640,56 @@ def test_reference_sidecar_health_payload_is_sanitized():
         },
     }
     assert "secret" not in __import__("json").dumps(payload)
+
+
+def test_reference_sidecar_health_requires_bearer_token():
+    from fastapi.testclient import TestClient
+
+    client = TestClient(
+        create_reference_sidecar_app(
+            ReferenceSidecarRuntimeConfig(
+                vllm_base_url="http://user:secret@voice.local:8000/v1",
+                vllm_model="google/gemma-4-E4B-it-qat-w4a16-ct",
+                auth_token="secret-token",
+            )
+        )
+    )
+
+    assert client.get("/health").status_code == 401
+    response = client.get("/health", headers={"Authorization": "Bearer secret-token"})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert "secret-token" not in __import__("json").dumps(response.json())
+    assert "user:secret" not in __import__("json").dumps(response.json())
+
+
+def test_reference_sidecar_websocket_requires_bearer_token():
+    from fastapi.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+
+    client = TestClient(create_reference_sidecar_app(ReferenceSidecarRuntimeConfig(auth_token="secret-token")))
+
+    with pytest.raises(WebSocketDisconnect) as unauthorized:
+        with client.websocket_connect("/v1/realtime-text/session"):
+            pass
+
+    assert unauthorized.value.code == 1008
+
+    with client.websocket_connect(
+        "/v1/realtime-text/session",
+        headers={"Authorization": "Bearer secret-token"},
+    ) as ws:
+        ws.send_json(
+            {
+                "type": "session.config",
+                "payload": RealtimeVoiceSessionConfig(session_id="voice-123").to_wire(),
+            }
+        )
+        response = ws.receive_json()
+
+    assert response["type"] == "frontend.state"
+    assert response["session_id"] == "voice-123"
 
 
 def test_session_persists_only_final_and_committed_messages(monkeypatch):

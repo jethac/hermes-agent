@@ -16,6 +16,9 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Mapping, Optional
 
+from starlette.requests import Request
+from starlette.websockets import WebSocket, WebSocketDisconnect
+
 from agent.realtime_voice import (
     AudioChunk,
     RealtimeVoiceSessionConfig,
@@ -38,6 +41,7 @@ class ReferenceSidecarRuntimeConfig:
     vllm_timeout_seconds: float = 60.0
     local_stt_enabled: bool = True
     local_tts_enabled: bool = True
+    auth_token: Optional[str] = None
 
 
 def reference_sidecar_health_payload(runtime: ReferenceSidecarRuntimeConfig) -> dict[str, Any]:
@@ -280,17 +284,22 @@ class ReferenceRealtimeVoiceSidecarSession:
 def create_reference_sidecar_app(runtime: Optional[ReferenceSidecarRuntimeConfig] = None):
     """Create the FastAPI app for the reference sidecar."""
 
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, HTTPException
 
     app = FastAPI(title="Hermes realtime voice reference sidecar")
     runtime = runtime or runtime_config_from_env()
 
     @app.get("/health")
-    async def health():
+    async def health(request: Request):
+        if not _authorized(request.headers, runtime.auth_token):
+            raise HTTPException(status_code=401, detail="unauthorized")
         return reference_sidecar_health_payload(runtime)
 
     @app.websocket("/v1/realtime-text/session")
     async def realtime_text_session(ws: WebSocket):
+        if not _authorized(ws.headers, runtime.auth_token):
+            await ws.close(code=1008, reason="unauthorized")
+            return
         await ws.accept()
         session: Optional[ReferenceRealtimeVoiceSidecarSession] = None
         pump_task: Optional[asyncio.Task[None]] = None
@@ -332,7 +341,16 @@ def runtime_config_from_env() -> ReferenceSidecarRuntimeConfig:
         vllm_timeout_seconds=float(os.environ.get("HERMES_VOICE_VLLM_TIMEOUT_SECONDS") or 60),
         local_stt_enabled=_env_bool("HERMES_VOICE_LOCAL_STT_ENABLED", True),
         local_tts_enabled=_env_bool("HERMES_VOICE_LOCAL_TTS_ENABLED", True),
+        auth_token=os.environ.get("HERMES_VOICE_SIDECAR_TOKEN")
+        or os.environ.get("HERMES_SPARK_VOICE_TOKEN")
+        or None,
     )
+
+
+def _authorized(headers: Mapping[str, str], token: Optional[str]) -> bool:
+    if not token:
+        return True
+    return headers.get("authorization") == f"Bearer {token}"
 
 
 def _write_temp_audio(audio: bytes, codec: VoiceAudioCodec) -> str:

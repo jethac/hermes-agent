@@ -6630,10 +6630,11 @@ class TestRealtimeVoiceWebSocket:
             def poll(self):
                 return None
 
-        calls = {"health": 0, "popen": None}
+        calls = {"health": 0, "popen": None, "requests": []}
 
-        def fake_urlopen(url, timeout):
+        def fake_urlopen(req, timeout):
             calls["health"] += 1
+            calls["requests"].append(req)
             if calls["health"] <= 2:
                 raise self.ws_module.urllib.error.URLError("not ready")
             return FakeResponse()
@@ -6644,7 +6645,14 @@ class TestRealtimeVoiceWebSocket:
 
         monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", fake_urlopen)
         monkeypatch.setattr(self.ws_module.subprocess, "Popen", fake_popen)
-        monkeypatch.setattr(self.ws_module, "load_env", lambda: {"HERMES_TEST_ENV": "1"})
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_env",
+            lambda: {
+                "CUSTOM_VOICE_TOKEN": "secret-token",
+                "HERMES_TEST_ENV": "1",
+            },
+        )
         monkeypatch.setattr(self.ws_module, "_ACTION_LOG_DIR", tmp_path)
         monkeypatch.setattr(self.ws_module, "_VOICE_SIDECAR_PROC", None)
 
@@ -6653,6 +6661,7 @@ class TestRealtimeVoiceWebSocket:
                 "frontend_provider": "reference",
                 "sidecar_host": "127.0.0.1",
                 "sidecar_port": 8765,
+                "sidecar_token_env": "CUSTOM_VOICE_TOKEN",
                 "vllm_base_url": "http://100.113.98.11:8000/v1",
                 "vllm_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
             }
@@ -6662,6 +6671,9 @@ class TestRealtimeVoiceWebSocket:
         assert command[:3] == [self.ws_module.sys.executable, "-m", "hermes_cli.realtime_voice_sidecar"]
         assert "--vllm-base-url" in command
         assert kwargs["cwd"] == str(self.ws_module.PROJECT_ROOT)
+        assert all(req.headers["Authorization"] == "Bearer secret-token" for req in calls["requests"])
+        assert kwargs["env"]["CUSTOM_VOICE_TOKEN"] == "secret-token"
+        assert kwargs["env"]["HERMES_VOICE_SIDECAR_TOKEN"] == "secret-token"
         assert kwargs["env"]["HERMES_TEST_ENV"] == "1"
         assert (tmp_path / "realtime-voice-sidecar.log").exists()
 
