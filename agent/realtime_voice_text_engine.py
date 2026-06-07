@@ -43,6 +43,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._oracle = oracle
         self._sidecar = sidecar
         self._sidecar_task: Optional[asyncio.Task[None]] = None
+        self._playback_generation = 0
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -80,6 +81,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if self._closed:
             return
         if event.type == VoiceEventType.BARGE_IN:
+            self._playback_generation += 1
             if self._active_task and not self._active_task.done():
                 self._active_task.cancel()
             oracle = self._oracle
@@ -88,7 +90,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._inbound_audio.clear()
             if self._sidecar is not None:
                 await self._send_sidecar_event(event)
-            await self._emit(VoiceEventType.BARGE_IN, {"reason": event.payload.get("reason") or "client"})
+            await self._emit(
+                VoiceEventType.BARGE_IN,
+                {
+                    "reason": event.payload.get("reason") or "client",
+                    "playback_generation": self._playback_generation,
+                },
+            )
             return
         if event.type == VoiceEventType.SESSION_CLOSED:
             await self.close()
@@ -156,7 +164,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     if text:
                         await self._start_turn(text)
                 elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
-                    await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, dict(event.payload))
+                    payload = dict(event.payload)
+                    generation = _payload_generation(payload)
+                    if generation is not None and generation < self._playback_generation:
+                        continue
+                    payload.setdefault("playback_generation", self._playback_generation)
+                    await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
                 elif event.type == VoiceEventType.FRONTEND_STATE:
                     await self._emit(VoiceEventType.FRONTEND_STATE, dict(event.payload))
                 elif event.type == VoiceEventType.SESSION_ERROR:
@@ -187,36 +200,55 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"transcription failed: {exc}"})
 
     async def _start_turn(self, transcript: str) -> None:
-        await self._emit(VoiceEventType.TRANSCRIPT_FINAL, {"text": transcript})
-        self._active_task = asyncio.create_task(self._answer_and_speak(transcript))
+        if self._active_task and not self._active_task.done():
+            self._active_task.cancel()
+        self._playback_generation += 1
+        generation = self._playback_generation
+        await self._emit(VoiceEventType.TRANSCRIPT_FINAL, {"text": transcript, "playback_generation": generation})
+        self._active_task = asyncio.create_task(self._answer_and_speak(transcript, generation))
 
-    async def _answer_and_speak(self, transcript: str) -> None:
+    async def _answer_and_speak(self, transcript: str, playback_generation: int) -> None:
         try:
             oracle = self._oracle or NullRealtimeOracle()
             answer = ""
             buffer = ""
             async for delta in oracle.stream_answer(transcript):  # type: ignore[attr-defined]
+                if playback_generation != self._playback_generation:
+                    return
                 answer += delta
                 buffer += delta
                 chunk, buffer = _take_speakable_chunk(buffer)
                 if chunk:
                     planned_chunk = self._planner.clean(chunk)
                     if planned_chunk:
-                        await self._emit(VoiceEventType.ASSISTANT_TEXT_PARTIAL, {"text": planned_chunk})
-                        await self._speak_chunk(planned_chunk)
+                        await self._emit(
+                            VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                            {"text": planned_chunk, "playback_generation": playback_generation},
+                        )
+                        await self._speak_chunk(planned_chunk, playback_generation)
 
             if buffer.strip():
                 planned_chunk = self._planner.clean(buffer)
                 if planned_chunk:
-                    await self._emit(VoiceEventType.ASSISTANT_TEXT_PARTIAL, {"text": planned_chunk})
-                    await self._speak_chunk(planned_chunk)
+                    await self._emit(
+                        VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                        {"text": planned_chunk, "playback_generation": playback_generation},
+                    )
+                    await self._speak_chunk(planned_chunk, playback_generation)
 
             plan = self._planner.plan(answer)
             if not plan.committed_text:
                 return
-            await self._emit(VoiceEventType.ASSISTANT_COMMIT, {"text": plan.committed_text})
+            if playback_generation == self._playback_generation:
+                await self._emit(
+                    VoiceEventType.ASSISTANT_COMMIT,
+                    {"text": plan.committed_text, "playback_generation": playback_generation},
+                )
         except asyncio.CancelledError:
-            await self._emit(VoiceEventType.ASSISTANT_COMMIT, {"interrupted": True, "text": ""})
+            await self._emit(
+                VoiceEventType.ASSISTANT_COMMIT,
+                {"interrupted": True, "text": "", "playback_generation": playback_generation},
+            )
             raise
         except Exception as exc:
             await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"oracle/tts failed: {exc}"})
@@ -245,13 +277,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 except OSError:
                     pass
 
-    async def _speak_chunk(self, text: str) -> None:
+    async def _speak_chunk(self, text: str, playback_generation: int) -> None:
         if self._sidecar is not None and self.config is not None:
             event = VoiceEvent(
                 type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                 session_id=self.config.session_id,
                 sequence=self._sequence + 1,
-                payload={"text": text, "speak": True},
+                payload={"text": text, "speak": True, "playback_generation": playback_generation},
             )
             try:
                 await self._sidecar.speak(event)  # type: ignore[attr-defined]
@@ -268,6 +300,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             if data:
                 payload = AudioChunk(codec=VoiceAudioCodec.OPUS, data=data).to_payload()
                 payload["mime_type"] = _mime_type_for_path(file_path)
+                payload["playback_generation"] = playback_generation
                 await self._emit(
                     VoiceEventType.AUDIO_OUTPUT_CHUNK,
                     payload,
@@ -310,6 +343,17 @@ def _mime_type_for_path(path: str) -> str:
         ".wav": "audio/wav",
         ".flac": "audio/flac",
     }.get(ext, "audio/mpeg")
+
+
+def _payload_generation(payload: dict) -> Optional[int]:
+    value = payload.get("playback_generation")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
 
 
 def _take_speakable_chunk(buffer: str) -> tuple[Optional[str], str]:

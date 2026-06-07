@@ -146,6 +146,7 @@ Hermes oracle
 - User speech during playback sends a `barge_in` event.
 - The backend cancels active TTS/native S2S output and marks uncommitted speech as interrupted.
 - The oracle receives the interruption as part of live state.
+- Assistant text, audio chunks, commits, and barge-in acknowledgements carry a `playback_generation` so the desktop can discard late audio from interrupted output.
 
 ### Persistence
 

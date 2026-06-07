@@ -94,7 +94,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("speak") is True:
             text = str(event.payload.get("text") or "").strip()
             if text:
-                self._track_task(asyncio.create_task(self._speak(text)))
+                self._track_task(asyncio.create_task(self._speak(text, _payload_generation(event.payload))))
             return
         if event.type != VoiceEventType.AUDIO_INPUT_CHUNK:
             return
@@ -205,7 +205,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             data = json.loads(response.read().decode("utf-8"))
         return str(data["choices"][0]["message"].get("content") or "").strip()
 
-    async def _speak(self, text: str) -> None:
+    async def _speak(self, text: str, playback_generation: Optional[int] = None) -> None:
         if not self.runtime.local_tts_enabled:
             return
         try:
@@ -218,6 +218,8 @@ class ReferenceRealtimeVoiceSidecarSession:
                 if data:
                     payload = AudioChunk(codec=VoiceAudioCodec.OPUS, data=data).to_payload()
                     payload["mime_type"] = _mime_type_for_path(file_path)
+                    if playback_generation is not None:
+                        payload["playback_generation"] = playback_generation
                     await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
             finally:
                 _unlink(file_path)
@@ -337,6 +339,17 @@ def _mime_type_for_path(path: str) -> str:
         ".wav": "audio/wav",
         ".flac": "audio/flac",
     }.get(ext, "audio/mpeg")
+
+
+def _payload_generation(payload: Mapping[str, Any]) -> Optional[int]:
+    value = payload.get("playback_generation")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
 
 
 def _unlink(path: str) -> None:
