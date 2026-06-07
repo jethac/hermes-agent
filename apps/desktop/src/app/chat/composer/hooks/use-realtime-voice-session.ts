@@ -654,19 +654,16 @@ export function shouldSendRealtimeVoiceEndMarker({
 export function realtimeVoiceCloseAction({
   closeCode,
   enabled,
-  sessionFailed = false,
-  sessionStarted
+  sessionFailed = false
 }: RealtimeCloseActionInput): 'fallback' | 'fatal' | 'ignore' {
   if (!enabled || closeCode === 1000 || sessionFailed) {
     return 'ignore'
   }
-  return sessionStarted ? 'fatal' : 'fallback'
+  return 'fallback'
 }
 
-export function realtimeVoiceSessionErrorAction({
-  sessionStarted
-}: RealtimeSessionErrorActionInput): 'fallback' | 'fatal' {
-  return sessionStarted ? 'fatal' : 'fallback'
+export function realtimeVoiceSessionErrorAction(_input: RealtimeSessionErrorActionInput): 'fallback' | 'fatal' {
+  return 'fallback'
 }
 
 export function realtimeVoicePlaybackQueueAction({
