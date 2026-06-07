@@ -12537,6 +12537,23 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     }
 
 
+def _realtime_voice_open_unavailable_reason(realtime: Dict[str, Any]) -> str:
+    engine = str(realtime.get("engine") or "text_oracle_tts")
+    base_url = _realtime_voice_sidecar_base_url(realtime)
+    if engine == "native_s2s_oracle" and not base_url:
+        return "sidecar_required"
+    if not base_url:
+        return ""
+    if _realtime_voice_should_autostart_sidecar(realtime, base_url):
+        return ""
+
+    sidecar_token = _realtime_voice_sidecar_token(realtime)
+    if not _realtime_voice_sidecar_healthy(base_url, token=sidecar_token):
+        return "sidecar_unhealthy"
+    health_payload = _realtime_voice_sidecar_health_payload(base_url, token=sidecar_token)
+    return _realtime_voice_sidecar_capability_error(engine=engine, health_payload=health_payload)
+
+
 def _realtime_voice_config_from_request(ws: WebSocket):
     """Build a realtime voice session config from profile config + query params."""
     from agent.realtime_voice import (
@@ -12698,6 +12715,12 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
     except Exception as exc:
         _log.warning("realtime voice sidecar failed to start", exc_info=True)
         await ws.close(code=1011, reason=_ws_close_reason(f"sidecar: {sanitize_realtime_voice_error(exc)}"))
+        return
+
+    unavailable_reason = _realtime_voice_open_unavailable_reason(realtime)
+    if unavailable_reason:
+        _log.warning("realtime voice refused: %s peer=%s", unavailable_reason, peer)
+        await ws.close(code=1011, reason=_ws_close_reason(f"sidecar: {unavailable_reason}"))
         return
 
     try:
