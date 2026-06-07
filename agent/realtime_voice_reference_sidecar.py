@@ -30,6 +30,7 @@ from agent.realtime_voice import (
     event_from_binary_audio_frame,
     put_realtime_voice_event,
 )
+from agent.realtime_voice_errors import sanitize_realtime_voice_error
 
 
 TranscribeFn = Callable[[str], Mapping[str, Any]]
@@ -185,7 +186,10 @@ class ReferenceRealtimeVoiceSidecarSession:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"transcription failed: {exc}"})
+            await self._emit(
+                VoiceEventType.SESSION_ERROR,
+                {"error": f"transcription failed: {sanitize_realtime_voice_error(exc)}"},
+            )
 
     def _transcribe_sync(self, audio: bytes, codec: VoiceAudioCodec) -> str:
         if self.runtime.vllm_base_url and self.runtime.vllm_model:
@@ -258,7 +262,10 @@ class ReferenceRealtimeVoiceSidecarSession:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"tts failed: {exc}"})
+            await self._emit(
+                VoiceEventType.SESSION_ERROR,
+                {"error": f"tts failed: {sanitize_realtime_voice_error(exc)}"},
+            )
 
     def _speak_sync(self, text: str) -> str:
         synthesize = self._synthesize_func

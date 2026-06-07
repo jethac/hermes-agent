@@ -195,6 +195,7 @@ Implementation notes:
 - Never expose sidecar bearer tokens, URL credentials, or query-string secrets through the status endpoint.
 - Use the configured sidecar bearer token for both websocket sessions and `/health` probes.
 - Bound realtime event queues inside Hermes and sidecars. Under pressure, drop queued audio chunks before control, transcript, error, or close events so memory stays bounded without hiding state changes from the desktop.
+- Sanitize reference sidecar STT/TTS/vLLM runtime errors before emitting `session.error`; provider URLs, bearer tokens, and API keys must not cross the websocket boundary.
 
 ## Session State Machine
 
