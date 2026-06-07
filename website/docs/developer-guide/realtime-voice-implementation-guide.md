@@ -265,7 +265,7 @@ Use this before treating a profile as live-voice ready. The strict gate requires
 
 `--realtime-voice-report` writes a JSON array of the realtime smoke results for CI and release gates. Each entry records a neutral smoke `kind` (`protocol`, `audio_fixture`, `tts`, or `barge_in`), `ok`, event names, latency fields, byte counts, sanitized error text, and smoke-specific metadata such as fixture path, codec, phrase text, and target milliseconds. The schema is intentionally language-neutral: English and Japanese are the first production acceptance fixtures, but additional best-effort language fixtures can use the same report format without changing Hermes protocol semantics.
 
-After `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha.json --alpha` passes, set `voice.realtime.production_evidence_report` to that artifact path for the release profile. `/api/voice/realtime/status`, `hermes status`, and strict `hermes doctor --realtime-voice` then surface the same evidence-backed `production_readiness` result. Without this path, a profile can still report `conversation_quality.live_like: true`, but `production_readiness.ready` remains false with `missing_evidence_report`.
+After `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha-*.json --alpha --min-runs 3` passes, set `voice.realtime.production_evidence_report` to either a verified report file or a directory containing verified report JSON files for the release profile. Production readiness defaults to `production_evidence_min_runs: 3`, so a single alpha report is useful evidence but not enough to claim production readiness. `/api/voice/realtime/status`, `hermes status`, and strict `hermes doctor --realtime-voice` then surface the same evidence-backed `production_readiness` result. Without this path, a profile can still report `conversation_quality.live_like: true`, but `production_readiness.ready` remains false with `missing_evidence_report`.
 
 ### Private Alpha Evidence Pack
 
@@ -289,7 +289,7 @@ Minimum TTS phrase set:
 - `音声で会話できますか？`
 - Optional best-effort phrase in a non-target language, marked non-blocking unless the configured provider claims production support for that language.
 
-For a private alpha release candidate, collect one JSON report per profile/run:
+For a private alpha release candidate, collect one JSON report per profile/run. For production readiness, collect at least three passing runs and point `production_evidence_report` at the directory that contains them:
 
 ```bash
 hermes doctor \
@@ -304,8 +304,8 @@ hermes doctor \
   --realtime-voice-tts-smoke "こんにちは、Hermesです。" \
   --realtime-voice-tts-smoke "音声で会話できますか？" \
   --realtime-voice-barge-in-smoke "Hello from Hermes." \
-  --realtime-voice-report ./artifacts/realtime-voice-alpha.json
-python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha.json --alpha
+  --realtime-voice-report ./artifacts/realtime-voice-alpha-001.json
+python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha-*.json --alpha --min-runs 3
 ```
 
 CI shape:
@@ -424,7 +424,8 @@ voice:
     production_languages: ["en", "ja"] # production acceptance targets
     production_scripts: ["Latn", "Jpan"]
     best_effort_languages: true        # allow non-target languages without claiming production quality
-    production_evidence_report: ./artifacts/realtime-voice-alpha.json
+    production_evidence_report: ./artifacts/realtime-voice-evidence
+    production_evidence_min_runs: 3
     quality_targets_ms:
       audio_to_partial_transcript_ms: 300
       final_transcript_to_first_text_ms: 500

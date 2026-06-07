@@ -56,6 +56,40 @@ def load_realtime_voice_smoke_report(path: str | Path) -> list[dict[str, Any]]:
     return entries
 
 
+def load_realtime_voice_smoke_report_runs(path: str | Path) -> list[tuple[str, list[dict[str, Any]]]]:
+    report_path = Path(path).expanduser()
+    if report_path.is_dir():
+        files = sorted(item for item in report_path.glob("*.json") if item.is_file())
+        return [(str(item), load_realtime_voice_smoke_report(item)) for item in files]
+    return [(str(report_path), load_realtime_voice_smoke_report(report_path))]
+
+
+def validate_realtime_voice_alpha_report_runs(
+    runs: Sequence[tuple[str, Sequence[Mapping[str, Any]]]],
+    *,
+    min_runs: int = 1,
+) -> list[RealtimeVoiceSmokeReportIssue]:
+    issues: list[RealtimeVoiceSmokeReportIssue] = []
+    required_runs = max(1, int(min_runs or 1))
+    if len(runs) < required_runs:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "evidence",
+                f"requires at least {required_runs} run(s), found {len(runs)}",
+            )
+        )
+    for label, entries in runs:
+        for issue in validate_realtime_voice_alpha_report(entries):
+            issues.append(
+                RealtimeVoiceSmokeReportIssue(
+                    issue.kind,
+                    issue.message,
+                    f"{label}: {issue.identifier}" if issue.identifier else label,
+                )
+            )
+    return issues
+
+
 def validate_realtime_voice_smoke_report(
     entries: Sequence[Mapping[str, Any]],
     *,

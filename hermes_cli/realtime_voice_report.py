@@ -7,6 +7,7 @@ import sys
 
 from agent.realtime_voice_smoke_report import (
     load_realtime_voice_smoke_report,
+    validate_realtime_voice_alpha_report_runs,
     validate_realtime_voice_alpha_report,
     validate_realtime_voice_smoke_report,
 )
@@ -14,7 +15,11 @@ from agent.realtime_voice_smoke_report import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Validate a Hermes realtime voice smoke report")
-    parser.add_argument("report", help="Path to the JSON report written by hermes doctor --realtime-voice-report")
+    parser.add_argument(
+        "report",
+        nargs="+",
+        help="Path to one or more JSON reports written by hermes doctor --realtime-voice-report",
+    )
     parser.add_argument(
         "--alpha",
         action="store_true",
@@ -39,15 +44,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not require a protocol smoke result",
     )
+    parser.add_argument(
+        "--min-runs",
+        type=int,
+        default=1,
+        help="Require at least this many report files/runs when validating --alpha evidence",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    entries = load_realtime_voice_smoke_report(args.report)
+    runs = [(report, load_realtime_voice_smoke_report(report)) for report in args.report]
     if args.alpha:
-        issues = validate_realtime_voice_alpha_report(entries)
+        if len(runs) == 1 and args.min_runs <= 1:
+            issues = validate_realtime_voice_alpha_report(runs[0][1])
+        else:
+            issues = validate_realtime_voice_alpha_report_runs(runs, min_runs=args.min_runs)
     else:
+        entries = [entry for _report, report_entries in runs for entry in report_entries]
         issues = validate_realtime_voice_smoke_report(
             entries,
             required_audio_fixtures=args.required_audio_fixture,
@@ -55,7 +70,8 @@ def main(argv: list[str] | None = None) -> int:
             require_protocol=not args.no_protocol,
         )
     if not issues:
-        print(f"Realtime voice smoke report OK: {len(entries)} result(s)")
+        result_count = sum(len(entries) for _report, entries in runs)
+        print(f"Realtime voice smoke report OK: {result_count} result(s) across {len(runs)} run(s)")
         return 0
     print(f"Realtime voice smoke report failed: {len(issues)} issue(s)", file=sys.stderr)
     for issue in issues:
