@@ -199,13 +199,13 @@ describe('realtimeVoiceQualityTargets', () => {
       quality_targets_ms: {
         audio_to_partial_transcript_ms: 250,
         barge_in_ack_ms: -1,
-        final_transcript_to_first_audio_ms: 850,
+        final_transcript_to_first_audio_ms: 0,
         final_transcript_to_first_text_ms: Number.NaN
       }
     })).toEqual({
       audio_to_partial_transcript_ms: 250,
       barge_in_ack_ms: 150,
-      final_transcript_to_first_audio_ms: 850,
+      final_transcript_to_first_audio_ms: 900,
       final_transcript_to_first_text_ms: 500
     })
   })
