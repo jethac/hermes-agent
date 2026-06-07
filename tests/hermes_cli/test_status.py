@@ -14,6 +14,89 @@ def test_show_status_includes_tavily_key(monkeypatch, capsys, tmp_path):
     assert "tvly...cdef" in output
 
 
+def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_path):
+    from hermes_cli import status as status_mod
+
+    monkeypatch.setattr(status_mod, "get_env_path", lambda: tmp_path / ".env", raising=False)
+    monkeypatch.setattr(status_mod, "get_hermes_home", lambda: tmp_path, raising=False)
+    monkeypatch.setattr(status_mod, "load_config", lambda: {"model": "gpt-5.4"}, raising=False)
+    monkeypatch.setattr(status_mod, "resolve_requested_provider", lambda requested=None: "openai-codex", raising=False)
+    monkeypatch.setattr(status_mod, "resolve_provider", lambda requested=None, **kwargs: "openai-codex", raising=False)
+    monkeypatch.setattr(status_mod, "provider_label", lambda provider: "OpenAI Codex", raising=False)
+    monkeypatch.setattr(
+        status_mod,
+        "_realtime_voice_status_payload",
+        lambda: {
+            "enabled": True,
+            "available": True,
+            "engine": "text_oracle_tts",
+            "require_live_like": True,
+            "conversation_quality": {
+                "mode": "streaming_text",
+                "reason": "streaming_stt_tts",
+                "live_like": True,
+            },
+            "sidecar": {
+                "mode": "external",
+                "healthy": True,
+            },
+        },
+        raising=False,
+    )
+
+    status_mod.show_status(SimpleNamespace(all=False, deep=False))
+
+    output = capsys.readouterr().out
+    assert "◆ Realtime Voice" in output
+    assert "Status:" in output
+    assert "available" in output
+    assert "Quality:" in output
+    assert "streaming_text (streaming_stt_tts)" in output
+    assert "Live-like:    yes" in output
+    assert "Require live: yes" in output
+    assert "Sidecar:      external (healthy: yes)" in output
+
+
+def test_show_status_reports_realtime_voice_live_like_required(monkeypatch, capsys, tmp_path):
+    from hermes_cli import status as status_mod
+
+    monkeypatch.setattr(status_mod, "get_env_path", lambda: tmp_path / ".env", raising=False)
+    monkeypatch.setattr(status_mod, "get_hermes_home", lambda: tmp_path, raising=False)
+    monkeypatch.setattr(status_mod, "load_config", lambda: {"model": "gpt-5.4"}, raising=False)
+    monkeypatch.setattr(status_mod, "resolve_requested_provider", lambda requested=None: "openai-codex", raising=False)
+    monkeypatch.setattr(status_mod, "resolve_provider", lambda requested=None, **kwargs: "openai-codex", raising=False)
+    monkeypatch.setattr(status_mod, "provider_label", lambda provider: "OpenAI Codex", raising=False)
+    monkeypatch.setattr(
+        status_mod,
+        "_realtime_voice_status_payload",
+        lambda: {
+            "enabled": True,
+            "available": False,
+            "unavailable_reason": "live_like_required",
+            "engine": "text_oracle_tts",
+            "require_live_like": True,
+            "conversation_quality": {
+                "mode": "turn_based_text",
+                "reason": "utterance_stt_tts",
+                "live_like": False,
+            },
+            "sidecar": {
+                "mode": "external",
+                "healthy": True,
+            },
+        },
+        raising=False,
+    )
+
+    status_mod.show_status(SimpleNamespace(all=False, deep=False))
+
+    output = capsys.readouterr().out
+    assert "unavailable (live_like_required)" in output
+    assert "turn_based_text (utterance_stt_tts)" in output
+    assert "Live-like:    no" in output
+    assert "Require live: yes" in output
+
+
 def test_show_status_termux_gateway_section_skips_systemctl(monkeypatch, capsys, tmp_path):
     from hermes_cli import status as status_mod
     import hermes_cli.auth as auth_mod
