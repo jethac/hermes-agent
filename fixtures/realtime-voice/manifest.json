@@ -1,0 +1,56 @@
+{
+  "kind": "realtime_voice_alpha_fixture_pack",
+  "generated_at": "2026-06-07T20:08:13.293583+00:00",
+  "output_dir": "fixtures\\realtime-voice",
+  "codec": "webm_opus",
+  "fixtures": [
+    {
+      "fixture": "./fixtures/realtime-voice/en/hello.webm",
+      "path": "fixtures\\realtime-voice\\en\\hello.webm",
+      "text": "Hello from Hermes.",
+      "language": "en",
+      "locale": "en-US",
+      "script": "Latn",
+      "codec": "webm_opus",
+      "audio_bytes": 15418,
+      "source_provider": "edge",
+      "source_voice_compatible": false
+    },
+    {
+      "fixture": "./fixtures/realtime-voice/en/tool-question.webm",
+      "path": "fixtures\\realtime-voice\\en\\tool-question.webm",
+      "text": "What files can Hermes see in this workspace?",
+      "language": "en",
+      "locale": "en-US",
+      "script": "Latn",
+      "codec": "webm_opus",
+      "audio_bytes": 29497,
+      "source_provider": "edge",
+      "source_voice_compatible": false
+    },
+    {
+      "fixture": "./fixtures/realtime-voice/ja/hello.webm",
+      "path": "fixtures\\realtime-voice\\ja\\hello.webm",
+      "text": "こんにちは、Hermesです。",
+      "language": "ja",
+      "locale": "ja-JP",
+      "script": "Jpan",
+      "codec": "webm_opus",
+      "audio_bytes": 12607,
+      "source_provider": "edge",
+      "source_voice_compatible": false
+    },
+    {
+      "fixture": "./fixtures/realtime-voice/ja/tool-question.webm",
+      "path": "fixtures\\realtime-voice\\ja\\tool-question.webm",
+      "text": "Hermesはこのワークスペースで何を確認できますか？",
+      "language": "ja",
+      "locale": "ja-JP",
+      "script": "Jpan",
+      "codec": "webm_opus",
+      "audio_bytes": 12368,
+      "source_provider": "edge",
+      "source_voice_compatible": false
+    }
+  ]
+}
