@@ -3,6 +3,7 @@ import json
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
     ALPHA_REQUIRED_BARGE_IN_TEXTS,
+    ALPHA_REQUIRED_SESSION_TURN_TEXTS,
     ALPHA_REQUIRED_TTS_METADATA,
     ALPHA_REQUIRED_TTS_TEXTS,
     load_realtime_voice_smoke_report,
@@ -58,6 +59,27 @@ def _valid_alpha_report():
             "error": None,
         }
     ]
+    for text in ALPHA_REQUIRED_SESSION_TURN_TEXTS:
+        entries.append(
+            {
+                "kind": "session_turn",
+                "ok": True,
+                "text": text,
+                "transcript_final_ms": 10,
+                "first_text_ms": 90,
+                "first_text_target_ms": 500,
+                "first_audio_ms": 250,
+                "first_audio_target_ms": 900,
+                "output_audio_bytes": 4321,
+                "events": [
+                    "session.started",
+                    "transcript.final",
+                    "assistant.text.partial",
+                    "audio.output.chunk",
+                ],
+                "error": None,
+            }
+        )
     for fixture in ALPHA_REQUIRED_AUDIO_FIXTURES:
         entries.append(
             {
@@ -199,6 +221,7 @@ def test_realtime_voice_alpha_report_requires_all_required_fixtures_and_phrases(
         if entry.get("fixture") != "./fixtures/realtime-voice/ja/tool-question.webm"
         and entry.get("text") != "音声で会話できますか？"
         and entry.get("kind") != "barge_in"
+        and entry.get("kind") != "session_turn"
     ]
 
     issues = validate_realtime_voice_alpha_report(report)
@@ -206,6 +229,26 @@ def test_realtime_voice_alpha_report_requires_all_required_fixtures_and_phrases(
     formatted = [issue.format() for issue in issues]
     assert any("missing required fixture" in issue for issue in formatted)
     assert any("missing required text" in issue for issue in formatted)
+
+
+def test_realtime_voice_alpha_report_requires_session_turn_smoke():
+    report = [entry for entry in _valid_alpha_report() if entry.get("kind") != "session_turn"]
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("session_turn: missing required text" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_rejects_slow_session_first_text():
+    report = _valid_alpha_report()
+    for entry in report:
+        if entry.get("kind") == "session_turn":
+            entry["first_text_ms"] = 650
+            break
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("first_text_ms 650 exceeds target 500" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_alpha_report_requires_tts_language_metadata():
@@ -289,6 +332,7 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     output = capsys.readouterr().out
     assert "Realtime voice smoke report OK" in output
     assert "audio_to_partial_transcript: p50=90ms p95=90ms max=90ms n=4" in output
+    assert "final_transcript_to_first_text: p50=90ms p95=90ms max=90ms n=1" in output
     assert "barge_in_ack: p50=45ms p95=45ms max=45ms n=1" in output
 
 
@@ -347,13 +391,20 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
     summary = summarize_realtime_voice_smoke_report_runs(runs)
 
     assert summary["runs"] == 3
-    assert summary["entries"] == 30
+    assert summary["entries"] == 33
     assert summary["kinds"]["audio_fixture"] == {"entries": 12, "ok": 12, "failed": 0}
+    assert summary["kinds"]["session_turn"] == {"entries": 3, "ok": 3, "failed": 0}
     assert summary["latency_ms"]["audio_to_partial_transcript"] == {
         "count": 12,
         "p50": 90,
         "p95": 120,
         "max": 120,
+    }
+    assert summary["latency_ms"]["final_transcript_to_first_text"] == {
+        "count": 3,
+        "p50": 90,
+        "p95": 90,
+        "max": 90,
     }
 
 

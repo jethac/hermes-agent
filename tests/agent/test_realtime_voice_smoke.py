@@ -3,6 +3,7 @@ import asyncio
 from agent.realtime_voice import AudioChunk, RealtimeVoiceSessionConfig, VoiceAudioCodec, VoiceEvent, VoiceEventType
 from agent.realtime_voice_smoke import (
     realtime_voice_smoke_text_metadata,
+    run_realtime_voice_session_turn_smoke,
     run_realtime_voice_sidecar_barge_in_smoke,
     run_realtime_voice_sidecar_tts_smoke,
 )
@@ -58,6 +59,43 @@ def test_tts_smoke_sends_language_metadata(monkeypatch):
     assert sent[0].payload["language"] == "ja"
     assert sent[0].payload["locale"] == "ja-JP"
     assert sent[0].payload["script"] == "Jpan"
+
+
+def test_session_turn_smoke_measures_first_text_and_audio(monkeypatch):
+    async def fake_speak_chunk(self, text, playback_generation):
+        await self._emit(
+            VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            {
+                **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+                "playback_generation": playback_generation,
+            },
+        )
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_text_engine.TextOracleTTSEngine._speak_chunk",
+        fake_speak_chunk,
+    )
+
+    result = asyncio.run(
+        run_realtime_voice_session_turn_smoke(
+            RealtimeVoiceSessionConfig(session_id="voice-smoke"),
+            answer="Hello from Hermes.",
+            transcript="hello",
+            timeout_seconds=1,
+        )
+    )
+
+    assert result.ok is True
+    assert result.first_text_ms is not None
+    assert result.first_audio_ms is not None
+    assert result.output_audio_bytes == len(b"audio")
+    assert result.final_text == "Hello from Hermes."
+    assert result.events == (
+        "session.started",
+        "transcript.final",
+        "assistant.text.partial",
+        "audio.output.chunk",
+    )
 
 
 def test_barge_in_smoke_measures_ack_latency(monkeypatch):
