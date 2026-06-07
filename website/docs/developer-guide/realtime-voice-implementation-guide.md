@@ -172,13 +172,21 @@ The status endpoint returns `enabled`, `available`, selected engine/codecs, fron
     "healthy": true,
     "health": {
       "kind": "reference",
-      "frontend": {"provider": "vllm", "model": "google/gemma-4-E4B-it-qat-w4a16-ct"},
+      "frontend": {
+        "provider": "vllm",
+        "model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+        "languages": ["en", "ja"],
+        "scripts": ["Latn", "Jpan"]
+      },
       "capabilities": {
         "utterance_stt": true,
         "streaming_stt": false,
         "tts": true,
         "native_s2s": false,
-        "vllm_audio_frontend": true
+        "vllm_audio_frontend": true,
+        "input_languages": ["en", "ja"],
+        "output_languages": ["en", "ja"],
+        "scripts": ["Latn", "Jpan"]
       }
     }
   }
@@ -189,7 +197,7 @@ A managed loopback sidecar can be `available: true` while `healthy: false` becau
 
 When `available` is false, `unavailable_reason` is a stable machine-readable reason such as `disabled`, `sidecar_required`, `sidecar_unhealthy`, `sidecar_missing_capabilities`, `sidecar_missing_stt`, `sidecar_missing_tts`, or `sidecar_missing_native_s2s`. The desktop should use this only to choose fallback and diagnostics; it must not infer a specific machine or accelerator from the reason.
 
-When a sidecar is reachable, its `/health` response must include a JSON capability payload. Hermes uses `capabilities` for preflight gating: `native_s2s_oracle` requires `native_s2s: true`; `text_oracle_tts` sidecar mode requires either `utterance_stt` or `streaming_stt`, plus `tts: true`, because the sidecar is responsible for both live speech understanding and streaming speech output on that path. A healthy HTTP sidecar without capability metadata, or without the required capabilities, is reported as `available: false` with an `unavailable_reason`. Websocket session opens are refused with the same reason before the microphone session is accepted, including managed loopback sidecars after Hermes has autostarted them.
+When a sidecar is reachable, its `/health` response must include a JSON capability payload. Hermes uses `capabilities` for preflight gating: `native_s2s_oracle` requires `native_s2s: true`; `text_oracle_tts` sidecar mode requires either `utterance_stt` or `streaming_stt`, plus `tts: true`, because the sidecar is responsible for both live speech understanding and streaming speech output on that path. A healthy HTTP sidecar without capability metadata, or without the required capabilities, is reported as `available: false` with an `unavailable_reason`. Websocket session opens are refused with the same reason before the microphone session is accepted, including managed loopback sidecars after Hermes has autostarted them. Language and script arrays in sidecar health are diagnostics only; Hermes sanitizes and forwards them for operator visibility, but they do not grant tool authority or replace explicit voice/STT/TTS configuration.
 
 Implementation notes:
 
