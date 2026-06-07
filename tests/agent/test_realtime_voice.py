@@ -100,13 +100,29 @@ def test_session_config_round_trips_wire_payload():
         frontend_model="gemma-4-e4b",
         oracle_model="configured-hermes-model",
         tts_provider="edge",
-        spark_base_url="http://voice.local:8080",
+        sidecar_base_url="http://voice.local:8080",
+        sidecar_token="secret-token",
         metadata={"profile": "default"},
     )
 
     restored = RealtimeVoiceSessionConfig.from_wire(config.to_wire())
 
-    assert restored == config
+    assert restored.to_wire() == config.to_wire()
+    assert restored.effective_sidecar_base_url == "http://voice.local:8080"
+    assert restored.effective_sidecar_token == "secret-token"
+
+
+def test_session_config_accepts_legacy_spark_sidecar_wire_payload():
+    restored = RealtimeVoiceSessionConfig.from_wire(
+        {
+            "session_id": "voice-123",
+            "spark_base_url": "http://voice.local:8080",
+            "spark_token": "legacy-token",
+        }
+    )
+
+    assert restored.effective_sidecar_base_url == "http://voice.local:8080"
+    assert restored.effective_sidecar_token == "legacy-token"
 
 
 def test_audio_chunk_round_trips_base64_payload():
@@ -262,7 +278,7 @@ def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
             session_id="voice-123",
             frontend_provider="gemma",
             frontend_model="gemma-4-e4b",
-            spark_base_url="http://voice.local:8080",
+            sidecar_base_url="http://voice.local:8080",
         )
         engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
         await engine.start(config)
@@ -316,7 +332,7 @@ def test_text_engine_barge_in_interrupts_oracle_and_sidecar():
         oracle = InterruptibleOracle()
         sidecar = FakeSidecar()
         engine = TextOracleTTSEngine(oracle=oracle, sidecar=sidecar)
-        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123", spark_base_url="http://voice.local"))
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123", sidecar_base_url="http://voice.local"))
         await engine.receive_event(
             VoiceEvent(
                 type=VoiceEventType.BARGE_IN,
@@ -341,7 +357,7 @@ def test_sidecar_config_detection_and_url_building():
         RealtimeVoiceSessionConfig(
             session_id="voice-123",
             frontend_provider="gemma",
-            spark_base_url="http://voice.local:8080/base",
+            sidecar_base_url="http://voice.local:8080/base",
         )
     )
     assert not wants_realtime_sidecar(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="gemma"))
@@ -650,7 +666,7 @@ def test_native_s2s_engine_sends_oracle_hint_to_sidecar():
         engine.config = RealtimeVoiceSessionConfig(
             session_id="voice-123",
             engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
-            spark_base_url="ws://voice.local",
+            sidecar_base_url="ws://voice.local",
         )
         engine._ws = ws
         engine._oracle = FakeOracle()

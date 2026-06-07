@@ -37,18 +37,19 @@ class RealtimeVoiceSidecarClient:
         return self._ws is not None and not self._closed
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
-        if not config.spark_base_url:
-            raise RuntimeError("realtime voice sidecar requires voice.realtime.spark_base_url")
+        sidecar_base_url = config.effective_sidecar_base_url
+        if not sidecar_base_url:
+            raise RuntimeError("realtime voice sidecar requires voice.realtime.sidecar_base_url")
         try:
             import websockets
         except ImportError as exc:
             raise RuntimeError("realtime voice sidecar requires the websockets package") from exc
 
         self.config = config
-        url = sidecar_ws_url(config.spark_base_url, self.path)
+        url = sidecar_ws_url(sidecar_base_url, self.path)
         headers = {}
-        if config.spark_token:
-            headers["Authorization"] = f"Bearer {config.spark_token}"
+        if config.effective_sidecar_token:
+            headers["Authorization"] = f"Bearer {config.effective_sidecar_token}"
         try:
             self._ws = await websockets.connect(url, additional_headers=headers or None)
         except TypeError:
@@ -131,7 +132,7 @@ class RealtimeVoiceSidecarClient:
 
 def wants_realtime_sidecar(config: RealtimeVoiceSessionConfig) -> bool:
     provider = (config.frontend_provider or "").strip().lower()
-    if not config.spark_base_url:
+    if not config.effective_sidecar_base_url:
         return False
     return provider in {
         "sidecar",
