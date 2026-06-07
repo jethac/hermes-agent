@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 import sys
 from argparse import Namespace
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
@@ -100,28 +101,32 @@ def main(argv: list[str] | None = None) -> int:
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    for ordinal, report_path in enumerate(report_paths, start=1):
-        print(f"Realtime voice alpha evidence run {ordinal}/{run_count}: {report_path}")
-        run_doctor(
-            Namespace(
-                fix=False,
-                ack=None,
-                realtime_voice=True,
-                realtime_voice_alpha=True,
-                realtime_voice_smoke=False,
-                realtime_voice_audio_fixture=None,
-                realtime_voice_audio_codec=args.audio_codec,
-                realtime_voice_tts_smoke=None,
-                realtime_voice_barge_in_smoke=None,
-                realtime_voice_report=str(report_path),
-            )
-        )
-        if not report_path.exists():
-            print(
-                f"Realtime voice alpha evidence failed: {report_path} was not written",
-                file=sys.stderr,
-            )
-            return 1
+    try:
+        with managed_realtime_voice_sidecar_for_evidence():
+            for ordinal, report_path in enumerate(report_paths, start=1):
+                print(f"Realtime voice alpha evidence run {ordinal}/{run_count}: {report_path}")
+                run_doctor(
+                    Namespace(
+                        fix=False,
+                        ack=None,
+                        realtime_voice=True,
+                        realtime_voice_alpha=True,
+                        realtime_voice_smoke=False,
+                        realtime_voice_audio_fixture=None,
+                        realtime_voice_audio_codec=args.audio_codec,
+                        realtime_voice_tts_smoke=None,
+                        realtime_voice_barge_in_smoke=None,
+                        realtime_voice_report=str(report_path),
+                    )
+                )
+                if not report_path.exists():
+                    print(
+                        f"Realtime voice alpha evidence failed: {report_path} was not written",
+                        file=sys.stderr,
+                    )
+                    return 1
+    except RuntimeError:
+        return 1
 
     runs = [(str(path), load_realtime_voice_smoke_report(path)) for path in report_paths]
     issues = validate_realtime_voice_alpha_report_runs(runs, min_runs=run_count)
@@ -141,6 +146,43 @@ def missing_required_audio_fixtures() -> list[str]:
         for fixture in ALPHA_REQUIRED_AUDIO_FIXTURES
         if not Path(fixture).expanduser().is_file()
     ]
+
+
+@contextmanager
+def managed_realtime_voice_sidecar_for_evidence() -> Iterator[None]:
+    """Start the configured managed loopback sidecar for CLI evidence runs."""
+
+    proc = None
+    try:
+        from hermes_cli import web_server
+
+        realtime = web_server._realtime_voice_config_dict()
+        base_url = web_server._realtime_voice_sidecar_base_url(realtime)
+        if web_server._realtime_voice_should_autostart_sidecar(realtime, base_url):
+            env_on_disk = web_server.load_env()
+            token = web_server._realtime_voice_sidecar_token(realtime, env_on_disk)
+            was_healthy = web_server._realtime_voice_sidecar_healthy(base_url, token=token)
+            if not was_healthy:
+                web_server._ensure_realtime_voice_sidecar(realtime)
+                candidate = getattr(web_server, "_VOICE_SIDECAR_PROC", None)
+                if candidate is not None and candidate.poll() is None:
+                    proc = candidate
+    except Exception as exc:
+        print(
+            "Realtime voice alpha evidence failed: managed sidecar is not ready "
+            f"({sanitize_realtime_voice_error(exc)})",
+            file=sys.stderr,
+        )
+        raise RuntimeError("managed realtime voice sidecar is not ready") from exc
+    try:
+        yield
+    finally:
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
 
 
 def _print_summary(runs: list[tuple[str, list[dict[str, Any]]]]) -> None:

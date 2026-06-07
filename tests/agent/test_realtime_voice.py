@@ -4,6 +4,7 @@ import types
 
 import pytest
 
+import agent.realtime_voice_reference_sidecar as reference_sidecar_module
 from agent.realtime_voice import (
     AudioChunk,
     RealtimeVoiceEngineKind,
@@ -2291,6 +2292,7 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_MODEL", "portable-streaming-asr")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_TOKEN", "secret-token")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_TIMEOUT_SECONDS", "2.5")
+    monkeypatch.setenv("HERMES_VOICE_STREAMING_BRIDGE_HEALTH_TIMEOUT_SECONDS", "0.25")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_BASE_URL", "http://streaming-tts.local:9001")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_MODEL", "portable-streaming-voice")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_TOKEN", "tts-secret-token")
@@ -2305,10 +2307,42 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     assert runtime.streaming_stt_model == "portable-streaming-asr"
     assert runtime.streaming_stt_token == "secret-token"
     assert runtime.streaming_stt_timeout_seconds == 2.5
+    assert runtime.streaming_bridge_health_timeout_seconds == 0.25
     assert runtime.streaming_tts_base_url == "http://streaming-tts.local:9001"
     assert runtime.streaming_tts_model == "portable-streaming-voice"
     assert runtime.streaming_tts_token == "tts-secret-token"
     assert runtime.streaming_tts_timeout_seconds == 3.5
+
+
+def test_reference_sidecar_health_probe_uses_short_bridge_health_timeout(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"ok": true, "capabilities": {"streaming_stt": true}}'
+
+    def fake_urlopen(request, timeout):
+        calls.append((request.full_url, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(reference_sidecar_module.urllib.request, "urlopen", fake_urlopen)
+
+    runtime = ReferenceSidecarRuntimeConfig(
+        streaming_stt_base_url="http://streaming-stt.local:9000",
+        streaming_stt_timeout_seconds=10.0,
+        streaming_bridge_health_timeout_seconds=0.2,
+    )
+
+    health = reference_sidecar_module._probe_streaming_stt_health_sync(runtime)
+
+    assert health == {"ok": True, "capabilities": {"streaming_stt": True}}
+    assert calls == [("http://streaming-stt.local:9000/health", 0.2)]
 
 
 def test_reference_sidecar_bridges_streaming_stt_events(monkeypatch):

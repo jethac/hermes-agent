@@ -1,4 +1,5 @@
 import json
+import sys
 import types
 
 from agent.realtime_voice_smoke_report import (
@@ -21,6 +22,66 @@ def _fake_doctor_module(run_doctor):
         _realtime_voice_smoke_config=lambda: object(),
         run_doctor=run_doctor,
     )
+
+
+class _FakeSidecarProcess:
+    def __init__(self):
+        self.alive = True
+        self.terminated = False
+        self.killed = False
+        self.waited = False
+
+    def poll(self):
+        return None if self.alive else 0
+
+    def terminate(self):
+        self.terminated = True
+        self.alive = False
+
+    def wait(self, timeout=None):
+        self.waited = True
+        return 0
+
+    def kill(self):
+        self.killed = True
+        self.alive = False
+
+
+def _fake_web_server_module(*, autostart=False, healthy=True, proc=None, ensure_error=None):
+    module = types.SimpleNamespace()
+    module._VOICE_SIDECAR_PROC = proc
+    module.load_env = lambda: {}
+    module._realtime_voice_config_dict = lambda: {"frontend_provider": "reference"}
+    module._realtime_voice_sidecar_base_url = lambda realtime: "http://127.0.0.1:8765"
+    module._realtime_voice_should_autostart_sidecar = lambda realtime, base_url: autostart
+    module._realtime_voice_sidecar_token = lambda realtime, env_on_disk: ""
+    module.ensure_calls = []
+    module._healthy_values = list(healthy if isinstance(healthy, list) else [healthy])
+
+    def fake_healthy(base_url, token=""):
+        if module._healthy_values:
+            return module._healthy_values.pop(0)
+        return bool(healthy)
+
+    def fake_ensure(realtime):
+        module.ensure_calls.append(realtime)
+        if ensure_error is not None:
+            raise ensure_error
+        if module._VOICE_SIDECAR_PROC is None:
+            module._VOICE_SIDECAR_PROC = _FakeSidecarProcess()
+
+    module._realtime_voice_sidecar_healthy = fake_healthy
+    module._ensure_realtime_voice_sidecar = fake_ensure
+    return module
+
+
+def _install_fake_web_server(monkeypatch, module=None):
+    import hermes_cli
+
+    fake = module or _fake_web_server_module()
+    monkeypatch.setitem(sys.modules, "hermes_cli.web_server", fake)
+    monkeypatch.setattr(hermes_cli, "web_server", fake, raising=False)
+    return fake
 
 
 def _valid_alpha_report():
@@ -82,6 +143,7 @@ def test_alpha_evidence_runner_collects_and_validates_runs(monkeypatch, tmp_path
     reports_dir = tmp_path / "reports"
     _write_required_audio_fixtures(tmp_path)
     monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(monkeypatch)
 
     def fake_run_doctor(args):
         calls.append(args)
@@ -217,6 +279,7 @@ def test_alpha_evidence_runner_reports_missing_fixtures(monkeypatch, tmp_path, c
 def test_alpha_evidence_runner_returns_validation_failure(monkeypatch, tmp_path, capsys):
     _write_required_audio_fixtures(tmp_path)
     monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(monkeypatch)
 
     def fake_run_doctor(args):
         report = _valid_alpha_report()
@@ -243,3 +306,118 @@ def test_alpha_evidence_runner_returns_validation_failure(monkeypatch, tmp_path,
 
     assert result == 1
     assert "missing required text" in capsys.readouterr().err
+
+
+def test_alpha_evidence_runner_starts_and_stops_managed_sidecar(monkeypatch, tmp_path):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    proc = _FakeSidecarProcess()
+    fake_web_server = _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(autostart=True, healthy=False, proc=proc),
+    )
+
+    def fake_run_doctor(args):
+        with open(args.realtime_voice_report, "w", encoding="utf-8") as handle:
+            json.dump(_valid_alpha_report(), handle, ensure_ascii=False)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+        ]
+    )
+
+    assert result == 0
+    assert len(fake_web_server.ensure_calls) == 1
+    assert proc.terminated is True
+    assert proc.waited is True
+    assert proc.killed is False
+
+
+def test_alpha_evidence_runner_leaves_existing_healthy_sidecar_running(monkeypatch, tmp_path):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    proc = _FakeSidecarProcess()
+    fake_web_server = _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(autostart=True, healthy=True, proc=proc),
+    )
+
+    def fake_run_doctor(args):
+        with open(args.realtime_voice_report, "w", encoding="utf-8") as handle:
+            json.dump(_valid_alpha_report(), handle, ensure_ascii=False)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+        ]
+    )
+
+    assert result == 0
+    assert fake_web_server.ensure_calls == []
+    assert proc.terminated is False
+
+
+def test_alpha_evidence_runner_reports_managed_sidecar_start_failure(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(
+            autostart=True,
+            healthy=False,
+            ensure_error=RuntimeError("sidecar exited with code 1"),
+        ),
+    )
+
+    calls = []
+
+    def fake_run_doctor(args):
+        calls.append(args)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+        ]
+    )
+
+    assert result == 1
+    assert calls == []
+    assert "managed sidecar is not ready" in capsys.readouterr().err
