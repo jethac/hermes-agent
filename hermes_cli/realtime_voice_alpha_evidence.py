@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import os
+import subprocess
 import sys
+import time
 from argparse import Namespace
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.error import URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
@@ -60,6 +66,28 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="After validation succeeds, set voice.realtime.production_evidence_report in config.yaml",
     )
+    parser.add_argument(
+        "--start-deepgram-bridge",
+        action="store_true",
+        help="Start the configured local Deepgram streaming bridge for this evidence run",
+    )
+    parser.add_argument(
+        "--deepgram-bridge-host",
+        default="",
+        help="Host for --start-deepgram-bridge; defaults to the configured streaming bridge URL host",
+    )
+    parser.add_argument(
+        "--deepgram-bridge-port",
+        type=int,
+        default=0,
+        help="Port for --start-deepgram-bridge; defaults to the configured streaming bridge URL port",
+    )
+    parser.add_argument(
+        "--deepgram-bridge-timeout-seconds",
+        type=float,
+        default=15.0,
+        help="Seconds to wait for an auto-started Deepgram bridge to become healthy",
+    )
     return parser
 
 
@@ -109,38 +137,39 @@ def main(argv: list[str] | None = None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        with managed_realtime_voice_sidecar_for_evidence():
-            live_like_issue = realtime_voice_live_like_preflight_issue()
-            if live_like_issue:
-                print(
-                    "Realtime voice alpha evidence failed: live-like realtime voice is not ready "
-                    f"({live_like_issue})",
-                    file=sys.stderr,
-                )
-                print_realtime_voice_live_setup_hint()
-                return 1
-            for ordinal, report_path in enumerate(report_paths, start=1):
-                print(f"Realtime voice alpha evidence run {ordinal}/{run_count}: {report_path}")
-                run_doctor(
-                    Namespace(
-                        fix=False,
-                        ack=None,
-                        realtime_voice=True,
-                        realtime_voice_alpha=True,
-                        realtime_voice_smoke=False,
-                        realtime_voice_audio_fixture=None,
-                        realtime_voice_audio_codec=args.audio_codec,
-                        realtime_voice_tts_smoke=None,
-                        realtime_voice_barge_in_smoke=None,
-                        realtime_voice_report=str(report_path),
-                    )
-                )
-                if not report_path.exists():
+        with managed_deepgram_bridge_for_evidence(args):
+            with managed_realtime_voice_sidecar_for_evidence():
+                live_like_issue = realtime_voice_live_like_preflight_issue()
+                if live_like_issue:
                     print(
-                        f"Realtime voice alpha evidence failed: {report_path} was not written",
+                        "Realtime voice alpha evidence failed: live-like realtime voice is not ready "
+                        f"({live_like_issue})",
                         file=sys.stderr,
                     )
+                    print_realtime_voice_live_setup_hint()
                     return 1
+                for ordinal, report_path in enumerate(report_paths, start=1):
+                    print(f"Realtime voice alpha evidence run {ordinal}/{run_count}: {report_path}")
+                    run_doctor(
+                        Namespace(
+                            fix=False,
+                            ack=None,
+                            realtime_voice=True,
+                            realtime_voice_alpha=True,
+                            realtime_voice_smoke=False,
+                            realtime_voice_audio_fixture=None,
+                            realtime_voice_audio_codec=args.audio_codec,
+                            realtime_voice_tts_smoke=None,
+                            realtime_voice_barge_in_smoke=None,
+                            realtime_voice_report=str(report_path),
+                        )
+                    )
+                    if not report_path.exists():
+                        print(
+                            f"Realtime voice alpha evidence failed: {report_path} was not written",
+                            file=sys.stderr,
+                        )
+                        return 1
     except RuntimeError:
         return 1
 
@@ -185,6 +214,196 @@ def apply_realtime_voice_production_evidence_report(report_path: str | Path) -> 
     config["voice"] = voice
     save_config(config)
     return get_config_path()
+
+
+@contextmanager
+def managed_deepgram_bridge_for_evidence(args: argparse.Namespace) -> Iterator[None]:
+    """Optionally start the configured local Deepgram bridge for evidence runs."""
+
+    if not getattr(args, "start_deepgram_bridge", False):
+        yield
+        return
+
+    proc = None
+    bridge_url = ""
+    try:
+        from hermes_cli import web_server
+
+        realtime = web_server._realtime_voice_config_dict()
+        env_on_disk = web_server.load_env()
+        bridge_url = _configured_deepgram_bridge_url(realtime)
+        if not bridge_url:
+            raise RuntimeError("voice.realtime.streaming_stt_base_url is required")
+        token = _streaming_bridge_token_for_evidence(realtime, env_on_disk)
+        if not _deepgram_bridge_healthy(bridge_url, token=token):
+            host, port = _deepgram_bridge_bind(args, bridge_url)
+            proc = _spawn_deepgram_bridge_for_evidence(host, port, env_on_disk)
+            _wait_for_deepgram_bridge_health(
+                bridge_url,
+                token=token,
+                proc=proc,
+                timeout_seconds=max(0.1, float(getattr(args, "deepgram_bridge_timeout_seconds", 15.0) or 15.0)),
+            )
+    except Exception as exc:
+        _terminate_process(proc)
+        print(
+            "Realtime voice alpha evidence failed: Deepgram bridge is not ready "
+            f"({sanitize_realtime_voice_error(exc)})",
+            file=sys.stderr,
+        )
+        raise RuntimeError("Deepgram bridge is not ready") from exc
+    try:
+        yield
+    finally:
+        _terminate_process(proc)
+
+
+def _configured_deepgram_bridge_url(realtime: dict[str, Any]) -> str:
+    return str(
+        realtime.get("streaming_stt_base_url")
+        or realtime.get("streaming_tts_base_url")
+        or ""
+    ).strip().rstrip("/")
+
+
+def _streaming_bridge_token_for_evidence(
+    realtime: dict[str, Any],
+    env_on_disk: dict[str, str],
+) -> str:
+    token_env = str(
+        realtime.get("streaming_stt_token_env")
+        or realtime.get("streaming_tts_token_env")
+        or "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    ).strip()
+    if not token_env:
+        return ""
+    return str(env_on_disk.get(token_env) or os.environ.get(token_env) or "")
+
+
+def _deepgram_bridge_bind(args: argparse.Namespace, bridge_url: str) -> tuple[str, int]:
+    parsed = urlparse(bridge_url)
+    host = str(getattr(args, "deepgram_bridge_host", "") or "").strip()
+    if not host:
+        host = parsed.hostname or "127.0.0.1"
+    port = int(getattr(args, "deepgram_bridge_port", 0) or 0)
+    if port <= 0:
+        try:
+            port = int(parsed.port or 8766)
+        except ValueError:
+            port = 8766
+    if port <= 0 or port > 65535:
+        raise RuntimeError("--deepgram-bridge-port must be between 1 and 65535")
+    configured_host = parsed.hostname or ""
+    if (
+        configured_host
+        and configured_host not in {"127.0.0.1", "localhost", "::1"}
+        and not str(getattr(args, "deepgram_bridge_host", "") or "").strip()
+    ):
+        raise RuntimeError(
+            "configured streaming bridge URL is not loopback; start that bridge on its host "
+            "or pass --deepgram-bridge-host for an explicit local bind"
+        )
+    return host, port
+
+
+def _spawn_deepgram_bridge_for_evidence(
+    host: str,
+    port: int,
+    env_on_disk: dict[str, str],
+) -> subprocess.Popen:
+    log_path = _deepgram_bridge_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_file = open(log_path, "ab", buffering=0)
+    log_file.write(f"\n=== Deepgram realtime voice bridge started {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode())
+    child_env = {
+        **os.environ,
+        **env_on_disk,
+        "HERMES_NONINTERACTIVE": "1",
+    }
+    command = [
+        sys.executable,
+        "-m",
+        "hermes_cli.realtime_voice_deepgram_bridge",
+        "--host",
+        str(host),
+        "--port",
+        str(port),
+        "--production-en-ja",
+    ]
+    popen_kwargs: dict[str, Any] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": log_file,
+        "stderr": subprocess.STDOUT,
+        "env": child_env,
+    }
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+            | getattr(subprocess, "DETACHED_PROCESS", 0)
+        )
+    else:
+        popen_kwargs["start_new_session"] = True
+    try:
+        return subprocess.Popen(command, **popen_kwargs)
+    finally:
+        log_file.close()
+
+
+def _deepgram_bridge_log_path() -> Path:
+    try:
+        from hermes_cli import web_server
+
+        action_log_dir = getattr(web_server, "_ACTION_LOG_DIR", None)
+        if action_log_dir:
+            return Path(action_log_dir) / "realtime-voice-deepgram-bridge.log"
+    except Exception:
+        pass
+    return Path.home() / ".hermes" / "logs" / "realtime-voice-deepgram-bridge.log"
+
+
+def _wait_for_deepgram_bridge_health(
+    bridge_url: str,
+    *,
+    token: str,
+    proc: subprocess.Popen,
+    timeout_seconds: float,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    last_error = "health check did not run"
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(f"Deepgram bridge exited with code {proc.returncode}")
+        try:
+            if _deepgram_bridge_healthy(bridge_url, token=token):
+                return
+        except Exception as exc:
+            last_error = sanitize_realtime_voice_error(exc)
+        time.sleep(0.2)
+    raise RuntimeError(f"Deepgram bridge health did not become ready at {bridge_url}/health: {last_error}")
+
+
+def _deepgram_bridge_healthy(bridge_url: str, *, token: str = "") -> bool:
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = Request(f"{bridge_url.rstrip('/')}/health", headers=headers)
+    try:
+        with urlopen(request, timeout=1.0) as response:
+            return int(getattr(response, "status", 0) or 0) == 200
+    except (OSError, URLError):
+        return False
+
+
+def _terminate_process(proc: Any) -> None:
+    if proc is None:
+        return
+    if proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except Exception:
+        proc.kill()
 
 
 @contextmanager
@@ -267,7 +486,10 @@ def print_realtime_voice_live_setup_hint() -> None:
         file=sys.stderr,
     )
     print("  python -m hermes_cli.realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice", file=sys.stderr)
-    print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply", file=sys.stderr)
+    print(
+        "  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --start-deepgram-bridge",
+        file=sys.stderr,
+    )
 
 
 def print_realtime_voice_fixture_setup_hint() -> None:
