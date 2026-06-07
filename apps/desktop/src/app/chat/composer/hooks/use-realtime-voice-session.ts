@@ -367,18 +367,23 @@ export function collectRealtimeVoiceMetrics(
   return next
 }
 
-export function realtimeVoiceQualityTargets(status: RealtimeVoiceStatus | null): RealtimeVoiceQualityTargetsMs {
-  const raw = status?.quality_targets_ms
+export function realtimeVoiceQualityTargetsFromPayload(raw: unknown): RealtimeVoiceQualityTargetsMs {
+  const targets =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as RealtimeVoiceQualityTargetsMs : undefined
 
   return {
     audio_to_partial_transcript_ms:
-      finitePositiveMs(raw?.audio_to_partial_transcript_ms) ?? 300,
-    barge_in_ack_ms: finitePositiveMs(raw?.barge_in_ack_ms) ?? 150,
+      finitePositiveMs(targets?.audio_to_partial_transcript_ms) ?? 300,
+    barge_in_ack_ms: finitePositiveMs(targets?.barge_in_ack_ms) ?? 150,
     final_transcript_to_first_audio_ms:
-      finitePositiveMs(raw?.final_transcript_to_first_audio_ms) ?? 900,
+      finitePositiveMs(targets?.final_transcript_to_first_audio_ms) ?? 900,
     final_transcript_to_first_text_ms:
-      finitePositiveMs(raw?.final_transcript_to_first_text_ms) ?? 500
+      finitePositiveMs(targets?.final_transcript_to_first_text_ms) ?? 500
   }
+}
+
+export function realtimeVoiceQualityTargets(status: RealtimeVoiceStatus | null): RealtimeVoiceQualityTargetsMs {
+  return realtimeVoiceQualityTargetsFromPayload(status?.quality_targets_ms)
 }
 
 export function updateRealtimeVoiceBargeInGate({
@@ -1324,6 +1329,8 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
       if (event.type === 'audio.output.chunk') {
         enqueueAudio(event.payload || {})
+      } else if (event.type === 'session.started') {
+        setQualityTargets(realtimeVoiceQualityTargetsFromPayload(event.payload?.quality_targets_ms))
       } else if (event.type === 'assistant.text.partial') {
         if (!sessionStatus) {
           setStatus('speaking')

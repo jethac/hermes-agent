@@ -19,6 +19,7 @@ from agent.realtime_voice import (
     VoiceEventType,
     create_realtime_voice_event_queue,
     put_realtime_voice_event,
+    realtime_voice_session_contract_payload,
     transcript_event_payload_from_payload,
     transcript_metadata_from_payload,
 )
@@ -88,6 +89,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 "frontend_provider": config.frontend_provider or "",
                 "frontend_model": config.frontend_model or "",
                 "sidecar": self._sidecar is not None,
+                **realtime_voice_session_contract_payload(config),
             },
         )
 

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import types
 
 import pytest
@@ -557,6 +558,44 @@ def test_text_engine_keeps_explicit_partial_transcript_out_of_oracle():
         assert events[-1].payload["script"] == "Jpan"
         assert "language_url" not in events[-1].payload
         assert oracle.called is False
+        await engine.close()
+
+    asyncio.run(run())
+
+
+def test_text_engine_session_started_includes_non_secret_runtime_contract():
+    async def run():
+        engine = TextOracleTTSEngine(oracle=FakeOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                sidecar_token="secret-token",
+                metadata={
+                    "language_support": {
+                        "production_languages": ["en", "ja"],
+                        "production_scripts": ["Latn", "Jpan"],
+                        "best_effort_languages": True,
+                    },
+                    "quality_targets_ms": {
+                        "audio_to_partial_transcript_ms": 250,
+                        "final_transcript_to_first_text_ms": 450,
+                        "final_transcript_to_first_audio_ms": 850,
+                        "barge_in_ack_ms": 120,
+                    },
+                    "sidecar_token": "do-not-forward",
+                },
+            )
+        )
+
+        event = await anext(engine.events())
+
+        assert event.type == VoiceEventType.SESSION_STARTED
+        assert event.payload["language_support"]["production_languages"] == ["en", "ja"]
+        assert event.payload["quality_targets_ms"]["final_transcript_to_first_audio_ms"] == 850
+        assert "metadata" not in event.payload
+        serialized = json.dumps(event.to_wire())
+        assert "secret-token" not in serialized
+        assert "do-not-forward" not in serialized
         await engine.close()
 
     asyncio.run(run())
@@ -2491,6 +2530,53 @@ def test_native_s2s_engine_streams_oracle_hint_to_sidecar():
             "final": True,
             "source": "hermes",
         }
+
+    asyncio.run(run())
+
+
+def test_native_s2s_engine_session_started_matches_realtime_contract(monkeypatch):
+    async def fake_connect(self, config):
+        self._ws = None
+
+    async def run():
+        monkeypatch.setattr(NativeS2SSidecarEngine, "_connect_sidecar", fake_connect)
+
+        engine = NativeS2SSidecarEngine()
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+                sidecar_base_url="ws://voice.local",
+                frontend_provider="native",
+                frontend_model="s2s-reference",
+                metadata={
+                    "language_support": {
+                        "production_languages": ["en", "ja"],
+                        "production_scripts": ["Latn", "Jpan"],
+                        "best_effort_languages": True,
+                    },
+                    "quality_targets_ms": {
+                        "audio_to_partial_transcript_ms": 250,
+                        "final_transcript_to_first_text_ms": 450,
+                        "final_transcript_to_first_audio_ms": 850,
+                        "barge_in_ack_ms": 120,
+                    },
+                },
+            )
+        )
+
+        event = await anext(engine.events())
+
+        assert event.type == VoiceEventType.SESSION_STARTED
+        assert event.payload["engine"] == RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE.value
+        assert event.payload["input_codec"] == VoiceAudioCodec.OPUS.value
+        assert event.payload["output_codec"] == VoiceAudioCodec.OPUS.value
+        assert event.payload["frontend_provider"] == "native"
+        assert event.payload["frontend_model"] == "s2s-reference"
+        assert event.payload["sidecar"] is True
+        assert event.payload["language_support"]["production_languages"] == ["en", "ja"]
+        assert event.payload["quality_targets_ms"]["barge_in_ack_ms"] == 120
+        await engine.close()
 
     asyncio.run(run())
 
