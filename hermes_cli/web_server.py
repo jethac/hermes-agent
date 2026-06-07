@@ -13042,11 +13042,9 @@ def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
         cmd.extend(["--vllm-base-url", vllm_base_url])
     if vllm_model:
         cmd.extend(["--vllm-model", vllm_model])
-    input_languages = _realtime_voice_sidecar_metadata_arg(realtime.get("input_languages") or realtime.get("languages"))
-    output_languages = _realtime_voice_sidecar_metadata_arg(
-        realtime.get("output_languages") or realtime.get("tts_languages") or realtime.get("languages")
-    )
-    scripts = _realtime_voice_sidecar_metadata_arg(realtime.get("scripts"))
+    input_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_input_languages(realtime))
+    output_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_output_languages(realtime))
+    scripts = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_scripts(realtime))
     if input_languages:
         cmd.extend(["--input-languages", input_languages])
     if output_languages:
@@ -13054,6 +13052,29 @@ def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
     if scripts:
         cmd.extend(["--scripts", scripts])
     return cmd
+
+
+def _realtime_voice_sidecar_input_languages(realtime: Dict[str, Any]) -> Any:
+    return (
+        realtime.get("input_languages")
+        or realtime.get("languages")
+        or realtime.get("production_languages")
+        or realtime.get("target_languages")
+    )
+
+
+def _realtime_voice_sidecar_output_languages(realtime: Dict[str, Any]) -> Any:
+    return (
+        realtime.get("output_languages")
+        or realtime.get("tts_languages")
+        or realtime.get("languages")
+        or realtime.get("production_languages")
+        or realtime.get("target_languages")
+    )
+
+
+def _realtime_voice_sidecar_scripts(realtime: Dict[str, Any]) -> Any:
+    return realtime.get("scripts") or realtime.get("production_scripts") or realtime.get("target_scripts")
 
 
 def _realtime_voice_sidecar_metadata_arg(value: Any) -> str:
@@ -13080,11 +13101,9 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
         child_env["HERMES_VOICE_VLLM_BASE_URL"] = vllm_base_url
     if vllm_model:
         child_env["HERMES_VOICE_VLLM_MODEL"] = vllm_model
-    input_languages = _realtime_voice_sidecar_metadata_arg(realtime.get("input_languages") or realtime.get("languages"))
-    output_languages = _realtime_voice_sidecar_metadata_arg(
-        realtime.get("output_languages") or realtime.get("tts_languages") or realtime.get("languages")
-    )
-    scripts = _realtime_voice_sidecar_metadata_arg(realtime.get("scripts"))
+    input_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_input_languages(realtime))
+    output_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_output_languages(realtime))
+    scripts = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_scripts(realtime))
     if input_languages:
         child_env["HERMES_VOICE_INPUT_LANGUAGES"] = input_languages
     if output_languages:
