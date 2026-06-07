@@ -88,6 +88,7 @@ class RealtimeVoiceSessionConfig:
     output_codec: VoiceAudioCodec = VoiceAudioCodec.OPUS
     sample_rate_hz: int = 16000
     channels: int = 1
+    input_buffer_limit_bytes: int = 8 * 1024 * 1024
     frontend_provider: Optional[str] = None
     frontend_model: Optional[str] = None
     oracle_model: Optional[str] = None
@@ -117,6 +118,7 @@ class RealtimeVoiceSessionConfig:
             "output_codec": self.output_codec.value,
             "sample_rate_hz": self.sample_rate_hz,
             "channels": self.channels,
+            "input_buffer_limit_bytes": self.input_buffer_limit_bytes,
             "frontend_provider": self.frontend_provider,
             "frontend_model": self.frontend_model,
             "oracle_model": self.oracle_model,
@@ -138,6 +140,10 @@ class RealtimeVoiceSessionConfig:
             output_codec=VoiceAudioCodec(str(payload.get("output_codec") or VoiceAudioCodec.OPUS.value)),
             sample_rate_hz=int(payload.get("sample_rate_hz") or 16000),
             channels=int(payload.get("channels") or 1),
+            input_buffer_limit_bytes=_positive_int(
+                payload.get("input_buffer_limit_bytes"),
+                default=8 * 1024 * 1024,
+            ),
             frontend_provider=_optional_str(payload.get("frontend_provider")),
             frontend_model=_optional_str(payload.get("frontend_model")),
             oracle_model=_optional_str(payload.get("oracle_model")),
@@ -269,6 +275,16 @@ def _positive_float(value: Any, *, default: float) -> float:
         return default
     try:
         parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _positive_int(value: Any, *, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default

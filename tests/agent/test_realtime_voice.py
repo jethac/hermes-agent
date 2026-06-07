@@ -112,6 +112,7 @@ def test_session_config_round_trips_wire_payload():
         engine=RealtimeVoiceEngineKind.TEXT_ORACLE_TTS,
         input_codec=VoiceAudioCodec.OPUS,
         output_codec=VoiceAudioCodec.OPUS,
+        input_buffer_limit_bytes=4096,
         frontend_provider="gemma",
         frontend_model="gemma-4-e4b",
         oracle_model="configured-hermes-model",
@@ -127,6 +128,7 @@ def test_session_config_round_trips_wire_payload():
     assert restored.to_wire() == config.to_wire()
     assert restored.effective_sidecar_base_url == "http://voice.local:8080"
     assert restored.effective_sidecar_token == "secret-token"
+    assert restored.input_buffer_limit_bytes == 4096
     assert restored.sidecar_connect_timeout_seconds == 3.5
 
 
@@ -452,6 +454,47 @@ def test_text_engine_falls_back_to_local_stt_when_sidecar_send_fails(monkeypatch
         assert fallback.payload["sidecar"] is False
         assert final.payload["text"] == "local transcript"
         assert VoiceEventType.SESSION_ERROR not in [event.type for event in seen]
+
+    asyncio.run(run())
+
+
+def test_text_engine_bounds_local_audio_fallback_buffer():
+    async def run():
+        engine = TextOracleTTSEngine(oracle=FakeOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                input_buffer_limit_bytes=3,
+            )
+        )
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"ab").to_payload(),
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"cd").to_payload(),
+            )
+        )
+
+        events = [await anext(engine.events()), await anext(engine.events())]
+        await engine.close()
+
+        assert events[0].type == VoiceEventType.SESSION_STARTED
+        assert events[1].type == VoiceEventType.FRONTEND_STATE
+        assert events[1].payload["status"] == "degraded"
+        assert events[1].payload["reason"] == "input_buffer_limit_exceeded"
+        assert events[1].payload["limit_bytes"] == 3
+        assert engine._inbound_audio_bytes == 0
+        assert VoiceEventType.SESSION_ERROR not in [event.type for event in events]
 
     asyncio.run(run())
 

@@ -2028,6 +2028,7 @@ DEFAULT_CONFIG = {
             "engine": "text_oracle_tts",  # "text_oracle_tts" | "native_s2s_oracle"
             "input_codec": "webm_opus",
             "output_codec": "opus",
+            "input_buffer_limit_bytes": 8388608,
             "frontend_provider": "",
             "frontend_model": "",
             "sidecar_base_url": "",

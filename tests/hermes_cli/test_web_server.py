@@ -6298,6 +6298,7 @@ class TestRealtimeVoiceWebSocket:
                         "sidecar_base_url": "http://voice.local:8080",
                         "sidecar_token_env": "HERMES_VOICE_SIDECAR_TOKEN",
                         "sidecar_connect_timeout_seconds": 2.5,
+                        "input_buffer_limit_bytes": 4096,
                     }
                 }
             },
@@ -6312,6 +6313,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.sidecar_base_url == "http://voice.local:8080"
         assert config.sidecar_token == "secret-token"
         assert config.sidecar_connect_timeout_seconds == 2.5
+        assert config.input_buffer_limit_bytes == 4096
         assert config.spark_base_url == "http://voice.local:8080"
         assert config.spark_token == "secret-token"
 
@@ -6402,6 +6404,7 @@ class TestRealtimeVoiceWebSocket:
                         "sidecar_port": 8765,
                         "sidecar_autostart": True,
                         "sidecar_connect_timeout_seconds": 3,
+                        "input_buffer_limit_bytes": 4096,
                     }
                 }
             },
@@ -6415,6 +6418,7 @@ class TestRealtimeVoiceWebSocket:
         assert body["enabled"] is True
         assert body["available"] is True
         assert body["frontend_provider"] == "gemma4"
+        assert body["input_buffer_limit_bytes"] == 4096
         assert body["sidecar"]["mode"] == "managed_loopback"
         assert body["sidecar"]["autostart"] is True
         assert body["sidecar"]["connect_timeout_seconds"] == 3

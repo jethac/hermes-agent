@@ -37,6 +37,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self.config: Optional[RealtimeVoiceSessionConfig] = None
         self._events: asyncio.Queue[VoiceEvent | None] = asyncio.Queue()
         self._inbound_audio: List[bytes] = []
+        self._inbound_audio_bytes = 0
         self._sequence = 0
         self._closed = False
         self._active_task: Optional[asyncio.Task[None]] = None
@@ -93,7 +94,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             oracle = self._oracle
             if hasattr(oracle, "interrupt"):
                 oracle.interrupt("Realtime voice barge-in")  # type: ignore[attr-defined]
-            self._inbound_audio.clear()
+            self._clear_inbound_audio()
             if self._sidecar is not None:
                 await self._send_sidecar_event(event)
             await self._emit(
@@ -123,14 +124,15 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             if self._sidecar is not None:
                 if await self._send_sidecar_event(event):
                     return
-            self._inbound_audio.append(chunk.data)
+            if not await self._append_inbound_audio(chunk.data):
+                return
         except Exception:
             await self._emit(VoiceEventType.SESSION_ERROR, {"error": "invalid audio chunk"})
             return
 
         if event.payload.get("end_of_utterance") is True:
             audio = b"".join(self._inbound_audio)
-            self._inbound_audio.clear()
+            self._clear_inbound_audio()
             if audio:
                 await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, {"text": "", "stability": 0.1})
                 self._active_task = asyncio.create_task(self._transcribe_and_answer(audio, chunk.codec))
@@ -215,6 +217,29 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 },
             )
             return False
+
+    async def _append_inbound_audio(self, data: bytes) -> bool:
+        config = self.config
+        limit = int(config.input_buffer_limit_bytes if config is not None else 8 * 1024 * 1024)
+        if self._inbound_audio_bytes + len(data) > max(1, limit):
+            self._clear_inbound_audio()
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "input_buffer_limit_exceeded",
+                    "sidecar": False,
+                    "limit_bytes": limit,
+                },
+            )
+            return False
+        self._inbound_audio.append(data)
+        self._inbound_audio_bytes += len(data)
+        return True
+
+    def _clear_inbound_audio(self) -> None:
+        self._inbound_audio.clear()
+        self._inbound_audio_bytes = 0
 
     async def _transcribe_and_answer(self, audio: bytes, codec: VoiceAudioCodec) -> None:
         try:

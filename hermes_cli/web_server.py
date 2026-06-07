@@ -662,6 +662,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "options": ["opus", "webm_opus", "pcm16"],
         "category": "voice",
     },
+    "voice.realtime.input_buffer_limit_bytes": {
+        "type": "number",
+        "description": "Maximum local realtime input audio buffered before dropping a turn",
+        "category": "voice",
+    },
     "voice.realtime.sidecar_base_url": {
         "type": "string",
         "description": "Remote or local realtime voice sidecar URL",
@@ -12682,6 +12687,16 @@ def _positive_float_config(value: Any, *, default: float) -> float:
     return parsed if parsed > 0 else default
 
 
+def _positive_int_config(value: Any, *, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
 def _realtime_voice_sidecar_is_loopback(base_url: str) -> bool:
     try:
         parsed = urllib.parse.urlparse(base_url)
@@ -12959,6 +12974,10 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "engine": engine,
         "input_codec": str(realtime.get("input_codec") or "webm_opus"),
         "output_codec": str(realtime.get("output_codec") or "opus"),
+        "input_buffer_limit_bytes": _positive_int_config(
+            realtime.get("input_buffer_limit_bytes"),
+            default=8 * 1024 * 1024,
+        ),
         "frontend_provider": provider or None,
         "frontend_model": frontend_model or None,
         "sidecar": {
@@ -13009,6 +13028,10 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         engine=RealtimeVoiceEngineKind(str(engine)),
         input_codec=VoiceAudioCodec(str(input_codec)),
         output_codec=VoiceAudioCodec(str(output_codec)),
+        input_buffer_limit_bytes=_positive_int_config(
+            realtime.get("input_buffer_limit_bytes"),
+            default=8 * 1024 * 1024,
+        ),
         frontend_provider=str(realtime.get("frontend_provider") or "") or None,
         frontend_model=str(realtime.get("frontend_model") or "") or None,
         oracle_model=str(realtime.get("oracle_model") or "") or None,
