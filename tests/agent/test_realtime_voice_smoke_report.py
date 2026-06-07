@@ -14,8 +14,35 @@ from agent.realtime_voice_smoke_report import (
 from hermes_cli.realtime_voice_report import main as realtime_voice_report_main
 
 
+def _valid_manifest():
+    return {
+        "kind": "manifest",
+        "ok": True,
+        "available": True,
+        "conversation_quality": {
+            "live_like": True,
+            "mode": "streaming_text",
+            "reason": "streaming_stt_tts",
+            "sidecar_verified": True,
+        },
+        "sidecar": {
+            "healthy": True,
+            "health": {
+                "capabilities": {
+                    "streaming_stt": True,
+                    "streaming_tts": True,
+                    "tts": True,
+                    "native_s2s": False,
+                    "output_languages": ["en", "ja"],
+                }
+            },
+        },
+    }
+
+
 def _valid_alpha_report():
     entries = [
+        _valid_manifest(),
         {
             "kind": "protocol",
             "ok": True,
@@ -74,46 +101,61 @@ def test_realtime_voice_alpha_report_accepts_required_en_ja_smokes():
     assert validate_realtime_voice_alpha_report(_valid_alpha_report()) == []
 
 
-def test_realtime_voice_alpha_report_ignores_manifest_entry():
+def test_realtime_voice_alpha_report_accepts_manifest_entry():
     report = [
-        {
-            "kind": "manifest",
-            "ok": True,
-            "sidecar": {
-                "health": {
-                    "capabilities": {
-                        "streaming_stt": True,
-                        "streaming_tts": True,
-                        "tts": True,
-                        "output_languages": ["en", "ja"],
-                    }
-                }
-            },
-        },
+        _valid_manifest(),
         *_valid_alpha_report(),
     ]
 
     assert validate_realtime_voice_alpha_report(report) == []
 
 
-def test_realtime_voice_alpha_report_requires_manifest_output_language_evidence():
+def test_realtime_voice_alpha_report_requires_manifest_entry():
     report = [
-        {
-            "kind": "manifest",
-            "ok": True,
-            "sidecar": {
-                "health": {
-                    "frontend": {},
-                    "capabilities": {
-                        "streaming_stt": True,
-                        "streaming_tts": True,
-                        "tts": True,
-                        "output_languages": ["en"],
-                    },
-                }
-            },
-        },
-        *_valid_alpha_report(),
+        entry
+        for entry in _valid_alpha_report()
+        if entry.get("kind") != "manifest"
+    ]
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("missing manifest entry" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_requires_live_like_manifest():
+    manifest = _valid_manifest()
+    manifest["conversation_quality"] = {
+        "live_like": False,
+        "mode": "turn_based_text",
+        "reason": "utterance_stt_tts",
+    }
+    report = [manifest, *_valid_alpha_report()[1:]]
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("manifest was not live-like" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_requires_live_sidecar_manifest_capabilities():
+    manifest = _valid_manifest()
+    manifest["sidecar"]["health"]["capabilities"] = {
+        "utterance_stt": True,
+        "tts": True,
+        "output_languages": ["en", "ja"],
+    }
+    report = [manifest, *_valid_alpha_report()[1:]]
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("missing native_s2s or streaming_stt+tts" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_requires_manifest_output_language_evidence():
+    manifest = _valid_manifest()
+    manifest["sidecar"]["health"]["capabilities"]["output_languages"] = ["en"]
+    report = [
+        manifest,
+        *_valid_alpha_report()[1:],
     ]
 
     issues = validate_realtime_voice_alpha_report(report)
@@ -122,18 +164,12 @@ def test_realtime_voice_alpha_report_requires_manifest_output_language_evidence(
 
 
 def test_realtime_voice_alpha_report_accepts_manifest_regional_output_languages():
+    manifest = _valid_manifest()
+    manifest["sidecar"]["health"]["frontend"] = {"tts_model_languages": ["en-US", "ja-JP"]}
+    manifest["sidecar"]["health"]["capabilities"]["output_languages"] = []
     report = [
-        {
-            "kind": "manifest",
-            "ok": True,
-            "sidecar": {
-                "health": {
-                    "frontend": {"tts_model_languages": ["en-US", "ja-JP"]},
-                    "capabilities": {},
-                }
-            },
-        },
-        *_valid_alpha_report(),
+        manifest,
+        *_valid_alpha_report()[1:],
     ]
 
     assert validate_realtime_voice_alpha_report(report) == []
@@ -178,7 +214,10 @@ def test_realtime_voice_alpha_report_rejects_barge_in_target_misses():
 
 def test_realtime_voice_smoke_report_rejects_latency_target_misses():
     report = _valid_alpha_report()
-    report[1]["transcript_partial_ms"] = 450
+    for entry in report:
+        if entry.get("kind") == "audio_fixture":
+            entry["transcript_partial_ms"] = 450
+            break
 
     issues = validate_realtime_voice_smoke_report(report)
 
@@ -225,7 +264,7 @@ def test_realtime_voice_alpha_report_runs_accept_multiple_reports(tmp_path):
 def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path):
     runs = []
     for index, partial_ms in enumerate((80, 90, 120)):
-        report = [{"kind": "manifest", "ok": True}, *_valid_alpha_report()]
+        report = _valid_alpha_report()
         for entry in report:
             if entry.get("kind") == "audio_fixture":
                 entry["transcript_partial_ms"] = partial_ms
@@ -249,8 +288,11 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
 def test_realtime_voice_report_cli_returns_nonzero_for_failed_report(tmp_path, capsys):
     path = tmp_path / "voice-smoke.json"
     report = _valid_alpha_report()
-    report[0]["ok"] = False
-    report[0]["error"] = "protocol failed"
+    for entry in report:
+        if entry.get("kind") == "protocol":
+            entry["ok"] = False
+            entry["error"] = "protocol failed"
+            break
     path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
 
     assert realtime_voice_report_main([str(path), "--alpha"]) == 1

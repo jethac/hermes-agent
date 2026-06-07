@@ -154,11 +154,14 @@ def validate_realtime_voice_smoke_report(
     required_tts_texts: Iterable[str] = (),
     required_barge_in_texts: Iterable[str] = (),
     require_protocol: bool = True,
+    require_manifest: bool = False,
 ) -> list[RealtimeVoiceSmokeReportIssue]:
     issues: list[RealtimeVoiceSmokeReportIssue] = []
     by_kind = _entries_by_kind(entries)
     manifest_entries = by_kind.get("manifest", [])
-    if manifest_entries:
+    if not manifest_entries and require_manifest:
+        issues.append(RealtimeVoiceSmokeReportIssue("manifest", "missing manifest entry"))
+    elif manifest_entries:
         issues.extend(_validate_alpha_manifest_entry(manifest_entries[0]))
 
     if require_protocol:
@@ -209,11 +212,40 @@ def validate_realtime_voice_alpha_report(entries: Sequence[Mapping[str, Any]]) -
         required_tts_texts=ALPHA_REQUIRED_TTS_TEXTS,
         required_barge_in_texts=ALPHA_REQUIRED_BARGE_IN_TEXTS,
         require_protocol=True,
+        require_manifest=True,
     )
 
 
 def _validate_alpha_manifest_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmokeReportIssue]:
     issues: list[RealtimeVoiceSmokeReportIssue] = []
+    if entry.get("ok") is not True:
+        issues.append(RealtimeVoiceSmokeReportIssue("manifest", "manifest entry was not ok", "manifest"))
+    if entry.get("available") is not True:
+        issues.append(RealtimeVoiceSmokeReportIssue("manifest", "manifest was not realtime-available", "manifest"))
+    conversation_quality = (
+        entry.get("conversation_quality")
+        if isinstance(entry.get("conversation_quality"), Mapping)
+        else {}
+    )
+    if conversation_quality.get("live_like") is not True:
+        issues.append(RealtimeVoiceSmokeReportIssue("manifest", "manifest was not live-like", "manifest"))
+
+    sidecar = entry.get("sidecar") if isinstance(entry.get("sidecar"), Mapping) else {}
+    if sidecar.get("healthy") is not True:
+        issues.append(RealtimeVoiceSmokeReportIssue("manifest", "manifest sidecar was not healthy", "manifest"))
+    health = sidecar.get("health") if isinstance(sidecar.get("health"), Mapping) else {}
+    capabilities = health.get("capabilities") if isinstance(health.get("capabilities"), Mapping) else {}
+    if capabilities.get("native_s2s") is not True and not (
+        capabilities.get("streaming_stt") is True and capabilities.get("tts") is True
+    ):
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "manifest",
+                "missing native_s2s or streaming_stt+tts sidecar capability",
+                "manifest",
+            )
+        )
+
     required_tts_languages = {
         metadata["language"]
         for metadata in ALPHA_REQUIRED_TTS_METADATA.values()
@@ -221,11 +253,7 @@ def _validate_alpha_manifest_entry(entry: Mapping[str, Any]) -> list[RealtimeVoi
     }
     if not required_tts_languages:
         return issues
-    health = entry.get("sidecar")
-    health = health.get("health") if isinstance(health, Mapping) else None
-    health = health if isinstance(health, Mapping) else {}
     frontend = health.get("frontend") if isinstance(health.get("frontend"), Mapping) else {}
-    capabilities = health.get("capabilities") if isinstance(health.get("capabilities"), Mapping) else {}
     configured_languages = _primary_language_set(frontend.get("tts_model_languages", []))
     configured_languages.update(_primary_language_set(capabilities.get("output_languages", [])))
     if not configured_languages:

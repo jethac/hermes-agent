@@ -107,9 +107,23 @@ def _valid_alpha_report():
         {
             "kind": "manifest",
             "ok": True,
+            "available": True,
+            "conversation_quality": {
+                "live_like": True,
+                "mode": "streaming_text",
+                "reason": "streaming_stt_tts",
+                "sidecar_verified": True,
+            },
             "sidecar": {
+                "healthy": True,
                 "health": {
-                    "capabilities": {"output_languages": ["en", "ja"]},
+                    "capabilities": {
+                        "streaming_stt": True,
+                        "streaming_tts": True,
+                        "tts": True,
+                        "native_s2s": False,
+                        "output_languages": ["en", "ja"],
+                    },
                 }
             },
         },
