@@ -284,6 +284,8 @@ WS /v1/realtime-text/session
 
 Hermes sends a `session.config` frame first, then forwards `audio.input.chunk`, `barge_in`, and assistant text chunks with `{"speak": true}`. The sidecar returns `transcript.partial`, `transcript.final`, `frontend.state`, `audio.output.chunk`, or `session.error` events using the shared wire protocol.
 
+Hermes and the reference sidecar use the same binary audio envelope as the desktop hot path for sidecar-facing `audio.input.chunk` and `audio.output.chunk` events: a 4-byte big-endian JSON header length, a UTF-8 `VoiceEvent` header without `payload.data_b64`, then the raw audio bytes. JSON/base64 audio events remain valid for compatibility sidecars and tests, and raw binary output bytes without the envelope are still accepted as legacy Opus output from older sidecars.
+
 Reference sidecar command:
 
 ```bash

@@ -13075,48 +13075,13 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     )
 
 
-_REALTIME_VOICE_BINARY_HEADER_BYTES = 4
-_REALTIME_VOICE_BINARY_HEADER_LIMIT = 64 * 1024
 _REALTIME_VOICE_AUDIO_SEND_TIMEOUT_SECONDS = 2.0
 
 
 def _realtime_voice_event_from_binary_frame(frame: bytes):
-    """Parse a realtime voice binary websocket frame.
+    from agent.realtime_voice import VoiceEventType, event_from_binary_audio_frame
 
-    Frame format:
-      4-byte big-endian JSON header length
-      UTF-8 JSON VoiceEvent header without payload.data_b64
-      raw audio bytes
-
-    The returned event is normalized back to the JSON/base64 payload shape used
-    by engines and sidecars.
-    """
-    from agent.realtime_voice import VoiceEvent, VoiceEventType
-
-    if len(frame) < _REALTIME_VOICE_BINARY_HEADER_BYTES:
-        raise ValueError("binary audio frame missing header length")
-
-    header_length = int.from_bytes(frame[:_REALTIME_VOICE_BINARY_HEADER_BYTES], "big", signed=False)
-    if header_length <= 0 or header_length > _REALTIME_VOICE_BINARY_HEADER_LIMIT:
-        raise ValueError("binary audio frame header length is invalid")
-    header_start = _REALTIME_VOICE_BINARY_HEADER_BYTES
-    header_end = header_start + header_length
-    if len(frame) < header_end:
-        raise ValueError("binary audio frame header is truncated")
-
-    header = json.loads(frame[header_start:header_end].decode("utf-8"))
-    if not isinstance(header, dict):
-        raise ValueError("binary audio frame header must be a JSON object")
-
-    payload = header.get("payload")
-    payload = dict(payload) if isinstance(payload, dict) else {}
-    header["payload"] = payload
-    payload["data_b64"] = base64.b64encode(frame[header_end:]).decode("ascii")
-
-    event = VoiceEvent.from_wire(header)
-    if event.type != VoiceEventType.AUDIO_INPUT_CHUNK:
-        raise ValueError("binary realtime voice frames must carry audio.input.chunk")
-    return event
+    return event_from_binary_audio_frame(frame, expected_type=VoiceEventType.AUDIO_INPUT_CHUNK)
 
 
 def _realtime_voice_event_from_ws_message(message: Dict[str, Any]):
@@ -13138,28 +13103,9 @@ def _realtime_voice_event_from_ws_message(message: Dict[str, Any]):
 
 
 def _realtime_voice_binary_frame_from_event(event) -> Optional[bytes]:
-    from agent.realtime_voice import VoiceEventType
+    from agent.realtime_voice import VoiceEventType, binary_audio_frame_from_event
 
-    if event.type != VoiceEventType.AUDIO_OUTPUT_CHUNK:
-        return None
-
-    payload = dict(event.payload)
-    raw = payload.pop("data_b64", None)
-    if not isinstance(raw, str) or not raw:
-        return None
-
-    try:
-        audio = base64.b64decode(raw.encode("ascii"), validate=True)
-    except Exception:
-        return None
-
-    wire = event.to_wire()
-    wire["payload"] = payload
-    header = json.dumps(wire, separators=(",", ":")).encode("utf-8")
-    if not header or len(header) > _REALTIME_VOICE_BINARY_HEADER_LIMIT:
-        return None
-
-    return len(header).to_bytes(_REALTIME_VOICE_BINARY_HEADER_BYTES, "big") + header + audio
+    return binary_audio_frame_from_event(event) if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK else None
 
 
 async def _send_realtime_voice_server_event(ws: WebSocket, event) -> bool:
