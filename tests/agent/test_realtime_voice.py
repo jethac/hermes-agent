@@ -290,6 +290,34 @@ def test_planner_suppresses_internal_markup_and_chunks_text():
     assert planned.chunks == ["Here is the answer. Second sentence!"]
 
 
+def test_planner_chunks_multilingual_sentence_boundaries():
+    planner = RealtimeSpeechPlanner()
+
+    assert planner.plan("これは最初の長い返答です。続きもあります").chunks == [
+        "これは最初の長い返答です。",
+        "続きもあります",
+    ]
+    assert planner.plan("هذا رد طويل بما يكفي؟وهذه متابعة").chunks == [
+        "هذا رد طويل بما يكفي؟",
+        "وهذه متابعة",
+    ]
+
+
+def test_planner_chunks_multilingual_phrase_boundaries():
+    planner = RealtimeSpeechPlanner()
+    text = (
+        "これは多言語音声の計画で英語の空白に頼らず自然な句読点を探すための長い前置きです"
+        "これは多言語音声の計画で英語の空白に頼らず自然な句読点を探すための長い前置きです、"
+        "ここから先もまだかなり長く続くので句読点で先に読み上げられる必要があります"
+        "ここから先もまだかなり長く続くので句読点で先に読み上げられる必要があります"
+    )
+
+    chunks = list(planner.chunk(text))
+
+    assert chunks[0].endswith("です、")
+    assert "".join(chunks) == text
+
+
 def test_text_engine_takes_speakable_phrase_before_full_sentence():
     phrase = (
         "This response starts with a stable opening phrase, and then keeps going "
@@ -1268,6 +1296,9 @@ def test_reference_sidecar_vllm_audio_frontend(monkeypatch):
     assert captured["timeout"] == 12
     assert captured["body"]["model"] == "google/gemma-4-E4B-it-qat-w4a16-ct"
     assert captured["body"]["messages"][0]["content"][0]["type"] == "audio_url"
+    prompt = captured["body"]["messages"][0]["content"][1]["text"]
+    assert "Preserve the speaker's language and script" in prompt
+    assert "do not translate" in prompt
 
 
 def test_reference_sidecar_health_payload_is_sanitized():

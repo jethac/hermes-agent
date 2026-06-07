@@ -6304,6 +6304,33 @@ class TestRealtimeVoiceWebSocket:
         assert config.sidecar_base_url == "http://127.0.0.1:8765"
         assert config.spark_base_url == "http://127.0.0.1:8765"
 
+    def test_config_defaults_sidecar_frontend_to_reference_sidecar(self, monkeypatch):
+        class FakeWebSocket:
+            query_params = {"session_id": "voice-sidecar"}
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "frontend_provider": "sidecar",
+                        "sidecar_host": "127.0.0.1",
+                        "sidecar_port": 8765,
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+
+        config = self.ws_module._realtime_voice_config_from_request(FakeWebSocket())
+
+        assert config.frontend_provider == "sidecar"
+        assert config.sidecar_base_url == "http://127.0.0.1:8765"
+        assert config.spark_base_url == "http://127.0.0.1:8765"
+
     def test_config_defaults_gemma4_frontend_to_reference_sidecar(self, monkeypatch):
         class FakeWebSocket:
             query_params = {"session_id": "voice-gemma4"}
@@ -6715,6 +6742,12 @@ class TestRealtimeVoiceWebSocket:
             "sidecar_port": 8765,
             "sidecar_autostart": True,
         }
+        sidecar = {
+            "frontend_provider": "sidecar",
+            "sidecar_host": "127.0.0.1",
+            "sidecar_port": 8765,
+            "sidecar_autostart": True,
+        }
         remote = {
             "frontend_provider": "vllm",
             "sidecar_base_url": "http://100.113.98.11:8765",
@@ -6735,6 +6768,9 @@ class TestRealtimeVoiceWebSocket:
 
         assert self.ws_module._realtime_voice_should_autostart_sidecar(
             local, self.ws_module._realtime_voice_sidecar_base_url(local)
+        )
+        assert self.ws_module._realtime_voice_should_autostart_sidecar(
+            sidecar, self.ws_module._realtime_voice_sidecar_base_url(sidecar)
         )
         assert not self.ws_module._realtime_voice_should_autostart_sidecar(
             remote, self.ws_module._realtime_voice_sidecar_base_url(remote)
