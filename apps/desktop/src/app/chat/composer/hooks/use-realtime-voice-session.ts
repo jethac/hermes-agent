@@ -37,6 +37,13 @@ export interface RealtimeVoiceLatencyMetrics {
   updatedAtMs?: number
 }
 
+export interface RealtimeVoiceCaption {
+  final: boolean
+  speaker: 'assistant' | 'user'
+  text: string
+  updatedAtMs?: number
+}
+
 export interface RealtimeVoiceStatus {
   available: boolean
   enabled: boolean
@@ -182,7 +189,41 @@ export function realtimeAudioInputPayload({
   }
 }
 
+export function collectRealtimeVoiceCaption(
+  previous: RealtimeVoiceCaption | null,
+  event: VoiceEvent
+): RealtimeVoiceCaption | null {
+  const rawText = typeof event.payload?.text === 'string' ? event.payload.text : ''
+  const text = rawText.trim()
+  const updatedAtMs = finiteNonNegativeMs(event.timestamp_ms) ?? Date.now()
+
+  if (event.type === 'transcript.partial') {
+    return text ? { final: false, speaker: 'user', text, updatedAtMs } : previous
+  }
+  if (event.type === 'transcript.final') {
+    return text ? { final: true, speaker: 'user', text, updatedAtMs } : previous
+  }
+  if (event.type === 'assistant.text.partial') {
+    if (!text) {
+      return previous
+    }
+    const chunk = previous?.speaker === 'assistant' ? rawText : rawText.trimStart()
+    const nextText = previous?.speaker === 'assistant' ? `${previous.text}${chunk}` : chunk
+
+    return { final: false, speaker: 'assistant', text: nextText, updatedAtMs }
+  }
+  if (event.type === 'assistant.commit') {
+    return text ? { final: true, speaker: 'assistant', text, updatedAtMs } : previous
+  }
+  if (event.type === 'barge_in') {
+    return previous?.speaker === 'assistant' ? null : previous
+  }
+
+  return previous
+}
+
 export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavailable, sessionId }: RealtimeVoiceOptions) {
+  const [caption, setCaption] = useState<RealtimeVoiceCaption | null>(null)
   const [status, setStatus] = useState<ConversationStatus>('idle')
   const [level, setLevel] = useState(0)
   const [muted, setMuted] = useState(false)
@@ -539,6 +580,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
   const handleEvent = useCallback(
     (event: VoiceEvent) => {
+      setCaption(current => collectRealtimeVoiceCaption(current, event))
       setMetrics(current => collectRealtimeVoiceMetrics(current, event))
 
       if (event.type === 'audio.output.chunk') {
@@ -573,6 +615,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     }
 
     sessionRef.current = sessionId || sessionRef.current
+    setCaption(null)
     setMetrics({})
     const url = await realtimeVoiceUrl(sessionRef.current)
     const socket = new WebSocket(url)
@@ -614,6 +657,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     cleanupInput()
     socketRef.current?.close(1000, 'client closed')
     socketRef.current = null
+    setCaption(null)
     setMuted(false)
     setStatus('idle')
   }, [cleanupInput, sendEvent, stopPlayback])
@@ -655,5 +699,5 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
   useEffect(() => () => void end(), [end])
 
-  return { end, level, metrics, muted, start, status, stopTurn, toggleMute }
+  return { caption, end, level, metrics, muted, start, status, stopTurn, toggleMute }
 }

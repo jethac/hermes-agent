@@ -9,7 +9,7 @@ import { formatCombo } from '@/lib/keybinds/combo'
 import { cn } from '@/lib/utils'
 
 import type { ConversationStatus } from './hooks/use-voice-conversation'
-import type { RealtimeVoiceLatencyMetrics } from './hooks/use-realtime-voice-session'
+import type { RealtimeVoiceCaption, RealtimeVoiceLatencyMetrics } from './hooks/use-realtime-voice-session'
 import { ModelPill } from './model-pill'
 import type { ChatBarState, VoiceStatus } from './types'
 
@@ -30,6 +30,7 @@ export const PRIMARY_ICON_BTN = cn(
 
 interface ConversationProps {
   active: boolean
+  caption?: null | RealtimeVoiceCaption
   level: number
   metrics?: RealtimeVoiceLatencyMetrics
   muted: boolean
@@ -153,6 +154,7 @@ export function ComposerControls({
 }
 
 function ConversationPill({
+  caption,
   disabled,
   level,
   metrics,
@@ -215,6 +217,7 @@ function ConversationPill({
           <span>{c.stopShort}</span>
         </Button>
       )}
+      {caption?.text && <RealtimeVoiceCaptionPill caption={caption} />}
       {quality && <RealtimeVoiceQualityPill quality={quality} />}
       <Button
         aria-label={c.endConversation}
@@ -234,6 +237,22 @@ function ConversationPill({
         {label}
       </span>
     </div>
+  )
+}
+
+function RealtimeVoiceCaptionPill({ caption }: { caption: RealtimeVoiceCaption }) {
+  return (
+    <Tip label={caption.text}>
+      <span
+        aria-label={`Realtime voice ${caption.speaker} caption: ${caption.text}`}
+        className={cn(
+          'hidden h-(--composer-control-size) max-w-[min(22rem,34vw)] shrink min-w-0 items-center rounded-full border border-border/55 bg-muted/45 px-2.5 text-xs text-muted-foreground sm:inline-flex',
+          !caption.final && 'italic text-muted-foreground/75'
+        )}
+      >
+        <span className="truncate">{caption.text}</span>
+      </span>
+    </Tip>
   )
 }
 

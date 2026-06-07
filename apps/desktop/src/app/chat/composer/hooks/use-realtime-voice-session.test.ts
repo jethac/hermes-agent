@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  collectRealtimeVoiceCaption,
   collectRealtimeVoiceMetrics,
   getRealtimeVoiceStatus,
   realtimeAudioInputPayload,
@@ -118,6 +119,61 @@ describe('collectRealtimeVoiceMetrics', () => {
       sessionElapsedMs: 120,
       updatedAtMs: 1_500
     })
+  })
+})
+
+describe('collectRealtimeVoiceCaption', () => {
+  const event = (type: string, payload: Record<string, unknown>, timestamp_ms = 1_234): VoiceEvent => ({
+    payload,
+    sequence: 1,
+    session_id: 'voice-123',
+    timestamp_ms,
+    type
+  })
+
+  it('tracks user partial and final transcript captions', () => {
+    const partial = collectRealtimeVoiceCaption(null, event('transcript.partial', { text: 'hello her' }))
+    const final = collectRealtimeVoiceCaption(partial, event('transcript.final', { text: 'hello hermes' }, 1_500))
+
+    expect(partial).toEqual({
+      final: false,
+      speaker: 'user',
+      text: 'hello her',
+      updatedAtMs: 1_234
+    })
+    expect(final).toEqual({
+      final: true,
+      speaker: 'user',
+      text: 'hello hermes',
+      updatedAtMs: 1_500
+    })
+  })
+
+  it('accumulates assistant text chunks until commit replaces the caption', () => {
+    const first = collectRealtimeVoiceCaption(null, event('assistant.text.partial', { text: 'Answering ' }))
+    const second = collectRealtimeVoiceCaption(first, event('assistant.text.partial', { text: 'now.' }, 1_300))
+    const committed = collectRealtimeVoiceCaption(second, event('assistant.commit', { text: 'Answering now.' }, 1_600))
+
+    expect(second).toEqual({
+      final: false,
+      speaker: 'assistant',
+      text: 'Answering now.',
+      updatedAtMs: 1_300
+    })
+    expect(committed).toEqual({
+      final: true,
+      speaker: 'assistant',
+      text: 'Answering now.',
+      updatedAtMs: 1_600
+    })
+  })
+
+  it('clears assistant captions on barge-in but keeps user captions', () => {
+    const assistant = collectRealtimeVoiceCaption(null, event('assistant.text.partial', { text: 'old answer' }))
+    const user = collectRealtimeVoiceCaption(null, event('transcript.partial', { text: 'new question' }))
+
+    expect(collectRealtimeVoiceCaption(assistant, event('barge_in', {}))).toBeNull()
+    expect(collectRealtimeVoiceCaption(user, event('barge_in', {}))).toBe(user)
   })
 })
 
