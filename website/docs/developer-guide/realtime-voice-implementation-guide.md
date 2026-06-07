@@ -173,6 +173,8 @@ apps/desktop/src/app/chat/voice/
 
 Use websocket JSON frames for control events, transcript events, captions, metrics, and errors. Microphone chunks and assistant audio chunks use binary websocket frames on the desktop, text-oracle sidecar, and native S2S sidecar hot paths. JSON/base64 `audio.input.chunk` and `audio.output.chunk` remain valid for tests and compatibility clients.
 
+For `audio.output.chunk`, `codec: pcm16` means raw little-endian signed 16-bit PCM with `sample_rate_hz` and `channels` metadata. The desktop wraps those bytes in a WAV container before browser playback. Sidecars that emit already-containerized audio should report `opus`/`webm_opus` plus a clean `mime_type`, or use a future explicit container codec, instead of labeling container bytes as `pcm16`.
+
 Binary audio frame format:
 
 ```text

@@ -19,6 +19,7 @@ import {
   realtimeVoiceFailureFrontendState,
   realtimeVoicePlaybackGeneration,
   realtimeVoicePlaybackQueueAction,
+  realtimeVoiceOutputAudioBlob,
   realtimeVoiceOutputAudioMimeType,
   realtimeVoicePreRollMs,
   realtimeVoicePreRollChunkLimit,
@@ -683,6 +684,39 @@ describe('realtimeVoiceOutputAudioMimeType', () => {
       codec: 'webm_opus',
       mime_type: 'text/html'
     })).toBe('audio/webm;codecs=opus')
+  })
+
+  it('treats pcm16 output as browser-playable wav even when sidecar reports audio L16', () => {
+    expect(realtimeVoiceOutputAudioMimeType({
+      codec: 'pcm16',
+      mime_type: 'audio/L16'
+    })).toBe('audio/wav')
+  })
+
+  it('wraps raw pcm16 output in a wav container for playback', async () => {
+    const blob = realtimeVoiceOutputAudioBlob(
+      {
+        channels: 1,
+        codec: 'pcm16',
+        mime_type: 'audio/L16',
+        sample_rate_hz: 24000
+      },
+      new Uint8Array([1, 0, 255, 127])
+    )
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    const ascii = (start: number, end: number) => String.fromCharCode(...bytes.slice(start, end))
+    const view = new DataView(bytes.buffer)
+
+    expect(blob.type).toBe('audio/wav')
+    expect(ascii(0, 4)).toBe('RIFF')
+    expect(ascii(8, 12)).toBe('WAVE')
+    expect(ascii(36, 40)).toBe('data')
+    expect(view.getUint16(20, true)).toBe(1)
+    expect(view.getUint16(22, true)).toBe(1)
+    expect(view.getUint32(24, true)).toBe(24000)
+    expect(view.getUint16(34, true)).toBe(16)
+    expect(view.getUint32(40, true)).toBe(4)
+    expect(Array.from(bytes.slice(44))).toEqual([1, 0, 255, 127])
   })
 })
 

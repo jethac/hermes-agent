@@ -321,21 +321,88 @@ export function getRealtimeVoiceStatus(): Promise<RealtimeVoiceStatus> {
 }
 
 export function realtimeVoiceOutputAudioMimeType(payload: Record<string, unknown>): string {
+  const codec = typeof payload.codec === 'string' ? payload.codec.trim().toLowerCase() : ''
+  if (codec === 'pcm16') {
+    return 'audio/wav'
+  }
+
   const mimeType = typeof payload.mime_type === 'string' ? payload.mime_type.trim().toLowerCase() : ''
 
   if (mimeType.length > 0 && mimeType.length <= 128 && REALTIME_OUTPUT_AUDIO_MIME_TYPE_RE.test(mimeType)) {
     return mimeType
   }
 
-  const codec = typeof payload.codec === 'string' ? payload.codec.trim().toLowerCase() : ''
   if (codec === 'webm_opus') {
     return 'audio/webm;codecs=opus'
   }
-  if (codec === 'pcm16') {
-    return 'audio/wav'
-  }
 
   return 'audio/ogg'
+}
+
+function realtimeVoiceAudioSampleRateHz(payload: Record<string, unknown>): number {
+  const value = payload.sample_rate_hz
+
+  return typeof value === 'number' && Number.isFinite(value) && value >= 8_000 && value <= 384_000
+    ? Math.round(value)
+    : 16_000
+}
+
+function realtimeVoiceAudioChannels(payload: Record<string, unknown>): number {
+  const value = payload.channels
+
+  return typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 8
+    ? Math.round(value)
+    : 1
+}
+
+export function realtimeVoiceOutputAudioBlob(payload: Record<string, unknown>, bytes: Uint8Array): Blob {
+  const codec = typeof payload.codec === 'string' ? payload.codec.trim().toLowerCase() : ''
+  const audioBytes = codec === 'pcm16'
+    ? wavContainerForPcm16(
+      bytes,
+      realtimeVoiceAudioSampleRateHz(payload),
+      realtimeVoiceAudioChannels(payload)
+    )
+    : bytes
+  const audioData = new ArrayBuffer(audioBytes.byteLength)
+
+  new Uint8Array(audioData).set(audioBytes)
+
+  return new Blob([audioData], { type: realtimeVoiceOutputAudioMimeType(payload) })
+}
+
+export function wavContainerForPcm16(
+  pcmBytes: Uint8Array,
+  sampleRateHz = 16_000,
+  channels = 1
+): Uint8Array {
+  const headerBytes = 44
+  const wav = new Uint8Array(headerBytes + pcmBytes.byteLength)
+  const view = new DataView(wav.buffer)
+  const writeAscii = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) {
+      wav[offset + index] = value.charCodeAt(index)
+    }
+  }
+  const bitsPerSample = 16
+  const blockAlign = channels * bitsPerSample / 8
+
+  writeAscii(0, 'RIFF')
+  view.setUint32(4, 36 + pcmBytes.byteLength, true)
+  writeAscii(8, 'WAVE')
+  writeAscii(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, channels, true)
+  view.setUint32(24, sampleRateHz, true)
+  view.setUint32(28, sampleRateHz * blockAlign, true)
+  view.setUint16(32, blockAlign, true)
+  view.setUint16(34, bitsPerSample, true)
+  writeAscii(36, 'data')
+  view.setUint32(40, pcmBytes.byteLength, true)
+  wav.set(pcmBytes, headerBytes)
+
+  return wav
 }
 
 function finiteNonNegativeMs(value: unknown): number | null {
@@ -1326,13 +1393,9 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         playbackGenerationRef.current = generation
       }
 
-      const mimeType = realtimeVoiceOutputAudioMimeType(payload)
       const bytes = binaryData ?? bytesFromBase64(data)
-      const audioData = new ArrayBuffer(bytes.byteLength)
 
-      new Uint8Array(audioData).set(bytes)
-
-      playbackQueueRef.current.push({ blob: new Blob([audioData], { type: mimeType }), generation })
+      playbackQueueRef.current.push({ blob: realtimeVoiceOutputAudioBlob(payload, bytes), generation })
       const backpressure = applyRealtimePlaybackQueueBackpressure({ queue: playbackQueueRef.current })
 
       if (backpressure.dropped > 0) {
