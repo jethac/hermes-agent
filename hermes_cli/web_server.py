@@ -12841,6 +12841,28 @@ def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str
     }
 
 
+def _realtime_voice_sidecar_capability_error(
+    *,
+    engine: str,
+    health_payload: Optional[Dict[str, Any]],
+) -> str:
+    if not health_payload:
+        return ""
+    if health_payload.get("ok") is not True:
+        return "sidecar_not_ready"
+
+    capabilities = health_payload.get("capabilities") if isinstance(health_payload.get("capabilities"), dict) else {}
+    if engine == "native_s2s_oracle":
+        return "" if capabilities.get("native_s2s") is True else "sidecar_missing_native_s2s"
+
+    has_stt = capabilities.get("utterance_stt") is True or capabilities.get("streaming_stt") is True
+    if not has_stt:
+        return "sidecar_missing_stt"
+    if capabilities.get("tts") is not True:
+        return "sidecar_missing_tts"
+    return ""
+
+
 def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
     sidecar_host = str(realtime.get("sidecar_host") or "127.0.0.1")
     sidecar_port = str(int(realtime.get("sidecar_port") or 8765))
@@ -12970,6 +12992,10 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         if probe_health and base_url and healthy is True
         else None
     )
+    sidecar_capability_error = _realtime_voice_sidecar_capability_error(
+        engine=engine,
+        health_payload=health_payload,
+    )
 
     sidecar_mode = "none"
     if autostart:
@@ -12982,10 +13008,13 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         available = False
     if base_url and not autostart and healthy is False:
         available = False
+    if sidecar_capability_error:
+        available = False
 
     return {
         "enabled": enabled,
         "available": available,
+        "unavailable_reason": sidecar_capability_error or None,
         "engine": engine,
         "input_codec": str(realtime.get("input_codec") or "webm_opus"),
         "output_codec": str(realtime.get("output_codec") or "opus"),
