@@ -9,6 +9,7 @@ import { formatCombo } from '@/lib/keybinds/combo'
 import { cn } from '@/lib/utils'
 
 import type { ConversationStatus } from './hooks/use-voice-conversation'
+import type { RealtimeVoiceLatencyMetrics } from './hooks/use-realtime-voice-session'
 import { ModelPill } from './model-pill'
 import type { ChatBarState, VoiceStatus } from './types'
 
@@ -30,6 +31,7 @@ export const PRIMARY_ICON_BTN = cn(
 interface ConversationProps {
   active: boolean
   level: number
+  metrics?: RealtimeVoiceLatencyMetrics
   muted: boolean
   status: ConversationStatus
   onEnd: () => void
@@ -148,6 +150,7 @@ export function ComposerControls({
 function ConversationPill({
   disabled,
   level,
+  metrics,
   muted,
   onEnd,
   onStopTurn,
@@ -158,6 +161,7 @@ function ConversationPill({
   const c = t.composer
   const speaking = status === 'speaking'
   const listening = status === 'listening' && !muted
+  const quality = realtimeVoiceQuality(metrics)
 
   const label =
     status === 'speaking'
@@ -206,6 +210,7 @@ function ConversationPill({
           <span>{c.stopShort}</span>
         </Button>
       )}
+      {quality && <RealtimeVoiceQualityPill quality={quality} />}
       <Button
         aria-label={c.endConversation}
         className="h-(--composer-control-size) gap-1.5 rounded-full bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"
@@ -224,6 +229,76 @@ function ConversationPill({
         {label}
       </span>
     </div>
+  )
+}
+
+export interface RealtimeVoiceQuality {
+  primaryMs: number
+  state: 'good' | 'slow'
+  tooltip: Array<{ label: string; ms: number; targetMs: number }>
+}
+
+export function realtimeVoiceQuality(metrics?: RealtimeVoiceLatencyMetrics): RealtimeVoiceQuality | null {
+  const rows = [
+    metricRow('ASR', metrics?.audioToPartialTranscriptMs, 300),
+    metricRow('Audio', metrics?.finalTranscriptToFirstAudioMs, 900),
+    metricRow('Barge', metrics?.bargeInAckMs, 150)
+  ].filter((row): row is RealtimeVoiceQuality['tooltip'][number] => row !== null)
+
+  if (!rows.length) {
+    return null
+  }
+
+  const primary = rows.find(row => row.label === 'Audio') || rows[0]
+
+  return {
+    primaryMs: primary.ms,
+    state: rows.some(row => row.ms > row.targetMs) ? 'slow' : 'good',
+    tooltip: rows
+  }
+}
+
+function metricRow(label: string, ms: number | undefined, targetMs: number) {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) {
+    return null
+  }
+
+  return { label, ms, targetMs }
+}
+
+function formatLatency(ms: number) {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`
+}
+
+function RealtimeVoiceQualityPill({ quality }: { quality: RealtimeVoiceQuality }) {
+  return (
+    <Tip
+      label={
+        <div className="space-y-1 py-0.5 font-mono font-normal leading-4">
+          {quality.tooltip.map(row => (
+            <div className="flex items-center justify-between gap-3" key={row.label}>
+              <span>{row.label}</span>
+              <span>
+                {formatLatency(row.ms)} / {formatLatency(row.targetMs)}
+              </span>
+            </div>
+          ))}
+        </div>
+      }
+    >
+      <span
+        aria-label={`Realtime voice latency ${formatLatency(quality.primaryMs)}`}
+        className={cn(
+          'inline-flex h-(--composer-control-size) shrink-0 items-center gap-1 rounded-full border px-2 font-mono text-[0.65rem]',
+          quality.state === 'good'
+            ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+            : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+        )}
+      >
+        <span className="text-[0.58rem] font-semibold opacity-75">RT</span>
+        <span>{formatLatency(quality.primaryMs)}</span>
+      </span>
+    </Tip>
   )
 }
 

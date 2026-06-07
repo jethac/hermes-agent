@@ -117,7 +117,7 @@ Server events:
 {"type":"assistant.commit","session_id":"...","sequence":6,"payload":{"text":"KAME is interesting because ...","playback_generation":1}}
 ```
 
-Server events may include a `metrics` object in the payload. The session layer annotates events with monotonic timing data such as `session_elapsed_ms`, `audio_to_partial_transcript_ms`, `audio_to_final_transcript_ms`, `eou_to_final_transcript_ms`, `final_transcript_to_first_text_ms`, `final_transcript_to_first_audio_ms`, and `barge_in_ack_ms`. Engines and sidecars should preserve any existing metric fields they provide; the session appends Hermes-observed timings before forwarding the event to the desktop. The desktop hook keeps the latest valid metrics as a realtime session snapshot for diagnostics and future quality UI.
+Server events may include a `metrics` object in the payload. The session layer annotates events with monotonic timing data such as `session_elapsed_ms`, `audio_to_partial_transcript_ms`, `audio_to_final_transcript_ms`, `eou_to_final_transcript_ms`, `final_transcript_to_first_text_ms`, `final_transcript_to_first_audio_ms`, and `barge_in_ack_ms`. Engines and sidecars should preserve any existing metric fields they provide; the session appends Hermes-observed timings before forwarding the event to the desktop. The desktop hook keeps the latest valid metrics as a realtime session snapshot and the active voice controls surface a compact quality readout against the PRD latency targets.
 
 ## Backend Endpoint
 
@@ -355,6 +355,7 @@ Responsibilities:
 - Require a short sustained-speech window before local barge-in so isolated playback echo frames do not self-interrupt the assistant.
 - Keep the microphone stream and analyser alive across assistant playback; stop and recreate only the per-utterance `MediaRecorder`.
 - Track `playback_generation` and drop stale audio chunks from interrupted assistant output.
+- Show the latest realtime latency snapshot while a voice session is active.
 - Fall back to the current MediaRecorder blob loop when realtime mode is unavailable.
 
 ## Testing Plan
