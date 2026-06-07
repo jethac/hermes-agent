@@ -183,6 +183,8 @@ class RealtimeVoiceSession:
                     generation,
                 )
             self.state = RealtimeVoiceSessionState.LISTENING
+        elif event.type == VoiceEventType.SESSION_ERROR:
+            self.state = RealtimeVoiceSessionState.CLOSING
         elif event.type == VoiceEventType.SESSION_CLOSED:
             self.state = RealtimeVoiceSessionState.CLOSED
 
@@ -225,6 +227,8 @@ class RealtimeVoiceSession:
             return RealtimeVoiceSessionState.SPEAKING
         if event.type in {VoiceEventType.ASSISTANT_COMMIT, VoiceEventType.BARGE_IN}:
             return RealtimeVoiceSessionState.LISTENING
+        if event.type == VoiceEventType.SESSION_ERROR:
+            return RealtimeVoiceSessionState.CLOSING
         if event.type == VoiceEventType.SESSION_CLOSED:
             return RealtimeVoiceSessionState.CLOSED
         return None

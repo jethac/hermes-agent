@@ -197,6 +197,7 @@ Implementation notes:
 - Create one `RealtimeVoiceSession` per websocket.
 - Validate every client event with `validate_client_event`.
 - Never let recoverable model-sidecar failures kill the process; emit `frontend.state` with `status: "fallback"` or `status: "degraded"` and continue through local/provider STT/TTS where possible. Use `session.error` only for unrecoverable session failures.
+- After forwarding `session.error`, Hermes closes the realtime websocket with an abnormal close code so the desktop cannot keep recording into a failed session.
 - Sanitize exception text before sending websocket events or close reasons to the desktop, including errors after the websocket has already been accepted. Runtime voice events must not expose bearer tokens, URL credentials, query-string secrets, or provider keys.
 - On disconnect, call `engine.close()`.
 - Never expose sidecar bearer tokens, URL credentials, or query-string secrets through the status endpoint.

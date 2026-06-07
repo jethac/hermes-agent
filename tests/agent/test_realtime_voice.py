@@ -1621,6 +1621,44 @@ def test_session_adds_turn_state_to_realtime_events(monkeypatch):
     asyncio.run(run())
 
 
+def test_session_marks_session_error_as_closing_state():
+    class ErrorEngine:
+        kind = RealtimeVoiceEngineKind.TEXT_ORACLE_TTS
+
+        async def start(self, config):
+            self.config = config
+
+        async def receive_event(self, event):
+            return None
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.SESSION_ERROR,
+                session_id="voice-123",
+                sequence=1,
+                payload={"error": "sidecar failed"},
+            )
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(session_id="voice-123"),
+            engine=ErrorEngine(),
+        )
+        await session.start()
+
+        event = await anext(session.events())
+
+        assert event.type == VoiceEventType.SESSION_ERROR
+        assert event.payload["session_state"] == RealtimeVoiceSessionState.CLOSING.value
+        assert session.state == RealtimeVoiceSessionState.CLOSING
+        await session.close()
+
+    asyncio.run(run())
+
+
 def test_session_adds_barge_in_ack_latency_metric():
     async def run():
         session = RealtimeVoiceSession(
