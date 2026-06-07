@@ -69,6 +69,12 @@ const METRIC_KEYS = {
 
 const SPEECH_LEVEL_THRESHOLD = 0.075
 const BARGE_IN_MIN_SPEECH_MS = 120
+const GENERATION_EVENT_TYPES = new Set([
+  'audio.output.chunk',
+  'assistant.commit',
+  'assistant.text.partial',
+  'transcript.final'
+])
 
 interface RealtimeVoiceBargeInGateInput {
   isSpeechActive: boolean
@@ -187,6 +193,32 @@ export function realtimeAudioInputPayload({
     data_b64: dataB64,
     end_of_utterance: endOfUtterance
   }
+}
+
+export function realtimeVoicePlaybackGeneration(payload?: Record<string, unknown>): number | null {
+  const value = payload?.playback_generation
+
+  if (typeof value === 'boolean') {
+    return null
+  }
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+    return value
+  }
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    return Number(value)
+  }
+
+  return null
+}
+
+export function shouldDropStaleRealtimeVoiceEvent(event: VoiceEvent, activeGeneration: number): boolean {
+  if (!GENERATION_EVENT_TYPES.has(event.type)) {
+    return false
+  }
+
+  const generation = realtimeVoicePlaybackGeneration(event.payload)
+
+  return generation !== null && generation < activeGeneration
 }
 
 export function collectRealtimeVoiceCaption(
@@ -580,6 +612,20 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
   const handleEvent = useCallback(
     (event: VoiceEvent) => {
+      if (shouldDropStaleRealtimeVoiceEvent(event, playbackGenerationRef.current)) {
+        return
+      }
+
+      const eventGeneration = realtimeVoicePlaybackGeneration(event.payload)
+      if (
+        eventGeneration !== null &&
+        eventGeneration > playbackGenerationRef.current &&
+        GENERATION_EVENT_TYPES.has(event.type)
+      ) {
+        stopPlayback()
+        playbackGenerationRef.current = eventGeneration
+      }
+
       setCaption(current => collectRealtimeVoiceCaption(current, event))
       setMetrics(current => collectRealtimeVoiceMetrics(current, event))
 

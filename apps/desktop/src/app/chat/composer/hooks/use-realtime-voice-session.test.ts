@@ -5,7 +5,9 @@ import {
   collectRealtimeVoiceMetrics,
   getRealtimeVoiceStatus,
   realtimeAudioInputPayload,
+  realtimeVoicePlaybackGeneration,
   realtimeVoiceUrl,
+  shouldDropStaleRealtimeVoiceEvent,
   updateRealtimeVoiceBargeInGate
 } from './use-realtime-voice-session'
 
@@ -201,6 +203,37 @@ describe('realtimeAudioInputPayload', () => {
       codec: 'opus',
       end_of_utterance: false
     })
+  })
+})
+
+describe('realtime playback generation helpers', () => {
+  const event = (type: string, playback_generation: unknown): VoiceEvent => ({
+    payload: { playback_generation },
+    sequence: 1,
+    session_id: 'voice-123',
+    type
+  })
+
+  it('parses numeric playback generations from wire payloads', () => {
+    expect(realtimeVoicePlaybackGeneration({ playback_generation: 3 })).toBe(3)
+    expect(realtimeVoicePlaybackGeneration({ playback_generation: '4' })).toBe(4)
+    expect(realtimeVoicePlaybackGeneration({ playback_generation: true })).toBeNull()
+    expect(realtimeVoicePlaybackGeneration({ playback_generation: -1 })).toBeNull()
+    expect(realtimeVoicePlaybackGeneration({ playback_generation: 'old' })).toBeNull()
+  })
+
+  it('drops stale generated assistant and transcript events', () => {
+    expect(shouldDropStaleRealtimeVoiceEvent(event('assistant.text.partial', 1), 2)).toBe(true)
+    expect(shouldDropStaleRealtimeVoiceEvent(event('assistant.commit', 1), 2)).toBe(true)
+    expect(shouldDropStaleRealtimeVoiceEvent(event('audio.output.chunk', 1), 2)).toBe(true)
+    expect(shouldDropStaleRealtimeVoiceEvent(event('transcript.final', 1), 2)).toBe(true)
+  })
+
+  it('keeps current, future, and ungenerational events', () => {
+    expect(shouldDropStaleRealtimeVoiceEvent(event('assistant.text.partial', 2), 2)).toBe(false)
+    expect(shouldDropStaleRealtimeVoiceEvent(event('assistant.text.partial', 3), 2)).toBe(false)
+    expect(shouldDropStaleRealtimeVoiceEvent(event('transcript.partial', 1), 2)).toBe(false)
+    expect(shouldDropStaleRealtimeVoiceEvent(event('assistant.text.partial', undefined), 2)).toBe(false)
   })
 })
 
