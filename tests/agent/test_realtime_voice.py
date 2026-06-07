@@ -2756,3 +2756,28 @@ def test_native_s2s_engine_close_awaits_reader_task():
         assert ws.closed is True
 
     asyncio.run(run())
+
+
+def test_native_s2s_engine_reader_error_after_close_is_terminal():
+    class FailingWs:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise RuntimeError("sidecar failed during close at http://user:pass@voice.local/v1?token=abc")
+
+    async def run():
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = FailingWs()
+        engine._closed = True
+
+        await engine._read_sidecar()
+
+        assert engine._events.empty()
+
+    asyncio.run(run())

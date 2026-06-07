@@ -463,7 +463,7 @@ Responsibilities:
 - Track `playback_generation` and drop stale audio, assistant text, assistant commit, and generated final-transcript events from interrupted output.
 - Show the latest realtime latency snapshot while a voice session is active.
 - Treat `session.error` before `session.started` as realtime unavailable and return to the one-shot voice fallback. Treat `session.error` after `session.started` as an active-session fatal error.
-- Treat `session.closed` as terminal. Engines should drain cancelled turn work before emitting it and must not enqueue late interrupted commits after close.
+- Treat `session.closed` as terminal. Engines should drain cancelled turn work before emitting it and must not enqueue late interrupted commits or sidecar reader errors after close.
 - Fall back to the current MediaRecorder blob loop when realtime mode is unavailable or the websocket closes before `session.started`.
 
 ## Testing Plan
