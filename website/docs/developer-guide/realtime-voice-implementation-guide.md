@@ -165,6 +165,12 @@ The status endpoint returns `enabled`, `available`, selected engine/codecs, fron
   "unavailable_reason": null,
   "engine": "text_oracle_tts",
   "frontend_provider": "gemma4",
+  "language_support": {
+    "production_languages": ["en", "ja"],
+    "production_scripts": ["Latn", "Jpan"],
+    "best_effort_languages": true,
+    "sidecar_languages_are_diagnostics": true
+  },
   "sidecar": {
     "mode": "managed_loopback",
     "base_url": "http://127.0.0.1:8765",
@@ -198,6 +204,8 @@ A managed loopback sidecar can be `available: true` while `healthy: false` becau
 When `available` is false, `unavailable_reason` is a stable machine-readable reason such as `disabled`, `sidecar_required`, `sidecar_unhealthy`, `sidecar_missing_capabilities`, `sidecar_missing_stt`, `sidecar_missing_tts`, or `sidecar_missing_native_s2s`. The desktop should use this only to choose fallback and diagnostics; it must not infer a specific machine or accelerator from the reason.
 
 When a sidecar is reachable, its `/health` response must include a JSON capability payload. Hermes uses `capabilities` for preflight gating: `native_s2s_oracle` requires `native_s2s: true`; `text_oracle_tts` sidecar mode requires either `utterance_stt` or `streaming_stt`, plus `tts: true`, because the sidecar is responsible for both live speech understanding and streaming speech output on that path. A healthy HTTP sidecar without capability metadata, or without the required capabilities, is reported as `available: false` with an `unavailable_reason`. Websocket session opens are refused with the same reason before the microphone session is accepted, including managed loopback sidecars after Hermes has autostarted them. Language and script arrays in sidecar health are diagnostics only; Hermes sanitizes and forwards them for operator visibility, but they do not grant tool authority or replace explicit voice/STT/TTS configuration.
+
+`language_support` is Hermes' product-support contract, not a sidecar capability claim. By default, English and Japanese are the production acceptance languages and Latin/Japanese scripts are the production acceptance scripts. `best_effort_languages: true` means other clean language metadata may pass through captions, prompts, diagnostics, and provider auto-detection when the configured STT/frontend/TTS stack can handle it. The desktop should not hide realtime voice for non-target languages solely because they are outside this production list; it may label them best-effort. Operators can override `production_languages`, `production_scripts`, and `best_effort_languages` in `voice.realtime`.
 
 Implementation notes:
 
@@ -301,6 +309,9 @@ voice:
     vllm_base_url: "http://voice-gpu.local:8000/v1"
     vllm_model: google/gemma-4-E4B-it-qat-w4a16-ct
     tts_provider: edge
+    production_languages: ["en", "ja"] # production acceptance targets
+    production_scripts: ["Latn", "Jpan"]
+    best_effort_languages: true        # allow non-target languages without claiming production quality
     languages: ["en", "ja"]        # optional diagnostics for managed reference sidecars
     scripts: ["Latn", "Jpan"]      # optional diagnostics for managed reference sidecars
 ```

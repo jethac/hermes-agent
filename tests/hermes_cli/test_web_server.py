@@ -6276,6 +6276,12 @@ class TestRealtimeVoiceWebSocket:
         assert config.input_buffer_limit_bytes == 4096
         assert config.spark_base_url == "http://voice.local:8080"
         assert config.spark_token == "secret-token"
+        assert config.metadata["language_support"] == {
+            "production_languages": ["en", "ja"],
+            "production_scripts": ["Latn", "Jpan"],
+            "best_effort_languages": True,
+            "sidecar_languages_are_diagnostics": True,
+        }
 
     def test_config_defaults_local_frontend_to_reference_sidecar(self, monkeypatch):
         class FakeWebSocket:
@@ -6411,11 +6417,44 @@ class TestRealtimeVoiceWebSocket:
         assert body["input_buffer_limit_bytes"] == 4096
         assert body["input_frame_ms"] == 80
         assert body["silence_timeout_ms"] == 700
+        assert body["language_support"] == {
+            "production_languages": ["en", "ja"],
+            "production_scripts": ["Latn", "Jpan"],
+            "best_effort_languages": True,
+            "sidecar_languages_are_diagnostics": True,
+        }
         assert body["sidecar"]["mode"] == "managed_loopback"
         assert body["sidecar"]["autostart"] is True
         assert body["sidecar"]["connect_timeout_seconds"] == 3
         assert body["sidecar"]["loopback"] is True
         assert body["sidecar"]["healthy"] is False
+
+    def test_status_sanitizes_configured_realtime_language_support(self, monkeypatch):
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "production_languages": ["ja", "en-US", "JA", "https://voice.local/secret"],
+                        "production_scripts": ["Jpan", "Latn", "bad/script"],
+                        "best_effort_languages": False,
+                    }
+                }
+            },
+        )
+
+        response = self.client.get("/api/voice/realtime/status")
+
+        assert response.status_code == 200
+        assert response.json()["language_support"] == {
+            "production_languages": ["ja", "en-US"],
+            "production_scripts": ["Jpan", "Latn"],
+            "best_effort_languages": False,
+            "sidecar_languages_are_diagnostics": True,
+        }
 
     def test_status_includes_sanitized_sidecar_health_payload(self, monkeypatch):
         requests = []
