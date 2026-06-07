@@ -55,6 +55,13 @@ _PROVIDER_ENV_HINTS = (
     "TOKENHUB_API_KEY",
 )
 
+_REALTIME_VOICE_LIVE_TARGETS_MS = {
+    "audio_to_partial_transcript_ms": 300,
+    "final_transcript_to_first_text_ms": 500,
+    "final_transcript_to_first_audio_ms": 900,
+    "barge_in_ack_ms": 150,
+}
+
 
 from hermes_constants import is_termux as _is_termux
 
@@ -389,6 +396,17 @@ def _realtime_voice_clean_list(value: Any) -> list[str]:
     return result
 
 
+def _realtime_voice_positive_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float) and value.is_integer():
+        int_value = int(value)
+        return int_value if int_value > 0 else None
+    return None
+
+
 def _realtime_voice_provider_label(payload: Mapping[str, Any]) -> str:
     provider = str(payload.get("frontend_provider") or "").strip()
     if provider:
@@ -439,6 +457,51 @@ def _realtime_voice_enabled_in_config() -> bool:
     voice = cfg.get("voice") if isinstance(cfg, dict) else {}
     realtime = voice.get("realtime") if isinstance(voice, dict) else {}
     return isinstance(realtime, dict) and realtime.get("enabled") is True
+
+
+def _check_realtime_voice_quality_targets(payload: Mapping[str, Any], issues: list[str], *, strict: bool) -> None:
+    raw_targets = payload.get("quality_targets_ms")
+    targets = raw_targets if isinstance(raw_targets, Mapping) else {}
+    missing: list[str] = []
+    invalid: list[str] = []
+    loose: list[str] = []
+    display_parts: list[str] = []
+
+    for key, max_ms in _REALTIME_VOICE_LIVE_TARGETS_MS.items():
+        value = _realtime_voice_positive_int(targets.get(key))
+        if value is None:
+            if key in targets:
+                invalid.append(key)
+            else:
+                missing.append(key)
+            continue
+        display_parts.append(f"{key}={value}ms")
+        if value > max_ms:
+            loose.append(f"{key}={value}ms>{max_ms}ms")
+
+    detail = f"({', '.join(display_parts)})" if display_parts else "(none)"
+    if not missing and not invalid and not loose:
+        check_ok("Realtime voice latency targets", detail)
+        return
+
+    problem_parts: list[str] = []
+    if missing:
+        problem_parts.append(f"missing: {', '.join(missing)}")
+    if invalid:
+        problem_parts.append(f"invalid: {', '.join(invalid)}")
+    if loose:
+        problem_parts.append(f"loose: {', '.join(loose)}")
+    problem = "; ".join(problem_parts)
+
+    if strict:
+        _fail_and_issue(
+            "Realtime voice latency targets",
+            f"({problem})",
+            "Set voice.realtime.quality_targets_ms to the live-readiness targets or stricter values",
+            issues,
+        )
+    else:
+        check_warn("Realtime voice latency targets", f"({problem})")
 
 
 def _check_realtime_voice_readiness(issues: list[str], *, strict: bool = False) -> None:
@@ -509,6 +572,8 @@ def _check_realtime_voice_readiness(issues: list[str], *, strict: bool = False) 
         check_warn("Live conversation quality", quality_detail)
     else:
         check_info(f"Live conversation quality not evaluated {quality_detail}")
+
+    _check_realtime_voice_quality_targets(payload, issues, strict=strict)
 
     language_support = payload.get("language_support")
     language_support = language_support if isinstance(language_support, Mapping) else {}
