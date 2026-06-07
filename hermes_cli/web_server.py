@@ -38,7 +38,7 @@ import zipfile
 from hermes_cli._subprocess_compat import windows_detach_flags, windows_hide_flags
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import yaml
 
@@ -13214,7 +13214,11 @@ def _realtime_voice_production_readiness_payload(
     }
 
 
-def _realtime_voice_production_evidence_payload(realtime: Dict[str, Any]) -> Dict[str, Any]:
+def _realtime_voice_production_evidence_payload(
+    realtime: Dict[str, Any],
+    *,
+    current_manifest: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
     min_runs = _positive_int_config(realtime.get("production_evidence_min_runs"), default=3)
     raw_path = str(
         realtime.get("production_evidence_report")
@@ -13234,13 +13238,28 @@ def _realtime_voice_production_evidence_payload(realtime: Dict[str, Any]) -> Dic
     report_path = Path(raw_path).expanduser()
     try:
         from agent.realtime_voice_smoke_report import (
+            RealtimeVoiceSmokeReportIssue,
             load_realtime_voice_smoke_report_runs,
+            realtime_voice_alpha_manifest_fingerprint,
             summarize_realtime_voice_smoke_report_runs,
             validate_realtime_voice_alpha_report_runs,
         )
 
         runs = load_realtime_voice_smoke_report_runs(report_path)
         issues = validate_realtime_voice_alpha_report_runs(runs, min_runs=min_runs)
+        if current_manifest is not None:
+            evidence_manifest = _realtime_voice_first_evidence_manifest(runs)
+            if evidence_manifest is not None and (
+                realtime_voice_alpha_manifest_fingerprint(evidence_manifest)
+                != realtime_voice_alpha_manifest_fingerprint(current_manifest)
+            ):
+                issues.append(
+                    RealtimeVoiceSmokeReportIssue(
+                        "evidence",
+                        "current realtime stack does not match evidence manifest",
+                        "current_stack",
+                    )
+                )
         summary = summarize_realtime_voice_smoke_report_runs(runs)
     except Exception as exc:
         return {
@@ -13262,6 +13281,40 @@ def _realtime_voice_production_evidence_payload(realtime: Dict[str, Any]) -> Dic
         "summary": summary,
         "issues": formatted_issues,
     }
+
+
+def _realtime_voice_current_evidence_manifest(
+    *,
+    engine: str,
+    frontend_provider: str,
+    frontend_model: str,
+    sidecar_mode: str,
+    health_payload: Optional[Mapping[str, Any]],
+    conversation_quality: Mapping[str, Any],
+) -> Dict[str, Any]:
+    return {
+        "kind": "manifest",
+        "engine": str(engine or ""),
+        "frontend_provider": str(frontend_provider or ""),
+        "frontend_model": str(frontend_model or ""),
+        "conversation_quality": {
+            "mode": str(conversation_quality.get("mode") or ""),
+        },
+        "sidecar": {
+            "mode": str(sidecar_mode or "none"),
+            "health": health_payload if isinstance(health_payload, Mapping) else {},
+        },
+    }
+
+
+def _realtime_voice_first_evidence_manifest(
+    runs: Sequence[tuple[str, Sequence[Mapping[str, Any]]]],
+) -> Optional[Mapping[str, Any]]:
+    for _label, entries in runs:
+        for entry in entries:
+            if str(entry.get("kind") or "").strip() == "manifest":
+                return entry
+    return None
 
 
 def _realtime_voice_language_policy_has(languages: Sequence[Any], target: str) -> bool:
@@ -13496,13 +13549,24 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         base_url=base_url,
         health_payload=health_payload,
     )
-    production_evidence = _realtime_voice_production_evidence_payload(realtime)
-
     sidecar_mode = "none"
     if autostart:
         sidecar_mode = "managed_loopback"
     elif externally_managed:
         sidecar_mode = "external"
+
+    current_evidence_manifest = _realtime_voice_current_evidence_manifest(
+        engine=engine,
+        frontend_provider=provider,
+        frontend_model=frontend_model,
+        sidecar_mode=sidecar_mode,
+        health_payload=health_payload,
+        conversation_quality=conversation_quality,
+    )
+    production_evidence = _realtime_voice_production_evidence_payload(
+        realtime,
+        current_manifest=current_evidence_manifest,
+    )
 
     unavailable_reason = ""
     available = enabled
