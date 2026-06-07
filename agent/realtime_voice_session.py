@@ -41,6 +41,16 @@ class RealtimeVoiceTranscript:
     interrupted_assistant_segments: List[str] = field(default_factory=list)
 
 
+STALE_GENERATION_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.ASSISTANT_COMMIT,
+        VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+        VoiceEventType.TRANSCRIPT_FINAL,
+    }
+)
+
+
 class RealtimeVoiceSession:
     """Owns state and persistence boundaries for one realtime voice session."""
 
@@ -83,6 +93,7 @@ class RealtimeVoiceSession:
                 self._turn_eou_at = now
         if event.type == VoiceEventType.BARGE_IN:
             self._last_barge_in_at = now
+            self.transcript.active_playback_generation += 1
             self.state = RealtimeVoiceSessionState.LISTENING
             if self.transcript.assistant_draft:
                 self.transcript.interrupted_assistant_segments.append(self.transcript.assistant_draft)
@@ -94,6 +105,8 @@ class RealtimeVoiceSession:
     async def events(self) -> AsyncIterator[VoiceEvent]:
         async for event in self.engine.events():
             validate_server_event(event)
+            if self._should_drop_stale_server_event(event):
+                continue
             annotated = self._annotate_server_event(event)
             self._apply_server_event(annotated)
             yield annotated
@@ -141,6 +154,13 @@ class RealtimeVoiceSession:
                 self.transcript.assistant_draft + " " + str(event.payload.get("text") or "")
             ).strip()
             self.state = RealtimeVoiceSessionState.SPEAKING
+        elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+            generation = _payload_generation(event.payload)
+            if generation is not None:
+                if generation < self.transcript.active_playback_generation:
+                    return
+                self.transcript.active_playback_generation = generation
+            self.state = RealtimeVoiceSessionState.SPEAKING
         elif event.type == VoiceEventType.ASSISTANT_COMMIT:
             generation = _payload_generation(event.payload)
             if generation is not None and generation < self.transcript.active_playback_generation:
@@ -155,8 +175,22 @@ class RealtimeVoiceSession:
                     self.transcript.committed_assistant_segments.append(text)
                 self.transcript.assistant_draft = ""
             self.state = RealtimeVoiceSessionState.LISTENING
+        elif event.type == VoiceEventType.BARGE_IN:
+            generation = _payload_generation(event.payload)
+            if generation is not None:
+                self.transcript.active_playback_generation = max(
+                    self.transcript.active_playback_generation,
+                    generation,
+                )
+            self.state = RealtimeVoiceSessionState.LISTENING
         elif event.type == VoiceEventType.SESSION_CLOSED:
             self.state = RealtimeVoiceSessionState.CLOSED
+
+    def _should_drop_stale_server_event(self, event: VoiceEvent) -> bool:
+        if event.type not in STALE_GENERATION_EVENT_TYPES:
+            return False
+        generation = _payload_generation(event.payload)
+        return generation is not None and generation < self.transcript.active_playback_generation
 
     def _annotate_server_event(self, event: VoiceEvent) -> VoiceEvent:
         session_state = self._state_after_event(event)

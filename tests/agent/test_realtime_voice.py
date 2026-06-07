@@ -1176,6 +1176,116 @@ def test_session_ignores_stale_interrupted_commit_from_prior_generation():
     asyncio.run(run())
 
 
+def test_session_drops_stale_generated_events_after_barge_in():
+    class ScriptedEngine:
+        def __init__(self):
+            self.received = []
+            self._events = [
+                VoiceEvent(
+                    type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                    session_id="voice-123",
+                    sequence=10,
+                    payload={
+                        **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"stale-audio").to_payload(),
+                        "playback_generation": 1,
+                    },
+                ),
+                VoiceEvent(
+                    type=VoiceEventType.ASSISTANT_COMMIT,
+                    session_id="voice-123",
+                    sequence=11,
+                    payload={"text": "stale answer", "playback_generation": 1},
+                ),
+                VoiceEvent(
+                    type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                    session_id="voice-123",
+                    sequence=12,
+                    payload={"text": "fresh answer", "playback_generation": 2},
+                ),
+            ]
+
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            self.received.append(event)
+
+        async def events(self):
+            for event in self._events:
+                yield event
+
+        async def close(self):
+            return None
+
+    async def run():
+        engine = ScriptedEngine()
+        session = RealtimeVoiceSession(RealtimeVoiceSessionConfig(session_id="voice-123"), engine=engine)
+        await session.start()
+        session._apply_server_event(
+            VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"text": "first", "playback_generation": 1},
+            )
+        )
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=1,
+                payload={"reason": "user_speech"},
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+
+        assert [event.sequence for event in seen] == [12]
+        assert seen[0].payload["text"] == "fresh answer"
+        assert session.durable_messages() == [{"role": "user", "content": "first"}]
+
+    asyncio.run(run())
+
+
+def test_session_marks_audio_only_output_as_speaking():
+    class AudioOnlyEngine:
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            return None
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"native-audio").to_payload(),
+                    "playback_generation": 1,
+                },
+            )
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(RealtimeVoiceSessionConfig(session_id="voice-123"), engine=AudioOnlyEngine())
+        await session.start()
+
+        async for event in session.events():
+            assert event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
+            assert event.payload["session_state"] == RealtimeVoiceSessionState.SPEAKING.value
+            break
+
+        assert session.state == RealtimeVoiceSessionState.SPEAKING
+        assert session.transcript.active_playback_generation == 1
+
+    asyncio.run(run())
+
+
 def test_session_adds_latency_metrics_to_realtime_events(monkeypatch):
     async def run():
         async def fake_speak(self, text, playback_generation):
