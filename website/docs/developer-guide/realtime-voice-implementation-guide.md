@@ -364,6 +364,8 @@ Hermes sends audio and transcript state. The sidecar returns transcript/frontend
 
 Native S2S sidecars should treat `oracle.hint` as a streaming hint channel from the Hermes oracle. Each hint includes accumulated `text`, the latest `delta`, `final`, `source: "hermes"`, and the active `playback_generation`. Sidecars can condition generation on these deltas immediately instead of waiting for the final hint. Hermes cancels the active hint stream and advances `playback_generation` on barge-in.
 
+The native S2S websocket uses the same binary audio envelope for `audio.input.chunk` and `audio.output.chunk` as the text-oracle sidecar websocket. JSON/base64 remains valid for control and compatibility events, and raw binary output without an envelope remains a legacy Opus fallback only.
+
 Security requirements:
 
 - Bind to LAN-private interface only or require auth.

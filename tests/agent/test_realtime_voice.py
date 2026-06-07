@@ -1335,6 +1335,41 @@ def test_native_s2s_engine_uses_configured_connect_timeout(monkeypatch):
     asyncio.run(run())
 
 
+def test_native_s2s_engine_sends_audio_input_as_binary_frame():
+    class FakeWs:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, payload):
+            self.sent.append(payload)
+
+    async def run():
+        ws = FakeWs()
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = ws
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=12,
+                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"s2s-mic").to_payload(),
+            )
+        )
+
+        assert isinstance(ws.sent[-1], bytes)
+        event = event_from_binary_audio_frame(ws.sent[-1], expected_type=VoiceEventType.AUDIO_INPUT_CHUNK)
+        assert event.sequence == 12
+        assert AudioChunk.from_payload(event.payload).data == b"s2s-mic"
+
+    asyncio.run(run())
+
+
 def test_native_s2s_engine_normalizes_sidecar_generation_and_session():
     engine = NativeS2SSidecarEngine()
     engine.config = RealtimeVoiceSessionConfig(
@@ -1367,7 +1402,49 @@ def test_native_s2s_engine_normalizes_sidecar_generation_and_session():
     assert audio.payload["playback_generation"] == 1
 
 
-def test_native_s2s_engine_tags_binary_audio_with_active_generation():
+def test_native_s2s_engine_accepts_binary_audio_output_frame():
+    class FakeWs:
+        def __init__(self, items):
+            self._items = list(items)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._items:
+                raise StopAsyncIteration
+            return self._items.pop(0)
+
+    async def run():
+        output = VoiceEvent(
+            type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            session_id="sidecar-session",
+            sequence=44,
+            payload={
+                **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"s2s-speaker").to_payload(),
+                "playback_generation": 6,
+            },
+        )
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = FakeWs([binary_audio_frame_from_event(output)])
+
+        await engine._read_sidecar()
+
+        event = await engine._events.get()
+        assert event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
+        assert event.session_id == "voice-123"
+        assert event.payload["playback_generation"] == 6
+        assert AudioChunk.from_payload(event.payload).data == b"s2s-speaker"
+
+    asyncio.run(run())
+
+
+def test_native_s2s_engine_tags_legacy_raw_audio_with_active_generation():
     class FakeWs:
         def __init__(self):
             self._items = [b"audio"]
