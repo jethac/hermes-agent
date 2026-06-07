@@ -667,6 +667,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Maximum local realtime input audio buffered before dropping a turn",
         "category": "voice",
     },
+    "voice.realtime.input_frame_ms": {
+        "type": "number",
+        "description": "Desktop microphone frame duration for realtime voice capture",
+        "category": "voice",
+    },
     "voice.realtime.sidecar_base_url": {
         "type": "string",
         "description": "Remote or local realtime voice sidecar URL",
@@ -12697,6 +12702,11 @@ def _positive_int_config(value: Any, *, default: int) -> int:
     return parsed if parsed > 0 else default
 
 
+def _bounded_int_config(value: Any, *, default: int, minimum: int, maximum: int) -> int:
+    parsed = _positive_int_config(value, default=default)
+    return min(maximum, max(minimum, parsed))
+
+
 def _realtime_voice_sidecar_is_loopback(base_url: str) -> bool:
     try:
         parsed = urllib.parse.urlparse(base_url)
@@ -12977,6 +12987,12 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "input_buffer_limit_bytes": _positive_int_config(
             realtime.get("input_buffer_limit_bytes"),
             default=8 * 1024 * 1024,
+        ),
+        "input_frame_ms": _bounded_int_config(
+            realtime.get("input_frame_ms"),
+            default=100,
+            minimum=40,
+            maximum=500,
         ),
         "frontend_provider": provider or None,
         "frontend_model": frontend_model or None,

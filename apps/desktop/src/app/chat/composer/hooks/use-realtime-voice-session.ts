@@ -59,6 +59,7 @@ export interface RealtimeVoiceStatus {
   enabled: boolean
   engine: string
   input_buffer_limit_bytes?: number
+  input_frame_ms?: number
   sidecar?: {
     autostart?: boolean
     connect_timeout_seconds?: number
@@ -84,6 +85,9 @@ const BARGE_IN_MIN_SPEECH_MS = 120
 const MAX_REALTIME_AUDIO_BUFFERED_BYTES = 512 * 1024
 const REALTIME_BINARY_HEADER_BYTES = 4
 const REALTIME_BINARY_HEADER_LIMIT = 64 * 1024
+const DEFAULT_REALTIME_INPUT_FRAME_MS = 100
+const MIN_REALTIME_INPUT_FRAME_MS = 40
+const MAX_REALTIME_INPUT_FRAME_MS = 500
 const GENERATION_EVENT_TYPES = new Set([
   'audio.output.chunk',
   'assistant.commit',
@@ -335,6 +339,17 @@ export function shouldSendRealtimeAudioFrame({
   return endOfUtterance || bufferedAmount <= maxBufferedBytes
 }
 
+export function realtimeVoiceInputFrameMs(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_REALTIME_INPUT_FRAME_MS
+  }
+
+  return Math.min(
+    MAX_REALTIME_INPUT_FRAME_MS,
+    Math.max(MIN_REALTIME_INPUT_FRAME_MS, Math.round(value))
+  )
+}
+
 export function shouldSendRealtimeVoiceEndMarker({
   closingInput,
   sentEndOfUtterance,
@@ -473,6 +488,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const audioSendChainRef = useRef<Promise<void>>(Promise.resolve())
   const serverEventChainRef = useRef<Promise<void>>(Promise.resolve())
   const audioInputGenerationRef = useRef(0)
+  const inputFrameMsRef = useRef(DEFAULT_REALTIME_INPUT_FRAME_MS)
 
   useEffect(() => {
     enabledRef.current = enabled
@@ -630,7 +646,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         }
       }
 
-      recorder.start(250)
+      recorder.start(inputFrameMsRef.current)
     },
     [queueAudioInput]
   )
@@ -924,6 +940,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
       return
     }
+    inputFrameMsRef.current = realtimeVoiceInputFrameMs(preflight?.input_frame_ms)
 
     sessionRef.current = sessionId || sessionRef.current
     setCaption(null)
