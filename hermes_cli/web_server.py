@@ -12174,6 +12174,30 @@ def _realtime_voice_sidecar_health_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/health"
 
 
+def _realtime_voice_sidecar_token_env(realtime: Dict[str, Any]) -> str:
+    return str(
+        realtime.get("sidecar_token_env")
+        or realtime.get("spark_token_env")
+        or "HERMES_VOICE_SIDECAR_TOKEN"
+    )
+
+
+def _realtime_voice_sidecar_token(
+    realtime: Dict[str, Any],
+    env_on_disk: Optional[Dict[str, str]] = None,
+) -> str:
+    token_env = _realtime_voice_sidecar_token_env(realtime)
+    env = env_on_disk if env_on_disk is not None else load_env()
+    return str(env.get(token_env) or os.environ.get(token_env) or "")
+
+
+def _realtime_voice_sidecar_health_request(base_url: str, token: str = ""):
+    url = _realtime_voice_sidecar_health_url(base_url)
+    if not token:
+        return url
+    return urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+
+
 def _redact_realtime_voice_url(value: str) -> str:
     if not value:
         return ""
@@ -12189,11 +12213,15 @@ def _redact_realtime_voice_url(value: str) -> str:
     return urllib.parse.urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
 
 
-def _realtime_voice_sidecar_healthy(base_url: str, timeout: float = _VOICE_SIDECAR_HEALTH_TIMEOUT) -> bool:
+def _realtime_voice_sidecar_healthy(
+    base_url: str,
+    timeout: float = _VOICE_SIDECAR_HEALTH_TIMEOUT,
+    token: str = "",
+) -> bool:
     if not base_url:
         return False
     try:
-        with urllib.request.urlopen(_realtime_voice_sidecar_health_url(base_url), timeout=timeout) as response:
+        with urllib.request.urlopen(_realtime_voice_sidecar_health_request(base_url, token), timeout=timeout) as response:
             status = int(getattr(response, "status", 200))
             return 200 <= status < 300
     except Exception:
@@ -12203,11 +12231,12 @@ def _realtime_voice_sidecar_healthy(base_url: str, timeout: float = _VOICE_SIDEC
 def _realtime_voice_sidecar_health_payload(
     base_url: str,
     timeout: float = _VOICE_SIDECAR_HEALTH_TIMEOUT,
+    token: str = "",
 ) -> Optional[Dict[str, Any]]:
     if not base_url:
         return None
     try:
-        with urllib.request.urlopen(_realtime_voice_sidecar_health_url(base_url), timeout=timeout) as response:
+        with urllib.request.urlopen(_realtime_voice_sidecar_health_request(base_url, token), timeout=timeout) as response:
             status = int(getattr(response, "status", 200))
             if status < 200 or status >= 300 or not hasattr(response, "read"):
                 return None
@@ -12364,9 +12393,10 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     loopback = _realtime_voice_sidecar_is_loopback(base_url) if base_url else False
     autostart = _realtime_voice_should_autostart_sidecar(realtime, base_url)
     externally_managed = bool(base_url and not autostart)
-    healthy = _realtime_voice_sidecar_healthy(base_url) if probe_health and base_url else None
+    sidecar_token = _realtime_voice_sidecar_token(realtime) if probe_health and base_url else ""
+    healthy = _realtime_voice_sidecar_healthy(base_url, token=sidecar_token) if probe_health and base_url else None
     health_payload = (
-        _realtime_voice_sidecar_health_payload(base_url)
+        _realtime_voice_sidecar_health_payload(base_url, token=sidecar_token)
         if probe_health and base_url and healthy is True
         else None
     )
@@ -12430,13 +12460,8 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     input_codec = ws.query_params.get("input_codec") or realtime.get("input_codec") or "webm_opus"
     output_codec = ws.query_params.get("output_codec") or realtime.get("output_codec") or "opus"
     sidecar_base_url = _realtime_voice_sidecar_base_url(realtime)
-    sidecar_token_env = str(
-        realtime.get("sidecar_token_env")
-        or realtime.get("spark_token_env")
-        or "HERMES_VOICE_SIDECAR_TOKEN"
-    )
     env = load_env()
-    sidecar_token = env.get(sidecar_token_env) or os.environ.get(sidecar_token_env) or ""
+    sidecar_token = _realtime_voice_sidecar_token(realtime, env)
 
     return RealtimeVoiceSessionConfig(
         session_id=str(session_id),

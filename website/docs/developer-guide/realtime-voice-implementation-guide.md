@@ -165,7 +165,7 @@ The status endpoint returns `enabled`, `available`, selected engine/codecs, fron
 }
 ```
 
-A managed loopback sidecar can be `available: true` while `healthy: false` because the websocket path will autostart it. An externally managed remote sidecar that is unhealthy is `available: false`, so the desktop should keep or return to the one-shot voice fallback. When `/health` returns metadata, Hermes includes only sanitized `kind`, `frontend`, `capabilities`, and local provider flags; URLs, tokens, credentials, and arbitrary vendor fields are not forwarded.
+A managed loopback sidecar can be `available: true` while `healthy: false` because the websocket path will autostart it. An externally managed remote sidecar that is unhealthy is `available: false`, so the desktop should keep or return to the one-shot voice fallback. Health probes use the configured `sidecar_token_env` bearer token when present. When `/health` returns metadata, Hermes includes only sanitized `kind`, `frontend`, `capabilities`, and local provider flags; URLs, tokens, credentials, and arbitrary vendor fields are not forwarded.
 
 Implementation notes:
 
@@ -175,6 +175,7 @@ Implementation notes:
 - Never let model-sidecar exceptions kill the process; emit `session.error`, close the engine, then close the websocket.
 - On disconnect, call `engine.close()`.
 - Never expose sidecar bearer tokens, URL credentials, or query-string secrets through the status endpoint.
+- Use the configured sidecar bearer token for both websocket sessions and `/health` probes.
 
 ## Session State Machine
 
