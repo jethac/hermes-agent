@@ -2228,6 +2228,39 @@ def test_reference_sidecar_health_marks_streaming_tts_bridge_after_health():
         runtime,
         streaming_tts_health={
             "ok": True,
+            "frontend": {
+                "tts_model_languages": ["ja", "https://voice.local/secret"],
+            },
+            "capabilities": {
+                "tts": True,
+                "streaming_tts": True,
+                "output_languages": ["en", "ja", "token=secret"],
+            },
+        },
+    )
+
+    assert verified["capabilities"]["tts"] is True
+    assert verified["capabilities"]["output_languages"] == ["en", "ja"]
+    assert verified["frontend"]["tts_model_languages"] == ["ja"]
+    assert verified["frontend"]["streaming_tts_bridge"] == {
+        "configured": True,
+        "healthy": True,
+        "model": "portable-streaming-voice",
+    }
+
+
+def test_reference_sidecar_health_uses_streaming_tts_bridge_language_evidence_over_policy():
+    runtime = ReferenceSidecarRuntimeConfig(
+        streaming_tts_base_url="http://streaming-tts.local:9001",
+        streaming_tts_model="portable-streaming-voice",
+        local_tts_enabled=False,
+        output_languages=("en", "ja"),
+    )
+
+    no_route_metadata = reference_sidecar_health_payload(
+        runtime,
+        streaming_tts_health={
+            "ok": True,
             "capabilities": {
                 "tts": True,
                 "streaming_tts": True,
@@ -2235,12 +2268,22 @@ def test_reference_sidecar_health_marks_streaming_tts_bridge_after_health():
         },
     )
 
-    assert verified["capabilities"]["tts"] is True
-    assert verified["frontend"]["streaming_tts_bridge"] == {
-        "configured": True,
-        "healthy": True,
-        "model": "portable-streaming-voice",
-    }
+    assert no_route_metadata["capabilities"]["tts"] is True
+    assert "output_languages" not in no_route_metadata["capabilities"]
+
+    english_only = reference_sidecar_health_payload(
+        runtime,
+        streaming_tts_health={
+            "ok": True,
+            "capabilities": {
+                "tts": True,
+                "streaming_tts": True,
+                "output_languages": ["en"],
+            },
+        },
+    )
+
+    assert english_only["capabilities"]["output_languages"] == ["en"]
 
 
 def test_reference_sidecar_health_payload_is_sanitized():

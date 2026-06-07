@@ -9,7 +9,7 @@ import json
 import os
 import urllib.parse
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Mapping, Optional
+from typing import Any, AsyncIterator, Mapping, Optional, Sequence
 
 from starlette.requests import Request
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -598,6 +598,7 @@ def deepgram_bridge_prerequisite_issues(
     runtime: Optional[DeepgramStreamingSTTBridgeConfig] = None,
     *,
     require_auth_token: bool = False,
+    required_output_languages: Sequence[str] = (),
     module_available: Optional[Any] = None,
 ) -> list[str]:
     runtime = runtime or deepgram_bridge_config_from_env()
@@ -612,6 +613,20 @@ def deepgram_bridge_prerequisite_issues(
         )
     if require_auth_token and not runtime.auth_token:
         issues.append("HERMES_STREAMING_STT_BRIDGE_TOKEN is required in strict mode")
+    configured_output_languages = {_primary_language(language) for language in deepgram_tts_output_languages(runtime)}
+    configured_output_languages.discard("")
+    missing_output_languages = [
+        language
+        for language in (_primary_language(value) for value in required_output_languages)
+        if language and language not in configured_output_languages
+    ]
+    if missing_output_languages:
+        configured = ",".join(sorted(configured_output_languages)) or "none"
+        required = ",".join(missing_output_languages)
+        issues.append(
+            "Deepgram streaming TTS output routing is missing required language(s) "
+            f"{required}; configured output language(s): {configured}"
+        )
     return issues
 
 
