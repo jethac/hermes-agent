@@ -124,6 +124,8 @@ Hermes oracle
 
 ### Language and Locale
 
+- English and Japanese are the initial production quality targets. Acceptance testing must cover English and Japanese speech input, assistant captions, barge-in behavior, and spoken output before realtime voice is considered ready for general release.
+- Other languages are best-effort and provider-driven. Hermes must not reject clean language metadata, silently translate to English, or require EN/JA-only language tags just because the first rollout is optimized for English and Japanese.
 - Language selection is provider/config driven, not hardcoded in the realtime protocol.
 - The desktop UI language is not automatically the speech language. Use explicit voice/STT config, provider auto-detection, or per-session metadata.
 - Speech chunking and planning must handle common non-ASCII sentence and phrase delimiters, and must not require whitespace-delimited words.
