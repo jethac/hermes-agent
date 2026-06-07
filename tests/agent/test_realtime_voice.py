@@ -1120,14 +1120,14 @@ def test_text_engine_closes_sidecar_when_sidecar_tts_fails(monkeypatch, tmp_path
                 await engine.close()
                 break
 
-        fallback = next(event for event in seen if event.type == VoiceEventType.FRONTEND_STATE)
+        degraded = next(event for event in seen if event.type == VoiceEventType.FRONTEND_STATE)
         audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
 
-        assert fallback.payload["status"] == "fallback"
-        assert fallback.payload["reason"] == "sidecar_tts_failed"
-        assert fallback.payload["sidecar"] is False
-        assert "user:pass" not in fallback.payload["error"]
-        assert "token=abc" not in fallback.payload["error"]
+        assert degraded.payload["status"] == "degraded"
+        assert degraded.payload["reason"] == "sidecar_tts_failed"
+        assert degraded.payload["sidecar"] is False
+        assert "user:pass" not in degraded.payload["error"]
+        assert "token=abc" not in degraded.payload["error"]
         assert AudioChunk.from_payload(audio.payload).data == b"fallback-audio"
         assert sidecar.closed is True
         assert engine._sidecar is None
