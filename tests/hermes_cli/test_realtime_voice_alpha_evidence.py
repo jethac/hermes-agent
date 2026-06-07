@@ -16,6 +16,13 @@ def _write_required_audio_fixtures(root):
         fixture_path.write_bytes(b"fixture")
 
 
+def _fake_doctor_module(run_doctor):
+    return types.SimpleNamespace(
+        _realtime_voice_smoke_config=lambda: object(),
+        run_doctor=run_doctor,
+    )
+
+
 def _valid_alpha_report():
     entries = [
         {
@@ -84,7 +91,7 @@ def test_alpha_evidence_runner_collects_and_validates_runs(monkeypatch, tmp_path
     monkeypatch.setitem(
         __import__("sys").modules,
         "hermes_cli.doctor",
-        types.SimpleNamespace(run_doctor=fake_run_doctor),
+        _fake_doctor_module(fake_run_doctor),
     )
 
     result = realtime_voice_alpha_evidence.main(
@@ -131,6 +138,50 @@ def test_alpha_evidence_runner_refuses_to_overwrite_existing_report(tmp_path, ca
     assert "already exists" in capsys.readouterr().err
 
 
+def test_alpha_evidence_runner_reports_missing_realtime_smoke_config(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    calls = []
+    reports_dir = tmp_path / "reports"
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    def fake_config():
+        raise RuntimeError("realtime voice smoke requires voice.realtime.sidecar_base_url")
+
+    def fake_run_doctor(args):
+        calls.append(args)
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "hermes_cli.doctor",
+        types.SimpleNamespace(
+            _realtime_voice_smoke_config=fake_config,
+            run_doctor=fake_run_doctor,
+        ),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(reports_dir),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+        ]
+    )
+
+    assert result == 1
+    assert calls == []
+    assert not reports_dir.exists()
+    error = capsys.readouterr().err
+    assert "realtime voice smoke is not configured" in error
+    assert "sidecar_base_url" in error
+
+
 def test_alpha_evidence_runner_reports_missing_fixtures(monkeypatch, tmp_path, capsys):
     calls = []
     monkeypatch.chdir(tmp_path)
@@ -138,7 +189,11 @@ def test_alpha_evidence_runner_reports_missing_fixtures(monkeypatch, tmp_path, c
     def fake_run_doctor(args):
         calls.append(args)
 
-    monkeypatch.setitem(__import__("sys").modules, "hermes_cli.doctor", types.SimpleNamespace(run_doctor=fake_run_doctor))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "hermes_cli.doctor",
+        types.SimpleNamespace(run_doctor=fake_run_doctor),
+    )
 
     result = realtime_voice_alpha_evidence.main(
         [
@@ -169,7 +224,11 @@ def test_alpha_evidence_runner_returns_validation_failure(monkeypatch, tmp_path,
         with open(args.realtime_voice_report, "w", encoding="utf-8") as handle:
             json.dump(report, handle, ensure_ascii=False)
 
-    monkeypatch.setitem(__import__("sys").modules, "hermes_cli.doctor", types.SimpleNamespace(run_doctor=fake_run_doctor))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
 
     result = realtime_voice_alpha_evidence.main(
         [
