@@ -12560,6 +12560,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
 
 _REALTIME_VOICE_BINARY_HEADER_BYTES = 4
 _REALTIME_VOICE_BINARY_HEADER_LIMIT = 64 * 1024
+_REALTIME_VOICE_AUDIO_SEND_TIMEOUT_SECONDS = 2.0
 
 
 def _realtime_voice_event_from_binary_frame(frame: bytes):
@@ -12644,6 +12645,41 @@ def _realtime_voice_binary_frame_from_event(event) -> Optional[bytes]:
     return len(header).to_bytes(_REALTIME_VOICE_BINARY_HEADER_BYTES, "big") + header + audio
 
 
+async def _send_realtime_voice_server_event(ws: WebSocket, event) -> bool:
+    frame = _realtime_voice_binary_frame_from_event(event)
+    if frame is None:
+        await ws.send_json(event.to_wire())
+        return True
+
+    try:
+        await asyncio.wait_for(ws.send_bytes(frame), timeout=_REALTIME_VOICE_AUDIO_SEND_TIMEOUT_SECONDS)
+        return True
+    except asyncio.TimeoutError:
+        from agent.realtime_voice import VoiceEvent, VoiceEventType
+
+        _log.warning(
+            "dropping realtime voice audio frame due to websocket backpressure session=%s sequence=%s",
+            event.session_id,
+            event.sequence,
+        )
+        try:
+            await ws.send_json(
+                VoiceEvent(
+                    type=VoiceEventType.FRONTEND_STATE,
+                    session_id=event.session_id,
+                    sequence=0,
+                    payload={
+                        "status": "degraded",
+                        "reason": "desktop_audio_backpressure",
+                        "sidecar": False,
+                    },
+                ).to_wire()
+            )
+        except Exception:
+            pass
+        return False
+
+
 @app.get("/api/voice/realtime/status")
 async def realtime_voice_status() -> Dict[str, Any]:
     """Return realtime voice capability and sidecar health for preflight UI."""
@@ -12726,11 +12762,7 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
 
     async def pump_events() -> None:
         async for event in session.events():
-            frame = _realtime_voice_binary_frame_from_event(event)
-            if frame is not None:
-                await ws.send_bytes(frame)
-                continue
-            await ws.send_json(event.to_wire())
+            await _send_realtime_voice_server_event(ws, event)
 
     event_task = asyncio.create_task(pump_events())
 

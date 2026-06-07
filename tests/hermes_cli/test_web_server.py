@@ -6591,6 +6591,67 @@ class TestRealtimeVoiceWebSocket:
         assert header["payload"]["playback_generation"] == 2
         assert "data_b64" not in header["payload"]
 
+    def test_send_server_event_drops_audio_when_websocket_backpressured(self, monkeypatch):
+        import asyncio
+
+        from agent.realtime_voice import AudioChunk, VoiceAudioCodec, VoiceEvent, VoiceEventType
+
+        class SlowWebSocket:
+            def __init__(self):
+                self.json_events = []
+
+            async def send_bytes(self, frame):
+                await asyncio.sleep(1)
+
+            async def send_json(self, event):
+                self.json_events.append(event)
+
+        event = VoiceEvent(
+            type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            session_id="voice-123",
+            sequence=7,
+            payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"assistant-audio").to_payload(),
+        )
+        websocket = SlowWebSocket()
+        monkeypatch.setattr(self.ws_module, "_REALTIME_VOICE_AUDIO_SEND_TIMEOUT_SECONDS", 0.001)
+
+        sent = asyncio.run(self.ws_module._send_realtime_voice_server_event(websocket, event))
+
+        assert sent is False
+        assert websocket.json_events[0]["type"] == "frontend.state"
+        assert websocket.json_events[0]["payload"]["status"] == "degraded"
+        assert websocket.json_events[0]["payload"]["reason"] == "desktop_audio_backpressure"
+
+    def test_send_server_event_uses_json_for_control_events(self):
+        import asyncio
+
+        from agent.realtime_voice import VoiceEvent, VoiceEventType
+
+        class FakeWebSocket:
+            def __init__(self):
+                self.bytes_sent = []
+                self.json_events = []
+
+            async def send_bytes(self, frame):
+                self.bytes_sent.append(frame)
+
+            async def send_json(self, event):
+                self.json_events.append(event)
+
+        event = VoiceEvent(
+            type=VoiceEventType.TRANSCRIPT_FINAL,
+            session_id="voice-123",
+            sequence=3,
+            payload={"text": "hello"},
+        )
+        websocket = FakeWebSocket()
+
+        sent = asyncio.run(self.ws_module._send_realtime_voice_server_event(websocket, event))
+
+        assert sent is True
+        assert websocket.bytes_sent == []
+        assert websocket.json_events[0]["type"] == "transcript.final"
+
     def test_websocket_sends_audio_output_as_binary_frames(self, monkeypatch):
         from agent.realtime_voice import AudioChunk, VoiceAudioCodec, VoiceEvent, VoiceEventType
 
