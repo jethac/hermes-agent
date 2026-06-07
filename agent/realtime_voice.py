@@ -10,6 +10,7 @@ so the desktop app does not know which model stack is active.
 from __future__ import annotations
 
 import abc
+import asyncio
 import base64
 import json
 import time
@@ -80,6 +81,7 @@ SERVER_EVENT_TYPES = frozenset(
 
 BINARY_AUDIO_FRAME_HEADER_BYTES = 4
 BINARY_AUDIO_FRAME_HEADER_LIMIT = 64 * 1024
+REALTIME_VOICE_EVENT_QUEUE_LIMIT = 256
 
 
 @dataclass(frozen=True)
@@ -294,6 +296,75 @@ def event_from_binary_audio_frame(frame: bytes, *, expected_type: Optional[Voice
     if expected_type is not None and event.type != expected_type:
         raise ValueError(f"binary audio frame must carry {expected_type.value}")
     return event
+
+
+def create_realtime_voice_event_queue() -> asyncio.Queue[VoiceEvent | None]:
+    return asyncio.Queue(maxsize=REALTIME_VOICE_EVENT_QUEUE_LIMIT)
+
+
+async def put_realtime_voice_event(queue: asyncio.Queue[VoiceEvent | None], event: VoiceEvent | None) -> bool:
+    """Queue a realtime voice event without letting audio backlog grow forever.
+
+    Audio chunks are expendable under pressure; control, transcript, and error
+    events are not. When the queue is full, drop the oldest queued audio first.
+    If a non-audio event still cannot fit, evict the oldest queued item so the
+    latest control state can reach the desktop.
+    """
+
+    if queue.maxsize <= 0:
+        await queue.put(event)
+        return True
+
+    try:
+        queue.put_nowait(event)
+        return True
+    except asyncio.QueueFull:
+        pass
+
+    if _drop_one_queued_audio_event(queue):
+        try:
+            queue.put_nowait(event)
+            return True
+        except asyncio.QueueFull:
+            pass
+
+    if isinstance(event, VoiceEvent) and event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+        return False
+
+    _drop_oldest_queued_event(queue)
+    try:
+        queue.put_nowait(event)
+        return True
+    except asyncio.QueueFull:
+        return False
+
+
+def _drop_one_queued_audio_event(queue: asyncio.Queue[VoiceEvent | None]) -> bool:
+    kept: list[VoiceEvent | None] = []
+    dropped = False
+    while True:
+        try:
+            item = queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+        if not dropped and isinstance(item, VoiceEvent) and item.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+            dropped = True
+            continue
+        kept.append(item)
+    for item in kept:
+        try:
+            queue.put_nowait(item)
+        except asyncio.QueueFull:
+            break
+    return dropped
+
+
+def _drop_oldest_queued_event(queue: asyncio.Queue[VoiceEvent | None]) -> bool:
+    try:
+        queue.get_nowait()
+        return True
+    except asyncio.QueueEmpty:
+        return False
 
 
 def validate_client_event(event: VoiceEvent) -> None:

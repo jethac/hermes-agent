@@ -50,7 +50,7 @@ Current limits:
 
 - In-core local STT still uses Hermes' existing file-based transcription providers after an utterance boundary. True streaming STT is available through the configured sidecar protocol, not through the local provider chain.
 - The native S2S model itself is not shipped in Hermes. Hermes provides the sidecar bridge and oracle hint stream; a local, remote, or cloud sidecar owns model inference.
-- Audio frames are JSON/base64 for the first implementation. Binary websocket frames can replace this without changing the semantic event contract.
+- Binary audio frames are implemented for the desktop hot path, text-oracle sidecars, and native S2S sidecars. JSON/base64 remains a compatibility protocol for tests and older clients.
 
 ## Portability Boundary
 
@@ -98,7 +98,7 @@ apps/desktop/src/app/chat/voice/
 
 ## Wire Protocol
 
-Use websocket JSON frames for control events, transcript events, captions, metrics, and errors. Microphone chunks and assistant audio chunks should use binary websocket frames on the desktop hot path; JSON/base64 `audio.input.chunk` and `audio.output.chunk` remain valid for tests, compatibility clients, and sidecar-facing normalized events.
+Use websocket JSON frames for control events, transcript events, captions, metrics, and errors. Microphone chunks and assistant audio chunks use binary websocket frames on the desktop, text-oracle sidecar, and native S2S sidecar hot paths. JSON/base64 `audio.input.chunk` and `audio.output.chunk` remain valid for tests and compatibility clients.
 
 Binary audio frame format:
 
@@ -194,6 +194,7 @@ Implementation notes:
 - On disconnect, call `engine.close()`.
 - Never expose sidecar bearer tokens, URL credentials, or query-string secrets through the status endpoint.
 - Use the configured sidecar bearer token for both websocket sessions and `/health` probes.
+- Bound realtime event queues inside Hermes and sidecars. Under pressure, drop queued audio chunks before control, transcript, error, or close events so memory stays bounded without hiding state changes from the desktop.
 
 ## Session State Machine
 

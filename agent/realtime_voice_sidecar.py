@@ -14,7 +14,9 @@ from agent.realtime_voice import (
     VoiceEvent,
     VoiceEventType,
     binary_audio_frame_from_event,
+    create_realtime_voice_event_queue,
     event_from_binary_audio_frame,
+    put_realtime_voice_event,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 
@@ -32,7 +34,7 @@ class RealtimeVoiceSidecarClient:
         self.config: Optional[RealtimeVoiceSessionConfig] = None
         self._ws: Any = None
         self._reader_task: Optional[asyncio.Task[None]] = None
-        self._events: asyncio.Queue[VoiceEvent | None] = asyncio.Queue()
+        self._events: asyncio.Queue[VoiceEvent | None] = create_realtime_voice_event_queue()
         self._closed = False
 
     @property
@@ -96,20 +98,22 @@ class RealtimeVoiceSidecarClient:
                 pass
         if self._ws is not None:
             await self._ws.close()
-        await self._events.put(None)
+        await put_realtime_voice_event(self._events, None)
 
     async def _read_events(self) -> None:
         try:
             async for raw in self._ws:
                 if isinstance(raw, bytes):
                     try:
-                        await self._events.put(
+                        await put_realtime_voice_event(
+                            self._events,
                             event_from_binary_audio_frame(raw, expected_type=VoiceEventType.AUDIO_OUTPUT_CHUNK)
                         )
                         continue
                     except Exception:
                         pass
-                    await self._events.put(
+                    await put_realtime_voice_event(
+                        self._events,
                         VoiceEvent(
                             type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
                             session_id=self.config.session_id if self.config else "",
@@ -126,7 +130,8 @@ class RealtimeVoiceSidecarClient:
                 try:
                     event = VoiceEvent.from_wire(json.loads(raw))
                 except Exception as exc:
-                    await self._events.put(
+                    await put_realtime_voice_event(
+                        self._events,
                         VoiceEvent(
                             type=VoiceEventType.SESSION_ERROR,
                             session_id=self.config.session_id if self.config else "",
@@ -135,11 +140,12 @@ class RealtimeVoiceSidecarClient:
                         )
                     )
                     continue
-                await self._events.put(event)
+                await put_realtime_voice_event(self._events, event)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            await self._events.put(
+            await put_realtime_voice_event(
+                self._events,
                 VoiceEvent(
                     type=VoiceEventType.SESSION_ERROR,
                     session_id=self.config.session_id if self.config else "",
