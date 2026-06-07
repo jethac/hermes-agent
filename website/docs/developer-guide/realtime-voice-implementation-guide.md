@@ -116,6 +116,19 @@ voice:
     require_live_like: true
 ```
 
+The same live-like profile can be generated without machine-specific names:
+
+```bash
+python -m hermes_cli.realtime_voice_profile \
+  --streaming-stt-base-url http://127.0.0.1:8766 \
+  --streaming-stt-model nova-3 \
+  --streaming-tts-base-url http://127.0.0.1:8766 \
+  --streaming-tts-model aura-2-thalia-en \
+  --apply
+```
+
+This writes a capability-based `voice.realtime` profile, clears stale direct sidecar URLs, keeps the managed loopback reference sidecar portable, requires live-like streaming STT/TTS, and points production evidence at `./artifacts/realtime-voice-evidence` by default. Use `--allow-template-urls` without `--apply` to print a YAML template instead.
+
 For Japanese validation, use a Japanese-capable Deepgram model/language setting or run a second profile with `--language ja`. If the bridge health probe cannot verify `streaming_stt: true`, Hermes keeps the profile below live-like status even though utterance STT and TTS may still work.
 
 ## Production-Readiness Ladder
