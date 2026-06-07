@@ -280,6 +280,8 @@ python -m hermes_cli.realtime_voice_sidecar \
 
 The vLLM runtime must include audio dependencies. If the server returns `Invalid or unsupported audio file` and logs `Please install vllm[audio] for audio support`, install or bake `av`, `librosa`, `soundfile`, and `soxr` into the vLLM image.
 
+When `HERMES_VOICE_SIDECAR_TOKEN` is set, the reference sidecar requires `Authorization: Bearer ...` on both `GET /health` and `WS /v1/realtime-text/session`. Hermes also accepts a custom `sidecar_token_env`; for managed loopback sidecars it resolves that value and passes it to the child as `HERMES_VOICE_SIDECAR_TOKEN` so the desktop process and the inference process can be split cleanly without changing the sidecar API.
+
 Hermes config for no-special-hardware local mode:
 
 ```yaml
@@ -330,7 +332,7 @@ Hermes sends audio and transcript state. The sidecar returns transcript/frontend
 Security requirements:
 
 - Bind to LAN-private interface only or require auth.
-- Support bearer token.
+- Support bearer token on health checks and realtime websockets.
 - Log model names and latencies, not raw audio by default.
 - Make raw audio trace capture opt-in.
 

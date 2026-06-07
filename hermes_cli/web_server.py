@@ -12312,6 +12312,9 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
         **env_on_disk,
         "HERMES_NONINTERACTIVE": "1",
     }
+    sidecar_token = _realtime_voice_sidecar_token(realtime, env_on_disk)
+    if sidecar_token:
+        child_env["HERMES_VOICE_SIDECAR_TOKEN"] = sidecar_token
     vllm_base_url = str(realtime.get("vllm_base_url") or "").strip()
     vllm_model = str(realtime.get("vllm_model") or "").strip()
     if vllm_base_url:
@@ -12346,25 +12349,26 @@ def _ensure_realtime_voice_sidecar(realtime: Dict[str, Any]) -> None:
     base_url = _realtime_voice_sidecar_base_url(realtime)
     if not _realtime_voice_should_autostart_sidecar(realtime, base_url):
         return
-    if _realtime_voice_sidecar_healthy(base_url):
+    env_on_disk = load_env()
+    sidecar_token = _realtime_voice_sidecar_token(realtime, env_on_disk)
+    if _realtime_voice_sidecar_healthy(base_url, token=sidecar_token):
         return
 
     with _VOICE_SIDECAR_LOCK:
-        if _realtime_voice_sidecar_healthy(base_url):
+        if _realtime_voice_sidecar_healthy(base_url, token=sidecar_token):
             return
         if _VOICE_SIDECAR_PROC is not None and _VOICE_SIDECAR_PROC.poll() is None:
             deadline = time.monotonic() + _VOICE_SIDECAR_START_TIMEOUT
             while time.monotonic() < deadline:
-                if _realtime_voice_sidecar_healthy(base_url):
+                if _realtime_voice_sidecar_healthy(base_url, token=sidecar_token):
                     return
                 time.sleep(0.2)
             raise RuntimeError(f"realtime voice sidecar is not healthy at {base_url}")
 
-        env_on_disk = load_env()
         _VOICE_SIDECAR_PROC = _spawn_realtime_voice_sidecar(realtime, env_on_disk)
         deadline = time.monotonic() + _VOICE_SIDECAR_START_TIMEOUT
         while time.monotonic() < deadline:
-            if _realtime_voice_sidecar_healthy(base_url):
+            if _realtime_voice_sidecar_healthy(base_url, token=sidecar_token):
                 _log.info("realtime voice sidecar ready at %s", base_url)
                 return
             if _VOICE_SIDECAR_PROC.poll() is not None:
