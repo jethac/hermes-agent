@@ -82,6 +82,11 @@ from gateway.status import (
     parse_active_agents,
     read_runtime_status,
 )
+from hermes_cli.realtime_voice_production_review import (
+    REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS,
+    load_production_review_report,
+    validate_production_review_report,
+)
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from utils import env_var_enabled
 
@@ -2928,17 +2933,7 @@ _REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS = {
     "final_transcript_to_first_audio_ms": 900,
     "barge_in_ack_ms": 150,
 }
-_REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS = {
-    "human_en_ja_conversations": "Human English and Japanese conversation sessions passed",
-    "noisy_room_and_headset_coverage": "Noisy-room, laptop microphone, and headset coverage passed",
-    "remote_sidecar_latency_drill": "Remote sidecar latency and reconnect drill passed",
-    "provider_failure_drill": "Streaming STT/TTS or native S2S provider failure drill passed",
-    "barge_in_reliability": "Barge-in reliability passed under real playback",
-    "tool_call_policy_review": "Tool-call and data-access behavior reviewed for live voice",
-    "accessibility_review": "Accessibility review for captions, mute, fallback, and interruption passed",
-    "security_review": "Credential, transport, and remote-sidecar security review passed",
-    "operator_docs_review": "Operator setup, fallback, and incident docs reviewed",
-}
+_REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS = REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
 _VOICE_SIDECAR_HEALTH_TIMEOUT = 0.75
 _VOICE_SIDECAR_START_TIMEOUT = 8.0
 
@@ -13282,10 +13277,8 @@ def _realtime_voice_production_launch_review_payload(
             "issues": ["missing_production_review_report"],
         }
 
-    report_path = Path(raw_path).expanduser()
     try:
-        with open(report_path, "r", encoding="utf-8") as handle:
-            report = json.load(handle)
+        report = load_production_review_report(raw_path)
     except Exception as exc:
         return {
             "required": True,
@@ -13296,15 +13289,9 @@ def _realtime_voice_production_launch_review_payload(
             "issues": [f"invalid_production_review_report:{sanitize_realtime_voice_error(exc)}"],
         }
 
-    checks = report.get("checks") if isinstance(report, Mapping) else {}
-    checks = checks if isinstance(checks, Mapping) else {}
-    issues = [
-        f"review_check_missing:{key}"
-        for key in required_checks
-        if checks.get(key) is not True
-    ]
-    reviewed_at = report.get("reviewed_at") if isinstance(report, Mapping) else None
-    reviewer = report.get("reviewer") if isinstance(report, Mapping) else None
+    issues = validate_production_review_report(report)
+    reviewed_at = report.get("reviewed_at")
+    reviewer = report.get("reviewer")
     return {
         "required": True,
         "configured": True,
