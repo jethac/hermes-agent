@@ -44,6 +44,14 @@ interface VoiceConversationSpeechChunk {
   remaining: string
 }
 
+interface VoiceConversationFallbackStartInput {
+  enabled: boolean
+  realtimeEnabled: boolean
+  realtimeFallbackStarted: boolean
+  realtimeUnavailable: boolean
+  wasEnabled: boolean
+}
+
 function findDelimiter(text: string, delimiters: Set<string>, start: number, end: number): number {
   const upper = Math.min(text.length, end)
 
@@ -108,6 +116,22 @@ export function takeVoiceConversationSpeechChunk(buffer: string, force = false):
   }
 
   return { chunk: normalized, remaining: '' }
+}
+
+export function shouldStartVoiceConversationFallback({
+  enabled,
+  realtimeEnabled,
+  realtimeFallbackStarted,
+  realtimeUnavailable,
+  wasEnabled
+}: VoiceConversationFallbackStartInput): boolean {
+  if (!enabled) {
+    return false
+  }
+  if (!wasEnabled) {
+    return true
+  }
+  return realtimeEnabled && realtimeUnavailable && !realtimeFallbackStarted
 }
 
 export function useVoiceConversation({
@@ -459,9 +483,13 @@ export function useVoiceConversation({
       return
     }
 
-    const shouldStartFallback =
-      enabled &&
-      (!wasEnabledRef.current || (realtimeEnabled && realtimeUnavailable && !realtimeFallbackStartedRef.current))
+    const shouldStartFallback = shouldStartVoiceConversationFallback({
+      enabled,
+      realtimeEnabled,
+      realtimeFallbackStarted: realtimeFallbackStartedRef.current,
+      realtimeUnavailable,
+      wasEnabled: wasEnabledRef.current
+    })
 
     if (shouldStartFallback) {
       if (realtimeEnabled && realtimeUnavailable) {
