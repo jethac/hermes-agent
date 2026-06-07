@@ -18,6 +18,7 @@ import {
   realtimeVoiceSilenceTimeoutMs,
   realtimeVoiceUrl,
   shouldDropStaleRealtimeVoiceEvent,
+  shouldRestartRealtimeTurnRecorder,
   shouldSendRealtimeAudioFrame,
   shouldSendRealtimeVoiceEndMarker,
   shouldStartRealtimeTurnCapture,
@@ -534,6 +535,44 @@ describe('shouldStartRealtimeTurnCapture', () => {
       busy: false,
       enabled: true,
       muted: false,
+      turnCaptureActive: true
+    })).toBe(false)
+  })
+})
+
+describe('shouldRestartRealtimeTurnRecorder', () => {
+  it('restarts the per-turn recorder when accepted speech arrives after a prior turn stopped it', () => {
+    expect(shouldRestartRealtimeTurnRecorder({
+      acceptSpeech: true,
+      hasRecorder: false,
+      streamAvailable: true,
+      turnCaptureActive: false
+    })).toBe(true)
+  })
+
+  it('keeps the current recorder when one is already active or speech is not accepted', () => {
+    expect(shouldRestartRealtimeTurnRecorder({
+      acceptSpeech: true,
+      hasRecorder: true,
+      streamAvailable: true,
+      turnCaptureActive: false
+    })).toBe(false)
+    expect(shouldRestartRealtimeTurnRecorder({
+      acceptSpeech: false,
+      hasRecorder: false,
+      streamAvailable: true,
+      turnCaptureActive: false
+    })).toBe(false)
+    expect(shouldRestartRealtimeTurnRecorder({
+      acceptSpeech: true,
+      hasRecorder: false,
+      streamAvailable: false,
+      turnCaptureActive: false
+    })).toBe(false)
+    expect(shouldRestartRealtimeTurnRecorder({
+      acceptSpeech: true,
+      hasRecorder: false,
+      streamAvailable: true,
       turnCaptureActive: true
     })).toBe(false)
   })

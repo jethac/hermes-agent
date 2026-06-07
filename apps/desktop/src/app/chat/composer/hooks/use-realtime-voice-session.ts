@@ -153,6 +153,13 @@ interface RealtimeTurnCaptureStartInput {
   turnCaptureActive: boolean
 }
 
+interface RealtimeTurnRecorderRestartInput {
+  acceptSpeech: boolean
+  hasRecorder: boolean
+  streamAvailable: boolean
+  turnCaptureActive: boolean
+}
+
 interface RealtimeEndMarkerInput {
   closingInput: boolean
   sentEndOfUtterance: boolean
@@ -406,6 +413,15 @@ export function shouldStartRealtimeTurnCapture({
   turnCaptureActive
 }: RealtimeTurnCaptureStartInput): boolean {
   return acceptSpeech && enabled && !muted && !busy && !turnCaptureActive
+}
+
+export function shouldRestartRealtimeTurnRecorder({
+  acceptSpeech,
+  hasRecorder,
+  streamAvailable,
+  turnCaptureActive
+}: RealtimeTurnRecorderRestartInput): boolean {
+  return acceptSpeech && streamAvailable && !hasRecorder && !turnCaptureActive
 }
 
 export function shouldSendRealtimeVoiceEndMarker({
@@ -920,6 +936,14 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
             muted: mutedRef.current,
             turnCaptureActive: turnCaptureActiveRef.current
           })) {
+            if (shouldRestartRealtimeTurnRecorder({
+              acceptSpeech,
+              hasRecorder: Boolean(recorderRef.current),
+              streamAvailable: Boolean(streamRef.current),
+              turnCaptureActive: turnCaptureActiveRef.current
+            }) && streamRef.current) {
+              startRecorder(streamRef.current)
+            }
             turnCaptureActiveRef.current = true
             flushPreRollChunks()
             setStatus('listening')
