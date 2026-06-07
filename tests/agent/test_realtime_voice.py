@@ -674,6 +674,49 @@ def test_text_engine_reports_sidecar_start_failure_as_frontend_fallback():
     asyncio.run(run())
 
 
+def test_text_engine_treats_sidecar_session_error_as_frontend_fallback():
+    class ErrorSidecar(FakeSidecar):
+        async def start(self, config):
+            await super().start(config)
+            await self._events.put(
+                VoiceEvent(
+                    type=VoiceEventType.SESSION_ERROR,
+                    session_id=config.session_id,
+                    sequence=1,
+                    payload={"error": "TTS failed Bearer secret-token at http://user:pass@voice.local/v1?token=abc"},
+                )
+            )
+
+    async def run():
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=ErrorSidecar())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="sidecar",
+                sidecar_base_url="http://voice.local:8080",
+            )
+        )
+
+        events = [await anext(engine.events()), await anext(engine.events())]
+
+        assert [event.type for event in events] == [
+            VoiceEventType.SESSION_STARTED,
+            VoiceEventType.FRONTEND_STATE,
+        ]
+        fallback = events[-1]
+        assert fallback.payload["status"] == "fallback"
+        assert fallback.payload["reason"] == "sidecar_session_error"
+        assert fallback.payload["sidecar"] is False
+        assert "TTS failed" in fallback.payload["error"]
+        assert "secret-token" not in fallback.payload["error"]
+        assert "user:pass" not in fallback.payload["error"]
+        assert "token=abc" not in fallback.payload["error"]
+        assert engine._sidecar is None
+        await engine.close()
+
+    asyncio.run(run())
+
+
 def test_text_engine_falls_back_to_local_stt_when_sidecar_send_fails(monkeypatch):
     class FailingSendSidecar(FakeSidecar):
         async def send_event(self, event):
