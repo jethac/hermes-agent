@@ -624,6 +624,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Milliseconds of local microphone pre-roll kept before speech starts",
         "category": "voice",
     },
+    "voice.realtime.require_live_like": {
+        "type": "boolean",
+        "description": "Require native S2S or streaming STT/TTS before realtime voice is considered available",
+        "category": "voice",
+    },
     "voice.realtime.production_languages": {
         "type": "list",
         "description": "BCP-47 language tags Hermes treats as production realtime voice targets; defaults to English and Japanese",
@@ -12717,6 +12722,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     engine = str(realtime.get("engine") or "text_oracle_tts")
     provider = str(realtime.get("frontend_provider") or "")
     frontend_model = str(realtime.get("frontend_model") or "")
+    require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     language_support = _realtime_voice_language_support_payload(realtime)
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
     base_url = _realtime_voice_sidecar_base_url(realtime)
@@ -12768,6 +12774,9 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     elif sidecar_capability_error:
         available = False
         unavailable_reason = sidecar_capability_error
+    elif require_live_like and conversation_quality.get("live_like") is not True:
+        available = False
+        unavailable_reason = "live_like_required"
 
     return {
         "enabled": enabled,
@@ -12815,6 +12824,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "language_support": language_support,
         "quality_targets_ms": quality_targets_ms,
         "conversation_quality": conversation_quality,
+        "require_live_like": require_live_like,
         "sidecar": {
             "mode": sidecar_mode,
             "base_url": _redact_realtime_voice_url(base_url),
@@ -12839,13 +12849,24 @@ def _realtime_voice_open_unavailable_reason(realtime: Dict[str, Any]) -> str:
     if engine == "native_s2s_oracle" and not base_url:
         return "sidecar_required"
     if not base_url:
-        return ""
+        return "live_like_required" if _truthy_config(realtime.get("require_live_like"), default=False) else ""
 
     sidecar_token = _realtime_voice_sidecar_token(realtime)
     healthy, health_payload = _realtime_voice_sidecar_health_probe(base_url, token=sidecar_token)
     if not healthy:
         return "sidecar_unhealthy"
-    return _realtime_voice_sidecar_capability_error(engine=engine, health_payload=health_payload)
+    capability_error = _realtime_voice_sidecar_capability_error(engine=engine, health_payload=health_payload)
+    if capability_error:
+        return capability_error
+    if _truthy_config(realtime.get("require_live_like"), default=False):
+        conversation_quality = _realtime_voice_conversation_quality_payload(
+            engine=engine,
+            base_url=base_url,
+            health_payload=health_payload,
+        )
+        if conversation_quality.get("live_like") is not True:
+            return "live_like_required"
+    return ""
 
 
 def _realtime_voice_config_from_request(ws: WebSocket):
@@ -12875,6 +12896,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
 
     language_support = _realtime_voice_language_support_payload(realtime)
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
+    require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     conversation_quality = _realtime_voice_conversation_quality_payload(
         engine=str(engine),
         base_url=str(sidecar_base_url or ""),
@@ -12907,6 +12929,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "language_support": language_support,
             "quality_targets_ms": quality_targets_ms,
             "conversation_quality": conversation_quality,
+            "require_live_like": require_live_like,
         },
     )
 

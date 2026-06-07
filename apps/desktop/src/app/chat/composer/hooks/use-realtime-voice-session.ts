@@ -106,6 +106,7 @@ export interface RealtimeVoiceStatus {
   language_support?: RealtimeVoiceLanguageSupport
   pre_roll_ms?: number
   quality_targets_ms?: RealtimeVoiceQualityTargetsMs
+  require_live_like?: boolean
   silence_timeout_ms?: number
   speech_level_threshold?: number
   sidecar?: {
