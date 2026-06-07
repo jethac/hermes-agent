@@ -230,6 +230,56 @@ class TestRealtimeVoiceReadiness:
         assert "realtime_voice_profile --preset deepgram" not in output
         assert issues == []
 
+    def test_strict_guides_missing_realtime_voice_production_review(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_status_payload",
+            lambda: {
+                "enabled": True,
+                "available": True,
+                "engine": "text_oracle_tts",
+                "frontend_provider": "gemma4",
+                "conversation_quality": {
+                    "mode": "streaming_text",
+                    "reason": "streaming_stt_tts",
+                    "live_like": True,
+                },
+                "production_readiness": {
+                    "ready": False,
+                    "level": "evidence_ready",
+                    "evidence_ready": True,
+                    "issues": ["missing_production_review_report"],
+                },
+                "quality_targets_ms": {
+                    "audio_to_partial_transcript_ms": 300,
+                    "final_transcript_to_first_text_ms": 500,
+                    "final_transcript_to_first_audio_ms": 900,
+                    "barge_in_ack_ms": 150,
+                },
+                "language_support": {
+                    "production_languages": ["en", "ja"],
+                    "production_scripts": ["Latn", "Jpan"],
+                    "best_effort_languages": True,
+                },
+                "sidecar": {
+                    "mode": "external",
+                    "healthy": True,
+                },
+            },
+        )
+        issues = []
+
+        doctor._check_realtime_voice_readiness(issues, strict=True)
+
+        output = capsys.readouterr().out
+        assert "Realtime voice production readiness" in output
+        assert "missing_production_review_report" in output
+        assert "Production launch review:" in output
+        assert "realtime_voice_production_review ./artifacts/realtime-voice-production-review.json --write-template" in output
+        assert "voice.realtime.production_review_report" in output
+        assert any("production_review_report" in issue for issue in issues)
+        assert not any("production_evidence_report" in issue for issue in issues)
+
     def test_strict_rejects_loose_realtime_voice_latency_targets(self, monkeypatch, capsys):
         monkeypatch.setattr(
             doctor,
