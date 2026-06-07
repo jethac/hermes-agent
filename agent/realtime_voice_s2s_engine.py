@@ -10,6 +10,7 @@ from typing import Any, AsyncIterator, Optional
 
 from agent.realtime_voice import (
     AudioChunk,
+    REALTIME_VOICE_SIDECAR_SEND_TIMEOUT_SECONDS,
     RealtimeVoiceEngine,
     RealtimeVoiceEngineKind,
     RealtimeVoiceSessionConfig,
@@ -121,7 +122,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             self._ws = await asyncio.wait_for(connect, timeout=timeout)
         except asyncio.TimeoutError as exc:
             raise RuntimeError(f"native S2S sidecar connect timed out after {timeout:g}s") from exc
-        await self._ws.send(json.dumps({"type": "session.config", "payload": config.to_wire()}))
+        await self._send_ws_with_timeout(json.dumps({"type": "session.config", "payload": config.to_wire()}))
         self._reader_task = asyncio.create_task(self._read_sidecar())
 
     async def _auto_barge_in_for_speech(self, event: VoiceEvent) -> None:
@@ -169,9 +170,9 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             return
         frame = binary_audio_frame_from_event(event)
         if frame is not None and event.type == VoiceEventType.AUDIO_INPUT_CHUNK:
-            await self._ws.send(frame)
+            await self._send_ws_with_timeout(frame)
             return
-        await self._ws.send(json.dumps(event.to_wire()))
+        await self._send_ws_with_timeout(json.dumps(event.to_wire()))
 
     async def _read_sidecar(self) -> None:
         try:
@@ -348,7 +349,19 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             payload["playback_generation"] = playback_generation
         event = await self._emit(VoiceEventType.ORACLE_HINT, payload)
         if event is not None and self._ws is not None:
-            await self._ws.send(json.dumps(event.to_wire()))
+            await self._send_ws_with_timeout(json.dumps(event.to_wire()))
+
+    async def _send_ws_with_timeout(self, payload: Any) -> None:
+        try:
+            await asyncio.wait_for(
+                self._ws.send(payload),
+                timeout=REALTIME_VOICE_SIDECAR_SEND_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError(
+                "native S2S sidecar send timed out after "
+                f"{REALTIME_VOICE_SIDECAR_SEND_TIMEOUT_SECONDS:g}s"
+            ) from exc
 
 
 def _sidecar_ws_url(base_url: str, path: str) -> str:
