@@ -45,6 +45,12 @@ def build_doctor_parser(subparsers, *, cmd_doctor: Callable) -> None:
         help="Codec for --realtime-voice-audio-fixture (default: webm_opus)",
     )
     doctor_parser.add_argument(
+        "--realtime-voice-tts-smoke",
+        metavar="TEXT",
+        default=None,
+        help="Run the strict realtime voice gate plus a sidecar TTS first-audio smoke",
+    )
+    doctor_parser.add_argument(
         "--ack",
         metavar="ADVISORY_ID",
         default=None,

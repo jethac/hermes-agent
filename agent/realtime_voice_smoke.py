@@ -24,8 +24,10 @@ class RealtimeVoiceSidecarSmokeResult:
     ready_ms: Optional[int] = None
     transcript_partial_ms: Optional[int] = None
     transcript_final_ms: Optional[int] = None
+    first_audio_ms: Optional[int] = None
     final_text: str = ""
     audio_bytes: int = 0
+    output_audio_bytes: int = 0
     events: Tuple[str, ...] = ()
     error: str = ""
 
@@ -128,6 +130,92 @@ async def run_realtime_voice_sidecar_smoke(
             ready_ms=ready_ms,
             transcript_partial_ms=transcript_partial_ms,
             audio_bytes=len(audio or b""),
+            events=tuple(events),
+            error=sanitize_realtime_voice_error(exc),
+        )
+    finally:
+        await client.close()
+
+
+async def run_realtime_voice_sidecar_tts_smoke(
+    config: RealtimeVoiceSessionConfig,
+    *,
+    text: str = "Hello from Hermes.",
+    timeout_seconds: float = 5.0,
+) -> RealtimeVoiceSidecarSmokeResult:
+    """Run a sidecar TTS/output smoke check."""
+    timeout = max(0.1, float(timeout_seconds or 5.0))
+    started_at = time.perf_counter()
+    ready_ms: Optional[int] = None
+    events: list[str] = []
+    client = RealtimeVoiceSidecarClient()
+
+    try:
+        await client.start(config)
+        await client.send_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id=config.session_id,
+                sequence=1,
+                payload={
+                    "text": text,
+                    "speak": True,
+                    "playback_generation": 1,
+                },
+            )
+        )
+
+        stream = client.events()
+        deadline = started_at + timeout
+        while True:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=False,
+                    ready_ms=ready_ms,
+                    events=tuple(events),
+                    error=f"timed out after {timeout:g}s waiting for audio.output.chunk",
+                )
+            try:
+                event = await asyncio.wait_for(anext(stream), timeout=remaining)
+            except StopAsyncIteration:
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=False,
+                    ready_ms=ready_ms,
+                    events=tuple(events),
+                    error="sidecar event stream ended before audio.output.chunk",
+                )
+
+            elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
+            events.append(event.type.value)
+
+            if event.type == VoiceEventType.FRONTEND_STATE and ready_ms is None:
+                ready_ms = elapsed_ms
+            if event.type == VoiceEventType.SESSION_ERROR:
+                error = str(event.payload.get("error") or "sidecar session error")
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=False,
+                    ready_ms=ready_ms,
+                    events=tuple(events),
+                    error=error,
+                )
+            if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                try:
+                    output_audio_bytes = len(AudioChunk.from_payload(event.payload).data)
+                except Exception:
+                    output_audio_bytes = 0
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=output_audio_bytes > 0,
+                    ready_ms=ready_ms,
+                    first_audio_ms=elapsed_ms,
+                    output_audio_bytes=output_audio_bytes,
+                    events=tuple(events),
+                    error="" if output_audio_bytes > 0 else "audio.output.chunk contained no audio bytes",
+                )
+    except Exception as exc:
+        return RealtimeVoiceSidecarSmokeResult(
+            ok=False,
+            ready_ms=ready_ms,
             events=tuple(events),
             error=sanitize_realtime_voice_error(exc),
         )
