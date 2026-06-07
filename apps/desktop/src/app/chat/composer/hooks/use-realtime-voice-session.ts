@@ -526,9 +526,19 @@ export function collectRealtimeVoiceCaption(
     return text ? { final: true, speaker: 'user', text, updatedAtMs } : previous
   }
   if (event.type === 'assistant.text.partial') {
-    if (!text) {
+    const rawDelta = typeof event.payload?.delta === 'string' ? event.payload.delta : ''
+    const hasDelta = rawDelta.length > 0
+    if (!text && !hasDelta) {
       return previous
     }
+    if (hasDelta) {
+      const chunk = previous?.speaker === 'assistant' ? rawDelta : rawDelta.trimStart()
+      const prefix = previous?.speaker === 'assistant' ? previous.text : rawText.trimStart()
+      const nextText = previous?.speaker === 'assistant' ? `${prefix}${chunk}` : prefix || chunk
+
+      return { final: false, speaker: 'assistant', text: nextText, updatedAtMs }
+    }
+
     const chunk = previous?.speaker === 'assistant' ? rawText : rawText.trimStart()
     const nextText = previous?.speaker === 'assistant' ? `${previous.text}${chunk}` : chunk
 

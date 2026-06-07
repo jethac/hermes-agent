@@ -188,6 +188,29 @@ describe('collectRealtimeVoiceCaption', () => {
     })
   })
 
+  it('accumulates assistant deltas from live provider-style partials', () => {
+    const first = collectRealtimeVoiceCaption(null, event('assistant.text.partial', { delta: 'Answering ' }))
+    const second = collectRealtimeVoiceCaption(first, event('assistant.text.partial', { delta: 'now.' }, 1_300))
+
+    expect(second).toEqual({
+      final: false,
+      speaker: 'assistant',
+      text: 'Answering now.',
+      updatedAtMs: 1_300
+    })
+  })
+
+  it('uses cumulative assistant text as the first caption when both text and delta are present', () => {
+    const first = collectRealtimeVoiceCaption(null, event('assistant.text.partial', {
+      delta: 'now.',
+      text: 'Answering now.'
+    }))
+    const second = collectRealtimeVoiceCaption(first, event('assistant.text.partial', { delta: ' More.' }, 1_300))
+
+    expect(first?.text).toBe('Answering now.')
+    expect(second?.text).toBe('Answering now. More.')
+  })
+
   it('clears assistant captions on barge-in but keeps user captions', () => {
     const assistant = collectRealtimeVoiceCaption(null, event('assistant.text.partial', { text: 'old answer' }))
     const user = collectRealtimeVoiceCaption(null, event('transcript.partial', { text: 'new question' }))
