@@ -475,6 +475,30 @@ def test_sidecar_config_detection_and_url_building():
     )
 
 
+def test_sidecar_detection_does_not_depend_on_hardware_aliases():
+    assert not wants_realtime_sidecar(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            frontend_provider="pgx",
+            sidecar_base_url="http://voice.local:8080",
+        )
+    )
+    assert not wants_realtime_sidecar(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            frontend_provider="dgx",
+            sidecar_base_url="http://voice.local:8080",
+        )
+    )
+    assert wants_realtime_sidecar(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            frontend_model="google/gemma-4-E4B-it-qat-w4a16-ct",
+            sidecar_base_url="http://voice.local:8080",
+        )
+    )
+
+
 def test_reference_sidecar_accepts_transcript_payloads_without_gpu():
     async def run():
         sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())

@@ -318,6 +318,8 @@ voice:
 
 For `gemma4` or `vllm` frontends, the same supervised sidecar can call a remote vLLM audio endpoint through `vllm_base_url` and `vllm_model`. If `sidecar_base_url` points at a non-loopback host, Hermes treats that as an externally managed inference host and does not spawn a local process. `spark_base_url` remains a deprecated compatibility alias for existing private profiles.
 
+Use capability names for `frontend_provider`, not machine names. Prefer `sidecar`, `reference`, `local`, `gemma4`, `vllm`, or a concrete `frontend_model`; do not encode a workstation or GPU product name into the provider value.
+
 Suggested sidecar API expansion:
 
 ```text
