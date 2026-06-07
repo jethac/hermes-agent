@@ -3,6 +3,7 @@ import json
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
     ALPHA_REQUIRED_BARGE_IN_TEXTS,
+    ALPHA_REQUIRED_TTS_METADATA,
     ALPHA_REQUIRED_TTS_TEXTS,
     load_realtime_voice_smoke_report,
     summarize_realtime_voice_smoke_report_runs,
@@ -40,11 +41,13 @@ def _valid_alpha_report():
             }
         )
     for text in ALPHA_REQUIRED_TTS_TEXTS:
+        metadata = ALPHA_REQUIRED_TTS_METADATA[text]
         entries.append(
             {
                 "kind": "tts",
                 "ok": True,
                 "text": text,
+                **metadata,
                 "first_audio_ms": 250,
                 "target_ms": 900,
                 "output_audio_bytes": 4321,
@@ -106,6 +109,18 @@ def test_realtime_voice_alpha_report_requires_all_required_fixtures_and_phrases(
     formatted = [issue.format() for issue in issues]
     assert any("missing required fixture" in issue for issue in formatted)
     assert any("missing required text" in issue for issue in formatted)
+
+
+def test_realtime_voice_alpha_report_requires_tts_language_metadata():
+    report = _valid_alpha_report()
+    for entry in report:
+        if entry.get("kind") == "tts" and entry.get("text") == "こんにちは、Hermesです。":
+            entry.pop("language", None)
+            break
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("missing language=ja metadata" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_alpha_report_rejects_barge_in_target_misses():

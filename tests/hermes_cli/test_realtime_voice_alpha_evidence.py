@@ -5,6 +5,7 @@ import types
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
     ALPHA_REQUIRED_BARGE_IN_TEXTS,
+    ALPHA_REQUIRED_TTS_METADATA,
     ALPHA_REQUIRED_TTS_TEXTS,
 )
 from hermes_cli import realtime_voice_alpha_evidence
@@ -130,11 +131,13 @@ def _valid_alpha_report():
             }
         )
     for text in ALPHA_REQUIRED_TTS_TEXTS:
+        metadata = ALPHA_REQUIRED_TTS_METADATA[text]
         entries.append(
             {
                 "kind": "tts",
                 "ok": True,
                 "text": text,
+                **metadata,
                 "first_audio_ms": 250,
                 "target_ms": 900,
                 "output_audio_bytes": 4321,

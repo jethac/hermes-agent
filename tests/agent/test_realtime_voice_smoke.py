@@ -1,7 +1,63 @@
 import asyncio
 
-from agent.realtime_voice import RealtimeVoiceSessionConfig, VoiceEvent, VoiceEventType
-from agent.realtime_voice_smoke import run_realtime_voice_sidecar_barge_in_smoke
+from agent.realtime_voice import AudioChunk, RealtimeVoiceSessionConfig, VoiceAudioCodec, VoiceEvent, VoiceEventType
+from agent.realtime_voice_smoke import (
+    realtime_voice_smoke_text_metadata,
+    run_realtime_voice_sidecar_barge_in_smoke,
+    run_realtime_voice_sidecar_tts_smoke,
+)
+
+
+def test_tts_smoke_sends_language_metadata(monkeypatch):
+    sent = []
+
+    class FakeSidecarClient:
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            sent.append(event)
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.FRONTEND_STATE,
+                session_id=self.config.session_id,
+                sequence=1,
+                payload={"status": "ready"},
+            )
+            while not sent:
+                await asyncio.sleep(0)
+            yield VoiceEvent(
+                type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                session_id=self.config.session_id,
+                sequence=2,
+                payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+            )
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_smoke.RealtimeVoiceSidecarClient",
+        FakeSidecarClient,
+    )
+
+    result = asyncio.run(
+        run_realtime_voice_sidecar_tts_smoke(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-smoke",
+                sidecar_base_url="http://voice.example.test:8765",
+            ),
+            text="こんにちは、Hermesです。",
+            metadata=realtime_voice_smoke_text_metadata("こんにちは、Hermesです。"),
+            timeout_seconds=1,
+        )
+    )
+
+    assert result.ok is True
+    assert sent[0].payload["language"] == "ja"
+    assert sent[0].payload["locale"] == "ja-JP"
+    assert sent[0].payload["script"] == "Jpan"
 
 
 def test_barge_in_smoke_measures_ack_latency(monkeypatch):
