@@ -6849,6 +6849,21 @@ class TestRealtimeVoiceWebSocket:
             "runs": 3,
             "min_runs": 3,
             "entries": 30,
+            "summary": {
+                "runs": 3,
+                "entries": 30,
+                "kinds": {
+                    "audio_fixture": {"entries": 12, "ok": 12, "failed": 0},
+                    "barge_in": {"entries": 3, "ok": 3, "failed": 0},
+                    "protocol": {"entries": 3, "ok": 3, "failed": 0},
+                    "tts": {"entries": 12, "ok": 12, "failed": 0},
+                },
+                "latency_ms": {
+                    "audio_to_partial_transcript": {"count": 12, "p50": 90, "p95": 90, "max": 90},
+                    "final_transcript_to_first_audio": {"count": 12, "p50": 250, "p95": 250, "max": 250},
+                    "barge_in_ack": {"count": 3, "p50": 45, "p95": 45, "max": 45},
+                },
+            },
             "issues": [],
         }
 

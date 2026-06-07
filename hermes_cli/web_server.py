@@ -12663,11 +12663,13 @@ def _realtime_voice_production_evidence_payload(realtime: Dict[str, Any]) -> Dic
     try:
         from agent.realtime_voice_smoke_report import (
             load_realtime_voice_smoke_report_runs,
+            summarize_realtime_voice_smoke_report_runs,
             validate_realtime_voice_alpha_report_runs,
         )
 
         runs = load_realtime_voice_smoke_report_runs(report_path)
         issues = validate_realtime_voice_alpha_report_runs(runs, min_runs=min_runs)
+        summary = summarize_realtime_voice_smoke_report_runs(runs)
     except Exception as exc:
         return {
             "configured": True,
@@ -12685,6 +12687,7 @@ def _realtime_voice_production_evidence_payload(realtime: Dict[str, Any]) -> Dic
         "runs": len(runs),
         "min_runs": min_runs,
         "entries": sum(len(entries) for _label, entries in runs),
+        "summary": summary,
         "issues": formatted_issues,
     }
 
