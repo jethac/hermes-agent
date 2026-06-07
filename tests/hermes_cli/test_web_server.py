@@ -6619,6 +6619,8 @@ class TestRealtimeVoiceWebSocket:
                         "frontend": {
                             "provider": "vllm",
                             "model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                            "languages": ["ja", "en-US", "JA", "https://user:secret@voice.local"],
+                            "scripts": ["Jpan", "Latn", "bad/script"],
                             "base_url": "http://user:secret@voice.local:8000/v1",
                         },
                         "capabilities": {
@@ -6627,6 +6629,9 @@ class TestRealtimeVoiceWebSocket:
                             "tts": True,
                             "native_s2s": False,
                             "vllm_audio_frontend": True,
+                            "input_languages": ["ja", "de-DE", "token=secret"],
+                            "output_languages": ["ja", "ko", "https://voice.local/secret"],
+                            "scripts": ["Jpan", "Hang", "secret value"],
                             "token": "secret",
                         },
                         "local": {"stt": False, "tts": True},
@@ -6669,6 +6674,8 @@ class TestRealtimeVoiceWebSocket:
             "frontend": {
                 "provider": "vllm",
                 "model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                "languages": ["ja", "en-US"],
+                "scripts": ["Jpan", "Latn"],
             },
             "capabilities": {
                 "utterance_stt": True,
@@ -6676,6 +6683,9 @@ class TestRealtimeVoiceWebSocket:
                 "tts": True,
                 "native_s2s": False,
                 "vllm_audio_frontend": True,
+                "input_languages": ["ja", "de-DE"],
+                "output_languages": ["ja", "ko"],
+                "scripts": ["Jpan", "Hang"],
             },
             "local": {"stt": False, "tts": True},
         }

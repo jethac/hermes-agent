@@ -12815,6 +12815,35 @@ def _realtime_voice_sidecar_health_payload(
     return _sanitize_realtime_voice_sidecar_health(payload)
 
 
+_REALTIME_VOICE_HEALTH_METADATA_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def _sanitize_realtime_voice_health_metadata(value: Any, *, limit: int = 32) -> List[str]:
+    if isinstance(value, str):
+        candidates = [value]
+    elif isinstance(value, (list, tuple, set)):
+        candidates = list(value)
+    else:
+        return []
+
+    sanitized: List[str] = []
+    seen = set()
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        token = candidate.strip()
+        if not _REALTIME_VOICE_HEALTH_METADATA_RE.fullmatch(token):
+            continue
+        key = token.lower()
+        if key in seen:
+            continue
+        sanitized.append(token)
+        seen.add(key)
+        if len(sanitized) >= limit:
+            break
+    return sanitized
+
+
 def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str, Any]:
     frontend = payload.get("frontend") if isinstance(payload.get("frontend"), dict) else {}
     capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
@@ -12826,6 +12855,10 @@ def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str
         "frontend": {
             "provider": str(frontend.get("provider") or "") or None,
             "model": str(frontend.get("model") or "") or None,
+            "languages": _sanitize_realtime_voice_health_metadata(
+                frontend.get("languages", frontend.get("language"))
+            ),
+            "scripts": _sanitize_realtime_voice_health_metadata(frontend.get("scripts", frontend.get("script"))),
         },
         "capabilities": {
             "utterance_stt": capabilities.get("utterance_stt") is True,
@@ -12833,6 +12866,13 @@ def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str
             "tts": capabilities.get("tts") is True,
             "native_s2s": capabilities.get("native_s2s") is True,
             "vllm_audio_frontend": capabilities.get("vllm_audio_frontend") is True,
+            "input_languages": _sanitize_realtime_voice_health_metadata(
+                capabilities.get("input_languages", capabilities.get("languages"))
+            ),
+            "output_languages": _sanitize_realtime_voice_health_metadata(
+                capabilities.get("output_languages", capabilities.get("tts_languages"))
+            ),
+            "scripts": _sanitize_realtime_voice_health_metadata(capabilities.get("scripts")),
         },
         "local": {
             "stt": local.get("stt") is True,
