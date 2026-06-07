@@ -380,6 +380,8 @@ Responsibilities:
 - Capture microphone frames with WebAudio or AudioWorklet.
 - Wait for `session.started` before opening the microphone so remote sidecar/model startup does not capture audio before the backend voice engine is ready.
 - Send frames over websocket with monotonically increasing sequence numbers.
+- Serialize asynchronous audio encoding/sends so browser recorder chunks reach Hermes in capture order.
+- Bound browser websocket backpressure by dropping only non-final audio frames when the send buffer is already behind; never drop `end_of_utterance` frames.
 - Snapshot the end-of-utterance flag before async blob encoding so the final recorder chunk cannot lose the user turn boundary.
 - Request a final recorder chunk before silence stop and send an empty `end_of_utterance` marker if the browser stops without yielding one.
 - Maintain and surface captions from transcript and assistant text events.
