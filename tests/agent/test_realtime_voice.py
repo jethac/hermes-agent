@@ -236,6 +236,41 @@ def test_text_engine_accepts_transcript_payload_and_emits_oracle_text(monkeypatc
     asyncio.run(run())
 
 
+def test_text_engine_keeps_explicit_partial_transcript_out_of_oracle():
+    class TrackingOracle(FakeOracle):
+        def __init__(self):
+            self.called = False
+
+        async def stream_answer(self, transcript: str):
+            self.called = True
+            yield "should not happen"
+
+    async def run():
+        oracle = TrackingOracle()
+        engine = TextOracleTTSEngine(oracle=oracle)
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello her", "end_of_utterance": False},
+            )
+        )
+
+        events = [await anext(engine.events()), await anext(engine.events())]
+
+        assert [event.type for event in events] == [
+            VoiceEventType.SESSION_STARTED,
+            VoiceEventType.TRANSCRIPT_PARTIAL,
+        ]
+        assert events[-1].payload["text"] == "hello her"
+        assert oracle.called is False
+        await engine.close()
+
+    asyncio.run(run())
+
+
 def test_text_engine_speaks_before_oracle_stream_finishes(monkeypatch):
     class StreamingOracle:
         async def stream_answer(self, transcript: str):

@@ -106,6 +106,8 @@ Client events:
 {"type":"session.closed","session_id":"...","sequence":3,"payload":{"reason":"client_closed"}}
 ```
 
+Client `audio.input.chunk` events may include a `transcript` string for browser or sidecar experiments that produce text before raw-audio STT. Set `end_of_utterance`, `final`, or `is_final` to `false` for partial transcript captions; only final transcript payloads should start the Hermes oracle turn.
+
 Server events:
 
 ```json
