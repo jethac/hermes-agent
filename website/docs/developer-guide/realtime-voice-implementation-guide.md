@@ -749,6 +749,7 @@ Manual checks:
 - Confirm partial transcript appears before final transcript.
 - Confirm first audio starts before full response completes.
 - Interrupt playback and verify it stops.
+- Kill or restart the realtime sidecar or bridge during active playback and verify the desktop stops playback, releases microphone capture, clears stale queued audio, and reconnects or falls back without recording into the failed session.
 - Confirm durable transcript contains only final user text and committed assistant text.
 
 Run focused tests with:
@@ -784,3 +785,4 @@ npm run test:ui -- src/app/chat/composer/hooks/use-realtime-voice-session.test.t
 - Sidecar credentials are profile-safe.
 - Provider dependencies are optional or lazy-installed.
 - No English-only assumptions in speech planning, transcript prompts, language metadata, or TTS fallback.
+- Desktop reconnect recovery was exercised with real microphone/playback state, including microphone release, playback cancellation, stale queued audio invalidation, and clean return to realtime or one-shot fallback voice.

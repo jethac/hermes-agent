@@ -50,6 +50,31 @@ def test_production_review_validation_reports_missing_checks(tmp_path, capsys):
     assert "review_check_missing:noisy_room_and_headset_coverage" in error
 
 
+def test_production_review_requires_desktop_reconnect_recovery_check(tmp_path, capsys):
+    report_path = tmp_path / "review.json"
+    checks = {
+        key: True
+        for key in REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
+        if key != "desktop_reconnect_recovery"
+    }
+    report_path.write_text(
+        json.dumps(
+            {
+                "kind": "realtime_voice_production_review",
+                "reviewer": "qa@example.test",
+                "reviewed_at": "2026-06-08T00:00:00Z",
+                "checks": checks,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = realtime_voice_production_review.main([str(report_path)])
+
+    assert result == 1
+    assert "review_check_missing:desktop_reconnect_recovery" in capsys.readouterr().err
+
+
 def test_production_review_validation_accepts_all_checks(tmp_path, capsys):
     report_path = tmp_path / "review.json"
     report_path.write_text(

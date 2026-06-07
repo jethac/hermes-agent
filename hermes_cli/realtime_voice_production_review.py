@@ -16,6 +16,10 @@ REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS = {
     "human_en_ja_conversations": "Human English and Japanese conversation sessions passed",
     "noisy_room_and_headset_coverage": "Noisy-room, laptop microphone, and headset coverage passed",
     "remote_sidecar_latency_drill": "Remote sidecar latency and reconnect drill passed",
+    "desktop_reconnect_recovery": (
+        "Desktop websocket reconnect recovery releases microphone capture, stops playback, "
+        "drops stale queued audio, and returns to realtime or fallback voice cleanly"
+    ),
     "provider_failure_drill": "Streaming STT/TTS or native S2S provider failure drill passed",
     "barge_in_reliability": "Barge-in reliability passed under real playback",
     "tool_call_policy_review": "Tool-call and data-access behavior reviewed for live voice",
