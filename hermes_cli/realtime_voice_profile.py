@@ -124,6 +124,8 @@ def main(argv: list[str] | None = None) -> int:
                 bridge_token_env,
                 force=bool(args.force_bridge_token),
             )
+            if args.preset == "deepgram":
+                ensure_deepgram_bridge_token_env(bridge_token_env)
             if token_result == "created":
                 print(f"Generated realtime voice bridge token in {bridge_token_env}")
             elif token_result == "existing":
@@ -157,6 +159,16 @@ def ensure_realtime_voice_bridge_token(token_env: str, *, force: bool = False) -
         return "existing"
     save_env_value(env_name, secrets.token_urlsafe(32))
     return "created"
+
+
+def ensure_deepgram_bridge_token_env(token_env: str) -> None:
+    env_name = _clean_env_name(token_env)
+    if not env_name or env_name == "HERMES_STREAMING_STT_BRIDGE_TOKEN":
+        return
+
+    from hermes_cli.config import save_env_value
+
+    save_env_value("HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV", env_name)
 
 
 def _profile_preset_values(args: argparse.Namespace) -> dict[str, str]:

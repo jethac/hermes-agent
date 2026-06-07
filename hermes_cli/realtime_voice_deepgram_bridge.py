@@ -121,6 +121,8 @@ def main(argv: list[str] | None = None) -> int:
         from hermes_cli.config import save_env_value
 
         save_env_value(token_env, secrets.token_urlsafe(32))
+        if args.token_env:
+            save_env_value("HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV", token_env)
         print(f"Deepgram realtime voice bridge token stored in {token_env}")
         return 0
 
