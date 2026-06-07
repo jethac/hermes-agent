@@ -158,6 +158,8 @@ export function useVoiceConversation({
   const spokenSourceLengthRef = useRef(0)
   const speechBufferRef = useRef('')
   const [realtimeUnavailable, setRealtimeUnavailable] = useState(false)
+  const [realtimeFallbackFrontendState, setRealtimeFallbackFrontendState] =
+    useState<RealtimeVoiceFrontendState | null>(null)
   const realtimeFallbackStartedRef = useRef(false)
   const enabledRef = useRef(enabled)
   const mutedRef = useRef(muted)
@@ -168,7 +170,12 @@ export function useVoiceConversation({
     busy,
     enabled: enabled && realtimeEnabled && !realtimeUnavailable,
     onFatalError,
-    onUnavailable: () => setRealtimeUnavailable(true),
+    onUnavailable: state => {
+      setRealtimeFallbackFrontendState(
+        state ?? { reason: 'realtime_unavailable', status: 'fallback', updatedAtMs: Date.now() }
+      )
+      setRealtimeUnavailable(true)
+    },
     sessionId
   })
 
@@ -191,6 +198,7 @@ export function useVoiceConversation({
   useEffect(() => {
     if (!enabled || !realtimeEnabled) {
       setRealtimeUnavailable(false)
+      setRealtimeFallbackFrontendState(null)
       realtimeFallbackStartedRef.current = false
     }
   }, [enabled, realtimeEnabled])
@@ -512,7 +520,7 @@ export function useVoiceConversation({
   return {
     caption: EMPTY_REALTIME_CAPTION,
     end,
-    frontendState: EMPTY_REALTIME_FRONTEND_STATE,
+    frontendState: realtimeFallbackFrontendState ?? EMPTY_REALTIME_FRONTEND_STATE,
     level,
     metrics: EMPTY_REALTIME_METRICS,
     muted,
