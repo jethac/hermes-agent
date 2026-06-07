@@ -316,6 +316,21 @@ function finitePositiveMs(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
 }
 
+function realtimeVoiceHasQualityTargetMiss(payload?: Record<string, unknown>): boolean {
+  if (Array.isArray(payload?.quality_target_misses) && payload.quality_target_misses.length > 0) {
+    return true
+  }
+
+  const summary = payload?.quality_summary
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+    return false
+  }
+
+  const targetMissCount = (summary as Record<string, unknown>).target_miss_count
+
+  return typeof targetMissCount === 'number' && Number.isFinite(targetMissCount) && targetMissCount > 0
+}
+
 function realtimeVoiceLanguageMetadata(payload?: Record<string, unknown>): RealtimeVoiceLanguageMetadata {
   const metadata: RealtimeVoiceLanguageMetadata = {}
 
@@ -768,7 +783,7 @@ export function collectRealtimeVoiceFrontendState(
   event: VoiceEvent
 ): RealtimeVoiceFrontendState | null {
   if (event.type !== 'frontend.state') {
-    if (Array.isArray(event.payload?.quality_target_misses) && event.payload.quality_target_misses.length > 0) {
+    if (realtimeVoiceHasQualityTargetMiss(event.payload)) {
       if (previous?.status === 'fallback') {
         return previous
       }

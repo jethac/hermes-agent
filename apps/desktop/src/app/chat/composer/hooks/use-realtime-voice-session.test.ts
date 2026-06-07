@@ -404,6 +404,24 @@ describe('collectRealtimeVoiceFrontendState', () => {
     })
   })
 
+  it('keeps realtime voice degraded from the session quality summary', () => {
+    expect(collectRealtimeVoiceFrontendState(null, event('transcript.final', {
+      quality_summary: {
+        last_target_miss: {
+          actual_ms: 650,
+          metric: 'final_transcript_to_first_text_ms',
+          target_ms: 500
+        },
+        target_miss_count: 2
+      },
+      text: 'hello'
+    }))).toEqual({
+      reason: 'quality_target_missed',
+      status: 'degraded',
+      updatedAtMs: 1_234
+    })
+  })
+
   it('does not replace a fallback state with latency degradation', () => {
     const previous = {
       reason: 'sidecar_send_failed',
