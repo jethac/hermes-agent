@@ -36,6 +36,11 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
                 "reason": "streaming_stt_tts",
                 "live_like": True,
             },
+            "production_readiness": {
+                "ready": True,
+                "level": "production_ready",
+                "issues": [],
+            },
             "sidecar": {
                 "mode": "external",
                 "healthy": True,
@@ -53,6 +58,8 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
     assert "Quality:" in output
     assert "streaming_text (streaming_stt_tts)" in output
     assert "Live-like:    yes" in output
+    assert "Production:" in output
+    assert "production_ready" in output
     assert "Require live: yes" in output
     assert "Sidecar:      external (healthy: yes)" in output
 
@@ -80,6 +87,11 @@ def test_show_status_reports_realtime_voice_live_like_required(monkeypatch, caps
                 "reason": "utterance_stt_tts",
                 "live_like": False,
             },
+            "production_readiness": {
+                "ready": False,
+                "level": "not_ready",
+                "issues": ["live_like_required", "not_live_like"],
+            },
             "sidecar": {
                 "mode": "external",
                 "healthy": True,
@@ -94,6 +106,7 @@ def test_show_status_reports_realtime_voice_live_like_required(monkeypatch, caps
     assert "unavailable (live_like_required)" in output
     assert "turn_based_text (utterance_stt_tts)" in output
     assert "Live-like:    no" in output
+    assert "not_ready (live_like_required, not_live_like)" in output
     assert "Require live: yes" in output
 
 
