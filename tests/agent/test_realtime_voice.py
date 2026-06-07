@@ -680,7 +680,10 @@ def test_text_engine_degrades_to_text_when_tts_fails(monkeypatch):
             yield "Second sentence."
 
     async def run():
+        attempted_tts = []
+
         async def failing_speak(self, text, playback_generation):
+            attempted_tts.append(text)
             raise RuntimeError("tts failed at http://user:pass@voice.local/v1?token=abc")
 
         monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", failing_speak)
@@ -712,6 +715,7 @@ def test_text_engine_degrades_to_text_when_tts_fails(monkeypatch):
         commit = seen[-1]
         assert commit.type == VoiceEventType.ASSISTANT_COMMIT
         assert commit.payload["text"] == "First sentence. Second sentence."
+        assert attempted_tts == ["First sentence."]
         assert VoiceEventType.SESSION_ERROR not in [event.type for event in seen]
 
     asyncio.run(run())

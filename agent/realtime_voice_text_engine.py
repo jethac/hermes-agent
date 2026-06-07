@@ -398,6 +398,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             async def speak_after_previous() -> None:
                 if previous is not None:
                     await previous
+                if tts_error_reported:
+                    return
                 if playback_generation == self._playback_generation:
                     try:
                         await self._speak_chunk(text, playback_generation)
