@@ -217,6 +217,11 @@ interface RealtimePlaybackQueueActionInput {
   muted: boolean
 }
 
+interface RealtimeQueuedAudioInputGeneration {
+  activeGeneration: number
+  queuedGeneration: number
+}
+
 function bytesFromBase64(value: string): Uint8Array {
   const raw = atob(value)
   const bytes = new Uint8Array(raw.length)
@@ -541,6 +546,13 @@ export function realtimeVoicePlaybackQueueAction({
   return enabled && !muted ? 'listening' : 'idle'
 }
 
+export function shouldDropQueuedRealtimeAudioInput({
+  activeGeneration,
+  queuedGeneration
+}: RealtimeQueuedAudioInputGeneration): boolean {
+  return queuedGeneration !== activeGeneration
+}
+
 export function realtimeVoicePlaybackGeneration(payload?: Record<string, unknown>): number | null {
   const value = payload?.playback_generation
 
@@ -736,7 +748,10 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       audioSendChainRef.current = queueRealtimeAudioTask(
         audioSendChainRef.current,
         async () => {
-          if (audioInputGeneration !== audioInputGenerationRef.current) {
+          if (shouldDropQueuedRealtimeAudioInput({
+            activeGeneration: audioInputGenerationRef.current,
+            queuedGeneration: audioInputGeneration
+          })) {
             return
           }
           if (closingInputRef.current && !endOfUtterance) {
@@ -756,7 +771,10 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
           }
 
           const audioData = blob.size > 0 ? await blob.arrayBuffer() : new ArrayBuffer(0)
-          if (audioInputGeneration !== audioInputGenerationRef.current) {
+          if (shouldDropQueuedRealtimeAudioInput({
+            activeGeneration: audioInputGenerationRef.current,
+            queuedGeneration: audioInputGeneration
+          })) {
             return
           }
 
@@ -1056,6 +1074,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
             acceptSpeech = gate.shouldBargeIn
             if (gate.shouldBargeIn) {
               bargeInSpeechStartedAtRef.current = null
+              audioInputGenerationRef.current += 1
               stopPlayback(true)
               sendEvent('barge_in', { reason: 'user_speech' })
             }
