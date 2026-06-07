@@ -8,6 +8,7 @@ import os
 import sys
 import subprocess  # noqa: F401 — re-exported for tests that monkeypatch status.subprocess to guard against regressions
 from pathlib import Path
+from typing import Any, Mapping
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
@@ -84,6 +85,59 @@ def _effective_provider_label() -> str:
         effective = "custom"
 
     return provider_label(effective)
+
+
+def _realtime_voice_status_payload() -> Mapping[str, Any]:
+    from hermes_cli.web_server import _realtime_voice_status_payload as payload
+
+    return payload(probe_health=True)
+
+
+def _format_realtime_voice_bool(value: Any) -> str:
+    if value is True:
+        return "yes"
+    if value is False:
+        return "no"
+    return "unknown"
+
+
+def _print_realtime_voice_status() -> None:
+    print()
+    print(color("◆ Realtime Voice", Colors.CYAN, Colors.BOLD))
+
+    try:
+        payload = _realtime_voice_status_payload()
+    except Exception as exc:
+        print(f"  Status:       {color('unknown', Colors.DIM)}")
+        print(f"  Detail:       could not check realtime voice ({exc})")
+        return
+
+    enabled = payload.get("enabled") is True
+    available = payload.get("available") is True
+    unavailable_reason = str(payload.get("unavailable_reason") or "").strip()
+    engine = str(payload.get("engine") or "text_oracle_tts")
+    quality = payload.get("conversation_quality") if isinstance(payload.get("conversation_quality"), Mapping) else {}
+    sidecar = payload.get("sidecar") if isinstance(payload.get("sidecar"), Mapping) else {}
+
+    if not enabled:
+        status_label = "disabled"
+    elif available:
+        status_label = "available"
+    else:
+        status_label = f"unavailable ({unavailable_reason or 'unknown'})"
+
+    print(f"  Status:       {check_mark(enabled and available)} {status_label}")
+    print(f"  Engine:       {engine}")
+    mode = str(quality.get("mode") or "unknown")
+    reason = str(quality.get("reason") or "unknown")
+    live_like = quality.get("live_like")
+    live_label = _format_realtime_voice_bool(live_like)
+    print(f"  Quality:      {check_mark(live_like is True)} {mode} ({reason})")
+    print(f"  Live-like:    {live_label}")
+    print(f"  Require live: {_format_realtime_voice_bool(payload.get('require_live_like'))}")
+    sidecar_mode = str(sidecar.get("mode") or "none")
+    healthy = sidecar.get("healthy")
+    print(f"  Sidecar:      {sidecar_mode} (healthy: {_format_realtime_voice_bool(healthy)})")
 
 
 from hermes_constants import is_termux as _is_termux
@@ -171,6 +225,8 @@ def show_status(args):
     anthropic_value = get_anthropic_key()
     anthropic_display = redact_key(anthropic_value)
     print(f"  {'Anthropic':<12}  {check_mark(bool(anthropic_value))} {anthropic_display}")
+
+    _print_realtime_voice_status()
 
     # =========================================================================
     # Auth Providers (OAuth)
