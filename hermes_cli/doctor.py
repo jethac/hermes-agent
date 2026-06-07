@@ -582,6 +582,29 @@ def _check_realtime_voice_production_readiness(
         check_warn("Realtime voice production readiness", detail)
 
 
+def _emit_realtime_voice_live_setup_hint(payload: Mapping[str, Any]) -> None:
+    quality = payload.get("conversation_quality")
+    quality = quality if isinstance(quality, Mapping) else {}
+    mode = str(quality.get("mode") or "")
+    if quality.get("live_like") is True:
+        return
+    if mode not in {
+        "local_turn_based",
+        "turn_based_text",
+        "limited_sidecar",
+        "unverified_sidecar",
+        "unknown",
+    }:
+        return
+    check_info("Portable live setup:")
+    check_info("  python -m hermes_cli.realtime_voice_profile --preset deepgram --apply")
+    check_info("  set DEEPGRAM_API_KEY=...")
+    check_info("  python -m hermes_cli.realtime_voice_deepgram_bridge --generate-token")
+    check_info("  python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict --production-en-ja")
+    check_info("  python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --production-en-ja")
+    check_info("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3")
+
+
 def _realtime_voice_cli_values(value: Any) -> list[str]:
     if value is None or value is False:
         return []
@@ -1341,6 +1364,7 @@ def _check_realtime_voice_readiness(issues: list[str], *, strict: bool = False) 
             "Configure a streaming STT/TTS sidecar or native S2S sidecar; turn-based voice is not live-like",
             issues,
         )
+        _emit_realtime_voice_live_setup_hint(payload)
     elif enabled:
         check_warn("Live conversation quality", quality_detail)
     else:
