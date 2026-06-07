@@ -1999,6 +1999,9 @@ DEFAULT_CONFIG = {
             "sidecar_connect_timeout_seconds": 10.0,
             "vllm_base_url": "",
             "vllm_model": "",
+            "production_languages": ["en", "ja"],
+            "production_scripts": ["Latn", "Jpan"],
+            "best_effort_languages": True,
         },
     },
     
