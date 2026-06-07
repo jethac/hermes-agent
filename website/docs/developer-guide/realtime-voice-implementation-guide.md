@@ -277,15 +277,16 @@ hermes doctor \
   --realtime-voice-tts-smoke "こんにちは、Hermesです。" \
   --realtime-voice-tts-smoke "音声で会話できますか？" \
   --realtime-voice-report ./artifacts/realtime-voice-alpha.json
+python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha.json --alpha
 ```
 
 CI shape:
 
 - Keep the normal unit tests in the regular test matrix: `tests/agent/test_realtime_voice.py`, `tests/hermes_cli/test_web_server.py::TestRealtimeVoiceWebSocket`, and the realtime desktop hook tests.
-- Add a separate, opt-in realtime voice smoke workflow or manual job that starts the configured sidecar, runs the command above, and uploads `artifacts/realtime-voice-alpha.json`.
+- Add a separate, opt-in realtime voice smoke workflow or manual job that starts the configured sidecar, runs the command above, verifies the JSON artifact with `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha.json --alpha`, and uploads `artifacts/realtime-voice-alpha.json`.
 - Treat EN/JA fixture and TTS failures, missing `transcript.partial`, missing `transcript.final`, missing `audio.output.chunk`, and target latency misses as release-blocking for private alpha.
 - Treat non-target language fixture failures as non-blocking unless they reveal protocol rejection, translation-to-English behavior, metadata leakage, or a crash.
-- Archive only latency metrics, event names, byte counts, sanitized errors, fixture identifiers, and phrase identifiers. Do not archive raw user audio outside explicit opt-in fixtures.
+- Archive only latency metrics, event names, byte counts, sanitized errors, fixture identifiers, and configured smoke phrases. Do not archive raw user audio outside explicit opt-in fixtures.
 
 Implementation notes:
 
