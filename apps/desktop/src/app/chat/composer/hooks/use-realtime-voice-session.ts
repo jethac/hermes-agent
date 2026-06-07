@@ -122,6 +122,7 @@ const METRIC_KEYS = {
 const SPEECH_LEVEL_THRESHOLD = 0.075
 const BARGE_IN_MIN_SPEECH_MS = 120
 const MAX_REALTIME_AUDIO_BUFFERED_BYTES = 512 * 1024
+const MAX_REALTIME_PLAYBACK_QUEUE_ITEMS = 24
 const REALTIME_BINARY_HEADER_BYTES = 4
 const REALTIME_BINARY_HEADER_LIMIT = 64 * 1024
 const DEFAULT_REALTIME_INPUT_FRAME_MS = 100
@@ -177,6 +178,11 @@ interface RealtimeAudioFrameBackpressureInput {
   bufferedAmount: number
   endOfUtterance: boolean
   maxBufferedBytes?: number
+}
+
+interface RealtimePlaybackQueueBackpressureInput<T> {
+  maxItems?: number
+  queue: T[]
 }
 
 interface RealtimeTurnCaptureStartInput {
@@ -449,6 +455,21 @@ export function shouldSendRealtimeAudioFrame({
   maxBufferedBytes = MAX_REALTIME_AUDIO_BUFFERED_BYTES
 }: RealtimeAudioFrameBackpressureInput): boolean {
   return endOfUtterance || bufferedAmount <= maxBufferedBytes
+}
+
+export function applyRealtimePlaybackQueueBackpressure<T>({
+  maxItems = MAX_REALTIME_PLAYBACK_QUEUE_ITEMS,
+  queue
+}: RealtimePlaybackQueueBackpressureInput<T>): { dropped: number; queue: T[] } {
+  const limit = Number.isFinite(maxItems) ? Math.max(0, Math.floor(maxItems)) : 0
+
+  if (queue.length <= limit) {
+    return { dropped: 0, queue }
+  }
+
+  const dropped = queue.length - limit
+
+  return { dropped, queue: queue.slice(dropped) }
 }
 
 export function realtimeVoiceInputFrameMs(value: unknown): number {
@@ -1004,6 +1025,16 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       new Uint8Array(audioData).set(bytes)
 
       playbackQueueRef.current.push({ blob: new Blob([audioData], { type: mimeType }), generation })
+      const backpressure = applyRealtimePlaybackQueueBackpressure({ queue: playbackQueueRef.current })
+
+      if (backpressure.dropped > 0) {
+        playbackQueueRef.current = backpressure.queue
+        setFrontendState({
+          reason: 'playback_queue_backpressure',
+          status: 'degraded',
+          updatedAtMs: Date.now()
+        })
+      }
       playNext()
     },
     [playNext, stopPlayback]
