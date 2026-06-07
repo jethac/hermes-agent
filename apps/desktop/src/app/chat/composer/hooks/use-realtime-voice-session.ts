@@ -44,6 +44,12 @@ export interface RealtimeVoiceCaption {
   updatedAtMs?: number
 }
 
+export interface RealtimeVoiceFrontendState {
+  reason?: string
+  status: 'degraded' | 'fallback'
+  updatedAtMs?: number
+}
+
 export interface RealtimeVoiceStatus {
   available: boolean
   enabled: boolean
@@ -285,8 +291,31 @@ export function collectRealtimeVoiceCaption(
   return previous
 }
 
+export function collectRealtimeVoiceFrontendState(
+  previous: RealtimeVoiceFrontendState | null,
+  event: VoiceEvent
+): RealtimeVoiceFrontendState | null {
+  if (event.type !== 'frontend.state') {
+    return previous
+  }
+
+  const status = typeof event.payload?.status === 'string' ? event.payload.status : ''
+  if (status !== 'fallback' && status !== 'degraded') {
+    return null
+  }
+
+  const reason = typeof event.payload?.reason === 'string' ? event.payload.reason : ''
+
+  return {
+    reason: reason || undefined,
+    status,
+    updatedAtMs: finiteNonNegativeMs(event.timestamp_ms) ?? Date.now()
+  }
+}
+
 export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavailable, sessionId }: RealtimeVoiceOptions) {
   const [caption, setCaption] = useState<RealtimeVoiceCaption | null>(null)
+  const [frontendState, setFrontendState] = useState<RealtimeVoiceFrontendState | null>(null)
   const [status, setStatus] = useState<ConversationStatus>('idle')
   const [level, setLevel] = useState(0)
   const [muted, setMuted] = useState(false)
@@ -681,6 +710,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       }
 
       setCaption(current => collectRealtimeVoiceCaption(current, event))
+      setFrontendState(current => collectRealtimeVoiceFrontendState(current, event))
       setMetrics(current => collectRealtimeVoiceMetrics(current, event))
 
       if (event.type === 'audio.output.chunk') {
@@ -716,6 +746,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
     sessionRef.current = sessionId || sessionRef.current
     setCaption(null)
+    setFrontendState(null)
     setMetrics({})
     const url = await realtimeVoiceUrl(sessionRef.current)
     const socket = new WebSocket(url)
@@ -779,6 +810,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     socketRef.current = null
     sessionStartedRef.current = false
     setCaption(null)
+    setFrontendState(null)
     setMuted(false)
     setStatus('idle')
   }, [cleanupInput, sendEvent, stopPlayback])
@@ -820,5 +852,5 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
   useEffect(() => () => void end(), [end])
 
-  return { caption, end, level, metrics, muted, start, status, stopTurn, toggleMute }
+  return { caption, end, frontendState, level, metrics, muted, start, status, stopTurn, toggleMute }
 }

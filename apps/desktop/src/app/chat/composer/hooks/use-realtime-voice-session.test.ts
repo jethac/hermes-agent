@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   collectRealtimeVoiceCaption,
+  collectRealtimeVoiceFrontendState,
   collectRealtimeVoiceMetrics,
   getRealtimeVoiceStatus,
   realtimeAudioInputPayload,
@@ -178,6 +179,38 @@ describe('collectRealtimeVoiceCaption', () => {
 
     expect(collectRealtimeVoiceCaption(assistant, event('barge_in', {}))).toBeNull()
     expect(collectRealtimeVoiceCaption(user, event('barge_in', {}))).toBe(user)
+  })
+})
+
+describe('collectRealtimeVoiceFrontendState', () => {
+  const event = (type: string, payload: Record<string, unknown>, timestamp_ms = 1_234): VoiceEvent => ({
+    payload,
+    sequence: 1,
+    session_id: 'voice-123',
+    timestamp_ms,
+    type
+  })
+
+  it('tracks recoverable frontend fallback state', () => {
+    expect(collectRealtimeVoiceFrontendState(null, event('frontend.state', {
+      reason: 'sidecar_send_failed',
+      status: 'fallback'
+    }))).toEqual({
+      reason: 'sidecar_send_failed',
+      status: 'fallback',
+      updatedAtMs: 1_234
+    })
+  })
+
+  it('clears degraded state when the frontend reports ready', () => {
+    const previous = {
+      reason: 'sidecar_event_stream_failed',
+      status: 'degraded' as const,
+      updatedAtMs: 1_000
+    }
+
+    expect(collectRealtimeVoiceFrontendState(previous, event('frontend.state', { status: 'ready' }))).toBeNull()
+    expect(collectRealtimeVoiceFrontendState(previous, event('transcript.partial', { text: 'hello' }))).toBe(previous)
   })
 })
 

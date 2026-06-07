@@ -2049,6 +2049,7 @@ export function ChatBar({
       conversation={{
         active: voiceConversationActive,
         caption: conversation.caption,
+        frontendState: conversation.frontendState,
         level: conversation.level,
         metrics: conversation.metrics,
         muted: conversation.muted,

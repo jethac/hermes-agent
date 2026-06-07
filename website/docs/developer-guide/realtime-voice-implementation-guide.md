@@ -376,6 +376,7 @@ Responsibilities:
 - Snapshot the end-of-utterance flag before async blob encoding so the final recorder chunk cannot lose the user turn boundary.
 - Request a final recorder chunk before silence stop and send an empty `end_of_utterance` marker if the browser stops without yielding one.
 - Maintain and surface captions from transcript and assistant text events.
+- Surface recoverable `frontend.state` fallback/degraded events without ending the voice session.
 - Play `audio.output.chunk` through a queue.
 - Cancel playback immediately on local barge-in.
 - Require a short sustained-speech window before local barge-in so isolated playback echo frames do not self-interrupt the assistant.
