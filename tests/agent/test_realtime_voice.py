@@ -64,7 +64,12 @@ class FakeSidecar:
                     type=VoiceEventType.TRANSCRIPT_PARTIAL,
                     session_id=event.session_id,
                     sequence=1,
-                    payload={"text": "hello", "stability": 0.7, **transcript_payload},
+                    payload={
+                        "text": "hello",
+                        "stability": 0.7,
+                        "language_url": "https://voice.local/secret",
+                        **transcript_payload,
+                    },
                 )
             )
             await self._events.put(
@@ -72,7 +77,13 @@ class FakeSidecar:
                     type=VoiceEventType.TRANSCRIPT_FINAL,
                     session_id=event.session_id,
                     sequence=2,
-                    payload={"text": "hello hermes", "language": "ja", "script": "Jpan", **transcript_payload},
+                    payload={
+                        "text": "hello hermes",
+                        "language": "ja",
+                        "script": "Jpan",
+                        "language_url": "https://voice.local/secret",
+                        **transcript_payload,
+                    },
                 )
             )
 
@@ -762,6 +773,9 @@ def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
         assert sidecar.spoken[0].payload["playback_generation"] == 1
         assert VoiceEventType.TRANSCRIPT_PARTIAL in [event.type for event in seen]
         assert VoiceEventType.TRANSCRIPT_FINAL in [event.type for event in seen]
+        partial_events = [event for event in seen if event.type == VoiceEventType.TRANSCRIPT_PARTIAL]
+        assert partial_events[0].payload["stability"] == 0.7
+        assert "language_url" not in partial_events[0].payload
         commit_events = [event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT]
         assert commit_events[0].payload["text"] == "Answering: hello hermes."
         assert commit_events[0].payload["playback_generation"] == 1
@@ -769,6 +783,7 @@ def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
         assert final_events[0].payload["input_generation"] == 1
         assert final_events[0].payload["language"] == "ja"
         assert final_events[0].payload["script"] == "Jpan"
+        assert "language_url" not in final_events[0].payload
         audio_events = [event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK]
         assert audio_events[0].payload["playback_generation"] == 1
 
@@ -2419,7 +2434,12 @@ def test_native_s2s_engine_normalizes_sidecar_generation_and_session():
             type=VoiceEventType.TRANSCRIPT_FINAL,
             session_id="sidecar-session",
             sequence=50,
-            payload={"text": "hello"},
+            payload={
+                "text": "hello",
+                "language": "ja",
+                "script": "Jpan",
+                "language_url": "https://voice.local/secret",
+            },
         ),
         new_generation=True,
     )
@@ -2434,6 +2454,9 @@ def test_native_s2s_engine_normalizes_sidecar_generation_and_session():
 
     assert transcript.session_id == "voice-123"
     assert transcript.payload["playback_generation"] == 1
+    assert transcript.payload["language"] == "ja"
+    assert transcript.payload["script"] == "Jpan"
+    assert "language_url" not in transcript.payload
     assert audio.session_id == "voice-123"
     assert audio.payload["playback_generation"] == 1
 
