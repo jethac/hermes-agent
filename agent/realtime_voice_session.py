@@ -35,6 +35,7 @@ class RealtimeVoiceTranscript:
     partial_user_text: str = ""
     final_user_segments: List[str] = field(default_factory=list)
     assistant_draft: str = ""
+    active_playback_generation: int = 0
     committed_assistant_segments: List[str] = field(default_factory=list)
     interrupted_assistant_segments: List[str] = field(default_factory=list)
 
@@ -103,16 +104,30 @@ class RealtimeVoiceSession:
             self.transcript.partial_user_text = str(event.payload.get("text") or "")
         elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
             text = str(event.payload.get("text") or "").strip()
+            generation = _payload_generation(event.payload)
+            if generation is not None:
+                self.transcript.active_playback_generation = max(
+                    self.transcript.active_playback_generation,
+                    generation,
+                )
             self.transcript.partial_user_text = ""
             if text:
                 self.transcript.final_user_segments.append(text)
             self.state = RealtimeVoiceSessionState.ASSISTANT_PENDING
         elif event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+            generation = _payload_generation(event.payload)
+            if generation is not None:
+                if generation < self.transcript.active_playback_generation:
+                    return
+                self.transcript.active_playback_generation = generation
             self.transcript.assistant_draft = (
                 self.transcript.assistant_draft + " " + str(event.payload.get("text") or "")
             ).strip()
             self.state = RealtimeVoiceSessionState.SPEAKING
         elif event.type == VoiceEventType.ASSISTANT_COMMIT:
+            generation = _payload_generation(event.payload)
+            if generation is not None and generation < self.transcript.active_playback_generation:
+                return
             if event.payload.get("interrupted") is True:
                 if self.transcript.assistant_draft:
                     self.transcript.interrupted_assistant_segments.append(self.transcript.assistant_draft)
@@ -125,6 +140,17 @@ class RealtimeVoiceSession:
             self.state = RealtimeVoiceSessionState.LISTENING
         elif event.type == VoiceEventType.SESSION_CLOSED:
             self.state = RealtimeVoiceSessionState.CLOSED
+
+
+def _payload_generation(payload: dict) -> Optional[int]:
+    value = payload.get("playback_generation")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
 
 
 def create_realtime_voice_engine(config: RealtimeVoiceSessionConfig) -> RealtimeVoiceEngine:

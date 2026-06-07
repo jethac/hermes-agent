@@ -112,9 +112,9 @@ Server events:
 {"type":"session.started","session_id":"...","sequence":1,"payload":{"engine":"text_oracle_tts"}}
 {"type":"transcript.partial","session_id":"...","sequence":2,"payload":{"text":"what was that","stability":0.42}}
 {"type":"transcript.final","session_id":"...","sequence":3,"payload":{"text":"what was that KAME paper about?"}}
-{"type":"assistant.text.partial","session_id":"...","sequence":4,"payload":{"text":"KAME is interesting because "}}
-{"type":"audio.output.chunk","session_id":"...","sequence":5,"payload":{"codec":"opus","data_b64":"..."}}
-{"type":"assistant.commit","session_id":"...","sequence":6,"payload":{"text":"KAME is interesting because ..."}}
+{"type":"assistant.text.partial","session_id":"...","sequence":4,"payload":{"text":"KAME is interesting because ","playback_generation":1}}
+{"type":"audio.output.chunk","session_id":"...","sequence":5,"payload":{"codec":"opus","data_b64":"...","playback_generation":1}}
+{"type":"assistant.commit","session_id":"...","sequence":6,"payload":{"text":"KAME is interesting because ...","playback_generation":1}}
 ```
 
 ## Backend Endpoint
@@ -174,6 +174,7 @@ Keep these pieces of state:
 - current final user segment
 - partial transcript text and stability
 - active assistant draft id
+- active playback generation
 - committed assistant text
 - interrupted assistant text
 - pending tool calls
@@ -335,6 +336,7 @@ Responsibilities:
 - Maintain captions from transcript and assistant text events.
 - Play `audio.output.chunk` through a queue.
 - Cancel playback immediately on local barge-in.
+- Track `playback_generation` and drop stale audio chunks from interrupted assistant output.
 - Fall back to the current MediaRecorder blob loop when realtime mode is unavailable.
 
 ## Testing Plan

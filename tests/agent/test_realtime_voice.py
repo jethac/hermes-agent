@@ -66,12 +66,15 @@ class FakeSidecar:
 
     async def speak(self, event):
         self.spoken.append(event)
+        payload = AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"sidecar-audio").to_payload()
+        if "playback_generation" in event.payload:
+            payload["playback_generation"] = event.payload["playback_generation"]
         await self._events.put(
             VoiceEvent(
                 type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
                 session_id=event.session_id,
                 sequence=3,
-                payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"sidecar-audio").to_payload(),
+                payload=payload,
             )
         )
 
@@ -97,7 +100,7 @@ def test_session_config_round_trips_wire_payload():
         frontend_model="gemma-4-e4b",
         oracle_model="configured-hermes-model",
         tts_provider="edge",
-        spark_base_url="http://spark.local:8080",
+        spark_base_url="http://voice.local:8080",
         metadata={"profile": "default"},
     )
 
@@ -171,10 +174,13 @@ def test_planner_suppresses_internal_markup_and_chunks_text():
 
 def test_text_engine_accepts_transcript_payload_and_emits_oracle_text(monkeypatch):
     async def run():
-        async def fake_speak(self, text):
+        async def fake_speak(self, text, playback_generation):
             await self._emit(
                 VoiceEventType.AUDIO_OUTPUT_CHUNK,
-                AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+                {
+                    **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+                    "playback_generation": playback_generation,
+                },
             )
 
         monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
@@ -194,7 +200,11 @@ def test_text_engine_accepts_transcript_payload_and_emits_oracle_text(monkeypatc
         seen = []
         async for event in engine.events():
             seen.append(event)
-            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+            event_types = [event.type for event in seen]
+            if (
+                VoiceEventType.ASSISTANT_COMMIT in event_types
+                and VoiceEventType.AUDIO_OUTPUT_CHUNK in event_types
+            ):
                 await engine.close()
                 break
 
@@ -219,7 +229,7 @@ def test_text_engine_speaks_before_oracle_stream_finishes(monkeypatch):
     async def run():
         spoken = []
 
-        async def fake_speak(self, text):
+        async def fake_speak(self, text, playback_generation):
             spoken.append(text)
 
         monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
@@ -252,7 +262,7 @@ def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
             session_id="voice-123",
             frontend_provider="gemma",
             frontend_model="gemma-4-e4b",
-            spark_base_url="http://spark.local:8080",
+            spark_base_url="http://voice.local:8080",
         )
         engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
         await engine.start(config)
@@ -271,16 +281,25 @@ def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
         seen = []
         async for event in engine.events():
             seen.append(event)
-            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+            event_types = [seen_event.type for seen_event in seen]
+            if (
+                VoiceEventType.ASSISTANT_COMMIT in event_types
+                and VoiceEventType.AUDIO_OUTPUT_CHUNK in event_types
+            ):
                 await engine.close()
                 break
 
         assert sidecar.started is True
         assert sidecar.received[0].type == VoiceEventType.AUDIO_INPUT_CHUNK
         assert sidecar.spoken
+        assert sidecar.spoken[0].payload["playback_generation"] == 1
         assert VoiceEventType.TRANSCRIPT_PARTIAL in [event.type for event in seen]
         assert VoiceEventType.TRANSCRIPT_FINAL in [event.type for event in seen]
-        assert seen[-1].payload["text"] == "Answering: hello hermes."
+        commit_events = [event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT]
+        assert commit_events[0].payload["text"] == "Answering: hello hermes."
+        assert commit_events[0].payload["playback_generation"] == 1
+        audio_events = [event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK]
+        assert audio_events[0].payload["playback_generation"] == 1
 
     asyncio.run(run())
 
@@ -297,7 +316,7 @@ def test_text_engine_barge_in_interrupts_oracle_and_sidecar():
         oracle = InterruptibleOracle()
         sidecar = FakeSidecar()
         engine = TextOracleTTSEngine(oracle=oracle, sidecar=sidecar)
-        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123", spark_base_url="http://spark.local"))
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123", spark_base_url="http://voice.local"))
         await engine.receive_event(
             VoiceEvent(
                 type=VoiceEventType.BARGE_IN,
@@ -322,12 +341,12 @@ def test_sidecar_config_detection_and_url_building():
         RealtimeVoiceSessionConfig(
             session_id="voice-123",
             frontend_provider="gemma",
-            spark_base_url="http://spark.local:8080/base",
+            spark_base_url="http://voice.local:8080/base",
         )
     )
     assert not wants_realtime_sidecar(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="gemma"))
-    assert sidecar_ws_url("http://spark.local:8080/base", "/v1/realtime-text/session") == (
-        "ws://spark.local:8080/base/v1/realtime-text/session"
+    assert sidecar_ws_url("http://voice.local:8080/base", "/v1/realtime-text/session") == (
+        "ws://voice.local:8080/base/v1/realtime-text/session"
     )
 
 
@@ -402,7 +421,7 @@ def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
                 type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                 session_id="voice-123",
                 sequence=2,
-                payload={"text": "hello back", "speak": True},
+                payload={"text": "hello back", "speak": True, "playback_generation": 7},
             )
         )
 
@@ -423,6 +442,7 @@ def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
         ]
         audio_events = [event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK]
         assert audio_events[0].payload["data_b64"]
+        assert audio_events[0].payload["playback_generation"] == 7
 
     asyncio.run(run())
 
@@ -467,7 +487,7 @@ def test_reference_sidecar_vllm_audio_frontend(monkeypatch):
 
 def test_session_persists_only_final_and_committed_messages(monkeypatch):
     async def run():
-        async def fake_speak(self, text):
+        async def fake_speak(self, text, playback_generation):
             return None
 
         monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
@@ -498,6 +518,43 @@ def test_session_persists_only_final_and_committed_messages(monkeypatch):
     asyncio.run(run())
 
 
+def test_session_ignores_stale_interrupted_commit_from_prior_generation():
+    async def run():
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(session_id="voice-123"),
+            engine=TextOracleTTSEngine(oracle=FakeOracle()),
+        )
+        session._apply_server_event(
+            VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"text": "first", "playback_generation": 1},
+            )
+        )
+        session._apply_server_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=2,
+                payload={"text": "new draft", "playback_generation": 2},
+            )
+        )
+        session._apply_server_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_COMMIT,
+                session_id="voice-123",
+                sequence=3,
+                payload={"interrupted": True, "text": "", "playback_generation": 1},
+            )
+        )
+
+        assert session.transcript.assistant_draft == "new draft"
+        assert session.transcript.interrupted_assistant_segments == []
+
+    asyncio.run(run())
+
+
 def test_native_s2s_engine_sends_oracle_hint_to_sidecar():
     class FakeWs:
         def __init__(self):
@@ -512,7 +569,7 @@ def test_native_s2s_engine_sends_oracle_hint_to_sidecar():
         engine.config = RealtimeVoiceSessionConfig(
             session_id="voice-123",
             engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
-            spark_base_url="ws://spark.local",
+            spark_base_url="ws://voice.local",
         )
         engine._ws = ws
         engine._oracle = FakeOracle()

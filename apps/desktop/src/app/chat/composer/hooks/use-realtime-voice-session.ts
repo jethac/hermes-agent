@@ -21,6 +21,11 @@ interface VoiceEvent {
   type: string
 }
 
+interface PlaybackItem {
+  blob: Blob
+  generation: number
+}
+
 export interface RealtimeVoiceStatus {
   available: boolean
   enabled: boolean
@@ -87,8 +92,9 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const heardSpeechRef = useRef(false)
   const silenceStartedAtRef = useRef<number | null>(null)
   const stoppingForSilenceRef = useRef(false)
-  const playbackQueueRef = useRef<Blob[]>([])
+  const playbackQueueRef = useRef<PlaybackItem[]>([])
   const playingRef = useRef<HTMLAudioElement | null>(null)
+  const playbackGenerationRef = useRef(0)
   const enabledRef = useRef(enabled)
   const mutedRef = useRef(muted)
   const busyRef = useRef(busy)
@@ -141,7 +147,20 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     setLevel(0)
   }, [])
 
-  const stopPlayback = useCallback(() => {
+  const advancePlaybackGeneration = useCallback((generation?: unknown) => {
+    const next = typeof generation === 'number' && Number.isFinite(generation)
+      ? Math.max(playbackGenerationRef.current, generation)
+      : playbackGenerationRef.current + 1
+
+    playbackGenerationRef.current = next
+
+    return next
+  }, [])
+
+  const stopPlayback = useCallback((advanceGeneration = false) => {
+    if (advanceGeneration) {
+      advancePlaybackGeneration()
+    }
     playbackQueueRef.current = []
     const audio = playingRef.current
 
@@ -150,19 +169,24 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       audio.src = ''
       playingRef.current = null
     }
-  }, [])
+  }, [advancePlaybackGeneration])
 
   const playNext = useCallback(() => {
     if (playingRef.current || !playbackQueueRef.current.length) {
       return
     }
 
-    const blob = playbackQueueRef.current.shift()
-    if (!blob) {
+    const item = playbackQueueRef.current.shift()
+    if (!item) {
+      return
+    }
+    if (item.generation < playbackGenerationRef.current) {
+      playNext()
+
       return
     }
 
-    const url = URL.createObjectURL(blob)
+    const url = URL.createObjectURL(item.blob)
     const audio = new Audio(url)
 
     playingRef.current = audio
@@ -191,6 +215,19 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       if (!data) {
         return
       }
+      const rawGeneration = payload.playback_generation
+      const generation =
+        typeof rawGeneration === 'number' && Number.isFinite(rawGeneration)
+          ? rawGeneration
+          : playbackGenerationRef.current
+
+      if (generation < playbackGenerationRef.current) {
+        return
+      }
+      if (generation > playbackGenerationRef.current) {
+        stopPlayback()
+        playbackGenerationRef.current = generation
+      }
 
       const mimeType =
         typeof payload.mime_type === 'string'
@@ -203,10 +240,10 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
       new Uint8Array(audioData).set(bytes)
 
-      playbackQueueRef.current.push(new Blob([audioData], { type: mimeType }))
+      playbackQueueRef.current.push({ blob: new Blob([audioData], { type: mimeType }), generation })
       playNext()
     },
-    [playNext]
+    [playNext, stopPlayback]
   )
 
   const stopRecorderForTurn = useCallback(() => {
@@ -255,7 +292,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
         if (normalized >= 0.075) {
           if (playingRef.current) {
-            stopPlayback()
+            stopPlayback(true)
             sendEvent('barge_in', { reason: 'user_speech' })
           }
           heardSpeechRef.current = true
@@ -344,9 +381,12 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       } else if (event.type === 'session.error') {
         notifyError(new Error(String(event.payload?.error || 'Realtime voice failed')), 'Realtime voice failed')
         onFatalError?.()
+      } else if (event.type === 'barge_in') {
+        stopPlayback()
+        advancePlaybackGeneration(event.payload?.playback_generation)
       }
     },
-    [enqueueAudio, onFatalError, startListening]
+    [advancePlaybackGeneration, enqueueAudio, onFatalError, startListening, stopPlayback]
   )
 
   const start = useCallback(async () => {
