@@ -174,6 +174,7 @@ Hermes oracle
 - The backend cancels active TTS/native S2S output and marks uncommitted speech as interrupted.
 - The oracle receives the interruption as part of live state.
 - Assistant text, audio chunks, commits, and barge-in acknowledgements carry a `playback_generation` so the desktop can discard late audio from interrupted output.
+- Acceptance evidence must prove the interrupted output goes quiet after the barge-in acknowledgement; acknowledging `barge_in` while stale assistant audio keeps arriving is not sufficient.
 
 ### Persistence
 

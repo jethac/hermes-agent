@@ -537,6 +537,23 @@ def _validate_barge_in_entry(
     events = _events(entry)
     if "barge_in" not in events:
         issues.append(RealtimeVoiceSmokeReportIssue("barge_in", "missing barge_in event", identifier))
+    audio_after_barge_in_bytes = _nonnegative_int(entry.get("audio_after_barge_in_bytes"))
+    if audio_after_barge_in_bytes is None:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "barge_in",
+                "missing audio_after_barge_in_bytes",
+                identifier,
+            )
+        )
+    elif audio_after_barge_in_bytes > 0:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "barge_in",
+                f"audio.output.chunk arrived after barge_in ({audio_after_barge_in_bytes} byte(s))",
+                identifier,
+            )
+        )
     ack_ms = _nonnegative_int(entry.get("barge_in_ack_ms"))
     target_ms = _positive_int(entry.get("target_ms"))
     if ack_ms is None:

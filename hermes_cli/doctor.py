@@ -710,6 +710,13 @@ def _realtime_voice_smoke_report_payload(result: Any, *, kind: str, **extra: Any
         "output_audio_bytes": int(
             mapping.get("output_audio_bytes", getattr(result, "output_audio_bytes", 0)) or 0
         ),
+        "audio_after_barge_in_bytes": int(
+            mapping.get(
+                "audio_after_barge_in_bytes",
+                getattr(result, "audio_after_barge_in_bytes", 0),
+            )
+            or 0
+        ),
         "events": list(tuple(mapping.get("events", getattr(result, "events", ())) or ())),
         "error": str(mapping.get("error", getattr(result, "error", "")) or "") or None,
     }

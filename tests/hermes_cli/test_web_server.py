@@ -124,6 +124,7 @@ def _valid_realtime_voice_alpha_report():
                 "ok": True,
                 "text": text,
                 "barge_in_ack_ms": 45,
+                "audio_after_barge_in_bytes": 0,
                 "target_ms": 150,
                 "events": ["frontend.state", "barge_in"],
                 "error": None,

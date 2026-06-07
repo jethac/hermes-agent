@@ -95,6 +95,7 @@ def _valid_alpha_report():
                 "ok": True,
                 "text": text,
                 "barge_in_ack_ms": 45,
+                "audio_after_barge_in_bytes": 0,
                 "target_ms": 150,
                 "events": ["frontend.state", "barge_in"],
                 "error": None,
@@ -226,6 +227,25 @@ def test_realtime_voice_alpha_report_rejects_barge_in_target_misses():
     issues = validate_realtime_voice_alpha_report(report)
 
     assert any("barge_in_ack_ms 250 exceeds target 150" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_rejects_audio_after_barge_in():
+    report = _valid_alpha_report()
+    report[-1]["audio_after_barge_in_bytes"] = 128
+    report[-1]["events"] = ["frontend.state", "barge_in", "audio.output.chunk"]
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("audio.output.chunk arrived after barge_in (128 byte(s))" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_requires_barge_in_audio_quiet_field():
+    report = _valid_alpha_report()
+    report[-1].pop("audio_after_barge_in_bytes")
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("missing audio_after_barge_in_bytes" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_alpha_report_rejects_loose_entry_targets():

@@ -88,6 +88,7 @@ class TestRealtimeVoiceReadiness:
                 final_text="こんにちは",
                 audio_bytes=1234,
                 output_audio_bytes=4321,
+                audio_after_barge_in_bytes=0,
                 events=("frontend.state", "transcript.final"),
             ),
             kind="audio_fixture",
@@ -97,6 +98,7 @@ class TestRealtimeVoiceReadiness:
         assert payload["kind"] == "audio_fixture"
         assert payload["events"] == ["frontend.state", "transcript.final"]
         assert payload["barge_in_ack_ms"] == 45
+        assert payload["audio_after_barge_in_bytes"] == 0
         assert payload["error"] is None
 
     def test_non_strict_disabled_realtime_voice_is_informational(self, monkeypatch, capsys):
@@ -546,6 +548,7 @@ class TestRealtimeVoiceReadiness:
                 "final_text": "",
                 "audio_bytes": 1234,
                 "output_audio_bytes": 0,
+                "audio_after_barge_in_bytes": 0,
                 "events": ["frontend.state", "transcript.partial", "transcript.final"],
                 "error": None,
                 "fixture": "hello-ja.webm",
