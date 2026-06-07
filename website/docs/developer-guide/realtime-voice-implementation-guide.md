@@ -419,6 +419,7 @@ Responsibilities:
 - Cancel playback immediately on local barge-in.
 - Require a short sustained-speech window before local barge-in so isolated playback echo frames do not self-interrupt the assistant.
 - Keep the microphone stream and analyser alive across assistant playback; stop and recreate only the per-utterance `MediaRecorder`.
+- Restart the per-utterance `MediaRecorder` immediately when accepted speech begins after a prior silence stop, including barge-in before the previous assistant turn has committed.
 - Track `playback_generation` and drop stale audio, assistant text, assistant commit, and generated final-transcript events from interrupted output.
 - Show the latest realtime latency snapshot while a voice session is active.
 - Fall back to the current MediaRecorder blob loop when realtime mode is unavailable or the websocket closes before `session.started`.
