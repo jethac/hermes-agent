@@ -7408,6 +7408,23 @@ class TestRealtimeVoiceWebSocket:
         assert "Jpan,Latn" in command
         assert "secret" not in __import__("json").dumps(command)
 
+    def test_sidecar_command_includes_streaming_stt_bridge_args_without_token(self):
+        command = self.ws_module._realtime_voice_sidecar_command(
+            {
+                "sidecar_host": "127.0.0.1",
+                "sidecar_port": 8765,
+                "streaming_stt_base_url": "http://streaming-stt.local:9000",
+                "streaming_stt_model": "portable-streaming-asr",
+                "streaming_stt_token_env": "STREAMING_STT_TOKEN",
+            }
+        )
+
+        assert "--streaming-stt-base-url" in command
+        assert "http://streaming-stt.local:9000" in command
+        assert "--streaming-stt-model" in command
+        assert "portable-streaming-asr" in command
+        assert "STREAMING_STT_TOKEN" not in command
+
     def test_sidecar_command_inherits_production_language_policy_by_default(self):
         command = self.ws_module._realtime_voice_sidecar_command(
             {
@@ -7730,6 +7747,7 @@ class TestRealtimeVoiceWebSocket:
             "load_env",
             lambda: {
                 "CUSTOM_VOICE_TOKEN": "secret-token",
+                "STREAMING_STT_TOKEN": "stream-secret-token",
                 "HERMES_TEST_ENV": "1",
             },
         )
@@ -7744,6 +7762,9 @@ class TestRealtimeVoiceWebSocket:
                 "sidecar_token_env": "CUSTOM_VOICE_TOKEN",
                 "vllm_base_url": "http://100.113.98.11:8000/v1",
                 "vllm_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                "streaming_stt_base_url": "http://streaming-stt.local:9000",
+                "streaming_stt_model": "portable-streaming-asr",
+                "streaming_stt_token_env": "STREAMING_STT_TOKEN",
                 "languages": ["ja", "en", "https://voice.local/secret"],
                 "scripts": ["Jpan", "Latn", "bad/script"],
             }
@@ -7756,6 +7777,9 @@ class TestRealtimeVoiceWebSocket:
         assert all(req.headers["Authorization"] == "Bearer secret-token" for req in calls["requests"])
         assert kwargs["env"]["CUSTOM_VOICE_TOKEN"] == "secret-token"
         assert kwargs["env"]["HERMES_VOICE_SIDECAR_TOKEN"] == "secret-token"
+        assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_BASE_URL"] == "http://streaming-stt.local:9000"
+        assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_MODEL"] == "portable-streaming-asr"
+        assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_TOKEN"] == "stream-secret-token"
         assert kwargs["env"]["HERMES_VOICE_INPUT_LANGUAGES"] == "ja,en"
         assert kwargs["env"]["HERMES_VOICE_OUTPUT_LANGUAGES"] == "ja,en"
         assert kwargs["env"]["HERMES_VOICE_SCRIPTS"] == "Jpan,Latn"
