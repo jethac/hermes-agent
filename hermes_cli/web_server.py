@@ -12854,6 +12854,14 @@ def _realtime_voice_should_autostart_sidecar(realtime: Dict[str, Any], base_url:
     return True
 
 
+def _realtime_voice_sidecar_mode(realtime: Dict[str, Any], base_url: str) -> str:
+    if _realtime_voice_should_autostart_sidecar(realtime, base_url):
+        return "managed_loopback"
+    if base_url:
+        return "external"
+    return "none"
+
+
 def _realtime_voice_sidecar_health_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/health"
 
@@ -13549,11 +13557,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         base_url=base_url,
         health_payload=health_payload,
     )
-    sidecar_mode = "none"
-    if autostart:
-        sidecar_mode = "managed_loopback"
-    elif externally_managed:
-        sidecar_mode = "external"
+    sidecar_mode = _realtime_voice_sidecar_mode(realtime, base_url)
 
     current_evidence_manifest = _realtime_voice_current_evidence_manifest(
         engine=engine,
@@ -13715,12 +13719,36 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     language_support = _realtime_voice_language_support_payload(realtime)
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
+    evidence_configured = bool(
+        str(
+            realtime.get("production_evidence_report")
+            or realtime.get("alpha_evidence_report")
+            or ""
+        ).strip()
+    )
+    health_payload = None
+    if sidecar_base_url and (require_live_like or evidence_configured):
+        health_payload = _realtime_voice_sidecar_health_payload(
+            sidecar_base_url,
+            token=sidecar_token,
+        )
     conversation_quality = _realtime_voice_conversation_quality_payload(
         engine=str(engine),
         base_url=str(sidecar_base_url or ""),
-        health_payload=None,
+        health_payload=health_payload,
     )
-    production_evidence = _realtime_voice_production_evidence_payload(realtime)
+    current_evidence_manifest = _realtime_voice_current_evidence_manifest(
+        engine=str(engine),
+        frontend_provider=str(realtime.get("frontend_provider") or ""),
+        frontend_model=str(realtime.get("frontend_model") or ""),
+        sidecar_mode=_realtime_voice_sidecar_mode(realtime, sidecar_base_url),
+        health_payload=health_payload,
+        conversation_quality=conversation_quality,
+    )
+    production_evidence = _realtime_voice_production_evidence_payload(
+        realtime,
+        current_manifest=current_evidence_manifest,
+    )
     production_readiness = _realtime_voice_production_readiness_payload(
         enabled=realtime.get("enabled") is True,
         available=realtime.get("enabled") is True,
