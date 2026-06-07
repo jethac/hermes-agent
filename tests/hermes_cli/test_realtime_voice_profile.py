@@ -158,4 +158,5 @@ def test_deepgram_preset_apply_prints_bridge_next_steps(monkeypatch, tmp_path, c
     output = capsys.readouterr().out
     assert "realtime_voice_deepgram_bridge --generate-token" in output
     assert "realtime_voice_deepgram_bridge --check --strict" in output
-    assert "--require-output-languages en,ja" in output
+    assert "--production-en-ja" in output
+    assert "realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --production-en-ja" in output

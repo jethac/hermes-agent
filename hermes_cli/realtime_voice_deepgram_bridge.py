@@ -13,6 +13,9 @@ from agent.realtime_voice_deepgram_bridge import (
 )
 
 
+DEFAULT_PRODUCTION_EN_JA_TTS_MODEL_BY_LANGUAGE = "ja:aura-2-fujin-ja,en:aura-2-thalia-en"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a Hermes-compatible Deepgram streaming STT bridge")
     parser.add_argument("--host", default=os.environ.get("HERMES_DEEPGRAM_BRIDGE_HOST", "127.0.0.1"))
@@ -56,6 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated TTS output languages that --check must verify, for example en,ja",
     )
     parser.add_argument(
+        "--production-en-ja",
+        action="store_true",
+        help="Use the supported Hermes EN/JA production TTS route preset and require en,ja output in --check",
+    )
+    parser.add_argument(
         "--token-env",
         default=None,
         help="Environment variable used for the bridge bearer token",
@@ -76,12 +84,19 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     _load_bridge_env()
+    tts_model_by_language = str(args.tts_model_by_language or "").strip()
+    if args.production_en_ja and not tts_model_by_language:
+        tts_model_by_language = DEFAULT_PRODUCTION_EN_JA_TTS_MODEL_BY_LANGUAGE
+    required_output_languages = str(args.require_output_languages or "").strip()
+    if args.production_en_ja and not required_output_languages:
+        required_output_languages = "en,ja"
+
     if args.model:
         os.environ["HERMES_DEEPGRAM_MODEL"] = args.model
     if args.tts_model:
         os.environ["HERMES_DEEPGRAM_TTS_MODEL"] = args.tts_model
-    if args.tts_model_by_language:
-        os.environ["HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE"] = args.tts_model_by_language
+    if tts_model_by_language:
+        os.environ["HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE"] = tts_model_by_language
     if args.output_languages:
         os.environ["HERMES_DEEPGRAM_OUTPUT_LANGUAGES"] = args.output_languages
     if args.language:
@@ -114,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
         issues = deepgram_bridge_prerequisite_issues(
             runtime,
             require_auth_token=bool(args.strict),
-            required_output_languages=_parse_required_languages(args.require_output_languages),
+            required_output_languages=_parse_required_languages(required_output_languages),
         )
         if issues:
             print(f"Deepgram realtime voice bridge check failed: {len(issues)} issue(s)")

@@ -362,6 +362,7 @@ def test_deepgram_bridge_cli_check_requires_output_languages(monkeypatch, capsys
 
     monkeypatch.delenv("HERMES_DEEPGRAM_OUTPUT_LANGUAGES", raising=False)
     monkeypatch.delenv("HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE", raising=False)
+    monkeypatch.delenv("HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV", raising=False)
     monkeypatch.setattr(
         "hermes_cli.config.load_env",
         lambda: {
@@ -382,6 +383,34 @@ def test_deepgram_bridge_cli_check_requires_output_languages(monkeypatch, capsys
     output = capsys.readouterr().out
     assert "Deepgram realtime voice bridge check failed" in output
     assert "missing required language(s) ja" in output
+
+
+def test_deepgram_bridge_cli_production_en_ja_preset_routes_tts(monkeypatch, capsys):
+    from hermes_cli import realtime_voice_deepgram_bridge
+
+    monkeypatch.delenv("HERMES_DEEPGRAM_OUTPUT_LANGUAGES", raising=False)
+    monkeypatch.delenv("HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE", raising=False)
+    monkeypatch.delenv("HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.config.load_env",
+        lambda: {
+            "DEEPGRAM_API_KEY": "deepgram-secret",
+            "HERMES_STREAMING_STT_BRIDGE_TOKEN": "bridge-token",
+        },
+    )
+    monkeypatch.setattr(
+        "agent.realtime_voice_deepgram_bridge._module_available",
+        lambda name: name == "websockets",
+    )
+
+    result = realtime_voice_deepgram_bridge.main(["--check", "--strict", "--production-en-ja"])
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "Deepgram realtime voice bridge check OK" in output
+    assert "tts_model_by_language: en,ja" in output
+    assert "deepgram-secret" not in output
+    assert "bridge-token" not in output
 
 
 def test_voice_extra_installs_websocket_client():
