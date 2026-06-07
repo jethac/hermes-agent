@@ -13040,8 +13040,10 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
     try:
         _ensure_realtime_voice_sidecar(realtime)
     except Exception as exc:
+        from agent.realtime_voice_errors import sanitize_realtime_voice_error
+
         _log.warning("realtime voice sidecar failed to start", exc_info=True)
-        await ws.close(code=1011, reason=_ws_close_reason(f"sidecar: {exc}"))
+        await ws.close(code=1011, reason=_ws_close_reason(f"sidecar: {sanitize_realtime_voice_error(exc)}"))
         return
 
     try:

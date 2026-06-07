@@ -18,6 +18,7 @@ from agent.realtime_voice import (
     VoiceEvent,
     VoiceEventType,
 )
+from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_oracle import HermesRealtimeOracle, NullRealtimeOracle
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, wants_realtime_sidecar
@@ -65,7 +66,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     {
                         "status": "fallback",
                         "reason": "sidecar_unavailable",
-                        "error": str(exc),
+                        "error": sanitize_realtime_voice_error(exc),
                         "sidecar": False,
                     },
                 )
@@ -191,7 +192,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 {
                     "status": "degraded",
                     "reason": "sidecar_event_stream_failed",
-                    "error": str(exc),
+                    "error": sanitize_realtime_voice_error(exc),
                     "sidecar": False,
                 },
             )
@@ -209,7 +210,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 {
                     "status": "fallback",
                     "reason": "sidecar_send_failed",
-                    "error": str(exc),
+                    "error": sanitize_realtime_voice_error(exc),
                     "sidecar": False,
                 },
             )
@@ -223,7 +224,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"transcription failed: {exc}"})
+            await self._emit(
+                VoiceEventType.SESSION_ERROR,
+                {"error": f"transcription failed: {sanitize_realtime_voice_error(exc)}"},
+            )
 
     async def _start_turn(self, transcript: str) -> None:
         if self._active_task and not self._active_task.done():
@@ -278,7 +282,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 )
             raise
         except Exception as exc:
-            await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"oracle/tts failed: {exc}"})
+            await self._emit(
+                VoiceEventType.SESSION_ERROR,
+                {"error": f"oracle/tts failed: {sanitize_realtime_voice_error(exc)}"},
+            )
 
     def _transcribe_sync(self, audio: bytes, codec: VoiceAudioCodec) -> str:
         from tools.transcription_tools import transcribe_audio
@@ -322,7 +329,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     {
                         "status": "fallback",
                         "reason": "sidecar_tts_failed",
-                        "error": str(exc),
+                        "error": sanitize_realtime_voice_error(exc),
                         "sidecar": False,
                     },
                 )

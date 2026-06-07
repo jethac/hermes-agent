@@ -174,6 +174,7 @@ Implementation notes:
 - Create one `RealtimeVoiceSession` per websocket.
 - Validate every client event with `validate_client_event`.
 - Never let recoverable model-sidecar failures kill the process; emit `frontend.state` with `status: "fallback"` or `status: "degraded"` and continue through local/provider STT/TTS where possible. Use `session.error` only for unrecoverable session failures.
+- Sanitize exception text before sending websocket events or close reasons to the desktop. Runtime voice events must not expose bearer tokens, URL credentials, query-string secrets, or provider keys.
 - On disconnect, call `engine.close()`.
 - Never expose sidecar bearer tokens, URL credentials, or query-string secrets through the status endpoint.
 - Use the configured sidecar bearer token for both websocket sessions and `/health` probes.

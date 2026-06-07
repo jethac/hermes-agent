@@ -19,6 +19,7 @@ from agent.realtime_voice_reference_sidecar import (
     create_reference_sidecar_app,
     reference_sidecar_health_payload,
 )
+from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
 from agent.realtime_voice_sidecar import sidecar_ws_url, wants_realtime_sidecar
@@ -90,6 +91,18 @@ class FakeSidecar:
     async def close(self):
         self.closed = True
         await self._events.put(None)
+
+
+def test_realtime_voice_error_sanitizer_redacts_credentials():
+    sanitized = sanitize_realtime_voice_error(
+        "failed Bearer secret-token at http://user:pass@voice.local:8765/v1?token=abc&api_key=def secret=raw"
+    )
+
+    assert sanitized == "failed Bearer *** at http://***@voice.local:8765/v1 secret=***"
+    assert "secret-token" not in sanitized
+    assert "user:pass" not in sanitized
+    assert "token=abc" not in sanitized
+    assert "api_key=def" not in sanitized
 
 
 def test_session_config_round_trips_wire_payload():
@@ -360,7 +373,7 @@ def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
 def test_text_engine_reports_sidecar_start_failure_as_frontend_fallback():
     class FailingStartSidecar:
         async def start(self, config):
-            raise RuntimeError("sidecar down")
+            raise RuntimeError("sidecar down at http://user:pass@voice.local:8765/v1?token=abc")
 
     async def run():
         engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=FailingStartSidecar())
@@ -382,6 +395,8 @@ def test_text_engine_reports_sidecar_start_failure_as_frontend_fallback():
         assert events[0].payload["reason"] == "sidecar_unavailable"
         assert events[0].payload["sidecar"] is False
         assert "sidecar down" in events[0].payload["error"]
+        assert "user:pass" not in events[0].payload["error"]
+        assert "token=abc" not in events[0].payload["error"]
         assert events[1].payload["sidecar"] is False
 
     asyncio.run(run())

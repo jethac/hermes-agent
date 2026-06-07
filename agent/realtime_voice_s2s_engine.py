@@ -15,6 +15,7 @@ from agent.realtime_voice import (
     VoiceEvent,
     VoiceEventType,
 )
+from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_oracle import HermesRealtimeOracle
 
 
@@ -147,7 +148,10 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"sidecar closed: {exc}"})
+            await self._emit(
+                VoiceEventType.SESSION_ERROR,
+                {"error": f"sidecar closed: {sanitize_realtime_voice_error(exc)}"},
+            )
 
     async def _emit(self, event_type: VoiceEventType, payload: dict) -> Optional[VoiceEvent]:
         if self.config is None:
@@ -235,7 +239,10 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"oracle hint failed: {exc}"})
+            await self._emit(
+                VoiceEventType.SESSION_ERROR,
+                {"error": f"oracle hint failed: {sanitize_realtime_voice_error(exc)}"},
+            )
 
     async def _send_oracle_hint_event(
         self,
