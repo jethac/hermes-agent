@@ -611,11 +611,7 @@ def _emit_realtime_voice_production_review_hint(readiness_issues: list[str]) -> 
     )
     check_info(
         "  python -m hermes_cli.realtime_voice_production_review "
-        "./artifacts/realtime-voice-production-review.json"
-    )
-    check_info(
-        "  set voice.realtime.production_review_report: "
-        "./artifacts/realtime-voice-production-review.json"
+        "./artifacts/realtime-voice-production-review.json --apply"
     )
 
 

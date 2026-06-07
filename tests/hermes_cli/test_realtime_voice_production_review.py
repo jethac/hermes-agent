@@ -68,6 +68,54 @@ def test_production_review_validation_accepts_all_checks(tmp_path, capsys):
     assert "Realtime voice production review OK" in capsys.readouterr().out
 
 
+def test_production_review_apply_updates_config_after_validation(monkeypatch, tmp_path, capsys):
+    report_path = tmp_path / "review.json"
+    report_path.write_text(
+        json.dumps(
+            realtime_voice_production_review.build_production_review_report(
+                reviewer="qa@example.test",
+                passed_checks=REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS,
+            )
+        ),
+        encoding="utf-8",
+    )
+    saved = {}
+    monkeypatch.setattr("hermes_cli.config.read_raw_config", lambda: {"voice": {"realtime": {"enabled": True}}})
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+
+    result = realtime_voice_production_review.main([str(report_path), "--apply"])
+
+    assert result == 0
+    assert saved["config"]["voice"]["realtime"]["enabled"] is True
+    assert saved["config"]["voice"]["realtime"]["production_review_report"] == str(report_path)
+    assert "Updated realtime voice production_review_report" in capsys.readouterr().out
+
+
+def test_production_review_apply_skips_pending_template(monkeypatch, tmp_path, capsys):
+    report_path = tmp_path / "review.json"
+    saved = {}
+    monkeypatch.setattr("hermes_cli.config.read_raw_config", lambda: {})
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+
+    result = realtime_voice_production_review.main(
+        [
+            str(report_path),
+            "--write-template",
+            "--reviewer",
+            "qa@example.test",
+            "--apply",
+        ]
+    )
+
+    assert result == 0
+    assert saved == {}
+    output = capsys.readouterr().out
+    assert "Pending check(s)" in output
+    assert "Config not updated" in output
+
+
 def test_production_review_template_refuses_existing_file_without_overwrite(tmp_path, capsys):
     report_path = tmp_path / "review.json"
     report_path.write_text("{}", encoding="utf-8")

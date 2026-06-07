@@ -300,7 +300,7 @@ class TestRealtimeVoiceReadiness:
         assert "missing_production_review_report" in output
         assert "Production launch review:" in output
         assert "realtime_voice_production_review ./artifacts/realtime-voice-production-review.json --write-template" in output
-        assert "voice.realtime.production_review_report" in output
+        assert "realtime_voice_production_review ./artifacts/realtime-voice-production-review.json --apply" in output
         assert any("production_review_report" in issue for issue in issues)
         assert not any("production_evidence_report" in issue for issue in issues)
 

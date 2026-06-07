@@ -44,6 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite an existing report when writing a template",
     )
     parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="After validation succeeds, set voice.realtime.production_review_report in config.yaml",
+    )
+    parser.add_argument(
         "--reviewer",
         default="",
         help="Reviewer name or team to include in a written template",
@@ -89,8 +94,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Pending check(s): {len(issues)}")
             for issue in issues:
                 print(f"  - {issue}")
+            if args.apply:
+                print("Config not updated until every production review check passes")
         else:
             print("Realtime voice production review OK")
+            if args.apply:
+                config_path = apply_production_review_report(report_path)
+                print(f"Updated realtime voice production_review_report in {config_path}")
         return 0
 
     try:
@@ -105,12 +115,35 @@ def main(argv: list[str] | None = None) -> int:
     issues = validate_production_review_report(report)
     if not issues:
         print("Realtime voice production review OK")
+        if args.apply:
+            config_path = apply_production_review_report(report_path)
+            print(f"Updated realtime voice production_review_report in {config_path}")
         return 0
 
     print(f"Realtime voice production review failed: {len(issues)} issue(s)", file=sys.stderr)
     for issue in issues:
         print(f"  - {issue}", file=sys.stderr)
     return 1
+
+
+def apply_production_review_report(report_path: str | Path) -> Path:
+    from hermes_cli.config import get_config_path, read_raw_config, save_config
+
+    path = Path(report_path).expanduser()
+    config = read_raw_config()
+    if not isinstance(config, dict):
+        config = {}
+    voice = config.get("voice")
+    if not isinstance(voice, dict):
+        voice = {}
+    realtime = voice.get("realtime")
+    if not isinstance(realtime, dict):
+        realtime = {}
+    realtime["production_review_report"] = str(path)
+    voice["realtime"] = realtime
+    config["voice"] = voice
+    save_config(config)
+    return get_config_path()
 
 
 def build_production_review_report(
