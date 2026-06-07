@@ -176,6 +176,9 @@ const MAX_REALTIME_SESSION_READY_TIMEOUT_MS = 30_000
 const DEFAULT_REALTIME_PRE_ROLL_MS = 300
 const MIN_REALTIME_PRE_ROLL_MS = 0
 const MAX_REALTIME_PRE_ROLL_MS = 1_000
+const MAX_REALTIME_RECONNECT_ATTEMPTS = 3
+const REALTIME_RECONNECT_BASE_DELAY_MS = 400
+const REALTIME_RECONNECT_MAX_DELAY_MS = 2_000
 const REALTIME_LANGUAGE_METADATA_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const GENERATION_EVENT_TYPES = new Set([
   'audio.output.chunk',
@@ -256,6 +259,13 @@ interface RealtimeCloseActionInput {
 
 interface RealtimeSessionErrorActionInput {
   sessionStarted: boolean
+}
+
+interface RealtimeReconnectInput {
+  attempts: number
+  busy: boolean
+  enabled: boolean
+  muted: boolean
 }
 
 interface RealtimePlaybackQueueActionInput {
@@ -679,6 +689,37 @@ export function realtimeVoiceFailureFrontendState(
   }
 }
 
+export function shouldReconnectRealtimeVoiceSession({
+  attempts,
+  busy,
+  enabled,
+  muted
+}: RealtimeReconnectInput): boolean {
+  return enabled && !muted && !busy && attempts < MAX_REALTIME_RECONNECT_ATTEMPTS
+}
+
+export function realtimeVoiceReconnectDelayMs(
+  attempts: number,
+  baseDelayMs = REALTIME_RECONNECT_BASE_DELAY_MS,
+  maxDelayMs = REALTIME_RECONNECT_MAX_DELAY_MS
+): number {
+  const cleanAttempts = Math.max(0, Math.floor(Number.isFinite(attempts) ? attempts : 0))
+  const delay = Math.max(0, baseDelayMs) * (2 ** cleanAttempts)
+
+  return Math.min(Math.max(0, maxDelayMs), delay)
+}
+
+export function realtimeVoiceReconnectFrontendState(
+  attempts: number,
+  updatedAtMs = Date.now()
+): RealtimeVoiceFrontendState {
+  return {
+    reason: `reconnecting_${Math.max(1, attempts)}`,
+    status: 'degraded',
+    updatedAtMs
+  }
+}
+
 export function realtimeVoicePlaybackQueueAction({
   enabled,
   hasQueuedAudio,
@@ -908,6 +949,9 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const audioSendChainRef = useRef<Promise<void>>(Promise.resolve())
   const serverEventChainRef = useRef<Promise<void>>(Promise.resolve())
   const audioInputGenerationRef = useRef(0)
+  const reconnectAttemptsRef = useRef(0)
+  const reconnectTimerRef = useRef<number | null>(null)
+  const startRef = useRef<(() => Promise<void>) | null>(null)
   const inputFrameMsRef = useRef(DEFAULT_REALTIME_INPUT_FRAME_MS)
   const silenceTimeoutMsRef = useRef(DEFAULT_REALTIME_SILENCE_TIMEOUT_MS)
   const speechLevelThresholdRef = useRef(DEFAULT_REALTIME_SPEECH_LEVEL_THRESHOLD)
@@ -931,6 +975,51 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
     return sequenceRef.current
   }
+
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleReconnect = useCallback(() => {
+    if (!shouldReconnectRealtimeVoiceSession({
+      attempts: reconnectAttemptsRef.current,
+      busy: busyRef.current,
+      enabled: enabledRef.current,
+      muted: mutedRef.current
+    })) {
+      return false
+    }
+
+    reconnectAttemptsRef.current += 1
+    const attempt = reconnectAttemptsRef.current
+
+    clearReconnectTimer()
+    setFrontendState(realtimeVoiceReconnectFrontendState(attempt))
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = null
+      if (!shouldReconnectRealtimeVoiceSession({
+        attempts: attempt - 1,
+        busy: busyRef.current,
+        enabled: enabledRef.current,
+        muted: mutedRef.current
+      })) {
+        return
+      }
+      const restart = startRef.current
+      if (!restart) {
+        return
+      }
+      void restart().catch(error => {
+        notifyError(error, 'Could not reconnect realtime voice')
+        onFatalError?.()
+      })
+    }, realtimeVoiceReconnectDelayMs(attempt - 1))
+
+    return true
+  }, [clearReconnectTimer, onFatalError])
 
   const sendEvent = useCallback((type: string, payload: Record<string, unknown> = {}) => {
     const socket = socketRef.current
@@ -1436,6 +1525,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
           )
           setFrontendState(state)
           onUnavailable?.(state)
+          scheduleReconnect()
         } else {
           onFatalError?.()
         }
@@ -1444,10 +1534,11 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         advancePlaybackGeneration(event.payload?.playback_generation)
       }
     },
-    [advancePlaybackGeneration, enqueueAudio, onFatalError, onUnavailable, startListening, stopPlayback]
+    [advancePlaybackGeneration, enqueueAudio, onFatalError, onUnavailable, scheduleReconnect, startListening, stopPlayback]
   )
 
   const start = useCallback(async () => {
+    clearReconnectTimer()
     const preflight = await getRealtimeVoiceStatus().catch(() => null)
     const unavailableState = realtimeVoiceUnavailableFrontendState(preflight)
 
@@ -1513,6 +1604,11 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       )
     }
     socket.onclose = close => {
+      if (socketRef.current !== socket) {
+        return
+      }
+      socketRef.current = null
+
       const action = realtimeVoiceCloseAction({
         closeCode: close.code,
         enabled: enabledRef.current,
@@ -1525,6 +1621,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         const state = realtimeVoiceFailureFrontendState('websocket_closed', Date.now())
         setFrontendState(state)
         onUnavailable?.(state)
+        scheduleReconnect()
       } else if (action === 'fatal') {
         onFatalError?.()
       }
@@ -1573,6 +1670,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     setMuted(false)
     try {
       await startListening()
+      reconnectAttemptsRef.current = 0
     } catch (error) {
       socket.close(1000, 'microphone unavailable')
       if (socketRef.current === socket) {
@@ -1581,9 +1679,10 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       setStatus('idle')
       throw error
     }
-  }, [handleEvent, onFatalError, onUnavailable, sessionId, startListening])
+  }, [clearReconnectTimer, handleEvent, onFatalError, onUnavailable, scheduleReconnect, sessionId, startListening])
 
   const end = useCallback(async () => {
+    clearReconnectTimer()
     sendEvent('session.closed', { reason: 'client_closed' })
     stopPlayback()
     cleanupInput()
@@ -1591,6 +1690,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     socketRef.current = null
     sessionStartedRef.current = false
     sessionFailedRef.current = false
+    reconnectAttemptsRef.current = 0
     audioSendChainRef.current = Promise.resolve()
     audioInputGenerationRef.current += 1
     setCaption(null)
@@ -1598,7 +1698,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     setQualityTargets(realtimeVoiceQualityTargets(null))
     setMuted(false)
     setStatus('idle')
-  }, [cleanupInput, sendEvent, stopPlayback])
+  }, [cleanupInput, clearReconnectTimer, sendEvent, stopPlayback])
 
   const stopTurn = useCallback(() => {
     stopRecorderForTurn()
@@ -1621,6 +1721,10 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       return next
     })
   }, [cleanupInput, onFatalError, startListening])
+
+  useEffect(() => {
+    startRef.current = start
+  }, [start])
 
   useEffect(() => {
     if (enabled) {
