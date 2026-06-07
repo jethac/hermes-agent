@@ -14,11 +14,25 @@ import yaml
 DEFAULT_EVIDENCE_REPORT = "./artifacts/realtime-voice-evidence"
 DEFAULT_STREAMING_STT_MODEL = "portable-streaming-asr"
 DEFAULT_STREAMING_TTS_MODEL = "portable-streaming-voice"
+DEFAULT_DEEPGRAM_BRIDGE_BASE_URL = "http://127.0.0.1:8766"
+DEFAULT_DEEPGRAM_STT_MODEL = "nova-3"
+DEFAULT_DEEPGRAM_TTS_MODEL = "aura-2-thalia-en"
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Print or apply a portable Hermes realtime voice profile"
+    )
+    parser.add_argument(
+        "--preset",
+        choices=("generic", "deepgram"),
+        default="generic",
+        help="Provider preset for common portable realtime voice stacks",
+    )
+    parser.add_argument(
+        "--bridge-base-url",
+        default="",
+        help="Shared bridge base URL used by provider presets, for example http://127.0.0.1:8766",
     )
     parser.add_argument(
         "--streaming-stt-base-url",
@@ -72,12 +86,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    preset = _profile_preset_values(args)
     try:
         profile = build_realtime_voice_live_like_profile(
-            streaming_stt_base_url=args.streaming_stt_base_url,
-            streaming_tts_base_url=args.streaming_tts_base_url,
-            streaming_stt_model=args.streaming_stt_model,
-            streaming_tts_model=args.streaming_tts_model,
+            streaming_stt_base_url=preset["streaming_stt_base_url"],
+            streaming_tts_base_url=preset["streaming_tts_base_url"],
+            streaming_stt_model=preset["streaming_stt_model"],
+            streaming_tts_model=preset["streaming_tts_model"],
             streaming_stt_token_env=args.streaming_stt_token_env,
             streaming_tts_token_env=args.streaming_tts_token_env,
             sidecar_host=args.sidecar_host,
@@ -93,12 +108,47 @@ def main(argv: list[str] | None = None) -> int:
         config_path = apply_realtime_voice_profile(profile)
         print(f"Updated realtime voice profile in {config_path}")
         print("Next:")
+        if args.preset == "deepgram":
+            print("  python -m hermes_cli.realtime_voice_deepgram_bridge --generate-token")
+            print("  python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict")
+            print("  python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766")
         print("  python -m hermes_cli.realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice")
         print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3")
         return 0
 
     print(yaml.safe_dump({"voice": {"realtime": profile}}, sort_keys=False, allow_unicode=True).rstrip())
     return 0
+
+
+def _profile_preset_values(args: argparse.Namespace) -> dict[str, str]:
+    streaming_stt_base_url = str(args.streaming_stt_base_url or "")
+    streaming_tts_base_url = str(args.streaming_tts_base_url or "")
+    streaming_stt_model = str(args.streaming_stt_model or DEFAULT_STREAMING_STT_MODEL)
+    streaming_tts_model = str(args.streaming_tts_model or DEFAULT_STREAMING_TTS_MODEL)
+
+    if args.preset != "deepgram":
+        return {
+            "streaming_stt_base_url": streaming_stt_base_url,
+            "streaming_tts_base_url": streaming_tts_base_url,
+            "streaming_stt_model": streaming_stt_model,
+            "streaming_tts_model": streaming_tts_model,
+        }
+
+    bridge_base_url = _clean_url(str(args.bridge_base_url or DEFAULT_DEEPGRAM_BRIDGE_BASE_URL))
+    return {
+        "streaming_stt_base_url": streaming_stt_base_url or bridge_base_url,
+        "streaming_tts_base_url": streaming_tts_base_url or streaming_stt_base_url or bridge_base_url,
+        "streaming_stt_model": (
+            DEFAULT_DEEPGRAM_STT_MODEL
+            if streaming_stt_model == DEFAULT_STREAMING_STT_MODEL
+            else streaming_stt_model
+        ),
+        "streaming_tts_model": (
+            DEFAULT_DEEPGRAM_TTS_MODEL
+            if streaming_tts_model == DEFAULT_STREAMING_TTS_MODEL
+            else streaming_tts_model
+        ),
+    }
 
 
 def build_realtime_voice_live_like_profile(

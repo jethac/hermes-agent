@@ -121,17 +121,10 @@ voice:
 The same live-like profile can be generated without machine-specific names:
 
 ```bash
-python -m hermes_cli.realtime_voice_profile \
-  --streaming-stt-base-url http://127.0.0.1:8766 \
-  --streaming-stt-model nova-3 \
-  --streaming-tts-base-url http://127.0.0.1:8766 \
-  --streaming-tts-model DEFAULT_TTS_MODEL \
-  --streaming-stt-token-env HERMES_STREAMING_STT_BRIDGE_TOKEN \
-  --streaming-tts-token-env HERMES_STREAMING_STT_BRIDGE_TOKEN \
-  --apply
+python -m hermes_cli.realtime_voice_profile --preset deepgram --apply
 ```
 
-This writes a capability-based `voice.realtime` profile, clears stale direct sidecar URLs, keeps the managed loopback reference sidecar portable, requires live-like streaming STT/TTS, and points production evidence at `./artifacts/realtime-voice-evidence` by default. Use `--allow-template-urls` without `--apply` to print a YAML template instead.
+This writes a capability-based `voice.realtime` profile, clears stale direct sidecar URLs, keeps the managed loopback reference sidecar portable, configures both streaming STT and streaming TTS through `http://127.0.0.1:8766`, uses `nova-3` plus `aura-2-thalia-en` unless overridden, requires live-like streaming STT/TTS, and points production evidence at `./artifacts/realtime-voice-evidence` by default. Use `--bridge-base-url` when the bridge runs on another host, or use the generic `--streaming-stt-*` and `--streaming-tts-*` flags for a non-Deepgram provider.
 
 For Japanese validation, use a Japanese-capable Deepgram STT language setting and route Japanese TTS to a Japanese-capable model with `--tts-model-by-language` or `HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE`. The value is a comma-separated map such as `ja:JAPANESE_TTS_MODEL,en:ENGLISH_TTS_MODEL`. If the bridge health probe cannot verify `streaming_stt: true`, Hermes keeps the profile below live-like status even though utterance STT and TTS may still work.
 
