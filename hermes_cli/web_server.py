@@ -12592,6 +12592,31 @@ def _realtime_voice_event_from_ws_message(message: Dict[str, Any]):
     raise ValueError("realtime voice websocket message must be JSON text or binary audio")
 
 
+def _realtime_voice_binary_frame_from_event(event) -> Optional[bytes]:
+    from agent.realtime_voice import VoiceEventType
+
+    if event.type != VoiceEventType.AUDIO_OUTPUT_CHUNK:
+        return None
+
+    payload = dict(event.payload)
+    raw = payload.pop("data_b64", None)
+    if not isinstance(raw, str) or not raw:
+        return None
+
+    try:
+        audio = base64.b64decode(raw.encode("ascii"), validate=True)
+    except Exception:
+        return None
+
+    wire = event.to_wire()
+    wire["payload"] = payload
+    header = json.dumps(wire, separators=(",", ":")).encode("utf-8")
+    if not header or len(header) > _REALTIME_VOICE_BINARY_HEADER_LIMIT:
+        return None
+
+    return len(header).to_bytes(_REALTIME_VOICE_BINARY_HEADER_BYTES, "big") + header + audio
+
+
 @app.get("/api/voice/realtime/status")
 async def realtime_voice_status() -> Dict[str, Any]:
     """Return realtime voice capability and sidecar health for preflight UI."""
@@ -12674,6 +12699,10 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
 
     async def pump_events() -> None:
         async for event in session.events():
+            frame = _realtime_voice_binary_frame_from_event(event)
+            if frame is not None:
+                await ws.send_bytes(frame)
+                continue
             await ws.send_json(event.to_wire())
 
     event_task = asyncio.create_task(pump_events())

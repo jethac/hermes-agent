@@ -5,6 +5,7 @@ import {
   collectRealtimeVoiceFrontendState,
   collectRealtimeVoiceMetrics,
   getRealtimeVoiceStatus,
+  parseRealtimeVoiceServerMessage,
   queueRealtimeAudioTask,
   realtimeAudioInputPayload,
   realtimeBinaryAudioInputFrame,
@@ -271,6 +272,46 @@ describe('realtimeBinaryAudioInputFrame', () => {
       type: 'audio.input.chunk'
     })
     expect(Array.from(bytes.slice(4 + headerLength))).toEqual([1, 2, 3])
+  })
+})
+
+describe('parseRealtimeVoiceServerMessage', () => {
+  it('parses legacy JSON websocket events', async () => {
+    await expect(parseRealtimeVoiceServerMessage(JSON.stringify({
+      payload: { engine: 'text_oracle_tts' },
+      sequence: 1,
+      session_id: 'voice-123',
+      type: 'session.started'
+    }))).resolves.toMatchObject({
+      payload: { engine: 'text_oracle_tts' },
+      sequence: 1,
+      session_id: 'voice-123',
+      type: 'session.started'
+    })
+  })
+
+  it('parses binary server audio without base64 encoding the raw bytes', async () => {
+    const header = new TextEncoder().encode(JSON.stringify({
+      payload: {
+        codec: 'opus',
+        playback_generation: 2
+      },
+      sequence: 9,
+      session_id: 'voice-123',
+      type: 'audio.output.chunk'
+    }))
+    const frame = new Uint8Array(4 + header.byteLength + 3)
+
+    new DataView(frame.buffer).setUint32(0, header.byteLength, false)
+    frame.set(header, 4)
+    frame.set(new Uint8Array([4, 5, 6]), 4 + header.byteLength)
+
+    const event = await parseRealtimeVoiceServerMessage(frame.buffer)
+
+    expect(event.type).toBe('audio.output.chunk')
+    expect(event.payload?.data_b64).toBeUndefined()
+    expect(Array.from(event.payload?.data_bytes as Uint8Array)).toEqual([4, 5, 6])
+    expect(event.payload?.playback_generation).toBe(2)
   })
 })
 

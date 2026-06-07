@@ -21,6 +21,10 @@ export interface VoiceEvent {
   type: string
 }
 
+interface BinaryVoiceEventPayload extends Record<string, unknown> {
+  data_bytes?: Uint8Array
+}
+
 interface PlaybackItem {
   blob: Blob
   generation: number
@@ -78,6 +82,8 @@ const METRIC_KEYS = {
 const SPEECH_LEVEL_THRESHOLD = 0.075
 const BARGE_IN_MIN_SPEECH_MS = 120
 const MAX_REALTIME_AUDIO_BUFFERED_BYTES = 512 * 1024
+const REALTIME_BINARY_HEADER_BYTES = 4
+const REALTIME_BINARY_HEADER_LIMIT = 64 * 1024
 const GENERATION_EVENT_TYPES = new Set([
   'audio.output.chunk',
   'assistant.commit',
@@ -271,6 +277,56 @@ export function realtimeBinaryAudioInputFrame({
   return frame.buffer
 }
 
+function arrayBufferFromRealtimeMessageData(data: unknown): Promise<ArrayBuffer | null> {
+  if (data instanceof ArrayBuffer) {
+    return Promise.resolve(data)
+  }
+  if (ArrayBuffer.isView(data)) {
+    const bytes = data as ArrayBufferView
+    const copy = new ArrayBuffer(bytes.byteLength)
+
+    new Uint8Array(copy).set(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength))
+
+    return Promise.resolve(copy)
+  }
+  if (data instanceof Blob) {
+    return data.arrayBuffer()
+  }
+
+  return Promise.resolve(null)
+}
+
+export async function parseRealtimeVoiceServerMessage(data: unknown): Promise<VoiceEvent> {
+  if (typeof data === 'string') {
+    return JSON.parse(data) as VoiceEvent
+  }
+
+  const frame = await arrayBufferFromRealtimeMessageData(data)
+  if (!frame || frame.byteLength < REALTIME_BINARY_HEADER_BYTES) {
+    throw new Error('Realtime voice message must be JSON text or binary audio')
+  }
+
+  const headerLength = new DataView(frame).getUint32(0, false)
+  if (headerLength <= 0 || headerLength > REALTIME_BINARY_HEADER_LIMIT) {
+    throw new Error('Realtime voice binary header length is invalid')
+  }
+  const headerEnd = REALTIME_BINARY_HEADER_BYTES + headerLength
+  if (frame.byteLength < headerEnd) {
+    throw new Error('Realtime voice binary header is truncated')
+  }
+
+  const bytes = new Uint8Array(frame)
+  const event = JSON.parse(
+    new TextDecoder().decode(bytes.slice(REALTIME_BINARY_HEADER_BYTES, headerEnd))
+  ) as VoiceEvent
+  const payload = (event.payload && typeof event.payload === 'object' ? event.payload : {}) as BinaryVoiceEventPayload
+
+  payload.data_bytes = bytes.slice(headerEnd)
+  event.payload = payload
+
+  return event
+}
+
 export function shouldSendRealtimeAudioFrame({
   bufferedAmount,
   endOfUtterance,
@@ -415,6 +471,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const mutedRef = useRef(muted)
   const busyRef = useRef(busy)
   const audioSendChainRef = useRef<Promise<void>>(Promise.resolve())
+  const serverEventChainRef = useRef<Promise<void>>(Promise.resolve())
   const audioInputGenerationRef = useRef(0)
 
   useEffect(() => {
@@ -641,9 +698,10 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
   const enqueueAudio = useCallback(
     (payload: Record<string, unknown>) => {
+      const binaryData = payload.data_bytes instanceof Uint8Array ? payload.data_bytes : null
       const data = typeof payload.data_b64 === 'string' ? payload.data_b64 : ''
 
-      if (!data) {
+      if (!binaryData && !data) {
         return
       }
       const rawGeneration = payload.playback_generation
@@ -666,7 +724,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
           : payload.codec === 'webm_opus'
             ? 'audio/webm;codecs=opus'
             : 'audio/ogg'
-      const bytes = bytesFromBase64(data)
+      const bytes = binaryData ?? bytesFromBase64(data)
       const audioData = new ArrayBuffer(bytes.byteLength)
 
       new Uint8Array(audioData).set(bytes)
@@ -878,6 +936,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     sessionStartedRef.current = false
     sessionFailedRef.current = false
     audioSendChainRef.current = Promise.resolve()
+    serverEventChainRef.current = Promise.resolve()
     audioInputGenerationRef.current += 1
     socketRef.current = socket
 
@@ -887,25 +946,30 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     })
 
     socket.onmessage = message => {
-      try {
-        const event = JSON.parse(String(message.data)) as VoiceEvent
-        if (event.type === 'session.started') {
-          sessionStartedRef.current = true
-          resolveSessionReady?.(true)
-          resolveSessionReady = null
-        } else if (event.type === 'session.error' && !sessionStartedRef.current) {
+      serverEventChainRef.current = queueRealtimeAudioTask(
+        serverEventChainRef.current,
+        async () => {
+          const event = await parseRealtimeVoiceServerMessage(message.data)
+
+          if (event.type === 'session.started') {
+            sessionStartedRef.current = true
+            resolveSessionReady?.(true)
+            resolveSessionReady = null
+          } else if (event.type === 'session.error' && !sessionStartedRef.current) {
+            sessionFailedRef.current = true
+            resolveSessionReady?.(false)
+            resolveSessionReady = null
+          }
+          handleEvent(event)
+        },
+        error => {
           sessionFailedRef.current = true
           resolveSessionReady?.(false)
           resolveSessionReady = null
+          notifyError(error, 'Realtime voice failed')
+          onFatalError?.()
         }
-        handleEvent(event)
-      } catch (error) {
-        sessionFailedRef.current = true
-        resolveSessionReady?.(false)
-        resolveSessionReady = null
-        notifyError(error, 'Realtime voice failed')
-        onFatalError?.()
-      }
+      )
     }
     socket.onclose = close => {
       const action = realtimeVoiceCloseAction({
