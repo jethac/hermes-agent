@@ -42,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--token-env",
-        default=os.environ.get("HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV", "HERMES_STREAMING_STT_BRIDGE_TOKEN"),
+        default=None,
         help="Environment variable used for the bridge bearer token",
     )
     parser.add_argument(
@@ -60,6 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    _load_bridge_env()
     if args.model:
         os.environ["HERMES_DEEPGRAM_MODEL"] = args.model
     if args.tts_model:
@@ -70,11 +71,15 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["HERMES_DEEPGRAM_TTS_SAMPLE_RATE_HZ"] = str(args.tts_sample_rate_hz)
     if args.endpointing_ms:
         os.environ["HERMES_DEEPGRAM_ENDPOINTING_MS"] = str(args.endpointing_ms)
+    token_env = str(
+        args.token_env
+        or os.environ.get("HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV")
+        or "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    ).strip()
     if args.token_env:
-        os.environ["HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV"] = str(args.token_env)
+        os.environ["HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV"] = token_env
 
     if args.generate_token:
-        token_env = str(args.token_env or "HERMES_STREAMING_STT_BRIDGE_TOKEN").strip()
         existing = os.environ.get(token_env)
         if existing and not args.force_token:
             print(f"Deepgram realtime voice bridge token already configured in {token_env}")
@@ -104,6 +109,17 @@ def main(argv: list[str] | None = None) -> int:
     app = create_deepgram_streaming_stt_bridge_app(runtime)
     uvicorn.run(app, host=args.host, port=args.port)
     return 0
+
+
+def _load_bridge_env() -> None:
+    try:
+        from hermes_cli.config import load_env
+    except Exception:
+        return
+    try:
+        os.environ.update(load_env())
+    except Exception:
+        return
 
 
 if __name__ == "__main__":

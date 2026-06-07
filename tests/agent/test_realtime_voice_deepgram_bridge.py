@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from pathlib import Path
 import sys
 import tomllib
@@ -199,6 +200,7 @@ def test_deepgram_bridge_cli_generate_token_accepts_custom_env(monkeypatch):
 
     saved = {}
     monkeypatch.delenv("CUSTOM_BRIDGE_TOKEN", raising=False)
+    monkeypatch.delenv("HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV", raising=False)
     monkeypatch.setattr("hermes_cli.config.save_env_value", lambda key, value: saved.setdefault(key, value))
 
     result = realtime_voice_deepgram_bridge.main(
@@ -207,6 +209,34 @@ def test_deepgram_bridge_cli_generate_token_accepts_custom_env(monkeypatch):
 
     assert result == 0
     assert "CUSTOM_BRIDGE_TOKEN" in saved
+    assert os.environ["HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV"] == "CUSTOM_BRIDGE_TOKEN"
+
+
+def test_deepgram_bridge_cli_check_loads_hermes_env(monkeypatch, capsys):
+    from hermes_cli import realtime_voice_deepgram_bridge
+
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+    monkeypatch.delenv("HERMES_STREAMING_STT_BRIDGE_TOKEN", raising=False)
+    monkeypatch.delenv("HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.config.load_env",
+        lambda: {
+            "DEEPGRAM_API_KEY": "deepgram-secret",
+            "HERMES_STREAMING_STT_BRIDGE_TOKEN": "bridge-token",
+        },
+    )
+    monkeypatch.setattr(
+        "agent.realtime_voice_deepgram_bridge._module_available",
+        lambda name: name == "websockets",
+    )
+
+    result = realtime_voice_deepgram_bridge.main(["--check", "--strict"])
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "Deepgram realtime voice bridge check OK" in output
+    assert "deepgram-secret" not in output
+    assert "bridge-token" not in output
 
 
 def test_voice_extra_installs_websocket_client():
