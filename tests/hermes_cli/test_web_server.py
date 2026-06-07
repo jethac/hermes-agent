@@ -7138,6 +7138,27 @@ class TestRealtimeVoiceWebSocket:
         assert websocket.bytes_sent == []
         assert websocket.json_events[0]["type"] == "transcript.final"
 
+    def test_send_server_event_times_out_backpressured_control_events(self, monkeypatch):
+        import asyncio
+
+        from agent.realtime_voice import VoiceEvent, VoiceEventType
+
+        class SlowWebSocket:
+            async def send_json(self, event):
+                await asyncio.sleep(1)
+
+        event = VoiceEvent(
+            type=VoiceEventType.TRANSCRIPT_FINAL,
+            session_id="voice-123",
+            sequence=3,
+            payload={"text": "hello"},
+        )
+        monkeypatch.setattr(self.ws_module, "_REALTIME_VOICE_EVENT_SEND_TIMEOUT_SECONDS", 0.001)
+
+        sent = asyncio.run(self.ws_module._send_realtime_voice_server_event(SlowWebSocket(), event))
+
+        assert sent is False
+
     def test_websocket_sends_audio_output_as_binary_frames(self, monkeypatch):
         from agent.realtime_voice import AudioChunk, VoiceAudioCodec, VoiceEvent, VoiceEventType
 
