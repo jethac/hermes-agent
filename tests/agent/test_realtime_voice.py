@@ -797,6 +797,59 @@ def test_text_engine_falls_back_to_local_stt_when_sidecar_send_fails(monkeypatch
     asyncio.run(run())
 
 
+def test_text_engine_closes_sidecar_when_sidecar_tts_fails(monkeypatch, tmp_path):
+    class FailingSpeakSidecar(FakeSidecar):
+        async def speak(self, event):
+            self.spoken.append(event)
+            raise RuntimeError("tts failed at http://user:pass@voice.local/v1?token=abc")
+
+    async def run():
+        audio_file = tmp_path / "fallback.ogg"
+        audio_file.write_bytes(b"fallback-audio")
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_tts_sync", lambda self, text: str(audio_file))
+
+        sidecar = FailingSpeakSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="gemma4",
+                sidecar_base_url="http://voice.local:8080",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello"},
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                await engine.close()
+                break
+
+        fallback = next(event for event in seen if event.type == VoiceEventType.FRONTEND_STATE)
+        audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
+
+        assert fallback.payload["status"] == "fallback"
+        assert fallback.payload["reason"] == "sidecar_tts_failed"
+        assert fallback.payload["sidecar"] is False
+        assert "user:pass" not in fallback.payload["error"]
+        assert "token=abc" not in fallback.payload["error"]
+        assert AudioChunk.from_payload(audio.payload).data == b"fallback-audio"
+        assert sidecar.closed is True
+        assert engine._sidecar is None
+        assert VoiceEventType.SESSION_ERROR not in [event.type for event in seen]
+
+    asyncio.run(run())
+
+
 def test_text_engine_bounds_local_audio_fallback_buffer():
     async def run():
         engine = TextOracleTTSEngine(oracle=FakeOracle())

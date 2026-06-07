@@ -437,7 +437,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 await self._sidecar.speak(event)  # type: ignore[attr-defined]
                 return
             except Exception as exc:
-                self._sidecar = None
+                await self._disable_sidecar()
                 await self._emit(
                     VoiceEventType.FRONTEND_STATE,
                     {
