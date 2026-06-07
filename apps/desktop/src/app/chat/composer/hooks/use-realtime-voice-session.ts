@@ -54,6 +54,7 @@ export interface RealtimeVoiceStatus {
   available: boolean
   enabled: boolean
   engine: string
+  input_buffer_limit_bytes?: number
   sidecar?: {
     autostart?: boolean
     connect_timeout_seconds?: number
