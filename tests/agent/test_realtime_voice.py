@@ -13,6 +13,7 @@ from agent.realtime_voice import (
     binary_audio_frame_from_event,
     event_from_binary_audio_frame,
     put_realtime_voice_event,
+    transcript_event_payload_from_payload,
     validate_client_event,
     validate_server_event,
 )
@@ -289,6 +290,33 @@ def test_voice_event_round_trips_wire_payload():
     restored = VoiceEvent.from_wire(event.to_wire())
 
     assert restored == event
+
+
+def test_transcript_event_payload_keeps_sanitized_non_target_language_metadata():
+    payload = transcript_event_payload_from_payload(
+        {
+            "text": "안녕하세요",
+            "language": "ko",
+            "locale": "ko-KR",
+            "script": "Kore",
+            "confidence": 1.5,
+            "stability": -0.2,
+            "input_generation": "7",
+            "playback_generation": -1,
+            "language_url": "https://voice.local/secret",
+            "raw_metadata": {"token": "secret"},
+        }
+    )
+
+    assert payload == {
+        "text": "안녕하세요",
+        "confidence": 1.0,
+        "stability": 0.0,
+        "input_generation": 7,
+        "language": "ko",
+        "locale": "ko-KR",
+        "script": "Kore",
+    }
 
 
 def test_planner_suppresses_internal_markup_and_chunks_text():
