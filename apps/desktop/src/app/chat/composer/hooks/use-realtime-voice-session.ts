@@ -9,7 +9,7 @@ interface RealtimeVoiceOptions {
   busy: boolean
   enabled: boolean
   onFatalError?: () => void
-  onUnavailable?: () => void
+  onUnavailable?: (state?: RealtimeVoiceFrontendState | null) => void
   sessionId?: null | string
 }
 
@@ -68,12 +68,20 @@ export interface RealtimeVoiceFrontendState {
   updatedAtMs?: number
 }
 
+export interface RealtimeVoiceLanguageSupport {
+  best_effort_languages?: boolean
+  production_languages?: string[]
+  production_scripts?: string[]
+  sidecar_languages_are_diagnostics?: boolean
+}
+
 export interface RealtimeVoiceStatus {
   available: boolean
   enabled: boolean
   engine: string
   input_buffer_limit_bytes?: number
   input_frame_ms?: number
+  language_support?: RealtimeVoiceLanguageSupport
   silence_timeout_ms?: number
   sidecar?: {
     autostart?: boolean
@@ -105,6 +113,7 @@ export interface RealtimeVoiceStatus {
     healthy?: boolean | null
     mode?: string
   }
+  unavailable_reason?: null | string
 }
 
 type BrowserAudioContext = typeof AudioContext
@@ -686,6 +695,28 @@ export function collectRealtimeVoiceFrontendState(
   }
 }
 
+export function realtimeVoiceUnavailableFrontendState(
+  status: RealtimeVoiceStatus | null,
+  updatedAtMs = Date.now()
+): RealtimeVoiceFrontendState | null {
+  if (!status || (status.enabled && status.available)) {
+    return null
+  }
+
+  const reason =
+    typeof status.unavailable_reason === 'string' && status.unavailable_reason.trim()
+      ? status.unavailable_reason.trim()
+      : status.enabled
+        ? 'unavailable'
+        : 'disabled'
+
+  return {
+    reason,
+    status: 'fallback',
+    updatedAtMs
+  }
+}
+
 export function realtimeVoiceSessionStatus(event: VoiceEvent): ConversationStatus | null {
   const state = typeof event.payload?.session_state === 'string' ? event.payload.session_state : ''
 
@@ -1243,9 +1274,11 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
   const start = useCallback(async () => {
     const preflight = await getRealtimeVoiceStatus().catch(() => null)
+    const unavailableState = realtimeVoiceUnavailableFrontendState(preflight)
 
-    if (preflight && (!preflight.enabled || !preflight.available)) {
-      onUnavailable?.()
+    if (unavailableState) {
+      setFrontendState(unavailableState)
+      onUnavailable?.(unavailableState)
 
       return
     }

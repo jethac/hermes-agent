@@ -21,6 +21,7 @@ import {
   realtimeVoiceSessionReadyTimeoutMs,
   realtimeVoiceSessionStatus,
   realtimeVoiceSilenceTimeoutMs,
+  realtimeVoiceUnavailableFrontendState,
   realtimeVoiceUrl,
   shouldDropQueuedRealtimeAudioInput,
   shouldDropStaleRealtimeVoiceEvent,
@@ -67,6 +68,12 @@ describe('realtimeVoiceUrl', () => {
       available: false,
       enabled: true,
       engine: 'native_s2s_oracle',
+      language_support: {
+        best_effort_languages: true,
+        production_languages: ['en', 'ja'],
+        production_scripts: ['Latn', 'Jpan'],
+        sidecar_languages_are_diagnostics: true
+      },
       sidecar: {
         health: {
           capabilities: {
@@ -80,7 +87,8 @@ describe('realtimeVoiceUrl', () => {
           }
         },
         mode: 'none'
-      }
+      },
+      unavailable_reason: 'sidecar_required'
     }))
 
     Object.defineProperty(window, 'hermesDesktop', {
@@ -92,6 +100,10 @@ describe('realtimeVoiceUrl', () => {
       available: false,
       enabled: true,
       engine: 'native_s2s_oracle',
+      language_support: {
+        production_languages: ['en', 'ja'],
+        production_scripts: ['Latn', 'Jpan']
+      },
       sidecar: {
         health: {
           capabilities: {
@@ -100,7 +112,8 @@ describe('realtimeVoiceUrl', () => {
             scripts: ['Latn', 'Jpan']
           }
         }
-      }
+      },
+      unavailable_reason: 'sidecar_required'
     })
     expect(api).toHaveBeenCalledWith({ path: '/api/voice/realtime/status' })
   })
@@ -309,6 +322,51 @@ describe('collectRealtimeVoiceFrontendState', () => {
 
     expect(collectRealtimeVoiceFrontendState(previous, event('frontend.state', { status: 'ready' }))).toBeNull()
     expect(collectRealtimeVoiceFrontendState(previous, event('transcript.partial', { text: 'hello' }))).toBe(previous)
+  })
+})
+
+describe('realtimeVoiceUnavailableFrontendState', () => {
+  it('does not report fallback state when realtime voice is enabled and available', () => {
+    expect(realtimeVoiceUnavailableFrontendState({
+      available: true,
+      enabled: true,
+      engine: 'text_oracle_tts'
+    }, 1_234)).toBeNull()
+  })
+
+  it('uses the stable unavailable reason from the backend status payload', () => {
+    expect(realtimeVoiceUnavailableFrontendState({
+      available: false,
+      enabled: true,
+      engine: 'native_s2s_oracle',
+      language_support: {
+        best_effort_languages: true,
+        production_languages: ['en', 'ja'],
+        production_scripts: ['Latn', 'Jpan'],
+        sidecar_languages_are_diagnostics: true
+      },
+      unavailable_reason: 'sidecar_missing_native_s2s'
+    }, 1_234)).toEqual({
+      reason: 'sidecar_missing_native_s2s',
+      status: 'fallback',
+      updatedAtMs: 1_234
+    })
+  })
+
+  it('reports disabled realtime voice as fallback without treating languages as a gate', () => {
+    expect(realtimeVoiceUnavailableFrontendState({
+      available: false,
+      enabled: false,
+      engine: 'text_oracle_tts',
+      language_support: {
+        best_effort_languages: true,
+        production_languages: ['en', 'ja']
+      }
+    }, 1_234)).toEqual({
+      reason: 'disabled',
+      status: 'fallback',
+      updatedAtMs: 1_234
+    })
   })
 })
 
