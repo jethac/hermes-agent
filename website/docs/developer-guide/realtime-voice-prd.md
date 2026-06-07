@@ -1,0 +1,177 @@
+---
+title: "Realtime Voice PRD"
+description: "Product requirements for a KAME-inspired realtime voice subsystem in Hermes"
+---
+
+# Realtime Voice PRD
+
+## Summary
+
+Hermes currently treats voice as a message convenience: record audio, transcribe a complete blob, submit the transcript as a normal user message, then synthesize the assistant's streamed text. That works for dictation and hands-free turns, but it is not a live conversation.
+
+This project adds a KAME-inspired realtime voice subsystem. The subsystem must support two engine families behind one session protocol:
+
+1. **Text oracle + streaming TTS**: a speech understanding frontend, a Hermes oracle backed by the configured Hermes model, and streaming text-to-speech output.
+2. **Native S2S + Hermes oracle**: a Moshi/KAME-style speech-to-speech frontend that receives asynchronous oracle hints from Hermes.
+
+The first production milestone is the text-oracle path. The native S2S path is a compatible follow-up, not a prerequisite.
+
+## Goals
+
+- Let a user have a low-latency spoken conversation with Hermes in the desktop app.
+- Preserve Hermes' existing data boundary: memory, files, MCP, tools, profiles, approvals, and session state remain owned by Hermes.
+- Allow a DGX Spark or other LAN model sidecar to run Gemma, streaming STT, streaming TTS, and later native S2S inference.
+- Keep the desktop UI protocol stable while engines change behind it.
+- Support barge-in: user speech interrupts assistant playback and updates the live session state.
+- Commit only stable transcript and assistant text to durable Hermes session history.
+
+## Non-goals
+
+- Train a native speech-to-speech foundation model from scratch.
+- Replace the normal Hermes message loop.
+- Expose raw Hermes memory or tool results directly to speech vendors outside the existing permission model.
+- Require DGX Spark for basic use.
+- Remove the existing one-shot voice mode.
+
+## User Stories
+
+- As a user, I can talk to Hermes without pressing send after every utterance.
+- As a user, I can interrupt Hermes while it is speaking and have the assistant stop immediately.
+- As a user, I can ask about my actual Hermes context, files, tools, and memories during a voice session.
+- As a user with a Mac desktop and DGX Spark, I can run the low-latency speech/frontend models on the Spark over the LAN.
+- As a developer, I can swap the voice engine from text-oracle-TTS to native S2S without rewriting the desktop UI.
+
+## Architecture
+
+```text
+Desktop mic stream
+  -> /api/voice/realtime websocket
+  -> RealtimeVoiceSession
+       -> selected RealtimeVoiceEngine
+       -> Hermes oracle
+       -> tool and permission gates
+       -> durable transcript commit logic
+  -> assistant audio stream
+  -> desktop playback
+```
+
+### Text Oracle + Streaming TTS
+
+```text
+mic audio
+  -> speech understanding frontend
+       Gemma audio input, streaming STT, Whisper, or provider STT
+  -> frontend state
+       partial transcript, final transcript, intent, confidence, barge-in
+  -> Hermes oracle
+       configured Hermes model
+       memory, files, MCP, tools, profile config, approvals
+  -> speech planner
+       decides when text is stable enough to speak
+  -> streaming TTS
+  -> audio output
+```
+
+### Native S2S + Hermes Oracle
+
+```text
+mic audio
+  -> native S2S frontend
+       starts speaking in acoustic-token space
+       receives oracle hints from Hermes
+  -> speech audio
+
+Hermes oracle
+  -> asynchronous guidance stream
+       facts, task intent, tool results, correction hints, stop/wait hints
+```
+
+## Product Requirements
+
+### Session Lifecycle
+
+- A voice session starts from the desktop app and receives a Hermes session id.
+- The backend returns `session.started` before accepting audio frames.
+- The session can close from the client, backend, or model-sidecar failure.
+- Closing a session must stop playback, cancel pending model/TTS work, and release sidecar resources.
+
+### Audio Input
+
+- Desktop captures microphone audio as small frames, not whole blobs.
+- The first implementation may use Opus or WebM/Opus frames; PCM16 is allowed for local/LAN debugging.
+- The browser must keep the existing MediaRecorder voice mode as a fallback until realtime mode is stable.
+
+### Speech Understanding
+
+- The engine emits `transcript.partial` for unstable speech.
+- The engine emits `transcript.final` when a segment is stable enough to commit to the live session state.
+- Gemma can be used as a speech understanding/frontend model, but Hermes must not depend on Gemma being the backend oracle model.
+
+### Hermes Oracle
+
+- The oracle uses the model Hermes is configured to use unless the voice session explicitly overrides it.
+- The oracle can see final transcript and selected partial transcript state.
+- Tool calls from partial speech require a conservative gate. Destructive or external side-effect tools require final transcript or explicit confirmation.
+- Oracle output is guidance until committed by the speech planner.
+
+### Speech Planning
+
+- The planner may emit short acknowledgements quickly.
+- The planner must wait for more speech when the user query is incomplete.
+- The planner must suppress raw tool traces, JSON, and hidden reasoning from audio output.
+- The planner must support correction when partial transcript changes meaning.
+- The planner must mark assistant output as interrupted when barge-in occurs before a commit.
+
+### Output
+
+- The text-oracle engine emits `assistant.text.partial` and `audio.output.chunk`.
+- Streaming TTS should start before the full response is complete.
+- The native S2S engine may emit only audio plus optional committed transcript.
+- The desktop app should show captions when text is available.
+
+### Barge-in
+
+- User speech during playback sends a `barge_in` event.
+- The backend cancels active TTS/native S2S output and marks uncommitted speech as interrupted.
+- The oracle receives the interruption as part of live state.
+
+### Persistence
+
+- Durable session history only stores:
+  - final user transcript segments
+  - committed assistant text
+  - tool calls/results that actually executed
+  - interruption markers where relevant
+- Partial transcripts, tentative assistant text, and acoustic chunks are not stored by default.
+
+### Security and Privacy
+
+- Raw audio endpoints must be loopback, LAN-private, or authenticated.
+- Spark sidecar access should use a token, mTLS, SSH tunnel, or Tailscale.
+- Audio should not be sent to a cloud provider unless the user configured that provider.
+- Hermes remains the permission boundary for memory, MCP, file access, and tools.
+
+## Success Metrics
+
+- Median first transcript partial: under 300 ms on LAN.
+- Median first assistant audio after final user speech: under 900 ms for simple responses.
+- Barge-in stop latency: under 150 ms from detected speech to playback cancellation.
+- No durable transcript pollution from partial ASR or abandoned assistant drafts.
+- Existing one-shot voice mode continues to work.
+
+## Rollout
+
+1. Add inert protocol types and docs.
+2. Add websocket session endpoint behind a config flag.
+3. Implement desktop audio frame streaming behind a feature flag.
+4. Implement text-oracle engine with streaming STT and streaming TTS.
+5. Add Spark sidecar adapter for Gemma/frontend and TTS.
+6. Add native S2S engine once the text-oracle path proves the session contract.
+
+## Open Questions
+
+- Which streaming STT should be the first supported provider?
+- Should Gemma receive raw audio chunks, transcript chunks, or both in the first prototype?
+- How aggressively should the planner allow early speech before the final transcript?
+- Which tool classes are safe during partial transcript state?
+- Should voice session traces be saved as optional debug artifacts?
