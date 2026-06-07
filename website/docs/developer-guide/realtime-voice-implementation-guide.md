@@ -228,7 +228,7 @@ Operator readiness gate:
 hermes doctor --realtime-voice
 ```
 
-Use this before treating a profile as live-voice ready. The strict gate requires realtime voice to be enabled, preflight-available, and live-like according to the same `conversation_quality` payload the desktop uses. It also checks that English and Japanese remain the production acceptance languages, that best-effort language pass-through is enabled unless deliberately disabled, that the configured sidecar is healthy, and that public provider naming stays capability-based rather than tied to a specific workstation or accelerator. Plain `hermes doctor` reports the same section informatively without failing ordinary installs that have not opted into realtime voice.
+Use this before treating a profile as live-voice ready. The strict gate requires realtime voice to be enabled, preflight-available, live-like according to the same `conversation_quality` payload the desktop uses, and configured with latency targets no looser than the PRD live-conversation targets. It also checks that English and Japanese remain the production acceptance languages, that best-effort language pass-through is enabled unless deliberately disabled, that the configured sidecar is healthy, and that public provider naming stays capability-based rather than tied to a specific workstation or accelerator. Plain `hermes doctor` reports the same section informatively without failing ordinary installs that have not opted into realtime voice.
 
 Implementation notes:
 
