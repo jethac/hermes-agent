@@ -5,6 +5,7 @@ import {
   collectRealtimeVoiceMetrics,
   getRealtimeVoiceStatus,
   realtimeAudioInputPayload,
+  realtimeVoiceCloseAction,
   realtimeVoicePlaybackGeneration,
   realtimeVoiceUrl,
   shouldDropStaleRealtimeVoiceEvent,
@@ -232,6 +233,37 @@ describe('shouldSendRealtimeVoiceEndMarker', () => {
       sentEndOfUtterance: false,
       stoppedForSilence: false
     })).toBe(false)
+  })
+})
+
+describe('realtimeVoiceCloseAction', () => {
+  it('falls back when realtime closes before the backend session starts', () => {
+    expect(realtimeVoiceCloseAction({
+      closeCode: 1011,
+      enabled: true,
+      sessionStarted: false
+    })).toBe('fallback')
+  })
+
+  it('treats active-session abnormal closes as fatal', () => {
+    expect(realtimeVoiceCloseAction({
+      closeCode: 1011,
+      enabled: true,
+      sessionStarted: true
+    })).toBe('fatal')
+  })
+
+  it('ignores normal or disabled closes', () => {
+    expect(realtimeVoiceCloseAction({
+      closeCode: 1000,
+      enabled: true,
+      sessionStarted: true
+    })).toBe('ignore')
+    expect(realtimeVoiceCloseAction({
+      closeCode: 1006,
+      enabled: false,
+      sessionStarted: false
+    })).toBe('ignore')
   })
 })
 

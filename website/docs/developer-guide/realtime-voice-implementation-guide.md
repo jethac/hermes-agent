@@ -381,7 +381,7 @@ Responsibilities:
 - Keep the microphone stream and analyser alive across assistant playback; stop and recreate only the per-utterance `MediaRecorder`.
 - Track `playback_generation` and drop stale audio, assistant text, assistant commit, and generated final-transcript events from interrupted output.
 - Show the latest realtime latency snapshot while a voice session is active.
-- Fall back to the current MediaRecorder blob loop when realtime mode is unavailable.
+- Fall back to the current MediaRecorder blob loop when realtime mode is unavailable or the websocket closes before `session.started`.
 
 ## Testing Plan
 
