@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { realtimeVoiceUrl } from './use-realtime-voice-session'
+import { getRealtimeVoiceStatus, realtimeVoiceUrl } from './use-realtime-voice-session'
 
 const { resolveGatewayWsUrlMock } = vi.hoisted(() => ({
   resolveGatewayWsUrlMock: vi.fn(async () => 'ws://127.0.0.1:9119/api/ws?token=t')
@@ -29,5 +29,26 @@ describe('realtimeVoiceUrl', () => {
     )
     expect(getConnection).toHaveBeenCalledTimes(1)
     expect(resolveGatewayWsUrlMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('loads realtime voice status through the authenticated desktop API bridge', async () => {
+    const api = vi.fn(async () => ({
+      available: false,
+      enabled: true,
+      engine: 'native_s2s_oracle',
+      sidecar: { mode: 'none' }
+    }))
+
+    Object.defineProperty(window, 'hermesDesktop', {
+      configurable: true,
+      value: { api }
+    })
+
+    await expect(getRealtimeVoiceStatus()).resolves.toMatchObject({
+      available: false,
+      enabled: true,
+      engine: 'native_s2s_oracle'
+    })
+    expect(api).toHaveBeenCalledWith({ path: '/api/voice/realtime/status' })
   })
 })

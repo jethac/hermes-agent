@@ -9,6 +9,7 @@ interface RealtimeVoiceOptions {
   busy: boolean
   enabled: boolean
   onFatalError?: () => void
+  onUnavailable?: () => void
   sessionId?: null | string
 }
 
@@ -18,6 +19,17 @@ interface VoiceEvent {
   session_id: string
   timestamp_ms?: number
   type: string
+}
+
+export interface RealtimeVoiceStatus {
+  available: boolean
+  enabled: boolean
+  engine: string
+  sidecar?: {
+    autostart?: boolean
+    healthy?: boolean | null
+    mode?: string
+  }
 }
 
 type BrowserAudioContext = typeof AudioContext
@@ -57,7 +69,11 @@ export async function realtimeVoiceUrl(sessionId: string): Promise<string> {
   return url.toString()
 }
 
-export function useRealtimeVoiceSession({ busy, enabled, onFatalError, sessionId }: RealtimeVoiceOptions) {
+export function getRealtimeVoiceStatus(): Promise<RealtimeVoiceStatus> {
+  return window.hermesDesktop.api<RealtimeVoiceStatus>({ path: '/api/voice/realtime/status' })
+}
+
+export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavailable, sessionId }: RealtimeVoiceOptions) {
   const [status, setStatus] = useState<ConversationStatus>('idle')
   const [level, setLevel] = useState(0)
   const [muted, setMuted] = useState(false)
@@ -334,6 +350,14 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, sessionId
   )
 
   const start = useCallback(async () => {
+    const preflight = await getRealtimeVoiceStatus().catch(() => null)
+
+    if (preflight && (!preflight.enabled || !preflight.available)) {
+      onUnavailable?.()
+
+      return
+    }
+
     sessionRef.current = sessionId || sessionRef.current
     const url = await realtimeVoiceUrl(sessionRef.current)
     const socket = new WebSocket(url)
@@ -367,7 +391,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, sessionId
 
     setMuted(false)
     await startListening()
-  }, [handleEvent, onFatalError, sessionId, startListening])
+  }, [handleEvent, onFatalError, onUnavailable, sessionId, startListening])
 
   const end = useCallback(async () => {
     sendEvent('session.closed', { reason: 'client_closed' })

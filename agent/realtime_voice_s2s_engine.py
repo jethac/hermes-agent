@@ -18,7 +18,7 @@ from agent.realtime_voice_oracle import HermesRealtimeOracle
 
 
 class NativeS2SSidecarEngine(RealtimeVoiceEngine):
-    """Bridge browser voice events to a DGX/Spark native S2S sidecar."""
+    """Bridge browser voice events to a native S2S inference sidecar."""
 
     def __init__(self):
         self.config: Optional[RealtimeVoiceSessionConfig] = None

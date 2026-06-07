@@ -6077,6 +6077,7 @@ class TestRealtimeVoiceWebSocket:
         self.ws_module = ws
         self.token = ws._SESSION_TOKEN
         self.client = TestClient(ws.app)
+        self.client.headers[ws._SESSION_HEADER_NAME] = ws._SESSION_TOKEN
 
     def _url(self, token: str | None = None, **params: str) -> str:
         from urllib.parse import urlencode
@@ -6112,7 +6113,7 @@ class TestRealtimeVoiceWebSocket:
                         "engine": "text_oracle_tts",
                         "frontend_provider": "gemma",
                         "frontend_model": "gemma-4-e4b",
-                        "spark_base_url": "http://spark.local:8080",
+                        "spark_base_url": "http://voice.local:8080",
                         "spark_token_env": "HERMES_SPARK_VOICE_TOKEN",
                     }
                 }
@@ -6125,7 +6126,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.session_id == "voice-123"
         assert config.frontend_provider == "gemma"
         assert config.frontend_model == "gemma-4-e4b"
-        assert config.spark_base_url == "http://spark.local:8080"
+        assert config.spark_base_url == "http://voice.local:8080"
         assert config.spark_token == "secret-token"
 
     def test_config_defaults_local_frontend_to_reference_sidecar(self, monkeypatch):
@@ -6181,6 +6182,112 @@ class TestRealtimeVoiceWebSocket:
         assert config.frontend_provider == "gemma4"
         assert config.frontend_model == "google/gemma-4-E4B-it-qat-w4a16-ct"
         assert config.spark_base_url == "http://127.0.0.1:8765"
+
+    def test_status_reports_disabled_realtime_voice(self, monkeypatch):
+        monkeypatch.setattr(self.ws_module, "load_config", lambda: {"voice": {"realtime": {"enabled": False}}})
+
+        response = self.client.get("/api/voice/realtime/status")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["enabled"] is False
+        assert body["available"] is False
+        assert body["engine"] == "text_oracle_tts"
+        assert body["sidecar"]["mode"] == "none"
+        assert body["sidecar"]["healthy"] is None
+
+    def test_status_reports_managed_loopback_sidecar_available_before_start(self, monkeypatch):
+        def fake_urlopen(url, timeout):
+            raise self.ws_module.urllib.error.URLError("not running")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "frontend_provider": "gemma4",
+                        "frontend_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                        "sidecar_host": "127.0.0.1",
+                        "sidecar_port": 8765,
+                        "sidecar_autostart": True,
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", fake_urlopen)
+
+        response = self.client.get("/api/voice/realtime/status")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["enabled"] is True
+        assert body["available"] is True
+        assert body["frontend_provider"] == "gemma4"
+        assert body["sidecar"]["mode"] == "managed_loopback"
+        assert body["sidecar"]["autostart"] is True
+        assert body["sidecar"]["loopback"] is True
+        assert body["sidecar"]["healthy"] is False
+
+    def test_status_reports_remote_unhealthy_sidecar_unavailable_and_redacted(self, monkeypatch):
+        def fake_urlopen(url, timeout):
+            raise self.ws_module.urllib.error.URLError("remote down")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "native_s2s_oracle",
+                        "frontend_provider": "native_s2s",
+                        "sidecar_base_url": "http://user:secret@voice.example.test:8765/root?token=bad",
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", fake_urlopen)
+
+        response = self.client.get("/api/voice/realtime/status")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["enabled"] is True
+        assert body["available"] is False
+        assert body["native_s2s"]["enabled"] is True
+        assert body["sidecar"]["mode"] == "external"
+        assert body["sidecar"]["externally_managed"] is True
+        assert body["sidecar"]["healthy"] is False
+        assert "secret" not in body["sidecar"]["base_url"]
+        assert "token=bad" not in body["sidecar"]["base_url"]
+        assert body["sidecar"]["base_url"] == "http://***@voice.example.test:8765/root"
+
+    def test_status_requires_sidecar_for_native_s2s_engine(self, monkeypatch):
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "native_s2s_oracle",
+                        "frontend_provider": "native_s2s",
+                    }
+                }
+            },
+        )
+
+        response = self.client.get("/api/voice/realtime/status")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["enabled"] is True
+        assert body["available"] is False
+        assert body["native_s2s"]["sidecar_required"] is True
+        assert body["sidecar"]["mode"] == "none"
 
     def test_sidecar_autostart_only_for_local_reference_frontends(self):
         local = {

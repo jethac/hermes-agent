@@ -100,6 +100,7 @@ Hermes oracle
 ### Session Lifecycle
 
 - A voice session starts from the desktop app and receives a Hermes session id.
+- The desktop can preflight `GET /api/voice/realtime/status` before opening the microphone or websocket.
 - The backend returns `session.started` before accepting audio frames.
 - For loopback local/reference/Gemma/vLLM frontends, the backend verifies sidecar health and starts the reference sidecar when configured to do so.
 - The session can close from the client, backend, or model-sidecar failure.
@@ -110,6 +111,7 @@ Hermes oracle
 - Desktop captures microphone audio as small frames, not whole blobs.
 - The first implementation may use Opus or WebM/Opus frames; PCM16 is allowed for local/LAN debugging.
 - The browser must keep the existing MediaRecorder voice mode as a fallback until realtime mode is stable.
+- If the status endpoint reports realtime voice unavailable, the desktop must fall back to the one-shot MediaRecorder voice loop instead of failing after microphone capture starts.
 
 ### Speech Understanding
 

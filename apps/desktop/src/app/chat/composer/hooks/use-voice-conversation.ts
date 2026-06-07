@@ -50,6 +50,8 @@ export function useVoiceConversation({
   const responseIdRef = useRef<string | null>(null)
   const spokenSourceLengthRef = useRef(0)
   const speechBufferRef = useRef('')
+  const [realtimeUnavailable, setRealtimeUnavailable] = useState(false)
+  const realtimeFallbackStartedRef = useRef(false)
   const enabledRef = useRef(enabled)
   const mutedRef = useRef(muted)
   const busyRef = useRef(busy)
@@ -57,8 +59,9 @@ export function useVoiceConversation({
   const wasEnabledRef = useRef(enabled)
   const realtime = useRealtimeVoiceSession({
     busy,
-    enabled: enabled && realtimeEnabled,
+    enabled: enabled && realtimeEnabled && !realtimeUnavailable,
     onFatalError,
+    onUnavailable: () => setRealtimeUnavailable(true),
     sessionId
   })
 
@@ -77,6 +80,13 @@ export function useVoiceConversation({
   useEffect(() => {
     statusRef.current = status
   }, [status])
+
+  useEffect(() => {
+    if (!enabled || !realtimeEnabled) {
+      setRealtimeUnavailable(false)
+      realtimeFallbackStartedRef.current = false
+    }
+  }, [enabled, realtimeEnabled])
 
   const clearTurnTimeout = () => {
     if (turnTimeoutRef.current) {
@@ -396,11 +406,18 @@ export function useVoiceConversation({
   }, [busy, consumePendingResponse, enabled, muted, pendingResponse, speak, startListening, status])
 
   useEffect(() => {
-    if (realtimeEnabled) {
+    if (realtimeEnabled && !realtimeUnavailable) {
       return
     }
 
-    if (enabled && !wasEnabledRef.current) {
+    const shouldStartFallback =
+      enabled &&
+      (!wasEnabledRef.current || (realtimeEnabled && realtimeUnavailable && !realtimeFallbackStartedRef.current))
+
+    if (shouldStartFallback) {
+      if (realtimeEnabled && realtimeUnavailable) {
+        realtimeFallbackStartedRef.current = true
+      }
       void start()
     }
 
@@ -409,9 +426,9 @@ export function useVoiceConversation({
     }
 
     wasEnabledRef.current = enabled
-  }, [enabled, end, realtimeEnabled, start])
+  }, [enabled, end, realtimeEnabled, realtimeUnavailable, start])
 
-  if (realtimeEnabled) {
+  if (realtimeEnabled && !realtimeUnavailable) {
     return realtime
   }
 
