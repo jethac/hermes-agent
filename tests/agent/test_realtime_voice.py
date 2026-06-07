@@ -1746,6 +1746,77 @@ def test_reference_sidecar_echoes_barge_in_generation():
     asyncio.run(run())
 
 
+def test_reference_sidecar_barge_in_ack_is_not_blocked_by_slow_streaming_bridge(
+    monkeypatch,
+):
+    created = []
+
+    class SlowStreamingClient:
+        def __init__(self, *, path="/v1/realtime-text/session"):
+            self.path = path
+            self.sent = []
+            self.entered = asyncio.Event()
+            self.release = asyncio.Event()
+            self._events = asyncio.Queue()
+            created.append(self)
+
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            self.sent.append(event)
+            self.entered.set()
+            await self.release.wait()
+
+        async def events(self):
+            while True:
+                event = await self._events.get()
+                if event is None:
+                    return
+                yield event
+
+        async def close(self):
+            await self._events.put(None)
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_reference_sidecar.RealtimeVoiceSidecarClient",
+        SlowStreamingClient,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                streaming_stt_base_url="http://streaming-stt.local:9000",
+            )
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="sidecar")
+        )
+        assert (await anext(sidecar.events())).type == VoiceEventType.FRONTEND_STATE
+
+        receive_task = asyncio.create_task(
+            sidecar.receive_event(
+                VoiceEvent(
+                    type=VoiceEventType.BARGE_IN,
+                    session_id="voice-123",
+                    sequence=1,
+                    payload={"reason": "user_speech", "playback_generation": 4},
+                )
+            )
+        )
+
+        event = await asyncio.wait_for(anext(sidecar.events()), timeout=0.1)
+        assert event.type == VoiceEventType.BARGE_IN
+        assert event.payload["playback_generation"] == 4
+        assert receive_task.done() is False
+        created[0].release.set()
+        await asyncio.wait_for(receive_task, timeout=1)
+        assert created[0].sent[0].type == VoiceEventType.BARGE_IN
+        await sidecar.close()
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
     def fake_transcribe(path):
         assert path
