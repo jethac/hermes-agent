@@ -37,7 +37,11 @@ _EXAMPLE_PLUGIN_FIXTURE = (
 
 
 def _valid_realtime_voice_alpha_report():
-    from agent.realtime_voice_smoke_report import ALPHA_REQUIRED_AUDIO_FIXTURES, ALPHA_REQUIRED_TTS_TEXTS
+    from agent.realtime_voice_smoke_report import (
+        ALPHA_REQUIRED_AUDIO_FIXTURES,
+        ALPHA_REQUIRED_BARGE_IN_TEXTS,
+        ALPHA_REQUIRED_TTS_TEXTS,
+    )
 
     entries = [
         {
@@ -74,6 +78,18 @@ def _valid_realtime_voice_alpha_report():
                 "target_ms": 900,
                 "output_audio_bytes": 4321,
                 "events": ["frontend.state", "audio.output.chunk"],
+                "error": None,
+            }
+        )
+    for text in ALPHA_REQUIRED_BARGE_IN_TEXTS:
+        entries.append(
+            {
+                "kind": "barge_in",
+                "ok": True,
+                "text": text,
+                "barge_in_ack_ms": 45,
+                "target_ms": 150,
+                "events": ["frontend.state", "barge_in"],
                 "error": None,
             }
         )
@@ -7004,7 +7020,7 @@ class TestRealtimeVoiceWebSocket:
             "configured": True,
             "verified": True,
             "report_path": str(evidence_path),
-            "entries": 9,
+            "entries": 10,
             "issues": [],
         }
 

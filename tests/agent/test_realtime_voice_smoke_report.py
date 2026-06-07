@@ -2,6 +2,7 @@ import json
 
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
+    ALPHA_REQUIRED_BARGE_IN_TEXTS,
     ALPHA_REQUIRED_TTS_TEXTS,
     load_realtime_voice_smoke_report,
     validate_realtime_voice_alpha_report,
@@ -49,6 +50,18 @@ def _valid_alpha_report():
                 "error": None,
             }
         )
+    for text in ALPHA_REQUIRED_BARGE_IN_TEXTS:
+        entries.append(
+            {
+                "kind": "barge_in",
+                "ok": True,
+                "text": text,
+                "barge_in_ack_ms": 45,
+                "target_ms": 150,
+                "events": ["frontend.state", "barge_in"],
+                "error": None,
+            }
+        )
     return entries
 
 
@@ -62,6 +75,7 @@ def test_realtime_voice_alpha_report_requires_all_required_fixtures_and_phrases(
         for entry in _valid_alpha_report()
         if entry.get("fixture") != "./fixtures/realtime-voice/ja/tool-question.webm"
         and entry.get("text") != "音声で会話できますか？"
+        and entry.get("kind") != "barge_in"
     ]
 
     issues = validate_realtime_voice_alpha_report(report)
@@ -69,6 +83,15 @@ def test_realtime_voice_alpha_report_requires_all_required_fixtures_and_phrases(
     formatted = [issue.format() for issue in issues]
     assert any("missing required fixture" in issue for issue in formatted)
     assert any("missing required text" in issue for issue in formatted)
+
+
+def test_realtime_voice_alpha_report_rejects_barge_in_target_misses():
+    report = _valid_alpha_report()
+    report[-1]["barge_in_ack_ms"] = 250
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("barge_in_ack_ms 250 exceeds target 150" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_smoke_report_rejects_latency_target_misses():

@@ -249,7 +249,8 @@ hermes doctor --realtime-voice
 hermes doctor --realtime-voice-smoke
 hermes doctor --realtime-voice-audio-fixture ./fixtures/hello-en.webm --realtime-voice-audio-fixture ./fixtures/hello-ja.webm --realtime-voice-audio-codec webm_opus
 hermes doctor --realtime-voice-tts-smoke "Hello from Hermes." --realtime-voice-tts-smoke "こんにちは、Hermesです。"
-hermes doctor --realtime-voice-smoke --realtime-voice-audio-fixture ./fixtures/hello-en.webm --realtime-voice-audio-fixture ./fixtures/hello-ja.webm --realtime-voice-tts-smoke "Hello from Hermes." --realtime-voice-tts-smoke "こんにちは、Hermesです。" --realtime-voice-report ./voice-smoke-report.json
+hermes doctor --realtime-voice-barge-in-smoke "Hello from Hermes."
+hermes doctor --realtime-voice-smoke --realtime-voice-audio-fixture ./fixtures/hello-en.webm --realtime-voice-audio-fixture ./fixtures/hello-ja.webm --realtime-voice-tts-smoke "Hello from Hermes." --realtime-voice-tts-smoke "こんにちは、Hermesです。" --realtime-voice-barge-in-smoke "Hello from Hermes." --realtime-voice-report ./voice-smoke-report.json
 ```
 
 Use this before treating a profile as live-voice ready. The strict gate requires realtime voice to be enabled, preflight-available, live-like according to the same `conversation_quality` payload the desktop uses, and configured with latency targets no looser than the PRD live-conversation targets. It also checks that English and Japanese remain the production acceptance languages, that best-effort language pass-through is enabled unless deliberately disabled, that the configured sidecar is healthy, and that public provider naming stays capability-based rather than tied to a specific workstation or accelerator. Plain `hermes doctor` reports the same section informatively without failing ordinary installs that have not opted into realtime voice.
@@ -260,7 +261,9 @@ Use this before treating a profile as live-voice ready. The strict gate requires
 
 `--realtime-voice-tts-smoke` sends `assistant.text.partial` with `speak: true` to the configured sidecar and requires the first `audio.output.chunk` within `final_transcript_to_first_audio_ms`. Repeat it with a short English and Japanese phrase when validating a release profile so both TTS provider latency and multilingual voice configuration are covered.
 
-`--realtime-voice-report` writes a JSON array of the realtime smoke results for CI and release gates. Each entry records a neutral smoke `kind` (`protocol`, `audio_fixture`, or `tts`), `ok`, event names, latency fields, byte counts, sanitized error text, and smoke-specific metadata such as fixture path, codec, phrase text, and target milliseconds. The schema is intentionally language-neutral: English and Japanese are the first production acceptance fixtures, but additional best-effort language fixtures can use the same report format without changing Hermes protocol semantics.
+`--realtime-voice-barge-in-smoke` sends a spoken assistant chunk, immediately interrupts it with `barge_in`, and requires a `barge_in` acknowledgement within `barge_in_ack_ms`. This is a protocol/interruption smoke, not a full acoustic cancellation benchmark, but it prevents release evidence from omitting the interruption path.
+
+`--realtime-voice-report` writes a JSON array of the realtime smoke results for CI and release gates. Each entry records a neutral smoke `kind` (`protocol`, `audio_fixture`, `tts`, or `barge_in`), `ok`, event names, latency fields, byte counts, sanitized error text, and smoke-specific metadata such as fixture path, codec, phrase text, and target milliseconds. The schema is intentionally language-neutral: English and Japanese are the first production acceptance fixtures, but additional best-effort language fixtures can use the same report format without changing Hermes protocol semantics.
 
 After `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha.json --alpha` passes, set `voice.realtime.production_evidence_report` to that artifact path for the release profile. `/api/voice/realtime/status`, `hermes status`, and strict `hermes doctor --realtime-voice` then surface the same evidence-backed `production_readiness` result. Without this path, a profile can still report `conversation_quality.live_like: true`, but `production_readiness.ready` remains false with `missing_evidence_report`.
 
@@ -300,6 +303,7 @@ hermes doctor \
   --realtime-voice-tts-smoke "Can you hear me clearly?" \
   --realtime-voice-tts-smoke "こんにちは、Hermesです。" \
   --realtime-voice-tts-smoke "音声で会話できますか？" \
+  --realtime-voice-barge-in-smoke "Hello from Hermes." \
   --realtime-voice-report ./artifacts/realtime-voice-alpha.json
 python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha.json --alpha
 ```
@@ -308,7 +312,7 @@ CI shape:
 
 - Keep the normal unit tests in the regular test matrix: `tests/agent/test_realtime_voice.py`, `tests/hermes_cli/test_web_server.py::TestRealtimeVoiceWebSocket`, and the realtime desktop hook tests.
 - Add a separate, opt-in realtime voice smoke workflow or manual job that starts the configured sidecar, runs the command above, verifies the JSON artifact with `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha.json --alpha`, and uploads `artifacts/realtime-voice-alpha.json`.
-- Treat EN/JA fixture and TTS failures, missing `transcript.partial`, missing `transcript.final`, missing `audio.output.chunk`, and target latency misses as release-blocking for private alpha.
+- Treat EN/JA fixture, TTS, and barge-in failures, missing `transcript.partial`, missing `transcript.final`, missing `audio.output.chunk`, missing `barge_in`, and target latency misses as release-blocking for private alpha.
 - Treat non-target language fixture failures as non-blocking unless they reveal protocol rejection, translation-to-English behavior, metadata leakage, or a crash.
 - Archive only latency metrics, event names, byte counts, sanitized errors, fixture identifiers, and configured smoke phrases. Do not archive raw user audio outside explicit opt-in fixtures.
 
