@@ -149,12 +149,23 @@ The status endpoint returns `enabled`, `available`, selected engine/codecs, fron
     "mode": "managed_loopback",
     "base_url": "http://127.0.0.1:8765",
     "autostart": true,
-    "healthy": false
+    "healthy": true,
+    "health": {
+      "kind": "reference",
+      "frontend": {"provider": "vllm", "model": "google/gemma-4-E4B-it-qat-w4a16-ct"},
+      "capabilities": {
+        "utterance_stt": true,
+        "streaming_stt": false,
+        "tts": true,
+        "native_s2s": false,
+        "vllm_audio_frontend": true
+      }
+    }
   }
 }
 ```
 
-A managed loopback sidecar can be `available: true` while `healthy: false` because the websocket path will autostart it. An externally managed remote sidecar that is unhealthy is `available: false`, so the desktop should keep or return to the one-shot voice fallback.
+A managed loopback sidecar can be `available: true` while `healthy: false` because the websocket path will autostart it. An externally managed remote sidecar that is unhealthy is `available: false`, so the desktop should keep or return to the one-shot voice fallback. When `/health` returns metadata, Hermes includes only sanitized `kind`, `frontend`, `capabilities`, and local provider flags; URLs, tokens, credentials, and arbitrary vendor fields are not forwarded.
 
 Implementation notes:
 
@@ -313,7 +324,7 @@ WS   /v1/s2s/session
 GET  /health
 ```
 
-Hermes sends audio and transcript state. The sidecar returns transcript/frontend state, local draft hints, or audio chunks.
+Hermes sends audio and transcript state. The sidecar returns transcript/frontend state, local draft hints, or audio chunks. `GET /health` returns liveness plus sanitized capability metadata so Hermes can diagnose local, remote, and provider-backed sidecars without exposing secrets.
 
 Security requirements:
 

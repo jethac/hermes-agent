@@ -40,6 +40,30 @@ class ReferenceSidecarRuntimeConfig:
     local_tts_enabled: bool = True
 
 
+def reference_sidecar_health_payload(runtime: ReferenceSidecarRuntimeConfig) -> dict[str, Any]:
+    vllm_enabled = bool(runtime.vllm_base_url and runtime.vllm_model)
+
+    return {
+        "ok": True,
+        "kind": "reference",
+        "frontend": {
+            "provider": "vllm" if vllm_enabled else "local",
+            "model": runtime.vllm_model or "",
+        },
+        "capabilities": {
+            "utterance_stt": vllm_enabled or runtime.local_stt_enabled,
+            "streaming_stt": False,
+            "tts": runtime.local_tts_enabled,
+            "native_s2s": False,
+            "vllm_audio_frontend": vllm_enabled,
+        },
+        "local": {
+            "stt": runtime.local_stt_enabled,
+            "tts": runtime.local_tts_enabled,
+        },
+    }
+
+
 class ReferenceRealtimeVoiceSidecarSession:
     """One realtime sidecar session.
 
@@ -263,7 +287,7 @@ def create_reference_sidecar_app(runtime: Optional[ReferenceSidecarRuntimeConfig
 
     @app.get("/health")
     async def health():
-        return {"ok": True, "vllm": bool(runtime.vllm_base_url and runtime.vllm_model)}
+        return reference_sidecar_health_payload(runtime)
 
     @app.websocket("/v1/realtime-text/session")
     async def realtime_text_session(ws: WebSocket):
