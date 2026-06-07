@@ -85,6 +85,31 @@ The downstream service must expose `GET /health` with `{"ok": true, "capabilitie
 
 This is intentionally not a Gemma/vLLM shortcut. A vLLM/Gemma chat-completions audio endpoint can improve utterance transcription, but it remains `utterance_stt` until it emits partial/final transcript events while audio is still arriving. Only a verified streaming STT bridge plus TTS, or a native S2S sidecar, can make `conversation_quality.live_like` true.
 
+Hermes ships a Deepgram-compatible bridge entrypoint for the first provider-backed streaming STT path:
+
+```bash
+set DEEPGRAM_API_KEY=...
+set HERMES_STREAMING_STT_BRIDGE_TOKEN=...
+python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --model nova-3 --language en-US
+```
+
+Then configure the Hermes realtime profile so the managed reference sidecar can bridge to it:
+
+```yaml
+voice:
+  realtime:
+    enabled: true
+    frontend_provider: reference
+    sidecar_host: 127.0.0.1
+    sidecar_port: 8765
+    streaming_stt_base_url: http://127.0.0.1:8766
+    streaming_stt_model: nova-3
+    streaming_stt_token_env: HERMES_STREAMING_STT_BRIDGE_TOKEN
+    require_live_like: true
+```
+
+For Japanese validation, use a Japanese-capable Deepgram model/language setting or run a second profile with `--language ja`. If the bridge health probe cannot verify `streaming_stt: true`, Hermes keeps the profile below live-like status even though utterance STT and TTS may still work.
+
 ## Production-Readiness Ladder
 
 Use this ladder when deciding what a profile may claim. The distinction matters because the same Hermes desktop can be connected to very different inference deployments.
