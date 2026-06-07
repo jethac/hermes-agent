@@ -65,6 +65,24 @@ _REALTIME_VOICE_LIVE_TARGETS_MS = {
 }
 
 
+def _realtime_voice_alpha_audio_fixtures() -> list[str]:
+    from agent.realtime_voice_smoke_report import ALPHA_REQUIRED_AUDIO_FIXTURES
+
+    return list(ALPHA_REQUIRED_AUDIO_FIXTURES)
+
+
+def _realtime_voice_alpha_tts_texts() -> list[str]:
+    from agent.realtime_voice_smoke_report import ALPHA_REQUIRED_TTS_TEXTS
+
+    return list(ALPHA_REQUIRED_TTS_TEXTS)
+
+
+def _realtime_voice_alpha_barge_in_texts() -> list[str]:
+    from agent.realtime_voice_smoke_report import ALPHA_REQUIRED_BARGE_IN_TEXTS
+
+    return list(ALPHA_REQUIRED_BARGE_IN_TEXTS)
+
+
 from hermes_constants import is_termux as _is_termux
 
 
@@ -548,6 +566,37 @@ def _realtime_voice_cli_values(value: Any) -> list[str]:
         return result
     text = str(value).strip()
     return [text] if text else []
+
+
+def _realtime_voice_unique_values(*groups: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for item in group:
+            text = str(item or "").strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            result.append(text)
+    return result
+
+
+def _realtime_voice_expand_alpha_smokes(
+    *,
+    alpha: bool,
+    smoke: bool,
+    audio_fixtures: list[str],
+    tts_texts: list[str],
+    barge_in_texts: list[str],
+) -> tuple[bool, list[str], list[str], list[str]]:
+    if not alpha:
+        return smoke, audio_fixtures, tts_texts, barge_in_texts
+    return (
+        True,
+        _realtime_voice_unique_values(_realtime_voice_alpha_audio_fixtures(), audio_fixtures),
+        _realtime_voice_unique_values(_realtime_voice_alpha_tts_texts(), tts_texts),
+        _realtime_voice_unique_values(_realtime_voice_alpha_barge_in_texts(), barge_in_texts),
+    )
 
 
 def _realtime_voice_smoke_report_payload(result: Any, *, kind: str, **extra: Any) -> dict[str, Any]:
@@ -1439,6 +1488,7 @@ def run_doctor(args):
     """Run diagnostic checks."""
     should_fix = getattr(args, 'fix', False)
     ack_target = getattr(args, 'ack', None)
+    realtime_voice_alpha = getattr(args, 'realtime_voice_alpha', False)
     smoke_realtime_voice = getattr(args, 'realtime_voice_smoke', False)
     realtime_voice_audio_fixtures = _realtime_voice_cli_values(
         getattr(args, 'realtime_voice_audio_fixture', None)
@@ -1448,6 +1498,18 @@ def run_doctor(args):
     )
     realtime_voice_barge_in_smokes = _realtime_voice_cli_values(
         getattr(args, 'realtime_voice_barge_in_smoke', None)
+    )
+    (
+        smoke_realtime_voice,
+        realtime_voice_audio_fixtures,
+        realtime_voice_tts_smokes,
+        realtime_voice_barge_in_smokes,
+    ) = _realtime_voice_expand_alpha_smokes(
+        alpha=realtime_voice_alpha,
+        smoke=smoke_realtime_voice,
+        audio_fixtures=realtime_voice_audio_fixtures,
+        tts_texts=realtime_voice_tts_smokes,
+        barge_in_texts=realtime_voice_barge_in_smokes,
     )
     realtime_voice_report_path = getattr(args, 'realtime_voice_report', None)
     realtime_voice_reports: list[dict[str, Any]] | None = [] if realtime_voice_report_path else None

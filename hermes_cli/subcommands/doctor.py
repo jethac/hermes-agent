@@ -33,6 +33,15 @@ def build_doctor_parser(subparsers, *, cmd_doctor: Callable) -> None:
         help="Run the strict realtime voice gate plus a sidecar websocket protocol smoke",
     )
     doctor_parser.add_argument(
+        "--realtime-voice-alpha",
+        action="store_true",
+        help=(
+            "Run the documented realtime voice private-alpha evidence set: protocol smoke, "
+            "required English/Japanese audio fixtures, required English/Japanese TTS phrases, "
+            "and barge-in smoke"
+        ),
+    )
+    doctor_parser.add_argument(
         "--realtime-voice-audio-fixture",
         action="append",
         metavar="PATH",
