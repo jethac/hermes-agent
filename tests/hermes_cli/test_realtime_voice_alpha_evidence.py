@@ -227,6 +227,51 @@ def test_alpha_evidence_runner_collects_and_validates_runs(monkeypatch, tmp_path
     assert "audio_to_partial_transcript" in output
 
 
+def test_alpha_evidence_runner_apply_updates_production_evidence_report(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    calls = []
+    saved = {}
+    reports_dir = tmp_path / "reports"
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(monkeypatch)
+    monkeypatch.setattr("hermes_cli.config.read_raw_config", lambda: {"voice": {"realtime": {"enabled": True}}})
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+
+    def fake_run_doctor(args):
+        calls.append(args)
+        with open(args.realtime_voice_report, "w", encoding="utf-8") as handle:
+            json.dump(_valid_alpha_report(), handle, ensure_ascii=False)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(reports_dir),
+            "--runs",
+            "3",
+            "--prefix",
+            "alpha",
+            "--apply",
+        ]
+    )
+
+    assert result == 0
+    assert len(calls) == 3
+    assert saved["config"]["voice"]["realtime"]["enabled"] is True
+    assert saved["config"]["voice"]["realtime"]["production_evidence_report"] == str(reports_dir)
+    assert "Updated realtime voice production_evidence_report" in capsys.readouterr().out
+
+
 def test_alpha_evidence_runner_refuses_to_overwrite_existing_report(tmp_path, capsys):
     (tmp_path / "alpha-001.json").write_text("[]", encoding="utf-8")
 
@@ -328,6 +373,9 @@ def test_alpha_evidence_runner_returns_validation_failure(monkeypatch, tmp_path,
     _write_required_audio_fixtures(tmp_path)
     monkeypatch.chdir(tmp_path)
     _install_fake_web_server(monkeypatch)
+    saved = {}
+    monkeypatch.setattr("hermes_cli.config.read_raw_config", lambda: {})
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
 
     def fake_run_doctor(args):
         report = _valid_alpha_report()
@@ -349,10 +397,12 @@ def test_alpha_evidence_runner_returns_validation_failure(monkeypatch, tmp_path,
             "1",
             "--prefix",
             "alpha",
+            "--apply",
         ]
     )
 
     assert result == 1
+    assert saved == {}
     assert "missing required text" in capsys.readouterr().err
 
 
@@ -523,4 +573,4 @@ def test_alpha_evidence_runner_requires_live_like_status_before_collecting(
     assert "realtime_voice_profile --preset deepgram --apply --generate-bridge-token" in error
     assert "realtime_voice_deepgram_bridge --check --strict --production-en-ja" in error
     assert "realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice" in error
-    assert "realtime_voice_alpha_evidence --runs 3" in error
+    assert "realtime_voice_alpha_evidence --runs 3 --apply" in error

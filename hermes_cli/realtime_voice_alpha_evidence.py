@@ -55,6 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Overwrite existing report files",
     )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="After validation succeeds, set voice.realtime.production_evidence_report in config.yaml",
+    )
     return parser
 
 
@@ -148,6 +153,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     _print_summary(runs)
+    if args.apply:
+        config_path = apply_realtime_voice_production_evidence_report(output_dir)
+        print(f"Updated realtime voice production_evidence_report in {config_path}")
     return 0
 
 
@@ -157,6 +165,26 @@ def missing_required_audio_fixtures() -> list[str]:
         for fixture in ALPHA_REQUIRED_AUDIO_FIXTURES
         if not Path(fixture).expanduser().is_file()
     ]
+
+
+def apply_realtime_voice_production_evidence_report(report_path: str | Path) -> Path:
+    from hermes_cli.config import get_config_path, read_raw_config, save_config
+
+    path = Path(report_path).expanduser()
+    config = read_raw_config()
+    if not isinstance(config, dict):
+        config = {}
+    voice = config.get("voice")
+    if not isinstance(voice, dict):
+        voice = {}
+    realtime = voice.get("realtime")
+    if not isinstance(realtime, dict):
+        realtime = {}
+    realtime["production_evidence_report"] = str(path)
+    voice["realtime"] = realtime
+    config["voice"] = voice
+    save_config(config)
+    return get_config_path()
 
 
 @contextmanager
@@ -239,7 +267,7 @@ def print_realtime_voice_live_setup_hint() -> None:
         file=sys.stderr,
     )
     print("  python -m hermes_cli.realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice", file=sys.stderr)
-    print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3", file=sys.stderr)
+    print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply", file=sys.stderr)
 
 
 def print_realtime_voice_fixture_setup_hint() -> None:

@@ -173,7 +173,7 @@ class TestRealtimeVoiceReadiness:
         assert "Voice sidecar health" in output
         assert "realtime_voice_profile --preset deepgram --apply --generate-bridge-token" in output
         assert "realtime_voice_deepgram_bridge --check --strict --production-en-ja" in output
-        assert "realtime_voice_alpha_evidence --runs 3" in output
+        assert "realtime_voice_alpha_evidence --runs 3 --apply" in output
         assert any("live-like" in issue for issue in issues)
         assert any("production_evidence_report" in issue for issue in issues)
         assert any("English and Japanese" in issue for issue in issues)
@@ -325,9 +325,8 @@ class TestRealtimeVoiceReadiness:
         assert "missing_evidence_report" in output
         assert "Production evidence:" in output
         assert "realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice" in output
-        assert "realtime_voice_alpha_evidence --runs 3" in output
+        assert "realtime_voice_alpha_evidence --runs 3 --apply" in output
         assert "realtime_voice_report ./artifacts/realtime-voice-evidence/*.json --alpha --min-runs 3" in output
-        assert "voice.realtime.production_evidence_report" in output
         assert any("production_evidence_report" in issue for issue in issues)
         assert "Production launch review:" not in output
 

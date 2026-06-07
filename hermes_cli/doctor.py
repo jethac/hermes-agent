@@ -581,12 +581,11 @@ def _emit_realtime_voice_production_evidence_hint(readiness_issues: list[str]) -
         return
     check_info("Production evidence:")
     check_info("  python -m hermes_cli.realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice")
-    check_info("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3")
+    check_info("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply")
     check_info(
         "  python -m hermes_cli.realtime_voice_report "
         "./artifacts/realtime-voice-evidence/*.json --alpha --min-runs 3"
     )
-    check_info("  set voice.realtime.production_evidence_report: ./artifacts/realtime-voice-evidence")
 
 
 def _realtime_voice_has_production_review_issue(readiness_issues: list[str]) -> bool:
@@ -631,7 +630,7 @@ def _emit_realtime_voice_live_setup_hint(payload: Mapping[str, Any]) -> None:
     check_info("  set DEEPGRAM_API_KEY=...")
     check_info("  python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict --production-en-ja")
     check_info("  python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --production-en-ja")
-    check_info("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3")
+    check_info("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply")
 
 
 def _realtime_voice_cli_values(value: Any) -> list[str]:
