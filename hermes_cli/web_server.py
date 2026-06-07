@@ -662,9 +662,19 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "options": ["opus", "webm_opus", "pcm16"],
         "category": "voice",
     },
+    "voice.realtime.sidecar_base_url": {
+        "type": "string",
+        "description": "Remote or local realtime voice sidecar URL",
+        "category": "voice",
+    },
+    "voice.realtime.sidecar_token_env": {
+        "type": "string",
+        "description": "Environment variable containing the realtime voice sidecar bearer token",
+        "category": "voice",
+    },
     "voice.realtime.spark_base_url": {
         "type": "string",
-        "description": "LAN sidecar URL for Gemma/S2S voice models",
+        "description": "Deprecated alias for voice.realtime.sidecar_base_url",
         "category": "voice",
     },
     "display.skin": {
@@ -12880,10 +12890,14 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     engine = ws.query_params.get("engine") or realtime.get("engine") or "text_oracle_tts"
     input_codec = ws.query_params.get("input_codec") or realtime.get("input_codec") or "webm_opus"
     output_codec = ws.query_params.get("output_codec") or realtime.get("output_codec") or "opus"
-    spark_base_url = _realtime_voice_sidecar_base_url(realtime)
-    spark_token_env = str(realtime.get("spark_token_env") or "HERMES_SPARK_VOICE_TOKEN")
+    sidecar_base_url = _realtime_voice_sidecar_base_url(realtime)
+    sidecar_token_env = str(
+        realtime.get("sidecar_token_env")
+        or realtime.get("spark_token_env")
+        or "HERMES_VOICE_SIDECAR_TOKEN"
+    )
     env = load_env()
-    spark_token = env.get(spark_token_env) or os.environ.get(spark_token_env) or ""
+    sidecar_token = env.get(sidecar_token_env) or os.environ.get(sidecar_token_env) or ""
 
     return RealtimeVoiceSessionConfig(
         session_id=str(session_id),
@@ -12894,8 +12908,10 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         frontend_model=str(realtime.get("frontend_model") or "") or None,
         oracle_model=str(realtime.get("oracle_model") or "") or None,
         tts_provider=str(realtime.get("tts_provider") or "") or None,
-        spark_base_url=str(spark_base_url or "") or None,
-        spark_token=str(spark_token or "") or None,
+        sidecar_base_url=str(sidecar_base_url or "") or None,
+        sidecar_token=str(sidecar_token or "") or None,
+        spark_base_url=str(sidecar_base_url or "") or None,
+        spark_token=str(sidecar_token or "") or None,
         metadata={"source": "desktop"},
     )
 

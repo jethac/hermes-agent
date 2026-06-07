@@ -92,11 +92,23 @@ class RealtimeVoiceSessionConfig:
     frontend_model: Optional[str] = None
     oracle_model: Optional[str] = None
     tts_provider: Optional[str] = None
+    sidecar_base_url: Optional[str] = None
+    sidecar_token: Optional[str] = None
     spark_base_url: Optional[str] = None
     spark_token: Optional[str] = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
+    @property
+    def effective_sidecar_base_url(self) -> Optional[str]:
+        return self.sidecar_base_url or self.spark_base_url
+
+    @property
+    def effective_sidecar_token(self) -> Optional[str]:
+        return self.sidecar_token or self.spark_token
+
     def to_wire(self) -> Dict[str, Any]:
+        sidecar_base_url = self.effective_sidecar_base_url
+        sidecar_token = self.effective_sidecar_token
         return {
             "session_id": self.session_id,
             "engine": self.engine.value,
@@ -108,8 +120,10 @@ class RealtimeVoiceSessionConfig:
             "frontend_model": self.frontend_model,
             "oracle_model": self.oracle_model,
             "tts_provider": self.tts_provider,
-            "spark_base_url": self.spark_base_url,
-            "spark_token": self.spark_token,
+            "sidecar_base_url": sidecar_base_url,
+            "sidecar_token": sidecar_token,
+            "spark_base_url": sidecar_base_url,
+            "spark_token": sidecar_token,
             "metadata": dict(self.metadata),
         }
 
@@ -126,6 +140,8 @@ class RealtimeVoiceSessionConfig:
             frontend_model=_optional_str(payload.get("frontend_model")),
             oracle_model=_optional_str(payload.get("oracle_model")),
             tts_provider=_optional_str(payload.get("tts_provider")),
+            sidecar_base_url=_optional_str(payload.get("sidecar_base_url")),
+            sidecar_token=_optional_str(payload.get("sidecar_token")),
             spark_base_url=_optional_str(payload.get("spark_base_url")),
             spark_token=_optional_str(payload.get("spark_token")),
             metadata=_mapping(payload.get("metadata")),

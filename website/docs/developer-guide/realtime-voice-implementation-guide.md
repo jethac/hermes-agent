@@ -69,7 +69,7 @@ The voice inference process owns:
 - streaming TTS or native S2S audio generation
 - model-specific media dependencies and GPU scheduling
 
-This split is why `sidecar_base_url` and `spark_base_url` remain server-side configuration. The desktop cannot point Hermes at an arbitrary inference host through query params.
+This split is why `sidecar_base_url` remains server-side configuration. The desktop cannot point Hermes at an arbitrary inference host through query params.
 
 ## Target File Layout
 
@@ -258,7 +258,7 @@ Gemma/vLLM audio frontend:
 python -m hermes_cli.realtime_voice_sidecar \
   --host 127.0.0.1 \
   --port 8765 \
-  --vllm-base-url http://100.113.98.11:8000/v1 \
+  --vllm-base-url http://voice-gpu.local:8000/v1 \
   --vllm-model google/gemma-4-E4B-it-qat-w4a16-ct
 ```
 
@@ -283,7 +283,21 @@ With `sidecar_autostart: true`, Hermes checks `GET /health` on the loopback side
 python -m hermes_cli.realtime_voice_sidecar --host 127.0.0.1 --port 8765
 ```
 
-For `gemma4` or `vllm` frontends, the same supervised sidecar can call a remote vLLM audio endpoint through `vllm_base_url` and `vllm_model`. If `sidecar_base_url` or `spark_base_url` points at a non-loopback host, Hermes treats that as an externally managed inference host and does not spawn a local process.
+Hermes config for an externally managed remote inference sidecar:
+
+```yaml
+voice:
+  realtime:
+    enabled: true
+    engine: text_oracle_tts
+    frontend_provider: gemma4
+    frontend_model: google/gemma-4-E4B-it-qat-w4a16-ct
+    sidecar_base_url: "http://voice-inference.local:8765"
+    sidecar_token_env: HERMES_VOICE_SIDECAR_TOKEN
+    sidecar_autostart: false
+```
+
+For `gemma4` or `vllm` frontends, the same supervised sidecar can call a remote vLLM audio endpoint through `vllm_base_url` and `vllm_model`. If `sidecar_base_url` points at a non-loopback host, Hermes treats that as an externally managed inference host and does not spawn a local process. `spark_base_url` remains a deprecated compatibility alias for existing private profiles.
 
 Suggested sidecar API expansion:
 

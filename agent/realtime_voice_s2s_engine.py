@@ -34,8 +34,8 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         return RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
-        if not config.spark_base_url:
-            raise RuntimeError("native S2S engine requires voice.realtime.spark_base_url")
+        if not config.effective_sidecar_base_url:
+            raise RuntimeError("native S2S engine requires voice.realtime.sidecar_base_url")
         self.config = config
         self._oracle = HermesRealtimeOracle(config)
         await self._connect_sidecar(config)
@@ -76,10 +76,10 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         except ImportError as exc:
             raise RuntimeError("native S2S sidecar requires the websockets package") from exc
 
-        url = _sidecar_ws_url(config.spark_base_url or "", "/v1/s2s/session")
+        url = _sidecar_ws_url(config.effective_sidecar_base_url or "", "/v1/s2s/session")
         headers = {}
-        if config.spark_token:
-            headers["Authorization"] = f"Bearer {config.spark_token}"
+        if config.effective_sidecar_token:
+            headers["Authorization"] = f"Bearer {config.effective_sidecar_token}"
         try:
             self._ws = await websockets.connect(url, additional_headers=headers or None)
         except TypeError:

@@ -6282,7 +6282,7 @@ class TestRealtimeVoiceWebSocket:
         class FakeWebSocket:
             query_params = {
                 "session_id": "voice-123",
-                "spark_base_url": "http://attacker.local:9999",
+                "sidecar_base_url": "http://attacker.local:9999",
             }
 
         monkeypatch.setattr(
@@ -6295,19 +6295,21 @@ class TestRealtimeVoiceWebSocket:
                         "engine": "text_oracle_tts",
                         "frontend_provider": "gemma",
                         "frontend_model": "gemma-4-e4b",
-                        "spark_base_url": "http://voice.local:8080",
-                        "spark_token_env": "HERMES_SPARK_VOICE_TOKEN",
+                        "sidecar_base_url": "http://voice.local:8080",
+                        "sidecar_token_env": "HERMES_VOICE_SIDECAR_TOKEN",
                     }
                 }
             },
         )
-        monkeypatch.setattr(self.ws_module, "load_env", lambda: {"HERMES_SPARK_VOICE_TOKEN": "secret-token"})
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {"HERMES_VOICE_SIDECAR_TOKEN": "secret-token"})
 
         config = self.ws_module._realtime_voice_config_from_request(FakeWebSocket())
 
         assert config.session_id == "voice-123"
         assert config.frontend_provider == "gemma"
         assert config.frontend_model == "gemma-4-e4b"
+        assert config.sidecar_base_url == "http://voice.local:8080"
+        assert config.sidecar_token == "secret-token"
         assert config.spark_base_url == "http://voice.local:8080"
         assert config.spark_token == "secret-token"
 
@@ -6335,6 +6337,7 @@ class TestRealtimeVoiceWebSocket:
         config = self.ws_module._realtime_voice_config_from_request(FakeWebSocket())
 
         assert config.frontend_provider == "local"
+        assert config.sidecar_base_url == "http://127.0.0.1:8765"
         assert config.spark_base_url == "http://127.0.0.1:8765"
 
     def test_config_defaults_gemma4_frontend_to_reference_sidecar(self, monkeypatch):
@@ -6363,6 +6366,7 @@ class TestRealtimeVoiceWebSocket:
 
         assert config.frontend_provider == "gemma4"
         assert config.frontend_model == "google/gemma-4-E4B-it-qat-w4a16-ct"
+        assert config.sidecar_base_url == "http://127.0.0.1:8765"
         assert config.spark_base_url == "http://127.0.0.1:8765"
 
     def test_status_reports_disabled_realtime_voice(self, monkeypatch):

@@ -2031,6 +2031,7 @@ DEFAULT_CONFIG = {
             "frontend_provider": "",
             "frontend_model": "",
             "sidecar_base_url": "",
+            "sidecar_token_env": "HERMES_VOICE_SIDECAR_TOKEN",
             "spark_base_url": "",
             "spark_token_env": "HERMES_SPARK_VOICE_TOKEN",
             "sidecar_host": "127.0.0.1",
