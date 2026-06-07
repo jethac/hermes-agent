@@ -6938,6 +6938,43 @@ class TestRealtimeVoiceWebSocket:
         assert "Jpan,Latn" in command
         assert "secret" not in __import__("json").dumps(command)
 
+    def test_sidecar_command_inherits_production_language_policy_by_default(self):
+        command = self.ws_module._realtime_voice_sidecar_command(
+            {
+                "sidecar_host": "127.0.0.1",
+                "sidecar_port": 8765,
+                "production_languages": ["en", "ja", "https://voice.local/secret"],
+                "production_scripts": ["Latn", "Jpan", "bad/script"],
+            }
+        )
+
+        assert "--input-languages" in command
+        assert "en,ja" in command
+        assert "--output-languages" in command
+        assert "en,ja" in command
+        assert "--scripts" in command
+        assert "Latn,Jpan" in command
+        assert "secret" not in __import__("json").dumps(command)
+
+    def test_sidecar_command_prefers_explicit_sidecar_language_overrides(self):
+        command = self.ws_module._realtime_voice_sidecar_command(
+            {
+                "sidecar_host": "127.0.0.1",
+                "sidecar_port": 8765,
+                "production_languages": ["en", "ja"],
+                "production_scripts": ["Latn", "Jpan"],
+                "input_languages": ["de"],
+                "output_languages": ["ko"],
+                "scripts": ["Hang"],
+            }
+        )
+
+        assert "de" in command
+        assert "ko" in command
+        assert "Hang" in command
+        assert "en,ja" not in command
+        assert "Latn,Jpan" not in command
+
     def test_binary_audio_frame_parses_to_json_audio_event(self):
         event = self.ws_module._realtime_voice_event_from_ws_message(
             {
