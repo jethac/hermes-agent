@@ -106,6 +106,23 @@ def validate_realtime_voice_alpha_report_runs(
                     f"{label}: {issue.identifier}" if issue.identifier else label,
                 )
             )
+    fingerprints: dict[tuple[Any, ...], str] = {}
+    for label, entries in runs:
+        manifest = _first_entry_by_kind(entries, "manifest")
+        if manifest is None:
+            continue
+        fingerprint = _alpha_manifest_fingerprint(manifest)
+        if fingerprint not in fingerprints:
+            fingerprints[fingerprint] = label
+    if len(fingerprints) > 1:
+        labels = ", ".join(sorted(fingerprints.values()))
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "evidence",
+                "alpha runs used mixed realtime voice stack manifests",
+                labels,
+            )
+        )
     return issues
 
 
@@ -296,6 +313,37 @@ def _entries_by_kind(entries: Sequence[Mapping[str, Any]]) -> dict[str, list[Map
             continue
         by_kind.setdefault(kind, []).append(entry)
     return by_kind
+
+
+def _first_entry_by_kind(entries: Sequence[Mapping[str, Any]], kind: str) -> Mapping[str, Any] | None:
+    for entry in entries:
+        if str(entry.get("kind") or "").strip() == kind:
+            return entry
+    return None
+
+
+def _alpha_manifest_fingerprint(entry: Mapping[str, Any]) -> tuple[Any, ...]:
+    sidecar = entry.get("sidecar") if isinstance(entry.get("sidecar"), Mapping) else {}
+    health = sidecar.get("health") if isinstance(sidecar.get("health"), Mapping) else {}
+    frontend = health.get("frontend") if isinstance(health.get("frontend"), Mapping) else {}
+    capabilities = health.get("capabilities") if isinstance(health.get("capabilities"), Mapping) else {}
+    conversation_quality = (
+        entry.get("conversation_quality")
+        if isinstance(entry.get("conversation_quality"), Mapping)
+        else {}
+    )
+    return (
+        str(entry.get("engine") or ""),
+        str(entry.get("frontend_provider") or ""),
+        str(entry.get("frontend_model") or ""),
+        str(conversation_quality.get("mode") or ""),
+        str(sidecar.get("mode") or ""),
+        capabilities.get("native_s2s") is True,
+        capabilities.get("streaming_stt") is True,
+        capabilities.get("tts") is True,
+        tuple(sorted(_primary_language_set(capabilities.get("output_languages", [])))),
+        tuple(sorted(_primary_language_set(frontend.get("tts_model_languages", [])))),
+    )
 
 
 def _validate_required_entries(

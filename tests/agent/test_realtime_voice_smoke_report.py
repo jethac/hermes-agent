@@ -261,6 +261,29 @@ def test_realtime_voice_alpha_report_runs_accept_multiple_reports(tmp_path):
     assert validate_realtime_voice_alpha_report_runs(runs, min_runs=3) == []
 
 
+def test_realtime_voice_alpha_report_runs_reject_mixed_stack_manifests(tmp_path):
+    runs = []
+    for index in range(3):
+        report = json.loads(json.dumps(_valid_alpha_report(), ensure_ascii=False))
+        if index == 1:
+            manifest = report[0]
+            manifest["engine"] = "native_s2s_oracle"
+            manifest["frontend_provider"] = "native_s2s"
+            manifest["conversation_quality"]["mode"] = "native_s2s"
+            manifest["sidecar"]["mode"] = "external"
+            manifest["sidecar"]["health"]["capabilities"] = {
+                "native_s2s": True,
+                "output_languages": ["en", "ja"],
+            }
+        path = tmp_path / f"voice-smoke-{index}.json"
+        path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+        runs.append((str(path), load_realtime_voice_smoke_report(path)))
+
+    issues = validate_realtime_voice_alpha_report_runs(runs, min_runs=3)
+
+    assert any("mixed realtime voice stack manifests" in issue.format() for issue in issues)
+
+
 def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path):
     runs = []
     for index, partial_ms in enumerate((80, 90, 120)):
