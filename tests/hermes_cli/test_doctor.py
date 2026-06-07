@@ -171,6 +171,9 @@ class TestRealtimeVoiceReadiness:
         assert "missing production target(s): ja" in output
         assert "Best-effort languages disabled" in output
         assert "Voice sidecar health" in output
+        assert "realtime_voice_profile --preset deepgram --apply" in output
+        assert "realtime_voice_deepgram_bridge --check --strict --production-en-ja" in output
+        assert "realtime_voice_alpha_evidence --runs 3" in output
         assert any("live-like" in issue for issue in issues)
         assert any("production_evidence_report" in issue for issue in issues)
         assert any("English and Japanese" in issue for issue in issues)
@@ -224,6 +227,7 @@ class TestRealtimeVoiceReadiness:
         assert "Realtime voice latency targets" in output
         assert "Realtime voice production readiness" in output
         assert "Portable voice provider naming" in output
+        assert "realtime_voice_profile --preset deepgram" not in output
         assert issues == []
 
     def test_strict_rejects_loose_realtime_voice_latency_targets(self, monkeypatch, capsys):
