@@ -117,6 +117,7 @@ def _print_realtime_voice_status() -> None:
     unavailable_reason = str(payload.get("unavailable_reason") or "").strip()
     engine = str(payload.get("engine") or "text_oracle_tts")
     quality = payload.get("conversation_quality") if isinstance(payload.get("conversation_quality"), Mapping) else {}
+    production = payload.get("production_readiness") if isinstance(payload.get("production_readiness"), Mapping) else {}
     sidecar = payload.get("sidecar") if isinstance(payload.get("sidecar"), Mapping) else {}
 
     if not enabled:
@@ -134,6 +135,11 @@ def _print_realtime_voice_status() -> None:
     live_label = _format_realtime_voice_bool(live_like)
     print(f"  Quality:      {check_mark(live_like is True)} {mode} ({reason})")
     print(f"  Live-like:    {live_label}")
+    production_ready = production.get("ready")
+    production_level = str(production.get("level") or "unknown")
+    production_issues = production.get("issues") if isinstance(production.get("issues"), list) else []
+    issue_suffix = f" ({', '.join(str(issue) for issue in production_issues[:3])})" if production_issues else ""
+    print(f"  Production:   {check_mark(production_ready is True)} {production_level}{issue_suffix}")
     print(f"  Require live: {_format_realtime_voice_bool(payload.get('require_live_like'))}")
     sidecar_mode = str(sidecar.get("mode") or "none")
     healthy = sidecar.get("healthy")

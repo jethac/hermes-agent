@@ -6500,6 +6500,19 @@ class TestRealtimeVoiceWebSocket:
             "tts": False,
             "sidecar_verified": False,
         }
+        assert config.metadata["production_readiness"] == {
+            "ready": False,
+            "level": "not_ready",
+            "issues": ["not_live_like", "sidecar_unverified"],
+            "required_languages": ["en", "ja"],
+            "required_scripts": ["Latn", "Jpan"],
+            "required_quality_targets_ms": {
+                "audio_to_partial_transcript_ms": 300,
+                "final_transcript_to_first_text_ms": 500,
+                "final_transcript_to_first_audio_ms": 900,
+                "barge_in_ack_ms": 150,
+            },
+        }
         assert config.metadata["require_live_like"] is False
 
     def test_config_defaults_local_frontend_to_reference_sidecar(self, monkeypatch):
@@ -6867,6 +6880,19 @@ class TestRealtimeVoiceWebSocket:
         assert body["conversation_quality"]["reason"] == "streaming_stt_tts"
         assert body["conversation_quality"]["live_like"] is True
         assert body["conversation_quality"]["partial_transcripts"] is True
+        assert body["production_readiness"] == {
+            "ready": True,
+            "level": "production_ready",
+            "issues": [],
+            "required_languages": ["en", "ja"],
+            "required_scripts": ["Latn", "Jpan"],
+            "required_quality_targets_ms": {
+                "audio_to_partial_transcript_ms": 300,
+                "final_transcript_to_first_text_ms": 500,
+                "final_transcript_to_first_audio_ms": 900,
+                "barge_in_ack_ms": 150,
+            },
+        }
 
     def test_status_require_live_like_keeps_turn_based_sidecar_unavailable(self, monkeypatch):
         class FakeResponse:
@@ -6914,6 +6940,9 @@ class TestRealtimeVoiceWebSocket:
         assert body["require_live_like"] is True
         assert body["conversation_quality"]["mode"] == "turn_based_text"
         assert body["conversation_quality"]["live_like"] is False
+        assert body["production_readiness"]["ready"] is False
+        assert body["production_readiness"]["level"] == "not_ready"
+        assert body["production_readiness"]["issues"] == ["live_like_required", "not_live_like"]
 
     def test_status_require_live_like_accepts_streaming_text_sidecar(self, monkeypatch):
         class FakeResponse:
@@ -6961,6 +6990,66 @@ class TestRealtimeVoiceWebSocket:
         assert body["require_live_like"] is True
         assert body["conversation_quality"]["mode"] == "streaming_text"
         assert body["conversation_quality"]["live_like"] is True
+
+    def test_status_production_readiness_reports_policy_and_target_issues(self, monkeypatch):
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": True,
+                            "tts": True,
+                            "native_s2s": False,
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                        "production_languages": ["en"],
+                        "production_scripts": ["Latn"],
+                        "best_effort_languages": False,
+                        "quality_targets_ms": {
+                            "audio_to_partial_transcript_ms": 300,
+                            "final_transcript_to_first_text_ms": 500,
+                            "final_transcript_to_first_audio_ms": 1200,
+                            "barge_in_ack_ms": 150,
+                        },
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        body = self.client.get("/api/voice/realtime/status").json()
+
+        assert body["available"] is True
+        assert body["conversation_quality"]["live_like"] is True
+        assert body["production_readiness"]["ready"] is False
+        assert body["production_readiness"]["level"] == "live_like"
+        assert body["production_readiness"]["issues"] == [
+            "missing_japanese",
+            "missing_japanese_script",
+            "best_effort_languages_disabled",
+            "loose_quality_targets",
+        ]
 
     def test_open_reason_requires_live_like_without_sidecar_for_text_engine(self):
         reason = self.ws_module._realtime_voice_open_unavailable_reason(

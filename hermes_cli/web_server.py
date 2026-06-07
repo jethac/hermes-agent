@@ -13080,6 +13080,79 @@ def _realtime_voice_conversation_quality_payload(
     }
 
 
+def _realtime_voice_production_readiness_payload(
+    *,
+    enabled: bool,
+    available: bool,
+    unavailable_reason: str,
+    language_support: Dict[str, Any],
+    quality_targets_ms: Dict[str, int],
+    conversation_quality: Dict[str, Any],
+) -> Dict[str, Any]:
+    issues: List[str] = []
+    if not enabled:
+        issues.append("disabled")
+    if not available and unavailable_reason:
+        issues.append(unavailable_reason)
+    if conversation_quality.get("live_like") is not True:
+        issues.append("not_live_like")
+    if conversation_quality.get("sidecar_verified") is not True:
+        issues.append("sidecar_unverified")
+
+    production_languages = language_support.get("production_languages")
+    if not isinstance(production_languages, list):
+        production_languages = []
+    if not _realtime_voice_language_policy_has(production_languages, "en"):
+        issues.append("missing_english")
+    if not _realtime_voice_language_policy_has(production_languages, "ja"):
+        issues.append("missing_japanese")
+
+    production_scripts = language_support.get("production_scripts")
+    if not isinstance(production_scripts, list):
+        production_scripts = []
+    if "Latn" not in production_scripts:
+        issues.append("missing_latin_script")
+    if "Jpan" not in production_scripts:
+        issues.append("missing_japanese_script")
+
+    if language_support.get("best_effort_languages") is not True:
+        issues.append("best_effort_languages_disabled")
+
+    loose_targets = [
+        key
+        for key, default in _REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS.items()
+        if int(quality_targets_ms.get(key, default)) > default
+    ]
+    if loose_targets:
+        issues.append("loose_quality_targets")
+
+    issues = list(dict.fromkeys(issues))
+    ready = available and not issues
+    if ready:
+        level = "production_ready"
+    elif conversation_quality.get("live_like") is True:
+        level = "live_like"
+    else:
+        level = "not_ready"
+    return {
+        "ready": ready,
+        "level": level,
+        "issues": issues,
+        "required_languages": list(_REALTIME_VOICE_DEFAULT_PRODUCTION_LANGUAGES),
+        "required_scripts": list(_REALTIME_VOICE_DEFAULT_PRODUCTION_SCRIPTS),
+        "required_quality_targets_ms": dict(_REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS),
+    }
+
+
+def _realtime_voice_language_policy_has(languages: Sequence[Any], target: str) -> bool:
+    target = target.lower()
+    for language in languages:
+        primary = str(language or "").strip().lower().replace("_", "-").split("-", 1)[0]
+        if primary == target:
+            return True
+    return False
+
+
 def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
     sidecar_host = str(realtime.get("sidecar_host") or "127.0.0.1")
     sidecar_port = str(int(realtime.get("sidecar_port") or 8765))
@@ -13295,6 +13368,15 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         available = False
         unavailable_reason = "live_like_required"
 
+    production_readiness = _realtime_voice_production_readiness_payload(
+        enabled=enabled,
+        available=available,
+        unavailable_reason=unavailable_reason,
+        language_support=language_support,
+        quality_targets_ms=quality_targets_ms,
+        conversation_quality=conversation_quality,
+    )
+
     return {
         "enabled": enabled,
         "available": available,
@@ -13341,6 +13423,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "language_support": language_support,
         "quality_targets_ms": quality_targets_ms,
         "conversation_quality": conversation_quality,
+        "production_readiness": production_readiness,
         "require_live_like": require_live_like,
         "sidecar": {
             "mode": sidecar_mode,
@@ -13419,6 +13502,14 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         base_url=str(sidecar_base_url or ""),
         health_payload=None,
     )
+    production_readiness = _realtime_voice_production_readiness_payload(
+        enabled=realtime.get("enabled") is True,
+        available=realtime.get("enabled") is True,
+        unavailable_reason="",
+        language_support=language_support,
+        quality_targets_ms=quality_targets_ms,
+        conversation_quality=conversation_quality,
+    )
 
     return RealtimeVoiceSessionConfig(
         session_id=str(session_id),
@@ -13446,6 +13537,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "language_support": language_support,
             "quality_targets_ms": quality_targets_ms,
             "conversation_quality": conversation_quality,
+            "production_readiness": production_readiness,
             "require_live_like": require_live_like,
         },
     )
