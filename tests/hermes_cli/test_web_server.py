@@ -6067,6 +6067,68 @@ def test_resolve_chat_argv_injects_gateway_ws_url(monkeypatch):
     assert "token=" in gateway_url
 
 
+class TestRealtimeVoiceWebSocket:
+    @pytest.fixture(autouse=True)
+    def _setup(self, monkeypatch, _isolate_hermes_home):
+        from starlette.testclient import TestClient
+
+        import hermes_cli.web_server as ws
+
+        self.ws_module = ws
+        self.token = ws._SESSION_TOKEN
+        self.client = TestClient(ws.app)
+
+    def _url(self, token: str | None = None, **params: str) -> str:
+        from urllib.parse import urlencode
+
+        tok = token if token is not None else self.token
+        q = {"token": tok, **params}
+        return f"/api/voice/realtime?{urlencode(q)}"
+
+    def test_rejects_when_realtime_voice_disabled(self, monkeypatch):
+        from starlette.websockets import WebSocketDisconnect
+
+        monkeypatch.setattr(self.ws_module, "load_config", lambda: {"voice": {"realtime": {"enabled": False}}})
+
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with self.client.websocket_connect(self._url()):
+                pass
+        assert exc.value.code == 4403
+
+    def test_config_uses_server_side_sidecar_settings(self, monkeypatch):
+        class FakeWebSocket:
+            query_params = {
+                "session_id": "voice-123",
+                "spark_base_url": "http://attacker.local:9999",
+            }
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "frontend_provider": "gemma",
+                        "frontend_model": "gemma-4-e4b",
+                        "spark_base_url": "http://spark.local:8080",
+                        "spark_token_env": "HERMES_SPARK_VOICE_TOKEN",
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {"HERMES_SPARK_VOICE_TOKEN": "secret-token"})
+
+        config = self.ws_module._realtime_voice_config_from_request(FakeWebSocket())
+
+        assert config.session_id == "voice-123"
+        assert config.frontend_provider == "gemma"
+        assert config.frontend_model == "gemma-4-e4b"
+        assert config.spark_base_url == "http://spark.local:8080"
+        assert config.spark_token == "secret-token"
+
+
 class TestDashboardPluginStaticAssetAllowlist:
     """``/dashboard-plugins/<name>/<path>`` is unauthenticated by design —
     the SPA loads plugin JS via ``<script src>`` and CSS via

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import tempfile
@@ -19,6 +20,7 @@ from agent.realtime_voice import (
 )
 from agent.realtime_voice_oracle import HermesRealtimeOracle, NullRealtimeOracle
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
+from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, wants_realtime_sidecar
 
 
 class TextOracleTTSEngine(RealtimeVoiceEngine):
@@ -30,7 +32,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
     event payload for tests or Web Speech API experiments.
     """
 
-    def __init__(self, *, oracle: Optional[object] = None):
+    def __init__(self, *, oracle: Optional[object] = None, sidecar: Optional[object] = None):
         self.config: Optional[RealtimeVoiceSessionConfig] = None
         self._events: asyncio.Queue[VoiceEvent | None] = asyncio.Queue()
         self._inbound_audio: List[bytes] = []
@@ -39,6 +41,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._active_task: Optional[asyncio.Task[None]] = None
         self._planner = RealtimeSpeechPlanner()
         self._oracle = oracle
+        self._sidecar = sidecar
+        self._sidecar_task: Optional[asyncio.Task[None]] = None
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -48,12 +52,27 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self.config = config
         if self._oracle is None:
             self._oracle = HermesRealtimeOracle(config)
+        if self._sidecar is None and wants_realtime_sidecar(config):
+            self._sidecar = RealtimeVoiceSidecarClient()
+        if self._sidecar is not None:
+            try:
+                await self._sidecar.start(config)  # type: ignore[attr-defined]
+                self._sidecar_task = asyncio.create_task(self._consume_sidecar_events())
+            except Exception as exc:
+                await self._emit(
+                    VoiceEventType.SESSION_ERROR,
+                    {"error": f"realtime voice sidecar unavailable; falling back to local STT/TTS: {exc}"},
+                )
+                self._sidecar = None
         await self._emit(
             VoiceEventType.SESSION_STARTED,
             {
                 "engine": self.kind.value,
                 "input_codec": config.input_codec.value,
                 "output_codec": config.output_codec.value,
+                "frontend_provider": config.frontend_provider or "",
+                "frontend_model": config.frontend_model or "",
+                "sidecar": self._sidecar is not None,
             },
         )
 
@@ -63,7 +82,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if event.type == VoiceEventType.BARGE_IN:
             if self._active_task and not self._active_task.done():
                 self._active_task.cancel()
+            oracle = self._oracle
+            if hasattr(oracle, "interrupt"):
+                oracle.interrupt("Realtime voice barge-in")  # type: ignore[attr-defined]
             self._inbound_audio.clear()
+            if self._sidecar is not None:
+                await self._send_sidecar_event(event)
             await self._emit(VoiceEventType.BARGE_IN, {"reason": event.payload.get("reason") or "client"})
             return
         if event.type == VoiceEventType.SESSION_CLOSED:
@@ -79,6 +103,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
 
         try:
             chunk = AudioChunk.from_payload(event.payload)
+            if self._sidecar is not None:
+                if await self._send_sidecar_event(event):
+                    return
             self._inbound_audio.append(chunk.data)
         except Exception:
             await self._emit(VoiceEventType.SESSION_ERROR, {"error": "invalid audio chunk"})
@@ -104,8 +131,50 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._closed = True
         if self._active_task and not self._active_task.done():
             self._active_task.cancel()
+        if self._sidecar_task and not self._sidecar_task.done():
+            self._sidecar_task.cancel()
+        if self._sidecar is not None:
+            try:
+                await self._sidecar.close()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        if self._sidecar_task:
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._sidecar_task
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
         await self._events.put(None)
+
+    async def _consume_sidecar_events(self) -> None:
+        if self._sidecar is None:
+            return
+        try:
+            async for event in self._sidecar.events():  # type: ignore[attr-defined]
+                if event.type == VoiceEventType.TRANSCRIPT_PARTIAL:
+                    await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, dict(event.payload))
+                elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                    text = str(event.payload.get("text") or "").strip()
+                    if text:
+                        await self._start_turn(text)
+                elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                    await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, dict(event.payload))
+                elif event.type == VoiceEventType.FRONTEND_STATE:
+                    await self._emit(VoiceEventType.FRONTEND_STATE, dict(event.payload))
+                elif event.type == VoiceEventType.SESSION_ERROR:
+                    await self._emit(VoiceEventType.SESSION_ERROR, dict(event.payload))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"sidecar event stream failed: {exc}"})
+
+    async def _send_sidecar_event(self, event: VoiceEvent) -> bool:
+        if self._sidecar is None:
+            return False
+        try:
+            await self._sidecar.send_event(event)  # type: ignore[attr-defined]
+            return True
+        except Exception as exc:
+            await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"sidecar send failed: {exc}"})
+            return False
 
     async def _transcribe_and_answer(self, audio: bytes, codec: VoiceAudioCodec) -> None:
         try:
@@ -177,6 +246,19 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     pass
 
     async def _speak_chunk(self, text: str) -> None:
+        if self._sidecar is not None and self.config is not None:
+            event = VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id=self.config.session_id,
+                sequence=self._sequence + 1,
+                payload={"text": text, "speak": True},
+            )
+            try:
+                await self._sidecar.speak(event)  # type: ignore[attr-defined]
+                return
+            except Exception as exc:
+                await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"sidecar TTS failed; falling back: {exc}"})
+
         file_path = await asyncio.to_thread(self._tts_sync, text)
         if not file_path:
             return

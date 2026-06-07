@@ -15,6 +15,7 @@ from agent.realtime_voice import (
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
+from agent.realtime_voice_sidecar import sidecar_ws_url, wants_realtime_sidecar
 from agent.realtime_voice_text_engine import TextOracleTTSEngine
 
 
@@ -27,12 +28,68 @@ class FakeOracle:
         yield f"{transcript}."
 
 
+class FakeSidecar:
+    def __init__(self):
+        self.started = False
+        self.closed = False
+        self.received = []
+        self.spoken = []
+        self._events = asyncio.Queue()
+
+    async def start(self, config):
+        self.started = True
+        self.config = config
+
+    async def send_event(self, event):
+        self.received.append(event)
+        if event.type == VoiceEventType.AUDIO_INPUT_CHUNK and event.payload.get("end_of_utterance") is True:
+            await self._events.put(
+                VoiceEvent(
+                    type=VoiceEventType.TRANSCRIPT_PARTIAL,
+                    session_id=event.session_id,
+                    sequence=1,
+                    payload={"text": "hello", "stability": 0.7},
+                )
+            )
+            await self._events.put(
+                VoiceEvent(
+                    type=VoiceEventType.TRANSCRIPT_FINAL,
+                    session_id=event.session_id,
+                    sequence=2,
+                    payload={"text": "hello hermes"},
+                )
+            )
+
+    async def speak(self, event):
+        self.spoken.append(event)
+        await self._events.put(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                session_id=event.session_id,
+                sequence=3,
+                payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"sidecar-audio").to_payload(),
+            )
+        )
+
+    async def events(self):
+        while True:
+            event = await self._events.get()
+            if event is None:
+                return
+            yield event
+
+    async def close(self):
+        self.closed = True
+        await self._events.put(None)
+
+
 def test_session_config_round_trips_wire_payload():
     config = RealtimeVoiceSessionConfig(
         session_id="voice-123",
         engine=RealtimeVoiceEngineKind.TEXT_ORACLE_TTS,
         input_codec=VoiceAudioCodec.OPUS,
         output_codec=VoiceAudioCodec.OPUS,
+        frontend_provider="gemma",
         frontend_model="gemma-4-e4b",
         oracle_model="configured-hermes-model",
         tts_provider="edge",
@@ -182,6 +239,92 @@ def test_text_engine_speaks_before_oracle_stream_finishes(monkeypatch):
         assert spoken == ["First sentence.", "Second sentence."]
 
     asyncio.run(run())
+
+
+def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
+    async def run():
+        sidecar = FakeSidecar()
+        config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            frontend_provider="gemma",
+            frontend_model="gemma-4-e4b",
+            spark_base_url="http://spark.local:8080",
+        )
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(config)
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                await engine.close()
+                break
+
+        assert sidecar.started is True
+        assert sidecar.received[0].type == VoiceEventType.AUDIO_INPUT_CHUNK
+        assert sidecar.spoken
+        assert VoiceEventType.TRANSCRIPT_PARTIAL in [event.type for event in seen]
+        assert VoiceEventType.TRANSCRIPT_FINAL in [event.type for event in seen]
+        assert seen[-1].payload["text"] == "Answering: hello hermes."
+
+    asyncio.run(run())
+
+
+def test_text_engine_barge_in_interrupts_oracle_and_sidecar():
+    class InterruptibleOracle(FakeOracle):
+        def __init__(self):
+            self.interrupted = False
+
+        def interrupt(self, message: str = ""):
+            self.interrupted = True
+
+    async def run():
+        oracle = InterruptibleOracle()
+        sidecar = FakeSidecar()
+        engine = TextOracleTTSEngine(oracle=oracle, sidecar=sidecar)
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123", spark_base_url="http://spark.local"))
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=1,
+                payload={"reason": "test"},
+            )
+        )
+        event = await anext(engine.events())
+        assert event.type == VoiceEventType.SESSION_STARTED
+        event = await anext(engine.events())
+        assert event.type == VoiceEventType.BARGE_IN
+        assert oracle.interrupted is True
+        assert sidecar.received[0].type == VoiceEventType.BARGE_IN
+        await engine.close()
+
+    asyncio.run(run())
+
+
+def test_sidecar_config_detection_and_url_building():
+    assert wants_realtime_sidecar(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            frontend_provider="gemma",
+            spark_base_url="http://spark.local:8080/base",
+        )
+    )
+    assert not wants_realtime_sidecar(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="gemma"))
+    assert sidecar_ws_url("http://spark.local:8080/base", "/v1/realtime-text/session") == (
+        "ws://spark.local:8080/base/v1/realtime-text/session"
+    )
 
 
 def test_session_persists_only_final_and_committed_messages(monkeypatch):

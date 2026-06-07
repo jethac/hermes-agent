@@ -46,7 +46,7 @@ function bytesFromBase64(value: string): Uint8Array {
   return bytes
 }
 
-async function realtimeVoiceUrl(sessionId: string): Promise<string> {
+export async function realtimeVoiceUrl(sessionId: string): Promise<string> {
   const conn = await window.hermesDesktop.getConnection()
   const wsUrl = await resolveGatewayWsUrl(window.hermesDesktop, conn)
   const url = new URL(wsUrl)
