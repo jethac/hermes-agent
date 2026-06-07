@@ -14,6 +14,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", default=int(os.environ.get("HERMES_VOICE_SIDECAR_PORT", "8765")), type=int)
     parser.add_argument("--vllm-base-url", default=os.environ.get("HERMES_VOICE_VLLM_BASE_URL", ""))
     parser.add_argument("--vllm-model", default=os.environ.get("HERMES_VOICE_VLLM_MODEL", ""))
+    parser.add_argument("--input-languages", default=os.environ.get("HERMES_VOICE_INPUT_LANGUAGES", ""))
+    parser.add_argument("--output-languages", default=os.environ.get("HERMES_VOICE_OUTPUT_LANGUAGES", ""))
+    parser.add_argument("--scripts", default=os.environ.get("HERMES_VOICE_SCRIPTS", ""))
     return parser
 
 
@@ -23,6 +26,12 @@ def main(argv: list[str] | None = None) -> None:
         os.environ["HERMES_VOICE_VLLM_BASE_URL"] = args.vllm_base_url
     if args.vllm_model:
         os.environ["HERMES_VOICE_VLLM_MODEL"] = args.vllm_model
+    if args.input_languages:
+        os.environ["HERMES_VOICE_INPUT_LANGUAGES"] = args.input_languages
+    if args.output_languages:
+        os.environ["HERMES_VOICE_OUTPUT_LANGUAGES"] = args.output_languages
+    if args.scripts:
+        os.environ["HERMES_VOICE_SCRIPTS"] = args.scripts
 
     import uvicorn
 

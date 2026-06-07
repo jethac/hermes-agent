@@ -6799,6 +6799,9 @@ class TestRealtimeVoiceWebSocket:
                 "sidecar_port": 8765,
                 "vllm_base_url": "http://100.113.98.11:8000/v1",
                 "vllm_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                "input_languages": ["ja", "en-US", "https://voice.local/secret"],
+                "output_languages": ["ja", "ko", "token=secret"],
+                "scripts": ["Jpan", "Latn", "bad/script"],
             }
         )
 
@@ -6807,6 +6810,13 @@ class TestRealtimeVoiceWebSocket:
         assert "http://100.113.98.11:8000/v1" in command
         assert "--vllm-model" in command
         assert "google/gemma-4-E4B-it-qat-w4a16-ct" in command
+        assert "--input-languages" in command
+        assert "ja,en-US" in command
+        assert "--output-languages" in command
+        assert "ja,ko" in command
+        assert "--scripts" in command
+        assert "Jpan,Latn" in command
+        assert "secret" not in __import__("json").dumps(command)
 
     def test_binary_audio_frame_parses_to_json_audio_event(self):
         event = self.ws_module._realtime_voice_event_from_ws_message(
@@ -7086,6 +7096,8 @@ class TestRealtimeVoiceWebSocket:
                 "sidecar_token_env": "CUSTOM_VOICE_TOKEN",
                 "vllm_base_url": "http://100.113.98.11:8000/v1",
                 "vllm_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                "languages": ["ja", "en", "https://voice.local/secret"],
+                "scripts": ["Jpan", "Latn", "bad/script"],
             }
         )
 
@@ -7096,6 +7108,12 @@ class TestRealtimeVoiceWebSocket:
         assert all(req.headers["Authorization"] == "Bearer secret-token" for req in calls["requests"])
         assert kwargs["env"]["CUSTOM_VOICE_TOKEN"] == "secret-token"
         assert kwargs["env"]["HERMES_VOICE_SIDECAR_TOKEN"] == "secret-token"
+        assert kwargs["env"]["HERMES_VOICE_INPUT_LANGUAGES"] == "ja,en"
+        assert kwargs["env"]["HERMES_VOICE_OUTPUT_LANGUAGES"] == "ja,en"
+        assert kwargs["env"]["HERMES_VOICE_SCRIPTS"] == "Jpan,Latn"
+        assert "secret" not in kwargs["env"]["HERMES_VOICE_INPUT_LANGUAGES"]
+        assert "secret" not in kwargs["env"]["HERMES_VOICE_OUTPUT_LANGUAGES"]
+        assert "bad/script" not in kwargs["env"]["HERMES_VOICE_SCRIPTS"]
         assert kwargs["env"]["HERMES_TEST_ENV"] == "1"
         assert (tmp_path / "realtime-voice-sidecar.log").exists()
 
