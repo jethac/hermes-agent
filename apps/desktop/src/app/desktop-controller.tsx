@@ -421,7 +421,7 @@ export function DesktopController() {
     requestGateway
   })
 
-  const { refreshHermesConfig, sttEnabled, voiceMaxRecordingSeconds } = useHermesConfig({
+  const { refreshHermesConfig, sttEnabled, voiceMaxRecordingSeconds, voiceRealtimeEnabled } = useHermesConfig({
     activeSessionIdRef,
     refreshProjectBranch
   })
@@ -1010,6 +1010,7 @@ export function DesktopController() {
       gateway={gatewayRef.current}
       maxVoiceRecordingSeconds={voiceMaxRecordingSeconds}
       modelMenuContent={modelMenuContent}
+      realtimeVoiceEnabled={voiceRealtimeEnabled}
       onAddContextRef={composer.addContextRefAttachment}
       onAddUrl={url => composer.addContextRefAttachment(`@url:${formatRefValue(url)}`, url)}
       onAttachDroppedItems={composer.attachDroppedItems}

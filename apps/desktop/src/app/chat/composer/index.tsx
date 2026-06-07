@@ -76,6 +76,7 @@ export function ChatBar({
   focusKey,
   gateway,
   maxRecordingSeconds = 120,
+  realtimeVoiceEnabled = false,
   queueSessionKey,
   sessionId,
   state,
@@ -673,6 +674,7 @@ export function ChatBar({
     maxRecordingSeconds,
     onSubmit,
     onTranscribeAudio,
+    realtimeEnabled: realtimeVoiceEnabled,
     sessionId
   })
 

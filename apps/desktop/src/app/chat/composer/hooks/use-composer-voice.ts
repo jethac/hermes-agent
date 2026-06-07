@@ -24,6 +24,7 @@ interface UseComposerVoiceArgs {
   maxRecordingSeconds: number
   onSubmit: ChatBarProps['onSubmit']
   onTranscribeAudio: ChatBarProps['onTranscribeAudio']
+  realtimeEnabled?: boolean
   sessionId: string | null | undefined
 }
 
@@ -42,6 +43,7 @@ export function useComposerVoice({
   maxRecordingSeconds,
   onSubmit,
   onTranscribeAudio,
+  realtimeEnabled = false,
   sessionId
 }: UseComposerVoiceArgs) {
   const { t } = useI18n()
@@ -103,7 +105,8 @@ export function useComposerVoice({
     onFatalError: () => setVoiceConversationActive(false),
     onSubmit: submitVoiceTurn,
     onTranscribeAudio,
-    pendingResponse
+    pendingResponse,
+    realtimeEnabled
   })
 
   // The `composer.voice` hotkey (Ctrl+B) toggles the conversation. Starting

@@ -225,6 +225,12 @@ export interface HermesConfig {
   voice?: {
     max_recording_seconds?: number
     auto_tts?: boolean
+    realtime?: {
+      enabled?: boolean
+      engine?: 'native_s2s_oracle' | 'text_oracle_tts'
+      input_codec?: 'opus' | 'pcm16' | 'webm_opus'
+      output_codec?: 'opus' | 'pcm16' | 'webm_opus'
+    }
   }
 }
 
