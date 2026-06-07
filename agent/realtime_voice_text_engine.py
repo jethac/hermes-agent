@@ -455,7 +455,23 @@ def _take_speakable_chunk(buffer: str) -> tuple[Optional[str], str]:
         chunk = match.group(1).strip()
         return chunk, normalized[len(match.group(1)):].strip()
 
-    if len(normalized) > 260:
+    if len(normalized) >= 96:
+        split_at = max(
+            normalized.rfind(", ", 48, 160),
+            normalized.rfind("; ", 48, 160),
+            normalized.rfind(": ", 48, 160),
+            normalized.rfind(",", 48, 160),
+            normalized.rfind(";", 48, 160),
+            normalized.rfind(":", 48, 160),
+        )
+        if split_at >= 48:
+            return normalized[: split_at + 1].strip(), normalized[split_at + 1 :].strip()
+
+        split_at = normalized.rfind(" ", 96, 160)
+        if split_at >= 96:
+            return normalized[:split_at].strip(), normalized[split_at:].strip()
+
+    if len(normalized) > 220:
         split_at = max(
             normalized.rfind(", ", 0, 220),
             normalized.rfind("; ", 0, 220),

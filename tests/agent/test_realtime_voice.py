@@ -27,7 +27,7 @@ from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, sidecar_ws_url, wants_realtime_sidecar
-from agent.realtime_voice_text_engine import TextOracleTTSEngine
+from agent.realtime_voice_text_engine import TextOracleTTSEngine, _take_speakable_chunk
 
 
 class FakeOracle:
@@ -287,6 +287,25 @@ def test_planner_suppresses_internal_markup_and_chunks_text():
     assert planned.chunks == ["Here is the answer. Second sentence!"]
 
 
+def test_text_engine_takes_speakable_phrase_before_full_sentence():
+    phrase = (
+        "This response starts with a stable opening phrase, and then keeps going "
+        "without ending the full sentence yet"
+    )
+
+    chunk, remaining = _take_speakable_chunk(phrase)
+
+    assert chunk == "This response starts with a stable opening phrase,"
+    assert remaining == "and then keeps going without ending the full sentence yet"
+
+
+def test_text_engine_keeps_short_unfinished_phrase_buffered():
+    chunk, remaining = _take_speakable_chunk("This is still forming")
+
+    assert chunk is None
+    assert remaining == "This is still forming"
+
+
 def test_text_engine_accepts_transcript_payload_and_emits_oracle_text(monkeypatch):
     async def run():
         async def fake_speak(self, text, playback_generation):
@@ -331,6 +350,44 @@ def test_text_engine_accepts_transcript_payload_and_emits_oracle_text(monkeypatc
             VoiceEventType.ASSISTANT_COMMIT,
         ]
         assert seen[-1].payload["text"] == "Answering: hello hermes."
+
+    asyncio.run(run())
+
+
+def test_text_engine_speaks_stable_phrase_before_sentence_ends(monkeypatch):
+    class PhraseOracle:
+        async def stream_answer(self, transcript: str):
+            yield "This response starts with a stable opening phrase, "
+            yield "and then keeps going without ending the full sentence yet"
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        engine = TextOracleTTSEngine(oracle=PhraseOracle())
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "tell me something"},
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                break
+
+        assert spoken[0] == "This response starts with a stable opening phrase,"
+        assert seen[-1].payload["text"] == "This response starts with a stable opening phrase,"
+        await engine.close()
 
     asyncio.run(run())
 
