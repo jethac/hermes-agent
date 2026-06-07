@@ -180,6 +180,8 @@ const MAX_REALTIME_RECONNECT_ATTEMPTS = 3
 const REALTIME_RECONNECT_BASE_DELAY_MS = 400
 const REALTIME_RECONNECT_MAX_DELAY_MS = 2_000
 const REALTIME_LANGUAGE_METADATA_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+const REALTIME_OUTPUT_AUDIO_MIME_TYPE_RE =
+  /^audio\/[a-z0-9.+-]+(?:\s*;\s*[a-z0-9._-]+=[a-z0-9._-]+)*$/i
 const GENERATION_EVENT_TYPES = new Set([
   'audio.output.chunk',
   'assistant.commit',
@@ -316,6 +318,24 @@ export async function realtimeVoiceUrl(sessionId: string): Promise<string> {
 
 export function getRealtimeVoiceStatus(): Promise<RealtimeVoiceStatus> {
   return window.hermesDesktop.api<RealtimeVoiceStatus>({ path: '/api/voice/realtime/status' })
+}
+
+export function realtimeVoiceOutputAudioMimeType(payload: Record<string, unknown>): string {
+  const mimeType = typeof payload.mime_type === 'string' ? payload.mime_type.trim().toLowerCase() : ''
+
+  if (mimeType.length > 0 && mimeType.length <= 128 && REALTIME_OUTPUT_AUDIO_MIME_TYPE_RE.test(mimeType)) {
+    return mimeType
+  }
+
+  const codec = typeof payload.codec === 'string' ? payload.codec.trim().toLowerCase() : ''
+  if (codec === 'webm_opus') {
+    return 'audio/webm;codecs=opus'
+  }
+  if (codec === 'pcm16') {
+    return 'audio/wav'
+  }
+
+  return 'audio/ogg'
 }
 
 function finiteNonNegativeMs(value: unknown): number | null {
@@ -1291,12 +1311,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         playbackGenerationRef.current = generation
       }
 
-      const mimeType =
-        typeof payload.mime_type === 'string'
-          ? payload.mime_type
-          : payload.codec === 'webm_opus'
-            ? 'audio/webm;codecs=opus'
-            : 'audio/ogg'
+      const mimeType = realtimeVoiceOutputAudioMimeType(payload)
       const bytes = binaryData ?? bytesFromBase64(data)
       const audioData = new ArrayBuffer(bytes.byteLength)
 

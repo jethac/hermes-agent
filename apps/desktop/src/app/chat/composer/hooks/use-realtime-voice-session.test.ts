@@ -18,6 +18,7 @@ import {
   realtimeVoiceFailureFrontendState,
   realtimeVoicePlaybackGeneration,
   realtimeVoicePlaybackQueueAction,
+  realtimeVoiceOutputAudioMimeType,
   realtimeVoicePreRollMs,
   realtimeVoicePreRollChunkLimit,
   realtimeVoiceReconnectDelayMs,
@@ -563,6 +564,22 @@ describe('realtimeBinaryAudioInputFrame', () => {
       type: 'audio.input.chunk'
     })
     expect(Array.from(bytes.slice(4 + headerLength))).toEqual([1, 2, 3])
+  })
+})
+
+describe('realtimeVoiceOutputAudioMimeType', () => {
+  it('uses clean sidecar audio MIME metadata for playback', () => {
+    expect(realtimeVoiceOutputAudioMimeType({
+      codec: 'opus',
+      mime_type: ' audio/MPEG '
+    })).toBe('audio/mpeg')
+  })
+
+  it('falls back to codec metadata when playback MIME metadata is not audio', () => {
+    expect(realtimeVoiceOutputAudioMimeType({
+      codec: 'webm_opus',
+      mime_type: 'text/html'
+    })).toBe('audio/webm;codecs=opus')
   })
 })
 
