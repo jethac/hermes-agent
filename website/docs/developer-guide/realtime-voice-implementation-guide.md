@@ -349,6 +349,7 @@ Responsibilities:
 
 - Capture microphone frames with WebAudio or AudioWorklet.
 - Send frames over websocket with monotonically increasing sequence numbers.
+- Snapshot the end-of-utterance flag before async blob encoding so the final recorder chunk cannot lose the user turn boundary.
 - Maintain captions from transcript and assistant text events.
 - Play `audio.output.chunk` through a queue.
 - Cancel playback immediately on local barge-in.
