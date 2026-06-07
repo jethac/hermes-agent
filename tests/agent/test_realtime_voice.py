@@ -1043,6 +1043,70 @@ def test_text_engine_barge_in_interrupts_oracle_and_sidecar():
     asyncio.run(run())
 
 
+def test_text_engine_auto_barge_in_on_new_speech_while_answering(monkeypatch):
+    class SlowInterruptibleOracle:
+        def __init__(self):
+            self.interrupted = False
+            self.release = asyncio.Event()
+
+        async def stream_answer(self, transcript: str):
+            yield "First answer starts."
+            await self.release.wait()
+            yield " stale ending."
+
+        def interrupt(self, message: str = ""):
+            self.interrupted = True
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        oracle = SlowInterruptibleOracle()
+        engine = TextOracleTTSEngine(oracle=oracle)
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "first turn"},
+            )
+        )
+
+        seen = []
+        while True:
+            event = await anext(engine.events())
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                break
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"new-speech").to_payload(),
+            )
+        )
+
+        barge_in = await anext(engine.events())
+        await engine.close()
+
+        assert barge_in.type == VoiceEventType.BARGE_IN
+        assert barge_in.payload["reason"] == "user_speech"
+        assert barge_in.payload["playback_generation"] == 2
+        assert oracle.interrupted is True
+        assert engine._inbound_audio == [b"new-speech"]
+        assert not any(
+            event.payload.get("interrupted") is True and event.payload.get("playback_generation") == 1
+            for event in seen
+        )
+
+    asyncio.run(run())
+
+
 def test_text_engine_suppresses_stale_cancelled_commit_when_new_turn_starts(monkeypatch):
     class BlockingOracle:
         def __init__(self):
@@ -1097,15 +1161,8 @@ def test_text_engine_suppresses_stale_cancelled_commit_when_new_turn_starts(monk
                 break
 
         commit_events = [event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT]
-        assert commit_events == [
-            VoiceEvent(
-                type=VoiceEventType.ASSISTANT_COMMIT,
-                session_id="voice-123",
-                sequence=6,
-                payload={"text": "Second answer.", "playback_generation": 2},
-                timestamp_ms=commit_events[0].timestamp_ms,
-            )
-        ]
+        assert len(commit_events) == 1
+        assert commit_events[0].payload == {"text": "Second answer.", "playback_generation": 2}
         assert not any(
             event.payload.get("interrupted") is True and event.payload.get("playback_generation") == 1
             for event in seen

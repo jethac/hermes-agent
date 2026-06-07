@@ -49,6 +49,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._sidecar = sidecar
         self._sidecar_task: Optional[asyncio.Task[None]] = None
         self._playback_generation = 0
+        self._pending_turn_generation: Optional[int] = None
         self._input_generation = 0
         self._input_generation_active = False
 
@@ -93,30 +94,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if self._closed:
             return
         if event.type == VoiceEventType.BARGE_IN:
-            self._playback_generation += 1
-            self._input_generation += 1
-            self._input_generation_active = False
-            payload = {
-                "reason": event.payload.get("reason") or "client",
-                "playback_generation": self._playback_generation,
-            }
-            if self._active_task and not self._active_task.done():
-                self._active_task.cancel()
-            oracle = self._oracle
-            if hasattr(oracle, "interrupt"):
-                oracle.interrupt("Realtime voice barge-in")  # type: ignore[attr-defined]
-            self._clear_inbound_audio()
-            if self._sidecar is not None:
-                await self._send_sidecar_event(
-                    VoiceEvent(
-                        type=event.type,
-                        session_id=event.session_id,
-                        sequence=event.sequence,
-                        timestamp_ms=event.timestamp_ms,
-                        payload=payload,
-                    )
-                )
-            await self._emit(VoiceEventType.BARGE_IN, payload)
+            await self._interrupt_active_turn(event, reason=str(event.payload.get("reason") or "client"))
             return
         if event.type == VoiceEventType.SESSION_CLOSED:
             await self.close()
@@ -126,6 +104,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
 
         transcript = str(event.payload.get("transcript") or "").strip()
         if transcript:
+            await self._auto_barge_in_for_speech(event)
             if not _payload_marks_final_transcript(event.payload):
                 await self._emit(
                     VoiceEventType.TRANSCRIPT_PARTIAL,
@@ -141,6 +120,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
 
         try:
             chunk = AudioChunk.from_payload(event.payload)
+            if chunk.data:
+                await self._auto_barge_in_for_speech(event)
             if self._sidecar is not None:
                 sidecar_event = self._sidecar_input_event(event)
                 if await self._send_sidecar_event(sidecar_event):
@@ -185,6 +166,40 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 await self._sidecar_task
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
         await put_realtime_voice_event(self._events, None)
+
+    async def _auto_barge_in_for_speech(self, event: VoiceEvent) -> None:
+        if self._pending_turn_generation is not None:
+            return
+        if self._active_task is None or self._active_task.done():
+            return
+        await self._interrupt_active_turn(event, reason="user_speech")
+
+    async def _interrupt_active_turn(self, event: VoiceEvent, *, reason: str) -> None:
+        self._playback_generation += 1
+        self._pending_turn_generation = self._playback_generation
+        self._input_generation += 1
+        self._input_generation_active = False
+        payload = {
+            "reason": reason or "client",
+            "playback_generation": self._playback_generation,
+        }
+        if self._active_task and not self._active_task.done():
+            self._active_task.cancel()
+        oracle = self._oracle
+        if hasattr(oracle, "interrupt"):
+            oracle.interrupt("Realtime voice barge-in")  # type: ignore[attr-defined]
+        self._clear_inbound_audio()
+        if self._sidecar is not None:
+            await self._send_sidecar_event(
+                VoiceEvent(
+                    type=VoiceEventType.BARGE_IN,
+                    session_id=event.session_id,
+                    sequence=event.sequence,
+                    timestamp_ms=event.timestamp_ms,
+                    payload=payload,
+                )
+            )
+        await self._emit(VoiceEventType.BARGE_IN, payload)
 
     async def _consume_sidecar_events(self) -> None:
         if self._sidecar is None:
@@ -341,8 +356,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
     ) -> None:
         if self._active_task and not self._active_task.done():
             self._active_task.cancel()
-        self._playback_generation += 1
-        generation = self._playback_generation
+        if self._pending_turn_generation is not None:
+            generation = self._pending_turn_generation
+            self._pending_turn_generation = None
+        else:
+            self._playback_generation += 1
+            generation = self._playback_generation
         payload = {"text": transcript, "playback_generation": generation}
         if input_generation is not None:
             payload["input_generation"] = input_generation
