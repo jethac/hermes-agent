@@ -87,6 +87,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const streamRef = useRef<MediaStream | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserFrameRef = useRef<number | null>(null)
+  const closingInputRef = useRef(false)
   const sequenceRef = useRef(0)
   const sessionRef = useRef(`voice-${Math.random().toString(36).slice(2)}`)
   const heardSpeechRef = useRef(false)
@@ -135,6 +136,12 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   }, [])
 
   const cleanupInput = useCallback(() => {
+    closingInputRef.current = true
+    const recorder = recorderRef.current
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop()
+    }
+    recorderRef.current = null
     if (analyserFrameRef.current) {
       window.cancelAnimationFrame(analyserFrameRef.current)
       analyserFrameRef.current = null
@@ -146,6 +153,57 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     recorderRef.current = null
     setLevel(0)
   }, [])
+
+  const startRecorder = useCallback(
+    (stream: MediaStream) => {
+      if (recorderRef.current) {
+        return
+      }
+      closingInputRef.current = false
+
+      const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'].find(type =>
+        MediaRecorder.isTypeSupported(type)
+      )
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+
+      recorderRef.current = recorder
+      stoppingForSilenceRef.current = false
+      silenceStartedAtRef.current = null
+
+      recorder.ondataavailable = event => {
+        if (closingInputRef.current) {
+          return
+        }
+        if (event.data.size <= 0) {
+          return
+        }
+
+        void blobToBase64(event.data).then(data_b64 => {
+          sendEvent('audio.input.chunk', {
+            codec: recorder.mimeType.includes('ogg') ? 'opus' : 'webm_opus',
+            sample_rate_hz: 16000,
+            channels: 1,
+            data_b64,
+            end_of_utterance: stoppingForSilenceRef.current
+          })
+        })
+      }
+
+      recorder.onstop = () => {
+        const isCurrentRecorder = recorderRef.current === recorder
+        if (isCurrentRecorder) {
+          recorderRef.current = null
+        }
+        stoppingForSilenceRef.current = false
+        if (!closingInputRef.current && isCurrentRecorder) {
+          setStatus('thinking')
+        }
+      }
+
+      recorder.start(250)
+    },
+    [sendEvent]
+  )
 
   const advancePlaybackGeneration = useCallback((generation?: unknown) => {
     const next = typeof generation === 'number' && Number.isFinite(generation)
@@ -259,6 +317,10 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
   const startMeter = useCallback(
     (stream: MediaStream) => {
+      if (analyserFrameRef.current) {
+        return
+      }
+
       const audioWindow = window as Window & { webkitAudioContext?: BrowserAudioContext }
       const AudioContextCtor = window.AudioContext || audioWindow.webkitAudioContext
 
@@ -295,14 +357,20 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
             stopPlayback(true)
             sendEvent('barge_in', { reason: 'user_speech' })
           }
+          if (!recorderRef.current && enabledRef.current && !mutedRef.current && !busyRef.current) {
+            startRecorder(stream)
+            setStatus('listening')
+          }
           heardSpeechRef.current = true
           silenceStartedAtRef.current = null
         } else if (heardSpeechRef.current) {
           silenceStartedAtRef.current ??= now
           if (now - silenceStartedAtRef.current >= 1250) {
-            stopRecorderForTurn()
-
-            return
+            if (recorderRef.current) {
+              stopRecorderForTurn()
+            }
+            heardSpeechRef.current = false
+            silenceStartedAtRef.current = null
           }
         }
 
@@ -311,7 +379,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
       tick()
     },
-    [sendEvent, stopPlayback, stopRecorderForTurn]
+    [sendEvent, startRecorder, stopPlayback, stopRecorderForTurn]
   )
 
   const startListening = useCallback(async () => {
@@ -325,45 +393,20 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       throw new Error('Microphone access denied.')
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true }
-    })
-    const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'].find(type =>
-      MediaRecorder.isTypeSupported(type)
-    )
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+    const stream =
+      streamRef.current ||
+      (await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true }
+      }))
 
     streamRef.current = stream
-    recorderRef.current = recorder
     heardSpeechRef.current = false
-    stoppingForSilenceRef.current = false
     silenceStartedAtRef.current = null
 
-    recorder.ondataavailable = event => {
-      if (event.data.size <= 0) {
-        return
-      }
-
-      void blobToBase64(event.data).then(data_b64 => {
-        sendEvent('audio.input.chunk', {
-          codec: recorder.mimeType.includes('ogg') ? 'opus' : 'webm_opus',
-          sample_rate_hz: 16000,
-          channels: 1,
-          data_b64,
-          end_of_utterance: stoppingForSilenceRef.current
-        })
-      })
-    }
-
-    recorder.onstop = () => {
-      cleanupInput()
-      setStatus('thinking')
-    }
-
-    recorder.start(250)
     startMeter(stream)
+    startRecorder(stream)
     setStatus('listening')
-  }, [cleanupInput, sendEvent, startMeter])
+  }, [startMeter, startRecorder])
 
   const handleEvent = useCallback(
     (event: VoiceEvent) => {
