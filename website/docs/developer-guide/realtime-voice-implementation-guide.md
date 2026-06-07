@@ -38,7 +38,7 @@ The realtime voice implementation now has both engine families behind the same p
 
 - `agent/realtime_voice_session.py` owns the session state machine, monotonically increasing client sequence validation, barge-in state, and the durable transcript boundary.
 - `agent/realtime_voice_sidecar.py` implements the configured model-sidecar client for local, Gemma/vLLM, and remote STT/TTS frontends.
-- `agent/realtime_voice_reference_sidecar.py` implements the reference sidecar server that can run on ordinary machines with configured STT/TTS providers, or call a vLLM/Gemma audio endpoint when available.
+- `agent/realtime_voice_reference_sidecar.py` implements the reference sidecar server that can run on ordinary machines with configured STT/TTS providers, call a vLLM/Gemma audio endpoint when available, or bridge to a compatible streaming STT service while keeping Hermes' TTS/oracle boundary intact.
 - `agent/realtime_voice_text_engine.py` implements the text-oracle path: audio or transcript input, streaming frontend events from a configured sidecar, local STT fallback via Hermes' existing transcription provider chain at utterance boundaries, streaming Hermes oracle deltas, speech planning, and chunked audio output via sidecar TTS or the existing TTS provider chain.
 - `agent/realtime_voice_s2s_engine.py` implements the native S2S path as a websocket bridge to a local, remote, or cloud model sidecar. When the sidecar emits final transcript events, Hermes calls the configured oracle model and sends `oracle.hint` events back to the sidecar.
 - `hermes_cli/web_server.py` exposes `/api/voice/realtime` behind the same websocket auth and Host/Origin guards as the dashboard chat websocket. For loopback `local`, `reference`, `sidecar`, `gemma`, `gemma4`, `lmstudio`, and `vllm` frontends, it can also supervise the reference sidecar process automatically.
@@ -72,6 +72,18 @@ The voice inference process owns:
 - model-specific media dependencies and GPU scheduling
 
 This split is why `sidecar_base_url` remains server-side configuration. The desktop cannot point Hermes at an arbitrary inference host through query params, and public docs/settings should describe sidecars by capability (`sidecar`, `local`, `reference`, `gemma4`, `vllm`, `native_s2s`) rather than by a specific workstation or accelerator name.
+
+### Compatible Streaming STT Bridge
+
+The managed reference sidecar can bridge to a portable streaming STT service through:
+
+- `voice.realtime.streaming_stt_base_url`
+- `voice.realtime.streaming_stt_model`
+- `voice.realtime.streaming_stt_token_env`
+
+The downstream service must expose `GET /health` with `{"ok": true, "capabilities": {"streaming_stt": true}}` before the reference sidecar advertises `capabilities.streaming_stt: true`. It must also accept a websocket at `/v1/streaming-stt/session` using the same `session.config`, binary `audio.input.chunk`, `transcript.partial`, `transcript.final`, `barge_in`, and `session.error` event contract as the main Hermes sidecar protocol. Hermes forwards microphone chunks to that bridge, relays sanitized transcript metadata back to the desktop, and still uses the configured Hermes oracle plus TTS path for the assistant response.
+
+This is intentionally not a Gemma/vLLM shortcut. A vLLM/Gemma chat-completions audio endpoint can improve utterance transcription, but it remains `utterance_stt` until it emits partial/final transcript events while audio is still arriving. Only a verified streaming STT bridge plus TTS, or a native S2S sidecar, can make `conversation_quality.live_like` true.
 
 ## Production-Readiness Ladder
 

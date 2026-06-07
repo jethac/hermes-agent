@@ -2096,6 +2096,45 @@ def test_reference_sidecar_vllm_audio_frontend(monkeypatch):
     assert "do not translate" in prompt
 
 
+def test_reference_sidecar_health_marks_streaming_stt_only_after_bridge_health():
+    runtime = ReferenceSidecarRuntimeConfig(
+        streaming_stt_base_url="http://streaming-stt.local:9000",
+        streaming_stt_model="portable-streaming-asr",
+        local_stt_enabled=True,
+        local_tts_enabled=True,
+    )
+
+    unverified = reference_sidecar_health_payload(runtime)
+
+    assert unverified["frontend"]["provider"] == "local"
+    assert unverified["frontend"]["streaming_stt_bridge"] == {
+        "configured": True,
+        "healthy": False,
+    }
+    assert unverified["capabilities"]["streaming_stt"] is False
+    assert unverified["capabilities"]["streaming_stt_bridge"] is True
+    assert unverified["capabilities"]["utterance_stt"] is True
+
+    verified = reference_sidecar_health_payload(
+        runtime,
+        streaming_stt_health={
+            "ok": True,
+            "capabilities": {
+                "streaming_stt": True,
+            },
+        },
+    )
+
+    assert verified["frontend"]["provider"] == "streaming_stt"
+    assert verified["frontend"]["model"] == "portable-streaming-asr"
+    assert verified["frontend"]["streaming_stt_bridge"] == {
+        "configured": True,
+        "healthy": True,
+    }
+    assert verified["capabilities"]["streaming_stt"] is True
+    assert verified["capabilities"]["utterance_stt"] is True
+
+
 def test_reference_sidecar_health_payload_is_sanitized():
     payload = reference_sidecar_health_payload(
         ReferenceSidecarRuntimeConfig(
@@ -2141,12 +2180,145 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     monkeypatch.setenv("HERMES_VOICE_INPUT_LANGUAGES", "ja en-US JA")
     monkeypatch.setenv("HERMES_VOICE_OUTPUT_LANGUAGES", "ja,ko token=secret")
     monkeypatch.setenv("HERMES_VOICE_SCRIPTS", "Jpan Latn bad/script")
+    monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_BASE_URL", "http://streaming-stt.local:9000")
+    monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_MODEL", "portable-streaming-asr")
+    monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_TOKEN", "secret-token")
+    monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_TIMEOUT_SECONDS", "2.5")
 
     runtime = runtime_config_from_env()
 
     assert runtime.input_languages == ("ja", "en-US")
     assert runtime.output_languages == ("ja", "ko")
     assert runtime.scripts == ("Jpan", "Latn")
+    assert runtime.streaming_stt_base_url == "http://streaming-stt.local:9000"
+    assert runtime.streaming_stt_model == "portable-streaming-asr"
+    assert runtime.streaming_stt_token == "secret-token"
+    assert runtime.streaming_stt_timeout_seconds == 2.5
+
+
+def test_reference_sidecar_bridges_streaming_stt_events(monkeypatch):
+    created = []
+
+    class FakeStreamingSTTClient:
+        def __init__(self, *, path="/v1/realtime-text/session"):
+            self.path = path
+            self.sent = []
+            self._events = asyncio.Queue()
+            created.append(self)
+
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            self.sent.append(event)
+            if event.type == VoiceEventType.AUDIO_INPUT_CHUNK:
+                await self._events.put(
+                    VoiceEvent(
+                        type=VoiceEventType.TRANSCRIPT_PARTIAL,
+                        session_id=event.session_id,
+                        sequence=1,
+                        payload={
+                            "text": "こん",
+                            "stability": 0.4,
+                            "input_generation": event.payload.get("input_generation"),
+                            "language": "ja",
+                            "locale": "ja-JP",
+                            "script": "Jpan",
+                            "language_url": "https://voice.local/secret",
+                        },
+                    )
+                )
+                await self._events.put(
+                    VoiceEvent(
+                        type=VoiceEventType.TRANSCRIPT_FINAL,
+                        session_id=event.session_id,
+                        sequence=2,
+                        payload={
+                            "text": "こんにちは Hermes",
+                            "confidence": 0.92,
+                            "input_generation": event.payload.get("input_generation"),
+                            "language": "ja",
+                            "locale": "ja-JP",
+                            "script": "Jpan",
+                        },
+                    )
+                )
+
+        async def events(self):
+            while True:
+                event = await self._events.get()
+                if event is None:
+                    return
+                yield event
+
+        async def close(self):
+            await self._events.put(None)
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_reference_sidecar.RealtimeVoiceSidecarClient",
+        FakeStreamingSTTClient,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                streaming_stt_base_url="http://streaming-stt.local:9000",
+                streaming_stt_model="portable-streaming-asr",
+                streaming_stt_token="secret-token",
+                streaming_stt_timeout_seconds=2.5,
+            )
+        )
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="sidecar"))
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "input_generation": 12,
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                await sidecar.close()
+                break
+
+        assert created[0].path == "/v1/streaming-stt/session"
+        assert created[0].config.sidecar_base_url == "http://streaming-stt.local:9000"
+        assert created[0].config.sidecar_token == "secret-token"
+        assert created[0].config.frontend_model == "portable-streaming-asr"
+        assert created[0].config.sidecar_connect_timeout_seconds == 2.5
+        assert created[0].sent[0].payload["input_generation"] == 12
+        assert [event.type for event in seen] == [
+            VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.TRANSCRIPT_PARTIAL,
+            VoiceEventType.TRANSCRIPT_FINAL,
+        ]
+        assert seen[0].payload["provider"] == "streaming_stt"
+        assert seen[0].payload["streaming_stt"] is True
+        assert seen[1].payload == {
+            "language": "ja",
+            "locale": "ja-JP",
+            "script": "Jpan",
+            "text": "こん",
+            "stability": 0.4,
+            "input_generation": 12,
+        }
+        assert seen[2].payload == {
+            "language": "ja",
+            "locale": "ja-JP",
+            "script": "Jpan",
+            "text": "こんにちは Hermes",
+            "confidence": 0.92,
+            "input_generation": 12,
+        }
+
+    asyncio.run(run())
 
 
 def test_reference_sidecar_health_requires_bearer_token():

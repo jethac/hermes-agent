@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import inspect
 import json
+import math
 import os
 import re
 import tempfile
@@ -34,6 +36,7 @@ from agent.realtime_voice import (
     transcript_metadata_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
+from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient
 
 
 TranscribeFn = Callable[[str], Mapping[str, Any]]
@@ -48,6 +51,10 @@ class ReferenceSidecarRuntimeConfig:
     vllm_base_url: Optional[str] = None
     vllm_model: Optional[str] = None
     vllm_timeout_seconds: float = 60.0
+    streaming_stt_base_url: Optional[str] = None
+    streaming_stt_model: Optional[str] = None
+    streaming_stt_token: Optional[str] = None
+    streaming_stt_timeout_seconds: float = 10.0
     local_stt_enabled: bool = True
     local_tts_enabled: bool = True
     auth_token: Optional[str] = None
@@ -56,8 +63,14 @@ class ReferenceSidecarRuntimeConfig:
     scripts: tuple[str, ...] = ()
 
 
-def reference_sidecar_health_payload(runtime: ReferenceSidecarRuntimeConfig) -> dict[str, Any]:
+def reference_sidecar_health_payload(
+    runtime: ReferenceSidecarRuntimeConfig,
+    *,
+    streaming_stt_health: Optional[Mapping[str, Any]] = None,
+) -> dict[str, Any]:
     vllm_enabled = bool(runtime.vllm_base_url and runtime.vllm_model)
+    streaming_stt_configured = bool(runtime.streaming_stt_base_url)
+    streaming_stt_ready = _health_supports_streaming_stt(streaming_stt_health)
     input_languages = _sanitize_metadata_list(runtime.input_languages)
     output_languages = _sanitize_metadata_list(runtime.output_languages)
     scripts = _sanitize_metadata_list(runtime.scripts)
@@ -67,12 +80,12 @@ def reference_sidecar_health_payload(runtime: ReferenceSidecarRuntimeConfig) -> 
         "ok": True,
         "kind": "reference",
         "frontend": {
-            "provider": "vllm" if vllm_enabled else "local",
-            "model": runtime.vllm_model or "",
+            "provider": "streaming_stt" if streaming_stt_ready else "vllm" if vllm_enabled else "local",
+            "model": (runtime.streaming_stt_model or "") if streaming_stt_ready else runtime.vllm_model or "",
         },
         "capabilities": {
-            "utterance_stt": vllm_enabled or runtime.local_stt_enabled,
-            "streaming_stt": False,
+            "utterance_stt": streaming_stt_ready or vllm_enabled or runtime.local_stt_enabled,
+            "streaming_stt": streaming_stt_ready,
             "tts": runtime.local_tts_enabled,
             "native_s2s": False,
             "vllm_audio_frontend": vllm_enabled,
@@ -82,6 +95,12 @@ def reference_sidecar_health_payload(runtime: ReferenceSidecarRuntimeConfig) -> 
             "tts": runtime.local_tts_enabled,
         },
     }
+    if streaming_stt_configured:
+        payload["capabilities"]["streaming_stt_bridge"] = True
+        payload["frontend"]["streaming_stt_bridge"] = {
+            "configured": True,
+            "healthy": streaming_stt_ready,
+        }
     if frontend_languages:
         payload["frontend"]["languages"] = frontend_languages
     if scripts:
@@ -121,15 +140,20 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._sequence = 0
         self._closed = False
         self._active_tasks: set[asyncio.Task[None]] = set()
+        self._streaming_stt: Optional[RealtimeVoiceSidecarClient] = None
+        self._streaming_stt_task: Optional[asyncio.Task[None]] = None
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
         self.config = config
+        if self.runtime.streaming_stt_base_url:
+            await self._start_streaming_stt(config)
         await self._emit(
             VoiceEventType.FRONTEND_STATE,
             {
                 "status": "ready",
-                "provider": config.frontend_provider or "local",
-                "model": config.frontend_model or "",
+                "provider": "streaming_stt" if self._streaming_stt is not None else config.frontend_provider or "local",
+                "model": self.runtime.streaming_stt_model or config.frontend_model or "",
+                "streaming_stt": self._streaming_stt is not None,
                 "vllm": bool(self.runtime.vllm_base_url and self.runtime.vllm_model),
                 "local_stt": self.runtime.local_stt_enabled,
                 "local_tts": self.runtime.local_tts_enabled,
@@ -149,6 +173,16 @@ class ReferenceRealtimeVoiceSidecarSession:
             playback_generation = _payload_generation(event.payload)
             if playback_generation is not None:
                 payload["playback_generation"] = playback_generation
+            if self._streaming_stt is not None:
+                await self._send_streaming_stt_event(
+                    VoiceEvent(
+                        type=VoiceEventType.BARGE_IN,
+                        session_id=event.session_id,
+                        sequence=event.sequence,
+                        timestamp_ms=event.timestamp_ms,
+                        payload=payload,
+                    )
+                )
             await self._emit(VoiceEventType.BARGE_IN, payload)
             await self._drain_cancelled_tasks(cancelled_tasks)
             return
@@ -192,6 +226,9 @@ class ReferenceRealtimeVoiceSidecarSession:
             if self._audio_input_generation is not None and input_generation != self._audio_input_generation:
                 self._clear_audio_buffer()
             self._audio_input_generation = input_generation
+        if self._streaming_stt is not None:
+            if await self._send_streaming_stt_event(event):
+                return
         if not await self._append_audio_chunk(chunk.data):
             return
         if event.payload.get("end_of_utterance") is True:
@@ -217,8 +254,103 @@ class ReferenceRealtimeVoiceSidecarSession:
             return
         self._closed = True
         await self._drain_cancelled_tasks(self._cancel_active_tasks())
+        if self._streaming_stt_task and not self._streaming_stt_task.done():
+            self._streaming_stt_task.cancel()
+        if self._streaming_stt is not None:
+            with contextlib.suppress(Exception):
+                await self._streaming_stt.close()
+        if self._streaming_stt_task:
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._streaming_stt_task
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
         await put_realtime_voice_event(self._events, None)
+
+    async def _start_streaming_stt(self, config: RealtimeVoiceSessionConfig) -> None:
+        client = RealtimeVoiceSidecarClient(path="/v1/streaming-stt/session")
+        downstream_config = RealtimeVoiceSessionConfig(
+            session_id=config.session_id,
+            engine=config.engine,
+            input_codec=config.input_codec,
+            output_codec=config.output_codec,
+            sample_rate_hz=config.sample_rate_hz,
+            channels=config.channels,
+            input_buffer_limit_bytes=config.input_buffer_limit_bytes,
+            frontend_provider="streaming_stt",
+            frontend_model=self.runtime.streaming_stt_model or config.frontend_model,
+            oracle_model=config.oracle_model,
+            tts_provider=config.tts_provider,
+            sidecar_base_url=self.runtime.streaming_stt_base_url,
+            sidecar_token=self.runtime.streaming_stt_token,
+            sidecar_connect_timeout_seconds=self.runtime.streaming_stt_timeout_seconds,
+            metadata=config.metadata,
+        )
+        try:
+            await client.start(downstream_config)
+        except Exception as exc:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "streaming_stt_unavailable",
+                    "error": sanitize_realtime_voice_error(exc),
+                    "streaming_stt": False,
+                },
+            )
+            return
+        self._streaming_stt = client
+        self._streaming_stt_task = asyncio.create_task(self._consume_streaming_stt_events())
+
+    async def _send_streaming_stt_event(self, event: VoiceEvent) -> bool:
+        if self._streaming_stt is None:
+            return False
+        try:
+            await self._streaming_stt.send_event(event)
+            return True
+        except Exception as exc:
+            await self._disable_streaming_stt("streaming_stt_send_failed", exc)
+            return False
+
+    async def _consume_streaming_stt_events(self) -> None:
+        if self._streaming_stt is None:
+            return
+        try:
+            async for event in self._streaming_stt.events():
+                if event.type in {VoiceEventType.TRANSCRIPT_PARTIAL, VoiceEventType.TRANSCRIPT_FINAL}:
+                    await self._emit(event.type, transcript_metadata_from_payload(event.payload) | {
+                        "text": str(event.payload.get("text") or ""),
+                        **_numeric_transcript_fields(event.payload),
+                        **_generation_transcript_fields(event.payload),
+                    })
+                elif event.type == VoiceEventType.FRONTEND_STATE:
+                    payload = dict(event.payload)
+                    payload.setdefault("streaming_stt", True)
+                    await self._emit(VoiceEventType.FRONTEND_STATE, payload)
+                elif event.type == VoiceEventType.SESSION_ERROR:
+                    await self._disable_streaming_stt(
+                        "streaming_stt_session_error",
+                        event.payload.get("error") or "",
+                    )
+                    return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._disable_streaming_stt("streaming_stt_event_stream_failed", exc)
+
+    async def _disable_streaming_stt(self, reason: str, error: Any) -> None:
+        client = self._streaming_stt
+        self._streaming_stt = None
+        if client is not None:
+            with contextlib.suppress(Exception):
+                await client.close()
+        await self._emit(
+            VoiceEventType.FRONTEND_STATE,
+            {
+                "status": "degraded",
+                "reason": reason,
+                "error": sanitize_realtime_voice_error(error),
+                "streaming_stt": False,
+            },
+        )
 
     def _track_task(self, task: asyncio.Task[None]) -> None:
         self._active_tasks.add(task)
@@ -413,7 +545,8 @@ def create_reference_sidecar_app(runtime: Optional[ReferenceSidecarRuntimeConfig
     async def health(request: Request):
         if not _authorized(request.headers, runtime.auth_token):
             raise HTTPException(status_code=401, detail="unauthorized")
-        return reference_sidecar_health_payload(runtime)
+        streaming_stt_health = await _probe_streaming_stt_health(runtime)
+        return reference_sidecar_health_payload(runtime, streaming_stt_health=streaming_stt_health)
 
     @app.websocket("/v1/realtime-text/session")
     async def realtime_text_session(ws: WebSocket):
@@ -482,6 +615,10 @@ def runtime_config_from_env() -> ReferenceSidecarRuntimeConfig:
         vllm_base_url=os.environ.get("HERMES_VOICE_VLLM_BASE_URL") or None,
         vllm_model=os.environ.get("HERMES_VOICE_VLLM_MODEL") or None,
         vllm_timeout_seconds=float(os.environ.get("HERMES_VOICE_VLLM_TIMEOUT_SECONDS") or 60),
+        streaming_stt_base_url=os.environ.get("HERMES_VOICE_STREAMING_STT_BASE_URL") or None,
+        streaming_stt_model=os.environ.get("HERMES_VOICE_STREAMING_STT_MODEL") or None,
+        streaming_stt_token=os.environ.get("HERMES_VOICE_STREAMING_STT_TOKEN") or None,
+        streaming_stt_timeout_seconds=float(os.environ.get("HERMES_VOICE_STREAMING_STT_TIMEOUT_SECONDS") or 10),
         local_stt_enabled=_env_bool("HERMES_VOICE_LOCAL_STT_ENABLED", True),
         local_tts_enabled=_env_bool("HERMES_VOICE_LOCAL_TTS_ENABLED", True),
         auth_token=os.environ.get("HERMES_VOICE_SIDECAR_TOKEN")
@@ -501,6 +638,55 @@ def _authorized(headers: Mapping[str, str], token: Optional[str]) -> bool:
     if not token:
         return True
     return headers.get("authorization") == f"Bearer {token}"
+
+
+async def _probe_streaming_stt_health(runtime: ReferenceSidecarRuntimeConfig) -> Optional[Mapping[str, Any]]:
+    if not runtime.streaming_stt_base_url:
+        return None
+    return await asyncio.to_thread(_probe_streaming_stt_health_sync, runtime)
+
+
+def _probe_streaming_stt_health_sync(runtime: ReferenceSidecarRuntimeConfig) -> Optional[Mapping[str, Any]]:
+    if not runtime.streaming_stt_base_url:
+        return None
+    url = f"{runtime.streaming_stt_base_url.rstrip('/')}/health"
+    headers = {}
+    if runtime.streaming_stt_token:
+        headers["Authorization"] = f"Bearer {runtime.streaming_stt_token}"
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=runtime.streaming_stt_timeout_seconds) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, Mapping) else None
+
+
+def _health_supports_streaming_stt(health: Optional[Mapping[str, Any]]) -> bool:
+    if not isinstance(health, Mapping) or health.get("ok") is not True:
+        return False
+    capabilities = health.get("capabilities")
+    if not isinstance(capabilities, Mapping):
+        return False
+    return capabilities.get("streaming_stt") is True
+
+
+def _numeric_transcript_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
+    fields = {}
+    for key in ("confidence", "stability"):
+        value = payload.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
+            fields[key] = value
+    return fields
+
+
+def _generation_transcript_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
+    fields = {}
+    for key in ("input_generation", "playback_generation"):
+        value = _payload_int(payload.get(key))
+        if value is not None:
+            fields[key] = value
+    return fields
 
 
 def _write_temp_audio(audio: bytes, codec: VoiceAudioCodec) -> str:
