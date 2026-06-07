@@ -279,6 +279,8 @@ When sanitized transcript language metadata is available, the text-oracle engine
 
 TTS is also language-sensitive. Prefer provider auto-detection or configured multilingual voices where available. If a configured voice is known to be language-limited, report a degraded `frontend.state` or use a configured fallback voice/provider; do not silently translate assistant output into English to satisfy a voice.
 
+If local/provider TTS fails after assistant text has already been planned, the text-oracle engine should emit `frontend.state` with `status: "degraded"` and continue as a text/caption-only turn instead of raising `session.error`. The user can keep speaking, and the committed assistant text remains durable. Reserve `session.error` for unrecoverable oracle, websocket, or session failures.
+
 Provider choices should be config-driven:
 
 ```yaml

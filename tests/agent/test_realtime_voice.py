@@ -673,6 +673,50 @@ def test_text_engine_cancels_queued_tts_when_oracle_fails(monkeypatch):
     asyncio.run(run())
 
 
+def test_text_engine_degrades_to_text_when_tts_fails(monkeypatch):
+    class StreamingOracle:
+        async def stream_answer(self, transcript: str):
+            yield "First sentence. "
+            yield "Second sentence."
+
+    async def run():
+        async def failing_speak(self, text, playback_generation):
+            raise RuntimeError("tts failed at http://user:pass@voice.local/v1?token=abc")
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", failing_speak)
+
+        engine = TextOracleTTSEngine(oracle=StreamingOracle())
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello"},
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                await engine.close()
+                break
+
+        degraded = [event for event in seen if event.type == VoiceEventType.FRONTEND_STATE]
+        assert len(degraded) == 1
+        assert degraded[0].payload["status"] == "degraded"
+        assert degraded[0].payload["reason"] == "tts_failed"
+        assert "user:pass" not in degraded[0].payload["error"]
+        assert "token=abc" not in degraded[0].payload["error"]
+        commit = seen[-1]
+        assert commit.type == VoiceEventType.ASSISTANT_COMMIT
+        assert commit.payload["text"] == "First sentence. Second sentence."
+        assert VoiceEventType.SESSION_ERROR not in [event.type for event in seen]
+
+    asyncio.run(run())
+
+
 def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
     async def run():
         sidecar = FakeSidecar()
