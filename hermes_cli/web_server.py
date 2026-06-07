@@ -12490,18 +12490,24 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     elif externally_managed:
         sidecar_mode = "external"
 
+    unavailable_reason = ""
     available = enabled
-    if engine == "native_s2s_oracle" and not base_url:
+    if not enabled:
+        unavailable_reason = "disabled"
+    elif engine == "native_s2s_oracle" and not base_url:
         available = False
-    if base_url and not autostart and healthy is False:
+        unavailable_reason = "sidecar_required"
+    elif base_url and not autostart and healthy is False:
         available = False
-    if sidecar_capability_error:
+        unavailable_reason = "sidecar_unhealthy"
+    elif sidecar_capability_error:
         available = False
+        unavailable_reason = sidecar_capability_error
 
     return {
         "enabled": enabled,
         "available": available,
-        "unavailable_reason": sidecar_capability_error or None,
+        "unavailable_reason": unavailable_reason or None,
         "engine": engine,
         "input_codec": str(realtime.get("input_codec") or "webm_opus"),
         "output_codec": str(realtime.get("output_codec") or "opus"),

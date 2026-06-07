@@ -6342,6 +6342,7 @@ class TestRealtimeVoiceWebSocket:
         body = response.json()
         assert body["enabled"] is False
         assert body["available"] is False
+        assert body["unavailable_reason"] == "disabled"
         assert body["engine"] == "text_oracle_tts"
         assert body["sidecar"]["mode"] == "none"
         assert body["sidecar"]["healthy"] is None
@@ -6673,6 +6674,7 @@ class TestRealtimeVoiceWebSocket:
         body = response.json()
         assert body["enabled"] is True
         assert body["available"] is False
+        assert body["unavailable_reason"] == "sidecar_unhealthy"
         assert body["native_s2s"]["enabled"] is True
         assert body["sidecar"]["mode"] == "external"
         assert body["sidecar"]["externally_managed"] is True
@@ -6702,6 +6704,7 @@ class TestRealtimeVoiceWebSocket:
         body = response.json()
         assert body["enabled"] is True
         assert body["available"] is False
+        assert body["unavailable_reason"] == "sidecar_required"
         assert body["native_s2s"]["sidecar_required"] is True
         assert body["sidecar"]["mode"] == "none"
 
