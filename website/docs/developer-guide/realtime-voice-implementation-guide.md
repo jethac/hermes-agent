@@ -242,6 +242,51 @@ Use this before treating a profile as live-voice ready. The strict gate requires
 
 `--realtime-voice-report` writes a JSON array of the realtime smoke results for CI and release gates. Each entry records a neutral smoke `kind` (`protocol`, `audio_fixture`, or `tts`), `ok`, event names, latency fields, byte counts, sanitized error text, and smoke-specific metadata such as fixture path, codec, phrase text, and target milliseconds. The schema is intentionally language-neutral: English and Japanese are the first production acceptance fixtures, but additional best-effort language fixtures can use the same report format without changing Hermes protocol semantics.
 
+### Private Alpha Evidence Pack
+
+The shortest path to an evidence-backed private alpha is days, not weeks, if the scope stays on the portable sidecar contract and the first production languages remain English and Japanese. Do not gate alpha on a particular workstation, GPU, or native S2S model; gate it on repeatable artifacts from the configured realtime sidecar profile.
+
+Minimum alpha fixture set:
+
+- `fixtures/realtime-voice/en/hello.webm`: short English greeting or question.
+- `fixtures/realtime-voice/en/tool-question.webm`: short English utterance that should exercise Hermes oracle context without executing unsafe tools from a partial transcript.
+- `fixtures/realtime-voice/ja/hello.webm`: short Japanese greeting or question.
+- `fixtures/realtime-voice/ja/tool-question.webm`: short Japanese utterance that should preserve Japanese captions and oracle guidance.
+- Optional best-effort fixture in a non-target language, used only to prove clean metadata pass-through and no EN/JA-only rejection.
+
+Minimum TTS phrase set:
+
+- `Hello from Hermes.`
+- `Can you hear me clearly?`
+- `こんにちは、Hermesです。`
+- `音声で会話できますか？`
+- Optional best-effort phrase in a non-target language, marked non-blocking unless the configured provider claims production support for that language.
+
+For a private alpha release candidate, collect one JSON report per profile/run:
+
+```bash
+hermes doctor \
+  --realtime-voice-smoke \
+  --realtime-voice-audio-fixture ./fixtures/realtime-voice/en/hello.webm \
+  --realtime-voice-audio-fixture ./fixtures/realtime-voice/en/tool-question.webm \
+  --realtime-voice-audio-fixture ./fixtures/realtime-voice/ja/hello.webm \
+  --realtime-voice-audio-fixture ./fixtures/realtime-voice/ja/tool-question.webm \
+  --realtime-voice-audio-codec webm_opus \
+  --realtime-voice-tts-smoke "Hello from Hermes." \
+  --realtime-voice-tts-smoke "Can you hear me clearly?" \
+  --realtime-voice-tts-smoke "こんにちは、Hermesです。" \
+  --realtime-voice-tts-smoke "音声で会話できますか？" \
+  --realtime-voice-report ./artifacts/realtime-voice-alpha.json
+```
+
+CI shape:
+
+- Keep the normal unit tests in the regular test matrix: `tests/agent/test_realtime_voice.py`, `tests/hermes_cli/test_web_server.py::TestRealtimeVoiceWebSocket`, and the realtime desktop hook tests.
+- Add a separate, opt-in realtime voice smoke workflow or manual job that starts the configured sidecar, runs the command above, and uploads `artifacts/realtime-voice-alpha.json`.
+- Treat EN/JA fixture and TTS failures, missing `transcript.partial`, missing `transcript.final`, missing `audio.output.chunk`, and target latency misses as release-blocking for private alpha.
+- Treat non-target language fixture failures as non-blocking unless they reveal protocol rejection, translation-to-English behavior, metadata leakage, or a crash.
+- Archive only latency metrics, event names, byte counts, sanitized errors, fixture identifiers, and phrase identifiers. Do not archive raw user audio outside explicit opt-in fixtures.
+
 Implementation notes:
 
 - Reuse existing websocket host/origin/auth guards in `web_server.py`.
