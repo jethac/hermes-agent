@@ -6418,6 +6418,8 @@ class TestRealtimeVoiceWebSocket:
         assert body["sidecar"]["healthy"] is False
 
     def test_status_includes_sanitized_sidecar_health_payload(self, monkeypatch):
+        requests = []
+
         class FakeResponse:
             status = 200
 
@@ -6460,11 +6462,18 @@ class TestRealtimeVoiceWebSocket:
                         "engine": "text_oracle_tts",
                         "frontend_provider": "gemma4",
                         "sidecar_base_url": "http://voice.example.test:8765",
+                        "sidecar_token_env": "HERMES_VOICE_SIDECAR_TOKEN",
                     }
                 }
             },
         )
-        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda url, timeout: FakeResponse())
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {"HERMES_VOICE_SIDECAR_TOKEN": "secret-token"})
+
+        def fake_urlopen(req, timeout):
+            requests.append(req)
+            return FakeResponse()
+
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", fake_urlopen)
 
         response = self.client.get("/api/voice/realtime/status")
 
@@ -6489,6 +6498,8 @@ class TestRealtimeVoiceWebSocket:
             "local": {"stt": False, "tts": True},
         }
         assert "secret" not in __import__("json").dumps(body["sidecar"]["health"])
+        assert len(requests) == 2
+        assert all(req.headers["Authorization"] == "Bearer secret-token" for req in requests)
 
     def test_status_reports_remote_unhealthy_sidecar_unavailable_and_redacted(self, monkeypatch):
         def fake_urlopen(url, timeout):
