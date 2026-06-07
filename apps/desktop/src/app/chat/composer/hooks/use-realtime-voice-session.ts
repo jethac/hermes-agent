@@ -60,6 +60,7 @@ export interface RealtimeVoiceStatus {
   engine: string
   input_buffer_limit_bytes?: number
   input_frame_ms?: number
+  silence_timeout_ms?: number
   sidecar?: {
     autostart?: boolean
     connect_timeout_seconds?: number
@@ -88,6 +89,9 @@ const REALTIME_BINARY_HEADER_LIMIT = 64 * 1024
 const DEFAULT_REALTIME_INPUT_FRAME_MS = 100
 const MIN_REALTIME_INPUT_FRAME_MS = 40
 const MAX_REALTIME_INPUT_FRAME_MS = 500
+const DEFAULT_REALTIME_SILENCE_TIMEOUT_MS = 650
+const MIN_REALTIME_SILENCE_TIMEOUT_MS = 250
+const MAX_REALTIME_SILENCE_TIMEOUT_MS = 2_000
 const GENERATION_EVENT_TYPES = new Set([
   'audio.output.chunk',
   'assistant.commit',
@@ -350,6 +354,17 @@ export function realtimeVoiceInputFrameMs(value: unknown): number {
   )
 }
 
+export function realtimeVoiceSilenceTimeoutMs(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_REALTIME_SILENCE_TIMEOUT_MS
+  }
+
+  return Math.min(
+    MAX_REALTIME_SILENCE_TIMEOUT_MS,
+    Math.max(MIN_REALTIME_SILENCE_TIMEOUT_MS, Math.round(value))
+  )
+}
+
 export function shouldSendRealtimeVoiceEndMarker({
   closingInput,
   sentEndOfUtterance,
@@ -489,6 +504,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const serverEventChainRef = useRef<Promise<void>>(Promise.resolve())
   const audioInputGenerationRef = useRef(0)
   const inputFrameMsRef = useRef(DEFAULT_REALTIME_INPUT_FRAME_MS)
+  const silenceTimeoutMsRef = useRef(DEFAULT_REALTIME_SILENCE_TIMEOUT_MS)
 
   useEffect(() => {
     enabledRef.current = enabled
@@ -835,7 +851,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         } else if (heardSpeechRef.current) {
           bargeInSpeechStartedAtRef.current = null
           silenceStartedAtRef.current ??= now
-          if (now - silenceStartedAtRef.current >= 1250) {
+          if (now - silenceStartedAtRef.current >= silenceTimeoutMsRef.current) {
             if (recorderRef.current) {
               stopRecorderForTurn()
             }
@@ -941,6 +957,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       return
     }
     inputFrameMsRef.current = realtimeVoiceInputFrameMs(preflight?.input_frame_ms)
+    silenceTimeoutMsRef.current = realtimeVoiceSilenceTimeoutMs(preflight?.silence_timeout_ms)
 
     sessionRef.current = sessionId || sessionRef.current
     setCaption(null)

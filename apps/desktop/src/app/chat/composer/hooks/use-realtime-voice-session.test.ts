@@ -13,6 +13,7 @@ import {
   realtimeVoiceInputFrameMs,
   realtimeVoicePlaybackGeneration,
   realtimeVoiceSessionStatus,
+  realtimeVoiceSilenceTimeoutMs,
   realtimeVoiceUrl,
   shouldDropStaleRealtimeVoiceEvent,
   shouldSendRealtimeAudioFrame,
@@ -352,6 +353,19 @@ describe('realtimeVoiceInputFrameMs', () => {
     expect(realtimeVoiceInputFrameMs(79.6)).toBe(80)
     expect(realtimeVoiceInputFrameMs(10)).toBe(40)
     expect(realtimeVoiceInputFrameMs(1_000)).toBe(500)
+  })
+})
+
+describe('realtimeVoiceSilenceTimeoutMs', () => {
+  it('defaults to a low-latency 650 ms end-of-utterance silence window', () => {
+    expect(realtimeVoiceSilenceTimeoutMs(undefined)).toBe(650)
+    expect(realtimeVoiceSilenceTimeoutMs('slow')).toBe(650)
+  })
+
+  it('rounds and clamps configured silence timeout duration', () => {
+    expect(realtimeVoiceSilenceTimeoutMs(799.6)).toBe(800)
+    expect(realtimeVoiceSilenceTimeoutMs(100)).toBe(250)
+    expect(realtimeVoiceSilenceTimeoutMs(5_000)).toBe(2_000)
   })
 })
 

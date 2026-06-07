@@ -604,6 +604,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Desktop microphone frame duration for realtime voice capture",
         "category": "voice",
     },
+    "voice.realtime.silence_timeout_ms": {
+        "type": "number",
+        "description": "Milliseconds of silence before realtime voice closes the current user turn",
+        "category": "voice",
+    },
     "voice.realtime.sidecar_base_url": {
         "type": "string",
         "description": "Remote or local realtime voice sidecar URL",
@@ -12476,6 +12481,12 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             default=100,
             minimum=40,
             maximum=500,
+        ),
+        "silence_timeout_ms": _bounded_int_config(
+            realtime.get("silence_timeout_ms"),
+            default=650,
+            minimum=250,
+            maximum=2000,
         ),
         "frontend_provider": provider or None,
         "frontend_model": frontend_model or None,
