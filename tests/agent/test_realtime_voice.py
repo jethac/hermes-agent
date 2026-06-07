@@ -299,6 +299,22 @@ def test_text_engine_takes_speakable_phrase_before_full_sentence():
     assert remaining == "and then keeps going without ending the full sentence yet"
 
 
+def test_text_engine_takes_unicode_phrase_boundary_without_spaces():
+    phrase = "これはかなり長い応答の最初の安定した部分です、まだ文は終わっていませんが会話ではここで話し始められます"
+
+    chunk, remaining = _take_speakable_chunk(phrase)
+
+    assert chunk == "これはかなり長い応答の最初の安定した部分です、"
+    assert remaining == "まだ文は終わっていませんが会話ではここで話し始められます"
+
+
+def test_text_engine_takes_unicode_sentence_boundary_without_trailing_space():
+    chunk, remaining = _take_speakable_chunk("これは短い文です。次の文も続きます")
+
+    assert chunk == "これは短い文です。"
+    assert remaining == "次の文も続きます"
+
+
 def test_text_engine_keeps_short_unfinished_phrase_buffered():
     chunk, remaining = _take_speakable_chunk("This is still forming")
 
