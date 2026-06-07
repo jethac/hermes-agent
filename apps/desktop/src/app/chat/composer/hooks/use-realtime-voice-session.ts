@@ -30,6 +30,11 @@ interface PlaybackItem {
   generation: number
 }
 
+interface PreRollItem {
+  blob: Blob
+  mimeType: string
+}
+
 export interface RealtimeVoiceLatencyMetrics {
   audioToFinalTranscriptMs?: number
   audioToPartialTranscriptMs?: number
@@ -95,6 +100,7 @@ const MAX_REALTIME_SILENCE_TIMEOUT_MS = 2_000
 const DEFAULT_REALTIME_SESSION_READY_TIMEOUT_MS = 12_000
 const MIN_REALTIME_SESSION_READY_TIMEOUT_MS = 3_000
 const MAX_REALTIME_SESSION_READY_TIMEOUT_MS = 30_000
+const DEFAULT_REALTIME_PRE_ROLL_MS = 300
 const GENERATION_EVENT_TYPES = new Set([
   'audio.output.chunk',
   'assistant.commit',
@@ -139,12 +145,12 @@ interface RealtimeAudioFrameBackpressureInput {
   maxBufferedBytes?: number
 }
 
-interface RealtimeRecorderStartInput {
+interface RealtimeTurnCaptureStartInput {
   acceptSpeech: boolean
   busy: boolean
   enabled: boolean
   muted: boolean
-  recorderActive: boolean
+  turnCaptureActive: boolean
 }
 
 interface RealtimeEndMarkerInput {
@@ -388,14 +394,18 @@ export function realtimeVoiceSessionReadyTimeoutMs(status: RealtimeVoiceStatus |
   )
 }
 
-export function shouldStartRealtimeRecorder({
+export function realtimeVoicePreRollChunkLimit(inputFrameMs: unknown): number {
+  return Math.max(1, Math.ceil(DEFAULT_REALTIME_PRE_ROLL_MS / realtimeVoiceInputFrameMs(inputFrameMs)))
+}
+
+export function shouldStartRealtimeTurnCapture({
   acceptSpeech,
   busy,
   enabled,
   muted,
-  recorderActive
-}: RealtimeRecorderStartInput): boolean {
-  return acceptSpeech && enabled && !muted && !busy && !recorderActive
+  turnCaptureActive
+}: RealtimeTurnCaptureStartInput): boolean {
+  return acceptSpeech && enabled && !muted && !busy && !turnCaptureActive
 }
 
 export function shouldSendRealtimeVoiceEndMarker({
@@ -524,6 +534,8 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const silenceStartedAtRef = useRef<number | null>(null)
   const sentEndOfUtteranceRef = useRef(false)
   const stoppingForSilenceRef = useRef(false)
+  const turnCaptureActiveRef = useRef(false)
+  const preRollChunksRef = useRef<PreRollItem[]>([])
   const sessionStartedRef = useRef(false)
   const sessionFailedRef = useRef(false)
   const playbackQueueRef = useRef<PlaybackItem[]>([])
@@ -621,6 +633,22 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     [onFatalError]
   )
 
+  const retainPreRollChunk = useCallback((blob: Blob, mimeType: string) => {
+    const chunks = preRollChunksRef.current
+
+    chunks.push({ blob, mimeType })
+    chunks.splice(0, Math.max(0, chunks.length - realtimeVoicePreRollChunkLimit(inputFrameMsRef.current)))
+  }, [])
+
+  const flushPreRollChunks = useCallback(() => {
+    const chunks = preRollChunksRef.current
+
+    preRollChunksRef.current = []
+    for (const chunk of chunks) {
+      queueAudioInput(chunk.blob, false, chunk.mimeType)
+    }
+  }, [queueAudioInput])
+
   const cleanupInput = useCallback(() => {
     closingInputRef.current = true
     const recorder = recorderRef.current
@@ -637,6 +665,8 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     streamRef.current?.getTracks().forEach(track => track.stop())
     streamRef.current = null
     recorderRef.current = null
+    turnCaptureActiveRef.current = false
+    preRollChunksRef.current = []
     setLevel(0)
   }, [])
 
@@ -655,6 +685,8 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       recorderRef.current = recorder
       stoppingForSilenceRef.current = false
       sentEndOfUtteranceRef.current = false
+      turnCaptureActiveRef.current = false
+      preRollChunksRef.current = []
       silenceStartedAtRef.current = null
 
       recorder.ondataavailable = event => {
@@ -669,6 +701,13 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         const recorderMimeType = recorder.mimeType
         if (endOfUtterance) {
           sentEndOfUtteranceRef.current = true
+          queueAudioInput(event.data, endOfUtterance, recorderMimeType)
+          return
+        }
+
+        if (!turnCaptureActiveRef.current) {
+          retainPreRollChunk(event.data, recorderMimeType)
+          return
         }
 
         queueAudioInput(event.data, endOfUtterance, recorderMimeType)
@@ -690,6 +729,8 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         }
         stoppingForSilenceRef.current = false
         sentEndOfUtteranceRef.current = false
+        turnCaptureActiveRef.current = false
+        preRollChunksRef.current = []
         if (!closingInputRef.current && isCurrentRecorder) {
           setStatus('thinking')
         }
@@ -697,7 +738,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
       recorder.start(inputFrameMsRef.current)
     },
-    [queueAudioInput]
+    [queueAudioInput, retainPreRollChunk]
   )
 
   const advancePlaybackGeneration = useCallback((generation?: unknown) => {
@@ -803,7 +844,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const stopRecorderForTurn = useCallback(() => {
     const recorder = recorderRef.current
 
-    if (!recorder || recorder.state === 'inactive') {
+    if (!recorder || recorder.state === 'inactive' || !turnCaptureActiveRef.current) {
       return
     }
 
@@ -872,14 +913,15 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
             bargeInSpeechStartedAtRef.current = null
           }
 
-          if (shouldStartRealtimeRecorder({
+          if (shouldStartRealtimeTurnCapture({
             acceptSpeech,
             busy: busyRef.current,
             enabled: enabledRef.current,
             muted: mutedRef.current,
-            recorderActive: Boolean(recorderRef.current)
+            turnCaptureActive: turnCaptureActiveRef.current
           })) {
-            startRecorder(stream)
+            turnCaptureActiveRef.current = true
+            flushPreRollChunks()
             setStatus('listening')
           }
 
@@ -931,8 +973,9 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     silenceStartedAtRef.current = null
 
     startMeter(stream)
+    startRecorder(stream)
     setStatus('listening')
-  }, [startMeter])
+  }, [startMeter, startRecorder])
 
   const handleEvent = useCallback(
     (event: VoiceEvent) => {

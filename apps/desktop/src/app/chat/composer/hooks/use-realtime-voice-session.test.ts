@@ -12,6 +12,7 @@ import {
   realtimeVoiceCloseAction,
   realtimeVoiceInputFrameMs,
   realtimeVoicePlaybackGeneration,
+  realtimeVoicePreRollChunkLimit,
   realtimeVoiceSessionReadyTimeoutMs,
   realtimeVoiceSessionStatus,
   realtimeVoiceSilenceTimeoutMs,
@@ -19,7 +20,7 @@ import {
   shouldDropStaleRealtimeVoiceEvent,
   shouldSendRealtimeAudioFrame,
   shouldSendRealtimeVoiceEndMarker,
-  shouldStartRealtimeRecorder,
+  shouldStartRealtimeTurnCapture,
   updateRealtimeVoiceBargeInGate
 } from './use-realtime-voice-session'
 
@@ -404,6 +405,14 @@ describe('realtimeVoiceSessionReadyTimeoutMs', () => {
   })
 })
 
+describe('realtimeVoicePreRollChunkLimit', () => {
+  it('keeps roughly 300 ms of local pre-roll using the active frame duration', () => {
+    expect(realtimeVoicePreRollChunkLimit(undefined)).toBe(3)
+    expect(realtimeVoicePreRollChunkLimit(80)).toBe(4)
+    expect(realtimeVoicePreRollChunkLimit(500)).toBe(1)
+  })
+})
+
 describe('queueRealtimeAudioTask', () => {
   it('runs realtime audio sends in capture order even when later work is ready first', async () => {
     const order: string[] = []
@@ -480,52 +489,52 @@ describe('shouldSendRealtimeVoiceEndMarker', () => {
   })
 })
 
-describe('shouldStartRealtimeRecorder', () => {
+describe('shouldStartRealtimeTurnCapture', () => {
   it('starts capture only after accepted speech while realtime is available', () => {
-    expect(shouldStartRealtimeRecorder({
+    expect(shouldStartRealtimeTurnCapture({
       acceptSpeech: true,
       busy: false,
       enabled: true,
       muted: false,
-      recorderActive: false
+      turnCaptureActive: false
     })).toBe(true)
   })
 
-  it('does not start capture while idle, muted, busy, disabled, or already recording', () => {
-    expect(shouldStartRealtimeRecorder({
+  it('does not start capture while idle, muted, busy, disabled, or already capturing a turn', () => {
+    expect(shouldStartRealtimeTurnCapture({
       acceptSpeech: false,
       busy: false,
       enabled: true,
       muted: false,
-      recorderActive: false
+      turnCaptureActive: false
     })).toBe(false)
-    expect(shouldStartRealtimeRecorder({
+    expect(shouldStartRealtimeTurnCapture({
       acceptSpeech: true,
       busy: false,
       enabled: true,
       muted: true,
-      recorderActive: false
+      turnCaptureActive: false
     })).toBe(false)
-    expect(shouldStartRealtimeRecorder({
+    expect(shouldStartRealtimeTurnCapture({
       acceptSpeech: true,
       busy: true,
       enabled: true,
       muted: false,
-      recorderActive: false
+      turnCaptureActive: false
     })).toBe(false)
-    expect(shouldStartRealtimeRecorder({
+    expect(shouldStartRealtimeTurnCapture({
       acceptSpeech: true,
       busy: false,
       enabled: false,
       muted: false,
-      recorderActive: false
+      turnCaptureActive: false
     })).toBe(false)
-    expect(shouldStartRealtimeRecorder({
+    expect(shouldStartRealtimeTurnCapture({
       acceptSpeech: true,
       busy: false,
       enabled: true,
       muted: false,
-      recorderActive: true
+      turnCaptureActive: true
     })).toBe(false)
   })
 })
