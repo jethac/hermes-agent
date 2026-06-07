@@ -539,7 +539,7 @@ export function realtimeVoiceSilenceTimeoutMs(value: unknown): number {
 }
 
 export function realtimeVoiceSpeechLevelThreshold(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     return DEFAULT_REALTIME_SPEECH_LEVEL_THRESHOLD
   }
 
@@ -547,7 +547,7 @@ export function realtimeVoiceSpeechLevelThreshold(value: unknown): number {
 }
 
 export function realtimeVoiceBargeInMinSpeechMs(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     return DEFAULT_REALTIME_BARGE_IN_MIN_SPEECH_MS
   }
 
@@ -558,7 +558,7 @@ export function realtimeVoiceBargeInMinSpeechMs(value: unknown): number {
 }
 
 export function realtimeVoicePreRollMs(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
     return DEFAULT_REALTIME_PRE_ROLL_MS
   }
 

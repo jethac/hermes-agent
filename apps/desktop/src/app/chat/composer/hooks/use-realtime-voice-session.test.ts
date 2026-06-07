@@ -593,13 +593,15 @@ describe('realtimeVoiceSilenceTimeoutMs', () => {
 describe('realtime voice capture tuning', () => {
   it('clamps speech level threshold from backend status', () => {
     expect(realtimeVoiceSpeechLevelThreshold(undefined)).toBe(0.075)
-    expect(realtimeVoiceSpeechLevelThreshold(0)).toBe(0.005)
+    expect(realtimeVoiceSpeechLevelThreshold(0)).toBe(0.075)
+    expect(realtimeVoiceSpeechLevelThreshold(0.001)).toBe(0.005)
     expect(realtimeVoiceSpeechLevelThreshold(2)).toBe(1)
     expect(realtimeVoiceSpeechLevelThreshold(0.12)).toBe(0.12)
   })
 
   it('clamps barge-in speech duration from backend status', () => {
     expect(realtimeVoiceBargeInMinSpeechMs(undefined)).toBe(120)
+    expect(realtimeVoiceBargeInMinSpeechMs(0)).toBe(120)
     expect(realtimeVoiceBargeInMinSpeechMs(10)).toBe(40)
     expect(realtimeVoiceBargeInMinSpeechMs(2_000)).toBe(1_000)
     expect(realtimeVoiceBargeInMinSpeechMs(149.6)).toBe(150)
@@ -607,7 +609,8 @@ describe('realtime voice capture tuning', () => {
 
   it('clamps pre-roll duration from backend status', () => {
     expect(realtimeVoicePreRollMs(undefined)).toBe(300)
-    expect(realtimeVoicePreRollMs(-1)).toBe(0)
+    expect(realtimeVoicePreRollMs(-1)).toBe(300)
+    expect(realtimeVoicePreRollMs(0)).toBe(0)
     expect(realtimeVoicePreRollMs(2_000)).toBe(1_000)
     expect(realtimeVoicePreRollMs(249.6)).toBe(250)
   })
