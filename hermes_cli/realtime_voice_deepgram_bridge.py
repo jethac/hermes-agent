@@ -14,6 +14,7 @@ from agent.realtime_voice_deepgram_bridge import (
 
 
 DEFAULT_PRODUCTION_EN_JA_TTS_MODEL_BY_LANGUAGE = "ja:aura-2-fujin-ja,en:aura-2-thalia-en"
+DEFAULT_PRODUCTION_EN_JA_STT_LANGUAGE = "multi"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -90,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     required_output_languages = str(args.require_output_languages or "").strip()
     if args.production_en_ja and not required_output_languages:
         required_output_languages = "en,ja"
+    required_input_languages = "en,ja" if args.production_en_ja else ""
 
     if args.model:
         os.environ["HERMES_DEEPGRAM_MODEL"] = args.model
@@ -99,8 +101,11 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE"] = tts_model_by_language
     if args.output_languages:
         os.environ["HERMES_DEEPGRAM_OUTPUT_LANGUAGES"] = args.output_languages
-    if args.language:
-        os.environ["HERMES_DEEPGRAM_LANGUAGE"] = args.language
+    configured_language = str(args.language or os.environ.get("HERMES_DEEPGRAM_LANGUAGE") or "").strip()
+    if args.production_en_ja and not configured_language:
+        os.environ["HERMES_DEEPGRAM_LANGUAGE"] = DEFAULT_PRODUCTION_EN_JA_STT_LANGUAGE
+    elif configured_language:
+        os.environ["HERMES_DEEPGRAM_LANGUAGE"] = configured_language
     if args.tts_sample_rate_hz:
         os.environ["HERMES_DEEPGRAM_TTS_SAMPLE_RATE_HZ"] = str(args.tts_sample_rate_hz)
     if args.endpointing_ms:
@@ -131,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         issues = deepgram_bridge_prerequisite_issues(
             runtime,
             require_auth_token=bool(args.strict),
+            required_input_languages=_parse_required_languages(required_input_languages),
             required_output_languages=_parse_required_languages(required_output_languages),
         )
         if issues:
@@ -149,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
             "  output_languages: "
             f"{','.join(runtime.output_languages) if runtime.output_languages else 'inferred from TTS models'}"
         )
+        print(f"  language: {runtime.language or 'default(en)'}")
         print(f"  auth_token: {'configured' if runtime.auth_token else 'not configured'}")
         return 0
 
