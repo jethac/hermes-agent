@@ -12795,24 +12795,33 @@ def _realtime_voice_sidecar_health_payload(
     timeout: float = _VOICE_SIDECAR_HEALTH_TIMEOUT,
     token: str = "",
 ) -> Optional[Dict[str, Any]]:
+    return _realtime_voice_sidecar_health_probe(base_url, timeout=timeout, token=token)[1]
+
+
+def _realtime_voice_sidecar_health_probe(
+    base_url: str,
+    timeout: float = _VOICE_SIDECAR_HEALTH_TIMEOUT,
+    token: str = "",
+) -> Tuple[bool, Optional[Dict[str, Any]]]:
     if not base_url:
-        return None
+        return False, None
     try:
         with urllib.request.urlopen(_realtime_voice_sidecar_health_request(base_url, token), timeout=timeout) as response:
             status = int(getattr(response, "status", 200))
-            if status < 200 or status >= 300 or not hasattr(response, "read"):
-                return None
+            healthy = 200 <= status < 300
+            if not healthy or not hasattr(response, "read"):
+                return healthy, None
             raw = response.read()
     except Exception:
-        return None
+        return False, None
 
     try:
         payload = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else str(raw))
     except Exception:
-        return None
+        return True, None
     if not isinstance(payload, dict):
-        return None
-    return _sanitize_realtime_voice_sidecar_health(payload)
+        return True, None
+    return True, _sanitize_realtime_voice_sidecar_health(payload)
 
 
 _REALTIME_VOICE_HEALTH_METADATA_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -13026,12 +13035,13 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     autostart = _realtime_voice_should_autostart_sidecar(realtime, base_url)
     externally_managed = bool(base_url and not autostart)
     sidecar_token = _realtime_voice_sidecar_token(realtime) if probe_health and base_url else ""
-    healthy = _realtime_voice_sidecar_healthy(base_url, token=sidecar_token) if probe_health and base_url else None
-    health_payload = (
-        _realtime_voice_sidecar_health_payload(base_url, token=sidecar_token)
-        if probe_health and base_url and healthy is True
-        else None
-    )
+    healthy: Optional[bool]
+    health_payload: Optional[Dict[str, Any]]
+    if probe_health and base_url:
+        healthy, health_payload = _realtime_voice_sidecar_health_probe(base_url, token=sidecar_token)
+    else:
+        healthy = None
+        health_payload = None
     sidecar_capability_error = (
         _realtime_voice_sidecar_capability_error(
             engine=engine,
@@ -13113,9 +13123,9 @@ def _realtime_voice_open_unavailable_reason(realtime: Dict[str, Any]) -> str:
         return ""
 
     sidecar_token = _realtime_voice_sidecar_token(realtime)
-    if not _realtime_voice_sidecar_healthy(base_url, token=sidecar_token):
+    healthy, health_payload = _realtime_voice_sidecar_health_probe(base_url, token=sidecar_token)
+    if not healthy:
         return "sidecar_unhealthy"
-    health_payload = _realtime_voice_sidecar_health_payload(base_url, token=sidecar_token)
     return _realtime_voice_sidecar_capability_error(engine=engine, health_payload=health_payload)
 
 

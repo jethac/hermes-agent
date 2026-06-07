@@ -6690,7 +6690,7 @@ class TestRealtimeVoiceWebSocket:
             "local": {"stt": False, "tts": True},
         }
         assert "secret" not in __import__("json").dumps(body["sidecar"]["health"])
-        assert len(requests) == 2
+        assert len(requests) == 1
         assert all(req.headers["Authorization"] == "Bearer secret-token" for req in requests)
 
     def test_status_marks_text_sidecar_unavailable_without_tts_capability(self, monkeypatch):
