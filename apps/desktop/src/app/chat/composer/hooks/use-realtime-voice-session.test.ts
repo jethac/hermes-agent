@@ -8,6 +8,7 @@ import {
   realtimeAudioInputPayload,
   realtimeVoiceCloseAction,
   realtimeVoicePlaybackGeneration,
+  realtimeVoiceSessionStatus,
   realtimeVoiceUrl,
   shouldDropStaleRealtimeVoiceEvent,
   shouldSendRealtimeVoiceEndMarker,
@@ -306,6 +307,27 @@ describe('realtimeVoiceCloseAction', () => {
       sessionFailed: true,
       sessionStarted: false
     })).toBe('ignore')
+  })
+})
+
+describe('realtimeVoiceSessionStatus', () => {
+  const event = (session_state: unknown): VoiceEvent => ({
+    payload: { session_state },
+    sequence: 1,
+    session_id: 'voice-123',
+    type: 'transcript.final'
+  })
+
+  it('maps backend realtime session states to desktop conversation status', () => {
+    expect(realtimeVoiceSessionStatus(event('listening'))).toBe('listening')
+    expect(realtimeVoiceSessionStatus(event('assistant_pending'))).toBe('thinking')
+    expect(realtimeVoiceSessionStatus(event('speaking'))).toBe('speaking')
+    expect(realtimeVoiceSessionStatus(event('closed'))).toBe('idle')
+  })
+
+  it('ignores missing or unknown backend session states', () => {
+    expect(realtimeVoiceSessionStatus(event('unknown'))).toBeNull()
+    expect(realtimeVoiceSessionStatus(event(null))).toBeNull()
   })
 })
 

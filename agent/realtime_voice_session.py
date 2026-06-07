@@ -159,15 +159,19 @@ class RealtimeVoiceSession:
             self.state = RealtimeVoiceSessionState.CLOSED
 
     def _annotate_server_event(self, event: VoiceEvent) -> VoiceEvent:
+        session_state = self._state_after_event(event)
         metrics = self._event_metrics(event)
-        if not metrics:
+        if not metrics and session_state is None:
             return event
         payload = dict(event.payload)
+        if session_state is not None:
+            payload["session_state"] = session_state.value
         existing = payload.get("metrics")
-        if isinstance(existing, dict):
-            payload["metrics"] = {**existing, **metrics}
-        else:
-            payload["metrics"] = metrics
+        if metrics:
+            if isinstance(existing, dict):
+                payload["metrics"] = {**existing, **metrics}
+            else:
+                payload["metrics"] = metrics
         return VoiceEvent(
             type=event.type,
             session_id=event.session_id,
@@ -175,6 +179,21 @@ class RealtimeVoiceSession:
             timestamp_ms=event.timestamp_ms,
             payload=payload,
         )
+
+    def _state_after_event(self, event: VoiceEvent) -> Optional[RealtimeVoiceSessionState]:
+        if event.type == VoiceEventType.SESSION_STARTED:
+            return RealtimeVoiceSessionState.LISTENING
+        if event.type == VoiceEventType.TRANSCRIPT_PARTIAL:
+            return self.state
+        if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+            return RealtimeVoiceSessionState.ASSISTANT_PENDING
+        if event.type in {VoiceEventType.ASSISTANT_TEXT_PARTIAL, VoiceEventType.AUDIO_OUTPUT_CHUNK}:
+            return RealtimeVoiceSessionState.SPEAKING
+        if event.type in {VoiceEventType.ASSISTANT_COMMIT, VoiceEventType.BARGE_IN}:
+            return RealtimeVoiceSessionState.LISTENING
+        if event.type == VoiceEventType.SESSION_CLOSED:
+            return RealtimeVoiceSessionState.CLOSED
+        return None
 
     def _event_metrics(self, event: VoiceEvent) -> Dict[str, int]:
         now = time.monotonic()

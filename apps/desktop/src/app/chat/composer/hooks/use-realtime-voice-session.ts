@@ -82,6 +82,16 @@ const GENERATION_EVENT_TYPES = new Set([
   'transcript.final'
 ])
 
+const REALTIME_SESSION_STATUS: Record<string, ConversationStatus> = {
+  assistant_pending: 'thinking',
+  closed: 'idle',
+  closing: 'idle',
+  idle: 'idle',
+  listening: 'listening',
+  speaking: 'speaking',
+  starting: 'idle'
+}
+
 interface RealtimeVoiceBargeInGateInput {
   isSpeechActive: boolean
   minSpeechMs?: number
@@ -313,6 +323,12 @@ export function collectRealtimeVoiceFrontendState(
     status,
     updatedAtMs: finiteNonNegativeMs(event.timestamp_ms) ?? Date.now()
   }
+}
+
+export function realtimeVoiceSessionStatus(event: VoiceEvent): ConversationStatus | null {
+  const state = typeof event.payload?.session_state === 'string' ? event.payload.session_state : ''
+
+  return REALTIME_SESSION_STATUS[state] ?? null
 }
 
 export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavailable, sessionId }: RealtimeVoiceOptions) {
@@ -716,12 +732,22 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       setFrontendState(current => collectRealtimeVoiceFrontendState(current, event))
       setMetrics(current => collectRealtimeVoiceMetrics(current, event))
 
+      const sessionStatus = realtimeVoiceSessionStatus(event)
+      if (sessionStatus) {
+        const hasPlayback = Boolean(playingRef.current || playbackQueueRef.current.length)
+        if (sessionStatus !== 'listening' || event.type !== 'assistant.commit' || !hasPlayback) {
+          setStatus(sessionStatus)
+        }
+      }
+
       if (event.type === 'audio.output.chunk') {
         enqueueAudio(event.payload || {})
       } else if (event.type === 'assistant.text.partial') {
-        setStatus('speaking')
+        if (!sessionStatus) {
+          setStatus('speaking')
+        }
       } else if (event.type === 'assistant.commit') {
-        if (!playingRef.current && !playbackQueueRef.current.length) {
+        if (!sessionStatus && !playingRef.current && !playbackQueueRef.current.length) {
           setStatus(enabledRef.current && !mutedRef.current ? 'listening' : 'idle')
         }
         if (enabledRef.current && !mutedRef.current) {
