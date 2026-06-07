@@ -443,42 +443,46 @@ def _payload_marks_final_transcript(payload: dict) -> bool:
     return True
 
 
+_SENTENCE_BOUNDARY_CHARS = frozenset(".!?。！？؟।")
+_PHRASE_BOUNDARY_CHARS = frozenset(",;:，、；：،؛")
+
+
 def _take_speakable_chunk(buffer: str) -> tuple[Optional[str], str]:
     normalized = " ".join((buffer or "").split())
     if not normalized:
         return None, ""
 
-    import re
+    sentence_at = _find_delimiter(normalized, _SENTENCE_BOUNDARY_CHARS, start=8, end=260)
+    if sentence_at >= 0:
+        return normalized[: sentence_at + 1].strip(), normalized[sentence_at + 1 :].strip()
 
-    match = re.match(r"^(.{8,260}?[.!?。！？])(?:\s+|$)", normalized)
-    if match:
-        chunk = match.group(1).strip()
-        return chunk, normalized[len(match.group(1)):].strip()
+    has_whitespace = any(character.isspace() for character in normalized)
+    phrase_min = 48 if has_whitespace else 16
+    phrase_trigger = 96 if has_whitespace else 32
+    phrase_end = 160 if has_whitespace else 96
 
-    if len(normalized) >= 96:
-        split_at = max(
-            normalized.rfind(", ", 48, 160),
-            normalized.rfind("; ", 48, 160),
-            normalized.rfind(": ", 48, 160),
-            normalized.rfind(",", 48, 160),
-            normalized.rfind(";", 48, 160),
-            normalized.rfind(":", 48, 160),
-        )
-        if split_at >= 48:
+    if len(normalized) >= phrase_trigger:
+        split_at = _find_delimiter(normalized, _PHRASE_BOUNDARY_CHARS, start=phrase_min, end=phrase_end)
+        if split_at >= phrase_min:
             return normalized[: split_at + 1].strip(), normalized[split_at + 1 :].strip()
 
-        split_at = normalized.rfind(" ", 96, 160)
+        split_at = normalized.rfind(" ", 96, 160) if has_whitespace else -1
         if split_at >= 96:
             return normalized[:split_at].strip(), normalized[split_at:].strip()
 
     if len(normalized) > 220:
-        split_at = max(
-            normalized.rfind(", ", 0, 220),
-            normalized.rfind("; ", 0, 220),
-            normalized.rfind(": ", 0, 220),
-            normalized.rfind(" ", 0, 220),
-        )
+        split_at = _find_delimiter(normalized, _PHRASE_BOUNDARY_CHARS, start=0, end=220)
+        split_at = max(split_at, normalized.rfind(" ", 0, 220))
         if split_at >= 80:
-            return normalized[:split_at].strip(), normalized[split_at:].strip()
+            suffix_start = split_at + 1 if normalized[split_at] in _PHRASE_BOUNDARY_CHARS else split_at
+            return normalized[:suffix_start].strip(), normalized[suffix_start:].strip()
 
     return None, normalized
+
+
+def _find_delimiter(text: str, delimiters: frozenset[str], *, start: int, end: int) -> int:
+    upper = min(len(text), end)
+    for index in range(upper - 1, max(-1, start - 1), -1):
+        if text[index] in delimiters:
+            return index
+    return -1
