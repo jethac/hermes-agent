@@ -86,11 +86,14 @@ export interface RealtimeVoiceStatus {
   available: boolean
   enabled: boolean
   engine: string
+  barge_in_min_speech_ms?: number
   input_buffer_limit_bytes?: number
   input_frame_ms?: number
   language_support?: RealtimeVoiceLanguageSupport
+  pre_roll_ms?: number
   quality_targets_ms?: RealtimeVoiceQualityTargetsMs
   silence_timeout_ms?: number
+  speech_level_threshold?: number
   sidecar?: {
     autostart?: boolean
     connect_timeout_seconds?: number
@@ -136,8 +139,12 @@ const METRIC_KEYS = {
   session_elapsed_ms: 'sessionElapsedMs'
 } as const satisfies Record<string, keyof RealtimeVoiceLatencyMetrics>
 
-const SPEECH_LEVEL_THRESHOLD = 0.075
-const BARGE_IN_MIN_SPEECH_MS = 120
+const DEFAULT_REALTIME_SPEECH_LEVEL_THRESHOLD = 0.075
+const MIN_REALTIME_SPEECH_LEVEL_THRESHOLD = 0.005
+const MAX_REALTIME_SPEECH_LEVEL_THRESHOLD = 1
+const DEFAULT_REALTIME_BARGE_IN_MIN_SPEECH_MS = 120
+const MIN_REALTIME_BARGE_IN_MIN_SPEECH_MS = 40
+const MAX_REALTIME_BARGE_IN_MIN_SPEECH_MS = 1_000
 const MAX_REALTIME_AUDIO_BUFFERED_BYTES = 512 * 1024
 const MAX_REALTIME_PLAYBACK_QUEUE_ITEMS = 24
 const REALTIME_BINARY_HEADER_BYTES = 4
@@ -152,6 +159,8 @@ const DEFAULT_REALTIME_SESSION_READY_TIMEOUT_MS = 12_000
 const MIN_REALTIME_SESSION_READY_TIMEOUT_MS = 3_000
 const MAX_REALTIME_SESSION_READY_TIMEOUT_MS = 30_000
 const DEFAULT_REALTIME_PRE_ROLL_MS = 300
+const MIN_REALTIME_PRE_ROLL_MS = 0
+const MAX_REALTIME_PRE_ROLL_MS = 1_000
 const REALTIME_LANGUAGE_METADATA_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const GENERATION_EVENT_TYPES = new Set([
   'audio.output.chunk',
@@ -374,7 +383,7 @@ export function realtimeVoiceQualityTargets(status: RealtimeVoiceStatus | null):
 
 export function updateRealtimeVoiceBargeInGate({
   isSpeechActive,
-  minSpeechMs = BARGE_IN_MIN_SPEECH_MS,
+  minSpeechMs = DEFAULT_REALTIME_BARGE_IN_MIN_SPEECH_MS,
   nowMs,
   speechStartedAtMs
 }: RealtimeVoiceBargeInGateInput): { shouldBargeIn: boolean; speechStartedAtMs: number | null } {
@@ -529,6 +538,33 @@ export function realtimeVoiceSilenceTimeoutMs(value: unknown): number {
   )
 }
 
+export function realtimeVoiceSpeechLevelThreshold(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_REALTIME_SPEECH_LEVEL_THRESHOLD
+  }
+
+  return Math.min(MAX_REALTIME_SPEECH_LEVEL_THRESHOLD, Math.max(MIN_REALTIME_SPEECH_LEVEL_THRESHOLD, value))
+}
+
+export function realtimeVoiceBargeInMinSpeechMs(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_REALTIME_BARGE_IN_MIN_SPEECH_MS
+  }
+
+  return Math.min(
+    MAX_REALTIME_BARGE_IN_MIN_SPEECH_MS,
+    Math.max(MIN_REALTIME_BARGE_IN_MIN_SPEECH_MS, Math.round(value))
+  )
+}
+
+export function realtimeVoicePreRollMs(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_REALTIME_PRE_ROLL_MS
+  }
+
+  return Math.min(MAX_REALTIME_PRE_ROLL_MS, Math.max(MIN_REALTIME_PRE_ROLL_MS, Math.round(value)))
+}
+
 export function realtimeVoiceSessionReadyTimeoutMs(status: RealtimeVoiceStatus | null): number {
   const connectTimeoutSeconds = status?.sidecar?.connect_timeout_seconds
   if (typeof connectTimeoutSeconds !== 'number' || !Number.isFinite(connectTimeoutSeconds)) {
@@ -541,8 +577,16 @@ export function realtimeVoiceSessionReadyTimeoutMs(status: RealtimeVoiceStatus |
   )
 }
 
-export function realtimeVoicePreRollChunkLimit(inputFrameMs: unknown): number {
-  return Math.max(1, Math.ceil(DEFAULT_REALTIME_PRE_ROLL_MS / realtimeVoiceInputFrameMs(inputFrameMs)))
+export function realtimeVoicePreRollChunkLimit(
+  inputFrameMs: unknown,
+  preRollMs: unknown = DEFAULT_REALTIME_PRE_ROLL_MS
+): number {
+  const durationMs = realtimeVoicePreRollMs(preRollMs)
+  if (durationMs <= 0) {
+    return 0
+  }
+
+  return Math.max(1, Math.ceil(durationMs / realtimeVoiceInputFrameMs(inputFrameMs)))
 }
 
 export function shouldStartRealtimeTurnCapture({
@@ -785,6 +829,9 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const audioInputGenerationRef = useRef(0)
   const inputFrameMsRef = useRef(DEFAULT_REALTIME_INPUT_FRAME_MS)
   const silenceTimeoutMsRef = useRef(DEFAULT_REALTIME_SILENCE_TIMEOUT_MS)
+  const speechLevelThresholdRef = useRef(DEFAULT_REALTIME_SPEECH_LEVEL_THRESHOLD)
+  const bargeInMinSpeechMsRef = useRef(DEFAULT_REALTIME_BARGE_IN_MIN_SPEECH_MS)
+  const preRollMsRef = useRef(DEFAULT_REALTIME_PRE_ROLL_MS)
 
   useEffect(() => {
     enabledRef.current = enabled
@@ -878,7 +925,10 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     const chunks = preRollChunksRef.current
 
     chunks.push({ blob, mimeType })
-    chunks.splice(0, Math.max(0, chunks.length - realtimeVoicePreRollChunkLimit(inputFrameMsRef.current)))
+    chunks.splice(
+      0,
+      Math.max(0, chunks.length - realtimeVoicePreRollChunkLimit(inputFrameMsRef.current, preRollMsRef.current))
+    )
   }, [])
 
   const flushPreRollChunks = useCallback(() => {
@@ -1149,12 +1199,13 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
         setLevel(normalized)
 
-        if (normalized >= SPEECH_LEVEL_THRESHOLD) {
+        if (normalized >= speechLevelThresholdRef.current) {
           let acceptSpeech = true
 
           if (playingRef.current) {
             const gate = updateRealtimeVoiceBargeInGate({
               isSpeechActive: true,
+              minSpeechMs: bargeInMinSpeechMsRef.current,
               nowMs: now,
               speechStartedAtMs: bargeInSpeechStartedAtRef.current
             })
@@ -1311,6 +1362,9 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     }
     inputFrameMsRef.current = realtimeVoiceInputFrameMs(preflight?.input_frame_ms)
     silenceTimeoutMsRef.current = realtimeVoiceSilenceTimeoutMs(preflight?.silence_timeout_ms)
+    speechLevelThresholdRef.current = realtimeVoiceSpeechLevelThreshold(preflight?.speech_level_threshold)
+    bargeInMinSpeechMsRef.current = realtimeVoiceBargeInMinSpeechMs(preflight?.barge_in_min_speech_ms)
+    preRollMsRef.current = realtimeVoicePreRollMs(preflight?.pre_roll_ms)
     setQualityTargets(realtimeVoiceQualityTargets(preflight))
     const sessionReadyTimeoutMs = realtimeVoiceSessionReadyTimeoutMs(preflight)
 

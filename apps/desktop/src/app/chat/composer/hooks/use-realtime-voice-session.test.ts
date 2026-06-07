@@ -12,11 +12,14 @@ import {
   realtimeAudioInputPayload,
   realtimeBinaryAudioInputFrame,
   realtimeVoiceCloseAction,
+  realtimeVoiceBargeInMinSpeechMs,
   realtimeVoiceInputFrameMs,
   realtimeVoiceEventGeneration,
   realtimeVoicePlaybackGeneration,
   realtimeVoicePlaybackQueueAction,
+  realtimeVoicePreRollMs,
   realtimeVoicePreRollChunkLimit,
+  realtimeVoiceSpeechLevelThreshold,
   realtimeVoiceSessionErrorAction,
   realtimeVoiceSessionReadyTimeoutMs,
   realtimeVoiceSessionStatus,
@@ -69,6 +72,9 @@ describe('realtimeVoiceUrl', () => {
       available: false,
       enabled: true,
       engine: 'native_s2s_oracle',
+      barge_in_min_speech_ms: 120,
+      pre_roll_ms: 300,
+      speech_level_threshold: 0.075,
       language_support: {
         best_effort_languages: true,
         production_languages: ['en', 'ja'],
@@ -107,6 +113,9 @@ describe('realtimeVoiceUrl', () => {
       available: false,
       enabled: true,
       engine: 'native_s2s_oracle',
+      barge_in_min_speech_ms: 120,
+      pre_roll_ms: 300,
+      speech_level_threshold: 0.075,
       language_support: {
         production_languages: ['en', 'ja'],
         production_scripts: ['Latn', 'Jpan']
@@ -581,6 +590,29 @@ describe('realtimeVoiceSilenceTimeoutMs', () => {
   })
 })
 
+describe('realtime voice capture tuning', () => {
+  it('clamps speech level threshold from backend status', () => {
+    expect(realtimeVoiceSpeechLevelThreshold(undefined)).toBe(0.075)
+    expect(realtimeVoiceSpeechLevelThreshold(0)).toBe(0.005)
+    expect(realtimeVoiceSpeechLevelThreshold(2)).toBe(1)
+    expect(realtimeVoiceSpeechLevelThreshold(0.12)).toBe(0.12)
+  })
+
+  it('clamps barge-in speech duration from backend status', () => {
+    expect(realtimeVoiceBargeInMinSpeechMs(undefined)).toBe(120)
+    expect(realtimeVoiceBargeInMinSpeechMs(10)).toBe(40)
+    expect(realtimeVoiceBargeInMinSpeechMs(2_000)).toBe(1_000)
+    expect(realtimeVoiceBargeInMinSpeechMs(149.6)).toBe(150)
+  })
+
+  it('clamps pre-roll duration from backend status', () => {
+    expect(realtimeVoicePreRollMs(undefined)).toBe(300)
+    expect(realtimeVoicePreRollMs(-1)).toBe(0)
+    expect(realtimeVoicePreRollMs(2_000)).toBe(1_000)
+    expect(realtimeVoicePreRollMs(249.6)).toBe(250)
+  })
+})
+
 describe('realtimeVoiceSessionReadyTimeoutMs', () => {
   it('defaults to a bounded wait for session.started', () => {
     expect(realtimeVoiceSessionReadyTimeoutMs(null)).toBe(12_000)
@@ -619,6 +651,11 @@ describe('realtimeVoicePreRollChunkLimit', () => {
     expect(realtimeVoicePreRollChunkLimit(undefined)).toBe(3)
     expect(realtimeVoicePreRollChunkLimit(80)).toBe(4)
     expect(realtimeVoicePreRollChunkLimit(500)).toBe(1)
+  })
+
+  it('uses configured pre-roll duration and allows disabling pre-roll', () => {
+    expect(realtimeVoicePreRollChunkLimit(100, 500)).toBe(5)
+    expect(realtimeVoicePreRollChunkLimit(100, 0)).toBe(0)
   })
 })
 

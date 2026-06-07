@@ -2789,6 +2789,9 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.production_scripts"]["type"] == "list"
         assert CONFIG_SCHEMA["voice.realtime.best_effort_languages"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.production_languages"]["category"] == "voice"
+        assert CONFIG_SCHEMA["voice.realtime.speech_level_threshold"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.barge_in_min_speech_ms"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.pre_roll_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.final_transcript_to_first_audio_ms"]["type"] == "number"
 
@@ -6427,6 +6430,9 @@ class TestRealtimeVoiceWebSocket:
         assert body["input_buffer_limit_bytes"] == 4096
         assert body["input_frame_ms"] == 80
         assert body["silence_timeout_ms"] == 700
+        assert body["speech_level_threshold"] == 0.075
+        assert body["barge_in_min_speech_ms"] == 120
+        assert body["pre_roll_ms"] == 300
         assert body["language_support"] == {
             "production_languages": ["en", "ja"],
             "production_scripts": ["Latn", "Jpan"],
@@ -6770,6 +6776,31 @@ class TestRealtimeVoiceWebSocket:
 
         assert response.status_code == 200
         assert response.json()["silence_timeout_ms"] == 2000
+
+    def test_status_clamps_realtime_capture_tuning(self, monkeypatch):
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "speech_level_threshold": 2,
+                        "barge_in_min_speech_ms": 5,
+                        "pre_roll_ms": 5_000,
+                    }
+                }
+            },
+        )
+
+        response = self.client.get("/api/voice/realtime/status")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["speech_level_threshold"] == 1.0
+        assert body["barge_in_min_speech_ms"] == 40
+        assert body["pre_roll_ms"] == 1000
 
     def test_status_reports_remote_unhealthy_sidecar_unavailable_and_redacted(self, monkeypatch):
         def fake_urlopen(url, timeout):

@@ -609,6 +609,21 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Milliseconds of silence before realtime voice closes the current user turn",
         "category": "voice",
     },
+    "voice.realtime.speech_level_threshold": {
+        "type": "number",
+        "description": "Normalized microphone level required to start realtime speech capture",
+        "category": "voice",
+    },
+    "voice.realtime.barge_in_min_speech_ms": {
+        "type": "number",
+        "description": "Milliseconds of sustained speech over playback before barge-in",
+        "category": "voice",
+    },
+    "voice.realtime.pre_roll_ms": {
+        "type": "number",
+        "description": "Milliseconds of local microphone pre-roll kept before speech starts",
+        "category": "voice",
+    },
     "voice.realtime.production_languages": {
         "type": "list",
         "description": "Production acceptance languages for realtime voice quality",
@@ -12238,6 +12253,24 @@ def _bounded_int_config(value: Any, *, default: int, minimum: int, maximum: int)
     return min(maximum, max(minimum, parsed))
 
 
+def _bounded_nonnegative_int_config(value: Any, *, default: int, minimum: int, maximum: int) -> int:
+    if value is None:
+        parsed = default
+    else:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            parsed = default
+    if parsed < 0:
+        parsed = default
+    return min(maximum, max(minimum, parsed))
+
+
+def _bounded_float_config(value: Any, *, default: float, minimum: float, maximum: float) -> float:
+    parsed = _positive_float_config(value, default=default)
+    return min(maximum, max(minimum, parsed))
+
+
 def _realtime_voice_sidecar_is_loopback(base_url: str) -> bool:
     try:
         parsed = urllib.parse.urlparse(base_url)
@@ -12682,6 +12715,24 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             default=650,
             minimum=250,
             maximum=2000,
+        ),
+        "speech_level_threshold": _bounded_float_config(
+            realtime.get("speech_level_threshold"),
+            default=0.075,
+            minimum=0.005,
+            maximum=1.0,
+        ),
+        "barge_in_min_speech_ms": _bounded_int_config(
+            realtime.get("barge_in_min_speech_ms"),
+            default=120,
+            minimum=40,
+            maximum=1000,
+        ),
+        "pre_roll_ms": _bounded_nonnegative_int_config(
+            realtime.get("pre_roll_ms"),
+            default=300,
+            minimum=0,
+            maximum=1000,
         ),
         "frontend_provider": provider or None,
         "frontend_model": frontend_model or None,

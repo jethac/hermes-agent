@@ -171,6 +171,9 @@ The status endpoint returns `enabled`, `available`, selected engine/codecs, fron
     "best_effort_languages": true,
     "sidecar_languages_are_diagnostics": true
   },
+  "speech_level_threshold": 0.075,
+  "barge_in_min_speech_ms": 120,
+  "pre_roll_ms": 300,
   "quality_targets_ms": {
     "audio_to_partial_transcript_ms": 300,
     "final_transcript_to_first_text_ms": 500,
@@ -216,6 +219,8 @@ When a sidecar is reachable, its `/health` response must include a JSON capabili
 `language_support` is Hermes' product-support contract, not a sidecar capability claim. By default, English and Japanese are the production acceptance languages and Latin/Japanese scripts are the production acceptance scripts. `best_effort_languages: true` means other clean language metadata may pass through captions, prompts, diagnostics, and provider auto-detection when the configured STT/frontend/TTS stack can handle it. The desktop should not hide realtime voice for non-target languages solely because they are outside this production list; it may label them best-effort. Operators can override `production_languages`, `production_scripts`, and `best_effort_languages` in `voice.realtime`.
 
 `quality_targets_ms` is the active live-conversation quality contract. The desktop compares observed realtime metrics against these targets for its quality pill, and operators can tune them in `voice.realtime.quality_targets_ms` for slower local-only setups without changing the protocol.
+
+Capture tuning is also server-owned. The desktop uses `speech_level_threshold`, `barge_in_min_speech_ms`, and `pre_roll_ms` from preflight status so microphone sensitivity, interruption confidence, and first-syllable preservation can be tuned per profile without rebuilding or reconfiguring the desktop.
 
 Implementation notes:
 
@@ -313,6 +318,9 @@ voice:
     input_buffer_limit_bytes: 8388608
     input_frame_ms: 100
     silence_timeout_ms: 650
+    speech_level_threshold: 0.075
+    barge_in_min_speech_ms: 120
+    pre_roll_ms: 300
     sidecar_host: 127.0.0.1
     sidecar_port: 8765
     sidecar_connect_timeout_seconds: 10
@@ -387,6 +395,9 @@ voice:
     input_buffer_limit_bytes: 8388608
     input_frame_ms: 100
     silence_timeout_ms: 650
+    speech_level_threshold: 0.075
+    barge_in_min_speech_ms: 120
+    pre_roll_ms: 300
     sidecar_host: 127.0.0.1
     sidecar_port: 8765
     sidecar_autostart: true
@@ -410,13 +421,16 @@ voice:
     input_buffer_limit_bytes: 8388608
     input_frame_ms: 100
     silence_timeout_ms: 650
+    speech_level_threshold: 0.075
+    barge_in_min_speech_ms: 120
+    pre_roll_ms: 300
     sidecar_base_url: "http://voice-inference.local:8765"
     sidecar_token_env: HERMES_VOICE_SIDECAR_TOKEN
     sidecar_connect_timeout_seconds: 10
     sidecar_autostart: false
 ```
 
-For `gemma4` or `vllm` frontends, the same supervised sidecar can call a remote vLLM audio endpoint through `vllm_base_url` and `vllm_model`. If `sidecar_base_url` points at a non-loopback host, Hermes treats that as an externally managed inference host and does not spawn a local process. Hermes bounds realtime sidecar websocket startup with `sidecar_connect_timeout_seconds` so an unreachable remote inference host can fall back or fail quickly instead of leaving the desktop waiting with an open microphone path. Hermes also bounds sidecar websocket sends; a sidecar that stops accepting microphone chunks, TTS text, or oracle hints must produce fallback/degraded state or a session error instead of blocking the live receive loop indefinitely. The desktop captures microphone chunks at `input_frame_ms` intervals and closes a user turn after `silence_timeout_ms` of quiet; keep the defaults at 100 ms frames and 650 ms silence for low-latency conversation, and raise them only when a browser, room, or provider cannot keep up. The in-core local STT fallback and the managed reference sidecar both bound unfinished utterance buffering with `input_buffer_limit_bytes`; when the cap is exceeded, Hermes clears the buffered audio and emits `frontend.state` with `status: "degraded"` and `reason: "input_buffer_limit_exceeded"` instead of storing audio without limit. Deprecated sidecar URL aliases remain accepted only for existing private profiles.
+For `gemma4` or `vllm` frontends, the same supervised sidecar can call a remote vLLM audio endpoint through `vllm_base_url` and `vllm_model`. If `sidecar_base_url` points at a non-loopback host, Hermes treats that as an externally managed inference host and does not spawn a local process. Hermes bounds realtime sidecar websocket startup with `sidecar_connect_timeout_seconds` so an unreachable remote inference host can fall back or fail quickly instead of leaving the desktop waiting with an open microphone path. Hermes also bounds sidecar websocket sends; a sidecar that stops accepting microphone chunks, TTS text, or oracle hints must produce fallback/degraded state or a session error instead of blocking the live receive loop indefinitely. The desktop captures microphone chunks at `input_frame_ms` intervals and closes a user turn after `silence_timeout_ms` of quiet; keep the defaults at 100 ms frames and 650 ms silence for low-latency conversation, and raise them only when a browser, room, or provider cannot keep up. `speech_level_threshold`, `barge_in_min_speech_ms`, and `pre_roll_ms` tune the browser VAD and interruption feel for different microphones and rooms. The in-core local STT fallback and the managed reference sidecar both bound unfinished utterance buffering with `input_buffer_limit_bytes`; when the cap is exceeded, Hermes clears the buffered audio and emits `frontend.state` with `status: "degraded"` and `reason: "input_buffer_limit_exceeded"` instead of storing audio without limit. Deprecated sidecar URL aliases remain accepted only for existing private profiles.
 
 Use capability names for `frontend_provider`, not machine names. Prefer `sidecar`, `reference`, `local`, `gemma4`, `vllm`, or a concrete `frontend_model`; do not encode a workstation or GPU product name into the provider value. `sidecar` is the portable alias for "use the configured/default voice sidecar" and should get the same local loopback defaulting and managed-autostart behavior as `local` or `reference` when no explicit remote `sidecar_base_url` is set.
 
