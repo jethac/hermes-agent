@@ -552,7 +552,7 @@ class TestRealtimeVoiceReadiness:
         monkeypatch.setattr(
             doctor,
             "_run_realtime_voice_sidecar_tts_smoke_sync",
-            lambda _config, *, text, timeout_seconds: SimpleNamespace(
+            lambda _config, *, text, metadata=None, timeout_seconds: SimpleNamespace(
                 events=("frontend.state", "audio.output.chunk"),
                 first_audio_ms=250,
                 ok=True,
@@ -581,7 +581,7 @@ class TestRealtimeVoiceReadiness:
         monkeypatch.setattr(
             doctor,
             "_run_realtime_voice_sidecar_tts_smoke_sync",
-            lambda _config, *, text, timeout_seconds: SimpleNamespace(
+            lambda _config, *, text, metadata=None, timeout_seconds: SimpleNamespace(
                 events=("frontend.state", "audio.output.chunk"),
                 first_audio_ms=1200,
                 ok=True,
@@ -696,6 +696,7 @@ class TestRealtimeVoiceReadiness:
                         "frontend": {
                             "provider": "streaming_stt",
                             "model": "portable-asr",
+                            "tts_model_languages": ["ja", "en", "https://voice.local/secret"],
                             "streaming_tts_bridge": {
                                 "configured": True,
                                 "healthy": True,
@@ -709,6 +710,7 @@ class TestRealtimeVoiceReadiness:
                             "tts": True,
                             "streaming_tts": True,
                             "streaming_tts_bridge": True,
+                            "output_languages": ["en", "ja", "token=secret"],
                             "token": "secret",
                         },
                     },
@@ -743,6 +745,7 @@ class TestRealtimeVoiceReadiness:
                 "frontend": {
                     "provider": "streaming_stt",
                     "model": "portable-asr",
+                    "tts_model_languages": ["ja", "en"],
                     "languages": [],
                     "scripts": [],
                     "streaming_tts_bridge": {
@@ -758,7 +761,7 @@ class TestRealtimeVoiceReadiness:
                     "native_s2s": False,
                     "vllm_audio_frontend": False,
                     "input_languages": [],
-                    "output_languages": [],
+                    "output_languages": ["en", "ja"],
                     "scripts": [],
                     "streaming_stt_bridge": True,
                     "streaming_tts": True,

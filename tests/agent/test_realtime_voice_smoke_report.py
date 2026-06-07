@@ -85,7 +85,51 @@ def test_realtime_voice_alpha_report_ignores_manifest_entry():
                         "streaming_stt": True,
                         "streaming_tts": True,
                         "tts": True,
+                        "output_languages": ["en", "ja"],
                     }
+                }
+            },
+        },
+        *_valid_alpha_report(),
+    ]
+
+    assert validate_realtime_voice_alpha_report(report) == []
+
+
+def test_realtime_voice_alpha_report_requires_manifest_output_language_evidence():
+    report = [
+        {
+            "kind": "manifest",
+            "ok": True,
+            "sidecar": {
+                "health": {
+                    "frontend": {},
+                    "capabilities": {
+                        "streaming_stt": True,
+                        "streaming_tts": True,
+                        "tts": True,
+                        "output_languages": ["en"],
+                    },
+                }
+            },
+        },
+        *_valid_alpha_report(),
+    ]
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("missing TTS model route for ja" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_accepts_manifest_regional_output_languages():
+    report = [
+        {
+            "kind": "manifest",
+            "ok": True,
+            "sidecar": {
+                "health": {
+                    "frontend": {"tts_model_languages": ["en-US", "ja-JP"]},
+                    "capabilities": {},
                 }
             },
         },

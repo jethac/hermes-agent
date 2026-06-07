@@ -157,6 +157,9 @@ def validate_realtime_voice_smoke_report(
 ) -> list[RealtimeVoiceSmokeReportIssue]:
     issues: list[RealtimeVoiceSmokeReportIssue] = []
     by_kind = _entries_by_kind(entries)
+    manifest_entries = by_kind.get("manifest", [])
+    if manifest_entries:
+        issues.extend(_validate_alpha_manifest_entry(manifest_entries[0]))
 
     if require_protocol:
         protocol_entries = by_kind.get("protocol", [])
@@ -207,6 +210,54 @@ def validate_realtime_voice_alpha_report(entries: Sequence[Mapping[str, Any]]) -
         required_barge_in_texts=ALPHA_REQUIRED_BARGE_IN_TEXTS,
         require_protocol=True,
     )
+
+
+def _validate_alpha_manifest_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmokeReportIssue]:
+    issues: list[RealtimeVoiceSmokeReportIssue] = []
+    required_tts_languages = {
+        metadata["language"]
+        for metadata in ALPHA_REQUIRED_TTS_METADATA.values()
+        if metadata.get("language")
+    }
+    if not required_tts_languages:
+        return issues
+    health = entry.get("sidecar")
+    health = health.get("health") if isinstance(health, Mapping) else None
+    health = health if isinstance(health, Mapping) else {}
+    frontend = health.get("frontend") if isinstance(health.get("frontend"), Mapping) else {}
+    capabilities = health.get("capabilities") if isinstance(health.get("capabilities"), Mapping) else {}
+    configured_languages = _primary_language_set(frontend.get("tts_model_languages", []))
+    configured_languages.update(_primary_language_set(capabilities.get("output_languages", [])))
+    if not configured_languages:
+        return [
+            RealtimeVoiceSmokeReportIssue(
+                "manifest",
+                "missing output_languages or tts_model_languages for EN/JA TTS routing",
+                "manifest",
+            )
+        ]
+    for language in sorted(required_tts_languages):
+        if language.lower() not in configured_languages:
+            issues.append(
+                RealtimeVoiceSmokeReportIssue(
+                    "manifest",
+                    f"missing TTS model route for {language}",
+                    "manifest",
+                )
+            )
+    return issues
+
+
+def _primary_language_set(values: Any) -> set[str]:
+    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+        return set()
+    return {
+        language
+        for item in values
+        if isinstance(item, str)
+        for language in [item.strip().lower().split("-", 1)[0]]
+        if language
+    }
 
 
 def _entries_by_kind(entries: Sequence[Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:

@@ -40,10 +40,20 @@ def _valid_realtime_voice_alpha_report():
     from agent.realtime_voice_smoke_report import (
         ALPHA_REQUIRED_AUDIO_FIXTURES,
         ALPHA_REQUIRED_BARGE_IN_TEXTS,
+        ALPHA_REQUIRED_TTS_METADATA,
         ALPHA_REQUIRED_TTS_TEXTS,
     )
 
     entries = [
+        {
+            "kind": "manifest",
+            "ok": True,
+            "sidecar": {
+                "health": {
+                    "capabilities": {"output_languages": ["en", "ja"]},
+                }
+            },
+        },
         {
             "kind": "protocol",
             "ok": True,
@@ -69,11 +79,13 @@ def _valid_realtime_voice_alpha_report():
             }
         )
     for text in ALPHA_REQUIRED_TTS_TEXTS:
+        metadata = ALPHA_REQUIRED_TTS_METADATA[text]
         entries.append(
             {
                 "kind": "tts",
                 "ok": True,
                 "text": text,
+                **metadata,
                 "first_audio_ms": 250,
                 "target_ms": 900,
                 "output_audio_bytes": 4321,
@@ -6875,6 +6887,7 @@ class TestRealtimeVoiceWebSocket:
             "frontend": {
                 "provider": "vllm",
                 "model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                "tts_model_languages": [],
                 "languages": ["ja", "en-US"],
                 "scripts": ["Jpan", "Latn"],
             },
@@ -6914,6 +6927,7 @@ class TestRealtimeVoiceWebSocket:
                 "frontend": {
                     "provider": "streaming_stt",
                     "model": "portable-asr",
+                    "tts_model_languages": ["ja", "en", "https://voice.local/secret"],
                     "streaming_stt_bridge": {"configured": True, "healthy": True, "url": "http://secret"},
                     "streaming_tts_bridge": {
                         "configured": True,
@@ -6934,6 +6948,7 @@ class TestRealtimeVoiceWebSocket:
         )
 
         assert sanitized["frontend"]["streaming_stt_bridge"] == {"configured": True, "healthy": True}
+        assert sanitized["frontend"]["tts_model_languages"] == ["ja", "en"]
         assert sanitized["frontend"]["streaming_tts_bridge"] == {
             "configured": True,
             "healthy": True,
@@ -7070,7 +7085,7 @@ class TestRealtimeVoiceWebSocket:
             "report_path": str(evidence_path),
             "runs": 3,
             "min_runs": 3,
-            "entries": 30,
+            "entries": 33,
             "summary": {
                 "runs": 3,
                 "entries": 30,

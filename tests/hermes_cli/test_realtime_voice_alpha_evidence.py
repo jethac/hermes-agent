@@ -107,6 +107,11 @@ def _valid_alpha_report():
         {
             "kind": "manifest",
             "ok": True,
+            "sidecar": {
+                "health": {
+                    "capabilities": {"output_languages": ["en", "ja"]},
+                }
+            },
         },
         {
             "kind": "protocol",
