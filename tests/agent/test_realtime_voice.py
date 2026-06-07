@@ -1453,6 +1453,66 @@ def test_session_ignores_stale_interrupted_commit_from_prior_generation():
     asyncio.run(run())
 
 
+def test_session_treats_assistant_partial_text_as_cumulative():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-123"),
+        engine=TextOracleTTSEngine(oracle=FakeOracle()),
+    )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+            session_id="voice-123",
+            sequence=1,
+            payload={"text": "Hello"},
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+            session_id="voice-123",
+            sequence=2,
+            payload={"text": "Hello world"},
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ASSISTANT_COMMIT,
+            session_id="voice-123",
+            sequence=3,
+            payload={},
+        )
+    )
+
+    assert session.transcript.committed_assistant_segments == ["Hello world"]
+
+
+def test_session_accumulates_assistant_partial_delta():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-123"),
+        engine=TextOracleTTSEngine(oracle=FakeOracle()),
+    )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+            session_id="voice-123",
+            sequence=1,
+            payload={"delta": "Hello "},
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+            session_id="voice-123",
+            sequence=2,
+            payload={"delta": "world"},
+        )
+    )
+
+    assert session.transcript.assistant_draft == "Hello world"
+
+
 def test_session_drops_stale_generated_events_after_barge_in():
     class ScriptedEngine:
         def __init__(self):
