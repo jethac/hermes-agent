@@ -8,7 +8,7 @@ import importlib.util
 import json
 import os
 import urllib.parse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Mapping, Optional
 
 from starlette.requests import Request
@@ -38,6 +38,7 @@ class DeepgramStreamingSTTBridgeConfig:
     deepgram_tts_url: str = "wss://api.deepgram.com/v1/speak"
     model: str = "nova-3"
     tts_model: str = "aura-2-thalia-en"
+    tts_model_by_language: Mapping[str, str] = field(default_factory=dict)
     language: Optional[str] = None
     tts_sample_rate_hz: int = 24000
     endpointing_ms: int = 80
@@ -200,12 +201,13 @@ class DeepgramStreamingTTSBridgeSession:
         self._sequence = 0
         self._closed = False
         self._playback_generation: Optional[int] = None
+        self._current_tts_model = ""
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
         if not self.runtime.api_key:
             raise RuntimeError("Deepgram streaming TTS bridge requires DEEPGRAM_API_KEY")
         self.config = config
-        self._deepgram_ws = await self._connect_deepgram_tts()
+        self._deepgram_ws = await self._connect_deepgram_tts(self.runtime.tts_model)
         self._reader_task = asyncio.create_task(self._consume_deepgram_audio())
         await self._emit(
             VoiceEventType.FRONTEND_STATE,
@@ -242,6 +244,9 @@ class DeepgramStreamingTTSBridgeSession:
         generation = _payload_int(event.payload.get("playback_generation"))
         if generation is not None:
             self._playback_generation = generation
+        tts_model = deepgram_tts_model_for_payload(self.runtime, event.payload)
+        if tts_model != self._current_tts_model:
+            await self._switch_deepgram_tts_model(tts_model)
         await self._deepgram_ws.send(json.dumps({"type": "Speak", "text": text}))
         await self._deepgram_ws.send(json.dumps({"type": "Flush"}))
 
@@ -269,19 +274,44 @@ class DeepgramStreamingTTSBridgeSession:
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
         await put_realtime_voice_event(self._events, None)
 
-    async def _connect_deepgram_tts(self) -> Any:
+    async def _connect_deepgram_tts(self, tts_model: Optional[str] = None) -> Any:
         try:
             import websockets
         except ImportError as exc:
             raise RuntimeError("Deepgram streaming TTS bridge requires the websockets package") from exc
 
-        url = deepgram_tts_url(self.runtime)
+        selected_model = str(tts_model or self.runtime.tts_model).strip() or self.runtime.tts_model
+        url = deepgram_tts_url(self.runtime, tts_model=selected_model)
         headers = {"Authorization": f"Token {self.runtime.api_key}"}
         try:
             connect = websockets.connect(url, additional_headers=headers)
         except TypeError:
             connect = websockets.connect(url, extra_headers=headers)
-        return await asyncio.wait_for(connect, timeout=max(0.1, self.runtime.connect_timeout_seconds))
+        ws = await asyncio.wait_for(connect, timeout=max(0.1, self.runtime.connect_timeout_seconds))
+        self._current_tts_model = selected_model
+        return ws
+
+    async def _switch_deepgram_tts_model(self, tts_model: str) -> None:
+        if self._reader_task and not self._reader_task.done():
+            self._reader_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._reader_task
+        if self._deepgram_ws is not None:
+            with contextlib.suppress(Exception):
+                await self._deepgram_ws.send(json.dumps({"type": "Close"}))
+            with contextlib.suppress(Exception):
+                await self._deepgram_ws.close()
+        self._deepgram_ws = await self._connect_deepgram_tts(tts_model)
+        self._reader_task = asyncio.create_task(self._consume_deepgram_audio())
+        await self._emit(
+            VoiceEventType.FRONTEND_STATE,
+            {
+                "status": "ready",
+                "provider": "deepgram",
+                "model": self._current_tts_model,
+                "streaming_tts": True,
+            },
+        )
 
     async def _consume_deepgram_audio(self) -> None:
         try:
@@ -343,9 +373,13 @@ def deepgram_listen_url(
     return f"{runtime.deepgram_url}{separator}{urllib.parse.urlencode(query)}"
 
 
-def deepgram_tts_url(runtime: DeepgramStreamingSTTBridgeConfig) -> str:
+def deepgram_tts_url(
+    runtime: DeepgramStreamingSTTBridgeConfig,
+    *,
+    tts_model: Optional[str] = None,
+) -> str:
     query = {
-        "model": runtime.tts_model,
+        "model": str(tts_model or runtime.tts_model),
         "encoding": "linear16",
         "sample_rate": str(max(1, int(runtime.tts_sample_rate_hz or 24000))),
     }
@@ -398,6 +432,8 @@ def create_deepgram_streaming_stt_bridge_app(runtime: Optional[DeepgramStreaming
             "frontend": {
                 "provider": "deepgram",
                 "model": runtime.model,
+                "tts_model": runtime.tts_model,
+                "tts_model_languages": sorted(runtime.tts_model_by_language.keys()),
             },
             "capabilities": {
                 "streaming_stt": bool(runtime.api_key),
@@ -543,6 +579,9 @@ def deepgram_bridge_config_from_env() -> DeepgramStreamingSTTBridgeConfig:
         deepgram_tts_url=os.environ.get("HERMES_DEEPGRAM_TTS_URL") or "wss://api.deepgram.com/v1/speak",
         model=os.environ.get("HERMES_DEEPGRAM_MODEL") or "nova-3",
         tts_model=os.environ.get("HERMES_DEEPGRAM_TTS_MODEL") or "aura-2-thalia-en",
+        tts_model_by_language=_parse_tts_model_by_language(
+            os.environ.get("HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE") or ""
+        ),
         language=os.environ.get("HERMES_DEEPGRAM_LANGUAGE") or None,
         tts_sample_rate_hz=int(os.environ.get("HERMES_DEEPGRAM_TTS_SAMPLE_RATE_HZ") or 24000),
         endpointing_ms=int(os.environ.get("HERMES_DEEPGRAM_ENDPOINTING_MS") or 80),
@@ -598,12 +637,63 @@ def _deepgram_language(alternative: Mapping[str, Any]) -> str:
 def _clean_language(value: Any) -> str:
     if not isinstance(value, str):
         return ""
-    value = value.strip()
+    value = value.strip().replace("_", "-")
     if not value or len(value) > 64:
         return ""
     if not all(ch.isalnum() or ch in {"-", "_", "."} for ch in value):
         return ""
     return value
+
+
+def deepgram_tts_model_for_payload(
+    runtime: DeepgramStreamingSTTBridgeConfig,
+    payload: Mapping[str, Any],
+) -> str:
+    language_map = {
+        _clean_language(key).lower(): str(model).strip()
+        for key, model in dict(runtime.tts_model_by_language or {}).items()
+        if _clean_language(key) and str(model).strip()
+    }
+    for raw in (payload.get("locale"), payload.get("language")):
+        language = _clean_language(raw).lower()
+        if not language:
+            continue
+        if language in language_map:
+            return language_map[language]
+        primary = language.split("-", 1)[0]
+        if primary in language_map:
+            return language_map[primary]
+    return str(runtime.tts_model or "").strip()
+
+
+def _parse_tts_model_by_language(value: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for item in str(value or "").split(","):
+        text = item.strip()
+        if not text:
+            continue
+        if "=" in text:
+            raw_language, raw_model = text.split("=", 1)
+        elif ":" in text:
+            raw_language, raw_model = text.split(":", 1)
+        else:
+            continue
+        language = _clean_language(raw_language).lower()
+        model = _clean_model_name(raw_model)
+        if language and model:
+            result[language] = model
+    return result
+
+
+def _clean_model_name(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if not text or any(char.isspace() for char in text):
+        return ""
+    if "://" in text or "/" in text or "\\" in text:
+        return ""
+    return text[:96]
 
 
 def _payload_int(value: Any) -> Optional[int]:

@@ -97,7 +97,7 @@ python -m pip install "hermes-agent[voice]"
 set DEEPGRAM_API_KEY=...
 python -m hermes_cli.realtime_voice_deepgram_bridge --generate-token
 python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict
-python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --model nova-3 --tts-model aura-2-thalia-en --language en-US
+python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --model nova-3 --tts-model DEFAULT_TTS_MODEL --tts-model-by-language "ja:JAPANESE_TTS_MODEL,en:ENGLISH_TTS_MODEL" --language en-US
 ```
 
 Then configure the Hermes realtime profile so the managed reference sidecar can bridge to it:
@@ -113,7 +113,7 @@ voice:
     streaming_stt_model: nova-3
     streaming_stt_token_env: HERMES_STREAMING_STT_BRIDGE_TOKEN
     streaming_tts_base_url: http://127.0.0.1:8766
-    streaming_tts_model: aura-2-thalia-en
+    streaming_tts_model: DEFAULT_TTS_MODEL
     streaming_tts_token_env: HERMES_STREAMING_STT_BRIDGE_TOKEN
     require_live_like: true
 ```
@@ -125,7 +125,7 @@ python -m hermes_cli.realtime_voice_profile \
   --streaming-stt-base-url http://127.0.0.1:8766 \
   --streaming-stt-model nova-3 \
   --streaming-tts-base-url http://127.0.0.1:8766 \
-  --streaming-tts-model aura-2-thalia-en \
+  --streaming-tts-model DEFAULT_TTS_MODEL \
   --streaming-stt-token-env HERMES_STREAMING_STT_BRIDGE_TOKEN \
   --streaming-tts-token-env HERMES_STREAMING_STT_BRIDGE_TOKEN \
   --apply
@@ -133,7 +133,7 @@ python -m hermes_cli.realtime_voice_profile \
 
 This writes a capability-based `voice.realtime` profile, clears stale direct sidecar URLs, keeps the managed loopback reference sidecar portable, requires live-like streaming STT/TTS, and points production evidence at `./artifacts/realtime-voice-evidence` by default. Use `--allow-template-urls` without `--apply` to print a YAML template instead.
 
-For Japanese validation, use a Japanese-capable Deepgram model/language setting or run a second profile with `--language ja`. If the bridge health probe cannot verify `streaming_stt: true`, Hermes keeps the profile below live-like status even though utterance STT and TTS may still work.
+For Japanese validation, use a Japanese-capable Deepgram STT language setting and route Japanese TTS to a Japanese-capable model with `--tts-model-by-language` or `HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE`. The value is a comma-separated map such as `ja:JAPANESE_TTS_MODEL,en:ENGLISH_TTS_MODEL`. If the bridge health probe cannot verify `streaming_stt: true`, Hermes keeps the profile below live-like status even though utterance STT and TTS may still work.
 
 ## Production-Readiness Ladder
 

@@ -19,6 +19,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", default=int(os.environ.get("HERMES_DEEPGRAM_BRIDGE_PORT", "8766")), type=int)
     parser.add_argument("--model", default=os.environ.get("HERMES_DEEPGRAM_MODEL", "nova-3"))
     parser.add_argument("--tts-model", default=os.environ.get("HERMES_DEEPGRAM_TTS_MODEL", "aura-2-thalia-en"))
+    parser.add_argument(
+        "--tts-model-by-language",
+        default=os.environ.get("HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE", ""),
+        help="Comma-separated language:model overrides for streaming TTS, for example ja:<japanese-tts-model>",
+    )
     parser.add_argument("--language", default=os.environ.get("HERMES_DEEPGRAM_LANGUAGE", ""))
     parser.add_argument(
         "--tts-sample-rate-hz",
@@ -65,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["HERMES_DEEPGRAM_MODEL"] = args.model
     if args.tts_model:
         os.environ["HERMES_DEEPGRAM_TTS_MODEL"] = args.tts_model
+    if args.tts_model_by_language:
+        os.environ["HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE"] = args.tts_model_by_language
     if args.language:
         os.environ["HERMES_DEEPGRAM_LANGUAGE"] = args.language
     if args.tts_sample_rate_hz:
@@ -101,6 +108,10 @@ def main(argv: list[str] | None = None) -> int:
         print("Deepgram realtime voice bridge check OK")
         print(f"  model: {runtime.model}")
         print(f"  tts_model: {runtime.tts_model}")
+        print(
+            "  tts_model_by_language: "
+            f"{','.join(sorted(runtime.tts_model_by_language)) if runtime.tts_model_by_language else 'not configured'}"
+        )
         print(f"  auth_token: {'configured' if runtime.auth_token else 'not configured'}")
         return 0
 
