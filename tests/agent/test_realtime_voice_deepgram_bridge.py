@@ -15,6 +15,7 @@ from agent.realtime_voice_deepgram_bridge import (
     DeepgramStreamingSTTBridgeSession,
     DeepgramStreamingTTSBridgeSession,
     deepgram_bridge_config_from_env,
+    deepgram_bridge_prerequisite_issues,
     deepgram_listen_url,
     deepgram_result_to_transcript_payload,
     deepgram_tts_url,
@@ -112,6 +113,52 @@ def test_deepgram_runtime_reads_env(monkeypatch):
     assert runtime.tts_sample_rate_hz == 48000
     assert runtime.endpointing_ms == 120
     assert runtime.connect_timeout_seconds == 2.5
+
+
+def test_deepgram_bridge_prerequisite_check_reports_missing_requirements():
+    issues = deepgram_bridge_prerequisite_issues(
+        DeepgramStreamingSTTBridgeConfig(api_key=None, auth_token=None),
+        require_auth_token=True,
+        module_available=lambda name: False,
+    )
+
+    assert "DEEPGRAM_API_KEY or HERMES_DEEPGRAM_API_KEY is required" in issues
+    assert "Python package 'websockets' is required" in issues
+    assert "HERMES_STREAMING_STT_BRIDGE_TOKEN is required in strict mode" in issues
+
+
+def test_deepgram_bridge_prerequisite_check_accepts_runtime_with_websockets():
+    issues = deepgram_bridge_prerequisite_issues(
+        DeepgramStreamingSTTBridgeConfig(
+            api_key="deepgram-secret",
+            auth_token="bridge-token",
+        ),
+        require_auth_token=True,
+        module_available=lambda name: name == "websockets",
+    )
+
+    assert issues == []
+
+
+def test_deepgram_bridge_cli_check_reports_missing_env(monkeypatch, capsys):
+    from hermes_cli import realtime_voice_deepgram_bridge
+
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+    monkeypatch.delenv("HERMES_DEEPGRAM_API_KEY", raising=False)
+    monkeypatch.delenv("HERMES_STREAMING_STT_BRIDGE_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "agent.realtime_voice_deepgram_bridge._module_available",
+        lambda name: name != "websockets",
+    )
+
+    result = realtime_voice_deepgram_bridge.main(["--check", "--strict"])
+
+    assert result == 1
+    output = capsys.readouterr().out
+    assert "Deepgram realtime voice bridge check failed" in output
+    assert "DEEPGRAM_API_KEY" in output
+    assert "websockets" in output
+    assert "HERMES_STREAMING_STT_BRIDGE_TOKEN" in output
 
 
 def test_deepgram_session_streams_partial_and_final_events(monkeypatch):

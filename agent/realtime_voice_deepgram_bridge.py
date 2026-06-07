@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib.util
 import json
 import os
 import urllib.parse
@@ -547,6 +548,28 @@ def deepgram_bridge_config_from_env() -> DeepgramStreamingSTTBridgeConfig:
         endpointing_ms=int(os.environ.get("HERMES_DEEPGRAM_ENDPOINTING_MS") or 80),
         connect_timeout_seconds=float(os.environ.get("HERMES_DEEPGRAM_CONNECT_TIMEOUT_SECONDS") or 10),
     )
+
+
+def deepgram_bridge_prerequisite_issues(
+    runtime: Optional[DeepgramStreamingSTTBridgeConfig] = None,
+    *,
+    require_auth_token: bool = False,
+    module_available: Optional[Any] = None,
+) -> list[str]:
+    runtime = runtime or deepgram_bridge_config_from_env()
+    available = module_available or _module_available
+    issues: list[str] = []
+    if not runtime.api_key:
+        issues.append("DEEPGRAM_API_KEY or HERMES_DEEPGRAM_API_KEY is required")
+    if not available("websockets"):
+        issues.append("Python package 'websockets' is required")
+    if require_auth_token and not runtime.auth_token:
+        issues.append("HERMES_STREAMING_STT_BRIDGE_TOKEN is required in strict mode")
+    return issues
+
+
+def _module_available(name: str) -> bool:
+    return importlib.util.find_spec(name) is not None
 
 
 def _authorized(headers: Mapping[str, str], token: Optional[str]) -> bool:
