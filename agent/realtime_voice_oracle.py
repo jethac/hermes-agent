@@ -5,9 +5,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import threading
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Mapping, Optional
 
-from agent.realtime_voice import RealtimeVoiceSessionConfig
+from agent.realtime_voice import (
+    TRANSCRIPT_METADATA_KEYS,
+    TRANSCRIPT_METADATA_VALUE_RE,
+    RealtimeVoiceSessionConfig,
+)
 
 
 class HermesRealtimeOracle:
@@ -26,6 +30,14 @@ class HermesRealtimeOracle:
         return await asyncio.to_thread(self._answer_sync, text)
 
     async def stream_answer(self, transcript: str) -> AsyncIterator[str]:
+        async for delta in self.stream_answer_with_metadata(transcript, {}):
+            yield delta
+
+    async def stream_answer_with_metadata(
+        self,
+        transcript: str,
+        metadata: Mapping[str, object],
+    ) -> AsyncIterator[str]:
         text = (transcript or "").strip()
         if not text:
             return
@@ -40,7 +52,7 @@ class HermesRealtimeOracle:
 
         def run() -> None:
             try:
-                self._answer_sync(text, stream_callback=on_delta)
+                self._answer_sync(text, stream_callback=on_delta, metadata=metadata)
             except Exception as exc:
                 loop.call_soon_threadsafe(queue.put_nowait, f"\n\n[realtime voice oracle error: {exc}]")
             finally:
@@ -71,7 +83,12 @@ class HermesRealtimeOracle:
             with contextlib.suppress(Exception):
                 agent.interrupt(message)
 
-    def _answer_sync(self, transcript: str, stream_callback: Optional[callable] = None) -> str:
+    def _answer_sync(
+        self,
+        transcript: str,
+        stream_callback: Optional[callable] = None,
+        metadata: Optional[Mapping[str, object]] = None,
+    ) -> str:
         from run_agent import AIAgent
 
         agent = AIAgent(
@@ -79,12 +96,7 @@ class HermesRealtimeOracle:
             platform="desktop_voice",
             session_id=self.config.session_id,
         )
-        prompt = (
-            "The user is speaking to Hermes in a realtime voice session. "
-            "Answer naturally and concisely. Avoid exposing hidden reasoning, "
-            "raw tool traces, JSON envelopes, or transcript metadata.\n\n"
-            f"User said: {transcript}"
-        )
+        prompt = _voice_oracle_prompt(transcript, metadata or {})
         with self._active_lock:
             self._active_agent = agent
         try:
@@ -98,6 +110,33 @@ class HermesRealtimeOracle:
             with self._active_lock:
                 if self._active_agent is agent:
                     self._active_agent = None
+
+
+def _voice_oracle_prompt(transcript: str, metadata: Mapping[str, object]) -> str:
+    language_context = _voice_language_context(metadata)
+    prompt = (
+        "The user is speaking to Hermes in a realtime voice session. "
+        "Answer naturally and concisely. Avoid exposing hidden reasoning, "
+        "raw tool traces, JSON envelopes, or transcript metadata."
+    )
+    if language_context:
+        prompt += (
+            "\nPreserve the user's spoken language and script unless the user explicitly asks "
+            f"for translation or a different language. Detected speech metadata: {language_context}."
+        )
+    return f"{prompt}\n\nUser said: {transcript}"
+
+
+def _voice_language_context(metadata: Mapping[str, object]) -> str:
+    parts = []
+    for key in TRANSCRIPT_METADATA_KEYS:
+        value = metadata.get(key)
+        if not isinstance(value, str):
+            continue
+        token = value.strip()
+        if TRANSCRIPT_METADATA_VALUE_RE.fullmatch(token):
+            parts.append(f"{key}={token}")
+    return ", ".join(parts)
 
 
 class NullRealtimeOracle:
