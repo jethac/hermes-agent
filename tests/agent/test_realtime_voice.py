@@ -605,6 +605,7 @@ def test_text_engine_barge_in_interrupts_oracle_and_sidecar():
         assert event.type == VoiceEventType.BARGE_IN
         assert oracle.interrupted is True
         assert sidecar.received[0].type == VoiceEventType.BARGE_IN
+        assert sidecar.received[0].payload["playback_generation"] == 1
         await engine.close()
 
     asyncio.run(run())
@@ -923,6 +924,33 @@ def test_reference_sidecar_accepts_transcript_payloads_without_gpu():
             VoiceEventType.TRANSCRIPT_FINAL,
         ]
         assert seen[-1].payload["text"] == "hello hermes"
+
+    asyncio.run(run())
+
+
+def test_reference_sidecar_echoes_barge_in_generation():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=1,
+                payload={"reason": "user_speech", "playback_generation": 4},
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.BARGE_IN:
+                await sidecar.close()
+                break
+
+        barge_in = seen[-1]
+        assert barge_in.payload["reason"] == "user_speech"
+        assert barge_in.payload["playback_generation"] == 4
 
     asyncio.run(run())
 
