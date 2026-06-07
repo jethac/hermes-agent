@@ -986,6 +986,60 @@ def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
     asyncio.run(run())
 
 
+def test_reference_sidecar_sanitizes_provider_errors():
+    def failing_transcribe(path):
+        raise RuntimeError("STT failed at http://user:pass@voice.local/v1?token=abc")
+
+    def failing_synthesize(text):
+        raise RuntimeError("TTS failed Bearer secret-token api_key=raw")
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(vllm_base_url=None, vllm_model=None),
+            transcribe_audio_func=failing_transcribe,
+            synthesize_func=failing_synthesize,
+        )
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                },
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=2,
+                payload={"text": "hello back", "speak": True, "playback_generation": 7},
+            )
+        )
+
+        errors = []
+        async for event in sidecar.events():
+            if event.type == VoiceEventType.SESSION_ERROR:
+                errors.append(str(event.payload.get("error") or ""))
+            if len(errors) == 2:
+                await sidecar.close()
+                break
+
+        combined = "\n".join(errors)
+        assert "http://***@voice.local/v1" in combined
+        assert "Bearer ***" in combined
+        assert "api_key=***" in combined
+        assert "user:pass" not in combined
+        assert "token=abc" not in combined
+        assert "secret-token" not in combined
+        assert "api_key=raw" not in combined
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_vllm_audio_frontend(monkeypatch):
     captured = {}
 
