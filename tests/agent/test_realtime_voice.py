@@ -1816,6 +1816,46 @@ def test_reference_sidecar_suppresses_worker_events_after_close():
     asyncio.run(run())
 
 
+def test_reference_sidecar_close_does_not_wait_forever_for_stubborn_workers(monkeypatch):
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+
+        async def stubborn_worker():
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                await asyncio.sleep(30)
+
+        task = asyncio.create_task(stubborn_worker())
+        sidecar._track_task(task)
+        await asyncio.sleep(0)
+
+        monkeypatch.setattr(
+            "agent.realtime_voice_reference_sidecar.REFERENCE_SIDECAR_CLOSE_DRAIN_TIMEOUT_SECONDS",
+            0.001,
+        )
+
+        await asyncio.wait_for(sidecar.close(), timeout=1)
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+
+        assert [event.type for event in seen] == [
+            VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.SESSION_CLOSED,
+        ]
+        assert task not in sidecar._active_tasks
+        assert not task.done()
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_sanitizes_provider_errors():
     def failing_transcribe(path):
         raise RuntimeError("STT failed at http://user:pass@voice.local/v1?token=abc")

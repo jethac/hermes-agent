@@ -323,7 +323,7 @@ Hermes sanitizes sidecar transcript payloads before forwarding them or starting 
 
 Hermes and the reference sidecar use the same binary audio envelope as the desktop hot path for sidecar-facing `audio.input.chunk` and `audio.output.chunk` events: a 4-byte big-endian JSON header length, a UTF-8 `VoiceEvent` header without `payload.data_b64`, then the raw audio bytes. JSON/base64 audio events remain valid for compatibility sidecars and tests, and raw binary output bytes without the envelope are still accepted as legacy Opus output from older sidecars.
 
-Reference and provider sidecars must treat `session.closed` as terminal. Cancel or drain active STT/TTS workers on close and suppress late transcript, audio, error, or degraded-state events from cancelled workers after the terminal event has been queued.
+Reference and provider sidecars must treat `session.closed` as terminal. Cancel or drain active STT/TTS workers on close with a bounded timeout, and suppress late transcript, audio, error, or degraded-state events from cancelled workers after the terminal event has been queued.
 
 Reference sidecar command:
 
