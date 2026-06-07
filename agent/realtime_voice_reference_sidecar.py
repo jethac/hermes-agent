@@ -143,12 +143,13 @@ class ReferenceRealtimeVoiceSidecarSession:
             return
         if event.type == VoiceEventType.BARGE_IN:
             self._clear_audio_buffer()
-            self._cancel_active_tasks()
+            cancelled_tasks = self._cancel_active_tasks()
             payload = {"reason": event.payload.get("reason") or "client"}
             playback_generation = _payload_generation(event.payload)
             if playback_generation is not None:
                 payload["playback_generation"] = playback_generation
             await self._emit(VoiceEventType.BARGE_IN, payload)
+            await self._drain_cancelled_tasks(cancelled_tasks)
             return
         if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("speak") is True:
             text = str(event.payload.get("text") or "").strip()
