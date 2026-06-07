@@ -40,6 +40,7 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
                 "ready": True,
                 "level": "production_ready",
                 "issues": [],
+                "evidence_ready": True,
                 "evidence": {
                     "runs": 3,
                     "min_runs": 3,
@@ -50,6 +51,12 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
                             "barge_in_ack": {"count": 3, "p95": 55, "max": 60},
                         }
                     },
+                },
+                "launch_review": {
+                    "required": True,
+                    "verified": True,
+                    "reviewed_at": "2026-06-08T00:00:00Z",
+                    "issues": [],
                 },
             },
             "sidecar": {
@@ -76,6 +83,8 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
     assert "partial p95=120ms max=140ms" in output
     assert "audio p95=420ms max=500ms" in output
     assert "barge p95=55ms max=60ms" in output
+    assert "Review:" in output
+    assert "passed (2026-06-08T00:00:00Z)" in output
     assert "Require live: yes" in output
     assert "Sidecar:      external (healthy: yes)" in output
 
