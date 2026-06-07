@@ -15,6 +15,7 @@ import {
   realtimeVoiceBargeInMinSpeechMs,
   realtimeVoiceInputFrameMs,
   realtimeVoiceEventGeneration,
+  realtimeVoiceFailureFrontendState,
   realtimeVoicePlaybackGeneration,
   realtimeVoicePlaybackQueueAction,
   realtimeVoicePreRollMs,
@@ -984,6 +985,24 @@ describe('realtimeVoiceSessionErrorAction', () => {
 
   it('falls back for active-session errors so the voice session can continue degraded', () => {
     expect(realtimeVoiceSessionErrorAction({ sessionStarted: true })).toBe('fallback')
+  })
+})
+
+describe('realtimeVoiceFailureFrontendState', () => {
+  it('records a structured fallback reason for realtime failures', () => {
+    expect(realtimeVoiceFailureFrontendState(' session_error ', 1_234)).toEqual({
+      reason: 'session_error',
+      status: 'fallback',
+      updatedAtMs: 1_234
+    })
+  })
+
+  it('uses a stable fallback reason when the caller does not provide one', () => {
+    expect(realtimeVoiceFailureFrontendState('', 1_234)).toEqual({
+      reason: 'realtime_voice_failed',
+      status: 'fallback',
+      updatedAtMs: 1_234
+    })
   })
 })
 
