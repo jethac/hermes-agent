@@ -643,9 +643,14 @@ def test_text_engine_drops_stale_sidecar_transcript_after_new_input(monkeypatch)
 
 
 def test_text_engine_reports_sidecar_start_failure_as_frontend_fallback():
+    closed = {"value": False}
+
     class FailingStartSidecar:
         async def start(self, config):
             raise RuntimeError("sidecar down at http://user:pass@voice.local:8765/v1?token=abc")
+
+        async def close(self):
+            closed["value"] = True
 
     async def run():
         engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=FailingStartSidecar())
@@ -670,6 +675,7 @@ def test_text_engine_reports_sidecar_start_failure_as_frontend_fallback():
         assert "user:pass" not in events[0].payload["error"]
         assert "token=abc" not in events[0].payload["error"]
         assert events[1].payload["sidecar"] is False
+        assert closed["value"] is True
 
     asyncio.run(run())
 
@@ -688,7 +694,8 @@ def test_text_engine_treats_sidecar_session_error_as_frontend_fallback():
             )
 
     async def run():
-        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=ErrorSidecar())
+        sidecar = ErrorSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
         await engine.start(
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
@@ -712,6 +719,7 @@ def test_text_engine_treats_sidecar_session_error_as_frontend_fallback():
         assert "user:pass" not in fallback.payload["error"]
         assert "token=abc" not in fallback.payload["error"]
         assert engine._sidecar is None
+        assert sidecar.closed is True
         await engine.close()
 
     asyncio.run(run())
@@ -729,7 +737,8 @@ def test_text_engine_falls_back_to_local_stt_when_sidecar_send_fails(monkeypatch
         monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
         monkeypatch.setattr(TextOracleTTSEngine, "_transcribe_sync", lambda self, audio, codec: "local transcript")
 
-        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=FailingSendSidecar())
+        sidecar = FailingSendSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
         await engine.start(
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
@@ -763,6 +772,7 @@ def test_text_engine_falls_back_to_local_stt_when_sidecar_send_fails(monkeypatch
         assert fallback.payload["reason"] == "sidecar_send_failed"
         assert fallback.payload["sidecar"] is False
         assert final.payload["text"] == "local transcript"
+        assert sidecar.closed is True
         assert VoiceEventType.SESSION_ERROR not in [event.type for event in seen]
 
     asyncio.run(run())
