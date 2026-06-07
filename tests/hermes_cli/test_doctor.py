@@ -19,6 +19,11 @@ from agent.realtime_voice_smoke import (
     RealtimeVoiceSidecarSmokeResult,
     realtime_voice_smoke_result_payload,
 )
+from agent.realtime_voice_smoke_report import (
+    ALPHA_REQUIRED_AUDIO_FIXTURES,
+    ALPHA_REQUIRED_BARGE_IN_TEXTS,
+    ALPHA_REQUIRED_TTS_TEXTS,
+)
 
 
 class TestDoctorPlatformHints:
@@ -87,6 +92,13 @@ class TestRealtimeVoiceReadiness:
         assert doctor._realtime_voice_cli_values("hello.webm") == ["hello.webm"]
         assert doctor._realtime_voice_cli_values(["en.webm", "ja.webm"]) == ["en.webm", "ja.webm"]
         assert doctor._realtime_voice_cli_values(["en.webm", ["ja.webm"]]) == ["en.webm", "ja.webm"]
+
+    def test_realtime_voice_unique_values_preserves_order_and_dedupes(self):
+        assert doctor._realtime_voice_unique_values(
+            ["a", "b"],
+            ["b", "c", ""],
+            ["a", "d"],
+        ) == ["a", "b", "c", "d"]
 
     def test_realtime_voice_smoke_result_payload_is_json_safe(self):
         payload = realtime_voice_smoke_result_payload(
@@ -758,6 +770,20 @@ class TestRealtimeVoiceReadiness:
         assert "secret" not in json.dumps(manifest)
         assert "unsafe_url" not in json.dumps(manifest)
         assert report[1] == {"kind": "tts", "ok": True}
+
+    def test_realtime_voice_alpha_expands_required_smokes(self):
+        smoke, audio, tts, barge = doctor._realtime_voice_expand_alpha_smokes(
+            alpha=True,
+            smoke=False,
+            audio_fixtures=["./fixtures/realtime-voice/en/hello.webm", "custom.webm"],
+            tts_texts=["Hello from Hermes.", "Extra phrase."],
+            barge_in_texts=[],
+        )
+
+        assert smoke is True
+        assert audio == [*ALPHA_REQUIRED_AUDIO_FIXTURES, "custom.webm"]
+        assert tts == [*ALPHA_REQUIRED_TTS_TEXTS, "Extra phrase."]
+        assert barge == list(ALPHA_REQUIRED_BARGE_IN_TEXTS)
 
 
 class TestDoctorEnvFileEncoding:

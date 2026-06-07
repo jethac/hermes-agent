@@ -292,15 +292,17 @@ Operator readiness gate:
 ```bash
 hermes doctor --realtime-voice
 hermes doctor --realtime-voice-smoke
+hermes doctor --realtime-voice-alpha --realtime-voice-report ./voice-smoke-report.json
 hermes doctor --realtime-voice-audio-fixture ./fixtures/hello-en.webm --realtime-voice-audio-fixture ./fixtures/hello-ja.webm --realtime-voice-audio-codec webm_opus
 hermes doctor --realtime-voice-tts-smoke "Hello from Hermes." --realtime-voice-tts-smoke "こんにちは、Hermesです。"
 hermes doctor --realtime-voice-barge-in-smoke "Hello from Hermes."
-hermes doctor --realtime-voice-smoke --realtime-voice-audio-fixture ./fixtures/hello-en.webm --realtime-voice-audio-fixture ./fixtures/hello-ja.webm --realtime-voice-tts-smoke "Hello from Hermes." --realtime-voice-tts-smoke "こんにちは、Hermesです。" --realtime-voice-barge-in-smoke "Hello from Hermes." --realtime-voice-report ./voice-smoke-report.json
 ```
 
 Use this before treating a profile as live-voice ready. The strict gate requires realtime voice to be enabled, preflight-available, live-like according to the same `conversation_quality` payload the desktop uses, and configured with latency targets no looser than the PRD live-conversation targets. It also checks that English and Japanese remain the production acceptance languages, that best-effort language pass-through is enabled unless deliberately disabled, that the configured sidecar is healthy, and that public provider naming stays capability-based rather than tied to a specific workstation or accelerator. Plain `hermes doctor` reports the same section informatively without failing ordinary installs that have not opted into realtime voice.
 
 `--realtime-voice-smoke` implies the strict gate, then opens the configured sidecar websocket, sends a transcript-backed `audio.input.chunk`, and waits for `frontend.state` plus `transcript.final`. This is a protocol smoke, not a microphone/acoustic benchmark: it proves sidecar auth, session startup, event streaming, and basic transcript turn latency without requiring a particular GPU or audio device.
+
+`--realtime-voice-alpha` expands to the documented private-alpha evidence set: protocol smoke, the four required English/Japanese audio fixtures, the four required English/Japanese TTS phrases, and the required barge-in smoke. Use it with `--realtime-voice-report` for a single release-candidate run, then repeat with separate report filenames until the minimum run count is satisfied.
 
 `--realtime-voice-audio-fixture` sends real audio bytes through the same websocket path and requires `transcript.partial` within `audio_to_partial_transcript_ms`, followed by `transcript.final` before timeout. Repeat the flag with short English and Japanese fixtures for release validation. This still does not prove end-user room acoustics or TTS quality, but it catches broken STT/audio-frontend deployments that a transcript-only protocol smoke cannot.
 
@@ -338,17 +340,8 @@ For a private alpha release candidate, collect one JSON report per profile/run. 
 
 ```bash
 hermes doctor \
-  --realtime-voice-smoke \
-  --realtime-voice-audio-fixture ./fixtures/realtime-voice/en/hello.webm \
-  --realtime-voice-audio-fixture ./fixtures/realtime-voice/en/tool-question.webm \
-  --realtime-voice-audio-fixture ./fixtures/realtime-voice/ja/hello.webm \
-  --realtime-voice-audio-fixture ./fixtures/realtime-voice/ja/tool-question.webm \
+  --realtime-voice-alpha \
   --realtime-voice-audio-codec webm_opus \
-  --realtime-voice-tts-smoke "Hello from Hermes." \
-  --realtime-voice-tts-smoke "Can you hear me clearly?" \
-  --realtime-voice-tts-smoke "こんにちは、Hermesです。" \
-  --realtime-voice-tts-smoke "音声で会話できますか？" \
-  --realtime-voice-barge-in-smoke "Hello from Hermes." \
   --realtime-voice-report ./artifacts/realtime-voice-alpha-001.json
 python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha-*.json --alpha --min-runs 3
 ```
