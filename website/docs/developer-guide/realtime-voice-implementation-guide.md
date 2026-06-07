@@ -128,6 +128,18 @@ This writes a capability-based `voice.realtime` profile, clears stale direct sid
 
 For Japanese validation, use a Japanese-capable Deepgram STT language setting and route Japanese TTS to a Japanese-capable model. `--production-en-ja` configures the bridge with Nova-3 `language=multi`, `ja:aura-2-fujin-ja,en:aura-2-thalia-en`, and a check that fails early if STT is locked to English or the configured TTS route metadata cannot satisfy Hermes' production EN/JA evidence gate. Override it with `--language`, `HERMES_DEEPGRAM_LANGUAGE`, `--tts-model-by-language`, or `HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE` when you want different provider behavior. If the bridge health probe cannot verify `streaming_stt: true`, Hermes keeps the profile below live-like status even though utterance STT and TTS may still work.
 
+For local evidence collection, the alpha evidence command can start the configured Deepgram bridge itself:
+
+```bash
+python -m hermes_cli.realtime_voice_alpha_evidence \
+  --output-dir ./artifacts/realtime-voice-evidence \
+  --runs 3 \
+  --apply \
+  --start-deepgram-bridge
+```
+
+`--start-deepgram-bridge` probes the configured `streaming_stt_base_url` first and leaves an already healthy bridge alone. If the bridge is not running and the configured URL is loopback, it starts `hermes_cli.realtime_voice_deepgram_bridge --production-en-ja`, waits for `/health` using the saved bridge bearer token, then starts the managed reference sidecar and collects the evidence run. For remote or shared inference hosts, start the bridge on that host or pass an explicit bind host with `--deepgram-bridge-host`; Hermes still verifies the configured URL before accepting the run.
+
 ## Production-Readiness Ladder
 
 Use this ladder when deciding what a profile may claim. The distinction matters because the same Hermes desktop can be connected to very different inference deployments.
@@ -390,7 +402,8 @@ python -m hermes_cli.realtime_voice_fixture_pack \
 python -m hermes_cli.realtime_voice_alpha_evidence \
   --output-dir ./artifacts/realtime-voice-evidence \
   --runs 3 \
-  --apply
+  --apply \
+  --start-deepgram-bridge
 python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-evidence/*.json --alpha --min-runs 3
 ```
 

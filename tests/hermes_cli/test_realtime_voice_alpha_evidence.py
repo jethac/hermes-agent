@@ -58,11 +58,15 @@ def _fake_web_server_module(
     proc=None,
     ensure_error=None,
     status_payload=None,
+    realtime_config=None,
+    env_on_disk=None,
 ):
     module = types.SimpleNamespace()
     module._VOICE_SIDECAR_PROC = proc
-    module.load_env = lambda: {}
-    module._realtime_voice_config_dict = lambda: {"frontend_provider": "reference"}
+    module.load_env = lambda: dict(env_on_disk or {})
+    module._realtime_voice_config_dict = lambda: dict(
+        realtime_config or {"frontend_provider": "reference"}
+    )
     module._realtime_voice_sidecar_base_url = lambda realtime: "http://127.0.0.1:8765"
     module._realtime_voice_should_autostart_sidecar = lambda realtime, base_url: autostart
     module._realtime_voice_sidecar_token = lambda realtime, env_on_disk: ""
@@ -535,6 +539,235 @@ def test_alpha_evidence_runner_leaves_existing_healthy_sidecar_running(monkeypat
     assert result == 0
     assert fake_web_server.ensure_calls == []
     assert proc.terminated is False
+
+
+def test_alpha_evidence_runner_can_start_deepgram_bridge(monkeypatch, tmp_path):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    proc = _FakeSidecarProcess()
+    _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(
+            realtime_config={
+                "frontend_provider": "reference",
+                "streaming_stt_base_url": "http://127.0.0.1:8766",
+                "streaming_tts_base_url": "http://127.0.0.1:8766",
+                "streaming_stt_token_env": "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+            },
+            env_on_disk={"HERMES_STREAMING_STT_BRIDGE_TOKEN": "secret-token"},
+        ),
+    )
+    health_calls = []
+    spawned = []
+
+    def fake_health(url, *, token=""):
+        health_calls.append((url, token))
+        return len(health_calls) >= 2
+
+    def fake_spawn(host, port, env_on_disk):
+        spawned.append((host, port, dict(env_on_disk)))
+        return proc
+
+    monkeypatch.setattr(realtime_voice_alpha_evidence, "_deepgram_bridge_healthy", fake_health)
+    monkeypatch.setattr(realtime_voice_alpha_evidence, "_spawn_deepgram_bridge_for_evidence", fake_spawn)
+
+    def fake_run_doctor(args):
+        with open(args.realtime_voice_report, "w", encoding="utf-8") as handle:
+            json.dump(_valid_alpha_report(), handle, ensure_ascii=False)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+            "--start-deepgram-bridge",
+        ]
+    )
+
+    assert result == 0
+    assert spawned == [
+        (
+            "127.0.0.1",
+            8766,
+            {"HERMES_STREAMING_STT_BRIDGE_TOKEN": "secret-token"},
+        )
+    ]
+    assert health_calls == [
+        ("http://127.0.0.1:8766", "secret-token"),
+        ("http://127.0.0.1:8766", "secret-token"),
+    ]
+    assert proc.terminated is True
+    assert proc.waited is True
+
+
+def test_alpha_evidence_runner_does_not_start_existing_healthy_deepgram_bridge(
+    monkeypatch,
+    tmp_path,
+):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(
+            realtime_config={
+                "frontend_provider": "reference",
+                "streaming_stt_base_url": "http://127.0.0.1:8766",
+                "streaming_stt_token_env": "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+            },
+            env_on_disk={"HERMES_STREAMING_STT_BRIDGE_TOKEN": "secret-token"},
+        ),
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_deepgram_bridge_healthy",
+        lambda url, *, token="": True,
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_spawn_deepgram_bridge_for_evidence",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not spawn")),
+    )
+
+    def fake_run_doctor(args):
+        with open(args.realtime_voice_report, "w", encoding="utf-8") as handle:
+            json.dump(_valid_alpha_report(), handle, ensure_ascii=False)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+            "--start-deepgram-bridge",
+        ]
+    )
+
+    assert result == 0
+
+
+def test_alpha_evidence_runner_refuses_to_autostart_remote_deepgram_bridge(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(
+            realtime_config={
+                "frontend_provider": "reference",
+                "streaming_stt_base_url": "http://voice-box.tailnet:8766",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_deepgram_bridge_healthy",
+        lambda url, *, token="": False,
+    )
+    calls = []
+
+    def fake_run_doctor(args):
+        calls.append(args)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+            "--start-deepgram-bridge",
+        ]
+    )
+
+    assert result == 1
+    assert calls == []
+    assert "configured streaming bridge URL is not loopback" in capsys.readouterr().err
+
+
+def test_alpha_evidence_runner_stops_failed_deepgram_bridge_start(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    proc = _FakeSidecarProcess()
+    _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(
+            realtime_config={
+                "frontend_provider": "reference",
+                "streaming_stt_base_url": "http://127.0.0.1:8766",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_deepgram_bridge_healthy",
+        lambda url, *, token="": False,
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_spawn_deepgram_bridge_for_evidence",
+        lambda host, port, env_on_disk: proc,
+    )
+    calls = []
+
+    def fake_run_doctor(args):
+        calls.append(args)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+            "--start-deepgram-bridge",
+            "--deepgram-bridge-timeout-seconds",
+            "0.1",
+        ]
+    )
+
+    assert result == 1
+    assert calls == []
+    assert proc.terminated is True
+    assert proc.waited is True
+    assert "Deepgram bridge health did not become ready" in capsys.readouterr().err
 
 
 def test_alpha_evidence_runner_reports_managed_sidecar_start_failure(
