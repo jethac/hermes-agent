@@ -185,6 +185,8 @@ Keep these pieces of state:
 - playback generation id
 - last inbound and outbound sequence numbers
 
+When a new final user turn or barge-in advances `playback_generation`, cancelled work from older generations must not emit assistant commits or audio. Late events from sidecars should include their original generation so Hermes and the desktop can drop them deterministically.
+
 The session owns persistence. Engines produce events; the session decides which events become durable Hermes messages.
 
 ## Hermes Oracle Adapter
