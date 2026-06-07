@@ -160,3 +160,46 @@ def test_deepgram_preset_apply_prints_bridge_next_steps(monkeypatch, tmp_path, c
     assert "realtime_voice_deepgram_bridge --check --strict" in output
     assert "--production-en-ja" in output
     assert "realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --production-en-ja" in output
+
+
+def test_deepgram_preset_apply_can_generate_bridge_token(monkeypatch, tmp_path, capsys):
+    saved = {}
+    env = {}
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {"model": {"provider": "openrouter"}},
+    )
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+    monkeypatch.setattr("hermes_cli.config.load_env", lambda: dict(env))
+    monkeypatch.setattr("hermes_cli.config.save_env_value", lambda key, value: env.setdefault(key, value))
+
+    result = realtime_voice_profile.main(["--preset", "deepgram", "--apply", "--generate-bridge-token"])
+
+    assert result == 0
+    assert "HERMES_STREAMING_STT_BRIDGE_TOKEN" in env
+    assert len(env["HERMES_STREAMING_STT_BRIDGE_TOKEN"]) >= 32
+    output = capsys.readouterr().out
+    assert "Generated realtime voice bridge token in HERMES_STREAMING_STT_BRIDGE_TOKEN" in output
+    assert "realtime_voice_deepgram_bridge --generate-token" not in output
+    assert env["HERMES_STREAMING_STT_BRIDGE_TOKEN"] not in output
+
+
+def test_deepgram_preset_apply_does_not_overwrite_existing_bridge_token(monkeypatch, tmp_path, capsys):
+    saved = {}
+    env = {"HERMES_STREAMING_STT_BRIDGE_TOKEN": "existing-token"}
+    writes = []
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {"model": {"provider": "openrouter"}},
+    )
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+    monkeypatch.setattr("hermes_cli.config.load_env", lambda: dict(env))
+    monkeypatch.setattr("hermes_cli.config.save_env_value", lambda key, value: writes.append((key, value)))
+
+    result = realtime_voice_profile.main(["--preset", "deepgram", "--apply", "--generate-bridge-token"])
+
+    assert result == 0
+    assert writes == []
+    assert "already configured in HERMES_STREAMING_STT_BRIDGE_TOKEN" in capsys.readouterr().out

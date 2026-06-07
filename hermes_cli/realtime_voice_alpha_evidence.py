@@ -226,9 +226,11 @@ def realtime_voice_live_like_preflight_issue() -> str:
 
 def print_realtime_voice_live_setup_hint() -> None:
     print("Portable live setup:", file=sys.stderr)
-    print("  python -m hermes_cli.realtime_voice_profile --preset deepgram --apply", file=sys.stderr)
+    print(
+        "  python -m hermes_cli.realtime_voice_profile --preset deepgram --apply --generate-bridge-token",
+        file=sys.stderr,
+    )
     print("  set DEEPGRAM_API_KEY=...", file=sys.stderr)
-    print("  python -m hermes_cli.realtime_voice_deepgram_bridge --generate-token", file=sys.stderr)
     print("  python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict --production-en-ja", file=sys.stderr)
     print(
         "  python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --production-en-ja",

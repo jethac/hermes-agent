@@ -571,9 +571,8 @@ def _emit_realtime_voice_live_setup_hint(payload: Mapping[str, Any]) -> None:
     }:
         return
     check_info("Portable live setup:")
-    check_info("  python -m hermes_cli.realtime_voice_profile --preset deepgram --apply")
+    check_info("  python -m hermes_cli.realtime_voice_profile --preset deepgram --apply --generate-bridge-token")
     check_info("  set DEEPGRAM_API_KEY=...")
-    check_info("  python -m hermes_cli.realtime_voice_deepgram_bridge --generate-token")
     check_info("  python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict --production-en-ja")
     check_info("  python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --production-en-ja")
     check_info("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3")

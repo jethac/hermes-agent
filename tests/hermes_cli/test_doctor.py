@@ -171,7 +171,7 @@ class TestRealtimeVoiceReadiness:
         assert "missing production target(s): ja" in output
         assert "Best-effort languages disabled" in output
         assert "Voice sidecar health" in output
-        assert "realtime_voice_profile --preset deepgram --apply" in output
+        assert "realtime_voice_profile --preset deepgram --apply --generate-bridge-token" in output
         assert "realtime_voice_deepgram_bridge --check --strict --production-en-ja" in output
         assert "realtime_voice_alpha_evidence --runs 3" in output
         assert any("live-like" in issue for issue in issues)

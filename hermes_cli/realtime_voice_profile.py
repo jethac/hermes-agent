@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import secrets
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -77,6 +78,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write the profile into ~/.hermes/config.yaml instead of printing YAML",
     )
     parser.add_argument(
+        "--generate-bridge-token",
+        action="store_true",
+        help="With --apply, generate the shared streaming bridge bearer token in ~/.hermes/.env",
+    )
+    parser.add_argument(
+        "--force-bridge-token",
+        action="store_true",
+        help="With --generate-bridge-token, replace an existing bridge bearer token",
+    )
+    parser.add_argument(
         "--allow-template-urls",
         action="store_true",
         help="Allow placeholder streaming bridge URLs when printing a template",
@@ -107,9 +118,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.apply:
         config_path = apply_realtime_voice_profile(profile)
         print(f"Updated realtime voice profile in {config_path}")
+        bridge_token_env = str(profile.get("streaming_stt_token_env") or "").strip()
+        if args.generate_bridge_token:
+            token_result = ensure_realtime_voice_bridge_token(
+                bridge_token_env,
+                force=bool(args.force_bridge_token),
+            )
+            if token_result == "created":
+                print(f"Generated realtime voice bridge token in {bridge_token_env}")
+            elif token_result == "existing":
+                print(f"Realtime voice bridge token already configured in {bridge_token_env}")
         print("Next:")
         if args.preset == "deepgram":
-            print("  python -m hermes_cli.realtime_voice_deepgram_bridge --generate-token")
+            if not args.generate_bridge_token:
+                print("  python -m hermes_cli.realtime_voice_deepgram_bridge --generate-token")
             print("  python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict --production-en-ja")
             print(
                 "  python -m hermes_cli.realtime_voice_deepgram_bridge "
@@ -121,6 +143,20 @@ def main(argv: list[str] | None = None) -> int:
 
     print(yaml.safe_dump({"voice": {"realtime": profile}}, sort_keys=False, allow_unicode=True).rstrip())
     return 0
+
+
+def ensure_realtime_voice_bridge_token(token_env: str, *, force: bool = False) -> str:
+    env_name = _clean_env_name(token_env)
+    if not env_name:
+        raise ValueError("streaming bridge token env is required")
+
+    from hermes_cli.config import load_env, save_env_value
+
+    existing = str(load_env().get(env_name) or "")
+    if existing and not force:
+        return "existing"
+    save_env_value(env_name, secrets.token_urlsafe(32))
+    return "created"
 
 
 def _profile_preset_values(args: argparse.Namespace) -> dict[str, str]:
