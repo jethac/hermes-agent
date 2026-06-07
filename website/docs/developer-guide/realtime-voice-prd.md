@@ -20,6 +20,19 @@ The production architecture has three deployment tiers behind the same desktop p
 2. **Gemma/vLLM audio tier**: a LAN or local sidecar hosts Gemma 4 E4B-IT audio understanding for higher-quality speech frontend behavior.
 3. **Native S2S tier**: a speech-to-speech sidecar emits low-latency audio directly while receiving Hermes oracle/tool hints.
 
+## Production-Readiness Ladder
+
+Realtime voice should ship in visible tiers instead of as a single "done" switch. Each tier keeps the same desktop websocket and Hermes oracle boundary, so users can move inference from a laptop to a LAN sidecar or provider endpoint without changing the desktop app.
+
+0. **One-shot fallback**: existing MediaRecorder upload, transcript submission, and TTS playback. This remains available for machines, browsers, or profiles where realtime preflight fails.
+1. **Portable desktop path**: desktop streams microphone frames to Hermes, Hermes owns session state, barge-in, permissions, durable transcript boundaries, and fallback to one-shot voice. This tier must not require local audio-model hardware.
+2. **External text-oracle sidecar path**: a loopback, LAN, or provider-backed sidecar supplies STT/audio understanding plus TTS. If the sidecar reports `streaming_stt: true` and `tts: true`, Hermes can treat it as live-like for text-oracle conversation. If it only has utterance STT, it is useful but not Gemini Live-style yet.
+3. **Gemma/frontend LLM path**: Gemma 4 E4B-IT, or a similar audio-capable frontend model, can run inside the sidecar as speech understanding and frontend reasoning. Gemma is not the Hermes oracle by default; the backend oracle remains whatever Hermes is configured to use for memory, files, tools, MCP, approvals, and profile behavior.
+4. **Native S2S path**: a sidecar speaks directly in a speech-to-speech loop and receives asynchronous `oracle.hint` events from Hermes. This is the best long-term path for prosody and interruption feel, but it is not required for a first English/Japanese private alpha if the streaming text-oracle path meets the evidence gates.
+5. **Gemini Live-style production quality**: requires repeatable latency evidence, interruption reliability, multilingual metadata preservation, graceful fallback, security review, and enough real conversation testing to prove the experience remains coherent under noise, remote sidecar latency, TTS/provider failure, and tool-using Hermes answers.
+
+The ladder is intentionally hardware-neutral. A developer may use a large local inference workstation, a small desktop with cloud STT/TTS, a LAN model server, or a hosted provider, but the product contract is capabilities and evidence: preflight status, sidecar health, live-like `conversation_quality`, latency targets, English/Japanese fixture reports, and safe fallback behavior.
+
 ## Goals
 
 - Let a user have a low-latency spoken conversation with Hermes in the desktop app.
