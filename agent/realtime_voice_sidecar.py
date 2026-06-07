@@ -14,6 +14,7 @@ from agent.realtime_voice import (
     VoiceEvent,
     VoiceEventType,
 )
+from agent.realtime_voice_errors import sanitize_realtime_voice_error
 
 
 class RealtimeVoiceSidecarClient:
@@ -112,7 +113,7 @@ class RealtimeVoiceSidecarClient:
                             type=VoiceEventType.SESSION_ERROR,
                             session_id=self.config.session_id if self.config else "",
                             sequence=0,
-                            payload={"error": f"invalid sidecar event: {exc}"},
+                            payload={"error": f"invalid sidecar event: {sanitize_realtime_voice_error(exc)}"},
                         )
                     )
                     continue
@@ -125,7 +126,7 @@ class RealtimeVoiceSidecarClient:
                     type=VoiceEventType.SESSION_ERROR,
                     session_id=self.config.session_id if self.config else "",
                     sequence=0,
-                    payload={"error": f"sidecar closed: {exc}"},
+                    payload={"error": f"sidecar closed: {sanitize_realtime_voice_error(exc)}"},
                 )
             )
 
