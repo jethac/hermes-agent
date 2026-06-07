@@ -114,6 +114,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._synthesize_func = synthesize_func
         self._events: asyncio.Queue[VoiceEvent | None] = create_realtime_voice_event_queue()
         self._audio: list[bytes] = []
+        self._audio_bytes = 0
         self._audio_input_generation: Optional[int] = None
         self._sequence = 0
         self._closed = False
@@ -140,8 +141,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             await self.close()
             return
         if event.type == VoiceEventType.BARGE_IN:
-            self._audio.clear()
-            self._audio_input_generation = None
+            self._clear_audio_buffer()
             self._cancel_active_tasks()
             payload = {"reason": event.payload.get("reason") or "client"}
             playback_generation = _payload_generation(event.payload)
@@ -179,14 +179,14 @@ class ReferenceRealtimeVoiceSidecarSession:
         input_generation = _payload_input_generation(event.payload)
         if input_generation is not None:
             if self._audio_input_generation is not None and input_generation != self._audio_input_generation:
-                self._audio.clear()
+                self._clear_audio_buffer()
             self._audio_input_generation = input_generation
-        self._audio.append(chunk.data)
+        if not await self._append_audio_chunk(chunk.data):
+            return
         if event.payload.get("end_of_utterance") is True:
             audio = b"".join(self._audio)
             audio_input_generation = self._audio_input_generation
-            self._audio.clear()
-            self._audio_input_generation = None
+            self._clear_audio_buffer()
             if audio:
                 payload = {"text": "", "stability": 0.1}
                 if audio_input_generation is not None:
@@ -217,6 +217,30 @@ class ReferenceRealtimeVoiceSidecarSession:
         for task in list(self._active_tasks):
             if not task.done():
                 task.cancel()
+
+    async def _append_audio_chunk(self, data: bytes) -> bool:
+        config = self.config
+        limit = int(config.input_buffer_limit_bytes if config is not None else 8 * 1024 * 1024)
+        if self._audio_bytes + len(data) > max(1, limit):
+            self._clear_audio_buffer()
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "input_buffer_limit_exceeded",
+                    "sidecar": True,
+                    "limit_bytes": limit,
+                },
+            )
+            return False
+        self._audio.append(data)
+        self._audio_bytes += len(data)
+        return True
+
+    def _clear_audio_buffer(self) -> None:
+        self._audio.clear()
+        self._audio_bytes = 0
+        self._audio_input_generation = None
 
     async def _transcribe(
         self,
