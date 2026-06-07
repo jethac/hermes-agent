@@ -60,6 +60,16 @@ const METRIC_KEYS = {
   session_elapsed_ms: 'sessionElapsedMs'
 } as const satisfies Record<string, keyof RealtimeVoiceLatencyMetrics>
 
+const SPEECH_LEVEL_THRESHOLD = 0.075
+const BARGE_IN_MIN_SPEECH_MS = 120
+
+interface RealtimeVoiceBargeInGateInput {
+  isSpeechActive: boolean
+  minSpeechMs?: number
+  nowMs: number
+  speechStartedAtMs: number | null
+}
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -134,6 +144,24 @@ export function collectRealtimeVoiceMetrics(
   return next
 }
 
+export function updateRealtimeVoiceBargeInGate({
+  isSpeechActive,
+  minSpeechMs = BARGE_IN_MIN_SPEECH_MS,
+  nowMs,
+  speechStartedAtMs
+}: RealtimeVoiceBargeInGateInput): { shouldBargeIn: boolean; speechStartedAtMs: number | null } {
+  if (!isSpeechActive) {
+    return { shouldBargeIn: false, speechStartedAtMs: null }
+  }
+
+  const startedAt = speechStartedAtMs ?? nowMs
+
+  return {
+    shouldBargeIn: nowMs - startedAt >= minSpeechMs,
+    speechStartedAtMs: startedAt
+  }
+}
+
 export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavailable, sessionId }: RealtimeVoiceOptions) {
   const [status, setStatus] = useState<ConversationStatus>('idle')
   const [level, setLevel] = useState(0)
@@ -152,6 +180,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const stoppingForSilenceRef = useRef(false)
   const playbackQueueRef = useRef<PlaybackItem[]>([])
   const playingRef = useRef<HTMLAudioElement | null>(null)
+  const bargeInSpeechStartedAtRef = useRef<number | null>(null)
   const playbackGenerationRef = useRef(0)
   const enabledRef = useRef(enabled)
   const mutedRef = useRef(muted)
@@ -409,18 +438,38 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
         setLevel(normalized)
 
-        if (normalized >= 0.075) {
+        if (normalized >= SPEECH_LEVEL_THRESHOLD) {
+          let acceptSpeech = true
+
           if (playingRef.current) {
-            stopPlayback(true)
-            sendEvent('barge_in', { reason: 'user_speech' })
+            const gate = updateRealtimeVoiceBargeInGate({
+              isSpeechActive: true,
+              nowMs: now,
+              speechStartedAtMs: bargeInSpeechStartedAtRef.current
+            })
+
+            bargeInSpeechStartedAtRef.current = gate.speechStartedAtMs
+            acceptSpeech = gate.shouldBargeIn
+            if (gate.shouldBargeIn) {
+              bargeInSpeechStartedAtRef.current = null
+              stopPlayback(true)
+              sendEvent('barge_in', { reason: 'user_speech' })
+            }
+          } else {
+            bargeInSpeechStartedAtRef.current = null
           }
-          if (!recorderRef.current && enabledRef.current && !mutedRef.current && !busyRef.current) {
+
+          if (acceptSpeech && !recorderRef.current && enabledRef.current && !mutedRef.current && !busyRef.current) {
             startRecorder(stream)
             setStatus('listening')
           }
-          heardSpeechRef.current = true
-          silenceStartedAtRef.current = null
+
+          if (acceptSpeech) {
+            heardSpeechRef.current = true
+            silenceStartedAtRef.current = null
+          }
         } else if (heardSpeechRef.current) {
+          bargeInSpeechStartedAtRef.current = null
           silenceStartedAtRef.current ??= now
           if (now - silenceStartedAtRef.current >= 1250) {
             if (recorderRef.current) {
@@ -429,6 +478,8 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
             heardSpeechRef.current = false
             silenceStartedAtRef.current = null
           }
+        } else {
+          bargeInSpeechStartedAtRef.current = null
         }
 
         analyserFrameRef.current = window.requestAnimationFrame(tick)
