@@ -238,6 +238,8 @@ When a sidecar is reachable, its `/health` response must include a JSON capabili
 
 `quality_targets_ms` is the active live-conversation quality contract. The desktop compares observed realtime metrics against these targets for its quality pill, and operators can tune them in `voice.realtime.quality_targets_ms` for slower local-only setups without changing the protocol.
 
+`production_readiness` is stricter than `conversation_quality`. A profile may be `live_like` from sidecar capabilities, but it is not `production_ready` until `voice.realtime.production_evidence_report` points at a JSON report that passes the alpha EN/JA verifier. This prevents a healthy streaming sidecar from being marketed as Gemini Live-style production quality without repeatable speech-input and speech-output evidence.
+
 Capture tuning is also server-owned. The desktop uses `speech_level_threshold`, `barge_in_min_speech_ms`, and `pre_roll_ms` from preflight status so microphone sensitivity, interruption confidence, and first-syllable preservation can be tuned per profile without rebuilding or reconfiguring the desktop.
 
 Operator readiness gate:
@@ -259,6 +261,8 @@ Use this before treating a profile as live-voice ready. The strict gate requires
 `--realtime-voice-tts-smoke` sends `assistant.text.partial` with `speak: true` to the configured sidecar and requires the first `audio.output.chunk` within `final_transcript_to_first_audio_ms`. Repeat it with a short English and Japanese phrase when validating a release profile so both TTS provider latency and multilingual voice configuration are covered.
 
 `--realtime-voice-report` writes a JSON array of the realtime smoke results for CI and release gates. Each entry records a neutral smoke `kind` (`protocol`, `audio_fixture`, or `tts`), `ok`, event names, latency fields, byte counts, sanitized error text, and smoke-specific metadata such as fixture path, codec, phrase text, and target milliseconds. The schema is intentionally language-neutral: English and Japanese are the first production acceptance fixtures, but additional best-effort language fixtures can use the same report format without changing Hermes protocol semantics.
+
+After `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha.json --alpha` passes, set `voice.realtime.production_evidence_report` to that artifact path for the release profile. `/api/voice/realtime/status`, `hermes status`, and strict `hermes doctor --realtime-voice` then surface the same evidence-backed `production_readiness` result. Without this path, a profile can still report `conversation_quality.live_like: true`, but `production_readiness.ready` remains false with `missing_evidence_report`.
 
 ### Private Alpha Evidence Pack
 
@@ -416,6 +420,7 @@ voice:
     production_languages: ["en", "ja"] # production acceptance targets
     production_scripts: ["Latn", "Jpan"]
     best_effort_languages: true        # allow non-target languages without claiming production quality
+    production_evidence_report: ./artifacts/realtime-voice-alpha.json
     quality_targets_ms:
       audio_to_partial_transcript_ms: 300
       final_transcript_to_first_text_ms: 500

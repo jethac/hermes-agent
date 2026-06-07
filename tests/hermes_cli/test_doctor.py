@@ -154,6 +154,11 @@ class TestRealtimeVoiceReadiness:
                     "reason": "utterance_stt_tts",
                     "live_like": False,
                 },
+                "production_readiness": {
+                    "ready": False,
+                    "level": "not_ready",
+                    "issues": ["live_like_required", "not_live_like", "missing_evidence_report"],
+                },
                 "language_support": {
                     "production_languages": ["en"],
                     "best_effort_languages": False,
@@ -172,10 +177,12 @@ class TestRealtimeVoiceReadiness:
         assert "Realtime voice preflight" in output
         assert "live_like_required" in output
         assert "turn_based_text" in output
+        assert "Realtime voice production readiness" in output
         assert "missing production target(s): ja" in output
         assert "Best-effort languages disabled" in output
         assert "Voice sidecar health" in output
         assert any("live-like" in issue for issue in issues)
+        assert any("production_evidence_report" in issue for issue in issues)
         assert any("English and Japanese" in issue for issue in issues)
         assert any("best_effort_languages" in issue for issue in issues)
 
@@ -193,6 +200,11 @@ class TestRealtimeVoiceReadiness:
                     "mode": "streaming_text",
                     "reason": "streaming_stt_tts",
                     "live_like": True,
+                },
+                "production_readiness": {
+                    "ready": True,
+                    "level": "production_ready",
+                    "issues": [],
                 },
                 "quality_targets_ms": {
                     "audio_to_partial_transcript_ms": 300,
@@ -220,6 +232,7 @@ class TestRealtimeVoiceReadiness:
         assert "Realtime voice preflight" in output
         assert "Live conversation quality" in output
         assert "Realtime voice latency targets" in output
+        assert "Realtime voice production readiness" in output
         assert "Portable voice provider naming" in output
         assert issues == []
 
@@ -236,6 +249,11 @@ class TestRealtimeVoiceReadiness:
                     "mode": "streaming_text",
                     "reason": "streaming_stt_tts",
                     "live_like": True,
+                },
+                "production_readiness": {
+                    "ready": False,
+                    "level": "live_like",
+                    "issues": ["loose_quality_targets"],
                 },
                 "quality_targets_ms": {
                     "audio_to_partial_transcript_ms": 800,
@@ -275,6 +293,11 @@ class TestRealtimeVoiceReadiness:
                     "mode": "streaming_text",
                     "reason": "streaming_stt_tts",
                     "live_like": True,
+                },
+                "production_readiness": {
+                    "ready": True,
+                    "level": "production_ready",
+                    "issues": [],
                 },
                 "quality_targets_ms": {
                     "audio_to_partial_transcript_ms": 300,

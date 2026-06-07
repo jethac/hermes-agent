@@ -82,6 +82,7 @@ from gateway.status import (
     parse_active_agents,
     read_runtime_status,
 )
+from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from utils import env_var_enabled
 
 try:
@@ -695,6 +696,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "voice.realtime.require_live_like": {
         "type": "boolean",
         "description": "Require native S2S or streaming STT/TTS before realtime voice is considered available",
+        "category": "voice",
+    },
+    "voice.realtime.production_evidence_report": {
+        "type": "string",
+        "description": "Path to a verified realtime voice smoke report required for production readiness",
         "category": "voice",
     },
     "voice.realtime.production_languages": {
@@ -13088,6 +13094,7 @@ def _realtime_voice_production_readiness_payload(
     language_support: Dict[str, Any],
     quality_targets_ms: Dict[str, int],
     conversation_quality: Dict[str, Any],
+    evidence: Dict[str, Any],
 ) -> Dict[str, Any]:
     issues: List[str] = []
     if not enabled:
@@ -13126,6 +13133,9 @@ def _realtime_voice_production_readiness_payload(
     if loose_targets:
         issues.append("loose_quality_targets")
 
+    evidence_issues = evidence.get("issues") if isinstance(evidence.get("issues"), list) else []
+    issues.extend(str(issue) for issue in evidence_issues if str(issue or "").strip())
+
     issues = list(dict.fromkeys(issues))
     ready = available and not issues
     if ready:
@@ -13141,6 +13151,48 @@ def _realtime_voice_production_readiness_payload(
         "required_languages": list(_REALTIME_VOICE_DEFAULT_PRODUCTION_LANGUAGES),
         "required_scripts": list(_REALTIME_VOICE_DEFAULT_PRODUCTION_SCRIPTS),
         "required_quality_targets_ms": dict(_REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS),
+        "evidence": evidence,
+    }
+
+
+def _realtime_voice_production_evidence_payload(realtime: Dict[str, Any]) -> Dict[str, Any]:
+    raw_path = str(
+        realtime.get("production_evidence_report")
+        or realtime.get("alpha_evidence_report")
+        or ""
+    ).strip()
+    if not raw_path:
+        return {
+            "configured": False,
+            "verified": False,
+            "report_path": None,
+            "issues": ["missing_evidence_report"],
+        }
+
+    report_path = Path(raw_path).expanduser()
+    try:
+        from agent.realtime_voice_smoke_report import (
+            load_realtime_voice_smoke_report,
+            validate_realtime_voice_alpha_report,
+        )
+
+        entries = load_realtime_voice_smoke_report(report_path)
+        issues = validate_realtime_voice_alpha_report(entries)
+    except Exception as exc:
+        return {
+            "configured": True,
+            "verified": False,
+            "report_path": raw_path,
+            "issues": [f"invalid_evidence_report:{sanitize_realtime_voice_error(exc)}"],
+        }
+
+    formatted_issues = [f"evidence_report:{issue.format()}" for issue in issues]
+    return {
+        "configured": True,
+        "verified": not formatted_issues,
+        "report_path": raw_path,
+        "entries": len(entries),
+        "issues": formatted_issues,
     }
 
 
@@ -13344,6 +13396,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         base_url=base_url,
         health_payload=health_payload,
     )
+    production_evidence = _realtime_voice_production_evidence_payload(realtime)
 
     sidecar_mode = "none"
     if autostart:
@@ -13375,6 +13428,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         language_support=language_support,
         quality_targets_ms=quality_targets_ms,
         conversation_quality=conversation_quality,
+        evidence=production_evidence,
     )
 
     return {
@@ -13502,6 +13556,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         base_url=str(sidecar_base_url or ""),
         health_payload=None,
     )
+    production_evidence = _realtime_voice_production_evidence_payload(realtime)
     production_readiness = _realtime_voice_production_readiness_payload(
         enabled=realtime.get("enabled") is True,
         available=realtime.get("enabled") is True,
@@ -13509,6 +13564,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         language_support=language_support,
         quality_targets_ms=quality_targets_ms,
         conversation_quality=conversation_quality,
+        evidence=production_evidence,
     )
 
     return RealtimeVoiceSessionConfig(
@@ -13635,8 +13691,6 @@ async def realtime_voice_status() -> Dict[str, Any]:
 
 @app.websocket("/api/voice/realtime")
 async def realtime_voice_ws(ws: WebSocket) -> None:
-    from agent.realtime_voice_errors import sanitize_realtime_voice_error
-
     peer = ws.client.host if ws.client else "?"
 
     auth_reason, cred = _ws_auth_reason(ws)

@@ -36,6 +36,50 @@ _EXAMPLE_PLUGIN_FIXTURE = (
 )
 
 
+def _valid_realtime_voice_alpha_report():
+    from agent.realtime_voice_smoke_report import ALPHA_REQUIRED_AUDIO_FIXTURES, ALPHA_REQUIRED_TTS_TEXTS
+
+    entries = [
+        {
+            "kind": "protocol",
+            "ok": True,
+            "ready_ms": 12,
+            "transcript_final_ms": 25,
+            "events": ["frontend.state", "transcript.final"],
+            "error": None,
+        }
+    ]
+    for fixture in ALPHA_REQUIRED_AUDIO_FIXTURES:
+        entries.append(
+            {
+                "kind": "audio_fixture",
+                "ok": True,
+                "fixture": fixture,
+                "codec": "webm_opus",
+                "audio_bytes": 1234,
+                "transcript_partial_ms": 90,
+                "transcript_final_ms": 180,
+                "target_ms": 300,
+                "events": ["frontend.state", "transcript.partial", "transcript.final"],
+                "error": None,
+            }
+        )
+    for text in ALPHA_REQUIRED_TTS_TEXTS:
+        entries.append(
+            {
+                "kind": "tts",
+                "ok": True,
+                "text": text,
+                "first_audio_ms": 250,
+                "target_ms": 900,
+                "output_audio_bytes": 4321,
+                "events": ["frontend.state", "audio.output.chunk"],
+                "error": None,
+            }
+        )
+    return entries
+
+
 @pytest.fixture
 def _install_example_plugin(_isolate_hermes_home):
     """Drop the example-dashboard fixture into the per-test HERMES_HOME
@@ -2979,6 +3023,8 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.pre_roll_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.require_live_like"]["type"] == "boolean"
         assert "streaming STT/TTS" in CONFIG_SCHEMA["voice.realtime.require_live_like"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["type"] == "string"
+        assert "smoke report" in CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.final_transcript_to_first_audio_ms"]["type"] == "number"
 
@@ -6503,7 +6549,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.metadata["production_readiness"] == {
             "ready": False,
             "level": "not_ready",
-            "issues": ["not_live_like", "sidecar_unverified"],
+            "issues": ["not_live_like", "sidecar_unverified", "missing_evidence_report"],
             "required_languages": ["en", "ja"],
             "required_scripts": ["Latn", "Jpan"],
             "required_quality_targets_ms": {
@@ -6511,6 +6557,12 @@ class TestRealtimeVoiceWebSocket:
                 "final_transcript_to_first_text_ms": 500,
                 "final_transcript_to_first_audio_ms": 900,
                 "barge_in_ack_ms": 150,
+            },
+            "evidence": {
+                "configured": False,
+                "verified": False,
+                "report_path": None,
+                "issues": ["missing_evidence_report"],
             },
         }
         assert config.metadata["require_live_like"] is False
@@ -6881,9 +6933,9 @@ class TestRealtimeVoiceWebSocket:
         assert body["conversation_quality"]["live_like"] is True
         assert body["conversation_quality"]["partial_transcripts"] is True
         assert body["production_readiness"] == {
-            "ready": True,
-            "level": "production_ready",
-            "issues": [],
+            "ready": False,
+            "level": "live_like",
+            "issues": ["missing_evidence_report"],
             "required_languages": ["en", "ja"],
             "required_scripts": ["Latn", "Jpan"],
             "required_quality_targets_ms": {
@@ -6892,6 +6944,68 @@ class TestRealtimeVoiceWebSocket:
                 "final_transcript_to_first_audio_ms": 900,
                 "barge_in_ack_ms": 150,
             },
+            "evidence": {
+                "configured": False,
+                "verified": False,
+                "report_path": None,
+                "issues": ["missing_evidence_report"],
+            },
+        }
+
+    def test_status_marks_streaming_text_sidecar_production_ready_with_alpha_evidence(self, monkeypatch, tmp_path):
+        evidence_path = tmp_path / "realtime-voice-alpha.json"
+        evidence_path.write_text(json.dumps(_valid_realtime_voice_alpha_report(), ensure_ascii=False), encoding="utf-8")
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": True,
+                            "tts": True,
+                            "native_s2s": False,
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                        "production_evidence_report": str(evidence_path),
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        body = self.client.get("/api/voice/realtime/status").json()
+
+        assert body["available"] is True
+        assert body["production_readiness"]["ready"] is True
+        assert body["production_readiness"]["level"] == "production_ready"
+        assert body["production_readiness"]["issues"] == []
+        assert body["production_readiness"]["evidence"] == {
+            "configured": True,
+            "verified": True,
+            "report_path": str(evidence_path),
+            "entries": 9,
+            "issues": [],
         }
 
     def test_status_require_live_like_keeps_turn_based_sidecar_unavailable(self, monkeypatch):
@@ -6942,7 +7056,11 @@ class TestRealtimeVoiceWebSocket:
         assert body["conversation_quality"]["live_like"] is False
         assert body["production_readiness"]["ready"] is False
         assert body["production_readiness"]["level"] == "not_ready"
-        assert body["production_readiness"]["issues"] == ["live_like_required", "not_live_like"]
+        assert body["production_readiness"]["issues"] == [
+            "live_like_required",
+            "not_live_like",
+            "missing_evidence_report",
+        ]
 
     def test_status_require_live_like_accepts_streaming_text_sidecar(self, monkeypatch):
         class FakeResponse:
@@ -7049,6 +7167,7 @@ class TestRealtimeVoiceWebSocket:
             "missing_japanese_script",
             "best_effort_languages_disabled",
             "loose_quality_targets",
+            "missing_evidence_report",
         ]
 
     def test_open_reason_requires_live_like_without_sidecar_for_text_engine(self):
