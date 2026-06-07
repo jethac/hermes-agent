@@ -6154,6 +6154,179 @@ class TestRealtimeVoiceWebSocket:
         assert config.frontend_provider == "local"
         assert config.spark_base_url == "http://127.0.0.1:8765"
 
+    def test_config_defaults_gemma4_frontend_to_reference_sidecar(self, monkeypatch):
+        class FakeWebSocket:
+            query_params = {"session_id": "voice-gemma4"}
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "frontend_provider": "gemma4",
+                        "frontend_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                        "sidecar_host": "127.0.0.1",
+                        "sidecar_port": 8765,
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+
+        config = self.ws_module._realtime_voice_config_from_request(FakeWebSocket())
+
+        assert config.frontend_provider == "gemma4"
+        assert config.frontend_model == "google/gemma-4-E4B-it-qat-w4a16-ct"
+        assert config.spark_base_url == "http://127.0.0.1:8765"
+
+    def test_sidecar_autostart_only_for_local_reference_frontends(self):
+        local = {
+            "frontend_provider": "gemma4",
+            "sidecar_host": "127.0.0.1",
+            "sidecar_port": 8765,
+            "sidecar_autostart": True,
+        }
+        remote = {
+            "frontend_provider": "vllm",
+            "sidecar_base_url": "http://100.113.98.11:8765",
+            "sidecar_autostart": True,
+        }
+        native = {
+            "frontend_provider": "native_s2s",
+            "sidecar_host": "127.0.0.1",
+            "sidecar_port": 8765,
+            "sidecar_autostart": True,
+        }
+        disabled = {
+            "frontend_provider": "reference",
+            "sidecar_host": "127.0.0.1",
+            "sidecar_port": 8765,
+            "sidecar_autostart": False,
+        }
+
+        assert self.ws_module._realtime_voice_should_autostart_sidecar(
+            local, self.ws_module._realtime_voice_sidecar_base_url(local)
+        )
+        assert not self.ws_module._realtime_voice_should_autostart_sidecar(
+            remote, self.ws_module._realtime_voice_sidecar_base_url(remote)
+        )
+        assert not self.ws_module._realtime_voice_should_autostart_sidecar(
+            native, self.ws_module._realtime_voice_sidecar_base_url(native)
+        )
+        assert not self.ws_module._realtime_voice_should_autostart_sidecar(
+            disabled, self.ws_module._realtime_voice_sidecar_base_url(disabled)
+        )
+
+    def test_sidecar_command_includes_vllm_args(self):
+        command = self.ws_module._realtime_voice_sidecar_command(
+            {
+                "sidecar_host": "127.0.0.1",
+                "sidecar_port": 8765,
+                "vllm_base_url": "http://100.113.98.11:8000/v1",
+                "vllm_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+            }
+        )
+
+        assert command[:3] == [self.ws_module.sys.executable, "-m", "hermes_cli.realtime_voice_sidecar"]
+        assert "--vllm-base-url" in command
+        assert "http://100.113.98.11:8000/v1" in command
+        assert "--vllm-model" in command
+        assert "google/gemma-4-E4B-it-qat-w4a16-ct" in command
+
+    def test_ensure_sidecar_spawns_reference_server(self, monkeypatch, tmp_path):
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class FakeProcess:
+            pid = 1234
+            returncode = None
+
+            def poll(self):
+                return None
+
+        calls = {"health": 0, "popen": None}
+
+        def fake_urlopen(url, timeout):
+            calls["health"] += 1
+            if calls["health"] <= 2:
+                raise self.ws_module.urllib.error.URLError("not ready")
+            return FakeResponse()
+
+        def fake_popen(command, **kwargs):
+            calls["popen"] = (command, kwargs)
+            return FakeProcess()
+
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(self.ws_module.subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {"HERMES_TEST_ENV": "1"})
+        monkeypatch.setattr(self.ws_module, "_ACTION_LOG_DIR", tmp_path)
+        monkeypatch.setattr(self.ws_module, "_VOICE_SIDECAR_PROC", None)
+
+        self.ws_module._ensure_realtime_voice_sidecar(
+            {
+                "frontend_provider": "reference",
+                "sidecar_host": "127.0.0.1",
+                "sidecar_port": 8765,
+                "vllm_base_url": "http://100.113.98.11:8000/v1",
+                "vllm_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+            }
+        )
+
+        command, kwargs = calls["popen"]
+        assert command[:3] == [self.ws_module.sys.executable, "-m", "hermes_cli.realtime_voice_sidecar"]
+        assert "--vllm-base-url" in command
+        assert kwargs["cwd"] == str(self.ws_module.PROJECT_ROOT)
+        assert kwargs["env"]["HERMES_TEST_ENV"] == "1"
+        assert (tmp_path / "realtime-voice-sidecar.log").exists()
+
+    def test_websocket_ensures_sidecar_before_accepting_session(self, monkeypatch):
+        ensured = {}
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {"voice": {"realtime": {"enabled": True, "frontend_provider": "reference"}}},
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+        monkeypatch.setattr(
+            self.ws_module,
+            "_ensure_realtime_voice_sidecar",
+            lambda realtime: ensured.setdefault("provider", realtime.get("frontend_provider")),
+        )
+
+        class FakeSession:
+            def __init__(self, config):
+                self.config = config
+
+            async def start(self):
+                return None
+
+            async def events(self):
+                return
+                yield
+
+            async def receive_client_event(self, event):
+                return None
+
+            async def close(self):
+                return None
+
+        monkeypatch.setattr("agent.realtime_voice_session.RealtimeVoiceSession", FakeSession)
+
+        with self.client.websocket_connect(self._url()) as websocket:
+            websocket.close()
+
+        assert ensured["provider"] == "reference"
+
 
 class TestDashboardPluginStaticAssetAllowlist:
     """``/dashboard-plugins/<name>/<path>`` is unauthenticated by design —

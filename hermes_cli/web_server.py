@@ -2491,6 +2491,12 @@ _ACTION_COMMANDS: Dict[str, Tuple[str, ...]] = {}
 # without spawning a subprocess (for example, unsupported Docker updates).
 _ACTION_RESULTS: Dict[str, Dict[str, Any]] = {}
 
+_VOICE_SIDECAR_PROC: Optional[subprocess.Popen] = None
+_VOICE_SIDECAR_LOCK = threading.Lock()
+_LOCAL_VOICE_SIDECAR_PROVIDERS = {"local", "reference", "provider", "gemma", "gemma4", "lmstudio", "vllm"}
+_VOICE_SIDECAR_HEALTH_TIMEOUT = 0.75
+_VOICE_SIDECAR_START_TIMEOUT = 8.0
+
 
 def _record_completed_action(name: str, message: str, exit_code: int = 1) -> None:
     """Record a non-spawned action result and write it to the action log."""
@@ -12106,6 +12112,166 @@ def _ws_close_reason(text: str) -> str:
     return encoded[:120].decode("utf-8", "ignore") + "..."
 
 
+def _realtime_voice_sidecar_base_url(realtime: Dict[str, Any]) -> str:
+    sidecar_base_url = str(realtime.get("sidecar_base_url") or "").strip()
+    if sidecar_base_url:
+        return sidecar_base_url.rstrip("/")
+
+    spark_base_url = str(realtime.get("spark_base_url") or "").strip()
+    if spark_base_url:
+        return spark_base_url.rstrip("/")
+
+    provider = str(realtime.get("frontend_provider") or "").lower()
+    if provider in _LOCAL_VOICE_SIDECAR_PROVIDERS:
+        sidecar_host = str(realtime.get("sidecar_host") or "127.0.0.1")
+        sidecar_port = int(realtime.get("sidecar_port") or 8765)
+        return f"http://{sidecar_host}:{sidecar_port}"
+
+    return ""
+
+
+def _truthy_config(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def _realtime_voice_sidecar_is_loopback(base_url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(base_url)
+    except Exception:
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in {"127.0.0.1", "localhost", "::1"}
+
+
+def _realtime_voice_should_autostart_sidecar(realtime: Dict[str, Any], base_url: str) -> bool:
+    provider = str(realtime.get("frontend_provider") or "").lower()
+    if provider not in _LOCAL_VOICE_SIDECAR_PROVIDERS:
+        return False
+    if not _truthy_config(realtime.get("sidecar_autostart"), default=True):
+        return False
+    if not base_url or not _realtime_voice_sidecar_is_loopback(base_url):
+        return False
+    return True
+
+
+def _realtime_voice_sidecar_health_url(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/health"
+
+
+def _realtime_voice_sidecar_healthy(base_url: str, timeout: float = _VOICE_SIDECAR_HEALTH_TIMEOUT) -> bool:
+    if not base_url:
+        return False
+    try:
+        with urllib.request.urlopen(_realtime_voice_sidecar_health_url(base_url), timeout=timeout) as response:
+            status = int(getattr(response, "status", 200))
+            return 200 <= status < 300
+    except Exception:
+        return False
+
+
+def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
+    sidecar_host = str(realtime.get("sidecar_host") or "127.0.0.1")
+    sidecar_port = str(int(realtime.get("sidecar_port") or 8765))
+    cmd = [
+        sys.executable,
+        "-m",
+        "hermes_cli.realtime_voice_sidecar",
+        "--host",
+        sidecar_host,
+        "--port",
+        sidecar_port,
+    ]
+
+    vllm_base_url = str(realtime.get("vllm_base_url") or "").strip()
+    vllm_model = str(realtime.get("vllm_model") or "").strip()
+    if vllm_base_url:
+        cmd.extend(["--vllm-base-url", vllm_base_url])
+    if vllm_model:
+        cmd.extend(["--vllm-model", vllm_model])
+    return cmd
+
+
+def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[str, str]) -> subprocess.Popen:
+    log_path = _ACTION_LOG_DIR / "realtime-voice-sidecar.log"
+    _ACTION_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = open(log_path, "ab", buffering=0)
+    log_file.write(f"\n=== realtime voice sidecar started {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode())
+
+    child_env = {
+        **os.environ,
+        **env_on_disk,
+        "HERMES_NONINTERACTIVE": "1",
+    }
+    vllm_base_url = str(realtime.get("vllm_base_url") or "").strip()
+    vllm_model = str(realtime.get("vllm_model") or "").strip()
+    if vllm_base_url:
+        child_env["HERMES_VOICE_VLLM_BASE_URL"] = vllm_base_url
+    if vllm_model:
+        child_env["HERMES_VOICE_VLLM_MODEL"] = vllm_model
+
+    popen_kwargs: Dict[str, Any] = {
+        "cwd": str(PROJECT_ROOT),
+        "stdin": subprocess.DEVNULL,
+        "stdout": log_file,
+        "stderr": subprocess.STDOUT,
+        "env": child_env,
+    }
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+            | getattr(subprocess, "DETACHED_PROCESS", 0)
+        )
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    try:
+        return subprocess.Popen(_realtime_voice_sidecar_command(realtime), **popen_kwargs)
+    finally:
+        log_file.close()
+
+
+def _ensure_realtime_voice_sidecar(realtime: Dict[str, Any]) -> None:
+    global _VOICE_SIDECAR_PROC
+
+    base_url = _realtime_voice_sidecar_base_url(realtime)
+    if not _realtime_voice_should_autostart_sidecar(realtime, base_url):
+        return
+    if _realtime_voice_sidecar_healthy(base_url):
+        return
+
+    with _VOICE_SIDECAR_LOCK:
+        if _realtime_voice_sidecar_healthy(base_url):
+            return
+        if _VOICE_SIDECAR_PROC is not None and _VOICE_SIDECAR_PROC.poll() is None:
+            deadline = time.monotonic() + _VOICE_SIDECAR_START_TIMEOUT
+            while time.monotonic() < deadline:
+                if _realtime_voice_sidecar_healthy(base_url):
+                    return
+                time.sleep(0.2)
+            raise RuntimeError(f"realtime voice sidecar is not healthy at {base_url}")
+
+        env_on_disk = load_env()
+        _VOICE_SIDECAR_PROC = _spawn_realtime_voice_sidecar(realtime, env_on_disk)
+        deadline = time.monotonic() + _VOICE_SIDECAR_START_TIMEOUT
+        while time.monotonic() < deadline:
+            if _realtime_voice_sidecar_healthy(base_url):
+                _log.info("realtime voice sidecar ready at %s", base_url)
+                return
+            if _VOICE_SIDECAR_PROC.poll() is not None:
+                raise RuntimeError(
+                    f"realtime voice sidecar exited with code {_VOICE_SIDECAR_PROC.returncode}; "
+                    f"see {_ACTION_LOG_DIR / 'realtime-voice-sidecar.log'}"
+                )
+            time.sleep(0.2)
+        raise RuntimeError(f"realtime voice sidecar did not become healthy at {base_url}")
+
+
 def _realtime_voice_config_from_request(ws: WebSocket):
     """Build a realtime voice session config from profile config + query params."""
     from agent.realtime_voice import (
@@ -12127,12 +12293,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     engine = ws.query_params.get("engine") or realtime.get("engine") or "text_oracle_tts"
     input_codec = ws.query_params.get("input_codec") or realtime.get("input_codec") or "webm_opus"
     output_codec = ws.query_params.get("output_codec") or realtime.get("output_codec") or "opus"
-    sidecar_base_url = realtime.get("sidecar_base_url") or ""
-    spark_base_url = sidecar_base_url or realtime.get("spark_base_url") or ""
-    if not spark_base_url and str(realtime.get("frontend_provider") or "").lower() in {"local", "reference", "provider", "vllm"}:
-        sidecar_host = str(realtime.get("sidecar_host") or "127.0.0.1")
-        sidecar_port = int(realtime.get("sidecar_port") or 8765)
-        spark_base_url = f"http://{sidecar_host}:{sidecar_port}"
+    spark_base_url = _realtime_voice_sidecar_base_url(realtime)
     spark_token_env = str(realtime.get("spark_token_env") or "HERMES_SPARK_VOICE_TOKEN")
     env = load_env()
     spark_token = env.get(spark_token_env) or os.environ.get(spark_token_env) or ""
@@ -12180,6 +12341,13 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
     realtime = voice.get("realtime") if isinstance(voice, dict) else {}
     if not (isinstance(realtime, dict) and realtime.get("enabled") is True):
         await ws.close(code=4403, reason="realtime voice disabled")
+        return
+
+    try:
+        _ensure_realtime_voice_sidecar(realtime)
+    except Exception as exc:
+        _log.warning("realtime voice sidecar failed to start", exc_info=True)
+        await ws.close(code=1011, reason=_ws_close_reason(f"sidecar: {exc}"))
         return
 
     try:

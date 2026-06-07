@@ -24,7 +24,9 @@ The production architecture has three deployment tiers behind the same desktop p
 
 - Let a user have a low-latency spoken conversation with Hermes in the desktop app.
 - Preserve Hermes' existing data boundary: memory, files, MCP, tools, profiles, approvals, and session state remain owned by Hermes.
-- Allow a local process, workstation, PGX/DGX-class box, or cloud endpoint to run Gemma, streaming STT, streaming TTS, and native S2S inference.
+- Allow a local process, remote inference host, or cloud endpoint to run Gemma, streaming STT, streaming TTS, and native S2S inference.
+- Make the desktop portable by separating microphone/playback/session UI from the machine or service that performs voice inference.
+- Autostart the reference sidecar for loopback local/Gemma/vLLM configurations so basic realtime voice does not require a second manual process.
 - Keep the desktop UI protocol stable while engines change behind it.
 - Support barge-in: user speech interrupts assistant playback and updates the live session state.
 - Commit only stable transcript and assistant text to durable Hermes session history.
@@ -34,7 +36,7 @@ The production architecture has three deployment tiers behind the same desktop p
 - Train a native speech-to-speech foundation model from scratch.
 - Replace the normal Hermes message loop.
 - Expose raw Hermes memory or tool results directly to speech vendors outside the existing permission model.
-- Require DGX Spark for basic use.
+- Require special GPU hardware for basic use.
 - Remove the existing one-shot voice mode.
 
 ## User Stories
@@ -42,8 +44,8 @@ The production architecture has three deployment tiers behind the same desktop p
 - As a user, I can talk to Hermes without pressing send after every utterance.
 - As a user, I can interrupt Hermes while it is speaking and have the assistant stop immediately.
 - As a user, I can ask about my actual Hermes context, files, tools, and memories during a voice session.
-- As a user without a workstation GPU, I can still use realtime voice through configured STT/TTS providers.
-- As a user with a workstation GPU, I can run low-latency speech/frontend models over the LAN.
+- As a user without local GPU hardware, I can still use realtime voice through configured STT/TTS providers.
+- As a user with a remote inference host, I can run low-latency speech/frontend models over the LAN.
 - As a developer, I can swap the voice engine from text-oracle-TTS to native S2S without rewriting the desktop UI.
 
 ## Architecture
@@ -59,6 +61,8 @@ Desktop mic stream
   -> assistant audio stream
   -> desktop playback
 ```
+
+The desktop talks only to Hermes' realtime websocket. Voice inference may run in-process, in a supervised loopback sidecar, on another LAN machine, or through a provider endpoint. The backend decides which engine/sidecar to use from profile config; the desktop protocol does not change.
 
 ### Text Oracle + Streaming TTS
 
@@ -97,6 +101,7 @@ Hermes oracle
 
 - A voice session starts from the desktop app and receives a Hermes session id.
 - The backend returns `session.started` before accepting audio frames.
+- For loopback local/reference/Gemma/vLLM frontends, the backend verifies sidecar health and starts the reference sidecar when configured to do so.
 - The session can close from the client, backend, or model-sidecar failure.
 - Closing a session must stop playback, cancel pending model/TTS work, and release sidecar resources.
 
@@ -155,6 +160,7 @@ Hermes oracle
 - Sidecar access should use a token, mTLS, SSH tunnel, loopback binding, or Tailscale.
 - Audio should not be sent to a cloud provider unless the user configured that provider.
 - Hermes remains the permission boundary for memory, MCP, file access, and tools.
+- Remote voice inference hosts are model/media workers only; they must not receive direct Hermes tool authority.
 
 ## Success Metrics
 
@@ -171,8 +177,9 @@ Hermes oracle
 3. Implement desktop audio frame streaming behind a feature flag.
 4. Implement text-oracle engine with streaming STT and streaming TTS.
 5. Add reference sidecar adapter for local/provider STT and TTS.
-6. Add workstation sidecar adapter for Gemma/vLLM audio frontend and TTS.
-7. Keep native S2S as a first-class engine path behind the same protocol.
+6. Add managed loopback sidecar lifecycle for local/Gemma/vLLM frontends.
+7. Add remote inference sidecar adapter for Gemma/vLLM audio frontend and TTS.
+8. Keep native S2S as a first-class engine path behind the same protocol.
 
 ## Open Questions
 

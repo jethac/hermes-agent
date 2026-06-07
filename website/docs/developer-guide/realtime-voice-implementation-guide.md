@@ -37,11 +37,11 @@ Treat this module as the shared contract between the desktop app, FastAPI websoc
 The realtime voice implementation now has both engine families behind the same protocol:
 
 - `agent/realtime_voice_session.py` owns the session state machine, monotonically increasing client sequence validation, barge-in state, and the durable transcript boundary.
-- `agent/realtime_voice_sidecar.py` implements the configured model-sidecar client for local, Gemma/vLLM, and workstation STT/TTS frontends.
+- `agent/realtime_voice_sidecar.py` implements the configured model-sidecar client for local, Gemma/vLLM, and remote STT/TTS frontends.
 - `agent/realtime_voice_reference_sidecar.py` implements the reference sidecar server that can run on ordinary machines with configured STT/TTS providers, or call a vLLM/Gemma audio endpoint when available.
 - `agent/realtime_voice_text_engine.py` implements the text-oracle path: audio or transcript input, streaming frontend events from a configured sidecar, local STT fallback via Hermes' existing transcription provider chain at utterance boundaries, streaming Hermes oracle deltas, speech planning, and chunked audio output via sidecar TTS or the existing TTS provider chain.
-- `agent/realtime_voice_s2s_engine.py` implements the native S2S path as a websocket bridge to a local, workstation, or cloud model sidecar. When the sidecar emits final transcript events, Hermes calls the configured oracle model and sends `oracle.hint` events back to the sidecar.
-- `hermes_cli/web_server.py` exposes `/api/voice/realtime` behind the same websocket auth and Host/Origin guards as the dashboard chat websocket.
+- `agent/realtime_voice_s2s_engine.py` implements the native S2S path as a websocket bridge to a local, remote, or cloud model sidecar. When the sidecar emits final transcript events, Hermes calls the configured oracle model and sends `oracle.hint` events back to the sidecar.
+- `hermes_cli/web_server.py` exposes `/api/voice/realtime` behind the same websocket auth and Host/Origin guards as the dashboard chat websocket. For loopback `local`, `reference`, `gemma`, `gemma4`, `lmstudio`, and `vllm` frontends, it can also supervise the reference sidecar process automatically.
 - `apps/desktop/src/app/chat/composer/hooks/use-realtime-voice-session.ts` implements the desktop websocket client, microphone frame capture, simple VAD, playback queue, and barge-in cancellation.
 
 The existing one-shot voice mode remains the fallback. Realtime voice is opt-in via `voice.realtime.enabled`.
@@ -49,8 +49,27 @@ The existing one-shot voice mode remains the fallback. Realtime voice is opt-in 
 Current limits:
 
 - In-core local STT still uses Hermes' existing file-based transcription providers after an utterance boundary. True streaming STT is available through the configured sidecar protocol, not through the local provider chain.
-- The native S2S model itself is not shipped in Hermes. Hermes provides the sidecar bridge and oracle hint stream; a local, workstation, or cloud sidecar owns model inference.
+- The native S2S model itself is not shipped in Hermes. Hermes provides the sidecar bridge and oracle hint stream; a local, remote, or cloud sidecar owns model inference.
 - Audio frames are JSON/base64 for the first implementation. Binary websocket frames can replace this without changing the semantic event contract.
+
+## Portability Boundary
+
+The desktop app should only know about Hermes' `/api/voice/realtime` websocket. It should not know whether speech inference is local, a supervised loopback process, a LAN GPU host, or a provider endpoint.
+
+Hermes owns:
+
+- websocket auth and session lifecycle
+- microphone/playback event protocol
+- oracle calls, tool gates, memory, files, and permissions
+- durable transcript commit policy
+
+The voice inference process owns:
+
+- streaming STT or audio understanding
+- streaming TTS or native S2S audio generation
+- model-specific media dependencies and GPU scheduling
+
+This split is why `sidecar_base_url` and `spark_base_url` remain server-side configuration. The desktop cannot point Hermes at an arbitrary inference host through query params.
 
 ## Target File Layout
 
@@ -67,6 +86,7 @@ agent/
 
 hermes_cli/
   web_server.py                  # /api/voice/realtime websocket endpoint
+  realtime_voice_sidecar.py      # reference sidecar CLI
 
 apps/desktop/src/app/chat/voice/
   realtime-voice-client.ts       # websocket client
@@ -174,15 +194,18 @@ voice:
   realtime:
     enabled: true
     engine: text_oracle_tts
-    spark_base_url: "http://spark.local:8080"
-    frontend_provider: gemma
-    frontend_model: gemma-4-e4b
+    frontend_provider: gemma4
+    frontend_model: google/gemma-4-E4B-it-qat-w4a16-ct
+    sidecar_host: 127.0.0.1
+    sidecar_port: 8765
+    vllm_base_url: "http://voice-gpu.local:8000/v1"
+    vllm_model: google/gemma-4-E4B-it-qat-w4a16-ct
     tts_provider: edge
 ```
 
 Do not add new core dependencies for provider-specific engines. Use extras or lazy install paths.
 
-## Reference And Workstation Sidecars
+## Reference And Remote Inference Sidecars
 
 Treat every sidecar as a model/media process, not as the Hermes authority. Hermes keeps the session, permissions, memory, and tool execution.
 
@@ -222,7 +245,16 @@ voice:
     frontend_provider: local
     sidecar_host: 127.0.0.1
     sidecar_port: 8765
+    sidecar_autostart: true
 ```
+
+With `sidecar_autostart: true`, Hermes checks `GET /health` on the loopback sidecar URL before accepting a realtime voice websocket. If the sidecar is absent, Hermes starts:
+
+```bash
+python -m hermes_cli.realtime_voice_sidecar --host 127.0.0.1 --port 8765
+```
+
+For `gemma4` or `vllm` frontends, the same supervised sidecar can call a remote vLLM audio endpoint through `vllm_base_url` and `vllm_model`. If `sidecar_base_url` or `spark_base_url` points at a non-loopback host, Hermes treats that as an externally managed inference host and does not spawn a local process.
 
 Suggested sidecar API expansion:
 
@@ -245,7 +277,7 @@ Security requirements:
 
 ## Native S2S Engine
 
-Only start this after text-oracle mode works.
+Native S2S is a first-class engine family behind the same session protocol. It does not need to wait for the text-oracle path to be "done"; the shared contract is the requirement.
 
 The native engine owns low-level speaking:
 
@@ -327,8 +359,9 @@ npm run test:ui -- src/app/chat/composer/hooks/use-realtime-voice-session.test.t
 7. Add TTS adapter. Done by reusing Hermes' existing provider chain.
 8. Add barge-in and commit semantics. Done in the session and desktop playback layers.
 9. Add reference sidecar server. Done for local/provider STT/TTS and optional vLLM audio frontend.
-10. Add workstation sidecar adapter. Done for text-oracle Gemma/STT/TTS streaming, native S2S websocket bridging, and oracle hints.
-11. Add native S2S engine. Done as a sidecar-backed engine; model-sidecar deployment is external to Hermes and remains a first-class production track.
+10. Add managed local sidecar lifecycle. Done for loopback local/reference/Gemma/vLLM frontends; remote inference sidecars remain externally managed.
+11. Add remote inference sidecar adapter. Done for text-oracle Gemma/STT/TTS streaming, native S2S websocket bridging, and oracle hints.
+12. Add native S2S engine. Done as a sidecar-backed engine; model-sidecar deployment is external to Hermes and remains a first-class production track.
 
 ## Review Checklist
 
