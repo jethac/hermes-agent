@@ -335,6 +335,7 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
       speechLevelThreshold: 'Speech Start Threshold',
       bargeInMinSpeechMs: 'Barge-In Speech Window',
       preRollMs: 'Mic Pre-Roll',
+      requireLiveLike: 'Require Live-Like Voice',
       productionLanguages: 'Production Voice Languages',
       productionScripts: 'Production Voice Scripts',
       bestEffortLanguages: 'Best-Effort Other Languages',
@@ -505,6 +506,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
         'Milliseconds of sustained speech over assistant playback before Hermes sends a barge-in event.',
       preRollMs:
         'Milliseconds of microphone audio retained before speech starts, so the first syllable is not clipped.',
+      requireLiveLike:
+        'Require native speech-to-speech or streaming STT/TTS before realtime voice is considered available.',
       productionLanguages:
         'Comma-separated BCP-47 language tags that Hermes treats as production acceptance targets. Defaults to English and Japanese.',
       productionScripts:
@@ -657,6 +660,7 @@ export const SECTIONS: DesktopConfigSection[] = [
       'voice.realtime.speech_level_threshold',
       'voice.realtime.barge_in_min_speech_ms',
       'voice.realtime.pre_roll_ms',
+      'voice.realtime.require_live_like',
       'voice.realtime.production_languages',
       'voice.realtime.production_scripts',
       'voice.realtime.best_effort_languages',
