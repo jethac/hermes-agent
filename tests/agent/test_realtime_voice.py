@@ -1808,6 +1808,63 @@ def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
     asyncio.run(run())
 
 
+def test_reference_sidecar_passes_language_metadata_to_tts_callback(tmp_path):
+    captured = {}
+
+    def fake_synthesize(text, *, metadata=None):
+        captured["text"] = text
+        captured["metadata"] = metadata
+        audio = tmp_path / "speech.ogg"
+        audio.write_bytes(b"audio")
+        return {"success": True, "file_path": str(audio)}
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(vllm_base_url=None, vllm_model=None),
+            synthesize_func=fake_synthesize,
+        )
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "text": "こんにちは、Hermesです。",
+                    "speak": True,
+                    "playback_generation": 7,
+                    "language": "ja",
+                    "locale": "ja-JP",
+                    "script": "Jpan",
+                    "language_url": "https://voice.local/secret",
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                await sidecar.close()
+                break
+
+        audio = seen[-1]
+        assert captured == {
+            "text": "こんにちは、Hermesです。",
+            "metadata": {
+                "language": "ja",
+                "locale": "ja-JP",
+                "script": "Jpan",
+            },
+        }
+        assert audio.payload["language"] == "ja"
+        assert audio.payload["locale"] == "ja-JP"
+        assert audio.payload["script"] == "Jpan"
+        assert "language_url" not in audio.payload
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_bounds_utterance_audio_buffer():
     transcribe_called = False
 
