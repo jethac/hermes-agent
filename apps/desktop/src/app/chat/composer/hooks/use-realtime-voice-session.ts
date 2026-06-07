@@ -13,7 +13,7 @@ interface RealtimeVoiceOptions {
   sessionId?: null | string
 }
 
-interface VoiceEvent {
+export interface VoiceEvent {
   payload?: Record<string, unknown>
   sequence: number
   session_id: string
@@ -24,6 +24,17 @@ interface VoiceEvent {
 interface PlaybackItem {
   blob: Blob
   generation: number
+}
+
+export interface RealtimeVoiceLatencyMetrics {
+  audioToFinalTranscriptMs?: number
+  audioToPartialTranscriptMs?: number
+  bargeInAckMs?: number
+  eouToFinalTranscriptMs?: number
+  finalTranscriptToFirstAudioMs?: number
+  finalTranscriptToFirstTextMs?: number
+  sessionElapsedMs?: number
+  updatedAtMs?: number
 }
 
 export interface RealtimeVoiceStatus {
@@ -38,6 +49,16 @@ export interface RealtimeVoiceStatus {
 }
 
 type BrowserAudioContext = typeof AudioContext
+
+const METRIC_KEYS = {
+  audio_to_final_transcript_ms: 'audioToFinalTranscriptMs',
+  audio_to_partial_transcript_ms: 'audioToPartialTranscriptMs',
+  barge_in_ack_ms: 'bargeInAckMs',
+  eou_to_final_transcript_ms: 'eouToFinalTranscriptMs',
+  final_transcript_to_first_audio_ms: 'finalTranscriptToFirstAudioMs',
+  final_transcript_to_first_text_ms: 'finalTranscriptToFirstTextMs',
+  session_elapsed_ms: 'sessionElapsedMs'
+} as const satisfies Record<string, keyof RealtimeVoiceLatencyMetrics>
 
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -78,10 +99,46 @@ export function getRealtimeVoiceStatus(): Promise<RealtimeVoiceStatus> {
   return window.hermesDesktop.api<RealtimeVoiceStatus>({ path: '/api/voice/realtime/status' })
 }
 
+function finiteNonNegativeMs(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
+
+export function collectRealtimeVoiceMetrics(
+  previous: RealtimeVoiceLatencyMetrics,
+  event: VoiceEvent
+): RealtimeVoiceLatencyMetrics {
+  const metrics = event.payload?.metrics
+
+  if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) {
+    return previous
+  }
+
+  let changed = false
+  const next: RealtimeVoiceLatencyMetrics = { ...previous }
+
+  for (const [wireKey, stateKey] of Object.entries(METRIC_KEYS)) {
+    const value = finiteNonNegativeMs((metrics as Record<string, unknown>)[wireKey])
+
+    if (value !== null && next[stateKey] !== value) {
+      next[stateKey] = value
+      changed = true
+    }
+  }
+
+  if (!changed) {
+    return previous
+  }
+
+  next.updatedAtMs = finiteNonNegativeMs(event.timestamp_ms) ?? Date.now()
+
+  return next
+}
+
 export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavailable, sessionId }: RealtimeVoiceOptions) {
   const [status, setStatus] = useState<ConversationStatus>('idle')
   const [level, setLevel] = useState(0)
   const [muted, setMuted] = useState(false)
+  const [metrics, setMetrics] = useState<RealtimeVoiceLatencyMetrics>({})
   const socketRef = useRef<WebSocket | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -410,6 +467,8 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
   const handleEvent = useCallback(
     (event: VoiceEvent) => {
+      setMetrics(current => collectRealtimeVoiceMetrics(current, event))
+
       if (event.type === 'audio.output.chunk') {
         enqueueAudio(event.payload || {})
       } else if (event.type === 'assistant.text.partial') {
@@ -442,6 +501,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     }
 
     sessionRef.current = sessionId || sessionRef.current
+    setMetrics({})
     const url = await realtimeVoiceUrl(sessionRef.current)
     const socket = new WebSocket(url)
 
@@ -523,5 +583,5 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
   useEffect(() => () => void end(), [end])
 
-  return { end, level, muted, start, status, stopTurn, toggleMute }
+  return { end, level, metrics, muted, start, status, stopTurn, toggleMute }
 }
