@@ -71,7 +71,12 @@ def main(argv: list[str] | None = None) -> int:
             require_protocol=not args.no_protocol,
         )
     if not issues:
-        result_count = sum(len(entries) for _report, entries in runs)
+        result_count = sum(
+            1
+            for _report, entries in runs
+            for entry in entries
+            if str(entry.get("kind") or "") != "manifest"
+        )
         print(f"Realtime voice smoke report OK: {result_count} result(s) across {len(runs)} run(s)")
         summary = summarize_realtime_voice_smoke_report_runs(runs)
         latency = summary.get("latency_ms", {})

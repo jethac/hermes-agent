@@ -12498,7 +12498,7 @@ def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str
     capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
     local = payload.get("local") if isinstance(payload.get("local"), dict) else {}
 
-    return {
+    result = {
         "ok": payload.get("ok") is True,
         "kind": str(payload.get("kind") or "") or None,
         "frontend": {
@@ -12528,6 +12528,27 @@ def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str
             "tts": local.get("tts") is True,
         },
     }
+    if "streaming_stt_bridge" in capabilities:
+        result["capabilities"]["streaming_stt_bridge"] = capabilities.get("streaming_stt_bridge") is True
+    if "streaming_tts" in capabilities:
+        result["capabilities"]["streaming_tts"] = capabilities.get("streaming_tts") is True
+    if "streaming_tts_bridge" in capabilities:
+        result["capabilities"]["streaming_tts_bridge"] = capabilities.get("streaming_tts_bridge") is True
+
+    stt_bridge = frontend.get("streaming_stt_bridge")
+    if isinstance(stt_bridge, dict):
+        result["frontend"]["streaming_stt_bridge"] = {
+            "configured": stt_bridge.get("configured") is True,
+            "healthy": stt_bridge.get("healthy") is True,
+        }
+    tts_bridge = frontend.get("streaming_tts_bridge")
+    if isinstance(tts_bridge, dict):
+        result["frontend"]["streaming_tts_bridge"] = {
+            "configured": tts_bridge.get("configured") is True,
+            "healthy": tts_bridge.get("healthy") is True,
+            "model": str(tts_bridge.get("model") or "") or None,
+        }
+    return result
 
 
 def _realtime_voice_sidecar_capability_error(

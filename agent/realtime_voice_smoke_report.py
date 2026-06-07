@@ -94,7 +94,12 @@ def validate_realtime_voice_alpha_report_runs(
 def summarize_realtime_voice_smoke_report_runs(
     runs: Sequence[tuple[str, Sequence[Mapping[str, Any]]]],
 ) -> dict[str, Any]:
-    entries = [entry for _label, report_entries in runs for entry in report_entries]
+    entries = [
+        entry
+        for _label, report_entries in runs
+        for entry in report_entries
+        if str(entry.get("kind") or "") != "manifest"
+    ]
     by_kind = _entries_by_kind(entries)
     return {
         "runs": len(runs),

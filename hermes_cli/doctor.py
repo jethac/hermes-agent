@@ -609,6 +609,153 @@ def _write_realtime_voice_report(path: str | os.PathLike[str], reports: list[dic
     report_path.write_text(json.dumps(reports, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def _realtime_voice_evidence_manifest_payload() -> dict[str, Any]:
+    """Return sanitized realtime voice stack context for smoke evidence reports."""
+    try:
+        status = dict(_realtime_voice_status_payload())
+    except Exception as exc:
+        return {
+            "kind": "manifest",
+            "ok": False,
+            "schema_version": 1,
+            "error": f"could not read realtime voice status: {exc}",
+        }
+
+    sidecar = status.get("sidecar") if isinstance(status.get("sidecar"), Mapping) else {}
+    sidecar_health = _realtime_voice_manifest_health(sidecar.get("health"))
+    production = status.get("production_readiness") if isinstance(status.get("production_readiness"), Mapping) else {}
+    evidence = production.get("evidence") if isinstance(production.get("evidence"), Mapping) else {}
+    manifest = {
+        "kind": "manifest",
+        "ok": True,
+        "schema_version": 1,
+        "source": "hermes doctor --realtime-voice-report",
+        "engine": str(status.get("engine") or ""),
+        "frontend_provider": str(status.get("frontend_provider") or ""),
+        "frontend_model": str(status.get("frontend_model") or ""),
+        "available": status.get("available") is True,
+        "unavailable_reason": str(status.get("unavailable_reason") or "") or None,
+        "require_live_like": status.get("require_live_like") is True,
+        "quality_targets_ms": status.get("quality_targets_ms") if isinstance(status.get("quality_targets_ms"), Mapping) else {},
+        "conversation_quality": (
+            status.get("conversation_quality")
+            if isinstance(status.get("conversation_quality"), Mapping)
+            else {}
+        ),
+        "language_support": (
+            status.get("language_support")
+            if isinstance(status.get("language_support"), Mapping)
+            else {}
+        ),
+        "sidecar": {
+            "mode": str(sidecar.get("mode") or "none"),
+            "healthy": sidecar.get("healthy"),
+            "health": sidecar_health,
+        },
+        "production_readiness": {
+            "ready": production.get("ready") is True,
+            "level": str(production.get("level") or ""),
+            "issues": [str(issue) for issue in production.get("issues", [])]
+            if isinstance(production.get("issues"), list)
+            else [],
+            "evidence": {
+                "runs": evidence.get("runs"),
+                "min_runs": evidence.get("min_runs"),
+                "verified": evidence.get("verified") is True,
+            },
+        },
+    }
+    return _strip_none_values(manifest)
+
+
+def _append_realtime_voice_evidence_manifest(reports: list[dict[str, Any]] | None) -> None:
+    if reports is None:
+        return
+    reports[:] = [entry for entry in reports if entry.get("kind") != "manifest"]
+    reports.insert(0, _realtime_voice_evidence_manifest_payload())
+
+
+def _realtime_voice_manifest_health(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping):
+        return None
+    frontend = value.get("frontend") if isinstance(value.get("frontend"), Mapping) else {}
+    capabilities = value.get("capabilities") if isinstance(value.get("capabilities"), Mapping) else {}
+    local = value.get("local") if isinstance(value.get("local"), Mapping) else {}
+    result: dict[str, Any] = {
+        "ok": value.get("ok") is True,
+        "kind": str(value.get("kind") or "") or None,
+        "frontend": {
+            "provider": str(frontend.get("provider") or "") or None,
+            "model": str(frontend.get("model") or "") or None,
+            "languages": _realtime_voice_manifest_metadata_list(frontend.get("languages")),
+            "scripts": _realtime_voice_manifest_metadata_list(frontend.get("scripts")),
+        },
+        "capabilities": {
+            "utterance_stt": capabilities.get("utterance_stt") is True,
+            "streaming_stt": capabilities.get("streaming_stt") is True,
+            "tts": capabilities.get("tts") is True,
+            "native_s2s": capabilities.get("native_s2s") is True,
+            "vllm_audio_frontend": capabilities.get("vllm_audio_frontend") is True,
+            "input_languages": _realtime_voice_manifest_metadata_list(capabilities.get("input_languages")),
+            "output_languages": _realtime_voice_manifest_metadata_list(capabilities.get("output_languages")),
+            "scripts": _realtime_voice_manifest_metadata_list(capabilities.get("scripts")),
+        },
+        "local": {
+            "stt": local.get("stt") is True,
+            "tts": local.get("tts") is True,
+        },
+    }
+    for key in ("streaming_stt_bridge", "streaming_tts", "streaming_tts_bridge"):
+        if key in capabilities:
+            result["capabilities"][key] = capabilities.get(key) is True
+    stt_bridge = frontend.get("streaming_stt_bridge")
+    if isinstance(stt_bridge, Mapping):
+        result["frontend"]["streaming_stt_bridge"] = {
+            "configured": stt_bridge.get("configured") is True,
+            "healthy": stt_bridge.get("healthy") is True,
+        }
+    tts_bridge = frontend.get("streaming_tts_bridge")
+    if isinstance(tts_bridge, Mapping):
+        result["frontend"]["streaming_tts_bridge"] = {
+            "configured": tts_bridge.get("configured") is True,
+            "healthy": tts_bridge.get("healthy") is True,
+            "model": str(tts_bridge.get("model") or "") or None,
+        }
+    return _strip_none_values(result)
+
+
+def _realtime_voice_manifest_metadata_list(value: Any) -> list[str]:
+    values = value if isinstance(value, list) else [value] if isinstance(value, str) else []
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        if not isinstance(item, str):
+            continue
+        text = item.strip()
+        if not text or len(text) > 64:
+            continue
+        if not all(char.isalnum() or char in {"-", "_", "."} for char in text):
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(text)
+    return result
+
+
+def _strip_none_values(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _strip_none_values(item)
+            for key, item in value.items()
+            if item is not None
+        }
+    if isinstance(value, list):
+        return [_strip_none_values(item) for item in value]
+    return value
+
+
 def _realtime_voice_smoke_config():
     from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceAudioCodec
     from hermes_cli.web_server import (
@@ -1971,6 +2118,7 @@ def run_doctor(args):
         )
     if realtime_voice_report_path:
         try:
+            _append_realtime_voice_evidence_manifest(realtime_voice_reports)
             _write_realtime_voice_report(realtime_voice_report_path, realtime_voice_reports or [])
             check_ok("Realtime voice smoke report", f"({realtime_voice_report_path})")
         except Exception as exc:

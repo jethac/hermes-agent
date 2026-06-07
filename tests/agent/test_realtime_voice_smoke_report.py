@@ -71,6 +71,27 @@ def test_realtime_voice_alpha_report_accepts_required_en_ja_smokes():
     assert validate_realtime_voice_alpha_report(_valid_alpha_report()) == []
 
 
+def test_realtime_voice_alpha_report_ignores_manifest_entry():
+    report = [
+        {
+            "kind": "manifest",
+            "ok": True,
+            "sidecar": {
+                "health": {
+                    "capabilities": {
+                        "streaming_stt": True,
+                        "streaming_tts": True,
+                        "tts": True,
+                    }
+                }
+            },
+        },
+        *_valid_alpha_report(),
+    ]
+
+    assert validate_realtime_voice_alpha_report(report) == []
+
+
 def test_realtime_voice_alpha_report_requires_all_required_fixtures_and_phrases():
     report = [
         entry
@@ -145,7 +166,7 @@ def test_realtime_voice_alpha_report_runs_accept_multiple_reports(tmp_path):
 def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path):
     runs = []
     for index, partial_ms in enumerate((80, 90, 120)):
-        report = _valid_alpha_report()
+        report = [{"kind": "manifest", "ok": True}, *_valid_alpha_report()]
         for entry in report:
             if entry.get("kind") == "audio_fixture":
                 entry["transcript_partial_ms"] = partial_ms
