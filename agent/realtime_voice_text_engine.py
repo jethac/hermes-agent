@@ -248,10 +248,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     {"text": plan.committed_text, "playback_generation": playback_generation},
                 )
         except asyncio.CancelledError:
-            await self._emit(
-                VoiceEventType.ASSISTANT_COMMIT,
-                {"interrupted": True, "text": "", "playback_generation": playback_generation},
-            )
+            if playback_generation == self._playback_generation:
+                await self._emit(
+                    VoiceEventType.ASSISTANT_COMMIT,
+                    {"interrupted": True, "text": "", "playback_generation": playback_generation},
+                )
             raise
         except Exception as exc:
             await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"oracle/tts failed: {exc}"})

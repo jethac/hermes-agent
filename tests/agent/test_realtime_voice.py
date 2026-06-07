@@ -387,6 +387,78 @@ def test_text_engine_barge_in_interrupts_oracle_and_sidecar():
     asyncio.run(run())
 
 
+def test_text_engine_suppresses_stale_cancelled_commit_when_new_turn_starts(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.release = asyncio.Event()
+
+        async def stream_answer(self, transcript: str):
+            if transcript == "first":
+                yield "First answer starts. "
+                await self.release.wait()
+                yield "stale"
+            else:
+                yield "Second answer."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = TextOracleTTSEngine(oracle=oracle)
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "first"},
+            )
+        )
+
+        seen = []
+        while True:
+            event = await anext(engine.events())
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                break
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload={"transcript": "second"},
+            )
+        )
+
+        while True:
+            event = await anext(engine.events())
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        commit_events = [event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT]
+        assert commit_events == [
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_COMMIT,
+                session_id="voice-123",
+                sequence=6,
+                payload={"text": "Second answer.", "playback_generation": 2},
+                timestamp_ms=commit_events[0].timestamp_ms,
+            )
+        ]
+        assert not any(
+            event.payload.get("interrupted") is True and event.payload.get("playback_generation") == 1
+            for event in seen
+        )
+        await engine.close()
+
+    asyncio.run(run())
+
+
 def test_sidecar_config_detection_and_url_building():
     assert wants_realtime_sidecar(
         RealtimeVoiceSessionConfig(
