@@ -666,6 +666,19 @@ export function realtimeVoiceSessionErrorAction(_input: RealtimeSessionErrorActi
   return 'fallback'
 }
 
+export function realtimeVoiceFailureFrontendState(
+  reason: string,
+  updatedAtMs = Date.now()
+): RealtimeVoiceFrontendState {
+  const cleanReason = reason.trim()
+
+  return {
+    reason: cleanReason || 'realtime_voice_failed',
+    status: 'fallback',
+    updatedAtMs
+  }
+}
+
 export function realtimeVoicePlaybackQueueAction({
   enabled,
   hasQueuedAudio,
@@ -1416,7 +1429,13 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       } else if (event.type === 'session.error') {
         notifyError(new Error(String(event.payload?.error || 'Realtime voice failed')), 'Realtime voice failed')
         if (realtimeVoiceSessionErrorAction({ sessionStarted: sessionStartedRef.current }) === 'fallback') {
-          onUnavailable?.()
+          sessionFailedRef.current = true
+          const state = realtimeVoiceFailureFrontendState(
+            'session_error',
+            finiteNonNegativeMs(event.timestamp_ms) ?? Date.now()
+          )
+          setFrontendState(state)
+          onUnavailable?.(state)
         } else {
           onFatalError?.()
         }
@@ -1503,7 +1522,9 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       resolveSessionReady?.(false)
       resolveSessionReady = null
       if (action === 'fallback') {
-        onUnavailable?.()
+        const state = realtimeVoiceFailureFrontendState('websocket_closed', Date.now())
+        setFrontendState(state)
+        onUnavailable?.(state)
       } else if (action === 'fatal') {
         onFatalError?.()
       }
