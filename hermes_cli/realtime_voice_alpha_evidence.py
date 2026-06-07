@@ -236,6 +236,12 @@ def managed_deepgram_bridge_for_evidence(args: argparse.Namespace) -> Iterator[N
             raise RuntimeError("voice.realtime.streaming_stt_base_url is required")
         token = _streaming_bridge_token_for_evidence(realtime, env_on_disk)
         if not _deepgram_bridge_healthy(bridge_url, token=token):
+            prerequisite_issues = _deepgram_bridge_prerequisite_issues_for_evidence(env_on_disk)
+            if prerequisite_issues:
+                raise RuntimeError(
+                    "Deepgram bridge prerequisite check failed: "
+                    + "; ".join(prerequisite_issues)
+                )
             host, port = _deepgram_bridge_bind(args, bridge_url)
             proc = _spawn_deepgram_bridge_for_evidence(host, port, env_on_disk)
             _wait_for_deepgram_bridge_health(
@@ -347,6 +353,49 @@ def _spawn_deepgram_bridge_for_evidence(
         return subprocess.Popen(command, **popen_kwargs)
     finally:
         log_file.close()
+
+
+def _deepgram_bridge_prerequisite_issues_for_evidence(env_on_disk: dict[str, str]) -> list[str]:
+    from agent.realtime_voice_deepgram_bridge import (
+        deepgram_bridge_config_from_env,
+        deepgram_bridge_prerequisite_issues,
+    )
+    from hermes_cli.realtime_voice_deepgram_bridge import (
+        DEFAULT_PRODUCTION_EN_JA_STT_LANGUAGE,
+        DEFAULT_PRODUCTION_EN_JA_TTS_MODEL_BY_LANGUAGE,
+    )
+
+    merged_env = {
+        **os.environ,
+        **env_on_disk,
+    }
+    if not str(merged_env.get("HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE") or "").strip():
+        merged_env["HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE"] = DEFAULT_PRODUCTION_EN_JA_TTS_MODEL_BY_LANGUAGE
+    if not str(merged_env.get("HERMES_DEEPGRAM_LANGUAGE") or "").strip():
+        merged_env["HERMES_DEEPGRAM_LANGUAGE"] = DEFAULT_PRODUCTION_EN_JA_STT_LANGUAGE
+
+    with _temporary_environ(merged_env):
+        runtime = deepgram_bridge_config_from_env()
+        return deepgram_bridge_prerequisite_issues(
+            runtime,
+            require_auth_token=True,
+            required_input_languages=("en", "ja"),
+            required_output_languages=("en", "ja"),
+        )
+
+
+@contextmanager
+def _temporary_environ(values: dict[str, str]) -> Iterator[None]:
+    previous = {key: os.environ.get(key) for key in values}
+    try:
+        os.environ.update({key: str(value) for key, value in values.items()})
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def _deepgram_bridge_log_path() -> Path:
