@@ -25,6 +25,16 @@ from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_oracle import HermesRealtimeOracle
 
 
+STALE_SIDECAR_GENERATION_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.ASSISTANT_COMMIT,
+        VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+        VoiceEventType.TRANSCRIPT_FINAL,
+    }
+)
+
+
 class NativeS2SSidecarEngine(RealtimeVoiceEngine):
     """Bridge browser voice events to a native S2S inference sidecar."""
 
@@ -143,6 +153,8 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
                             payload["playback_generation"] = self._playback_generation
                         await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
                         continue
+                    if self._is_stale_sidecar_event(event):
+                        continue
                     event = self._normalize_sidecar_event(event)
                     await self._queue_sidecar_event(event)
                     continue
@@ -150,6 +162,8 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
                     event = VoiceEvent.from_wire(json.loads(raw))
                 except Exception:
                     await self._emit(VoiceEventType.SESSION_ERROR, {"error": "invalid sidecar event"})
+                    continue
+                if self._is_stale_sidecar_event(event):
                     continue
                 if event.type == VoiceEventType.TRANSCRIPT_FINAL:
                     event = self._normalize_sidecar_event(event, new_generation=True)
@@ -183,6 +197,12 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
 
     async def _queue_sidecar_event(self, event: VoiceEvent) -> None:
         await self._emit(event.type, dict(event.payload))
+
+    def _is_stale_sidecar_event(self, event: VoiceEvent) -> bool:
+        if event.type not in STALE_SIDECAR_GENERATION_EVENT_TYPES:
+            return False
+        generation = _payload_generation(dict(event.payload))
+        return generation is not None and generation < self._playback_generation
 
     def _normalize_sidecar_event(self, event: VoiceEvent, *, new_generation: bool = False) -> VoiceEvent:
         payload = dict(event.payload)
