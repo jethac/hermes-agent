@@ -287,6 +287,8 @@ def test_alpha_evidence_runner_reports_missing_realtime_smoke_config(
     error = capsys.readouterr().err
     assert "realtime voice smoke is not configured" in error
     assert "sidecar_base_url" in error
+    assert "realtime_voice_profile --preset deepgram --apply --generate-bridge-token" in error
+    assert "realtime_voice_deepgram_bridge --check --strict --production-en-ja" in error
 
 
 def test_alpha_evidence_runner_reports_missing_fixtures(monkeypatch, tmp_path, capsys):
@@ -319,6 +321,7 @@ def test_alpha_evidence_runner_reports_missing_fixtures(monkeypatch, tmp_path, c
     assert "missing required audio fixture" in error
     for fixture in ALPHA_REQUIRED_AUDIO_FIXTURES:
         assert fixture in error
+    assert "realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice" in error
 
 
 def test_alpha_evidence_runner_returns_validation_failure(monkeypatch, tmp_path, capsys):
@@ -519,4 +522,5 @@ def test_alpha_evidence_runner_requires_live_like_status_before_collecting(
     assert "live-like realtime voice is not ready" in error
     assert "realtime_voice_profile --preset deepgram --apply --generate-bridge-token" in error
     assert "realtime_voice_deepgram_bridge --check --strict --production-en-ja" in error
+    assert "realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice" in error
     assert "realtime_voice_alpha_evidence --runs 3" in error

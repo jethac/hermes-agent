@@ -85,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         for fixture in missing_fixtures:
             print(f"  - {fixture}", file=sys.stderr)
+        print_realtime_voice_fixture_setup_hint()
         return 1
 
     try:
@@ -97,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
             f"({sanitize_realtime_voice_error(exc)})",
             file=sys.stderr,
         )
+        print_realtime_voice_live_setup_hint()
         return 1
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -236,7 +238,13 @@ def print_realtime_voice_live_setup_hint() -> None:
         "  python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --production-en-ja",
         file=sys.stderr,
     )
+    print("  python -m hermes_cli.realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice", file=sys.stderr)
     print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3", file=sys.stderr)
+
+
+def print_realtime_voice_fixture_setup_hint() -> None:
+    print("Fixture setup:", file=sys.stderr)
+    print("  python -m hermes_cli.realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice", file=sys.stderr)
 
 
 def _print_summary(runs: list[tuple[str, list[dict[str, Any]]]]) -> None:
