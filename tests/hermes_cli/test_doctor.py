@@ -51,6 +51,148 @@ class TestProviderEnvDetection:
         assert not _has_provider_env_config(content)
 
 
+class TestRealtimeVoiceReadiness:
+    def test_non_strict_disabled_realtime_voice_is_informational(self, monkeypatch, capsys):
+        monkeypatch.setattr(doctor, "load_config", lambda: {}, raising=False)
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_status_payload",
+            lambda: {
+                "enabled": False,
+                "available": False,
+                "engine": "text_oracle_tts",
+                "conversation_quality": {
+                    "mode": "local_turn_based",
+                    "reason": "disabled",
+                    "live_like": False,
+                },
+                "language_support": {
+                    "production_languages": ["en", "ja"],
+                    "best_effort_languages": True,
+                },
+                "sidecar": {"mode": "none"},
+            },
+        )
+        issues = []
+
+        doctor._check_realtime_voice_readiness(issues, strict=False)
+
+        output = capsys.readouterr().out
+        assert "Realtime voice disabled" in output
+        assert "skipping live voice readiness gate" in output
+        assert issues == []
+
+    def test_strict_requires_enabled_available_live_like_voice(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_status_payload",
+            lambda: {
+                "enabled": True,
+                "available": False,
+                "unavailable_reason": "live_like_required",
+                "engine": "text_oracle_tts",
+                "require_live_like": True,
+                "conversation_quality": {
+                    "mode": "turn_based_text",
+                    "reason": "utterance_stt_tts",
+                    "live_like": False,
+                },
+                "language_support": {
+                    "production_languages": ["en"],
+                    "best_effort_languages": False,
+                },
+                "sidecar": {
+                    "mode": "external",
+                    "healthy": False,
+                },
+            },
+        )
+        issues = []
+
+        doctor._check_realtime_voice_readiness(issues, strict=True)
+
+        output = capsys.readouterr().out
+        assert "Realtime voice preflight" in output
+        assert "live_like_required" in output
+        assert "turn_based_text" in output
+        assert "missing production target(s): ja" in output
+        assert "Best-effort languages disabled" in output
+        assert "Voice sidecar health" in output
+        assert any("live-like" in issue for issue in issues)
+        assert any("English and Japanese" in issue for issue in issues)
+        assert any("best_effort_languages" in issue for issue in issues)
+
+    def test_strict_accepts_portable_live_like_voice_config(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_status_payload",
+            lambda: {
+                "enabled": True,
+                "available": True,
+                "engine": "text_oracle_tts",
+                "frontend_provider": "gemma4",
+                "frontend_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                "conversation_quality": {
+                    "mode": "streaming_text",
+                    "reason": "streaming_stt_tts",
+                    "live_like": True,
+                },
+                "language_support": {
+                    "production_languages": ["en", "ja"],
+                    "production_scripts": ["Latn", "Jpan"],
+                    "best_effort_languages": True,
+                },
+                "sidecar": {
+                    "mode": "external",
+                    "healthy": True,
+                },
+            },
+        )
+        issues = []
+
+        doctor._check_realtime_voice_readiness(issues, strict=True)
+
+        output = capsys.readouterr().out
+        assert "Realtime voice enabled" in output
+        assert "Realtime voice preflight" in output
+        assert "Live conversation quality" in output
+        assert "Portable voice provider naming" in output
+        assert issues == []
+
+    def test_strict_warns_on_machine_named_voice_provider(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_status_payload",
+            lambda: {
+                "enabled": True,
+                "available": True,
+                "engine": "text_oracle_tts",
+                "frontend_provider": "pgx-workstation",
+                "conversation_quality": {
+                    "mode": "streaming_text",
+                    "reason": "streaming_stt_tts",
+                    "live_like": True,
+                },
+                "language_support": {
+                    "production_languages": ["en", "ja"],
+                    "best_effort_languages": True,
+                },
+                "sidecar": {
+                    "mode": "external",
+                    "healthy": True,
+                },
+            },
+        )
+        issues = []
+
+        doctor._check_realtime_voice_readiness(issues, strict=True)
+
+        output = capsys.readouterr().out
+        assert "Portable voice provider naming" in output
+        assert "machine or accelerator name" in output
+        assert any("workstation/GPU" in issue for issue in issues)
+
+
 class TestDoctorEnvFileEncoding:
     """Regression for #18637 (bug 3): `hermes doctor` crashed on Windows
     Chinese locale (GBK) because `.env` was read with Path.read_text() which

@@ -23,6 +23,11 @@ def build_doctor_parser(subparsers, *, cmd_doctor: Callable) -> None:
         "--fix", action="store_true", help="Attempt to fix issues automatically"
     )
     doctor_parser.add_argument(
+        "--realtime-voice",
+        action="store_true",
+        help="Treat realtime voice live-conversation readiness as a required doctor gate",
+    )
+    doctor_parser.add_argument(
         "--ack",
         metavar="ADVISORY_ID",
         default=None,
