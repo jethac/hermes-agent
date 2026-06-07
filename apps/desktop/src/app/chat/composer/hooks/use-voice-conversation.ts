@@ -8,6 +8,7 @@ import {
   type RealtimeVoiceCaption,
   type RealtimeVoiceFrontendState,
   type RealtimeVoiceLatencyMetrics,
+  type RealtimeVoiceQualityTargetsMs,
   useRealtimeVoiceSession
 } from './use-realtime-voice-session'
 import { useMicRecorder } from './use-mic-recorder'
@@ -35,6 +36,12 @@ interface VoiceConversationOptions {
 const EMPTY_REALTIME_METRICS: RealtimeVoiceLatencyMetrics = {}
 const EMPTY_REALTIME_CAPTION: RealtimeVoiceCaption | null = null
 const EMPTY_REALTIME_FRONTEND_STATE: RealtimeVoiceFrontendState | null = null
+const DEFAULT_REALTIME_QUALITY_TARGETS: RealtimeVoiceQualityTargetsMs = {
+  audio_to_partial_transcript_ms: 300,
+  barge_in_ack_ms: 150,
+  final_transcript_to_first_audio_ms: 900,
+  final_transcript_to_first_text_ms: 500
+}
 const ASCII_SENTENCE_BOUNDARY_CHARS = new Set(['.', '!', '?'])
 const NON_ASCII_SENTENCE_BOUNDARY_CHARS = new Set(['。', '！', '？', '؟', '।'])
 const PHRASE_BOUNDARY_CHARS = new Set([',', ';', ':', '，', '、', '；', '：', '،', '؛'])
@@ -524,6 +531,7 @@ export function useVoiceConversation({
     level,
     metrics: EMPTY_REALTIME_METRICS,
     muted,
+    qualityTargets: DEFAULT_REALTIME_QUALITY_TARGETS,
     start,
     status,
     stopTurn,

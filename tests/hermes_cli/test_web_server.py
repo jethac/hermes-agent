@@ -2789,6 +2789,8 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.production_scripts"]["type"] == "list"
         assert CONFIG_SCHEMA["voice.realtime.best_effort_languages"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.production_languages"]["category"] == "voice"
+        assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.final_transcript_to_first_audio_ms"]["type"] == "number"
 
     def test_empty_prefix_produces_correct_keys(self):
         from hermes_cli.web_server import _build_schema_from_config
@@ -6431,6 +6433,12 @@ class TestRealtimeVoiceWebSocket:
             "best_effort_languages": True,
             "sidecar_languages_are_diagnostics": True,
         }
+        assert body["quality_targets_ms"] == {
+            "audio_to_partial_transcript_ms": 300,
+            "final_transcript_to_first_text_ms": 500,
+            "final_transcript_to_first_audio_ms": 900,
+            "barge_in_ack_ms": 150,
+        }
         assert body["sidecar"]["mode"] == "managed_loopback"
         assert body["sidecar"]["autostart"] is True
         assert body["sidecar"]["connect_timeout_seconds"] == 3
@@ -6462,6 +6470,37 @@ class TestRealtimeVoiceWebSocket:
             "production_scripts": ["Jpan", "Latn"],
             "best_effort_languages": False,
             "sidecar_languages_are_diagnostics": True,
+        }
+
+    def test_status_sanitizes_configured_realtime_quality_targets(self, monkeypatch):
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "quality_targets_ms": {
+                            "audio_to_partial_transcript_ms": 250,
+                            "final_transcript_to_first_text_ms": "400",
+                            "final_transcript_to_first_audio_ms": 0,
+                            "barge_in_ack_ms": -1,
+                            "unknown": 1,
+                        },
+                    }
+                }
+            },
+        )
+
+        response = self.client.get("/api/voice/realtime/status")
+
+        assert response.status_code == 200
+        assert response.json()["quality_targets_ms"] == {
+            "audio_to_partial_transcript_ms": 250,
+            "final_transcript_to_first_text_ms": 400,
+            "final_transcript_to_first_audio_ms": 900,
+            "barge_in_ack_ms": 150,
         }
 
     def test_status_includes_sanitized_sidecar_health_payload(self, monkeypatch):
