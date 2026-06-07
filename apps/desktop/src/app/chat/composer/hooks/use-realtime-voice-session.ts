@@ -76,6 +76,7 @@ const METRIC_KEYS = {
 
 const SPEECH_LEVEL_THRESHOLD = 0.075
 const BARGE_IN_MIN_SPEECH_MS = 120
+const MAX_REALTIME_AUDIO_BUFFERED_BYTES = 512 * 1024
 const GENERATION_EVENT_TYPES = new Set([
   'audio.output.chunk',
   'assistant.commit',
@@ -104,6 +105,12 @@ interface RealtimeAudioInputPayloadOptions {
   dataB64: string
   endOfUtterance: boolean
   mimeType: string
+}
+
+interface RealtimeAudioFrameBackpressureInput {
+  bufferedAmount: number
+  endOfUtterance: boolean
+  maxBufferedBytes?: number
 }
 
 interface RealtimeEndMarkerInput {
@@ -141,6 +148,19 @@ function bytesFromBase64(value: string): Uint8Array {
   }
 
   return bytes
+}
+
+export function queueRealtimeAudioTask(
+  previous: Promise<void>,
+  task: () => Promise<void>,
+  onError: (error: unknown) => void
+): Promise<void> {
+  return previous
+    .catch(() => undefined)
+    .then(task)
+    .catch(error => {
+      onError(error)
+    })
 }
 
 export async function realtimeVoiceUrl(sessionId: string): Promise<string> {
@@ -223,6 +243,14 @@ export function realtimeAudioInputPayload({
     data_b64: dataB64,
     end_of_utterance: endOfUtterance
   }
+}
+
+export function shouldSendRealtimeAudioFrame({
+  bufferedAmount,
+  endOfUtterance,
+  maxBufferedBytes = MAX_REALTIME_AUDIO_BUFFERED_BYTES
+}: RealtimeAudioFrameBackpressureInput): boolean {
+  return endOfUtterance || bufferedAmount <= maxBufferedBytes
 }
 
 export function shouldSendRealtimeVoiceEndMarker({
@@ -360,6 +388,8 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const enabledRef = useRef(enabled)
   const mutedRef = useRef(muted)
   const busyRef = useRef(busy)
+  const audioSendChainRef = useRef<Promise<void>>(Promise.resolve())
+  const audioInputGenerationRef = useRef(0)
 
   useEffect(() => {
     enabledRef.current = enabled
@@ -395,6 +425,51 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       })
     )
   }, [])
+
+  const queueAudioInput = useCallback(
+    (blob: Blob, endOfUtterance: boolean, mimeType: string) => {
+      const audioInputGeneration = audioInputGenerationRef.current
+      audioSendChainRef.current = queueRealtimeAudioTask(
+        audioSendChainRef.current,
+        async () => {
+          if (audioInputGeneration !== audioInputGenerationRef.current) {
+            return
+          }
+          if (closingInputRef.current && !endOfUtterance) {
+            return
+          }
+
+          const socket = socketRef.current
+          if (
+            !socket ||
+            socket.readyState !== WebSocket.OPEN ||
+            !shouldSendRealtimeAudioFrame({
+              bufferedAmount: socket.bufferedAmount,
+              endOfUtterance
+            })
+          ) {
+            return
+          }
+
+          const data_b64 = blob.size > 0 ? await blobToBase64(blob) : ''
+          if (audioInputGeneration !== audioInputGenerationRef.current) {
+            return
+          }
+
+          sendEvent('audio.input.chunk', realtimeAudioInputPayload({
+            dataB64: data_b64,
+            endOfUtterance,
+            mimeType
+          }))
+        },
+        error => {
+          notifyError(error, 'Realtime voice failed')
+          onFatalError?.()
+        }
+      )
+    },
+    [onFatalError, sendEvent]
+  )
 
   const cleanupInput = useCallback(() => {
     closingInputRef.current = true
@@ -446,13 +521,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
           sentEndOfUtteranceRef.current = true
         }
 
-        void blobToBase64(event.data).then(data_b64 => {
-          sendEvent('audio.input.chunk', realtimeAudioInputPayload({
-            dataB64: data_b64,
-            endOfUtterance,
-            mimeType: recorderMimeType
-          }))
-        })
+        queueAudioInput(event.data, endOfUtterance, recorderMimeType)
       }
 
       recorder.onstop = () => {
@@ -463,11 +532,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
           sentEndOfUtterance: sentEndOfUtteranceRef.current,
           stoppedForSilence
         })) {
-          sendEvent('audio.input.chunk', realtimeAudioInputPayload({
-            dataB64: '',
-            endOfUtterance: true,
-            mimeType: recorder.mimeType
-          }))
+          queueAudioInput(new Blob(), true, recorder.mimeType)
           sentEndOfUtteranceRef.current = true
         }
         if (isCurrentRecorder) {
@@ -482,7 +547,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
       recorder.start(250)
     },
-    [sendEvent]
+    [queueAudioInput]
   )
 
   const advancePlaybackGeneration = useCallback((generation?: unknown) => {
@@ -784,6 +849,8 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     sequenceRef.current = 0
     sessionStartedRef.current = false
     sessionFailedRef.current = false
+    audioSendChainRef.current = Promise.resolve()
+    audioInputGenerationRef.current += 1
     socketRef.current = socket
 
     let resolveSessionReady: ((ready: boolean) => void) | null = null
@@ -877,6 +944,8 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     socketRef.current = null
     sessionStartedRef.current = false
     sessionFailedRef.current = false
+    audioSendChainRef.current = Promise.resolve()
+    audioInputGenerationRef.current += 1
     setCaption(null)
     setFrontendState(null)
     setMuted(false)

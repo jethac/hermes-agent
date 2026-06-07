@@ -5,12 +5,14 @@ import {
   collectRealtimeVoiceFrontendState,
   collectRealtimeVoiceMetrics,
   getRealtimeVoiceStatus,
+  queueRealtimeAudioTask,
   realtimeAudioInputPayload,
   realtimeVoiceCloseAction,
   realtimeVoicePlaybackGeneration,
   realtimeVoiceSessionStatus,
   realtimeVoiceUrl,
   shouldDropStaleRealtimeVoiceEvent,
+  shouldSendRealtimeAudioFrame,
   shouldSendRealtimeVoiceEndMarker,
   updateRealtimeVoiceBargeInGate
 } from './use-realtime-voice-session'
@@ -239,6 +241,80 @@ describe('realtimeAudioInputPayload', () => {
       codec: 'opus',
       end_of_utterance: false
     })
+  })
+})
+
+describe('shouldSendRealtimeAudioFrame', () => {
+  it('sends ordinary audio when the websocket buffer is under the live threshold', () => {
+    expect(shouldSendRealtimeAudioFrame({
+      bufferedAmount: 128,
+      endOfUtterance: false,
+      maxBufferedBytes: 256
+    })).toBe(true)
+  })
+
+  it('drops non-final audio when the websocket buffer is too far behind', () => {
+    expect(shouldSendRealtimeAudioFrame({
+      bufferedAmount: 512,
+      endOfUtterance: false,
+      maxBufferedBytes: 256
+    })).toBe(false)
+  })
+
+  it('always sends end-of-utterance frames so turn boundaries survive backpressure', () => {
+    expect(shouldSendRealtimeAudioFrame({
+      bufferedAmount: 512,
+      endOfUtterance: true,
+      maxBufferedBytes: 256
+    })).toBe(true)
+  })
+})
+
+describe('queueRealtimeAudioTask', () => {
+  it('runs realtime audio sends in capture order even when later work is ready first', async () => {
+    const order: string[] = []
+    let releaseFirst!: () => void
+    const firstReady = new Promise<void>(resolve => {
+      releaseFirst = resolve
+    })
+
+    const first = queueRealtimeAudioTask(Promise.resolve(), async () => {
+      order.push('first-start')
+      await firstReady
+      order.push('first-end')
+    }, () => undefined)
+    const second = queueRealtimeAudioTask(first, async () => {
+      order.push('second')
+    }, () => undefined)
+
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(order).toEqual(['first-start'])
+    releaseFirst()
+    await second
+
+    expect(order).toEqual(['first-start', 'first-end', 'second'])
+  })
+
+  it('continues after a prior audio send error and reports the failure', async () => {
+    const errors: unknown[] = []
+    const order: string[] = []
+
+    const first = queueRealtimeAudioTask(Promise.resolve(), async () => {
+      throw new Error('encode failed')
+    }, error => {
+      errors.push(error)
+    })
+    const second = queueRealtimeAudioTask(first, async () => {
+      order.push('second')
+    }, error => {
+      errors.push(error)
+    })
+
+    await second
+
+    expect(errors).toHaveLength(1)
+    expect(order).toEqual(['second'])
   })
 })
 
