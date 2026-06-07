@@ -582,6 +582,68 @@ def test_text_engine_does_not_block_oracle_stream_on_local_tts(monkeypatch):
     asyncio.run(run())
 
 
+def test_text_engine_cancels_queued_tts_when_oracle_fails(monkeypatch):
+    class FailingOracle:
+        def __init__(self):
+            self.release_failure = asyncio.Event()
+
+        async def stream_answer(self, transcript: str):
+            yield "First sentence. "
+            await self.release_failure.wait()
+            raise RuntimeError("oracle failed")
+
+    async def run():
+        spoken = []
+        first_tts_started = asyncio.Event()
+        first_tts_cancelled = asyncio.Event()
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+            first_tts_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                first_tts_cancelled.set()
+                raise
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        oracle = FailingOracle()
+        engine = TextOracleTTSEngine(oracle=oracle)
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello"},
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                await asyncio.wait_for(first_tts_started.wait(), timeout=1)
+                oracle.release_failure.set()
+            if event.type == VoiceEventType.SESSION_ERROR:
+                break
+
+        await asyncio.wait_for(first_tts_cancelled.wait(), timeout=1)
+        await engine.close()
+
+        assert [event.type for event in seen] == [
+            VoiceEventType.SESSION_STARTED,
+            VoiceEventType.TRANSCRIPT_FINAL,
+            VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+            VoiceEventType.SESSION_ERROR,
+        ]
+        assert seen[-1].payload["error"] == "oracle/tts failed: oracle failed"
+        assert spoken == ["First sentence."]
+
+    asyncio.run(run())
+
+
 def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
     async def run():
         sidecar = FakeSidecar()

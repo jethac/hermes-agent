@@ -368,6 +368,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             speak_chain = asyncio.create_task(speak_after_previous())
             speak_tasks.append(speak_chain)
 
+        async def cancel_speak_tasks() -> None:
+            for task in speak_tasks:
+                task.cancel()
+            for task in speak_tasks:
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+
         try:
             oracle = self._oracle or NullRealtimeOracle()
             answer = ""
@@ -407,11 +414,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     {"text": plan.committed_text, "playback_generation": playback_generation},
                 )
         except asyncio.CancelledError:
-            for task in speak_tasks:
-                task.cancel()
-            for task in speak_tasks:
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
+            await cancel_speak_tasks()
             if playback_generation == self._playback_generation:
                 await self._emit(
                     VoiceEventType.ASSISTANT_COMMIT,
@@ -419,6 +422,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 )
             raise
         except Exception as exc:
+            await cancel_speak_tasks()
             await self._emit(
                 VoiceEventType.SESSION_ERROR,
                 {"error": f"oracle/tts failed: {sanitize_realtime_voice_error(exc)}"},
