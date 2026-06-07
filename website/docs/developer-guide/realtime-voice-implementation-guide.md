@@ -228,6 +228,7 @@ Operator readiness gate:
 hermes doctor --realtime-voice
 hermes doctor --realtime-voice-smoke
 hermes doctor --realtime-voice-audio-fixture ./fixtures/hello.webm --realtime-voice-audio-codec webm_opus
+hermes doctor --realtime-voice-tts-smoke "Hello from Hermes."
 ```
 
 Use this before treating a profile as live-voice ready. The strict gate requires realtime voice to be enabled, preflight-available, live-like according to the same `conversation_quality` payload the desktop uses, and configured with latency targets no looser than the PRD live-conversation targets. It also checks that English and Japanese remain the production acceptance languages, that best-effort language pass-through is enabled unless deliberately disabled, that the configured sidecar is healthy, and that public provider naming stays capability-based rather than tied to a specific workstation or accelerator. Plain `hermes doctor` reports the same section informatively without failing ordinary installs that have not opted into realtime voice.
@@ -235,6 +236,8 @@ Use this before treating a profile as live-voice ready. The strict gate requires
 `--realtime-voice-smoke` implies the strict gate, then opens the configured sidecar websocket, sends a transcript-backed `audio.input.chunk`, and waits for `frontend.state` plus `transcript.final`. This is a protocol smoke, not a microphone/acoustic benchmark: it proves sidecar auth, session startup, event streaming, and basic transcript turn latency without requiring a particular GPU or audio device.
 
 `--realtime-voice-audio-fixture` sends real audio bytes through the same websocket path and requires `transcript.partial` within `audio_to_partial_transcript_ms`, followed by `transcript.final` before timeout. Use a short English or Japanese fixture for release validation. This still does not prove end-user room acoustics or TTS quality, but it catches broken STT/audio-frontend deployments that a transcript-only protocol smoke cannot.
+
+`--realtime-voice-tts-smoke` sends `assistant.text.partial` with `speak: true` to the configured sidecar and requires the first `audio.output.chunk` within `final_transcript_to_first_audio_ms`. Run it with a short English and Japanese phrase when validating a release profile so both TTS provider latency and multilingual voice configuration are covered.
 
 Implementation notes:
 

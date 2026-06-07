@@ -417,6 +417,62 @@ class TestRealtimeVoiceReadiness:
         assert "transcript.partial=450ms exceeds target 300ms" in output
         assert any("audio fixture smoke failure" in issue for issue in issues)
 
+    def test_tts_smoke_reports_success_with_first_audio_target(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={"quality_targets_ms": {"final_transcript_to_first_audio_ms": 900}},
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_sidecar_tts_smoke_sync",
+            lambda _config, *, text, timeout_seconds: SimpleNamespace(
+                events=("frontend.state", "audio.output.chunk"),
+                first_audio_ms=250,
+                ok=True,
+                output_audio_bytes=4321,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_tts_smoke(issues, text="Hello from Hermes.")
+
+        output = capsys.readouterr().out
+        assert "Realtime voice TTS smoke" in output
+        assert "audio.bytes=4321" in output
+        assert "first_audio=250ms <= 900ms" in output
+        assert issues == []
+
+    def test_tts_smoke_records_first_audio_target_miss(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={"quality_targets_ms": {"final_transcript_to_first_audio_ms": 900}},
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_sidecar_tts_smoke_sync",
+            lambda _config, *, text, timeout_seconds: SimpleNamespace(
+                events=("frontend.state", "audio.output.chunk"),
+                first_audio_ms=1200,
+                ok=True,
+                output_audio_bytes=4321,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_tts_smoke(issues, text="Hello from Hermes.")
+
+        output = capsys.readouterr().out
+        assert "first_audio=1200ms exceeds target 900ms" in output
+        assert any("TTS smoke failure" in issue for issue in issues)
+
 
 class TestDoctorEnvFileEncoding:
     """Regression for #18637 (bug 3): `hermes doctor` crashed on Windows

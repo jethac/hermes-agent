@@ -622,6 +622,23 @@ def _run_realtime_voice_sidecar_audio_smoke_sync(
     )
 
 
+def _run_realtime_voice_sidecar_tts_smoke_sync(
+    config,
+    *,
+    text: str,
+    timeout_seconds: float,
+):
+    from agent.realtime_voice_smoke import run_realtime_voice_sidecar_tts_smoke
+
+    return asyncio.run(
+        run_realtime_voice_sidecar_tts_smoke(
+            config,
+            text=text,
+            timeout_seconds=timeout_seconds,
+        )
+    )
+
+
 def _check_realtime_voice_sidecar_smoke(issues: list[str]) -> None:
     try:
         config = _realtime_voice_smoke_config()
@@ -658,6 +675,63 @@ def _check_realtime_voice_sidecar_smoke(issues: list[str]) -> None:
         "Realtime voice sidecar smoke",
         f"({detail})",
         f"Fix realtime voice sidecar protocol smoke failure: {detail}",
+        issues,
+    )
+
+
+def _check_realtime_voice_tts_smoke(
+    issues: list[str],
+    *,
+    text: str,
+) -> None:
+    try:
+        config = _realtime_voice_smoke_config()
+    except Exception as exc:
+        _fail_and_issue(
+            "Realtime voice TTS smoke",
+            f"(could not build config: {exc})",
+            f"Fix realtime voice TTS smoke configuration: {exc}",
+            issues,
+        )
+        return
+
+    timeout_seconds = min(max(float(config.sidecar_connect_timeout_seconds or 10.0), 1.0), 30.0)
+    try:
+        result = _run_realtime_voice_sidecar_tts_smoke_sync(
+            config,
+            text=text,
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception as exc:
+        _fail_and_issue(
+            "Realtime voice TTS smoke",
+            f"(failed: {exc})",
+            f"Fix realtime voice TTS smoke failure: {exc}",
+            issues,
+        )
+        return
+
+    target_ms = _quality_target_from_config(config, "final_transcript_to_first_audio_ms", 900)
+    if result.ok and result.first_audio_ms is not None and result.first_audio_ms <= target_ms:
+        check_ok(
+            "Realtime voice TTS smoke",
+            (
+                f"(audio.bytes={result.output_audio_bytes}, first_audio={result.first_audio_ms}ms"
+                f" <= {target_ms}ms)"
+            ),
+        )
+        return
+
+    detail = getattr(result, "error", "") or "TTS smoke failed"
+    if result.ok and result.first_audio_ms is not None:
+        detail = f"first_audio={result.first_audio_ms}ms exceeds target {target_ms}ms"
+    events = tuple(getattr(result, "events", ()) or ())
+    if events:
+        detail = f"{detail}; events={','.join(events)}"
+    _fail_and_issue(
+        "Realtime voice TTS smoke",
+        f"({detail})",
+        f"Fix realtime voice TTS smoke failure: {detail}",
         issues,
     )
 
@@ -980,10 +1054,12 @@ def run_doctor(args):
     ack_target = getattr(args, 'ack', None)
     smoke_realtime_voice = getattr(args, 'realtime_voice_smoke', False)
     realtime_voice_audio_fixture = getattr(args, 'realtime_voice_audio_fixture', None)
+    realtime_voice_tts_smoke = getattr(args, 'realtime_voice_tts_smoke', None)
     strict_realtime_voice = (
         getattr(args, 'realtime_voice', False)
         or smoke_realtime_voice
         or bool(realtime_voice_audio_fixture)
+        or bool(realtime_voice_tts_smoke)
     )
 
     # Doctor runs from the interactive CLI, so CLI-gated tool availability
@@ -1629,6 +1705,11 @@ def run_doctor(args):
             issues,
             audio_fixture_path=str(realtime_voice_audio_fixture),
             audio_codec=str(getattr(args, 'realtime_voice_audio_codec', "webm_opus")),
+        )
+    if realtime_voice_tts_smoke:
+        _check_realtime_voice_tts_smoke(
+            issues,
+            text=str(realtime_voice_tts_smoke),
         )
 
     _section("Directory Structure")
