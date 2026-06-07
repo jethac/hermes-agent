@@ -19,6 +19,7 @@ from agent.realtime_voice import (
     VoiceEventType,
     create_realtime_voice_event_queue,
     put_realtime_voice_event,
+    transcript_metadata_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_oracle import HermesRealtimeOracle, NullRealtimeOracle
@@ -126,9 +127,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         transcript = str(event.payload.get("transcript") or "").strip()
         if transcript:
             if not _payload_marks_final_transcript(event.payload):
-                await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, {"text": transcript, "stability": 0.8})
+                await self._emit(
+                    VoiceEventType.TRANSCRIPT_PARTIAL,
+                    {
+                        "text": transcript,
+                        "stability": 0.8,
+                        **transcript_metadata_from_payload(event.payload),
+                    },
+                )
                 return
-            await self._start_turn(transcript)
+            await self._start_turn(transcript, metadata=transcript_metadata_from_payload(event.payload))
             return
 
         try:
@@ -194,7 +202,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         continue
                     text = str(payload.get("text") or "").strip()
                     if text:
-                        await self._start_turn(text, input_generation=_payload_input_generation(payload))
+                        await self._start_turn(
+                            text,
+                            input_generation=_payload_input_generation(payload),
+                            metadata=transcript_metadata_from_payload(payload),
+                        )
                 elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
                     payload = dict(event.payload)
                     generation = _payload_generation(payload)
@@ -320,7 +332,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 {"error": f"transcription failed: {sanitize_realtime_voice_error(exc)}"},
             )
 
-    async def _start_turn(self, transcript: str, *, input_generation: Optional[int] = None) -> None:
+    async def _start_turn(
+        self,
+        transcript: str,
+        *,
+        input_generation: Optional[int] = None,
+        metadata: Optional[dict] = None,
+    ) -> None:
         if self._active_task and not self._active_task.done():
             self._active_task.cancel()
         self._playback_generation += 1
@@ -328,6 +346,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         payload = {"text": transcript, "playback_generation": generation}
         if input_generation is not None:
             payload["input_generation"] = input_generation
+        if metadata:
+            payload.update(metadata)
         await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
         self._active_task = asyncio.create_task(self._answer_and_speak(transcript, generation))
 

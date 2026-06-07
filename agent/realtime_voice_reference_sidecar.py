@@ -29,6 +29,7 @@ from agent.realtime_voice import (
     create_realtime_voice_event_queue,
     event_from_binary_audio_frame,
     put_realtime_voice_event,
+    transcript_metadata_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 
@@ -140,7 +141,7 @@ class ReferenceRealtimeVoiceSidecarSession:
 
         transcript = str(event.payload.get("transcript") or "").strip()
         if transcript:
-            payload = {"text": transcript}
+            payload = {"text": transcript, **transcript_metadata_from_payload(event.payload)}
             input_generation = _payload_input_generation(event.payload)
             if input_generation is not None:
                 payload["input_generation"] = input_generation
