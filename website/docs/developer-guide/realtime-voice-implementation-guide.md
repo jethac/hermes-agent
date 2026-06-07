@@ -344,7 +344,11 @@ When the evidence gate passes, `production_readiness.level` becomes `evidence_re
 python -m hermes_cli.realtime_voice_production_review \
   ./artifacts/realtime-voice-production-review.json \
   --write-template \
-  --reviewer "Realtime voice QA"
+  --reviewer "Realtime voice QA" \
+  --pass-check desktop_reconnect_recovery \
+  --evidence-note "desktop_reconnect_recovery=Killed the bridge during active playback; desktop stopped playback, released mic capture, cleared queued audio, and recovered." \
+  --evidence-artifact "desktop_reconnect_recovery=./artifacts/realtime-voice-review/desktop-reconnect.md"
+# Repeat --pass-check and evidence flags, or edit the JSON, for every required check before applying.
 python -m hermes_cli.realtime_voice_production_review \
   ./artifacts/realtime-voice-production-review.json \
   --apply
@@ -380,7 +384,7 @@ python -m hermes_cli.realtime_voice_production_review \
 }
 ```
 
-Every passed production review check must include either non-empty `evidence.<check>.notes` or at least one artifact reference in `evidence.<check>.artifacts`; the example above omits the remaining evidence entries for brevity. Only after both `production_evidence_report` and `production_review_report` pass does `production_readiness.ready` become true and `production_readiness.level` become `production_ready`.
+Every passed production review check must include either non-empty `evidence.<check>.notes` or at least one artifact reference in `evidence.<check>.artifacts`; use repeated `--evidence-note CHECK=TEXT` and `--evidence-artifact CHECK=PATH_OR_URL` flags when writing the template from a script. The JSON example above omits the remaining evidence entries for brevity. Only after both `production_evidence_report` and `production_review_report` pass does `production_readiness.ready` become true and `production_readiness.level` become `production_ready`.
 
 ### Private Alpha Evidence Pack
 

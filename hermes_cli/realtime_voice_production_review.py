@@ -70,6 +70,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Mark every required check true in a written template",
     )
+    parser.add_argument(
+        "--evidence-note",
+        action="append",
+        default=[],
+        metavar="CHECK=TEXT",
+        help="Attach evidence notes for CHECK in a written template; repeat for multiple checks",
+    )
+    parser.add_argument(
+        "--evidence-artifact",
+        action="append",
+        default=[],
+        metavar="CHECK=PATH_OR_URL",
+        help="Attach an evidence artifact reference for CHECK in a written template; repeat for multiple artifacts",
+    )
     return parser
 
 
@@ -79,7 +93,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.write_template:
         try:
+            evidence = parse_production_review_evidence_args(
+                artifact_args=args.evidence_artifact,
+                note_args=args.evidence_note,
+            )
             report = build_production_review_report(
+                evidence=evidence,
                 reviewer=args.reviewer,
                 passed_checks=REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
                 if args.all_passed
@@ -148,6 +167,42 @@ def apply_production_review_report(report_path: str | Path) -> Path:
     config["voice"] = voice
     save_config(config)
     return get_config_path()
+
+
+def parse_production_review_evidence_args(
+    *,
+    artifact_args: list[str] | tuple[str, ...] = (),
+    note_args: list[str] | tuple[str, ...] = (),
+) -> dict[str, dict[str, Any]]:
+    evidence: dict[str, dict[str, Any]] = {}
+    for raw in note_args:
+        key, value = _parse_check_value_arg(raw, "--evidence-note")
+        entry = evidence.setdefault(key, {"notes": "", "artifacts": []})
+        existing = str(entry.get("notes") or "").strip()
+        entry["notes"] = f"{existing}\n{value}".strip() if existing else value
+    for raw in artifact_args:
+        key, value = _parse_check_value_arg(raw, "--evidence-artifact")
+        entry = evidence.setdefault(key, {"notes": "", "artifacts": []})
+        artifacts = entry.get("artifacts")
+        if not isinstance(artifacts, list):
+            artifacts = []
+        artifacts.append(value)
+        entry["artifacts"] = artifacts
+    return evidence
+
+
+def _parse_check_value_arg(raw: str, flag: str) -> tuple[str, str]:
+    text = str(raw or "")
+    if "=" not in text:
+        raise ValueError(f"{flag} must use CHECK=VALUE")
+    key, value = text.split("=", 1)
+    key = key.strip()
+    value = value.strip()
+    if key not in REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS:
+        raise ValueError(f"{flag} uses unknown check: {key}")
+    if not value:
+        raise ValueError(f"{flag} for {key} requires a non-empty value")
+    return key, value
 
 
 def build_production_review_report(

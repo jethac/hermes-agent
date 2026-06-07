@@ -48,6 +48,71 @@ def test_production_review_template_defaults_to_pending_checks(tmp_path, capsys)
     assert "Pending check(s)" in output
 
 
+def test_production_review_template_accepts_evidence_flags_for_all_passed_checks(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    report_path = tmp_path / "review.json"
+    saved = {}
+    monkeypatch.setattr("hermes_cli.config.read_raw_config", lambda: {"voice": {"realtime": {"enabled": True}}})
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+    evidence_args = []
+    for key in REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS:
+        evidence_args.extend(["--evidence-note", f"{key}=Reviewed {key}."])
+        evidence_args.extend(["--evidence-artifact", f"{key}=./artifacts/{key}.md"])
+    evidence_args.extend(["--evidence-artifact", "desktop_reconnect_recovery=./artifacts/reconnect-video.txt"])
+
+    result = realtime_voice_production_review.main(
+        [
+            str(report_path),
+            "--write-template",
+            "--reviewer",
+            "qa@example.test",
+            "--all-passed",
+            "--apply",
+            *evidence_args,
+        ]
+    )
+
+    assert result == 0
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert all(value is True for value in report["checks"].values())
+    assert report["evidence"]["human_en_ja_conversations"] == {
+        "notes": "Reviewed human_en_ja_conversations.",
+        "artifacts": ["./artifacts/human_en_ja_conversations.md"],
+    }
+    assert report["evidence"]["desktop_reconnect_recovery"]["artifacts"] == [
+        "./artifacts/desktop_reconnect_recovery.md",
+        "./artifacts/reconnect-video.txt",
+    ]
+    assert saved["config"]["voice"]["realtime"]["production_review_report"] == str(report_path)
+    output = capsys.readouterr().out
+    assert "Realtime voice production review OK" in output
+    assert "Updated realtime voice production_review_report" in output
+
+
+def test_production_review_template_rejects_invalid_evidence_flag(tmp_path, capsys):
+    report_path = tmp_path / "review.json"
+
+    result = realtime_voice_production_review.main(
+        [
+            str(report_path),
+            "--write-template",
+            "--reviewer",
+            "qa@example.test",
+            "--all-passed",
+            "--evidence-note",
+            "not_a_check=reviewed",
+        ]
+    )
+
+    assert result == 1
+    assert not report_path.exists()
+    assert "unknown check: not_a_check" in capsys.readouterr().err
+
+
 def test_production_review_validation_reports_missing_checks(tmp_path, capsys):
     report_path = tmp_path / "review.json"
     report_path.write_text(
