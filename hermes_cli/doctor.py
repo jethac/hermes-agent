@@ -7,6 +7,7 @@ Diagnoses issues with Hermes Agent setup.
 import os
 import sys
 import asyncio
+import json
 import subprocess
 import shutil
 from pathlib import Path
@@ -543,6 +544,64 @@ def _realtime_voice_cli_values(value: Any) -> list[str]:
     return [text] if text else []
 
 
+def _realtime_voice_smoke_report_payload(result: Any, *, kind: str, **extra: Any) -> dict[str, Any]:
+    mapping = result if isinstance(result, Mapping) else {}
+    if not mapping:
+        try:
+            from agent.realtime_voice_smoke import (
+                RealtimeVoiceSidecarSmokeResult,
+                realtime_voice_smoke_result_payload,
+            )
+
+            if isinstance(result, RealtimeVoiceSidecarSmokeResult):
+                payload = realtime_voice_smoke_result_payload(result, kind=kind)
+                payload.update(extra)
+                return payload
+        except Exception:
+            pass
+    payload = {
+        "kind": kind,
+        "ok": bool(mapping.get("ok", getattr(result, "ok", False))),
+        "ready_ms": mapping.get("ready_ms", getattr(result, "ready_ms", None)),
+        "transcript_partial_ms": mapping.get(
+            "transcript_partial_ms",
+            getattr(result, "transcript_partial_ms", None),
+        ),
+        "transcript_final_ms": mapping.get(
+            "transcript_final_ms",
+            getattr(result, "transcript_final_ms", None),
+        ),
+        "first_audio_ms": mapping.get("first_audio_ms", getattr(result, "first_audio_ms", None)),
+        "final_text": str(mapping.get("final_text", getattr(result, "final_text", "")) or ""),
+        "audio_bytes": int(mapping.get("audio_bytes", getattr(result, "audio_bytes", 0)) or 0),
+        "output_audio_bytes": int(
+            mapping.get("output_audio_bytes", getattr(result, "output_audio_bytes", 0)) or 0
+        ),
+        "events": list(tuple(mapping.get("events", getattr(result, "events", ())) or ())),
+        "error": str(mapping.get("error", getattr(result, "error", "")) or "") or None,
+    }
+    payload.update(extra)
+    return payload
+
+
+def _append_realtime_voice_smoke_report(
+    reports: list[dict[str, Any]] | None,
+    result: Any,
+    *,
+    kind: str,
+    **extra: Any,
+) -> None:
+    if reports is None:
+        return
+    reports.append(_realtime_voice_smoke_report_payload(result, kind=kind, **extra))
+
+
+def _write_realtime_voice_report(path: str | os.PathLike[str], reports: list[dict[str, Any]]) -> None:
+    report_path = Path(path).expanduser()
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(reports, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
 def _realtime_voice_smoke_config():
     from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceAudioCodec
     from hermes_cli.web_server import (
@@ -651,10 +710,19 @@ def _run_realtime_voice_sidecar_tts_smoke_sync(
     )
 
 
-def _check_realtime_voice_sidecar_smoke(issues: list[str]) -> None:
+def _check_realtime_voice_sidecar_smoke(
+    issues: list[str],
+    *,
+    reports: list[dict[str, Any]] | None = None,
+) -> None:
     try:
         config = _realtime_voice_smoke_config()
     except Exception as exc:
+        _append_realtime_voice_smoke_report(
+            reports,
+            {"ok": False, "error": f"could not build config: {exc}"},
+            kind="protocol",
+        )
         _fail_and_issue(
             "Realtime voice sidecar smoke",
             f"(could not build config: {exc})",
@@ -667,6 +735,12 @@ def _check_realtime_voice_sidecar_smoke(issues: list[str]) -> None:
     try:
         result = _run_realtime_voice_sidecar_smoke_sync(config, timeout_seconds=timeout_seconds)
     except Exception as exc:
+        _append_realtime_voice_smoke_report(
+            reports,
+            {"ok": False, "error": f"failed: {exc}"},
+            kind="protocol",
+            timeout_seconds=timeout_seconds,
+        )
         _fail_and_issue(
             "Realtime voice sidecar smoke",
             f"(failed: {exc})",
@@ -674,6 +748,12 @@ def _check_realtime_voice_sidecar_smoke(issues: list[str]) -> None:
             issues,
         )
         return
+    _append_realtime_voice_smoke_report(
+        reports,
+        result,
+        kind="protocol",
+        timeout_seconds=timeout_seconds,
+    )
     if result.ok:
         ready = f"{result.ready_ms}ms" if result.ready_ms is not None else "unknown"
         final = f"{result.transcript_final_ms}ms" if result.transcript_final_ms is not None else "unknown"
@@ -695,10 +775,17 @@ def _check_realtime_voice_tts_smoke(
     issues: list[str],
     *,
     text: str,
+    reports: list[dict[str, Any]] | None = None,
 ) -> None:
     try:
         config = _realtime_voice_smoke_config()
     except Exception as exc:
+        _append_realtime_voice_smoke_report(
+            reports,
+            {"ok": False, "error": f"could not build config: {exc}"},
+            kind="tts",
+            text=text,
+        )
         _fail_and_issue(
             "Realtime voice TTS smoke",
             f"(could not build config: {exc})",
@@ -715,6 +802,13 @@ def _check_realtime_voice_tts_smoke(
             timeout_seconds=timeout_seconds,
         )
     except Exception as exc:
+        _append_realtime_voice_smoke_report(
+            reports,
+            {"ok": False, "error": f"failed: {exc}"},
+            kind="tts",
+            text=text,
+            timeout_seconds=timeout_seconds,
+        )
         _fail_and_issue(
             "Realtime voice TTS smoke",
             f"(failed: {exc})",
@@ -724,6 +818,14 @@ def _check_realtime_voice_tts_smoke(
         return
 
     target_ms = _quality_target_from_config(config, "final_transcript_to_first_audio_ms", 900)
+    _append_realtime_voice_smoke_report(
+        reports,
+        result,
+        kind="tts",
+        text=text,
+        target_ms=target_ms,
+        timeout_seconds=timeout_seconds,
+    )
     if result.ok and result.first_audio_ms is not None and result.first_audio_ms <= target_ms:
         check_ok(
             "Realtime voice TTS smoke",
@@ -760,10 +862,18 @@ def _check_realtime_voice_audio_fixture_smoke(
     *,
     audio_fixture_path: str,
     audio_codec: str,
+    reports: list[dict[str, Any]] | None = None,
 ) -> None:
     try:
         config = _realtime_voice_smoke_config()
     except Exception as exc:
+        _append_realtime_voice_smoke_report(
+            reports,
+            {"ok": False, "error": f"could not build config: {exc}"},
+            kind="audio_fixture",
+            fixture=audio_fixture_path,
+            codec=audio_codec,
+        )
         _fail_and_issue(
             "Realtime voice audio fixture smoke",
             f"(could not build config: {exc})",
@@ -781,6 +891,14 @@ def _check_realtime_voice_audio_fixture_smoke(
             timeout_seconds=timeout_seconds,
         )
     except Exception as exc:
+        _append_realtime_voice_smoke_report(
+            reports,
+            {"ok": False, "error": f"failed: {exc}"},
+            kind="audio_fixture",
+            fixture=audio_fixture_path,
+            codec=audio_codec,
+            timeout_seconds=timeout_seconds,
+        )
         _fail_and_issue(
             "Realtime voice audio fixture smoke",
             f"(failed: {exc})",
@@ -790,6 +908,15 @@ def _check_realtime_voice_audio_fixture_smoke(
         return
 
     target_ms = _quality_target_from_config(config, "audio_to_partial_transcript_ms", 300)
+    _append_realtime_voice_smoke_report(
+        reports,
+        result,
+        kind="audio_fixture",
+        fixture=audio_fixture_path,
+        codec=audio_codec,
+        target_ms=target_ms,
+        timeout_seconds=timeout_seconds,
+    )
     if result.ok and result.transcript_partial_ms is not None and result.transcript_partial_ms <= target_ms:
         final = f"{result.transcript_final_ms}ms" if result.transcript_final_ms is not None else "unknown"
         check_ok(
@@ -1071,6 +1198,8 @@ def run_doctor(args):
     realtime_voice_tts_smokes = _realtime_voice_cli_values(
         getattr(args, 'realtime_voice_tts_smoke', None)
     )
+    realtime_voice_report_path = getattr(args, 'realtime_voice_report', None)
+    realtime_voice_reports: list[dict[str, Any]] | None = [] if realtime_voice_report_path else None
     strict_realtime_voice = (
         getattr(args, 'realtime_voice', False)
         or smoke_realtime_voice
@@ -1715,18 +1844,31 @@ def run_doctor(args):
 
     _check_realtime_voice_readiness(issues, strict=strict_realtime_voice)
     if smoke_realtime_voice:
-        _check_realtime_voice_sidecar_smoke(issues)
+        _check_realtime_voice_sidecar_smoke(issues, reports=realtime_voice_reports)
     for realtime_voice_audio_fixture in realtime_voice_audio_fixtures:
         _check_realtime_voice_audio_fixture_smoke(
             issues,
             audio_fixture_path=realtime_voice_audio_fixture,
             audio_codec=str(getattr(args, 'realtime_voice_audio_codec', "webm_opus")),
+            reports=realtime_voice_reports,
         )
     for realtime_voice_tts_smoke in realtime_voice_tts_smokes:
         _check_realtime_voice_tts_smoke(
             issues,
             text=realtime_voice_tts_smoke,
+            reports=realtime_voice_reports,
         )
+    if realtime_voice_report_path:
+        try:
+            _write_realtime_voice_report(realtime_voice_report_path, realtime_voice_reports or [])
+            check_ok("Realtime voice smoke report", f"({realtime_voice_report_path})")
+        except Exception as exc:
+            _fail_and_issue(
+                "Realtime voice smoke report",
+                f"(failed: {exc})",
+                f"Fix realtime voice smoke report path: {exc}",
+                issues,
+            )
 
     _section("Directory Structure")
     hermes_home = HERMES_HOME

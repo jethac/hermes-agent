@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from agent.realtime_voice import AudioChunk, RealtimeVoiceSessionConfig, VoiceAudioCodec, VoiceEvent, VoiceEventType
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
@@ -30,6 +30,27 @@ class RealtimeVoiceSidecarSmokeResult:
     output_audio_bytes: int = 0
     events: Tuple[str, ...] = ()
     error: str = ""
+
+
+def realtime_voice_smoke_result_payload(
+    result: RealtimeVoiceSidecarSmokeResult,
+    *,
+    kind: str,
+) -> dict[str, Any]:
+    """Return a JSON-safe realtime voice smoke result payload."""
+    return {
+        "kind": kind,
+        "ok": bool(result.ok),
+        "ready_ms": result.ready_ms,
+        "transcript_partial_ms": result.transcript_partial_ms,
+        "transcript_final_ms": result.transcript_final_ms,
+        "first_audio_ms": result.first_audio_ms,
+        "final_text": result.final_text,
+        "audio_bytes": result.audio_bytes,
+        "output_audio_bytes": result.output_audio_bytes,
+        "events": list(result.events),
+        "error": result.error or None,
+    }
 
 
 async def run_realtime_voice_sidecar_smoke(
