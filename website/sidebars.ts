@@ -724,6 +724,8 @@ const sidebars: SidebarsConfig = {
             'developer-guide/gateway-internals',
             'developer-guide/session-storage',
             'developer-guide/provider-runtime',
+            'developer-guide/realtime-voice-prd',
+            'developer-guide/realtime-voice-implementation-guide',
             'developer-guide/programmatic-integration',
           ],
         },
