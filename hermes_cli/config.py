@@ -2052,6 +2052,7 @@ DEFAULT_CONFIG = {
             "best_effort_languages": True,
             "production_evidence_report": "",
             "production_evidence_min_runs": 3,
+            "production_review_report": "",
             "quality_targets_ms": {
                 "audio_to_partial_transcript_ms": 300,
                 "final_transcript_to_first_text_ms": 500,

@@ -708,6 +708,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Minimum verified realtime voice smoke report runs required for production readiness",
         "category": "voice",
     },
+    "voice.realtime.production_review_report": {
+        "type": "string",
+        "description": "Path to a realtime voice production launch-review JSON report required after smoke evidence passes",
+        "category": "voice",
+    },
     "voice.realtime.production_languages": {
         "type": "list",
         "description": "BCP-47 language tags Hermes treats as production realtime voice targets; defaults to English and Japanese",
@@ -2922,6 +2927,17 @@ _REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS = {
     "final_transcript_to_first_text_ms": 500,
     "final_transcript_to_first_audio_ms": 900,
     "barge_in_ack_ms": 150,
+}
+_REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS = {
+    "human_en_ja_conversations": "Human English and Japanese conversation sessions passed",
+    "noisy_room_and_headset_coverage": "Noisy-room, laptop microphone, and headset coverage passed",
+    "remote_sidecar_latency_drill": "Remote sidecar latency and reconnect drill passed",
+    "provider_failure_drill": "Streaming STT/TTS or native S2S provider failure drill passed",
+    "barge_in_reliability": "Barge-in reliability passed under real playback",
+    "tool_call_policy_review": "Tool-call and data-access behavior reviewed for live voice",
+    "accessibility_review": "Accessibility review for captions, mute, fallback, and interruption passed",
+    "security_review": "Credential, transport, and remote-sidecar security review passed",
+    "operator_docs_review": "Operator setup, fallback, and incident docs reviewed",
 }
 _VOICE_SIDECAR_HEALTH_TIMEOUT = 0.75
 _VOICE_SIDECAR_START_TIMEOUT = 8.0
@@ -13162,6 +13178,7 @@ def _realtime_voice_production_readiness_payload(
     quality_targets_ms: Dict[str, int],
     conversation_quality: Dict[str, Any],
     evidence: Dict[str, Any],
+    launch_review: Dict[str, Any],
 ) -> Dict[str, Any]:
     issues: List[str] = []
     if not enabled:
@@ -13204,9 +13221,20 @@ def _realtime_voice_production_readiness_payload(
     issues.extend(str(issue) for issue in evidence_issues if str(issue or "").strip())
 
     issues = list(dict.fromkeys(issues))
-    ready = available and not issues
+    evidence_ready = available and not issues
+    if evidence_ready:
+        review_issues = (
+            launch_review.get("issues")
+            if isinstance(launch_review.get("issues"), list)
+            else []
+        )
+        issues.extend(str(issue) for issue in review_issues if str(issue or "").strip())
+        issues = list(dict.fromkeys(issues))
+    ready = evidence_ready and launch_review.get("verified") is True and not issues
     if ready:
         level = "production_ready"
+    elif evidence_ready:
+        level = "evidence_ready"
     elif conversation_quality.get("live_like") is True:
         level = "live_like"
     else:
@@ -13215,10 +13243,77 @@ def _realtime_voice_production_readiness_payload(
         "ready": ready,
         "level": level,
         "issues": issues,
+        "evidence_ready": evidence_ready,
         "required_languages": list(_REALTIME_VOICE_DEFAULT_PRODUCTION_LANGUAGES),
         "required_scripts": list(_REALTIME_VOICE_DEFAULT_PRODUCTION_SCRIPTS),
         "required_quality_targets_ms": dict(_REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS),
         "evidence": evidence,
+        "launch_review": launch_review,
+    }
+
+
+def _realtime_voice_production_launch_review_payload(
+    realtime: Dict[str, Any],
+    *,
+    required: bool,
+) -> Dict[str, Any]:
+    required_checks = dict(_REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS)
+    raw_path = str(
+        realtime.get("production_review_report")
+        or realtime.get("production_launch_review_report")
+        or ""
+    ).strip()
+    if not required:
+        return {
+            "required": False,
+            "configured": bool(raw_path),
+            "verified": False,
+            "report_path": raw_path or None,
+            "required_checks": required_checks,
+            "issues": [],
+        }
+    if not raw_path:
+        return {
+            "required": True,
+            "configured": False,
+            "verified": False,
+            "report_path": None,
+            "required_checks": required_checks,
+            "issues": ["missing_production_review_report"],
+        }
+
+    report_path = Path(raw_path).expanduser()
+    try:
+        with open(report_path, "r", encoding="utf-8") as handle:
+            report = json.load(handle)
+    except Exception as exc:
+        return {
+            "required": True,
+            "configured": True,
+            "verified": False,
+            "report_path": raw_path,
+            "required_checks": required_checks,
+            "issues": [f"invalid_production_review_report:{sanitize_realtime_voice_error(exc)}"],
+        }
+
+    checks = report.get("checks") if isinstance(report, Mapping) else {}
+    checks = checks if isinstance(checks, Mapping) else {}
+    issues = [
+        f"review_check_missing:{key}"
+        for key in required_checks
+        if checks.get(key) is not True
+    ]
+    reviewed_at = report.get("reviewed_at") if isinstance(report, Mapping) else None
+    reviewer = report.get("reviewer") if isinstance(report, Mapping) else None
+    return {
+        "required": True,
+        "configured": True,
+        "verified": not issues,
+        "report_path": raw_path,
+        "reviewed_at": str(reviewed_at or "") or None,
+        "reviewer": str(reviewer or "") or None,
+        "required_checks": required_checks,
+        "issues": issues,
     }
 
 
@@ -13571,6 +13666,10 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         realtime,
         current_manifest=current_evidence_manifest,
     )
+    launch_review = _realtime_voice_production_launch_review_payload(
+        realtime,
+        required=production_evidence.get("verified") is True,
+    )
 
     unavailable_reason = ""
     available = enabled
@@ -13597,6 +13696,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         quality_targets_ms=quality_targets_ms,
         conversation_quality=conversation_quality,
         evidence=production_evidence,
+        launch_review=launch_review,
     )
 
     return {
@@ -13749,6 +13849,10 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         realtime,
         current_manifest=current_evidence_manifest,
     )
+    launch_review = _realtime_voice_production_launch_review_payload(
+        realtime,
+        required=production_evidence.get("verified") is True,
+    )
     production_readiness = _realtime_voice_production_readiness_payload(
         enabled=realtime.get("enabled") is True,
         available=realtime.get("enabled") is True,
@@ -13757,6 +13861,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         quality_targets_ms=quality_targets_ms,
         conversation_quality=conversation_quality,
         evidence=production_evidence,
+        launch_review=launch_review,
     )
 
     return RealtimeVoiceSessionConfig(

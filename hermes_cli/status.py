@@ -143,6 +143,9 @@ def _print_realtime_voice_status() -> None:
     evidence_line = _realtime_voice_evidence_line(production)
     if evidence_line:
         print(f"  Evidence:     {evidence_line}")
+    review_line = _realtime_voice_launch_review_line(production)
+    if review_line:
+        print(f"  Review:       {review_line}")
     print(f"  Require live: {_format_realtime_voice_bool(payload.get('require_live_like'))}")
     sidecar_mode = str(sidecar.get("mode") or "none")
     healthy = sidecar.get("healthy")
@@ -168,6 +171,19 @@ def _realtime_voice_evidence_line(production: Mapping[str, Any]) -> str:
         ]
         parts.extend(part for part in metric_parts if part)
     return "; ".join(parts)
+
+
+def _realtime_voice_launch_review_line(production: Mapping[str, Any]) -> str:
+    review = production.get("launch_review")
+    if not isinstance(review, Mapping) or review.get("required") is not True:
+        return ""
+    if review.get("verified") is True:
+        reviewed_at = str(review.get("reviewed_at") or "").strip()
+        return f"passed ({reviewed_at})" if reviewed_at else "passed"
+    issues = review.get("issues") if isinstance(review.get("issues"), list) else []
+    if issues:
+        return f"pending ({', '.join(str(issue) for issue in issues[:3])})"
+    return "pending"
 
 
 def _realtime_voice_latency_summary_part(latency: Mapping[str, Any], key: str, label: str) -> str:

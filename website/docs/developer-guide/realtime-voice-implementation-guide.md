@@ -293,7 +293,7 @@ When a sidecar is reachable, its `/health` response must include a JSON capabili
 
 `quality_targets_ms` is the active live-conversation quality contract. The desktop compares observed realtime metrics against these targets for its quality pill, and operators can tune them in `voice.realtime.quality_targets_ms` for slower local-only setups without changing the protocol.
 
-`production_readiness` is stricter than `conversation_quality`. A profile may be `live_like` from sidecar capabilities, but it is not `production_ready` until `voice.realtime.production_evidence_report` points at a JSON report that passes the alpha EN/JA verifier. This prevents a healthy streaming sidecar from being marketed as Gemini Live-style production quality without repeatable speech-input and speech-output evidence.
+`production_readiness` is stricter than `conversation_quality`. A profile may be `live_like` from sidecar capabilities, but it is not even `evidence_ready` until `voice.realtime.production_evidence_report` points at JSON reports that pass the alpha EN/JA verifier. It is not `production_ready` until `voice.realtime.production_review_report` also points at a launch-review JSON report covering human conversation, noisy-room/headset, remote sidecar, provider failure, barge-in, tool policy, accessibility, security, and operator-doc checks. This prevents a healthy streaming sidecar from being marketed as Gemini Live-style production quality without both repeatable speech evidence and human/failure review.
 
 Capture tuning is also server-owned. The desktop uses `speech_level_threshold`, `barge_in_min_speech_ms`, and `pre_roll_ms` from preflight status so microphone sensitivity, interruption confidence, and first-syllable preservation can be tuned per profile without rebuilding or reconfiguring the desktop.
 
@@ -322,13 +322,36 @@ Use this before treating a profile as live-voice ready. The strict gate requires
 
 `--realtime-voice-report` writes a JSON array for CI and release gates. The first entry is a sanitized `manifest` row that records the realtime stack context used for the run: engine, frontend provider/model, live-like quality reason, quality targets, language policy, sidecar mode, sidecar health capabilities, bridge capability flags, and current production evidence counters. It does not include sidecar URLs, bearer tokens, env var values, query strings, or arbitrary vendor fields. Alpha validation requires this manifest, requires it to show an available live-like profile, requires a healthy verified sidecar with either `native_s2s: true` or `streaming_stt: true` plus `tts: true`, and requires EN/JA output routing evidence through `output_languages` or `tts_model_languages`. Manifest `quality_targets_ms` and per-smoke `target_ms` values must not be looser than the PRD ceilings: partial transcript <= 300 ms, first text <= 500 ms, first audio <= 900 ms, and barge-in acknowledgement <= 150 ms. The remaining entries record neutral smoke `kind` values (`protocol`, `audio_fixture`, `tts`, or `barge_in`), `ok`, event names, latency fields, byte counts, sanitized error text, and smoke-specific metadata such as fixture path, codec, phrase text, and target milliseconds. The schema is intentionally language-neutral: English and Japanese are the first production acceptance fixtures, but additional best-effort language fixtures can use the same report format without changing Hermes protocol semantics.
 
-After `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha-*.json --alpha --min-runs 3` passes, set `voice.realtime.production_evidence_report` to either a verified report file or a directory containing verified report JSON files for the release profile. Production readiness defaults to `production_evidence_min_runs: 3`, so a single alpha report is useful evidence but not enough to claim production readiness. The reports must also share one realtime stack manifest; mixing native S2S, streaming STT/TTS, providers, frontend models, or sidecar capability profiles in one evidence bundle is rejected because it does not prove one deployable profile is production-ready. The verifier and `/api/voice/realtime/status` summarize p50, p95, max, and sample count for transcript partial latency, first-audio latency, and barge-in acknowledgement latency across the configured runs. `/api/voice/realtime/status`, `hermes status`, and strict `hermes doctor --realtime-voice` then surface the same evidence-backed `production_readiness` result. Without this path, a profile can still report `conversation_quality.live_like: true`, but `production_readiness.ready` remains false with `missing_evidence_report`.
+After `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha-*.json --alpha --min-runs 3` passes, set `voice.realtime.production_evidence_report` to either a verified report file or a directory containing verified report JSON files for the release profile. Production evidence defaults to `production_evidence_min_runs: 3`, so a single alpha report is useful evidence but not enough to claim production readiness. The reports must also share one realtime stack manifest; mixing native S2S, streaming STT/TTS, providers, frontend models, or sidecar capability profiles in one evidence bundle is rejected because it does not prove one deployable profile is evidence-ready. The verifier and `/api/voice/realtime/status` summarize p50, p95, max, and sample count for transcript partial latency, first-audio latency, and barge-in acknowledgement latency across the configured runs. `/api/voice/realtime/status`, `hermes status`, and strict `hermes doctor --realtime-voice` then surface the same evidence-backed `production_readiness` result. Without this path, a profile can still report `conversation_quality.live_like: true`, but `production_readiness.ready` remains false with `missing_evidence_report`.
+
+When the evidence gate passes, `production_readiness.level` becomes `evidence_ready`, not `production_ready`. To make the final production claim, set `voice.realtime.production_review_report` to a JSON file like:
+
+```json
+{
+  "kind": "realtime_voice_production_review",
+  "reviewer": "qa@example.com",
+  "reviewed_at": "2026-06-08T00:00:00Z",
+  "checks": {
+    "human_en_ja_conversations": true,
+    "noisy_room_and_headset_coverage": true,
+    "remote_sidecar_latency_drill": true,
+    "provider_failure_drill": true,
+    "barge_in_reliability": true,
+    "tool_call_policy_review": true,
+    "accessibility_review": true,
+    "security_review": true,
+    "operator_docs_review": true
+  }
+}
+```
+
+Only after both `production_evidence_report` and `production_review_report` pass does `production_readiness.ready` become true and `production_readiness.level` become `production_ready`.
 
 ### Private Alpha Evidence Pack
 
 The shortest path to an evidence-backed private alpha is days, not weeks, if the scope stays on the portable sidecar contract and the first production languages remain English and Japanese. Do not gate alpha on a particular workstation, GPU, or native S2S model; gate it on repeatable artifacts from the configured realtime sidecar profile.
 
-Private alpha is not the same claim as Gemini Live-style production quality. Alpha readiness means one configured profile repeatedly proves live-like status, English/Japanese speech understanding, English/Japanese spoken output, barge-in plumbing, sanitized metadata, and latency targets through the doctor/report path. Production readiness also needs repeated human conversation sessions, noisy-room and headset coverage, remote-sidecar failure drills, provider/TTS outage behavior, transcript correction behavior, tool-call policy review, accessibility review, and clear operator docs for fallback.
+Private alpha is not the same claim as Gemini Live-style production quality. Alpha readiness means one configured profile repeatedly proves live-like status, English/Japanese speech understanding, English/Japanese spoken output, barge-in plumbing, sanitized metadata, and latency targets through the doctor/report path. That makes the profile `evidence_ready`. Production readiness also needs `production_review_report` to document repeated human conversation sessions, noisy-room and headset coverage, remote-sidecar failure drills, provider/TTS outage behavior, transcript correction behavior, tool-call policy review, accessibility review, security review, and clear operator docs for fallback.
 
 Minimum alpha fixture set:
 
@@ -489,6 +512,7 @@ voice:
     best_effort_languages: true        # allow non-target languages without claiming production quality
     production_evidence_report: ./artifacts/realtime-voice-evidence
     production_evidence_min_runs: 3
+    production_review_report: ./artifacts/realtime-voice-production-review.json
     quality_targets_ms:
       audio_to_partial_transcript_ms: 300
       final_transcript_to_first_text_ms: 500

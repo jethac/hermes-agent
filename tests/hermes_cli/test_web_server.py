@@ -132,6 +132,17 @@ def _valid_realtime_voice_alpha_report():
     return entries
 
 
+def _valid_realtime_voice_production_review_report():
+    from hermes_cli.web_server import _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
+
+    return {
+        "kind": "realtime_voice_production_review",
+        "reviewer": "qa@example.test",
+        "reviewed_at": "2026-06-08T00:00:00Z",
+        "checks": {key: True for key in _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS},
+    }
+
+
 @pytest.fixture
 def _install_example_plugin(_isolate_hermes_home):
     """Drop the example-dashboard fixture into the per-test HERMES_HOME
@@ -3078,6 +3089,8 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["type"] == "string"
         assert "smoke report" in CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.production_evidence_min_runs"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.production_review_report"]["type"] == "string"
+        assert "launch-review" in CONFIG_SCHEMA["voice.realtime.production_review_report"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.final_transcript_to_first_audio_ms"]["type"] == "number"
 
@@ -6599,27 +6612,23 @@ class TestRealtimeVoiceWebSocket:
             "tts": False,
             "sidecar_verified": False,
         }
-        assert config.metadata["production_readiness"] == {
-            "ready": False,
-            "level": "not_ready",
-            "issues": ["not_live_like", "sidecar_unverified", "missing_evidence_report"],
-            "required_languages": ["en", "ja"],
-            "required_scripts": ["Latn", "Jpan"],
-            "required_quality_targets_ms": {
-                "audio_to_partial_transcript_ms": 300,
-                "final_transcript_to_first_text_ms": 500,
-                "final_transcript_to_first_audio_ms": 900,
-                "barge_in_ack_ms": 150,
-            },
-            "evidence": {
-                "configured": False,
-                "verified": False,
-                "report_path": None,
-                "runs": 0,
-                "min_runs": 3,
-                "issues": ["missing_evidence_report"],
-            },
+        readiness = config.metadata["production_readiness"]
+        assert readiness["ready"] is False
+        assert readiness["evidence_ready"] is False
+        assert readiness["level"] == "not_ready"
+        assert readiness["issues"] == ["not_live_like", "sidecar_unverified", "missing_evidence_report"]
+        assert readiness["required_languages"] == ["en", "ja"]
+        assert readiness["required_scripts"] == ["Latn", "Jpan"]
+        assert readiness["evidence"] == {
+            "configured": False,
+            "verified": False,
+            "report_path": None,
+            "runs": 0,
+            "min_runs": 3,
+            "issues": ["missing_evidence_report"],
         }
+        assert readiness["launch_review"]["required"] is False
+        assert readiness["launch_review"]["issues"] == []
         assert config.metadata["require_live_like"] is False
 
     def test_config_defaults_local_frontend_to_reference_sidecar(self, monkeypatch):
@@ -6762,9 +6771,13 @@ class TestRealtimeVoiceWebSocket:
 
         assert config.metadata["conversation_quality"]["mode"] == "streaming_text"
         assert config.metadata["conversation_quality"]["live_like"] is True
-        assert config.metadata["production_readiness"]["ready"] is True
-        assert config.metadata["production_readiness"]["level"] == "production_ready"
-        assert config.metadata["production_readiness"]["issues"] == []
+        readiness = config.metadata["production_readiness"]
+        assert readiness["ready"] is False
+        assert readiness["evidence_ready"] is True
+        assert readiness["level"] == "evidence_ready"
+        assert readiness["issues"] == ["missing_production_review_report"]
+        assert readiness["launch_review"]["required"] is True
+        assert readiness["launch_review"]["verified"] is False
 
     def test_config_metadata_rejects_evidence_from_different_realtime_stack(self, monkeypatch, tmp_path):
         evidence_path = tmp_path / "evidence"
@@ -7163,29 +7176,22 @@ class TestRealtimeVoiceWebSocket:
         assert body["conversation_quality"]["reason"] == "streaming_stt_tts"
         assert body["conversation_quality"]["live_like"] is True
         assert body["conversation_quality"]["partial_transcripts"] is True
-        assert body["production_readiness"] == {
-            "ready": False,
-            "level": "live_like",
+        readiness = body["production_readiness"]
+        assert readiness["ready"] is False
+        assert readiness["evidence_ready"] is False
+        assert readiness["level"] == "live_like"
+        assert readiness["issues"] == ["missing_evidence_report"]
+        assert readiness["evidence"] == {
+            "configured": False,
+            "verified": False,
+            "report_path": None,
+            "runs": 0,
+            "min_runs": 3,
             "issues": ["missing_evidence_report"],
-            "required_languages": ["en", "ja"],
-            "required_scripts": ["Latn", "Jpan"],
-            "required_quality_targets_ms": {
-                "audio_to_partial_transcript_ms": 300,
-                "final_transcript_to_first_text_ms": 500,
-                "final_transcript_to_first_audio_ms": 900,
-                "barge_in_ack_ms": 150,
-            },
-            "evidence": {
-                "configured": False,
-                "verified": False,
-                "report_path": None,
-                "runs": 0,
-                "min_runs": 3,
-                "issues": ["missing_evidence_report"],
-            },
         }
+        assert readiness["launch_review"]["required"] is False
 
-    def test_status_marks_streaming_text_sidecar_production_ready_with_alpha_evidence(self, monkeypatch, tmp_path):
+    def test_status_marks_streaming_text_sidecar_evidence_ready_with_alpha_evidence(self, monkeypatch, tmp_path):
         evidence_path = tmp_path / "evidence"
         evidence_path.mkdir()
         for index in range(3):
@@ -7236,9 +7242,12 @@ class TestRealtimeVoiceWebSocket:
         body = self.client.get("/api/voice/realtime/status").json()
 
         assert body["available"] is True
-        assert body["production_readiness"]["ready"] is True
-        assert body["production_readiness"]["level"] == "production_ready"
-        assert body["production_readiness"]["issues"] == []
+        assert body["production_readiness"]["ready"] is False
+        assert body["production_readiness"]["evidence_ready"] is True
+        assert body["production_readiness"]["level"] == "evidence_ready"
+        assert body["production_readiness"]["issues"] == ["missing_production_review_report"]
+        assert body["production_readiness"]["launch_review"]["required"] is True
+        assert body["production_readiness"]["launch_review"]["verified"] is False
         assert body["production_readiness"]["evidence"] == {
             "configured": True,
             "verified": True,
@@ -7263,6 +7272,75 @@ class TestRealtimeVoiceWebSocket:
             },
             "issues": [],
         }
+
+    def test_status_marks_streaming_text_sidecar_production_ready_with_launch_review(
+        self,
+        monkeypatch,
+        tmp_path,
+    ):
+        evidence_path = tmp_path / "evidence"
+        evidence_path.mkdir()
+        for index in range(3):
+            (evidence_path / f"realtime-voice-alpha-{index}.json").write_text(
+                json.dumps(_valid_realtime_voice_alpha_report(), ensure_ascii=False),
+                encoding="utf-8",
+            )
+        review_path = tmp_path / "production-review.json"
+        review_path.write_text(
+            json.dumps(_valid_realtime_voice_production_review_report(), ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": True,
+                            "tts": True,
+                            "native_s2s": False,
+                            "output_languages": ["en", "ja"],
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                        "production_evidence_report": str(evidence_path),
+                        "production_review_report": str(review_path),
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        body = self.client.get("/api/voice/realtime/status").json()
+
+        readiness = body["production_readiness"]
+        assert readiness["ready"] is True
+        assert readiness["evidence_ready"] is True
+        assert readiness["level"] == "production_ready"
+        assert readiness["issues"] == []
+        assert readiness["launch_review"]["required"] is True
+        assert readiness["launch_review"]["verified"] is True
+        assert readiness["launch_review"]["report_path"] == str(review_path)
 
     def test_status_rejects_production_evidence_from_different_realtime_stack(self, monkeypatch, tmp_path):
         evidence_path = tmp_path / "evidence"
