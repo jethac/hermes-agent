@@ -531,6 +531,18 @@ def _check_realtime_voice_quality_targets(payload: Mapping[str, Any], issues: li
         check_warn("Realtime voice latency targets", f"({problem})")
 
 
+def _realtime_voice_cli_values(value: Any) -> list[str]:
+    if value is None or value is False:
+        return []
+    if isinstance(value, (list, tuple)):
+        result: list[str] = []
+        for item in value:
+            result.extend(_realtime_voice_cli_values(item))
+        return result
+    text = str(value).strip()
+    return [text] if text else []
+
+
 def _realtime_voice_smoke_config():
     from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceAudioCodec
     from hermes_cli.web_server import (
@@ -1053,13 +1065,17 @@ def run_doctor(args):
     should_fix = getattr(args, 'fix', False)
     ack_target = getattr(args, 'ack', None)
     smoke_realtime_voice = getattr(args, 'realtime_voice_smoke', False)
-    realtime_voice_audio_fixture = getattr(args, 'realtime_voice_audio_fixture', None)
-    realtime_voice_tts_smoke = getattr(args, 'realtime_voice_tts_smoke', None)
+    realtime_voice_audio_fixtures = _realtime_voice_cli_values(
+        getattr(args, 'realtime_voice_audio_fixture', None)
+    )
+    realtime_voice_tts_smokes = _realtime_voice_cli_values(
+        getattr(args, 'realtime_voice_tts_smoke', None)
+    )
     strict_realtime_voice = (
         getattr(args, 'realtime_voice', False)
         or smoke_realtime_voice
-        or bool(realtime_voice_audio_fixture)
-        or bool(realtime_voice_tts_smoke)
+        or bool(realtime_voice_audio_fixtures)
+        or bool(realtime_voice_tts_smokes)
     )
 
     # Doctor runs from the interactive CLI, so CLI-gated tool availability
@@ -1700,16 +1716,16 @@ def run_doctor(args):
     _check_realtime_voice_readiness(issues, strict=strict_realtime_voice)
     if smoke_realtime_voice:
         _check_realtime_voice_sidecar_smoke(issues)
-    if realtime_voice_audio_fixture:
+    for realtime_voice_audio_fixture in realtime_voice_audio_fixtures:
         _check_realtime_voice_audio_fixture_smoke(
             issues,
-            audio_fixture_path=str(realtime_voice_audio_fixture),
+            audio_fixture_path=realtime_voice_audio_fixture,
             audio_codec=str(getattr(args, 'realtime_voice_audio_codec', "webm_opus")),
         )
-    if realtime_voice_tts_smoke:
+    for realtime_voice_tts_smoke in realtime_voice_tts_smokes:
         _check_realtime_voice_tts_smoke(
             issues,
-            text=str(realtime_voice_tts_smoke),
+            text=realtime_voice_tts_smoke,
         )
 
     _section("Directory Structure")

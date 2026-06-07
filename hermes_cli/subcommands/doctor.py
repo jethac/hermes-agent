@@ -34,9 +34,10 @@ def build_doctor_parser(subparsers, *, cmd_doctor: Callable) -> None:
     )
     doctor_parser.add_argument(
         "--realtime-voice-audio-fixture",
+        action="append",
         metavar="PATH",
         default=None,
-        help="Run the strict realtime voice gate plus a sidecar audio fixture smoke",
+        help="Run the strict realtime voice gate plus a sidecar audio fixture smoke; repeat for multiple fixtures",
     )
     doctor_parser.add_argument(
         "--realtime-voice-audio-codec",
@@ -46,9 +47,10 @@ def build_doctor_parser(subparsers, *, cmd_doctor: Callable) -> None:
     )
     doctor_parser.add_argument(
         "--realtime-voice-tts-smoke",
+        action="append",
         metavar="TEXT",
         default=None,
-        help="Run the strict realtime voice gate plus a sidecar TTS first-audio smoke",
+        help="Run the strict realtime voice gate plus a sidecar TTS first-audio smoke; repeat for multiple phrases",
     )
     doctor_parser.add_argument(
         "--ack",
