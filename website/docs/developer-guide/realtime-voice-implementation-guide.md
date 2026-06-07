@@ -117,6 +117,7 @@ Server events:
 {"type":"assistant.text.partial","session_id":"...","sequence":4,"payload":{"text":"KAME is interesting because ","playback_generation":1}}
 {"type":"audio.output.chunk","session_id":"...","sequence":5,"payload":{"codec":"opus","data_b64":"...","playback_generation":1}}
 {"type":"assistant.commit","session_id":"...","sequence":6,"payload":{"text":"KAME is interesting because ...","playback_generation":1}}
+{"type":"oracle.hint","session_id":"...","sequence":7,"payload":{"text":"Use Hermes memory here","delta":"Use Hermes memory here","final":false,"source":"hermes","playback_generation":1}}
 ```
 
 Server events may include a `metrics` object in the payload. The session layer annotates events with monotonic timing data such as `session_elapsed_ms`, `audio_to_partial_transcript_ms`, `audio_to_final_transcript_ms`, `eou_to_final_transcript_ms`, `final_transcript_to_first_text_ms`, `final_transcript_to_first_audio_ms`, and `barge_in_ack_ms`. Engines and sidecars should preserve any existing metric fields they provide; the session appends Hermes-observed timings before forwarding the event to the desktop. The desktop hook keeps the latest valid metrics as a realtime session snapshot and the active voice controls surface a compact quality readout against the PRD latency targets.
@@ -328,6 +329,8 @@ GET  /health
 ```
 
 Hermes sends audio and transcript state. The sidecar returns transcript/frontend state, local draft hints, or audio chunks. `GET /health` returns liveness plus sanitized capability metadata so Hermes can diagnose local, remote, and provider-backed sidecars without exposing secrets.
+
+Native S2S sidecars should treat `oracle.hint` as a streaming hint channel from the Hermes oracle. Each hint includes accumulated `text`, the latest `delta`, `final`, `source: "hermes"`, and the active `playback_generation`. Sidecars can condition generation on these deltas immediately instead of waiting for the final hint. Hermes cancels the active hint stream and advances `playback_generation` on barge-in.
 
 Security requirements:
 

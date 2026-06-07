@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import urllib.parse
 from typing import Any, AsyncIterator, Optional
@@ -28,6 +29,8 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         self._ws: Any = None
         self._reader_task: Optional[asyncio.Task[None]] = None
         self._oracle: Optional[HermesRealtimeOracle] = None
+        self._oracle_hint_task: Optional[asyncio.Task[None]] = None
+        self._playback_generation = 0
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -48,7 +51,26 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             await self.close()
             return
         if event.type == VoiceEventType.BARGE_IN:
-            await self._emit(VoiceEventType.BARGE_IN, {"reason": event.payload.get("reason") or "client"})
+            self._playback_generation += 1
+            self._cancel_oracle_hint("Realtime voice native S2S turn interrupted")
+            event = VoiceEvent(
+                type=event.type,
+                session_id=event.session_id,
+                sequence=event.sequence,
+                timestamp_ms=event.timestamp_ms,
+                payload={
+                    **dict(event.payload),
+                    "reason": event.payload.get("reason") or "client",
+                    "playback_generation": self._playback_generation,
+                },
+            )
+            await self._emit(
+                VoiceEventType.BARGE_IN,
+                {
+                    "reason": event.payload.get("reason") or "client",
+                    "playback_generation": self._playback_generation,
+                },
+            )
         if self._ws is not None:
             await self._ws.send(json.dumps(event.to_wire()))
 
@@ -63,10 +85,14 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         if self._closed:
             return
         self._closed = True
+        self._cancel_oracle_hint()
         if self._reader_task:
             self._reader_task.cancel()
         if self._ws is not None:
             await self._ws.close()
+        if self._oracle_hint_task:
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._oracle_hint_task
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
         await self._events.put(None)
 
@@ -91,9 +117,17 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         try:
             async for raw in self._ws:
                 if isinstance(raw, bytes):
+                    payload = {
+                        "codec": "opus",
+                        "sample_rate_hz": 16000,
+                        "channels": 1,
+                        "data_b64": _b64(raw),
+                    }
+                    if self._playback_generation:
+                        payload["playback_generation"] = self._playback_generation
                     await self._emit(
                         VoiceEventType.AUDIO_OUTPUT_CHUNK,
-                        {"codec": "opus", "sample_rate_hz": 16000, "channels": 1, "data_b64": _b64(raw)},
+                        payload,
                     )
                     continue
                 try:
@@ -102,43 +136,126 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
                     await self._emit(VoiceEventType.SESSION_ERROR, {"error": "invalid sidecar event"})
                     continue
                 if event.type == VoiceEventType.TRANSCRIPT_FINAL:
-                    asyncio.create_task(self._send_oracle_hint(str(event.payload.get("text") or "")))
-                await self._events.put(event)
+                    event = self._normalize_sidecar_event(event, new_generation=True)
+                    self._start_oracle_hint(
+                        str(event.payload.get("text") or ""),
+                        _payload_generation(event.payload),
+                    )
+                else:
+                    event = self._normalize_sidecar_event(event)
+                await self._queue_sidecar_event(event)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"sidecar closed: {exc}"})
 
-    async def _emit(self, event_type: VoiceEventType, payload: dict) -> None:
+    async def _emit(self, event_type: VoiceEventType, payload: dict) -> Optional[VoiceEvent]:
         if self.config is None:
-            return
+            return None
         self._sequence += 1
-        await self._events.put(
-            VoiceEvent(
-                type=event_type,
-                session_id=self.config.session_id,
-                sequence=self._sequence,
-                payload=payload,
-            )
+        event = VoiceEvent(
+            type=event_type,
+            session_id=self.config.session_id,
+            sequence=self._sequence,
+            payload=payload,
+        )
+        await self._events.put(event)
+        return event
+
+    async def _queue_sidecar_event(self, event: VoiceEvent) -> None:
+        await self._emit(event.type, dict(event.payload))
+
+    def _normalize_sidecar_event(self, event: VoiceEvent, *, new_generation: bool = False) -> VoiceEvent:
+        payload = dict(event.payload)
+        generation = _payload_generation(payload)
+
+        if new_generation and generation is None:
+            self._playback_generation += 1
+            generation = self._playback_generation
+            payload["playback_generation"] = generation
+        elif generation is not None:
+            self._playback_generation = max(self._playback_generation, generation)
+        elif event.type in {
+            VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+            VoiceEventType.ASSISTANT_COMMIT,
+        } and self._playback_generation:
+            payload["playback_generation"] = self._playback_generation
+
+        return VoiceEvent(
+            type=event.type,
+            session_id=self.config.session_id if self.config else event.session_id,
+            sequence=event.sequence,
+            timestamp_ms=event.timestamp_ms,
+            payload=payload,
         )
 
-    async def _send_oracle_hint(self, transcript: str) -> None:
+    def _start_oracle_hint(self, transcript: str, playback_generation: Optional[int]) -> None:
+        self._cancel_oracle_hint("Realtime voice native S2S turn superseded")
+        task = asyncio.create_task(self._send_oracle_hint(transcript, playback_generation))
+        self._oracle_hint_task = task
+        task.add_done_callback(self._clear_oracle_hint_task)
+
+    def _clear_oracle_hint_task(self, task: asyncio.Task[None]) -> None:
+        if self._oracle_hint_task is task:
+            self._oracle_hint_task = None
+
+    def _cancel_oracle_hint(self, message: str = "Realtime voice turn interrupted") -> None:
+        if self._oracle_hint_task and not self._oracle_hint_task.done():
+            self._oracle_hint_task.cancel()
+        if self._oracle is not None:
+            with contextlib.suppress(Exception):
+                self._oracle.interrupt(message)
+
+    async def _send_oracle_hint(self, transcript: str, playback_generation: Optional[int] = None) -> None:
         if not transcript.strip() or self._oracle is None or self._ws is None:
             return
         try:
-            answer = await self._oracle.answer(transcript)
-            if not answer:
+            full_text = ""
+            sent_any = False
+            async for delta in self._oracle.stream_answer(transcript):
+                if not delta:
+                    continue
+                full_text += str(delta)
+                sent_any = True
+                await self._send_oracle_hint_event(
+                    text=full_text,
+                    delta=str(delta),
+                    final=False,
+                    playback_generation=playback_generation,
+                )
+            if not sent_any:
                 return
-            event = VoiceEvent(
-                type=VoiceEventType.ORACLE_HINT,
-                session_id=self.config.session_id if self.config else "",
-                sequence=0,
-                payload={"text": answer, "source": "hermes"},
+            await self._send_oracle_hint_event(
+                text=full_text,
+                delta="",
+                final=True,
+                playback_generation=playback_generation,
             )
-            await self._ws.send(json.dumps(event.to_wire()))
-            await self._events.put(event)
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"oracle hint failed: {exc}"})
+
+    async def _send_oracle_hint_event(
+        self,
+        *,
+        text: str,
+        delta: str,
+        final: bool,
+        playback_generation: Optional[int],
+    ) -> None:
+        payload = {
+            "text": text,
+            "delta": delta,
+            "final": final,
+            "source": "hermes",
+        }
+        if playback_generation is not None:
+            payload["playback_generation"] = playback_generation
+        event = await self._emit(VoiceEventType.ORACLE_HINT, payload)
+        if event is not None and self._ws is not None:
+            await self._ws.send(json.dumps(event.to_wire()))
 
 
 def _sidecar_ws_url(base_url: str, path: str) -> str:
@@ -153,3 +270,14 @@ def _b64(data: bytes) -> str:
     import base64
 
     return base64.b64encode(data).decode("ascii")
+
+
+def _payload_generation(payload: dict) -> Optional[int]:
+    value = payload.get("playback_generation")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value >= 0:
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None

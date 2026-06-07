@@ -843,7 +843,7 @@ def test_session_adds_barge_in_ack_latency_metric():
     asyncio.run(run())
 
 
-def test_native_s2s_engine_sends_oracle_hint_to_sidecar():
+def test_native_s2s_engine_streams_oracle_hint_to_sidecar():
     class FakeWs:
         def __init__(self):
             self.sent = []
@@ -864,9 +864,145 @@ def test_native_s2s_engine_sends_oracle_hint_to_sidecar():
 
         await engine._send_oracle_hint("what is kame")
 
-        assert ws.sent
-        event = VoiceEvent.from_wire(__import__("json").loads(ws.sent[0]))
-        assert event.type == VoiceEventType.ORACLE_HINT
-        assert event.payload["text"] == "Answering: what is kame."
+        events = [VoiceEvent.from_wire(__import__("json").loads(raw)) for raw in ws.sent]
+        assert [event.type for event in events] == [
+            VoiceEventType.ORACLE_HINT,
+            VoiceEventType.ORACLE_HINT,
+            VoiceEventType.ORACLE_HINT,
+        ]
+        assert events[0].payload == {
+            "text": "Answering: ",
+            "delta": "Answering: ",
+            "final": False,
+            "source": "hermes",
+        }
+        assert events[1].payload["delta"] == "what is kame."
+        assert events[-1].payload == {
+            "text": "Answering: what is kame.",
+            "delta": "",
+            "final": True,
+            "source": "hermes",
+        }
+
+    asyncio.run(run())
+
+
+def test_native_s2s_engine_normalizes_sidecar_generation_and_session():
+    engine = NativeS2SSidecarEngine()
+    engine.config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+        sidecar_base_url="ws://voice.local",
+    )
+
+    transcript = engine._normalize_sidecar_event(
+        VoiceEvent(
+            type=VoiceEventType.TRANSCRIPT_FINAL,
+            session_id="sidecar-session",
+            sequence=50,
+            payload={"text": "hello"},
+        ),
+        new_generation=True,
+    )
+    audio = engine._normalize_sidecar_event(
+        VoiceEvent(
+            type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            session_id="sidecar-session",
+            sequence=51,
+            payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+        )
+    )
+
+    assert transcript.session_id == "voice-123"
+    assert transcript.payload["playback_generation"] == 1
+    assert audio.session_id == "voice-123"
+    assert audio.payload["playback_generation"] == 1
+
+
+def test_native_s2s_engine_tags_binary_audio_with_active_generation():
+    class FakeWs:
+        def __init__(self):
+            self._items = [b"audio"]
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._items:
+                raise StopAsyncIteration
+            return self._items.pop(0)
+
+    async def run():
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = FakeWs()
+        engine._playback_generation = 3
+
+        await engine._read_sidecar()
+
+        event = await engine._events.get()
+        assert event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
+        assert event.payload["playback_generation"] == 3
+
+    asyncio.run(run())
+
+
+def test_native_s2s_engine_barge_in_cancels_active_oracle_hint():
+    class FakeWs:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, payload):
+            self.sent.append(payload)
+
+    class SlowOracle:
+        def __init__(self):
+            self.interrupted = []
+
+        async def stream_answer(self, transcript):
+            await asyncio.sleep(30)
+            yield transcript
+
+        def interrupt(self, message=""):
+            self.interrupted.append(message)
+
+    async def run():
+        ws = FakeWs()
+        oracle = SlowOracle()
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = ws
+        engine._oracle = oracle
+        engine._playback_generation = 1
+
+        engine._start_oracle_hint("slow question", 1)
+        await asyncio.sleep(0)
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=1,
+                payload={"reason": "user_speech"},
+            )
+        )
+        await asyncio.sleep(0)
+
+        assert oracle.interrupted
+        assert engine._oracle_hint_task is None or engine._oracle_hint_task.cancelled()
+        forwarded = VoiceEvent.from_wire(__import__("json").loads(ws.sent[-1]))
+        assert forwarded.type == VoiceEventType.BARGE_IN
+        assert forwarded.payload["playback_generation"] == 2
+
+        ack = await engine._events.get()
+        assert ack.type == VoiceEventType.BARGE_IN
+        assert ack.payload["playback_generation"] == 2
 
     asyncio.run(run())
