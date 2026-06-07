@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import urllib.parse
@@ -33,8 +34,11 @@ class DeepgramStreamingSTTBridgeConfig:
     api_key: Optional[str] = None
     auth_token: Optional[str] = None
     deepgram_url: str = "wss://api.deepgram.com/v1/listen"
+    deepgram_tts_url: str = "wss://api.deepgram.com/v1/speak"
     model: str = "nova-3"
+    tts_model: str = "aura-2-thalia-en"
     language: Optional[str] = None
+    tts_sample_rate_hz: int = 24000
     endpointing_ms: int = 80
     connect_timeout_seconds: float = 10.0
 
@@ -183,6 +187,140 @@ class DeepgramStreamingSTTBridgeSession:
         )
 
 
+class DeepgramStreamingTTSBridgeSession:
+    """One Hermes bridge session backed by Deepgram streaming TTS."""
+
+    def __init__(self, runtime: DeepgramStreamingSTTBridgeConfig):
+        self.runtime = runtime
+        self.config: Optional[RealtimeVoiceSessionConfig] = None
+        self._deepgram_ws: Any = None
+        self._reader_task: Optional[asyncio.Task[None]] = None
+        self._events: asyncio.Queue[VoiceEvent | None] = create_realtime_voice_event_queue()
+        self._sequence = 0
+        self._closed = False
+        self._playback_generation: Optional[int] = None
+
+    async def start(self, config: RealtimeVoiceSessionConfig) -> None:
+        if not self.runtime.api_key:
+            raise RuntimeError("Deepgram streaming TTS bridge requires DEEPGRAM_API_KEY")
+        self.config = config
+        self._deepgram_ws = await self._connect_deepgram_tts()
+        self._reader_task = asyncio.create_task(self._consume_deepgram_audio())
+        await self._emit(
+            VoiceEventType.FRONTEND_STATE,
+            {
+                "status": "ready",
+                "provider": "deepgram",
+                "model": self.runtime.tts_model,
+                "streaming_tts": True,
+            },
+        )
+
+    async def receive_event(self, event: VoiceEvent) -> None:
+        if self._closed:
+            return
+        if event.type == VoiceEventType.SESSION_CLOSED:
+            await self.close()
+            return
+        if event.type == VoiceEventType.BARGE_IN:
+            generation = _payload_int(event.payload.get("playback_generation"))
+            if generation is not None:
+                self._playback_generation = generation
+            with contextlib.suppress(Exception):
+                await self._deepgram_ws.send(json.dumps({"type": "Clear"}))
+            payload = {"reason": event.payload.get("reason") or "client"}
+            if generation is not None:
+                payload["playback_generation"] = generation
+            await self._emit(VoiceEventType.BARGE_IN, payload)
+            return
+        if event.type != VoiceEventType.ASSISTANT_TEXT_PARTIAL or event.payload.get("speak") is not True:
+            return
+        text = str(event.payload.get("text") or "").strip()
+        if not text:
+            return
+        generation = _payload_int(event.payload.get("playback_generation"))
+        if generation is not None:
+            self._playback_generation = generation
+        await self._deepgram_ws.send(json.dumps({"type": "Speak", "text": text}))
+        await self._deepgram_ws.send(json.dumps({"type": "Flush"}))
+
+    async def events(self) -> AsyncIterator[VoiceEvent]:
+        while True:
+            event = await self._events.get()
+            if event is None:
+                return
+            yield event
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._reader_task and not self._reader_task.done():
+            self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except asyncio.CancelledError:
+                pass
+        if self._deepgram_ws is not None:
+            with contextlib.suppress(Exception):
+                await self._deepgram_ws.send(json.dumps({"type": "Close"}))
+            await self._deepgram_ws.close()
+        await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
+        await put_realtime_voice_event(self._events, None)
+
+    async def _connect_deepgram_tts(self) -> Any:
+        try:
+            import websockets
+        except ImportError as exc:
+            raise RuntimeError("Deepgram streaming TTS bridge requires the websockets package") from exc
+
+        url = deepgram_tts_url(self.runtime)
+        headers = {"Authorization": f"Token {self.runtime.api_key}"}
+        try:
+            connect = websockets.connect(url, additional_headers=headers)
+        except TypeError:
+            connect = websockets.connect(url, extra_headers=headers)
+        return await asyncio.wait_for(connect, timeout=max(0.1, self.runtime.connect_timeout_seconds))
+
+    async def _consume_deepgram_audio(self) -> None:
+        try:
+            async for raw in self._deepgram_ws:
+                if isinstance(raw, bytes):
+                    payload = AudioChunk(
+                        codec=VoiceAudioCodec.PCM16,
+                        data=raw,
+                        sample_rate_hz=self.runtime.tts_sample_rate_hz,
+                        channels=1,
+                    ).to_payload()
+                    payload["mime_type"] = "audio/L16"
+                    if self._playback_generation is not None:
+                        payload["playback_generation"] = self._playback_generation
+                    await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._emit(
+                VoiceEventType.SESSION_ERROR,
+                {"error": f"deepgram tts stream failed: {sanitize_realtime_voice_error(exc)}"},
+            )
+
+    async def _emit(self, event_type: VoiceEventType, payload: Mapping[str, Any]) -> None:
+        if self.config is None:
+            return
+        if self._closed and event_type != VoiceEventType.SESSION_CLOSED:
+            return
+        self._sequence += 1
+        await put_realtime_voice_event(
+            self._events,
+            VoiceEvent(
+                type=event_type,
+                session_id=self.config.session_id,
+                sequence=self._sequence,
+                payload=dict(payload),
+            ),
+        )
+
+
 def deepgram_listen_url(
     runtime: DeepgramStreamingSTTBridgeConfig,
     config: RealtimeVoiceSessionConfig,
@@ -202,6 +340,16 @@ def deepgram_listen_url(
         query["sample_rate"] = str(max(1, int(config.sample_rate_hz or 16000)))
     separator = "&" if urllib.parse.urlparse(runtime.deepgram_url).query else "?"
     return f"{runtime.deepgram_url}{separator}{urllib.parse.urlencode(query)}"
+
+
+def deepgram_tts_url(runtime: DeepgramStreamingSTTBridgeConfig) -> str:
+    query = {
+        "model": runtime.tts_model,
+        "encoding": "linear16",
+        "sample_rate": str(max(1, int(runtime.tts_sample_rate_hz or 24000))),
+    }
+    separator = "&" if urllib.parse.urlparse(runtime.deepgram_tts_url).query else "?"
+    return f"{runtime.deepgram_tts_url}{separator}{urllib.parse.urlencode(query)}"
 
 
 def deepgram_result_to_transcript_payload(
@@ -252,7 +400,8 @@ def create_deepgram_streaming_stt_bridge_app(runtime: Optional[DeepgramStreaming
             },
             "capabilities": {
                 "streaming_stt": bool(runtime.api_key),
-                "tts": False,
+                "tts": bool(runtime.api_key),
+                "streaming_tts": bool(runtime.api_key),
                 "native_s2s": False,
             },
         }
@@ -325,6 +474,62 @@ def create_deepgram_streaming_stt_bridge_app(runtime: Optional[DeepgramStreaming
             if session is not None:
                 await session.close()
 
+    @app.websocket("/v1/streaming-tts/session")
+    async def streaming_tts_session(ws: WebSocket):
+        if not _authorized(ws.headers, runtime.auth_token):
+            await ws.close(code=1008, reason="unauthorized")
+            return
+        await ws.accept()
+        session: Optional[DeepgramStreamingTTSBridgeSession] = None
+        pump_task: Optional[asyncio.Task[None]] = None
+
+        async def pump_events() -> None:
+            assert session is not None
+            async for event in session.events():
+                frame = binary_audio_frame_from_event(event)
+                if frame is not None and event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                    await ws.send_bytes(frame)
+                    continue
+                await ws.send_json(event.to_wire())
+
+        try:
+            while True:
+                message = await ws.receive()
+                if message.get("type") == "websocket.disconnect":
+                    raise WebSocketDisconnect(code=int(message.get("code") or 1000))
+                raw = message.get("text")
+                if not isinstance(raw, str):
+                    await ws.send_json({"type": "session.error", "payload": {"error": "invalid websocket frame"}})
+                    continue
+                data = json.loads(raw)
+                if data.get("type") == "session.config":
+                    config = RealtimeVoiceSessionConfig.from_wire(data.get("payload") or {})
+                    session = DeepgramStreamingTTSBridgeSession(runtime)
+                    try:
+                        await session.start(config)
+                    except Exception as exc:
+                        await ws.send_json(
+                            {
+                                "type": "session.error",
+                                "payload": {"error": sanitize_realtime_voice_error(exc)},
+                            }
+                        )
+                        await ws.close(code=1011, reason="streaming tts unavailable")
+                        return
+                    pump_task = asyncio.create_task(pump_events())
+                    continue
+                if session is None:
+                    await ws.send_json({"type": "session.error", "payload": {"error": "missing session.config"}})
+                    continue
+                await session.receive_event(VoiceEvent.from_wire(data))
+        except WebSocketDisconnect:
+            pass
+        finally:
+            if pump_task:
+                pump_task.cancel()
+            if session is not None:
+                await session.close()
+
     return app
 
 
@@ -334,8 +539,11 @@ def deepgram_bridge_config_from_env() -> DeepgramStreamingSTTBridgeConfig:
         api_key=os.environ.get("DEEPGRAM_API_KEY") or os.environ.get("HERMES_DEEPGRAM_API_KEY") or None,
         auth_token=os.environ.get(auth_token_env) or None,
         deepgram_url=os.environ.get("HERMES_DEEPGRAM_LISTEN_URL") or "wss://api.deepgram.com/v1/listen",
+        deepgram_tts_url=os.environ.get("HERMES_DEEPGRAM_TTS_URL") or "wss://api.deepgram.com/v1/speak",
         model=os.environ.get("HERMES_DEEPGRAM_MODEL") or "nova-3",
+        tts_model=os.environ.get("HERMES_DEEPGRAM_TTS_MODEL") or "aura-2-thalia-en",
         language=os.environ.get("HERMES_DEEPGRAM_LANGUAGE") or None,
+        tts_sample_rate_hz=int(os.environ.get("HERMES_DEEPGRAM_TTS_SAMPLE_RATE_HZ") or 24000),
         endpointing_ms=int(os.environ.get("HERMES_DEEPGRAM_ENDPOINTING_MS") or 80),
         connect_timeout_seconds=float(os.environ.get("HERMES_DEEPGRAM_CONNECT_TIMEOUT_SECONDS") or 10),
     )

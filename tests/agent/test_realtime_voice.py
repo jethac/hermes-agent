@@ -2135,6 +2135,42 @@ def test_reference_sidecar_health_marks_streaming_stt_only_after_bridge_health()
     assert verified["capabilities"]["utterance_stt"] is True
 
 
+def test_reference_sidecar_health_marks_streaming_tts_bridge_after_health():
+    runtime = ReferenceSidecarRuntimeConfig(
+        streaming_tts_base_url="http://streaming-tts.local:9001",
+        streaming_tts_model="portable-streaming-voice",
+        local_tts_enabled=False,
+    )
+
+    unverified = reference_sidecar_health_payload(runtime)
+
+    assert unverified["capabilities"]["tts"] is False
+    assert unverified["capabilities"]["streaming_tts_bridge"] is True
+    assert unverified["frontend"]["streaming_tts_bridge"] == {
+        "configured": True,
+        "healthy": False,
+        "model": "portable-streaming-voice",
+    }
+
+    verified = reference_sidecar_health_payload(
+        runtime,
+        streaming_tts_health={
+            "ok": True,
+            "capabilities": {
+                "tts": True,
+                "streaming_tts": True,
+            },
+        },
+    )
+
+    assert verified["capabilities"]["tts"] is True
+    assert verified["frontend"]["streaming_tts_bridge"] == {
+        "configured": True,
+        "healthy": True,
+        "model": "portable-streaming-voice",
+    }
+
+
 def test_reference_sidecar_health_payload_is_sanitized():
     payload = reference_sidecar_health_payload(
         ReferenceSidecarRuntimeConfig(
@@ -2184,6 +2220,10 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_MODEL", "portable-streaming-asr")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_TOKEN", "secret-token")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_TIMEOUT_SECONDS", "2.5")
+    monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_BASE_URL", "http://streaming-tts.local:9001")
+    monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_MODEL", "portable-streaming-voice")
+    monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_TOKEN", "tts-secret-token")
+    monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_TIMEOUT_SECONDS", "3.5")
 
     runtime = runtime_config_from_env()
 
@@ -2194,6 +2234,10 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     assert runtime.streaming_stt_model == "portable-streaming-asr"
     assert runtime.streaming_stt_token == "secret-token"
     assert runtime.streaming_stt_timeout_seconds == 2.5
+    assert runtime.streaming_tts_base_url == "http://streaming-tts.local:9001"
+    assert runtime.streaming_tts_model == "portable-streaming-voice"
+    assert runtime.streaming_tts_token == "tts-secret-token"
+    assert runtime.streaming_tts_timeout_seconds == 3.5
 
 
 def test_reference_sidecar_bridges_streaming_stt_events(monkeypatch):
@@ -2317,6 +2361,102 @@ def test_reference_sidecar_bridges_streaming_stt_events(monkeypatch):
             "confidence": 0.92,
             "input_generation": 12,
         }
+
+    asyncio.run(run())
+
+
+def test_reference_sidecar_bridges_streaming_tts_audio(monkeypatch):
+    created = []
+
+    class FakeStreamingTTSClient:
+        def __init__(self, *, path="/v1/realtime-text/session"):
+            self.path = path
+            self.sent = []
+            self._events = asyncio.Queue()
+            created.append(self)
+
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            self.sent.append(event)
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                payload = AudioChunk(codec=VoiceAudioCodec.PCM16, data=b"pcm-audio").to_payload()
+                payload["playback_generation"] = event.payload.get("playback_generation")
+                await self._events.put(
+                    VoiceEvent(
+                        type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                        session_id=event.session_id,
+                        sequence=1,
+                        payload=payload,
+                    )
+                )
+
+        async def events(self):
+            while True:
+                event = await self._events.get()
+                if event is None:
+                    return
+                yield event
+
+        async def close(self):
+            await self._events.put(None)
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_reference_sidecar.RealtimeVoiceSidecarClient",
+        FakeStreamingTTSClient,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                streaming_tts_base_url="http://streaming-tts.local:9001",
+                streaming_tts_model="portable-streaming-voice",
+                streaming_tts_token="tts-secret-token",
+                streaming_tts_timeout_seconds=3.5,
+                local_tts_enabled=False,
+            )
+        )
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="sidecar"))
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "text": "hello back",
+                    "speak": True,
+                    "playback_generation": 7,
+                    "language": "en",
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                await sidecar.close()
+                break
+
+        assert created[0].path == "/v1/streaming-tts/session"
+        assert created[0].config.sidecar_base_url == "http://streaming-tts.local:9001"
+        assert created[0].config.sidecar_token == "tts-secret-token"
+        assert created[0].config.frontend_model == "portable-streaming-voice"
+        assert created[0].config.sidecar_connect_timeout_seconds == 3.5
+        assert created[0].sent[0].payload == {
+            "text": "hello back",
+            "speak": True,
+            "playback_generation": 7,
+            "language": "en",
+        }
+        assert [event.type for event in seen] == [
+            VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        ]
+        assert seen[0].payload["streaming_tts"] is True
+        assert AudioChunk.from_payload(seen[1].payload).data == b"pcm-audio"
+        assert seen[1].payload["playback_generation"] == 7
 
     asyncio.run(run())
 

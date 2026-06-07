@@ -7532,7 +7532,7 @@ class TestRealtimeVoiceWebSocket:
         }
         remote = {
             "frontend_provider": "vllm",
-            "sidecar_base_url": "http://100.113.98.11:8765",
+            "sidecar_base_url": "http://voice-sidecar.example.test:8765",
             "sidecar_autostart": True,
         }
         native = {
@@ -7569,7 +7569,7 @@ class TestRealtimeVoiceWebSocket:
             {
                 "sidecar_host": "127.0.0.1",
                 "sidecar_port": 8765,
-                "vllm_base_url": "http://100.113.98.11:8000/v1",
+                "vllm_base_url": "http://vllm.example.test:8000/v1",
                 "vllm_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
                 "input_languages": ["ja", "en-US", "https://voice.local/secret"],
                 "output_languages": ["ja", "ko", "token=secret"],
@@ -7579,7 +7579,7 @@ class TestRealtimeVoiceWebSocket:
 
         assert command[:3] == [self.ws_module.sys.executable, "-m", "hermes_cli.realtime_voice_sidecar"]
         assert "--vllm-base-url" in command
-        assert "http://100.113.98.11:8000/v1" in command
+        assert "http://vllm.example.test:8000/v1" in command
         assert "--vllm-model" in command
         assert "google/gemma-4-E4B-it-qat-w4a16-ct" in command
         assert "--input-languages" in command
@@ -7598,6 +7598,9 @@ class TestRealtimeVoiceWebSocket:
                 "streaming_stt_base_url": "http://streaming-stt.local:9000",
                 "streaming_stt_model": "portable-streaming-asr",
                 "streaming_stt_token_env": "STREAMING_STT_TOKEN",
+                "streaming_tts_base_url": "http://streaming-tts.local:9001",
+                "streaming_tts_model": "portable-streaming-voice",
+                "streaming_tts_token_env": "STREAMING_TTS_TOKEN",
             }
         )
 
@@ -7605,7 +7608,12 @@ class TestRealtimeVoiceWebSocket:
         assert "http://streaming-stt.local:9000" in command
         assert "--streaming-stt-model" in command
         assert "portable-streaming-asr" in command
+        assert "--streaming-tts-base-url" in command
+        assert "http://streaming-tts.local:9001" in command
+        assert "--streaming-tts-model" in command
+        assert "portable-streaming-voice" in command
         assert "STREAMING_STT_TOKEN" not in command
+        assert "STREAMING_TTS_TOKEN" not in command
 
     def test_sidecar_command_inherits_production_language_policy_by_default(self):
         command = self.ws_module._realtime_voice_sidecar_command(
@@ -7930,6 +7938,7 @@ class TestRealtimeVoiceWebSocket:
             lambda: {
                 "CUSTOM_VOICE_TOKEN": "secret-token",
                 "STREAMING_STT_TOKEN": "stream-secret-token",
+                "STREAMING_TTS_TOKEN": "stream-tts-secret-token",
                 "HERMES_TEST_ENV": "1",
             },
         )
@@ -7942,11 +7951,14 @@ class TestRealtimeVoiceWebSocket:
                 "sidecar_host": "127.0.0.1",
                 "sidecar_port": 8765,
                 "sidecar_token_env": "CUSTOM_VOICE_TOKEN",
-                "vllm_base_url": "http://100.113.98.11:8000/v1",
+                "vllm_base_url": "http://vllm.example.test:8000/v1",
                 "vllm_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
                 "streaming_stt_base_url": "http://streaming-stt.local:9000",
                 "streaming_stt_model": "portable-streaming-asr",
                 "streaming_stt_token_env": "STREAMING_STT_TOKEN",
+                "streaming_tts_base_url": "http://streaming-tts.local:9001",
+                "streaming_tts_model": "portable-streaming-voice",
+                "streaming_tts_token_env": "STREAMING_TTS_TOKEN",
                 "languages": ["ja", "en", "https://voice.local/secret"],
                 "scripts": ["Jpan", "Latn", "bad/script"],
             }
@@ -7962,6 +7974,9 @@ class TestRealtimeVoiceWebSocket:
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_BASE_URL"] == "http://streaming-stt.local:9000"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_MODEL"] == "portable-streaming-asr"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_TOKEN"] == "stream-secret-token"
+        assert kwargs["env"]["HERMES_VOICE_STREAMING_TTS_BASE_URL"] == "http://streaming-tts.local:9001"
+        assert kwargs["env"]["HERMES_VOICE_STREAMING_TTS_MODEL"] == "portable-streaming-voice"
+        assert kwargs["env"]["HERMES_VOICE_STREAMING_TTS_TOKEN"] == "stream-tts-secret-token"
         assert kwargs["env"]["HERMES_VOICE_INPUT_LANGUAGES"] == "ja,en"
         assert kwargs["env"]["HERMES_VOICE_OUTPUT_LANGUAGES"] == "ja,en"
         assert kwargs["env"]["HERMES_VOICE_SCRIPTS"] == "Jpan,Latn"

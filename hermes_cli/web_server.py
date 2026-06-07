@@ -773,6 +773,21 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Environment variable containing the streaming STT bridge bearer token",
         "category": "voice",
     },
+    "voice.realtime.streaming_tts_base_url": {
+        "type": "string",
+        "description": "Optional compatible streaming TTS bridge URL used by the managed reference sidecar",
+        "category": "voice",
+    },
+    "voice.realtime.streaming_tts_model": {
+        "type": "string",
+        "description": "Optional streaming TTS bridge model name for diagnostics",
+        "category": "voice",
+    },
+    "voice.realtime.streaming_tts_token_env": {
+        "type": "string",
+        "description": "Environment variable containing the streaming TTS bridge bearer token",
+        "category": "voice",
+    },
     "voice.realtime.spark_base_url": {
         "type": "string",
         "description": "Deprecated alias for voice.realtime.sidecar_base_url",
@@ -13259,6 +13274,12 @@ def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
         cmd.extend(["--streaming-stt-base-url", streaming_stt_base_url])
     if streaming_stt_model:
         cmd.extend(["--streaming-stt-model", streaming_stt_model])
+    streaming_tts_base_url = str(realtime.get("streaming_tts_base_url") or "").strip()
+    streaming_tts_model = str(realtime.get("streaming_tts_model") or "").strip()
+    if streaming_tts_base_url:
+        cmd.extend(["--streaming-tts-base-url", streaming_tts_base_url])
+    if streaming_tts_model:
+        cmd.extend(["--streaming-tts-model", streaming_tts_model])
     input_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_input_languages(realtime))
     output_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_output_languages(realtime))
     scripts = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_scripts(realtime))
@@ -13328,6 +13349,16 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
         child_env["HERMES_VOICE_STREAMING_STT_MODEL"] = streaming_stt_model
     if streaming_stt_token:
         child_env["HERMES_VOICE_STREAMING_STT_TOKEN"] = streaming_stt_token
+    streaming_tts_base_url = str(realtime.get("streaming_tts_base_url") or "").strip()
+    streaming_tts_model = str(realtime.get("streaming_tts_model") or "").strip()
+    streaming_tts_token_env = str(realtime.get("streaming_tts_token_env") or "HERMES_VOICE_STREAMING_TTS_TOKEN")
+    streaming_tts_token = str(env_on_disk.get(streaming_tts_token_env) or os.environ.get(streaming_tts_token_env) or "")
+    if streaming_tts_base_url:
+        child_env["HERMES_VOICE_STREAMING_TTS_BASE_URL"] = streaming_tts_base_url
+    if streaming_tts_model:
+        child_env["HERMES_VOICE_STREAMING_TTS_MODEL"] = streaming_tts_model
+    if streaming_tts_token:
+        child_env["HERMES_VOICE_STREAMING_TTS_TOKEN"] = streaming_tts_token
     input_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_input_languages(realtime))
     output_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_output_languages(realtime))
     scripts = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_scripts(realtime))

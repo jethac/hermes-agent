@@ -24,6 +24,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("HERMES_VOICE_STREAMING_STT_MODEL", ""),
         help="Optional streaming STT model name for diagnostics",
     )
+    parser.add_argument(
+        "--streaming-tts-base-url",
+        default=os.environ.get("HERMES_VOICE_STREAMING_TTS_BASE_URL", ""),
+        help="Optional compatible streaming TTS bridge base URL",
+    )
+    parser.add_argument(
+        "--streaming-tts-model",
+        default=os.environ.get("HERMES_VOICE_STREAMING_TTS_MODEL", ""),
+        help="Optional streaming TTS model name for diagnostics",
+    )
     parser.add_argument("--input-languages", default=os.environ.get("HERMES_VOICE_INPUT_LANGUAGES", ""))
     parser.add_argument("--output-languages", default=os.environ.get("HERMES_VOICE_OUTPUT_LANGUAGES", ""))
     parser.add_argument("--scripts", default=os.environ.get("HERMES_VOICE_SCRIPTS", ""))
@@ -40,6 +50,10 @@ def main(argv: list[str] | None = None) -> None:
         os.environ["HERMES_VOICE_STREAMING_STT_BASE_URL"] = args.streaming_stt_base_url
     if args.streaming_stt_model:
         os.environ["HERMES_VOICE_STREAMING_STT_MODEL"] = args.streaming_stt_model
+    if args.streaming_tts_base_url:
+        os.environ["HERMES_VOICE_STREAMING_TTS_BASE_URL"] = args.streaming_tts_base_url
+    if args.streaming_tts_model:
+        os.environ["HERMES_VOICE_STREAMING_TTS_MODEL"] = args.streaming_tts_model
     if args.input_languages:
         os.environ["HERMES_VOICE_INPUT_LANGUAGES"] = args.input_languages
     if args.output_languages:
