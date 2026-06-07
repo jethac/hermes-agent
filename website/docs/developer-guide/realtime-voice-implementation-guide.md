@@ -122,6 +122,8 @@ Client events:
 
 Client `audio.input.chunk` events may include a `transcript` string for browser or sidecar experiments that produce text before raw-audio STT. Set `end_of_utterance`, `final`, or `is_final` to `false` for partial transcript captions; only final transcript payloads should start the Hermes oracle turn.
 
+When Hermes forwards microphone chunks to a text-oracle sidecar, it adds a server-owned `input_generation` to each sidecar-bound `audio.input.chunk`. Sidecars should echo that value on `transcript.partial` and `transcript.final` events. Hermes uses it to ignore stale speech-recognition results after barge-in or after a newer utterance has started. Desktop clients do not set or rely on this field.
+
 Server events:
 
 ```json
@@ -211,13 +213,14 @@ Keep these pieces of state:
 - partial transcript text and stability
 - active assistant draft id
 - active playback generation
+- active sidecar input generation
 - committed assistant text
 - interrupted assistant text
 - pending tool calls
 - playback generation id
 - last inbound and outbound sequence numbers
 
-When a new final user turn or barge-in advances `playback_generation`, cancelled work from older generations must not emit assistant commits or audio. Late events from sidecars should include their original generation so Hermes and the desktop can drop them deterministically. The Hermes session layer drops stale generated audio, assistant text, assistant commits, and generated final transcripts before forwarding events to the desktop.
+When a new final user turn or barge-in advances `playback_generation`, cancelled work from older generations must not emit assistant commits or audio. When a sidecar handles microphone input, Hermes also advances an `input_generation` across utterances and barge-in boundaries; generation-aware sidecars echo it with transcript events so Hermes can drop late STT results before they start an obsolete oracle turn. The Hermes session layer drops stale generated audio, assistant text, assistant commits, and generated final transcripts before forwarding events to the desktop.
 
 The session owns persistence. Engines produce events; the session decides which events become durable Hermes messages.
 
@@ -286,7 +289,7 @@ Implemented sidecar websocket:
 WS /v1/realtime-text/session
 ```
 
-Hermes sends a `session.config` frame first, then forwards `audio.input.chunk`, `barge_in`, and assistant text chunks with `{"speak": true}`. Forwarded `barge_in` events include the active `playback_generation` so sidecars can cancel or tag stale work deterministically. The sidecar returns `transcript.partial`, `transcript.final`, `frontend.state`, `audio.output.chunk`, or `session.error` events using the shared wire protocol.
+Hermes sends a `session.config` frame first, then forwards `audio.input.chunk`, `barge_in`, and assistant text chunks with `{"speak": true}`. Forwarded `audio.input.chunk` events include the active `input_generation`; sidecars should echo it on transcript events so Hermes can reject stale STT output after barge-in or newer input. Forwarded `barge_in` events include the active `playback_generation` so sidecars can cancel or tag stale output work deterministically. The sidecar returns `transcript.partial`, `transcript.final`, `frontend.state`, `audio.output.chunk`, or `session.error` events using the shared wire protocol.
 
 Hermes and the reference sidecar use the same binary audio envelope as the desktop hot path for sidecar-facing `audio.input.chunk` and `audio.output.chunk` events: a 4-byte big-endian JSON header length, a UTF-8 `VoiceEvent` header without `payload.data_b64`, then the raw audio bytes. JSON/base64 audio events remain valid for compatibility sidecars and tests, and raw binary output bytes without the envelope are still accepted as legacy Opus output from older sidecars.
 
