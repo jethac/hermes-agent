@@ -6944,6 +6944,51 @@ class TestRealtimeVoiceWebSocket:
         assert "data_b64" not in header["payload"]
         assert audio == b"assistant-audio"
 
+    def test_websocket_closes_after_runtime_session_error(self, monkeypatch):
+        from agent.realtime_voice import VoiceEvent, VoiceEventType
+        from starlette.websockets import WebSocketDisconnect
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {"voice": {"realtime": {"enabled": True, "engine": "text_oracle_tts"}}},
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+        monkeypatch.setattr(self.ws_module, "_ensure_realtime_voice_sidecar", lambda realtime: None)
+
+        class FakeSession:
+            def __init__(self, config):
+                self.config = config
+
+            async def start(self):
+                return None
+
+            async def events(self):
+                yield VoiceEvent(
+                    type=VoiceEventType.SESSION_ERROR,
+                    session_id="voice-123",
+                    sequence=1,
+                    payload={"error": "runtime voice failure"},
+                )
+
+            async def receive_client_event(self, event):
+                return None
+
+            async def close(self):
+                return None
+
+        monkeypatch.setattr("agent.realtime_voice_session.RealtimeVoiceSession", FakeSession)
+
+        with self.client.websocket_connect(self._url(session_id="voice-123")) as websocket:
+            event = websocket.receive_json()
+            assert event["type"] == "session.error"
+            assert event["payload"]["error"] == "runtime voice failure"
+            with pytest.raises(WebSocketDisconnect) as exc:
+                websocket.receive_json()
+
+        assert exc.value.code == 1011
+        assert "runtime voice failure" in exc.value.reason
+
     def test_ensure_sidecar_spawns_reference_server(self, monkeypatch, tmp_path):
         class FakeResponse:
             status = 200

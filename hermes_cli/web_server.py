@@ -12767,8 +12767,14 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
         return
 
     async def pump_events() -> None:
+        from agent.realtime_voice import VoiceEventType
+
         async for event in session.events():
             await _send_realtime_voice_server_event(ws, event)
+            if event.type == VoiceEventType.SESSION_ERROR:
+                reason = str(event.payload.get("error") or "realtime voice session error")
+                await ws.close(code=1011, reason=_ws_close_reason(reason))
+                return
 
     event_task = asyncio.create_task(pump_events())
 
