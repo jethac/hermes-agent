@@ -6,7 +6,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Mapping, Optional
 
 from agent.realtime_voice import (
     RealtimeVoiceEngine,
@@ -47,6 +47,15 @@ STALE_GENERATION_EVENT_TYPES = frozenset(
         VoiceEventType.ASSISTANT_COMMIT,
         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
         VoiceEventType.TRANSCRIPT_FINAL,
+    }
+)
+
+QUALITY_TARGET_METRIC_KEYS = frozenset(
+    {
+        "audio_to_partial_transcript_ms",
+        "final_transcript_to_first_text_ms",
+        "final_transcript_to_first_audio_ms",
+        "barge_in_ack_ms",
     }
 )
 
@@ -209,6 +218,9 @@ class RealtimeVoiceSession:
                 payload["metrics"] = {**existing, **metrics}
             else:
                 payload["metrics"] = metrics
+            misses = self._quality_target_misses(payload["metrics"])
+            if misses:
+                payload["quality_target_misses"] = misses
         return VoiceEvent(
             type=event.type,
             session_id=event.session_id,
@@ -264,6 +276,20 @@ class RealtimeVoiceSession:
             metrics["barge_in_ack_ms"] = _elapsed_ms(self._last_barge_in_at, now)
         return metrics
 
+    def _quality_target_misses(self, metrics: Mapping[str, Any]) -> List[dict]:
+        targets = self.config.metadata.get("quality_targets_ms") if isinstance(self.config.metadata, Mapping) else {}
+        if not isinstance(targets, Mapping):
+            return []
+
+        misses: List[dict] = []
+        for key in QUALITY_TARGET_METRIC_KEYS:
+            actual = _positive_int(metrics.get(key))
+            target = _positive_int(targets.get(key))
+            if actual is None or target is None or actual <= target:
+                continue
+            misses.append({"metric": key, "actual_ms": actual, "target_ms": target})
+        return sorted(misses, key=lambda item: item["metric"])
+
 
 def _payload_generation(payload: dict) -> Optional[int]:
     value = payload.get("playback_generation")
@@ -273,6 +299,17 @@ def _payload_generation(payload: dict) -> Optional[int]:
         return value
     if isinstance(value, str) and value.isdigit():
         return int(value)
+    return None
+
+
+def _positive_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.isdigit():
+        parsed = int(value)
+        return parsed if parsed > 0 else None
     return None
 
 

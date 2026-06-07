@@ -386,6 +386,42 @@ describe('collectRealtimeVoiceFrontendState', () => {
     expect(collectRealtimeVoiceFrontendState(previous, event('frontend.state', { status: 'ready' }))).toBeNull()
     expect(collectRealtimeVoiceFrontendState(previous, event('transcript.partial', { text: 'hello' }))).toBe(previous)
   })
+
+  it('marks realtime voice degraded when latency targets are missed', () => {
+    expect(collectRealtimeVoiceFrontendState(null, event('assistant.text.partial', {
+      quality_target_misses: [
+        {
+          actual_ms: 650,
+          metric: 'final_transcript_to_first_text_ms',
+          target_ms: 500
+        }
+      ],
+      text: 'slow'
+    }))).toEqual({
+      reason: 'quality_target_missed',
+      status: 'degraded',
+      updatedAtMs: 1_234
+    })
+  })
+
+  it('does not replace a fallback state with latency degradation', () => {
+    const previous = {
+      reason: 'sidecar_send_failed',
+      status: 'fallback' as const,
+      updatedAtMs: 1_000
+    }
+
+    expect(collectRealtimeVoiceFrontendState(previous, event('assistant.text.partial', {
+      quality_target_misses: [
+        {
+          actual_ms: 650,
+          metric: 'final_transcript_to_first_text_ms',
+          target_ms: 500
+        }
+      ],
+      text: 'slow'
+    }))).toBe(previous)
+  })
 })
 
 describe('realtimeVoiceUnavailableFrontendState', () => {
