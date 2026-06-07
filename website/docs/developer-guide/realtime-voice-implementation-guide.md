@@ -334,7 +334,8 @@ python -m hermes_cli.realtime_voice_production_review \
   --write-template \
   --reviewer "Realtime voice QA"
 python -m hermes_cli.realtime_voice_production_review \
-  ./artifacts/realtime-voice-production-review.json
+  ./artifacts/realtime-voice-production-review.json \
+  --apply
 ```
 
 ```json
