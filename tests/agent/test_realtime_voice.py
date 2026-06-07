@@ -933,6 +933,44 @@ def test_session_adds_latency_metrics_to_realtime_events(monkeypatch):
     asyncio.run(run())
 
 
+def test_session_adds_turn_state_to_realtime_events(monkeypatch):
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(session_id="voice-123"),
+            engine=TextOracleTTSEngine(oracle=FakeOracle()),
+        )
+        await session.start()
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello state", "end_of_utterance": True},
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        states = {event.type: event.payload.get("session_state") for event in seen}
+
+        assert states[VoiceEventType.SESSION_STARTED] == RealtimeVoiceSessionState.LISTENING.value
+        assert states[VoiceEventType.TRANSCRIPT_FINAL] == RealtimeVoiceSessionState.ASSISTANT_PENDING.value
+        assert states[VoiceEventType.ASSISTANT_TEXT_PARTIAL] == RealtimeVoiceSessionState.SPEAKING.value
+        assert states[VoiceEventType.ASSISTANT_COMMIT] == RealtimeVoiceSessionState.LISTENING.value
+        await session.close()
+
+    asyncio.run(run())
+
+
 def test_session_adds_barge_in_ack_latency_metric():
     async def run():
         session = RealtimeVoiceSession(

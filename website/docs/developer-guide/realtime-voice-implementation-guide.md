@@ -124,6 +124,8 @@ Server events:
 
 Server events may include a `metrics` object in the payload. The session layer annotates events with monotonic timing data such as `session_elapsed_ms`, `audio_to_partial_transcript_ms`, `audio_to_final_transcript_ms`, `eou_to_final_transcript_ms`, `final_transcript_to_first_text_ms`, `final_transcript_to_first_audio_ms`, and `barge_in_ack_ms`. Engines and sidecars should preserve any existing metric fields they provide; the session appends Hermes-observed timings before forwarding the event to the desktop. The desktop hook keeps the latest valid metrics as a realtime session snapshot and the active voice controls surface a compact quality readout against the PRD latency targets.
 
+Hermes also annotates server events with `session_state` when the event implies a backend turn-state transition. Values mirror the session state machine (`listening`, `assistant_pending`, `speaking`, `closing`, `closed`) and are authoritative for desktop status display across text-oracle, remote sidecar, and native S2S engines. Desktop clients may still keep local playback state to avoid switching from speaking to listening while already-buffered audio is playing.
+
 ## Backend Endpoint
 
 Add a FastAPI websocket endpoint in `hermes_cli/web_server.py`:
