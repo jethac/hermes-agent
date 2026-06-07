@@ -639,6 +639,34 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "ElevenLabs Scribe model",
         "options": ["scribe_v2", "scribe_v1"],
     },
+    "voice.realtime.enabled": {
+        "type": "boolean",
+        "description": "Enable the realtime voice websocket path",
+        "category": "voice",
+    },
+    "voice.realtime.engine": {
+        "type": "select",
+        "description": "Realtime voice engine",
+        "options": ["text_oracle_tts", "native_s2s_oracle"],
+        "category": "voice",
+    },
+    "voice.realtime.input_codec": {
+        "type": "select",
+        "description": "Realtime microphone wire codec",
+        "options": ["webm_opus", "opus", "pcm16"],
+        "category": "voice",
+    },
+    "voice.realtime.output_codec": {
+        "type": "select",
+        "description": "Realtime assistant audio wire codec",
+        "options": ["opus", "webm_opus", "pcm16"],
+        "category": "voice",
+    },
+    "voice.realtime.spark_base_url": {
+        "type": "string",
+        "description": "LAN sidecar URL for Gemma/S2S voice models",
+        "category": "voice",
+    },
     "display.skin": {
         "type": "select",
         "description": "CLI visual theme",
@@ -12593,6 +12621,146 @@ def _ws_close_reason(text: str) -> str:
     if len(encoded) <= 123:
         return text
     return encoded[:120].decode("utf-8", "ignore") + "..."
+
+
+def _realtime_voice_config_from_request(ws: WebSocket):
+    """Build a realtime voice session config from profile config + query params."""
+    from agent.realtime_voice import (
+        RealtimeVoiceEngineKind,
+        RealtimeVoiceSessionConfig,
+        VoiceAudioCodec,
+    )
+
+    cfg = load_config()
+    voice = cfg.get("voice") if isinstance(cfg, dict) else {}
+    realtime = voice.get("realtime") if isinstance(voice, dict) else {}
+    realtime = realtime if isinstance(realtime, dict) else {}
+
+    session_id = (
+        ws.query_params.get("session_id")
+        or ws.query_params.get("session")
+        or f"voice-{secrets.token_urlsafe(12)}"
+    )
+    engine = ws.query_params.get("engine") or realtime.get("engine") or "text_oracle_tts"
+    input_codec = ws.query_params.get("input_codec") or realtime.get("input_codec") or "webm_opus"
+    output_codec = ws.query_params.get("output_codec") or realtime.get("output_codec") or "opus"
+    spark_base_url = ws.query_params.get("spark_base_url") or realtime.get("spark_base_url") or ""
+    spark_token_env = str(realtime.get("spark_token_env") or "HERMES_SPARK_VOICE_TOKEN")
+    env = load_env()
+    spark_token = env.get(spark_token_env) or os.environ.get(spark_token_env) or ""
+
+    return RealtimeVoiceSessionConfig(
+        session_id=str(session_id),
+        engine=RealtimeVoiceEngineKind(str(engine)),
+        input_codec=VoiceAudioCodec(str(input_codec)),
+        output_codec=VoiceAudioCodec(str(output_codec)),
+        frontend_model=str(realtime.get("frontend_model") or "") or None,
+        oracle_model=str(realtime.get("oracle_model") or "") or None,
+        tts_provider=str(realtime.get("tts_provider") or "") or None,
+        spark_base_url=str(spark_base_url or "") or None,
+        spark_token=str(spark_token or "") or None,
+        metadata={"source": "desktop"},
+    )
+
+
+@app.websocket("/api/voice/realtime")
+async def realtime_voice_ws(ws: WebSocket) -> None:
+    peer = ws.client.host if ws.client else "?"
+
+    auth_reason, cred = _ws_auth_reason(ws)
+    mode = _ws_auth_mode()
+    if auth_reason is not None:
+        _log.warning(
+            "realtime voice auth rejected reason=%s mode=%s cred=%s peer=%s",
+            auth_reason,
+            mode,
+            cred,
+            peer,
+        )
+        await ws.close(code=4401, reason=_ws_close_reason(f"auth: {auth_reason}"))
+        return
+
+    request_reason = _ws_request_reason(ws)
+    if request_reason is not None:
+        _log.warning("realtime voice refused: %s peer=%s", request_reason, peer)
+        await ws.close(code=4403, reason=_ws_close_reason(request_reason))
+        return
+
+    cfg = load_config()
+    voice = cfg.get("voice") if isinstance(cfg, dict) else {}
+    realtime = voice.get("realtime") if isinstance(voice, dict) else {}
+    if not (isinstance(realtime, dict) and realtime.get("enabled") is True):
+        await ws.close(code=4403, reason="realtime voice disabled")
+        return
+
+    try:
+        config = _realtime_voice_config_from_request(ws)
+    except Exception as exc:
+        await ws.close(code=4400, reason=_ws_close_reason(f"bad config: {exc}"))
+        return
+
+    await ws.accept()
+    _log.info(
+        "realtime voice accepted peer=%s mode=%s cred=%s session=%s engine=%s",
+        peer,
+        mode,
+        cred,
+        config.session_id,
+        config.engine.value,
+    )
+
+    from agent.realtime_voice import VoiceEvent
+    from agent.realtime_voice_session import RealtimeVoiceSession
+
+    session = RealtimeVoiceSession(config)
+    try:
+        await session.start()
+    except Exception as exc:
+        _log.warning("realtime voice session failed to start", exc_info=True)
+        await ws.send_json(
+            {
+                "type": "session.error",
+                "session_id": config.session_id,
+                "sequence": 0,
+                "payload": {"error": str(exc)},
+            }
+        )
+        await ws.close(code=1011, reason=_ws_close_reason(str(exc)))
+        return
+
+    async def pump_events() -> None:
+        async for event in session.events():
+            await ws.send_json(event.to_wire())
+
+    event_task = asyncio.create_task(pump_events())
+
+    try:
+        while True:
+            raw = await ws.receive_json()
+            event = VoiceEvent.from_wire(raw)
+            await session.receive_client_event(event)
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        _log.warning("realtime voice websocket error", exc_info=True)
+        try:
+            await ws.send_json(
+                {
+                    "type": "session.error",
+                    "session_id": config.session_id,
+                    "sequence": 0,
+                    "payload": {"error": str(exc)},
+                }
+            )
+        except Exception:
+            pass
+    finally:
+        event_task.cancel()
+        try:
+            await event_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        await session.close()
 
 
 @app.websocket("/api/pty")
