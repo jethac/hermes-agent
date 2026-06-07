@@ -7,6 +7,7 @@ import sys
 
 from agent.realtime_voice_smoke_report import (
     load_realtime_voice_smoke_report,
+    summarize_realtime_voice_smoke_report_runs,
     validate_realtime_voice_alpha_report_runs,
     validate_realtime_voice_alpha_report,
     validate_realtime_voice_smoke_report,
@@ -72,6 +73,16 @@ def main(argv: list[str] | None = None) -> int:
     if not issues:
         result_count = sum(len(entries) for _report, entries in runs)
         print(f"Realtime voice smoke report OK: {result_count} result(s) across {len(runs)} run(s)")
+        summary = summarize_realtime_voice_smoke_report_runs(runs)
+        latency = summary.get("latency_ms", {})
+        for label in ("audio_to_partial_transcript", "final_transcript_to_first_audio", "barge_in_ack"):
+            metric = latency.get(label) if isinstance(latency, dict) else None
+            if not isinstance(metric, dict) or not metric.get("count"):
+                continue
+            print(
+                f"  {label}: p50={metric.get('p50')}ms "
+                f"p95={metric.get('p95')}ms max={metric.get('max')}ms n={metric.get('count')}"
+            )
         return 0
     print(f"Realtime voice smoke report failed: {len(issues)} issue(s)", file=sys.stderr)
     for issue in issues:

@@ -8,6 +8,7 @@ depending on any particular machine, sidecar implementation, or accelerator.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -88,6 +89,39 @@ def validate_realtime_voice_alpha_report_runs(
                 )
             )
     return issues
+
+
+def summarize_realtime_voice_smoke_report_runs(
+    runs: Sequence[tuple[str, Sequence[Mapping[str, Any]]]],
+) -> dict[str, Any]:
+    entries = [entry for _label, report_entries in runs for entry in report_entries]
+    by_kind = _entries_by_kind(entries)
+    return {
+        "runs": len(runs),
+        "entries": len(entries),
+        "kinds": {
+            kind: {
+                "entries": len(kind_entries),
+                "ok": sum(1 for entry in kind_entries if entry.get("ok") is True),
+                "failed": sum(1 for entry in kind_entries if entry.get("ok") is not True),
+            }
+            for kind, kind_entries in sorted(by_kind.items())
+        },
+        "latency_ms": {
+            "audio_to_partial_transcript": _latency_summary(
+                entry.get("transcript_partial_ms")
+                for entry in by_kind.get("audio_fixture", [])
+            ),
+            "final_transcript_to_first_audio": _latency_summary(
+                entry.get("first_audio_ms")
+                for entry in by_kind.get("tts", [])
+            ),
+            "barge_in_ack": _latency_summary(
+                entry.get("barge_in_ack_ms")
+                for entry in by_kind.get("barge_in", [])
+            ),
+        },
+    }
 
 
 def validate_realtime_voice_smoke_report(
@@ -309,3 +343,22 @@ def _nonnegative_int(value: Any) -> int | None:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+def _latency_summary(values: Iterable[Any]) -> dict[str, Any]:
+    parsed = sorted(value for value in (_nonnegative_int(item) for item in values) if value is not None)
+    if not parsed:
+        return {"count": 0, "p50": None, "p95": None, "max": None}
+    return {
+        "count": len(parsed),
+        "p50": _percentile_nearest_rank(parsed, 50),
+        "p95": _percentile_nearest_rank(parsed, 95),
+        "max": parsed[-1],
+    }
+
+
+def _percentile_nearest_rank(values: Sequence[int], percentile: int) -> int:
+    if not values:
+        raise ValueError("percentile requires at least one value")
+    index = max(0, min(len(values) - 1, math.ceil((percentile / 100) * len(values)) - 1))
+    return values[index]

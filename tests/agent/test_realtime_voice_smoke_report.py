@@ -5,6 +5,7 @@ from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_BARGE_IN_TEXTS,
     ALPHA_REQUIRED_TTS_TEXTS,
     load_realtime_voice_smoke_report,
+    summarize_realtime_voice_smoke_report_runs,
     validate_realtime_voice_alpha_report_runs,
     validate_realtime_voice_alpha_report,
     validate_realtime_voice_smoke_report,
@@ -117,7 +118,10 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     path.write_text(json.dumps(_valid_alpha_report(), ensure_ascii=False), encoding="utf-8")
 
     assert realtime_voice_report_main([str(path), "--alpha"]) == 0
-    assert "Realtime voice smoke report OK" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "Realtime voice smoke report OK" in output
+    assert "audio_to_partial_transcript: p50=90ms p95=90ms max=90ms n=4" in output
+    assert "barge_in_ack: p50=45ms p95=45ms max=45ms n=1" in output
 
 
 def test_realtime_voice_report_cli_enforces_minimum_alpha_runs(tmp_path, capsys):
@@ -136,6 +140,30 @@ def test_realtime_voice_alpha_report_runs_accept_multiple_reports(tmp_path):
         runs.append((str(path), load_realtime_voice_smoke_report(path)))
 
     assert validate_realtime_voice_alpha_report_runs(runs, min_runs=3) == []
+
+
+def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path):
+    runs = []
+    for index, partial_ms in enumerate((80, 90, 120)):
+        report = _valid_alpha_report()
+        for entry in report:
+            if entry.get("kind") == "audio_fixture":
+                entry["transcript_partial_ms"] = partial_ms
+        path = tmp_path / f"voice-smoke-{index}.json"
+        path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+        runs.append((str(path), load_realtime_voice_smoke_report(path)))
+
+    summary = summarize_realtime_voice_smoke_report_runs(runs)
+
+    assert summary["runs"] == 3
+    assert summary["entries"] == 30
+    assert summary["kinds"]["audio_fixture"] == {"entries": 12, "ok": 12, "failed": 0}
+    assert summary["latency_ms"]["audio_to_partial_transcript"] == {
+        "count": 12,
+        "p50": 90,
+        "p95": 120,
+        "max": 120,
+    }
 
 
 def test_realtime_voice_report_cli_returns_nonzero_for_failed_report(tmp_path, capsys):
