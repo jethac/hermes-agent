@@ -12689,6 +12689,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
 
 
 _REALTIME_VOICE_AUDIO_SEND_TIMEOUT_SECONDS = 2.0
+_REALTIME_VOICE_EVENT_SEND_TIMEOUT_SECONDS = 2.0
 
 
 def _realtime_voice_event_from_binary_frame(frame: bytes):
@@ -12724,8 +12725,20 @@ def _realtime_voice_binary_frame_from_event(event) -> Optional[bytes]:
 async def _send_realtime_voice_server_event(ws: WebSocket, event) -> bool:
     frame = _realtime_voice_binary_frame_from_event(event)
     if frame is None:
-        await ws.send_json(event.to_wire())
-        return True
+        try:
+            await asyncio.wait_for(
+                ws.send_json(event.to_wire()),
+                timeout=_REALTIME_VOICE_EVENT_SEND_TIMEOUT_SECONDS,
+            )
+            return True
+        except asyncio.TimeoutError:
+            _log.warning(
+                "dropping realtime voice control event due to websocket backpressure session=%s sequence=%s type=%s",
+                event.session_id,
+                event.sequence,
+                event.type.value,
+            )
+            return False
 
     try:
         await asyncio.wait_for(ws.send_bytes(frame), timeout=_REALTIME_VOICE_AUDIO_SEND_TIMEOUT_SECONDS)
@@ -12739,17 +12752,20 @@ async def _send_realtime_voice_server_event(ws: WebSocket, event) -> bool:
             event.sequence,
         )
         try:
-            await ws.send_json(
-                VoiceEvent(
-                    type=VoiceEventType.FRONTEND_STATE,
-                    session_id=event.session_id,
-                    sequence=0,
-                    payload={
-                        "status": "degraded",
-                        "reason": "desktop_audio_backpressure",
-                        "sidecar": False,
-                    },
-                ).to_wire()
+            await asyncio.wait_for(
+                ws.send_json(
+                    VoiceEvent(
+                        type=VoiceEventType.FRONTEND_STATE,
+                        session_id=event.session_id,
+                        sequence=0,
+                        payload={
+                            "status": "degraded",
+                            "reason": "desktop_audio_backpressure",
+                            "sidecar": False,
+                        },
+                    ).to_wire()
+                ),
+                timeout=_REALTIME_VOICE_EVENT_SEND_TIMEOUT_SECONDS,
             )
         except Exception:
             pass
@@ -12846,7 +12862,10 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
         from agent.realtime_voice import VoiceEventType
 
         async for event in session.events():
-            await _send_realtime_voice_server_event(ws, event)
+            sent = await _send_realtime_voice_server_event(ws, event)
+            if not sent and event.type != VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                await ws.close(code=1011, reason="realtime voice desktop websocket backpressure")
+                return
             if event.type == VoiceEventType.SESSION_ERROR:
                 reason = str(event.payload.get("error") or "realtime voice session error")
                 await ws.close(code=1011, reason=_ws_close_reason(reason))

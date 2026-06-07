@@ -453,7 +453,7 @@ Responsibilities:
 - Send frames over websocket with monotonically increasing sequence numbers.
 - Serialize asynchronous audio encoding/sends so browser recorder chunks reach Hermes in capture order.
 - Bound browser websocket backpressure by dropping only non-final audio frames when the send buffer is already behind; never drop `end_of_utterance` frames.
-- Bound server-to-desktop assistant audio sends. If a desktop cannot receive audio promptly, drop that audio chunk, emit degraded `frontend.state`, and keep transcript/control events moving.
+- Bound server-to-desktop sends. If a desktop cannot receive assistant audio promptly, drop that audio chunk, emit degraded `frontend.state`, and keep transcript/control events moving. If transcript, state, error, or close events cannot be delivered promptly, close the realtime websocket because the desktop no longer has a coherent live session.
 - Snapshot the end-of-utterance flag before async blob encoding so the final recorder chunk cannot lose the user turn boundary.
 - Request a final recorder chunk before silence stop and send an empty `end_of_utterance` marker if the browser stops without yielding one.
 - Maintain and surface captions from transcript and assistant text events.
