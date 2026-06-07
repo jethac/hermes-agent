@@ -94,8 +94,8 @@ Hermes ships a Deepgram-compatible bridge entrypoint for the first provider-back
 
 ```bash
 python -m pip install "hermes-agent[voice]"
+python -m hermes_cli.realtime_voice_profile --preset deepgram --apply --generate-bridge-token
 set DEEPGRAM_API_KEY=...
-python -m hermes_cli.realtime_voice_deepgram_bridge --generate-token
 python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict --production-en-ja
 python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --production-en-ja
 ```
@@ -121,10 +121,10 @@ voice:
 The same live-like profile can be generated without machine-specific names:
 
 ```bash
-python -m hermes_cli.realtime_voice_profile --preset deepgram --apply
+python -m hermes_cli.realtime_voice_profile --preset deepgram --apply --generate-bridge-token
 ```
 
-This writes a capability-based `voice.realtime` profile, clears stale direct sidecar URLs, keeps the managed loopback reference sidecar portable, configures both streaming STT and streaming TTS through `http://127.0.0.1:8766`, uses `nova-3` plus `aura-2-thalia-en` unless overridden, requires live-like streaming STT/TTS, and points production evidence at `./artifacts/realtime-voice-evidence` by default. Use `--bridge-base-url` when the bridge runs on another host, or use the generic `--streaming-stt-*` and `--streaming-tts-*` flags for a non-Deepgram provider.
+This writes a capability-based `voice.realtime` profile, clears stale direct sidecar URLs, keeps the managed loopback reference sidecar portable, configures both streaming STT and streaming TTS through `http://127.0.0.1:8766`, stores the shared bridge bearer token without printing it, uses `nova-3` plus `aura-2-thalia-en` unless overridden, requires live-like streaming STT/TTS, and points production evidence at `./artifacts/realtime-voice-evidence` by default. Use `--bridge-base-url` when the bridge runs on another host, or use the generic `--streaming-stt-*` and `--streaming-tts-*` flags for a non-Deepgram provider.
 
 For Japanese validation, use a Japanese-capable Deepgram STT language setting and route Japanese TTS to a Japanese-capable model. `--production-en-ja` configures the bridge with `ja:aura-2-fujin-ja,en:aura-2-thalia-en` and makes the bridge check fail early if the configured TTS route metadata cannot satisfy Hermes' production EN/JA evidence gate. Override it with `--tts-model-by-language` or `HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE` when you want different voices. If the bridge health probe cannot verify `streaming_stt: true`, Hermes keeps the profile below live-like status even though utterance STT and TTS may still work.
 
