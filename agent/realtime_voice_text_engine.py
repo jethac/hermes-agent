@@ -205,7 +205,17 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 elif event.type == VoiceEventType.FRONTEND_STATE:
                     await self._emit(VoiceEventType.FRONTEND_STATE, dict(event.payload))
                 elif event.type == VoiceEventType.SESSION_ERROR:
-                    await self._emit(VoiceEventType.SESSION_ERROR, dict(event.payload))
+                    self._sidecar = None
+                    await self._emit(
+                        VoiceEventType.FRONTEND_STATE,
+                        {
+                            "status": "fallback",
+                            "reason": "sidecar_session_error",
+                            "error": sanitize_realtime_voice_error(event.payload.get("error") or ""),
+                            "sidecar": False,
+                        },
+                    )
+                    return
         except asyncio.CancelledError:
             raise
         except Exception as exc:
