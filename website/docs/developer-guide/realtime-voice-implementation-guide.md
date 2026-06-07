@@ -336,6 +336,7 @@ Responsibilities:
 - Maintain captions from transcript and assistant text events.
 - Play `audio.output.chunk` through a queue.
 - Cancel playback immediately on local barge-in.
+- Keep the microphone stream and analyser alive across assistant playback; stop and recreate only the per-utterance `MediaRecorder`.
 - Track `playback_generation` and drop stale audio chunks from interrupted assistant output.
 - Fall back to the current MediaRecorder blob loop when realtime mode is unavailable.
 
