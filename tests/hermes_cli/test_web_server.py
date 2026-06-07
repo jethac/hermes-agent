@@ -3041,6 +3041,7 @@ class TestBuildSchemaFromConfig:
         assert "streaming STT/TTS" in CONFIG_SCHEMA["voice.realtime.require_live_like"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["type"] == "string"
         assert "smoke report" in CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.production_evidence_min_runs"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.final_transcript_to_first_audio_ms"]["type"] == "number"
 
@@ -6578,6 +6579,7 @@ class TestRealtimeVoiceWebSocket:
                 "configured": False,
                 "verified": False,
                 "report_path": None,
+                "min_runs": 3,
                 "issues": ["missing_evidence_report"],
             },
         }
@@ -6964,13 +6966,19 @@ class TestRealtimeVoiceWebSocket:
                 "configured": False,
                 "verified": False,
                 "report_path": None,
+                "min_runs": 3,
                 "issues": ["missing_evidence_report"],
             },
         }
 
     def test_status_marks_streaming_text_sidecar_production_ready_with_alpha_evidence(self, monkeypatch, tmp_path):
-        evidence_path = tmp_path / "realtime-voice-alpha.json"
-        evidence_path.write_text(json.dumps(_valid_realtime_voice_alpha_report(), ensure_ascii=False), encoding="utf-8")
+        evidence_path = tmp_path / "evidence"
+        evidence_path.mkdir()
+        for index in range(3):
+            (evidence_path / f"realtime-voice-alpha-{index}.json").write_text(
+                json.dumps(_valid_realtime_voice_alpha_report(), ensure_ascii=False),
+                encoding="utf-8",
+            )
 
         class FakeResponse:
             status = 200
@@ -7020,7 +7028,9 @@ class TestRealtimeVoiceWebSocket:
             "configured": True,
             "verified": True,
             "report_path": str(evidence_path),
-            "entries": 10,
+            "runs": 3,
+            "min_runs": 3,
+            "entries": 30,
             "issues": [],
         }
 

@@ -703,6 +703,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Path to a verified realtime voice smoke report required for production readiness",
         "category": "voice",
     },
+    "voice.realtime.production_evidence_min_runs": {
+        "type": "number",
+        "description": "Minimum verified realtime voice smoke report runs required for production readiness",
+        "category": "voice",
+    },
     "voice.realtime.production_languages": {
         "type": "list",
         "description": "BCP-47 language tags Hermes treats as production realtime voice targets; defaults to English and Japanese",
@@ -13156,6 +13161,7 @@ def _realtime_voice_production_readiness_payload(
 
 
 def _realtime_voice_production_evidence_payload(realtime: Dict[str, Any]) -> Dict[str, Any]:
+    min_runs = _positive_int_config(realtime.get("production_evidence_min_runs"), default=3)
     raw_path = str(
         realtime.get("production_evidence_report")
         or realtime.get("alpha_evidence_report")
@@ -13166,23 +13172,25 @@ def _realtime_voice_production_evidence_payload(realtime: Dict[str, Any]) -> Dic
             "configured": False,
             "verified": False,
             "report_path": None,
+            "min_runs": min_runs,
             "issues": ["missing_evidence_report"],
         }
 
     report_path = Path(raw_path).expanduser()
     try:
         from agent.realtime_voice_smoke_report import (
-            load_realtime_voice_smoke_report,
-            validate_realtime_voice_alpha_report,
+            load_realtime_voice_smoke_report_runs,
+            validate_realtime_voice_alpha_report_runs,
         )
 
-        entries = load_realtime_voice_smoke_report(report_path)
-        issues = validate_realtime_voice_alpha_report(entries)
+        runs = load_realtime_voice_smoke_report_runs(report_path)
+        issues = validate_realtime_voice_alpha_report_runs(runs, min_runs=min_runs)
     except Exception as exc:
         return {
             "configured": True,
             "verified": False,
             "report_path": raw_path,
+            "min_runs": min_runs,
             "issues": [f"invalid_evidence_report:{sanitize_realtime_voice_error(exc)}"],
         }
 
@@ -13191,7 +13199,9 @@ def _realtime_voice_production_evidence_payload(realtime: Dict[str, Any]) -> Dic
         "configured": True,
         "verified": not formatted_issues,
         "report_path": raw_path,
-        "entries": len(entries),
+        "runs": len(runs),
+        "min_runs": min_runs,
+        "entries": sum(len(entries) for _label, entries in runs),
         "issues": formatted_issues,
     }
 
