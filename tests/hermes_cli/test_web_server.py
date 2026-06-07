@@ -6292,6 +6292,11 @@ class TestRealtimeVoiceWebSocket:
         ).encode("utf-8")
         return len(header).to_bytes(4, "big") + header + audio
 
+    def _decode_binary_voice_frame(self, frame: bytes):
+        header_length = int.from_bytes(frame[:4], "big")
+        header_end = 4 + header_length
+        return json.loads(frame[4:header_end].decode("utf-8")), frame[header_end:]
+
     def test_rejects_when_realtime_voice_disabled(self, monkeypatch):
         from starlette.websockets import WebSocketDisconnect
 
@@ -6698,6 +6703,73 @@ class TestRealtimeVoiceWebSocket:
         assert captured[0].type.value == "audio.input.chunk"
         assert captured[0].payload["end_of_utterance"] is True
         assert captured[0].payload["data_b64"] == base64.b64encode(b"audio").decode("ascii")
+
+    def test_audio_output_event_encodes_as_binary_frame(self):
+        from agent.realtime_voice import AudioChunk, VoiceAudioCodec, VoiceEvent, VoiceEventType
+
+        event = VoiceEvent(
+            type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            session_id="voice-123",
+            sequence=3,
+            payload={
+                **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"assistant-audio").to_payload(),
+                "playback_generation": 2,
+            },
+        )
+
+        frame = self.ws_module._realtime_voice_binary_frame_from_event(event)
+
+        assert frame is not None
+        header, audio = self._decode_binary_voice_frame(frame)
+        assert audio == b"assistant-audio"
+        assert header["type"] == "audio.output.chunk"
+        assert header["payload"]["codec"] == "opus"
+        assert header["payload"]["playback_generation"] == 2
+        assert "data_b64" not in header["payload"]
+
+    def test_websocket_sends_audio_output_as_binary_frames(self, monkeypatch):
+        from agent.realtime_voice import AudioChunk, VoiceAudioCodec, VoiceEvent, VoiceEventType
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {"voice": {"realtime": {"enabled": True, "engine": "text_oracle_tts"}}},
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+        monkeypatch.setattr(self.ws_module, "_ensure_realtime_voice_sidecar", lambda realtime: None)
+
+        class FakeSession:
+            def __init__(self, config):
+                self.config = config
+
+            async def start(self):
+                return None
+
+            async def events(self):
+                yield VoiceEvent(
+                    type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                    session_id="voice-123",
+                    sequence=1,
+                    payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"assistant-audio").to_payload(),
+                )
+
+            async def receive_client_event(self, event):
+                return None
+
+            async def close(self):
+                return None
+
+        monkeypatch.setattr("agent.realtime_voice_session.RealtimeVoiceSession", FakeSession)
+
+        with self.client.websocket_connect(self._url(session_id="voice-123")) as websocket:
+            header, audio = self._decode_binary_voice_frame(websocket.receive_bytes())
+            websocket.close()
+
+        assert header["type"] == "audio.output.chunk"
+        assert header["session_id"] == "voice-123"
+        assert header["payload"]["codec"] == "opus"
+        assert "data_b64" not in header["payload"]
+        assert audio == b"assistant-audio"
 
     def test_ensure_sidecar_spawns_reference_server(self, monkeypatch, tmp_path):
         class FakeResponse:

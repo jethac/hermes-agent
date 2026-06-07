@@ -98,9 +98,9 @@ apps/desktop/src/app/chat/voice/
 
 ## Wire Protocol
 
-Use websocket JSON frames for control events and server events. Client microphone chunks should use binary websocket frames on the hot path; JSON/base64 `audio.input.chunk` remains valid for tests, compatibility clients, and sidecar-facing normalized events.
+Use websocket JSON frames for control events, transcript events, captions, metrics, and errors. Microphone chunks and assistant audio chunks should use binary websocket frames on the desktop hot path; JSON/base64 `audio.input.chunk` and `audio.output.chunk` remain valid for tests, compatibility clients, and sidecar-facing normalized events.
 
-Binary client audio frame format:
+Binary audio frame format:
 
 ```text
 4-byte big-endian JSON header length
@@ -108,7 +108,9 @@ UTF-8 JSON VoiceEvent header without payload.data_b64
 raw audio bytes
 ```
 
-Hermes normalizes binary frames back into `audio.input.chunk` events with `payload.data_b64` before validation and engine dispatch, so engines and sidecars keep the same semantic event contract while the desktop avoids base64 encoding microphone blobs.
+For client microphone input, Hermes normalizes binary frames back into `audio.input.chunk` events with `payload.data_b64` before validation and engine dispatch, so engines and sidecars keep the same semantic event contract while the desktop avoids base64 encoding microphone blobs.
+
+For server assistant audio output, Hermes sends `audio.output.chunk` as a binary frame when `payload.data_b64` is present and valid. The desktop parses the JSON header and plays the raw trailing bytes directly. Non-audio events continue to use JSON.
 
 Client events:
 
