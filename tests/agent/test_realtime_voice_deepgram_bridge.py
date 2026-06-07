@@ -1,6 +1,8 @@
 import asyncio
 import json
+from pathlib import Path
 import sys
+import tomllib
 import types
 
 from agent.realtime_voice import (
@@ -123,7 +125,7 @@ def test_deepgram_bridge_prerequisite_check_reports_missing_requirements():
     )
 
     assert "DEEPGRAM_API_KEY or HERMES_DEEPGRAM_API_KEY is required" in issues
-    assert "Python package 'websockets' is required" in issues
+    assert any("websockets==15.0.1" in issue for issue in issues)
     assert "HERMES_STREAMING_STT_BRIDGE_TOKEN is required in strict mode" in issues
 
 
@@ -159,6 +161,15 @@ def test_deepgram_bridge_cli_check_reports_missing_env(monkeypatch, capsys):
     assert "DEEPGRAM_API_KEY" in output
     assert "websockets" in output
     assert "HERMES_STREAMING_STT_BRIDGE_TOKEN" in output
+
+
+def test_voice_extra_installs_websocket_client():
+    pyproject = tomllib.loads(
+        (Path(__file__).parents[2] / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    voice_extra = pyproject["project"]["optional-dependencies"]["voice"]
+    assert "websockets==15.0.1" in voice_extra
 
 
 def test_deepgram_session_streams_partial_and_final_events(monkeypatch):

@@ -562,7 +562,10 @@ def deepgram_bridge_prerequisite_issues(
     if not runtime.api_key:
         issues.append("DEEPGRAM_API_KEY or HERMES_DEEPGRAM_API_KEY is required")
     if not available("websockets"):
-        issues.append("Python package 'websockets' is required")
+        issues.append(
+            "Python package 'websockets==15.0.1' is required; "
+            "install with `python -m pip install 'hermes-agent[voice]'`"
+        )
     if require_auth_token and not runtime.auth_token:
         issues.append("HERMES_STREAMING_STT_BRIDGE_TOKEN is required in strict mode")
     return issues

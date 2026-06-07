@@ -93,6 +93,7 @@ This is intentionally not a Gemma/vLLM shortcut. A vLLM/Gemma chat-completions a
 Hermes ships a Deepgram-compatible bridge entrypoint for the first provider-backed streaming STT and streaming TTS path:
 
 ```bash
+python -m pip install "hermes-agent[voice]"
 set DEEPGRAM_API_KEY=...
 set HERMES_STREAMING_STT_BRIDGE_TOKEN=...
 python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict
