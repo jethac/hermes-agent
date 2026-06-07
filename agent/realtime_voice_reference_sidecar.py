@@ -192,6 +192,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             playback_generation = _payload_generation(event.payload)
             if playback_generation is not None:
                 payload["playback_generation"] = playback_generation
+            await self._emit(VoiceEventType.BARGE_IN, payload)
             if self._streaming_stt is not None:
                 await self._send_streaming_stt_event(
                     VoiceEvent(
@@ -212,7 +213,6 @@ class ReferenceRealtimeVoiceSidecarSession:
                         payload=payload,
                     )
                 )
-            await self._emit(VoiceEventType.BARGE_IN, payload)
             await self._drain_cancelled_tasks(cancelled_tasks)
             return
         if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("speak") is True:
