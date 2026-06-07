@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   collectRealtimeVoiceMetrics,
   getRealtimeVoiceStatus,
+  realtimeAudioInputPayload,
   realtimeVoiceUrl,
   updateRealtimeVoiceBargeInGate
 } from './use-realtime-voice-session'
@@ -116,6 +117,33 @@ describe('collectRealtimeVoiceMetrics', () => {
       finalTranscriptToFirstAudioMs: 250,
       sessionElapsedMs: 120,
       updatedAtMs: 1_500
+    })
+  })
+})
+
+describe('realtimeAudioInputPayload', () => {
+  it('preserves the caller snapshot of end-of-utterance state', () => {
+    expect(realtimeAudioInputPayload({
+      dataB64: 'abc',
+      endOfUtterance: true,
+      mimeType: 'audio/webm;codecs=opus'
+    })).toEqual({
+      channels: 1,
+      codec: 'webm_opus',
+      data_b64: 'abc',
+      end_of_utterance: true,
+      sample_rate_hz: 16000
+    })
+  })
+
+  it('maps ogg recorder output to opus wire codec', () => {
+    expect(realtimeAudioInputPayload({
+      dataB64: 'abc',
+      endOfUtterance: false,
+      mimeType: 'audio/ogg;codecs=opus'
+    })).toMatchObject({
+      codec: 'opus',
+      end_of_utterance: false
     })
   })
 })

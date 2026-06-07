@@ -70,6 +70,12 @@ interface RealtimeVoiceBargeInGateInput {
   speechStartedAtMs: number | null
 }
 
+interface RealtimeAudioInputPayloadOptions {
+  dataB64: string
+  endOfUtterance: boolean
+  mimeType: string
+}
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -159,6 +165,20 @@ export function updateRealtimeVoiceBargeInGate({
   return {
     shouldBargeIn: nowMs - startedAt >= minSpeechMs,
     speechStartedAtMs: startedAt
+  }
+}
+
+export function realtimeAudioInputPayload({
+  dataB64,
+  endOfUtterance,
+  mimeType
+}: RealtimeAudioInputPayloadOptions): Record<string, unknown> {
+  return {
+    codec: mimeType.includes('ogg') ? 'opus' : 'webm_opus',
+    sample_rate_hz: 16000,
+    channels: 1,
+    data_b64: dataB64,
+    end_of_utterance: endOfUtterance
   }
 }
 
@@ -264,14 +284,15 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
           return
         }
 
+        const endOfUtterance = stoppingForSilenceRef.current
+        const recorderMimeType = recorder.mimeType
+
         void blobToBase64(event.data).then(data_b64 => {
-          sendEvent('audio.input.chunk', {
-            codec: recorder.mimeType.includes('ogg') ? 'opus' : 'webm_opus',
-            sample_rate_hz: 16000,
-            channels: 1,
-            data_b64,
-            end_of_utterance: stoppingForSilenceRef.current
-          })
+          sendEvent('audio.input.chunk', realtimeAudioInputPayload({
+            dataB64: data_b64,
+            endOfUtterance,
+            mimeType: recorderMimeType
+          }))
         })
       }
 
