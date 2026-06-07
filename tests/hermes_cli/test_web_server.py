@@ -6307,6 +6307,79 @@ class TestRealtimeVoiceWebSocket:
                 pass
         assert exc.value.code == 4403
 
+    def test_rejects_external_text_sidecar_without_tts_capability(self, monkeypatch):
+        from starlette.websockets import WebSocketDisconnect
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "kind": "reference",
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": False,
+                            "tts": False,
+                            "native_s2s": False,
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "frontend_provider": "sidecar",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with self.client.websocket_connect(self._url()):
+                pass
+        assert exc.value.code == 1011
+        assert "sidecar_missing_tts" in exc.value.reason
+
+    def test_rejects_native_s2s_without_configured_sidecar(self, monkeypatch):
+        from starlette.websockets import WebSocketDisconnect
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "native_s2s_oracle",
+                        "frontend_provider": "native_s2s",
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with self.client.websocket_connect(self._url()):
+                pass
+        assert exc.value.code == 1011
+        assert "sidecar_required" in exc.value.reason
+
     def test_config_uses_server_side_sidecar_settings(self, monkeypatch):
         class FakeWebSocket:
             query_params = {
