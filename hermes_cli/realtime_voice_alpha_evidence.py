@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.realtime_voice_smoke_report import (
+    ALPHA_REQUIRED_AUDIO_FIXTURES,
     load_realtime_voice_smoke_report,
     summarize_realtime_voice_smoke_report_runs,
     validate_realtime_voice_alpha_report_runs,
@@ -60,7 +61,6 @@ def main(argv: list[str] | None = None) -> int:
     run_count = max(1, int(args.runs or 1))
     start_index = max(1, int(args.start_index or 1))
     output_dir = Path(args.output_dir).expanduser()
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     report_paths = [
         output_dir / f"{args.prefix}-{index:03d}.json"
@@ -74,6 +74,18 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
+
+    missing_fixtures = missing_required_audio_fixtures()
+    if missing_fixtures:
+        print(
+            "Realtime voice alpha evidence failed: missing required audio fixture(s)",
+            file=sys.stderr,
+        )
+        for fixture in missing_fixtures:
+            print(f"  - {fixture}", file=sys.stderr)
+        return 1
+
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     from hermes_cli.doctor import run_doctor
 
@@ -110,6 +122,14 @@ def main(argv: list[str] | None = None) -> int:
 
     _print_summary(runs)
     return 0
+
+
+def missing_required_audio_fixtures() -> list[str]:
+    return [
+        fixture
+        for fixture in ALPHA_REQUIRED_AUDIO_FIXTURES
+        if not Path(fixture).expanduser().is_file()
+    ]
 
 
 def _print_summary(runs: list[tuple[str, list[dict[str, Any]]]]) -> None:

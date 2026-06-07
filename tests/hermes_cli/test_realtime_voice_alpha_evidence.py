@@ -9,6 +9,13 @@ from agent.realtime_voice_smoke_report import (
 from hermes_cli import realtime_voice_alpha_evidence
 
 
+def _write_required_audio_fixtures(root):
+    for fixture in ALPHA_REQUIRED_AUDIO_FIXTURES:
+        fixture_path = root / fixture
+        fixture_path.parent.mkdir(parents=True, exist_ok=True)
+        fixture_path.write_bytes(b"fixture")
+
+
 def _valid_alpha_report():
     entries = [
         {
@@ -65,18 +72,25 @@ def _valid_alpha_report():
 
 def test_alpha_evidence_runner_collects_and_validates_runs(monkeypatch, tmp_path, capsys):
     calls = []
+    reports_dir = tmp_path / "reports"
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     def fake_run_doctor(args):
         calls.append(args)
         with open(args.realtime_voice_report, "w", encoding="utf-8") as handle:
             json.dump(_valid_alpha_report(), handle, ensure_ascii=False)
 
-    monkeypatch.setitem(__import__("sys").modules, "hermes_cli.doctor", types.SimpleNamespace(run_doctor=fake_run_doctor))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "hermes_cli.doctor",
+        types.SimpleNamespace(run_doctor=fake_run_doctor),
+    )
 
     result = realtime_voice_alpha_evidence.main(
         [
             "--output-dir",
-            str(tmp_path),
+            str(reports_dir),
             "--runs",
             "3",
             "--prefix",
@@ -85,7 +99,7 @@ def test_alpha_evidence_runner_collects_and_validates_runs(monkeypatch, tmp_path
     )
 
     assert result == 0
-    assert [path.name for path in sorted(tmp_path.glob("*.json"))] == [
+    assert [path.name for path in sorted(reports_dir.glob("*.json"))] == [
         "alpha-001.json",
         "alpha-002.json",
         "alpha-003.json",
@@ -117,7 +131,38 @@ def test_alpha_evidence_runner_refuses_to_overwrite_existing_report(tmp_path, ca
     assert "already exists" in capsys.readouterr().err
 
 
+def test_alpha_evidence_runner_reports_missing_fixtures(monkeypatch, tmp_path, capsys):
+    calls = []
+    monkeypatch.chdir(tmp_path)
+
+    def fake_run_doctor(args):
+        calls.append(args)
+
+    monkeypatch.setitem(__import__("sys").modules, "hermes_cli.doctor", types.SimpleNamespace(run_doctor=fake_run_doctor))
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+        ]
+    )
+
+    assert result == 1
+    assert calls == []
+    error = capsys.readouterr().err
+    assert "missing required audio fixture" in error
+    for fixture in ALPHA_REQUIRED_AUDIO_FIXTURES:
+        assert fixture in error
+
+
 def test_alpha_evidence_runner_returns_validation_failure(monkeypatch, tmp_path, capsys):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
     def fake_run_doctor(args):
         report = _valid_alpha_report()
         report = [entry for entry in report if entry.get("kind") != "barge_in"]
