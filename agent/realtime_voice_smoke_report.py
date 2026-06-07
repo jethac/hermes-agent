@@ -39,6 +39,13 @@ ALPHA_REQUIRED_TTS_TEXTS = (
     "音声で会話できますか？",
 )
 
+ALPHA_REQUIRED_TTS_METADATA = {
+    "Hello from Hermes.": {"language": "en", "script": "Latn"},
+    "Can you hear me clearly?": {"language": "en", "script": "Latn"},
+    "こんにちは、Hermesです。": {"language": "ja", "script": "Jpan"},
+    "音声で会話できますか？": {"language": "ja", "script": "Jpan"},
+}
+
 ALPHA_REQUIRED_BARGE_IN_TEXTS = (
     "Hello from Hermes.",
 )
@@ -272,6 +279,18 @@ def _validate_audio_fixture_entry(entry: Mapping[str, Any]) -> list[RealtimeVoic
 def _validate_tts_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmokeReportIssue]:
     identifier = str(entry.get("text") or "tts")
     issues = _validate_common_ok(entry, kind="tts", identifier=identifier)
+    expected_metadata = ALPHA_REQUIRED_TTS_METADATA.get(str(entry.get("text") or ""))
+    if expected_metadata:
+        for key, expected_value in expected_metadata.items():
+            actual = str(entry.get(key) or "")
+            if actual != expected_value:
+                issues.append(
+                    RealtimeVoiceSmokeReportIssue(
+                        "tts",
+                        f"missing {key}={expected_value} metadata",
+                        identifier,
+                    )
+                )
     events = _events(entry)
     if "audio.output.chunk" not in events:
         issues.append(RealtimeVoiceSmokeReportIssue("tts", "missing audio.output.chunk event", identifier))

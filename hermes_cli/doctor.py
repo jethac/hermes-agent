@@ -926,6 +926,7 @@ def _run_realtime_voice_sidecar_tts_smoke_sync(
     config,
     *,
     text: str,
+    metadata: Mapping[str, str] | None = None,
     timeout_seconds: float,
 ):
     from agent.realtime_voice_smoke import run_realtime_voice_sidecar_tts_smoke
@@ -934,6 +935,7 @@ def _run_realtime_voice_sidecar_tts_smoke_sync(
         run_realtime_voice_sidecar_tts_smoke(
             config,
             text=text,
+            metadata=metadata,
             timeout_seconds=timeout_seconds,
         )
     )
@@ -1117,10 +1119,14 @@ def _check_realtime_voice_tts_smoke(
         return
 
     timeout_seconds = min(max(float(config.sidecar_connect_timeout_seconds or 10.0), 1.0), 30.0)
+    from agent.realtime_voice_smoke import realtime_voice_smoke_text_metadata
+
+    metadata = realtime_voice_smoke_text_metadata(text)
     try:
         result = _run_realtime_voice_sidecar_tts_smoke_sync(
             config,
             text=text,
+            metadata=metadata,
             timeout_seconds=timeout_seconds,
         )
     except Exception as exc:
@@ -1129,6 +1135,7 @@ def _check_realtime_voice_tts_smoke(
             {"ok": False, "error": f"failed: {exc}"},
             kind="tts",
             text=text,
+            **metadata,
             timeout_seconds=timeout_seconds,
         )
         _fail_and_issue(
@@ -1145,6 +1152,7 @@ def _check_realtime_voice_tts_smoke(
         result,
         kind="tts",
         text=text,
+        **metadata,
         target_ms=target_ms,
         timeout_seconds=timeout_seconds,
     )

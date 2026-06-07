@@ -12,7 +12,7 @@ import asyncio
 import contextlib
 import time
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any, Mapping, Optional, Tuple
 
 from agent.realtime_voice import AudioChunk, RealtimeVoiceSessionConfig, VoiceAudioCodec, VoiceEvent, VoiceEventType
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
@@ -165,6 +165,7 @@ async def run_realtime_voice_sidecar_tts_smoke(
     config: RealtimeVoiceSessionConfig,
     *,
     text: str = "Hello from Hermes.",
+    metadata: Optional[Mapping[str, str]] = None,
     timeout_seconds: float = 5.0,
 ) -> RealtimeVoiceSidecarSmokeResult:
     """Run a sidecar TTS/output smoke check."""
@@ -185,6 +186,7 @@ async def run_realtime_voice_sidecar_tts_smoke(
                     "text": text,
                     "speak": True,
                     "playback_generation": 1,
+                    **dict(metadata or {}),
                 },
             )
         )
@@ -245,6 +247,28 @@ async def run_realtime_voice_sidecar_tts_smoke(
         )
     finally:
         await client.close()
+
+
+def realtime_voice_smoke_text_metadata(text: str) -> dict[str, str]:
+    value = str(text or "")
+    if _contains_japanese_script(value):
+        return {"language": "ja", "locale": "ja-JP", "script": "Jpan"}
+    if any(("A" <= char <= "Z") or ("a" <= char <= "z") for char in value):
+        return {"language": "en", "locale": "en-US", "script": "Latn"}
+    return {}
+
+
+def _contains_japanese_script(text: str) -> bool:
+    for char in text:
+        codepoint = ord(char)
+        if (
+            0x3040 <= codepoint <= 0x30FF
+            or 0x3400 <= codepoint <= 0x4DBF
+            or 0x4E00 <= codepoint <= 0x9FFF
+            or 0xF900 <= codepoint <= 0xFAFF
+        ):
+            return True
+    return False
 
 
 async def run_realtime_voice_sidecar_barge_in_smoke(
