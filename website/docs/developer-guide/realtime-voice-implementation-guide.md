@@ -345,6 +345,8 @@ python -m hermes_cli.realtime_voice_alpha_evidence \
 python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-evidence/*.json --alpha --min-runs 3
 ```
 
+The alpha evidence helper preflights the four required audio fixture paths before starting any doctor run or sidecar smoke. If a fixture is missing, it fails immediately with the exact path to create, preserving the documented relative fixture identifiers used by report validation.
+
 For a single debug run, the helper above is equivalent to:
 
 ```bash
