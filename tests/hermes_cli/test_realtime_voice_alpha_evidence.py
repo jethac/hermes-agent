@@ -515,4 +515,8 @@ def test_alpha_evidence_runner_requires_live_like_status_before_collecting(
 
     assert result == 1
     assert calls == []
-    assert "live-like realtime voice is not ready" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "live-like realtime voice is not ready" in error
+    assert "realtime_voice_profile --preset deepgram --apply" in error
+    assert "realtime_voice_deepgram_bridge --check --strict --production-en-ja" in error
+    assert "realtime_voice_alpha_evidence --runs 3" in error

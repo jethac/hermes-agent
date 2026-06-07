@@ -110,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
                     f"({live_like_issue})",
                     file=sys.stderr,
                 )
+                print_realtime_voice_live_setup_hint()
                 return 1
             for ordinal, report_path in enumerate(report_paths, start=1):
                 print(f"Realtime voice alpha evidence run {ordinal}/{run_count}: {report_path}")
@@ -221,6 +222,19 @@ def realtime_voice_live_like_preflight_issue() -> str:
             "configure streaming STT/TTS or native S2S"
         )
     return ""
+
+
+def print_realtime_voice_live_setup_hint() -> None:
+    print("Portable live setup:", file=sys.stderr)
+    print("  python -m hermes_cli.realtime_voice_profile --preset deepgram --apply", file=sys.stderr)
+    print("  set DEEPGRAM_API_KEY=...", file=sys.stderr)
+    print("  python -m hermes_cli.realtime_voice_deepgram_bridge --generate-token", file=sys.stderr)
+    print("  python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict --production-en-ja", file=sys.stderr)
+    print(
+        "  python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --production-en-ja",
+        file=sys.stderr,
+    )
+    print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3", file=sys.stderr)
 
 
 def _print_summary(runs: list[tuple[str, list[dict[str, Any]]]]) -> None:
