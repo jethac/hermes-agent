@@ -5,12 +5,14 @@ import {
   collectRealtimeVoiceFrontendState,
   collectRealtimeVoiceMetrics,
   getRealtimeVoiceStatus,
+  nextRealtimeVoicePlaybackGeneration,
   parseRealtimeVoiceServerMessage,
   queueRealtimeAudioTask,
   realtimeAudioInputPayload,
   realtimeBinaryAudioInputFrame,
   realtimeVoiceCloseAction,
   realtimeVoiceInputFrameMs,
+  realtimeVoiceEventGeneration,
   realtimeVoicePlaybackGeneration,
   realtimeVoicePreRollChunkLimit,
   realtimeVoiceSessionReadyTimeoutMs,
@@ -653,6 +655,18 @@ describe('realtime playback generation helpers', () => {
     expect(realtimeVoicePlaybackGeneration({ playback_generation: true })).toBeNull()
     expect(realtimeVoicePlaybackGeneration({ playback_generation: -1 })).toBeNull()
     expect(realtimeVoicePlaybackGeneration({ playback_generation: 'old' })).toBeNull()
+  })
+
+  it('advances playback generation from numeric strings without over-incrementing', () => {
+    expect(nextRealtimeVoicePlaybackGeneration(1, '4')).toBe(4)
+    expect(nextRealtimeVoicePlaybackGeneration(4, '2')).toBe(4)
+    expect(nextRealtimeVoicePlaybackGeneration(4, undefined)).toBe(5)
+  })
+
+  it('uses parsed wire generation for audio event queueing', () => {
+    expect(realtimeVoiceEventGeneration({ playback_generation: '7' }, 3)).toBe(7)
+    expect(realtimeVoiceEventGeneration({ playback_generation: true }, 3)).toBe(3)
+    expect(realtimeVoiceEventGeneration(undefined, 3)).toBe(3)
   })
 
   it('drops stale generated assistant and transcript events', () => {
