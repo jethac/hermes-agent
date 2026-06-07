@@ -12506,6 +12506,58 @@ def _realtime_voice_sidecar_capability_error(
     return ""
 
 
+def _realtime_voice_conversation_quality_payload(
+    *,
+    engine: str,
+    base_url: str,
+    health_payload: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    capabilities = health_payload.get("capabilities") if isinstance(health_payload, dict) else {}
+    capabilities = capabilities if isinstance(capabilities, dict) else {}
+    native_s2s = engine == "native_s2s_oracle" and capabilities.get("native_s2s") is True
+    streaming_stt = capabilities.get("streaming_stt") is True
+    utterance_stt = capabilities.get("utterance_stt") is True
+    tts = capabilities.get("tts") is True
+
+    if native_s2s:
+        mode = "native_s2s"
+        reason = "native_s2s"
+        live_like = True
+    elif streaming_stt and tts:
+        mode = "streaming_text"
+        reason = "streaming_stt_tts"
+        live_like = True
+    elif utterance_stt and tts:
+        mode = "turn_based_text"
+        reason = "utterance_stt_tts"
+        live_like = False
+    elif base_url and health_payload:
+        mode = "limited_sidecar"
+        reason = "missing_streaming_stt_or_tts"
+        live_like = False
+    elif base_url:
+        mode = "unverified_sidecar"
+        reason = "sidecar_unverified"
+        live_like = False
+    else:
+        mode = "local_turn_based"
+        reason = "local_stt_tts"
+        live_like = False
+
+    return {
+        "mode": mode,
+        "reason": reason,
+        "live_like": live_like,
+        "partial_transcripts": native_s2s or streaming_stt,
+        "barge_in": True,
+        "native_s2s": native_s2s,
+        "streaming_stt": streaming_stt,
+        "utterance_stt": utterance_stt,
+        "tts": tts,
+        "sidecar_verified": isinstance(health_payload, dict),
+    }
+
+
 def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
     sidecar_host = str(realtime.get("sidecar_host") or "127.0.0.1")
     sidecar_port = str(int(realtime.get("sidecar_port") or 8765))
@@ -12691,6 +12743,11 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         if base_url and healthy is True
         else ""
     )
+    conversation_quality = _realtime_voice_conversation_quality_payload(
+        engine=engine,
+        base_url=base_url,
+        health_payload=health_payload,
+    )
 
     sidecar_mode = "none"
     if autostart:
@@ -12757,6 +12814,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "frontend_model": frontend_model or None,
         "language_support": language_support,
         "quality_targets_ms": quality_targets_ms,
+        "conversation_quality": conversation_quality,
         "sidecar": {
             "mode": sidecar_mode,
             "base_url": _redact_realtime_voice_url(base_url),
@@ -12816,6 +12874,12 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     sidecar_token = _realtime_voice_sidecar_token(realtime, env)
 
     language_support = _realtime_voice_language_support_payload(realtime)
+    quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
+    conversation_quality = _realtime_voice_conversation_quality_payload(
+        engine=str(engine),
+        base_url=str(sidecar_base_url or ""),
+        health_payload=None,
+    )
 
     return RealtimeVoiceSessionConfig(
         session_id=str(session_id),
@@ -12842,6 +12906,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "source": "desktop",
             "language_support": language_support,
             "quality_targets_ms": quality_targets_ms,
+            "conversation_quality": conversation_quality,
         },
     )
 

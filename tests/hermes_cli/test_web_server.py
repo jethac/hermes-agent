@@ -6304,6 +6304,18 @@ class TestRealtimeVoiceWebSocket:
             "final_transcript_to_first_audio_ms": 900,
             "barge_in_ack_ms": 150,
         }
+        assert config.metadata["conversation_quality"] == {
+            "mode": "unverified_sidecar",
+            "reason": "sidecar_unverified",
+            "live_like": False,
+            "partial_transcripts": False,
+            "barge_in": True,
+            "native_s2s": False,
+            "streaming_stt": False,
+            "utterance_stt": False,
+            "tts": False,
+            "sidecar_verified": False,
+        }
 
     def test_config_defaults_local_frontend_to_reference_sidecar(self, monkeypatch):
         class FakeWebSocket:
@@ -6608,9 +6620,67 @@ class TestRealtimeVoiceWebSocket:
             },
             "local": {"stt": False, "tts": True},
         }
+        assert body["conversation_quality"] == {
+            "mode": "turn_based_text",
+            "reason": "utterance_stt_tts",
+            "live_like": False,
+            "partial_transcripts": False,
+            "barge_in": True,
+            "native_s2s": False,
+            "streaming_stt": False,
+            "utterance_stt": True,
+            "tts": True,
+            "sidecar_verified": True,
+        }
         assert "secret" not in __import__("json").dumps(body["sidecar"]["health"])
         assert len(requests) == 1
         assert all(req.headers["Authorization"] == "Bearer secret-token" for req in requests)
+
+    def test_status_marks_streaming_text_sidecar_live_like(self, monkeypatch):
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": True,
+                            "tts": True,
+                            "native_s2s": False,
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        body = self.client.get("/api/voice/realtime/status").json()
+
+        assert body["available"] is True
+        assert body["conversation_quality"]["mode"] == "streaming_text"
+        assert body["conversation_quality"]["reason"] == "streaming_stt_tts"
+        assert body["conversation_quality"]["live_like"] is True
+        assert body["conversation_quality"]["partial_transcripts"] is True
 
     def test_status_marks_text_sidecar_unavailable_without_tts_capability(self, monkeypatch):
         class FakeResponse:
