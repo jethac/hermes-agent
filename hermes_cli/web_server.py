@@ -12531,6 +12531,67 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     )
 
 
+_REALTIME_VOICE_BINARY_HEADER_BYTES = 4
+_REALTIME_VOICE_BINARY_HEADER_LIMIT = 64 * 1024
+
+
+def _realtime_voice_event_from_binary_frame(frame: bytes):
+    """Parse a realtime voice binary websocket frame.
+
+    Frame format:
+      4-byte big-endian JSON header length
+      UTF-8 JSON VoiceEvent header without payload.data_b64
+      raw audio bytes
+
+    The returned event is normalized back to the JSON/base64 payload shape used
+    by engines and sidecars.
+    """
+    from agent.realtime_voice import VoiceEvent, VoiceEventType
+
+    if len(frame) < _REALTIME_VOICE_BINARY_HEADER_BYTES:
+        raise ValueError("binary audio frame missing header length")
+
+    header_length = int.from_bytes(frame[:_REALTIME_VOICE_BINARY_HEADER_BYTES], "big", signed=False)
+    if header_length <= 0 or header_length > _REALTIME_VOICE_BINARY_HEADER_LIMIT:
+        raise ValueError("binary audio frame header length is invalid")
+    header_start = _REALTIME_VOICE_BINARY_HEADER_BYTES
+    header_end = header_start + header_length
+    if len(frame) < header_end:
+        raise ValueError("binary audio frame header is truncated")
+
+    header = json.loads(frame[header_start:header_end].decode("utf-8"))
+    if not isinstance(header, dict):
+        raise ValueError("binary audio frame header must be a JSON object")
+
+    payload = header.get("payload")
+    payload = dict(payload) if isinstance(payload, dict) else {}
+    header["payload"] = payload
+    payload["data_b64"] = base64.b64encode(frame[header_end:]).decode("ascii")
+
+    event = VoiceEvent.from_wire(header)
+    if event.type != VoiceEventType.AUDIO_INPUT_CHUNK:
+        raise ValueError("binary realtime voice frames must carry audio.input.chunk")
+    return event
+
+
+def _realtime_voice_event_from_ws_message(message: Dict[str, Any]):
+    from agent.realtime_voice import VoiceEvent
+
+    message_type = str(message.get("type") or "")
+    if message_type == "websocket.disconnect":
+        raise WebSocketDisconnect(code=int(message.get("code") or 1000))
+
+    text = message.get("text")
+    if isinstance(text, str):
+        return VoiceEvent.from_wire(json.loads(text))
+
+    frame = message.get("bytes")
+    if isinstance(frame, bytes):
+        return _realtime_voice_event_from_binary_frame(frame)
+
+    raise ValueError("realtime voice websocket message must be JSON text or binary audio")
+
+
 @app.get("/api/voice/realtime/status")
 async def realtime_voice_status() -> Dict[str, Any]:
     """Return realtime voice capability and sidecar health for preflight UI."""
@@ -12592,7 +12653,6 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
         config.engine.value,
     )
 
-    from agent.realtime_voice import VoiceEvent
     from agent.realtime_voice_session import RealtimeVoiceSession
 
     session = RealtimeVoiceSession(config)
@@ -12620,8 +12680,7 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
 
     try:
         while True:
-            raw = await ws.receive_json()
-            event = VoiceEvent.from_wire(raw)
+            event = _realtime_voice_event_from_ws_message(await ws.receive())
             await session.receive_client_event(event)
     except WebSocketDisconnect:
         pass

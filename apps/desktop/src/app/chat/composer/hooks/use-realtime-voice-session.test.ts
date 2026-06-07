@@ -7,6 +7,7 @@ import {
   getRealtimeVoiceStatus,
   queueRealtimeAudioTask,
   realtimeAudioInputPayload,
+  realtimeBinaryAudioInputFrame,
   realtimeVoiceCloseAction,
   realtimeVoicePlaybackGeneration,
   realtimeVoiceSessionStatus,
@@ -241,6 +242,35 @@ describe('realtimeAudioInputPayload', () => {
       codec: 'opus',
       end_of_utterance: false
     })
+  })
+})
+
+describe('realtimeBinaryAudioInputFrame', () => {
+  it('encodes realtime audio as a JSON header plus raw bytes', () => {
+    const audioData = new Uint8Array([1, 2, 3]).buffer
+    const frame = realtimeBinaryAudioInputFrame({
+      audioData,
+      endOfUtterance: true,
+      mimeType: 'audio/webm;codecs=opus',
+      sequence: 7,
+      sessionId: 'voice-123'
+    })
+    const bytes = new Uint8Array(frame)
+    const headerLength = new DataView(frame).getUint32(0, false)
+    const header = JSON.parse(new TextDecoder().decode(bytes.slice(4, 4 + headerLength)))
+
+    expect(header).toEqual({
+      payload: {
+        channels: 1,
+        codec: 'webm_opus',
+        end_of_utterance: true,
+        sample_rate_hz: 16000
+      },
+      sequence: 7,
+      session_id: 'voice-123',
+      type: 'audio.input.chunk'
+    })
+    expect(Array.from(bytes.slice(4 + headerLength))).toEqual([1, 2, 3])
   })
 })
 

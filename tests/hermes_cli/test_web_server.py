@@ -1,6 +1,7 @@
 """Tests for hermes_cli.web_server and related config utilities."""
 
 import asyncio
+import base64
 import os
 import json
 import shutil
@@ -6086,6 +6087,29 @@ class TestRealtimeVoiceWebSocket:
         q = {"token": tok, **params}
         return f"/api/voice/realtime?{urlencode(q)}"
 
+    def _binary_audio_frame(
+        self,
+        *,
+        audio: bytes = b"audio",
+        end_of_utterance: bool = False,
+        sequence: int = 1,
+        session_id: str = "voice-123",
+    ) -> bytes:
+        header = json.dumps(
+            {
+                "type": "audio.input.chunk",
+                "session_id": session_id,
+                "sequence": sequence,
+                "payload": {
+                    "codec": "webm_opus",
+                    "sample_rate_hz": 16000,
+                    "channels": 1,
+                    "end_of_utterance": end_of_utterance,
+                },
+            }
+        ).encode("utf-8")
+        return len(header).to_bytes(4, "big") + header + audio
+
     def test_rejects_when_realtime_voice_disabled(self, monkeypatch):
         from starlette.websockets import WebSocketDisconnect
 
@@ -6438,6 +6462,60 @@ class TestRealtimeVoiceWebSocket:
         assert "http://100.113.98.11:8000/v1" in command
         assert "--vllm-model" in command
         assert "google/gemma-4-E4B-it-qat-w4a16-ct" in command
+
+    def test_binary_audio_frame_parses_to_json_audio_event(self):
+        event = self.ws_module._realtime_voice_event_from_ws_message(
+            {
+                "type": "websocket.receive",
+                "bytes": self._binary_audio_frame(audio=b"\x01\x02\x03", end_of_utterance=True),
+            }
+        )
+
+        assert event.type.value == "audio.input.chunk"
+        assert event.session_id == "voice-123"
+        assert event.sequence == 1
+        assert event.payload["codec"] == "webm_opus"
+        assert event.payload["end_of_utterance"] is True
+        assert event.payload["data_b64"] == base64.b64encode(b"\x01\x02\x03").decode("ascii")
+
+    def test_websocket_accepts_binary_audio_frames(self, monkeypatch):
+        captured = []
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {"voice": {"realtime": {"enabled": True, "engine": "text_oracle_tts"}}},
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+        monkeypatch.setattr(self.ws_module, "_ensure_realtime_voice_sidecar", lambda realtime: None)
+
+        class FakeSession:
+            def __init__(self, config):
+                self.config = config
+
+            async def start(self):
+                return None
+
+            async def events(self):
+                return
+                yield
+
+            async def receive_client_event(self, event):
+                captured.append(event)
+
+            async def close(self):
+                return None
+
+        monkeypatch.setattr("agent.realtime_voice_session.RealtimeVoiceSession", FakeSession)
+
+        with self.client.websocket_connect(self._url(session_id="voice-123")) as websocket:
+            websocket.send_bytes(self._binary_audio_frame(audio=b"audio", end_of_utterance=True))
+            websocket.close()
+
+        assert len(captured) == 1
+        assert captured[0].type.value == "audio.input.chunk"
+        assert captured[0].payload["end_of_utterance"] is True
+        assert captured[0].payload["data_b64"] == base64.b64encode(b"audio").decode("ascii")
 
     def test_ensure_sidecar_spawns_reference_server(self, monkeypatch, tmp_path):
         class FakeResponse:
