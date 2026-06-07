@@ -106,6 +106,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
 
         transcript = str(event.payload.get("transcript") or "").strip()
         if transcript:
+            if not _payload_marks_final_transcript(event.payload):
+                await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, {"text": transcript, "stability": 0.8})
+                return
             await self._start_turn(transcript)
             return
 
@@ -354,6 +357,16 @@ def _payload_generation(payload: dict) -> Optional[int]:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+def _payload_marks_final_transcript(payload: dict) -> bool:
+    if "end_of_utterance" in payload:
+        return payload.get("end_of_utterance") is True
+    if "final" in payload:
+        return payload.get("final") is True
+    if "is_final" in payload:
+        return payload.get("is_final") is True
+    return True
 
 
 def _take_speakable_chunk(buffer: str) -> tuple[Optional[str], str]:
