@@ -1391,7 +1391,7 @@ def test_sidecar_client_uses_configured_connect_timeout(monkeypatch):
             return None
 
     async def run():
-        captured = {}
+        captured = {"timeouts": []}
         fake_ws = FakeWs()
 
         async def fake_connect(url, **kwargs):
@@ -1400,7 +1400,7 @@ def test_sidecar_client_uses_configured_connect_timeout(monkeypatch):
             return fake_ws
 
         async def fake_wait_for(awaitable, timeout):
-            captured["timeout"] = timeout
+            captured["timeouts"].append(timeout)
             return await awaitable
 
         monkeypatch.setitem(__import__("sys").modules, "websockets", types.SimpleNamespace(connect=fake_connect))
@@ -1417,7 +1417,8 @@ def test_sidecar_client_uses_configured_connect_timeout(monkeypatch):
         )
 
         assert captured["url"] == "ws://voice.local:8765/v1/realtime-text/session"
-        assert captured["timeout"] == 2.5
+        assert captured["timeouts"][0] == 2.5
+        assert captured["timeouts"][1] == 2.0
         assert fake_ws.sent
         assert __import__("json").loads(fake_ws.sent[0])["type"] == "session.config"
         await client.close()
@@ -1478,6 +1479,39 @@ def test_sidecar_client_sends_audio_input_as_binary_frame(monkeypatch):
         assert restored.sequence == 2
         assert AudioChunk.from_payload(restored.payload).data == b"mic-audio"
         await client.close()
+
+    asyncio.run(run())
+
+
+def test_sidecar_client_times_out_stalled_sends(monkeypatch):
+    class FakeWs:
+        async def send(self, payload):
+            await asyncio.sleep(30)
+
+    async def run():
+        async def fake_wait_for(awaitable, timeout):
+            awaitable.close()
+            raise asyncio.TimeoutError
+
+        monkeypatch.setattr("agent.realtime_voice_sidecar.asyncio.wait_for", fake_wait_for)
+
+        client = RealtimeVoiceSidecarClient()
+        client.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            frontend_provider="gemma4",
+            sidecar_base_url="http://voice.local:8765",
+        )
+        client._ws = FakeWs()
+
+        with pytest.raises(RuntimeError, match="sidecar send timed out"):
+            await client.send_event(
+                VoiceEvent(
+                    type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                    session_id="voice-123",
+                    sequence=2,
+                    payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"mic-audio").to_payload(),
+                )
+            )
 
     asyncio.run(run())
 
@@ -2381,7 +2415,7 @@ def test_native_s2s_engine_uses_configured_connect_timeout(monkeypatch):
             return None
 
     async def run():
-        captured = {}
+        captured = {"timeouts": []}
         fake_ws = FakeWs()
 
         async def fake_connect(url, **kwargs):
@@ -2390,7 +2424,7 @@ def test_native_s2s_engine_uses_configured_connect_timeout(monkeypatch):
             return fake_ws
 
         async def fake_wait_for(awaitable, timeout):
-            captured["timeout"] = timeout
+            captured["timeouts"].append(timeout)
             return await awaitable
 
         monkeypatch.setitem(__import__("sys").modules, "websockets", types.SimpleNamespace(connect=fake_connect))
@@ -2407,9 +2441,43 @@ def test_native_s2s_engine_uses_configured_connect_timeout(monkeypatch):
         await engine._connect_sidecar(engine.config)
 
         assert captured["url"] == "ws://voice.local/v1/s2s/session"
-        assert captured["timeout"] == 4.0
+        assert captured["timeouts"][0] == 4.0
+        assert captured["timeouts"][1] == 2.0
         assert fake_ws.sent
         await engine.close()
+
+    asyncio.run(run())
+
+
+def test_native_s2s_engine_times_out_stalled_sidecar_sends(monkeypatch):
+    class FakeWs:
+        async def send(self, payload):
+            await asyncio.sleep(30)
+
+    async def run():
+        async def fake_wait_for(awaitable, timeout):
+            awaitable.close()
+            raise asyncio.TimeoutError
+
+        monkeypatch.setattr("agent.realtime_voice_s2s_engine.asyncio.wait_for", fake_wait_for)
+
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = FakeWs()
+
+        with pytest.raises(RuntimeError, match="native S2S sidecar send timed out"):
+            await engine.receive_event(
+                VoiceEvent(
+                    type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                    session_id="voice-123",
+                    sequence=12,
+                    payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"s2s-mic").to_payload(),
+                )
+            )
 
     asyncio.run(run())
 

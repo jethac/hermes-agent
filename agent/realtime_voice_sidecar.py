@@ -9,6 +9,7 @@ import urllib.parse
 from typing import Any, AsyncIterator, Optional
 
 from agent.realtime_voice import (
+    REALTIME_VOICE_SIDECAR_SEND_TIMEOUT_SECONDS,
     RealtimeVoiceSessionConfig,
     VoiceAudioCodec,
     VoiceEvent,
@@ -64,7 +65,7 @@ class RealtimeVoiceSidecarClient:
             self._ws = await asyncio.wait_for(connect, timeout=timeout)
         except asyncio.TimeoutError as exc:
             raise RuntimeError(f"realtime voice sidecar connect timed out after {timeout:g}s") from exc
-        await self._ws.send(json.dumps({"type": "session.config", "payload": config.to_wire()}))
+        await self._send_with_timeout(json.dumps({"type": "session.config", "payload": config.to_wire()}))
         self._reader_task = asyncio.create_task(self._read_events())
 
     async def send_event(self, event: VoiceEvent) -> None:
@@ -72,9 +73,9 @@ class RealtimeVoiceSidecarClient:
             raise RuntimeError("realtime voice sidecar is not connected")
         frame = binary_audio_frame_from_event(event)
         if frame is not None and event.type == VoiceEventType.AUDIO_INPUT_CHUNK:
-            await self._ws.send(frame)
+            await self._send_with_timeout(frame)
             return
-        await self._ws.send(json.dumps(event.to_wire()))
+        await self._send_with_timeout(json.dumps(event.to_wire()))
 
     async def speak(self, event: VoiceEvent) -> None:
         await self.send_event(event)
@@ -99,6 +100,18 @@ class RealtimeVoiceSidecarClient:
         if self._ws is not None:
             await self._ws.close()
         await put_realtime_voice_event(self._events, None)
+
+    async def _send_with_timeout(self, payload: Any) -> None:
+        try:
+            await asyncio.wait_for(
+                self._ws.send(payload),
+                timeout=REALTIME_VOICE_SIDECAR_SEND_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError(
+                "realtime voice sidecar send timed out after "
+                f"{REALTIME_VOICE_SIDECAR_SEND_TIMEOUT_SECONDS:g}s"
+            ) from exc
 
     async def _read_events(self) -> None:
         try:
