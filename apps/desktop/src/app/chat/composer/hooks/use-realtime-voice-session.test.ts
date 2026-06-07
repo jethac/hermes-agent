@@ -20,6 +20,8 @@ import {
   realtimeVoicePlaybackQueueAction,
   realtimeVoicePreRollMs,
   realtimeVoicePreRollChunkLimit,
+  realtimeVoiceReconnectDelayMs,
+  realtimeVoiceReconnectFrontendState,
   realtimeVoiceSpeechLevelThreshold,
   realtimeVoiceSessionErrorAction,
   realtimeVoiceSessionReadyTimeoutMs,
@@ -32,6 +34,7 @@ import {
   realtimeVoiceUrl,
   shouldDropQueuedRealtimeAudioInput,
   shouldDropStaleRealtimeVoiceEvent,
+  shouldReconnectRealtimeVoiceSession,
   shouldRestartRealtimeTurnRecorder,
   shouldSendRealtimeAudioFrame,
   shouldSendRealtimeVoiceEndMarker,
@@ -1001,6 +1004,63 @@ describe('realtimeVoiceFailureFrontendState', () => {
     expect(realtimeVoiceFailureFrontendState('', 1_234)).toEqual({
       reason: 'realtime_voice_failed',
       status: 'fallback',
+      updatedAtMs: 1_234
+    })
+  })
+})
+
+describe('realtime voice reconnect policy', () => {
+  it('allows bounded reconnects only while realtime is active and usable', () => {
+    expect(shouldReconnectRealtimeVoiceSession({
+      attempts: 0,
+      busy: false,
+      enabled: true,
+      muted: false
+    })).toBe(true)
+    expect(shouldReconnectRealtimeVoiceSession({
+      attempts: 2,
+      busy: false,
+      enabled: true,
+      muted: false
+    })).toBe(true)
+    expect(shouldReconnectRealtimeVoiceSession({
+      attempts: 3,
+      busy: false,
+      enabled: true,
+      muted: false
+    })).toBe(false)
+    expect(shouldReconnectRealtimeVoiceSession({
+      attempts: 0,
+      busy: true,
+      enabled: true,
+      muted: false
+    })).toBe(false)
+    expect(shouldReconnectRealtimeVoiceSession({
+      attempts: 0,
+      busy: false,
+      enabled: true,
+      muted: true
+    })).toBe(false)
+    expect(shouldReconnectRealtimeVoiceSession({
+      attempts: 0,
+      busy: false,
+      enabled: false,
+      muted: false
+    })).toBe(false)
+  })
+
+  it('uses clamped exponential reconnect delays', () => {
+    expect(realtimeVoiceReconnectDelayMs(0)).toBe(400)
+    expect(realtimeVoiceReconnectDelayMs(1)).toBe(800)
+    expect(realtimeVoiceReconnectDelayMs(2)).toBe(1_600)
+    expect(realtimeVoiceReconnectDelayMs(5)).toBe(2_000)
+    expect(realtimeVoiceReconnectDelayMs(Number.NaN)).toBe(400)
+  })
+
+  it('marks reconnect attempts as degraded rather than permanent fallback', () => {
+    expect(realtimeVoiceReconnectFrontendState(2, 1_234)).toEqual({
+      reason: 'reconnecting_2',
+      status: 'degraded',
       updatedAtMs: 1_234
     })
   })
