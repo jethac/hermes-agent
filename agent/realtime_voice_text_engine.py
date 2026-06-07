@@ -91,6 +91,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             return
         if event.type == VoiceEventType.BARGE_IN:
             self._playback_generation += 1
+            payload = {
+                "reason": event.payload.get("reason") or "client",
+                "playback_generation": self._playback_generation,
+            }
             if self._active_task and not self._active_task.done():
                 self._active_task.cancel()
             oracle = self._oracle
@@ -98,14 +102,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 oracle.interrupt("Realtime voice barge-in")  # type: ignore[attr-defined]
             self._clear_inbound_audio()
             if self._sidecar is not None:
-                await self._send_sidecar_event(event)
-            await self._emit(
-                VoiceEventType.BARGE_IN,
-                {
-                    "reason": event.payload.get("reason") or "client",
-                    "playback_generation": self._playback_generation,
-                },
-            )
+                await self._send_sidecar_event(
+                    VoiceEvent(
+                        type=event.type,
+                        session_id=event.session_id,
+                        sequence=event.sequence,
+                        timestamp_ms=event.timestamp_ms,
+                        payload=payload,
+                    )
+                )
+            await self._emit(VoiceEventType.BARGE_IN, payload)
             return
         if event.type == VoiceEventType.SESSION_CLOSED:
             await self.close()
