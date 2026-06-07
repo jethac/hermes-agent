@@ -21,6 +21,7 @@ import {
   realtimeVoiceSessionStatus,
   realtimeVoiceSilenceTimeoutMs,
   realtimeVoiceUrl,
+  shouldDropQueuedRealtimeAudioInput,
   shouldDropStaleRealtimeVoiceEvent,
   shouldRestartRealtimeTurnRecorder,
   shouldSendRealtimeAudioFrame,
@@ -544,6 +545,22 @@ describe('queueRealtimeAudioTask', () => {
 
     expect(errors).toHaveLength(1)
     expect(order).toEqual(['second'])
+  })
+})
+
+describe('shouldDropQueuedRealtimeAudioInput', () => {
+  it('keeps audio queued for the active input generation', () => {
+    expect(shouldDropQueuedRealtimeAudioInput({
+      activeGeneration: 3,
+      queuedGeneration: 3
+    })).toBe(false)
+  })
+
+  it('drops audio queued before a new input generation such as barge-in', () => {
+    expect(shouldDropQueuedRealtimeAudioInput({
+      activeGeneration: 4,
+      queuedGeneration: 3
+    })).toBe(true)
   })
 })
 
