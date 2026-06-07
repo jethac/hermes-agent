@@ -2238,6 +2238,44 @@ def test_native_s2s_engine_streams_oracle_hint_to_sidecar():
     asyncio.run(run())
 
 
+def test_native_s2s_engine_degrades_when_oracle_hint_fails():
+    class FakeWs:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, payload):
+            self.sent.append(payload)
+
+    class FailingOracle:
+        async def stream_answer(self, transcript):
+            raise RuntimeError("oracle failed at http://user:pass@voice.local/v1?token=abc")
+            yield transcript
+
+    async def run():
+        ws = FakeWs()
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = ws
+        engine._oracle = FailingOracle()
+
+        await engine._send_oracle_hint("what is kame", 3)
+
+        event = await engine._events.get()
+        assert event.type == VoiceEventType.FRONTEND_STATE
+        assert event.payload["status"] == "degraded"
+        assert event.payload["reason"] == "oracle_hint_failed"
+        assert event.payload["sidecar"] is True
+        assert "user:pass" not in event.payload["error"]
+        assert "token=abc" not in event.payload["error"]
+        assert ws.sent == []
+
+    asyncio.run(run())
+
+
 def test_native_s2s_engine_uses_configured_connect_timeout(monkeypatch):
     class FakeWs:
         def __init__(self):
