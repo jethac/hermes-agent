@@ -170,6 +170,10 @@ tts-premium = ["elevenlabs==1.59.0"]
 voice = [
   # Local STT pulls in wheel-only transitive deps (ctranslate2, onnxruntime),
   # so keep it out of the base install for source-build packagers like Homebrew.
+  # Realtime voice sidecars and provider bridges use websocket clients for
+  # streaming audio. Pin directly instead of relying on uvicorn[standard]'s
+  # optional transitive extra so `pip install hermes-agent[voice]` is enough.
+  "websockets==15.0.1",
   "faster-whisper==1.2.1",
   "sounddevice==0.5.5",
   "numpy==2.4.3",
