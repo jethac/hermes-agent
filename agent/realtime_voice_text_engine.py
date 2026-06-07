@@ -66,6 +66,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 await self._sidecar.start(config)  # type: ignore[attr-defined]
                 self._sidecar_task = asyncio.create_task(self._consume_sidecar_events())
             except Exception as exc:
+                await self._disable_sidecar()
                 await self._emit(
                     VoiceEventType.FRONTEND_STATE,
                     {
@@ -75,7 +76,6 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         "sidecar": False,
                     },
                 )
-                self._sidecar = None
         await self._emit(
             VoiceEventType.SESSION_STARTED,
             {
@@ -205,7 +205,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 elif event.type == VoiceEventType.FRONTEND_STATE:
                     await self._emit(VoiceEventType.FRONTEND_STATE, dict(event.payload))
                 elif event.type == VoiceEventType.SESSION_ERROR:
-                    self._sidecar = None
+                    await self._disable_sidecar()
                     await self._emit(
                         VoiceEventType.FRONTEND_STATE,
                         {
@@ -219,7 +219,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            self._sidecar = None
+            await self._disable_sidecar()
             await self._emit(
                 VoiceEventType.FRONTEND_STATE,
                 {
@@ -237,7 +237,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             await self._sidecar.send_event(event)  # type: ignore[attr-defined]
             return True
         except Exception as exc:
-            self._sidecar = None
+            await self._disable_sidecar()
             await self._emit(
                 VoiceEventType.FRONTEND_STATE,
                 {
@@ -248,6 +248,19 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 },
             )
             return False
+
+    async def _disable_sidecar(self) -> None:
+        sidecar = self._sidecar
+        self._sidecar = None
+        if sidecar is None:
+            return
+        close = getattr(sidecar, "close", None)
+        if close is None:
+            return
+        with contextlib.suppress(Exception):
+            result = close()
+            if asyncio.iscoroutine(result):
+                await result
 
     def _sidecar_input_event(self, event: VoiceEvent) -> VoiceEvent:
         if not self._input_generation_active:
