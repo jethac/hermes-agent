@@ -22,6 +22,7 @@ from agent.realtime_voice_reference_sidecar import (
     ReferenceSidecarRuntimeConfig,
     create_reference_sidecar_app,
     reference_sidecar_health_payload,
+    runtime_config_from_env,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState
@@ -1567,6 +1568,9 @@ def test_reference_sidecar_health_payload_is_sanitized():
             vllm_model="google/gemma-4-E4B-it-qat-w4a16-ct",
             local_stt_enabled=False,
             local_tts_enabled=True,
+            input_languages=("ja", "en-US", "JA", "https://voice.local/secret"),
+            output_languages=("ja", "ko", "token=secret"),
+            scripts=("Jpan", "Latn", "bad/script"),
         )
     )
 
@@ -1576,6 +1580,8 @@ def test_reference_sidecar_health_payload_is_sanitized():
         "frontend": {
             "provider": "vllm",
             "model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+            "languages": ["ja", "en-US", "ko"],
+            "scripts": ["Jpan", "Latn"],
         },
         "capabilities": {
             "utterance_stt": True,
@@ -1583,6 +1589,9 @@ def test_reference_sidecar_health_payload_is_sanitized():
             "tts": True,
             "native_s2s": False,
             "vllm_audio_frontend": True,
+            "input_languages": ["ja", "en-US"],
+            "output_languages": ["ja", "ko"],
+            "scripts": ["Jpan", "Latn"],
         },
         "local": {
             "stt": False,
@@ -1590,6 +1599,19 @@ def test_reference_sidecar_health_payload_is_sanitized():
         },
     }
     assert "secret" not in __import__("json").dumps(payload)
+
+
+def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch):
+    monkeypatch.setenv("HERMES_VOICE_LANGUAGES", "en,ja https://voice.local/secret")
+    monkeypatch.setenv("HERMES_VOICE_INPUT_LANGUAGES", "ja en-US JA")
+    monkeypatch.setenv("HERMES_VOICE_OUTPUT_LANGUAGES", "ja,ko token=secret")
+    monkeypatch.setenv("HERMES_VOICE_SCRIPTS", "Jpan Latn bad/script")
+
+    runtime = runtime_config_from_env()
+
+    assert runtime.input_languages == ("ja", "en-US")
+    assert runtime.output_languages == ("ja", "ko")
+    assert runtime.scripts == ("Jpan", "Latn")
 
 
 def test_reference_sidecar_health_requires_bearer_token():

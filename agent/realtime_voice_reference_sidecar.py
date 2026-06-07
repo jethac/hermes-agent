@@ -11,6 +11,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import tempfile
 import urllib.request
 from dataclasses import dataclass
@@ -48,12 +49,19 @@ class ReferenceSidecarRuntimeConfig:
     local_stt_enabled: bool = True
     local_tts_enabled: bool = True
     auth_token: Optional[str] = None
+    input_languages: tuple[str, ...] = ()
+    output_languages: tuple[str, ...] = ()
+    scripts: tuple[str, ...] = ()
 
 
 def reference_sidecar_health_payload(runtime: ReferenceSidecarRuntimeConfig) -> dict[str, Any]:
     vllm_enabled = bool(runtime.vllm_base_url and runtime.vllm_model)
+    input_languages = _sanitize_metadata_list(runtime.input_languages)
+    output_languages = _sanitize_metadata_list(runtime.output_languages)
+    scripts = _sanitize_metadata_list(runtime.scripts)
+    frontend_languages = _dedupe_metadata([*input_languages, *output_languages])
 
-    return {
+    payload = {
         "ok": True,
         "kind": "reference",
         "frontend": {
@@ -72,6 +80,16 @@ def reference_sidecar_health_payload(runtime: ReferenceSidecarRuntimeConfig) -> 
             "tts": runtime.local_tts_enabled,
         },
     }
+    if frontend_languages:
+        payload["frontend"]["languages"] = frontend_languages
+    if scripts:
+        payload["frontend"]["scripts"] = scripts
+        payload["capabilities"]["scripts"] = scripts
+    if input_languages:
+        payload["capabilities"]["input_languages"] = input_languages
+    if output_languages:
+        payload["capabilities"]["output_languages"] = output_languages
+    return payload
 
 
 class ReferenceRealtimeVoiceSidecarSession:
@@ -402,6 +420,7 @@ def create_reference_sidecar_app(runtime: Optional[ReferenceSidecarRuntimeConfig
 
 
 def runtime_config_from_env() -> ReferenceSidecarRuntimeConfig:
+    language_fallback = os.environ.get("HERMES_VOICE_LANGUAGES") or ""
     return ReferenceSidecarRuntimeConfig(
         vllm_base_url=os.environ.get("HERMES_VOICE_VLLM_BASE_URL") or None,
         vllm_model=os.environ.get("HERMES_VOICE_VLLM_MODEL") or None,
@@ -411,6 +430,13 @@ def runtime_config_from_env() -> ReferenceSidecarRuntimeConfig:
         auth_token=os.environ.get("HERMES_VOICE_SIDECAR_TOKEN")
         or os.environ.get("HERMES_SPARK_VOICE_TOKEN")
         or None,
+        input_languages=tuple(
+            _sanitize_metadata_list(os.environ.get("HERMES_VOICE_INPUT_LANGUAGES") or language_fallback)
+        ),
+        output_languages=tuple(
+            _sanitize_metadata_list(os.environ.get("HERMES_VOICE_OUTPUT_LANGUAGES") or language_fallback)
+        ),
+        scripts=tuple(_sanitize_metadata_list(os.environ.get("HERMES_VOICE_SCRIPTS") or "")),
     )
 
 
@@ -482,3 +508,30 @@ def _env_bool(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+_HEALTH_METADATA_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def _sanitize_metadata_list(value: Any, *, limit: int = 32) -> list[str]:
+    if isinstance(value, str):
+        candidates = re.split(r"[\s,]+", value)
+    elif isinstance(value, (list, tuple, set)):
+        candidates = list(value)
+    else:
+        return []
+    return _dedupe_metadata(str(candidate).strip() for candidate in candidates if isinstance(candidate, str))[:limit]
+
+
+def _dedupe_metadata(values) -> list[str]:
+    result: list[str] = []
+    seen = set()
+    for value in values:
+        if not value or not _HEALTH_METADATA_RE.fullmatch(value):
+            continue
+        key = value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+    return result

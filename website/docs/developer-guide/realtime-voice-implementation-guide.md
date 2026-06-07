@@ -293,6 +293,8 @@ voice:
     vllm_base_url: "http://voice-gpu.local:8000/v1"
     vllm_model: google/gemma-4-E4B-it-qat-w4a16-ct
     tts_provider: edge
+    languages: ["en", "ja"]        # optional diagnostics for managed reference sidecars
+    scripts: ["Latn", "Jpan"]      # optional diagnostics for managed reference sidecars
 ```
 
 Do not add new core dependencies for provider-specific engines. Use extras or lazy install paths.
@@ -324,8 +326,13 @@ python -m hermes_cli.realtime_voice_sidecar \
   --host 127.0.0.1 \
   --port 8765 \
   --vllm-base-url http://voice-gpu.local:8000/v1 \
-  --vllm-model google/gemma-4-E4B-it-qat-w4a16-ct
+  --vllm-model google/gemma-4-E4B-it-qat-w4a16-ct \
+  --input-languages en,ja \
+  --output-languages en,ja \
+  --scripts Latn,Jpan
 ```
+
+For ordinary local/provider sidecars, `--input-languages`, `--output-languages`, and `--scripts` are optional health diagnostics. They can also be set with `HERMES_VOICE_INPUT_LANGUAGES`, `HERMES_VOICE_OUTPUT_LANGUAGES`, `HERMES_VOICE_LANGUAGES`, and `HERMES_VOICE_SCRIPTS`. Hermes sanitizes and forwards these values through `/api/voice/realtime/status`; they do not imply model authority or replace explicit STT/TTS provider configuration.
 
 The vLLM runtime must include audio dependencies. If the server returns `Invalid or unsupported audio file` and logs `Please install vllm[audio] for audio support`, install or bake `av`, `librosa`, `soundfile`, and `soxr` into the vLLM image.
 
