@@ -1,0 +1,239 @@
+"""Realtime voice protocol primitives for KAME-inspired Hermes sessions.
+
+This module is intentionally transport- and model-agnostic. The first live
+implementation is expected to sit behind a websocket endpoint and can choose a
+text pipeline (streaming STT -> Hermes oracle -> streaming TTS) or a native
+speech-to-speech front-end. Both engines should expose the same event contract
+so the desktop app does not know which model stack is active.
+"""
+
+from __future__ import annotations
+
+import abc
+import base64
+import time
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Any, AsyncIterator, Dict, Mapping, Optional
+
+
+class RealtimeVoiceEngineKind(StrEnum):
+    """Engine families supported by the realtime voice session."""
+
+    TEXT_ORACLE_TTS = "text_oracle_tts"
+    NATIVE_S2S_ORACLE = "native_s2s_oracle"
+
+
+class VoiceAudioCodec(StrEnum):
+    """Wire codecs the browser and backend may exchange."""
+
+    PCM16 = "pcm16"
+    OPUS = "opus"
+    WEBM_OPUS = "webm_opus"
+
+
+class VoiceEventType(StrEnum):
+    """Typed event names shared by browser, Hermes, and model sidecars."""
+
+    SESSION_STARTED = "session.started"
+    SESSION_CLOSED = "session.closed"
+    SESSION_ERROR = "session.error"
+    AUDIO_INPUT_CHUNK = "audio.input.chunk"
+    AUDIO_OUTPUT_CHUNK = "audio.output.chunk"
+    TRANSCRIPT_PARTIAL = "transcript.partial"
+    TRANSCRIPT_FINAL = "transcript.final"
+    FRONTEND_STATE = "frontend.state"
+    ORACLE_HINT = "oracle.hint"
+    ASSISTANT_TEXT_PARTIAL = "assistant.text.partial"
+    ASSISTANT_COMMIT = "assistant.commit"
+    BARGE_IN = "barge_in"
+    TOOL_PENDING = "tool.pending"
+    TOOL_RESULT = "tool.result"
+
+
+CLIENT_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.AUDIO_INPUT_CHUNK,
+        VoiceEventType.BARGE_IN,
+        VoiceEventType.SESSION_CLOSED,
+    }
+)
+
+SERVER_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.SESSION_STARTED,
+        VoiceEventType.SESSION_CLOSED,
+        VoiceEventType.SESSION_ERROR,
+        VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.TRANSCRIPT_PARTIAL,
+        VoiceEventType.TRANSCRIPT_FINAL,
+        VoiceEventType.FRONTEND_STATE,
+        VoiceEventType.ORACLE_HINT,
+        VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+        VoiceEventType.ASSISTANT_COMMIT,
+        VoiceEventType.BARGE_IN,
+        VoiceEventType.TOOL_PENDING,
+        VoiceEventType.TOOL_RESULT,
+    }
+)
+
+
+@dataclass(frozen=True)
+class RealtimeVoiceSessionConfig:
+    """Configuration for one realtime voice session."""
+
+    session_id: str
+    engine: RealtimeVoiceEngineKind = RealtimeVoiceEngineKind.TEXT_ORACLE_TTS
+    input_codec: VoiceAudioCodec = VoiceAudioCodec.OPUS
+    output_codec: VoiceAudioCodec = VoiceAudioCodec.OPUS
+    sample_rate_hz: int = 16000
+    channels: int = 1
+    frontend_model: Optional[str] = None
+    oracle_model: Optional[str] = None
+    tts_provider: Optional[str] = None
+    spark_base_url: Optional[str] = None
+    spark_token: Optional[str] = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def to_wire(self) -> Dict[str, Any]:
+        return {
+            "session_id": self.session_id,
+            "engine": self.engine.value,
+            "input_codec": self.input_codec.value,
+            "output_codec": self.output_codec.value,
+            "sample_rate_hz": self.sample_rate_hz,
+            "channels": self.channels,
+            "frontend_model": self.frontend_model,
+            "oracle_model": self.oracle_model,
+            "tts_provider": self.tts_provider,
+            "spark_base_url": self.spark_base_url,
+            "spark_token": self.spark_token,
+            "metadata": dict(self.metadata),
+        }
+
+    @classmethod
+    def from_wire(cls, payload: Mapping[str, Any]) -> "RealtimeVoiceSessionConfig":
+        return cls(
+            session_id=str(payload["session_id"]),
+            engine=RealtimeVoiceEngineKind(str(payload.get("engine") or RealtimeVoiceEngineKind.TEXT_ORACLE_TTS.value)),
+            input_codec=VoiceAudioCodec(str(payload.get("input_codec") or VoiceAudioCodec.OPUS.value)),
+            output_codec=VoiceAudioCodec(str(payload.get("output_codec") or VoiceAudioCodec.OPUS.value)),
+            sample_rate_hz=int(payload.get("sample_rate_hz") or 16000),
+            channels=int(payload.get("channels") or 1),
+            frontend_model=_optional_str(payload.get("frontend_model")),
+            oracle_model=_optional_str(payload.get("oracle_model")),
+            tts_provider=_optional_str(payload.get("tts_provider")),
+            spark_base_url=_optional_str(payload.get("spark_base_url")),
+            spark_token=_optional_str(payload.get("spark_token")),
+            metadata=_mapping(payload.get("metadata")),
+        )
+
+
+@dataclass(frozen=True)
+class VoiceEvent:
+    """JSON-serializable realtime voice event."""
+
+    type: VoiceEventType
+    session_id: str
+    sequence: int
+    payload: Mapping[str, Any] = field(default_factory=dict)
+    timestamp_ms: int = field(default_factory=lambda: int(time.time() * 1000))
+
+    def to_wire(self) -> Dict[str, Any]:
+        return {
+            "type": self.type.value,
+            "session_id": self.session_id,
+            "sequence": self.sequence,
+            "timestamp_ms": self.timestamp_ms,
+            "payload": dict(self.payload),
+        }
+
+    @classmethod
+    def from_wire(cls, data: Mapping[str, Any]) -> "VoiceEvent":
+        return cls(
+            type=VoiceEventType(str(data["type"])),
+            session_id=str(data["session_id"]),
+            sequence=int(data["sequence"]),
+            timestamp_ms=int(data.get("timestamp_ms") or int(time.time() * 1000)),
+            payload=_mapping(data.get("payload")),
+        )
+
+
+@dataclass(frozen=True)
+class AudioChunk:
+    """Base64 audio payload for websocket JSON transport."""
+
+    codec: VoiceAudioCodec
+    data: bytes
+    sample_rate_hz: int = 16000
+    channels: int = 1
+
+    def to_payload(self) -> Dict[str, Any]:
+        return {
+            "codec": self.codec.value,
+            "sample_rate_hz": self.sample_rate_hz,
+            "channels": self.channels,
+            "data_b64": base64.b64encode(self.data).decode("ascii"),
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> "AudioChunk":
+        raw = payload.get("data_b64")
+        if not isinstance(raw, str):
+            raise ValueError("audio chunk payload requires data_b64")
+        return cls(
+            codec=VoiceAudioCodec(str(payload["codec"])),
+            sample_rate_hz=int(payload.get("sample_rate_hz") or 16000),
+            channels=int(payload.get("channels") or 1),
+            data=base64.b64decode(raw.encode("ascii"), validate=True),
+        )
+
+
+class RealtimeVoiceEngine(abc.ABC):
+    """Abstract base class for realtime Hermes voice engines."""
+
+    @property
+    @abc.abstractmethod
+    def kind(self) -> RealtimeVoiceEngineKind:
+        """Return the engine family."""
+
+    @abc.abstractmethod
+    async def start(self, config: RealtimeVoiceSessionConfig) -> None:
+        """Start resources for a voice session."""
+
+    @abc.abstractmethod
+    async def receive_event(self, event: VoiceEvent) -> None:
+        """Receive a client control event or audio chunk."""
+
+    @abc.abstractmethod
+    async def events(self) -> AsyncIterator[VoiceEvent]:
+        """Yield server events until the session closes."""
+
+    @abc.abstractmethod
+    async def close(self) -> None:
+        """Release resources and stop background work."""
+
+
+def validate_client_event(event: VoiceEvent) -> None:
+    if event.type not in CLIENT_EVENT_TYPES:
+        raise ValueError(f"{event.type.value!r} is not accepted from clients")
+
+
+def validate_server_event(event: VoiceEvent) -> None:
+    if event.type not in SERVER_EVENT_TYPES:
+        raise ValueError(f"{event.type.value!r} is not a server event")
+
+
+def _optional_str(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _mapping(value: Any) -> Dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError("expected an object mapping")
+    return dict(value)

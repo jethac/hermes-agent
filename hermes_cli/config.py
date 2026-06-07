@@ -1979,6 +1979,16 @@ DEFAULT_CONFIG = {
         "beep_enabled": True,         # Play record start/stop beeps in CLI voice mode
         "silence_threshold": 200,     # RMS below this = silence (0-32767)
         "silence_duration": 3.0,      # Seconds of silence before auto-stop
+        "realtime": {
+            "enabled": False,
+            "engine": "text_oracle_tts",  # "text_oracle_tts" | "native_s2s_oracle"
+            "input_codec": "webm_opus",
+            "output_codec": "opus",
+            "frontend_provider": "",
+            "frontend_model": "",
+            "spark_base_url": "",
+            "spark_token_env": "HERMES_SPARK_VOICE_TOKEN",
+        },
     },
     
     "human_delay": {
