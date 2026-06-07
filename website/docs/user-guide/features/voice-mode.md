@@ -392,6 +392,13 @@ voice:
   beep_enabled: true               # Play record start/stop beeps
   silence_threshold: 200           # RMS level (0-32767) below which counts as silence
   silence_duration: 3.0            # Seconds of silence before auto-stop
+  realtime:
+    enabled: false                  # Desktop realtime voice websocket path
+    engine: text_oracle_tts         # text_oracle_tts | native_s2s_oracle
+    production_languages: ["en", "ja"]
+    production_scripts: ["Latn", "Jpan"]
+    best_effort_languages: true     # Non-target languages stay best-effort
+    sidecar_base_url: ""            # Optional local/LAN/private-network sidecar
 
 # Speech-to-Text
 stt:

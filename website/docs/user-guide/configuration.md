@@ -1578,6 +1578,13 @@ voice:
   beep_enabled: true            # Play record start/stop beeps in CLI voice mode
   silence_threshold: 200        # RMS threshold for speech detection
   silence_duration: 3.0         # Seconds of silence before auto-stop
+  realtime:
+    enabled: false              # Enable the desktop realtime voice websocket path
+    engine: text_oracle_tts     # text_oracle_tts | native_s2s_oracle
+    production_languages: ["en", "ja"]
+    production_scripts: ["Latn", "Jpan"]
+    best_effort_languages: true # Keep other languages available without claiming production quality
+    sidecar_base_url: ""        # Optional local/LAN/private-network voice sidecar URL
 ```
 
 Use `/voice on` in the CLI to enable microphone mode, `record_key` to start/stop recording, and `/voice tts` to toggle spoken replies. See [Voice Mode](/user-guide/features/voice-mode) for end-to-end setup and platform-specific behavior.

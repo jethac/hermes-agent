@@ -2964,6 +2964,14 @@ class TestBuildSchemaFromConfig:
             assert "options" in entry
             assert "local" in entry["options"]
 
+    def test_realtime_voice_language_policy_fields_are_exposed(self):
+        from hermes_cli.web_server import CONFIG_SCHEMA
+
+        assert CONFIG_SCHEMA["voice.realtime.production_languages"]["type"] == "list"
+        assert CONFIG_SCHEMA["voice.realtime.production_scripts"]["type"] == "list"
+        assert CONFIG_SCHEMA["voice.realtime.best_effort_languages"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.production_languages"]["category"] == "voice"
+
     def test_empty_prefix_produces_correct_keys(self):
         from hermes_cli.web_server import _build_schema_from_config
         test_config = {"model": "test", "nested": {"key": "val"}}

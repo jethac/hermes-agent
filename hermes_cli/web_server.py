@@ -677,6 +677,21 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Milliseconds of silence before realtime voice closes the current user turn",
         "category": "voice",
     },
+    "voice.realtime.production_languages": {
+        "type": "list",
+        "description": "Production acceptance languages for realtime voice quality",
+        "category": "voice",
+    },
+    "voice.realtime.production_scripts": {
+        "type": "list",
+        "description": "Production acceptance scripts for realtime voice quality",
+        "category": "voice",
+    },
+    "voice.realtime.best_effort_languages": {
+        "type": "boolean",
+        "description": "Allow non-production languages as best-effort realtime voice input and output",
+        "category": "voice",
+    },
     "voice.realtime.sidecar_base_url": {
         "type": "string",
         "description": "Remote or local realtime voice sidecar URL",

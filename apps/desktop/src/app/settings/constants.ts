@@ -332,6 +332,9 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
       inputBufferLimitBytes: 'Realtime Input Buffer Limit',
       inputFrameMs: 'Realtime Frame Duration',
       silenceTimeoutMs: 'Realtime Silence Timeout',
+      productionLanguages: 'Production Voice Languages',
+      productionScripts: 'Production Voice Scripts',
+      bestEffortLanguages: 'Best-Effort Other Languages',
       frontendProvider: 'Frontend Provider',
       frontendModel: 'Frontend Model',
       sidecarBaseUrl: 'Voice Sidecar URL',
@@ -487,6 +490,12 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
       inputBufferLimitBytes: 'Maximum local realtime audio bytes Hermes buffers before dropping an unfinished turn.',
       inputFrameMs: 'Microphone chunk duration in milliseconds for realtime voice. Lower values reduce latency but send more frames.',
       silenceTimeoutMs: 'Milliseconds of silence before Hermes closes the current realtime voice turn.',
+      productionLanguages:
+        'Comma-separated BCP-47 language tags that Hermes treats as production acceptance targets. Defaults to English and Japanese.',
+      productionScripts:
+        'Comma-separated ISO 15924 script tags covered by production realtime voice acceptance. Defaults to Latn and Jpan.',
+      bestEffortLanguages:
+        'Allow other languages to pass through captions, prompts, and provider auto-detection without claiming production quality.',
       sidecarBaseUrl:
         'LAN or private-network URL for a remote inference sidecar running Gemma, streaming TTS, or native S2S.',
       sidecarTokenEnv: 'Environment variable that contains the bearer token for the voice sidecar.',
@@ -624,6 +633,9 @@ export const SECTIONS: DesktopConfigSection[] = [
       'voice.realtime.input_buffer_limit_bytes',
       'voice.realtime.input_frame_ms',
       'voice.realtime.silence_timeout_ms',
+      'voice.realtime.production_languages',
+      'voice.realtime.production_scripts',
+      'voice.realtime.best_effort_languages',
       'voice.realtime.frontend_provider',
       'voice.realtime.frontend_model',
       'voice.realtime.sidecar_base_url',
