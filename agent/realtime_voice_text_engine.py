@@ -19,6 +19,7 @@ from agent.realtime_voice import (
     VoiceEventType,
     create_realtime_voice_event_queue,
     put_realtime_voice_event,
+    transcript_event_payload_from_payload,
     transcript_metadata_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
@@ -212,7 +213,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     payload = dict(event.payload)
                     if self._is_stale_sidecar_input(payload):
                         continue
-                    await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, payload)
+                    await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, transcript_event_payload_from_payload(payload))
                 elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
                     payload = dict(event.payload)
                     if self._is_stale_sidecar_input(payload):

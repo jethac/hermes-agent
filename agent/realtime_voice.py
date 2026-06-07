@@ -13,6 +13,7 @@ import abc
 import asyncio
 import base64
 import json
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -85,6 +86,8 @@ BINARY_AUDIO_FRAME_HEADER_LIMIT = 64 * 1024
 REALTIME_VOICE_EVENT_QUEUE_LIMIT = 256
 TRANSCRIPT_METADATA_KEYS = ("language", "locale", "script")
 TRANSCRIPT_METADATA_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+TRANSCRIPT_EVENT_NUMERIC_KEYS = ("confidence", "stability")
+TRANSCRIPT_EVENT_GENERATION_KEYS = ("input_generation", "playback_generation")
 
 
 @dataclass(frozen=True)
@@ -390,6 +393,40 @@ def transcript_metadata_from_payload(payload: Mapping[str, Any]) -> Dict[str, st
         if TRANSCRIPT_METADATA_VALUE_RE.fullmatch(token):
             metadata[key] = token
     return metadata
+
+
+def transcript_event_payload_from_payload(payload: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return a sanitized transcript payload safe to forward to clients."""
+
+    sanitized: Dict[str, Any] = {}
+    text = payload.get("text")
+    if isinstance(text, str):
+        sanitized["text"] = text
+
+    for key in TRANSCRIPT_EVENT_NUMERIC_KEYS:
+        value = payload.get(key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)) and math.isfinite(float(value)):
+            sanitized[key] = max(0.0, min(1.0, float(value)))
+
+    for key in TRANSCRIPT_EVENT_GENERATION_KEYS:
+        value = _wire_non_negative_int(payload.get(key))
+        if value is not None:
+            sanitized[key] = value
+
+    sanitized.update(transcript_metadata_from_payload(payload))
+    return sanitized
+
+
+def _wire_non_negative_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value >= 0:
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
 
 
 def _optional_str(value: Any) -> Optional[str]:

@@ -20,6 +20,7 @@ from agent.realtime_voice import (
     create_realtime_voice_event_queue,
     event_from_binary_audio_frame,
     put_realtime_voice_event,
+    transcript_event_payload_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_oracle import HermesRealtimeOracle
@@ -262,6 +263,9 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             VoiceEventType.ASSISTANT_COMMIT,
         } and self._playback_generation:
             payload["playback_generation"] = self._playback_generation
+
+        if event.type in {VoiceEventType.TRANSCRIPT_PARTIAL, VoiceEventType.TRANSCRIPT_FINAL}:
+            payload = transcript_event_payload_from_payload(payload)
 
         return VoiceEvent(
             type=event.type,
