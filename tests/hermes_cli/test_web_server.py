@@ -7125,6 +7125,7 @@ class TestRealtimeVoiceWebSocket:
             "_ensure_realtime_voice_sidecar",
             lambda realtime: ensured.setdefault("provider", realtime.get("frontend_provider")),
         )
+        monkeypatch.setattr(self.ws_module, "_realtime_voice_open_unavailable_reason", lambda realtime: "")
 
         class FakeSession:
             def __init__(self, config):
@@ -7149,6 +7150,59 @@ class TestRealtimeVoiceWebSocket:
             websocket.close()
 
         assert ensured["provider"] == "reference"
+
+    def test_websocket_rejects_managed_sidecar_without_tts_after_start(self, monkeypatch):
+        from starlette.websockets import WebSocketDisconnect
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "kind": "reference",
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": False,
+                            "tts": False,
+                            "native_s2s": False,
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "frontend_provider": "reference",
+                        "sidecar_host": "127.0.0.1",
+                        "sidecar_port": 8765,
+                        "sidecar_autostart": True,
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+        monkeypatch.setattr(self.ws_module, "_ensure_realtime_voice_sidecar", lambda realtime: None)
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with self.client.websocket_connect(self._url()):
+                pass
+
+        assert exc.value.code == 1011
+        assert "sidecar_missing_tts" in exc.value.reason
 
     def test_websocket_sanitizes_session_start_errors(self, monkeypatch):
         from starlette.websockets import WebSocketDisconnect

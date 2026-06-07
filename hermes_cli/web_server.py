@@ -13061,8 +13061,6 @@ def _realtime_voice_open_unavailable_reason(realtime: Dict[str, Any]) -> str:
         return "sidecar_required"
     if not base_url:
         return ""
-    if _realtime_voice_should_autostart_sidecar(realtime, base_url):
-        return ""
 
     sidecar_token = _realtime_voice_sidecar_token(realtime)
     if not _realtime_voice_sidecar_healthy(base_url, token=sidecar_token):
