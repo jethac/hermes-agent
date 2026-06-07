@@ -649,6 +649,116 @@ class TestRealtimeVoiceReadiness:
             {"kind": "tts", "ok": True, "final_text": "こんにちは"}
         ]
 
+    def test_realtime_voice_evidence_manifest_is_sanitized(self, monkeypatch):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_status_payload",
+            lambda: {
+                "engine": "text_oracle_tts",
+                "frontend_provider": "reference",
+                "frontend_model": "portable-voice",
+                "available": True,
+                "require_live_like": True,
+                "quality_targets_ms": {
+                    "audio_to_partial_transcript_ms": 300,
+                    "final_transcript_to_first_audio_ms": 900,
+                    "barge_in_ack_ms": 150,
+                },
+                "conversation_quality": {
+                    "live_like": True,
+                    "reason": "streaming_stt_tts",
+                    "streaming_stt": True,
+                    "tts": True,
+                },
+                "language_support": {
+                    "production_languages": ["en", "ja"],
+                    "best_effort_languages": True,
+                },
+                "sidecar": {
+                    "mode": "managed_loopback",
+                    "base_url": "http://user:secret@voice.local:8765",
+                    "healthy": True,
+                    "health": {
+                        "ok": True,
+                        "kind": "reference",
+                        "frontend": {
+                            "provider": "streaming_stt",
+                            "model": "portable-asr",
+                            "streaming_tts_bridge": {
+                                "configured": True,
+                                "healthy": True,
+                                "model": "portable-voice",
+                            },
+                            "unsafe_url": "http://user:secret@voice.local",
+                        },
+                        "capabilities": {
+                            "streaming_stt": True,
+                            "streaming_stt_bridge": True,
+                            "tts": True,
+                            "streaming_tts": True,
+                            "streaming_tts_bridge": True,
+                            "token": "secret",
+                        },
+                    },
+                },
+                "production_readiness": {
+                    "ready": False,
+                    "level": "not_ready",
+                    "issues": ["missing_evidence_report"],
+                    "evidence": {
+                        "runs": 0,
+                        "min_runs": 3,
+                        "verified": False,
+                        "report_path": "C:/secret/report.json",
+                    },
+                },
+            },
+        )
+
+        report = [{"kind": "tts", "ok": True}]
+        doctor._append_realtime_voice_evidence_manifest(report)
+
+        manifest = report[0]
+        assert manifest["kind"] == "manifest"
+        assert manifest["ok"] is True
+        assert manifest["conversation_quality"]["live_like"] is True
+        assert manifest["sidecar"] == {
+            "mode": "managed_loopback",
+            "healthy": True,
+            "health": {
+                "ok": True,
+                "kind": "reference",
+                "frontend": {
+                    "provider": "streaming_stt",
+                    "model": "portable-asr",
+                    "languages": [],
+                    "scripts": [],
+                    "streaming_tts_bridge": {
+                        "configured": True,
+                        "healthy": True,
+                        "model": "portable-voice",
+                    },
+                },
+                "capabilities": {
+                    "utterance_stt": False,
+                    "streaming_stt": True,
+                    "tts": True,
+                    "native_s2s": False,
+                    "vllm_audio_frontend": False,
+                    "input_languages": [],
+                    "output_languages": [],
+                    "scripts": [],
+                    "streaming_stt_bridge": True,
+                    "streaming_tts": True,
+                    "streaming_tts_bridge": True,
+                },
+                "local": {"stt": False, "tts": False},
+            },
+        }
+        assert "secret" not in json.dumps(manifest)
+        assert "unsafe_url" not in json.dumps(manifest)
+        assert report[1] == {"kind": "tts", "ok": True}
+
 
 class TestDoctorEnvFileEncoding:
     """Regression for #18637 (bug 3): `hermes doctor` crashed on Windows

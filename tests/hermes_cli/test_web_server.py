@@ -6906,6 +6906,44 @@ class TestRealtimeVoiceWebSocket:
         assert len(requests) == 1
         assert all(req.headers["Authorization"] == "Bearer secret-token" for req in requests)
 
+    def test_realtime_voice_sidecar_health_sanitizer_preserves_bridge_capabilities(self):
+        sanitized = self.ws_module._sanitize_realtime_voice_sidecar_health(
+            {
+                "ok": True,
+                "kind": "reference",
+                "frontend": {
+                    "provider": "streaming_stt",
+                    "model": "portable-asr",
+                    "streaming_stt_bridge": {"configured": True, "healthy": True, "url": "http://secret"},
+                    "streaming_tts_bridge": {
+                        "configured": True,
+                        "healthy": True,
+                        "model": "portable-voice",
+                        "token": "secret",
+                    },
+                },
+                "capabilities": {
+                    "streaming_stt": True,
+                    "streaming_stt_bridge": True,
+                    "tts": True,
+                    "streaming_tts": True,
+                    "streaming_tts_bridge": True,
+                    "token": "secret",
+                },
+            }
+        )
+
+        assert sanitized["frontend"]["streaming_stt_bridge"] == {"configured": True, "healthy": True}
+        assert sanitized["frontend"]["streaming_tts_bridge"] == {
+            "configured": True,
+            "healthy": True,
+            "model": "portable-voice",
+        }
+        assert sanitized["capabilities"]["streaming_stt_bridge"] is True
+        assert sanitized["capabilities"]["streaming_tts"] is True
+        assert sanitized["capabilities"]["streaming_tts_bridge"] is True
+        assert "secret" not in __import__("json").dumps(sanitized)
+
     def test_status_marks_streaming_text_sidecar_live_like(self, monkeypatch):
         class FakeResponse:
             status = 200
