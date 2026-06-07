@@ -35,6 +35,80 @@ interface VoiceConversationOptions {
 const EMPTY_REALTIME_METRICS: RealtimeVoiceLatencyMetrics = {}
 const EMPTY_REALTIME_CAPTION: RealtimeVoiceCaption | null = null
 const EMPTY_REALTIME_FRONTEND_STATE: RealtimeVoiceFrontendState | null = null
+const ASCII_SENTENCE_BOUNDARY_CHARS = new Set(['.', '!', '?'])
+const NON_ASCII_SENTENCE_BOUNDARY_CHARS = new Set(['。', '！', '？', '؟', '।'])
+const PHRASE_BOUNDARY_CHARS = new Set([',', ';', ':', '，', '、', '；', '：', '،', '؛'])
+
+interface VoiceConversationSpeechChunk {
+  chunk: string | null
+  remaining: string
+}
+
+function findDelimiter(text: string, delimiters: Set<string>, start: number, end: number): number {
+  const upper = Math.min(text.length, end)
+
+  for (let index = upper - 1; index >= Math.max(0, start); index -= 1) {
+    if (delimiters.has(text[index])) {
+      return index
+    }
+  }
+
+  return -1
+}
+
+export function takeVoiceConversationSpeechChunk(buffer: string, force = false): VoiceConversationSpeechChunk {
+  const normalized = buffer.replace(/\s+/g, ' ').trim()
+
+  if (!normalized) {
+    return { chunk: null, remaining: '' }
+  }
+
+  let sentenceAt = findDelimiter(normalized, NON_ASCII_SENTENCE_BOUNDARY_CHARS, 8, 220)
+  if (sentenceAt < 0) {
+    sentenceAt = findDelimiter(normalized, ASCII_SENTENCE_BOUNDARY_CHARS, 8, 220)
+  }
+  if (sentenceAt >= 0) {
+    return {
+      chunk: normalized.slice(0, sentenceAt + 1).trim(),
+      remaining: normalized.slice(sentenceAt + 1).trim()
+    }
+  }
+
+  const hasWhitespace = /\s/.test(normalized)
+  const phraseMin = hasWhitespace ? 80 : 16
+  const phraseTrigger = hasWhitespace ? 220 : 32
+  if (!force && normalized.length >= phraseTrigger) {
+    const phraseAt = findDelimiter(normalized, PHRASE_BOUNDARY_CHARS, phraseMin, 220)
+    if (phraseAt >= phraseMin) {
+      return {
+        chunk: normalized.slice(0, phraseAt + 1).trim(),
+        remaining: normalized.slice(phraseAt + 1).trim()
+      }
+    }
+  }
+
+  if (!force && normalized.length > 220) {
+    const splitAt = Math.max(
+      findDelimiter(normalized, PHRASE_BOUNDARY_CHARS, phraseMin, 220),
+      normalized.lastIndexOf(' ', 220)
+    )
+
+    if (splitAt > 80) {
+      const suffixStart = PHRASE_BOUNDARY_CHARS.has(normalized[splitAt]) ? splitAt + 1 : splitAt
+
+      return {
+        chunk: normalized.slice(0, suffixStart).trim(),
+        remaining: normalized.slice(suffixStart).trim()
+      }
+    }
+  }
+
+  if (!force) {
+    return { chunk: null, remaining: normalized }
+  }
+
+  return { chunk: normalized, remaining: '' }
+}
 
 export function useVoiceConversation({
   busy,
@@ -119,45 +193,11 @@ export function useVoiceConversation({
   }
 
   const takeSpeechChunk = (force = false): string | null => {
-    const buffer = speechBufferRef.current.replace(/\s+/g, ' ').trim()
+    const { chunk, remaining } = takeVoiceConversationSpeechChunk(speechBufferRef.current, force)
 
-    if (!buffer) {
-      speechBufferRef.current = ''
+    speechBufferRef.current = remaining
 
-      return null
-    }
-
-    const sentence = buffer.match(/^(.+?[.!?。！？])(?:\s+|$)/)
-
-    if (sentence?.[1] && (sentence[1].length >= 8 || force)) {
-      const chunk = sentence[1].trim()
-      speechBufferRef.current = buffer.slice(sentence[1].length).trim()
-
-      return chunk
-    }
-
-    if (!force && buffer.length > 220) {
-      const softBoundary = Math.max(
-        buffer.lastIndexOf(', ', 180),
-        buffer.lastIndexOf('; ', 180),
-        buffer.lastIndexOf(': ', 180)
-      )
-
-      if (softBoundary > 80) {
-        const chunk = buffer.slice(0, softBoundary + 1).trim()
-        speechBufferRef.current = buffer.slice(softBoundary + 1).trim()
-
-        return chunk
-      }
-    }
-
-    if (!force) {
-      return null
-    }
-
-    speechBufferRef.current = ''
-
-    return buffer
+    return chunk
   }
 
   const handleTurn = useCallback(
