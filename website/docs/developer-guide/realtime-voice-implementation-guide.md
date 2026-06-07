@@ -374,6 +374,7 @@ Add a realtime client separate from the existing dictation hook.
 Responsibilities:
 
 - Capture microphone frames with WebAudio or AudioWorklet.
+- Wait for `session.started` before opening the microphone so remote sidecar/model startup does not capture audio before the backend voice engine is ready.
 - Send frames over websocket with monotonically increasing sequence numbers.
 - Snapshot the end-of-utterance flag before async blob encoding so the final recorder chunk cannot lose the user turn boundary.
 - Request a final recorder chunk before silence stop and send an empty `end_of_utterance` marker if the browser stops without yielding one.

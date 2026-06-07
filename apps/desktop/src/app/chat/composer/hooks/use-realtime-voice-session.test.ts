@@ -298,6 +298,15 @@ describe('realtimeVoiceCloseAction', () => {
       sessionStarted: false
     })).toBe('ignore')
   })
+
+  it('does not fall back after a pre-start session error event', () => {
+    expect(realtimeVoiceCloseAction({
+      closeCode: 1011,
+      enabled: true,
+      sessionFailed: true,
+      sessionStarted: false
+    })).toBe('ignore')
+  })
 })
 
 describe('realtime playback generation helpers', () => {

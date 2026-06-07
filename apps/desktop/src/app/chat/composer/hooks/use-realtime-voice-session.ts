@@ -104,6 +104,7 @@ interface RealtimeEndMarkerInput {
 interface RealtimeCloseActionInput {
   closeCode: number
   enabled: boolean
+  sessionFailed?: boolean
   sessionStarted: boolean
 }
 
@@ -224,9 +225,10 @@ export function shouldSendRealtimeVoiceEndMarker({
 export function realtimeVoiceCloseAction({
   closeCode,
   enabled,
+  sessionFailed = false,
   sessionStarted
 }: RealtimeCloseActionInput): 'fallback' | 'fatal' | 'ignore' {
-  if (!enabled || closeCode === 1000) {
+  if (!enabled || closeCode === 1000 || sessionFailed) {
     return 'ignore'
   }
   return sessionStarted ? 'fatal' : 'fallback'
@@ -333,6 +335,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const sentEndOfUtteranceRef = useRef(false)
   const stoppingForSilenceRef = useRef(false)
   const sessionStartedRef = useRef(false)
+  const sessionFailedRef = useRef(false)
   const playbackQueueRef = useRef<PlaybackItem[]>([])
   const playingRef = useRef<HTMLAudioElement | null>(null)
   const bargeInSpeechStartedAtRef = useRef<number | null>(null)
@@ -753,16 +756,31 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
     sequenceRef.current = 0
     sessionStartedRef.current = false
+    sessionFailedRef.current = false
     socketRef.current = socket
+
+    let resolveSessionReady: ((ready: boolean) => void) | null = null
+    const sessionReady = new Promise<boolean>(resolve => {
+      resolveSessionReady = resolve
+    })
 
     socket.onmessage = message => {
       try {
         const event = JSON.parse(String(message.data)) as VoiceEvent
         if (event.type === 'session.started') {
           sessionStartedRef.current = true
+          resolveSessionReady?.(true)
+          resolveSessionReady = null
+        } else if (event.type === 'session.error' && !sessionStartedRef.current) {
+          sessionFailedRef.current = true
+          resolveSessionReady?.(false)
+          resolveSessionReady = null
         }
         handleEvent(event)
       } catch (error) {
+        sessionFailedRef.current = true
+        resolveSessionReady?.(false)
+        resolveSessionReady = null
         notifyError(error, 'Realtime voice failed')
         onFatalError?.()
       }
@@ -771,8 +789,11 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       const action = realtimeVoiceCloseAction({
         closeCode: close.code,
         enabled: enabledRef.current,
+        sessionFailed: sessionFailedRef.current,
         sessionStarted: sessionStartedRef.current
       })
+      resolveSessionReady?.(false)
+      resolveSessionReady = null
       if (action === 'fallback') {
         onUnavailable?.()
       } else if (action === 'fatal') {
@@ -798,6 +819,16 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       return
     }
 
+    const ready = await sessionReady
+    if (!ready || socketRef.current !== socket || socket.readyState !== WebSocket.OPEN) {
+      socket.close()
+      if (socketRef.current === socket) {
+        socketRef.current = null
+      }
+      setStatus('idle')
+      return
+    }
+
     setMuted(false)
     await startListening()
   }, [handleEvent, onFatalError, onUnavailable, sessionId, startListening])
@@ -809,6 +840,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     socketRef.current?.close(1000, 'client closed')
     socketRef.current = null
     sessionStartedRef.current = false
+    sessionFailedRef.current = false
     setCaption(null)
     setFrontendState(null)
     setMuted(false)
