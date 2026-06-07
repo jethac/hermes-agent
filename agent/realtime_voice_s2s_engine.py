@@ -224,10 +224,36 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         except Exception as exc:
             if self._closed:
                 return
-            await self._emit(
-                VoiceEventType.SESSION_ERROR,
-                {"error": f"sidecar closed: {sanitize_realtime_voice_error(exc)}"},
-            )
+            await self._fail_sidecar_session("native_s2s_sidecar_disconnected", exc)
+
+    async def _fail_sidecar_session(self, reason: str, error: Any) -> None:
+        self._assistant_output_active = False
+        self._auto_barge_in_input_active = False
+        self._cancel_oracle_hint("Realtime voice native S2S sidecar failed")
+        sidecar = self._ws
+        self._ws = None
+        if sidecar is not None:
+            close = getattr(sidecar, "close", None)
+            if close is not None:
+                with contextlib.suppress(Exception):
+                    result = close()
+                    if asyncio.iscoroutine(result):
+                        await result
+        sanitized = sanitize_realtime_voice_error(error)
+        await self._emit(
+            VoiceEventType.FRONTEND_STATE,
+            {
+                "status": "degraded",
+                "reason": reason,
+                "error": sanitized,
+                "sidecar": False,
+                "native_s2s": False,
+            },
+        )
+        await self._emit(
+            VoiceEventType.SESSION_ERROR,
+            {"error": f"native S2S sidecar failed: {sanitized}"},
+        )
 
     async def _emit(self, event_type: VoiceEventType, payload: dict) -> Optional[VoiceEvent]:
         if self.config is None:

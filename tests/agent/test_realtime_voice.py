@@ -3770,3 +3770,53 @@ def test_native_s2s_engine_reader_error_after_close_is_terminal():
         assert engine._events.empty()
 
     asyncio.run(run())
+
+
+def test_native_s2s_engine_reader_error_degrades_then_fails_session():
+    class FailingWs:
+        def __init__(self):
+            self.closed = False
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise RuntimeError("sidecar failed at http://user:pass@voice.local/v1?token=abc")
+
+        async def close(self):
+            self.closed = True
+
+    async def run():
+        ws = FailingWs()
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = ws
+        engine._assistant_output_active = True
+        engine._auto_barge_in_input_active = True
+
+        await engine._read_sidecar()
+
+        degraded = await engine._events.get()
+        error = await engine._events.get()
+
+        assert degraded.type == VoiceEventType.FRONTEND_STATE
+        assert degraded.payload["status"] == "degraded"
+        assert degraded.payload["reason"] == "native_s2s_sidecar_disconnected"
+        assert degraded.payload["sidecar"] is False
+        assert degraded.payload["native_s2s"] is False
+        assert "user:pass" not in degraded.payload["error"]
+        assert "token=abc" not in degraded.payload["error"]
+        assert error.type == VoiceEventType.SESSION_ERROR
+        assert "native S2S sidecar failed" in error.payload["error"]
+        assert "user:pass" not in error.payload["error"]
+        assert "token=abc" not in error.payload["error"]
+        assert ws.closed is True
+        assert engine._ws is None
+        assert engine._assistant_output_active is False
+        assert engine._auto_barge_in_input_active is False
+
+    asyncio.run(run())
