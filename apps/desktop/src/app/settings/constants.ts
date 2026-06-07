@@ -331,8 +331,8 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
       outputCodec: 'Realtime Output Codec',
       frontendProvider: 'Frontend Provider',
       frontendModel: 'Frontend Model',
-      sparkBaseUrl: 'Spark Sidecar URL',
-      sparkTokenEnv: 'Spark Token Env Var'
+      sparkBaseUrl: 'Voice Sidecar URL',
+      sparkTokenEnv: 'Voice Sidecar Token Env Var'
     }
   },
   stt: {
@@ -478,7 +478,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
     autoTts: 'Automatically speak assistant responses.',
     realtime: {
       enabled: 'Use the KAME-inspired realtime websocket path instead of the turn-based record/transcribe/speak loop.',
-      sparkBaseUrl: 'LAN URL for a DGX Spark or other model sidecar running Gemma, streaming TTS, or native S2S.'
+      sparkBaseUrl: 'LAN or private-network URL for a remote inference sidecar running Gemma, streaming TTS, or native S2S.'
     }
   },
   tts: {
