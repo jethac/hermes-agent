@@ -6,6 +6,7 @@ Diagnoses issues with Hermes Agent setup.
 
 import os
 import sys
+import asyncio
 import subprocess
 import shutil
 from pathlib import Path
@@ -530,6 +531,110 @@ def _check_realtime_voice_quality_targets(payload: Mapping[str, Any], issues: li
         check_warn("Realtime voice latency targets", f"({problem})")
 
 
+def _realtime_voice_smoke_config():
+    from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceAudioCodec
+    from hermes_cli.web_server import (
+        _positive_float_config,
+        _positive_int_config,
+        _realtime_voice_config_dict,
+        _realtime_voice_conversation_quality_payload,
+        _realtime_voice_language_support_payload,
+        _realtime_voice_quality_targets_payload,
+        _realtime_voice_sidecar_base_url,
+        _realtime_voice_sidecar_token,
+        _truthy_config,
+    )
+
+    realtime = _realtime_voice_config_dict()
+    base_url = _realtime_voice_sidecar_base_url(realtime)
+    if not base_url:
+        raise RuntimeError("realtime voice smoke requires voice.realtime.sidecar_base_url")
+    engine = str(realtime.get("engine") or RealtimeVoiceEngineKind.TEXT_ORACLE_TTS.value)
+    sidecar_token = _realtime_voice_sidecar_token(realtime)
+    return RealtimeVoiceSessionConfig(
+        session_id="voice-doctor-smoke",
+        engine=RealtimeVoiceEngineKind(engine),
+        input_codec=VoiceAudioCodec(str(realtime.get("input_codec") or VoiceAudioCodec.WEBM_OPUS.value)),
+        output_codec=VoiceAudioCodec(str(realtime.get("output_codec") or VoiceAudioCodec.OPUS.value)),
+        input_buffer_limit_bytes=_positive_int_config(
+            realtime.get("input_buffer_limit_bytes"),
+            default=8 * 1024 * 1024,
+        ),
+        frontend_provider=str(realtime.get("frontend_provider") or "") or None,
+        frontend_model=str(realtime.get("frontend_model") or "") or None,
+        oracle_model=str(realtime.get("oracle_model") or "") or None,
+        tts_provider=str(realtime.get("tts_provider") or "") or None,
+        sidecar_base_url=str(base_url or "") or None,
+        sidecar_token=str(sidecar_token or "") or None,
+        sidecar_connect_timeout_seconds=_positive_float_config(
+            realtime.get("sidecar_connect_timeout_seconds"),
+            default=10.0,
+        ),
+        metadata={
+            "source": "doctor_smoke",
+            "language_support": _realtime_voice_language_support_payload(realtime),
+            "quality_targets_ms": _realtime_voice_quality_targets_payload(realtime),
+            "conversation_quality": _realtime_voice_conversation_quality_payload(
+                engine=engine,
+                base_url=str(base_url or ""),
+                health_payload=None,
+            ),
+            "require_live_like": _truthy_config(realtime.get("require_live_like"), default=False),
+        },
+    )
+
+
+def _run_realtime_voice_sidecar_smoke_sync(config, *, timeout_seconds: float):
+    from agent.realtime_voice_smoke import run_realtime_voice_sidecar_smoke
+
+    return asyncio.run(
+        run_realtime_voice_sidecar_smoke(
+            config,
+            timeout_seconds=timeout_seconds,
+        )
+    )
+
+
+def _check_realtime_voice_sidecar_smoke(issues: list[str]) -> None:
+    try:
+        config = _realtime_voice_smoke_config()
+    except Exception as exc:
+        _fail_and_issue(
+            "Realtime voice sidecar smoke",
+            f"(could not build config: {exc})",
+            f"Fix realtime voice smoke configuration: {exc}",
+            issues,
+        )
+        return
+
+    timeout_seconds = min(max(float(config.sidecar_connect_timeout_seconds or 10.0), 1.0), 15.0)
+    try:
+        result = _run_realtime_voice_sidecar_smoke_sync(config, timeout_seconds=timeout_seconds)
+    except Exception as exc:
+        _fail_and_issue(
+            "Realtime voice sidecar smoke",
+            f"(failed: {exc})",
+            f"Fix realtime voice sidecar protocol smoke failure: {exc}",
+            issues,
+        )
+        return
+    if result.ok:
+        ready = f"{result.ready_ms}ms" if result.ready_ms is not None else "unknown"
+        final = f"{result.transcript_final_ms}ms" if result.transcript_final_ms is not None else "unknown"
+        check_ok("Realtime voice sidecar smoke", f"(ready={ready}, transcript.final={final})")
+        return
+
+    detail = result.error or "sidecar smoke failed"
+    if result.events:
+        detail = f"{detail}; events={','.join(result.events)}"
+    _fail_and_issue(
+        "Realtime voice sidecar smoke",
+        f"({detail})",
+        f"Fix realtime voice sidecar protocol smoke failure: {detail}",
+        issues,
+    )
+
+
 def _check_realtime_voice_readiness(issues: list[str], *, strict: bool = False) -> None:
     """Report whether realtime voice is configured for portable live conversation."""
     _section("Realtime Voice")
@@ -777,7 +882,8 @@ def run_doctor(args):
     """Run diagnostic checks."""
     should_fix = getattr(args, 'fix', False)
     ack_target = getattr(args, 'ack', None)
-    strict_realtime_voice = getattr(args, 'realtime_voice', False)
+    smoke_realtime_voice = getattr(args, 'realtime_voice_smoke', False)
+    strict_realtime_voice = getattr(args, 'realtime_voice', False) or smoke_realtime_voice
 
     # Doctor runs from the interactive CLI, so CLI-gated tool availability
     # checks (like cronjob management) should see the same context as `hermes`.
@@ -1415,6 +1521,8 @@ def run_doctor(args):
         pass
 
     _check_realtime_voice_readiness(issues, strict=strict_realtime_voice)
+    if smoke_realtime_voice:
+        _check_realtime_voice_sidecar_smoke(issues)
 
     _section("Directory Structure")
     hermes_home = HERMES_HOME
