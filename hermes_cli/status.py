@@ -166,6 +166,7 @@ def _realtime_voice_evidence_line(production: Mapping[str, Any]) -> str:
     if isinstance(latency, Mapping):
         metric_parts = [
             _realtime_voice_latency_summary_part(latency, "audio_to_partial_transcript", "partial"),
+            _realtime_voice_latency_summary_part(latency, "final_transcript_to_first_text", "text"),
             _realtime_voice_latency_summary_part(latency, "final_transcript_to_first_audio", "audio"),
             _realtime_voice_latency_summary_part(latency, "barge_in_ack", "barge"),
         ]

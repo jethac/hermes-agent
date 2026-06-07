@@ -284,7 +284,12 @@ def _print_summary(runs: list[tuple[str, list[dict[str, Any]]]]) -> None:
     latency = summary.get("latency_ms")
     if not isinstance(latency, dict):
         return
-    for label in ("audio_to_partial_transcript", "final_transcript_to_first_audio", "barge_in_ack"):
+    for label in (
+        "audio_to_partial_transcript",
+        "final_transcript_to_first_text",
+        "final_transcript_to_first_audio",
+        "barge_in_ack",
+    ):
         metric = latency.get(label)
         if not isinstance(metric, dict) or not metric.get("count"):
             continue

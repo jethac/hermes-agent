@@ -16,6 +16,8 @@ from typing import Any, Mapping, Optional, Tuple
 
 from agent.realtime_voice import AudioChunk, RealtimeVoiceSessionConfig, VoiceAudioCodec, VoiceEvent, VoiceEventType
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
+from agent.realtime_voice_session import RealtimeVoiceSession
+from agent.realtime_voice_text_engine import TextOracleTTSEngine
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient
 
 
@@ -25,6 +27,7 @@ class RealtimeVoiceSidecarSmokeResult:
     ready_ms: Optional[int] = None
     transcript_partial_ms: Optional[int] = None
     transcript_final_ms: Optional[int] = None
+    first_text_ms: Optional[int] = None
     first_audio_ms: Optional[int] = None
     barge_in_ack_ms: Optional[int] = None
     final_text: str = ""
@@ -47,6 +50,7 @@ def realtime_voice_smoke_result_payload(
         "ready_ms": result.ready_ms,
         "transcript_partial_ms": result.transcript_partial_ms,
         "transcript_final_ms": result.transcript_final_ms,
+        "first_text_ms": result.first_text_ms,
         "first_audio_ms": result.first_audio_ms,
         "barge_in_ack_ms": result.barge_in_ack_ms,
         "final_text": result.final_text,
@@ -251,6 +255,147 @@ async def run_realtime_voice_sidecar_tts_smoke(
         await client.close()
 
 
+class _StaticRealtimeOracle:
+    def __init__(self, answer: str):
+        self.answer = answer
+
+    async def stream_answer(self, _transcript: str):
+        yield self.answer
+
+
+async def run_realtime_voice_session_turn_smoke(
+    config: RealtimeVoiceSessionConfig,
+    *,
+    answer: str = "Hello from Hermes.",
+    metadata: Optional[Mapping[str, str]] = None,
+    transcript: str = "hello Hermes",
+    timeout_seconds: float = 5.0,
+) -> RealtimeVoiceSidecarSmokeResult:
+    """Run a Hermes session turn smoke through transcript, oracle text, and TTS."""
+
+    timeout = max(0.1, float(timeout_seconds or 5.0))
+    started_at = time.perf_counter()
+    transcript_final_elapsed_ms: Optional[int] = None
+    transcript_final_ms: Optional[int] = None
+    first_text_ms: Optional[int] = None
+    first_audio_ms: Optional[int] = None
+    output_audio_bytes = 0
+    final_text = ""
+    events: list[str] = []
+    engine = TextOracleTTSEngine(oracle=_StaticRealtimeOracle(answer))
+    session = RealtimeVoiceSession(config, engine=engine)
+
+    try:
+        await session.start()
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id=config.session_id,
+                sequence=1,
+                payload={
+                    "transcript": transcript,
+                    "end_of_utterance": True,
+                    **dict(metadata or {}),
+                },
+            )
+        )
+
+        stream = session.events()
+        deadline = started_at + timeout
+        while True:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=False,
+                    transcript_final_ms=transcript_final_ms,
+                    first_text_ms=first_text_ms,
+                    first_audio_ms=first_audio_ms,
+                    final_text=final_text,
+                    output_audio_bytes=output_audio_bytes,
+                    events=tuple(events),
+                    error=f"timed out after {timeout:g}s waiting for session assistant text/audio",
+                )
+            try:
+                event = await asyncio.wait_for(anext(stream), timeout=remaining)
+            except StopAsyncIteration:
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=False,
+                    transcript_final_ms=transcript_final_ms,
+                    first_text_ms=first_text_ms,
+                    first_audio_ms=first_audio_ms,
+                    final_text=final_text,
+                    output_audio_bytes=output_audio_bytes,
+                    events=tuple(events),
+                    error="session event stream ended before assistant text/audio",
+                )
+
+            elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
+            events.append(event.type.value)
+
+            if event.type == VoiceEventType.SESSION_ERROR:
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=False,
+                    transcript_final_ms=transcript_final_ms,
+                    first_text_ms=first_text_ms,
+                    first_audio_ms=first_audio_ms,
+                    final_text=final_text,
+                    output_audio_bytes=output_audio_bytes,
+                    events=tuple(events),
+                    error=str(event.payload.get("error") or "session error"),
+                )
+            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                transcript_final_elapsed_ms = elapsed_ms
+                transcript_final_ms = _metric_ms(
+                    event.payload,
+                    "audio_to_final_transcript_ms",
+                    fallback=elapsed_ms,
+                )
+            elif event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and first_text_ms is None:
+                first_text_ms = _metric_ms(
+                    event.payload,
+                    "final_transcript_to_first_text_ms",
+                    fallback=_elapsed_from(transcript_final_elapsed_ms, elapsed_ms),
+                )
+                final_text = _assistant_text_from_payload(event.payload) or final_text
+            elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK and first_audio_ms is None:
+                first_audio_ms = _metric_ms(
+                    event.payload,
+                    "final_transcript_to_first_audio_ms",
+                    fallback=_elapsed_from(transcript_final_elapsed_ms, elapsed_ms),
+                )
+                try:
+                    output_audio_bytes = len(AudioChunk.from_payload(event.payload).data)
+                except Exception:
+                    output_audio_bytes = 0
+            elif event.type == VoiceEventType.ASSISTANT_COMMIT:
+                final_text = str(event.payload.get("text") or final_text)
+
+            if first_text_ms is not None and first_audio_ms is not None:
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=output_audio_bytes > 0,
+                    transcript_final_ms=transcript_final_ms,
+                    first_text_ms=first_text_ms,
+                    first_audio_ms=first_audio_ms,
+                    final_text=final_text,
+                    output_audio_bytes=output_audio_bytes,
+                    events=tuple(events),
+                    error="" if output_audio_bytes > 0 else "audio.output.chunk contained no audio bytes",
+                )
+    except Exception as exc:
+        return RealtimeVoiceSidecarSmokeResult(
+            ok=False,
+            transcript_final_ms=transcript_final_ms,
+            first_text_ms=first_text_ms,
+            first_audio_ms=first_audio_ms,
+            final_text=final_text,
+            output_audio_bytes=output_audio_bytes,
+            events=tuple(events),
+            error=sanitize_realtime_voice_error(exc),
+        )
+    finally:
+        await session.close()
+
+
 def realtime_voice_smoke_text_metadata(text: str) -> dict[str, str]:
     value = str(text or "")
     if _contains_japanese_script(value):
@@ -271,6 +416,41 @@ def _contains_japanese_script(text: str) -> bool:
         ):
             return True
     return False
+
+
+def _metric_ms(payload: Mapping[str, Any], key: str, *, fallback: Optional[int] = None) -> Optional[int]:
+    metrics = payload.get("metrics") if isinstance(payload, Mapping) else None
+    if isinstance(metrics, Mapping):
+        value = _nonnegative_int(metrics.get(key))
+        if value is not None:
+            return value
+    return fallback
+
+
+def _elapsed_from(start_ms: Optional[int], end_ms: int) -> Optional[int]:
+    if start_ms is None:
+        return None
+    return max(0, end_ms - start_ms)
+
+
+def _assistant_text_from_payload(payload: Mapping[str, Any]) -> str:
+    text = payload.get("text")
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+    delta = payload.get("delta")
+    return delta.strip() if isinstance(delta, str) else ""
+
+
+def _nonnegative_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value >= 0:
+        return value
+    if isinstance(value, float) and value.is_integer() and value >= 0:
+        return int(value)
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
 
 
 async def run_realtime_voice_sidecar_barge_in_smoke(

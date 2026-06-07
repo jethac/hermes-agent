@@ -411,7 +411,7 @@ CI shape:
 
 - Keep the normal unit tests in the regular test matrix: `tests/agent/test_realtime_voice.py`, `tests/hermes_cli/test_web_server.py::TestRealtimeVoiceWebSocket`, and the realtime desktop hook tests.
 - Add a separate, opt-in realtime voice smoke workflow or manual job that starts the configured sidecar, runs the command above, verifies the JSON artifact with `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha.json --alpha`, and uploads `artifacts/realtime-voice-alpha.json`.
-- Treat EN/JA fixture, TTS, and barge-in failures, missing `transcript.partial`, missing `transcript.final`, missing `audio.output.chunk`, missing `barge_in`, post-barge-in `audio.output.chunk` bytes from the interrupted utterance, and target latency misses as release-blocking for private alpha.
+- Treat EN/JA fixture, Hermes session-turn, TTS, and barge-in failures, missing `transcript.partial`, missing `transcript.final`, missing `assistant.text.partial`, missing `audio.output.chunk`, missing `barge_in`, post-barge-in `audio.output.chunk` bytes from the interrupted utterance, and target latency misses as release-blocking for private alpha.
 - Treat non-target language fixture failures as non-blocking unless they reveal protocol rejection, translation-to-English behavior, metadata leakage, or a crash.
 - Archive only latency metrics, event names, byte counts, sanitized errors, fixture identifiers, and configured smoke phrases. Do not archive raw user audio outside explicit opt-in fixtures.
 

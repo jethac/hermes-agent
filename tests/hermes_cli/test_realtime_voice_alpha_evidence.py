@@ -140,6 +140,18 @@ def _valid_alpha_report():
             "transcript_final_ms": 25,
             "events": ["frontend.state", "transcript.final"],
         },
+        {
+            "kind": "session_turn",
+            "ok": True,
+            "text": "Hello from Hermes.",
+            "transcript_final_ms": 10,
+            "first_text_ms": 90,
+            "first_text_target_ms": 500,
+            "first_audio_ms": 250,
+            "first_audio_target_ms": 900,
+            "output_audio_bytes": 4321,
+            "events": ["session.started", "transcript.final", "assistant.text.partial", "audio.output.chunk"],
+        },
     ]
     for fixture in ALPHA_REQUIRED_AUDIO_FIXTURES:
         entries.append(
@@ -226,6 +238,7 @@ def test_alpha_evidence_runner_collects_and_validates_runs(monkeypatch, tmp_path
     output = capsys.readouterr().out
     assert "Realtime voice alpha evidence OK" in output
     assert "audio_to_partial_transcript" in output
+    assert "final_transcript_to_first_text" in output
 
 
 def test_alpha_evidence_runner_apply_updates_production_evidence_report(

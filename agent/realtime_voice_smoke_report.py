@@ -50,6 +50,10 @@ ALPHA_REQUIRED_BARGE_IN_TEXTS = (
     "Hello from Hermes.",
 )
 
+ALPHA_REQUIRED_SESSION_TURN_TEXTS = (
+    "Hello from Hermes.",
+)
+
 ALPHA_REQUIRED_QUALITY_TARGETS_MS = {
     "audio_to_partial_transcript_ms": 300,
     "final_transcript_to_first_text_ms": 500,
@@ -159,9 +163,13 @@ def summarize_realtime_voice_smoke_report_runs(
                 entry.get("transcript_partial_ms")
                 for entry in by_kind.get("audio_fixture", [])
             ),
+            "final_transcript_to_first_text": _latency_summary(
+                entry.get("first_text_ms")
+                for entry in by_kind.get("session_turn", [])
+            ),
             "final_transcript_to_first_audio": _latency_summary(
                 entry.get("first_audio_ms")
-                for entry in by_kind.get("tts", [])
+                for entry in [*by_kind.get("session_turn", []), *by_kind.get("tts", [])]
             ),
             "barge_in_ack": _latency_summary(
                 entry.get("barge_in_ack_ms")
@@ -177,6 +185,7 @@ def validate_realtime_voice_smoke_report(
     required_audio_fixtures: Iterable[str] = (),
     required_tts_texts: Iterable[str] = (),
     required_barge_in_texts: Iterable[str] = (),
+    required_session_turn_texts: Iterable[str] = (),
     require_protocol: bool = True,
     require_manifest: bool = False,
     require_alpha_targets: bool = False,
@@ -203,6 +212,7 @@ def validate_realtime_voice_smoke_report(
     audio_entries = by_kind.get("audio_fixture", [])
     tts_entries = by_kind.get("tts", [])
     barge_in_entries = by_kind.get("barge_in", [])
+    session_turn_entries = by_kind.get("session_turn", [])
 
     issues.extend(_validate_required_entries(
         entries=audio_entries,
@@ -222,6 +232,12 @@ def validate_realtime_voice_smoke_report(
         field="text",
         kind="barge_in",
     ))
+    issues.extend(_validate_required_entries(
+        entries=session_turn_entries,
+        required=required_session_turn_texts,
+        field="text",
+        kind="session_turn",
+    ))
 
     for entry in audio_entries:
         issues.extend(_validate_audio_fixture_entry(
@@ -236,6 +252,20 @@ def validate_realtime_voice_smoke_report(
         issues.extend(_validate_tts_entry(
             entry,
             max_target_ms=(
+                ALPHA_REQUIRED_QUALITY_TARGETS_MS["final_transcript_to_first_audio_ms"]
+                if require_alpha_targets
+                else None
+            ),
+        ))
+    for entry in session_turn_entries:
+        issues.extend(_validate_session_turn_entry(
+            entry,
+            max_first_text_target_ms=(
+                ALPHA_REQUIRED_QUALITY_TARGETS_MS["final_transcript_to_first_text_ms"]
+                if require_alpha_targets
+                else None
+            ),
+            max_first_audio_target_ms=(
                 ALPHA_REQUIRED_QUALITY_TARGETS_MS["final_transcript_to_first_audio_ms"]
                 if require_alpha_targets
                 else None
@@ -260,6 +290,7 @@ def validate_realtime_voice_alpha_report(entries: Sequence[Mapping[str, Any]]) -
         required_audio_fixtures=ALPHA_REQUIRED_AUDIO_FIXTURES,
         required_tts_texts=ALPHA_REQUIRED_TTS_TEXTS,
         required_barge_in_texts=ALPHA_REQUIRED_BARGE_IN_TEXTS,
+        required_session_turn_texts=ALPHA_REQUIRED_SESSION_TURN_TEXTS,
         require_protocol=True,
         require_manifest=True,
         require_alpha_targets=True,
@@ -521,6 +552,74 @@ def _validate_tts_entry(
             RealtimeVoiceSmokeReportIssue(
                 "tts",
                 f"first_audio_ms {first_audio_ms} exceeds target {target_ms}",
+                identifier,
+            )
+        )
+    return issues
+
+
+def _validate_session_turn_entry(
+    entry: Mapping[str, Any],
+    *,
+    max_first_audio_target_ms: int | None = None,
+    max_first_text_target_ms: int | None = None,
+) -> list[RealtimeVoiceSmokeReportIssue]:
+    identifier = str(entry.get("text") or "session_turn")
+    issues = _validate_common_ok(entry, kind="session_turn", identifier=identifier)
+    events = _events(entry)
+    if "transcript.final" not in events:
+        issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing transcript.final event", identifier))
+    if "assistant.text.partial" not in events:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue("session_turn", "missing assistant.text.partial event", identifier)
+        )
+    if "audio.output.chunk" not in events:
+        issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing audio.output.chunk event", identifier))
+    if _positive_int(entry.get("output_audio_bytes")) is None:
+        issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing output audio bytes", identifier))
+
+    first_text_ms = _nonnegative_int(entry.get("first_text_ms"))
+    first_text_target_ms = _positive_int(entry.get("first_text_target_ms"))
+    if first_text_ms is None:
+        issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing first_text_ms", identifier))
+    if first_text_target_ms is None:
+        issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing first_text_target_ms", identifier))
+    elif max_first_text_target_ms is not None and first_text_target_ms > max_first_text_target_ms:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "session_turn",
+                f"first_text_target_ms {first_text_target_ms} exceeds alpha ceiling {max_first_text_target_ms}",
+                identifier,
+            )
+        )
+    elif first_text_ms is not None and first_text_ms > first_text_target_ms:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "session_turn",
+                f"first_text_ms {first_text_ms} exceeds target {first_text_target_ms}",
+                identifier,
+            )
+        )
+
+    first_audio_ms = _nonnegative_int(entry.get("first_audio_ms"))
+    first_audio_target_ms = _positive_int(entry.get("first_audio_target_ms"))
+    if first_audio_ms is None:
+        issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing first_audio_ms", identifier))
+    if first_audio_target_ms is None:
+        issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing first_audio_target_ms", identifier))
+    elif max_first_audio_target_ms is not None and first_audio_target_ms > max_first_audio_target_ms:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "session_turn",
+                f"first_audio_target_ms {first_audio_target_ms} exceeds alpha ceiling {max_first_audio_target_ms}",
+                identifier,
+            )
+        )
+    elif first_audio_ms is not None and first_audio_ms > first_audio_target_ms:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "session_turn",
+                f"first_audio_ms {first_audio_ms} exceeds target {first_audio_target_ms}",
                 identifier,
             )
         )

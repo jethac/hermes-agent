@@ -729,6 +729,7 @@ def _realtime_voice_smoke_report_payload(result: Any, *, kind: str, **extra: Any
             "transcript_final_ms",
             getattr(result, "transcript_final_ms", None),
         ),
+        "first_text_ms": mapping.get("first_text_ms", getattr(result, "first_text_ms", None)),
         "first_audio_ms": mapping.get("first_audio_ms", getattr(result, "first_audio_ms", None)),
         "barge_in_ack_ms": mapping.get("barge_in_ack_ms", getattr(result, "barge_in_ack_ms", None)),
         "final_text": str(mapping.get("final_text", getattr(result, "final_text", "")) or ""),
@@ -1045,6 +1046,28 @@ def _run_realtime_voice_sidecar_barge_in_smoke_sync(
     )
 
 
+def _run_realtime_voice_session_turn_smoke_sync(
+    config,
+    *,
+    text: str,
+    timeout_seconds: float,
+):
+    from agent.realtime_voice_smoke import (
+        realtime_voice_smoke_text_metadata,
+        run_realtime_voice_session_turn_smoke,
+    )
+
+    return asyncio.run(
+        run_realtime_voice_session_turn_smoke(
+            config,
+            answer=text,
+            metadata=realtime_voice_smoke_text_metadata(text),
+            transcript=text,
+            timeout_seconds=timeout_seconds,
+        )
+    )
+
+
 def _check_realtime_voice_sidecar_smoke(
     issues: list[str],
     *,
@@ -1102,6 +1125,95 @@ def _check_realtime_voice_sidecar_smoke(
         "Realtime voice sidecar smoke",
         f"({detail})",
         f"Fix realtime voice sidecar protocol smoke failure: {detail}",
+        issues,
+    )
+
+
+def _check_realtime_voice_session_turn_smoke(
+    issues: list[str],
+    *,
+    text: str,
+    reports: list[dict[str, Any]] | None = None,
+) -> None:
+    try:
+        config = _realtime_voice_smoke_config()
+    except Exception as exc:
+        _append_realtime_voice_smoke_report(
+            reports,
+            {"ok": False, "error": f"could not build config: {exc}"},
+            kind="session_turn",
+            text=text,
+        )
+        _fail_and_issue(
+            "Realtime voice session turn smoke",
+            f"(could not build config: {exc})",
+            f"Fix realtime voice session turn smoke configuration: {exc}",
+            issues,
+        )
+        return
+
+    timeout_seconds = min(max(float(config.sidecar_connect_timeout_seconds or 10.0), 1.0), 30.0)
+    try:
+        result = _run_realtime_voice_session_turn_smoke_sync(
+            config,
+            text=text,
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception as exc:
+        _append_realtime_voice_smoke_report(
+            reports,
+            {"ok": False, "error": f"failed: {exc}"},
+            kind="session_turn",
+            text=text,
+            timeout_seconds=timeout_seconds,
+        )
+        _fail_and_issue(
+            "Realtime voice session turn smoke",
+            f"(failed: {exc})",
+            f"Fix realtime voice session turn smoke failure: {exc}",
+            issues,
+        )
+        return
+
+    first_text_target_ms = _quality_target_from_config(config, "final_transcript_to_first_text_ms", 500)
+    first_audio_target_ms = _quality_target_from_config(config, "final_transcript_to_first_audio_ms", 900)
+    _append_realtime_voice_smoke_report(
+        reports,
+        result,
+        kind="session_turn",
+        text=text,
+        first_text_target_ms=first_text_target_ms,
+        first_audio_target_ms=first_audio_target_ms,
+        timeout_seconds=timeout_seconds,
+    )
+    if (
+        result.ok
+        and result.first_text_ms is not None
+        and result.first_audio_ms is not None
+        and result.first_text_ms <= first_text_target_ms
+        and result.first_audio_ms <= first_audio_target_ms
+    ):
+        check_ok(
+            "Realtime voice session turn smoke",
+            (
+                f"(first_text={result.first_text_ms}ms <= {first_text_target_ms}ms, "
+                f"first_audio={result.first_audio_ms}ms <= {first_audio_target_ms}ms)"
+            ),
+        )
+        return
+
+    detail = getattr(result, "error", "") or "session turn smoke failed"
+    if result.ok and result.first_text_ms is not None and result.first_text_ms > first_text_target_ms:
+        detail = f"first_text={result.first_text_ms}ms exceeds target {first_text_target_ms}ms"
+    elif result.ok and result.first_audio_ms is not None and result.first_audio_ms > first_audio_target_ms:
+        detail = f"first_audio={result.first_audio_ms}ms exceeds target {first_audio_target_ms}ms"
+    events = tuple(getattr(result, "events", ()) or ())
+    if events:
+        detail = f"{detail}; events={','.join(events)}"
+    _fail_and_issue(
+        "Realtime voice session turn smoke",
+        f"({detail})",
+        f"Fix realtime voice session turn smoke failure: {detail}",
         issues,
     )
 
@@ -2281,6 +2393,11 @@ def run_doctor(args):
     _check_realtime_voice_readiness(issues, strict=strict_realtime_voice)
     if smoke_realtime_voice:
         _check_realtime_voice_sidecar_smoke(issues, reports=realtime_voice_reports)
+        _check_realtime_voice_session_turn_smoke(
+            issues,
+            text="Hello from Hermes.",
+            reports=realtime_voice_reports,
+        )
     for realtime_voice_audio_fixture in realtime_voice_audio_fixtures:
         _check_realtime_voice_audio_fixture_smoke(
             issues,

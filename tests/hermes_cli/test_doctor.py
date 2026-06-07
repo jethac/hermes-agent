@@ -107,6 +107,7 @@ class TestRealtimeVoiceReadiness:
                 ready_ms=12,
                 transcript_partial_ms=90,
                 transcript_final_ms=180,
+                first_text_ms=95,
                 first_audio_ms=250,
                 barge_in_ack_ms=45,
                 final_text="こんにちは",
@@ -121,6 +122,7 @@ class TestRealtimeVoiceReadiness:
         assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
         assert payload["kind"] == "audio_fixture"
         assert payload["events"] == ["frontend.state", "transcript.final"]
+        assert payload["first_text_ms"] == 95
         assert payload["barge_in_ack_ms"] == 45
         assert payload["audio_after_barge_in_bytes"] == 0
         assert payload["error"] is None
@@ -567,6 +569,7 @@ class TestRealtimeVoiceReadiness:
                 "ready_ms": None,
                 "transcript_partial_ms": 90,
                 "transcript_final_ms": 180,
+                "first_text_ms": None,
                 "first_audio_ms": None,
                 "barge_in_ack_ms": None,
                 "final_text": "",
@@ -729,6 +732,74 @@ class TestRealtimeVoiceReadiness:
         assert "Realtime voice barge-in smoke" in output
         assert "barge_in_ack=45ms <= 150ms" in output
         assert issues == []
+
+    def test_session_turn_smoke_reports_success_with_text_and_audio_targets(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={
+                    "quality_targets_ms": {
+                        "final_transcript_to_first_text_ms": 500,
+                        "final_transcript_to_first_audio_ms": 900,
+                    }
+                },
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_session_turn_smoke_sync",
+            lambda _config, *, text, timeout_seconds: SimpleNamespace(
+                events=("session.started", "transcript.final", "assistant.text.partial", "audio.output.chunk"),
+                first_audio_ms=240,
+                first_text_ms=80,
+                ok=True,
+                output_audio_bytes=4321,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_session_turn_smoke(issues, text="Hello from Hermes.")
+
+        output = capsys.readouterr().out
+        assert "Realtime voice session turn smoke" in output
+        assert "first_text=80ms <= 500ms" in output
+        assert "first_audio=240ms <= 900ms" in output
+        assert issues == []
+
+    def test_session_turn_smoke_records_first_text_target_miss(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={
+                    "quality_targets_ms": {
+                        "final_transcript_to_first_text_ms": 500,
+                        "final_transcript_to_first_audio_ms": 900,
+                    }
+                },
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_session_turn_smoke_sync",
+            lambda _config, *, text, timeout_seconds: SimpleNamespace(
+                events=("session.started", "transcript.final", "assistant.text.partial", "audio.output.chunk"),
+                first_audio_ms=240,
+                first_text_ms=650,
+                ok=True,
+                output_audio_bytes=4321,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_session_turn_smoke(issues, text="Hello from Hermes.")
+
+        output = capsys.readouterr().out
+        assert "first_text=650ms exceeds target 500ms" in output
+        assert any("session turn smoke failure" in issue for issue in issues)
 
     def test_barge_in_smoke_records_ack_target_miss(self, monkeypatch, capsys):
         monkeypatch.setattr(

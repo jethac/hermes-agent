@@ -85,7 +85,20 @@ def _valid_realtime_voice_alpha_report():
             "transcript_final_ms": 25,
             "events": ["frontend.state", "transcript.final"],
             "error": None,
-        }
+        },
+        {
+            "kind": "session_turn",
+            "ok": True,
+            "text": "Hello from Hermes.",
+            "transcript_final_ms": 10,
+            "first_text_ms": 90,
+            "first_text_target_ms": 500,
+            "first_audio_ms": 250,
+            "first_audio_target_ms": 900,
+            "output_audio_bytes": 4321,
+            "events": ["session.started", "transcript.final", "assistant.text.partial", "audio.output.chunk"],
+            "error": None,
+        },
     ]
     for fixture in ALPHA_REQUIRED_AUDIO_FIXTURES:
         entries.append(
@@ -7255,19 +7268,21 @@ class TestRealtimeVoiceWebSocket:
             "report_path": str(evidence_path),
             "runs": 3,
             "min_runs": 3,
-            "entries": 33,
+            "entries": 36,
             "summary": {
                 "runs": 3,
-                "entries": 30,
+                "entries": 33,
                 "kinds": {
                     "audio_fixture": {"entries": 12, "ok": 12, "failed": 0},
                     "barge_in": {"entries": 3, "ok": 3, "failed": 0},
                     "protocol": {"entries": 3, "ok": 3, "failed": 0},
+                    "session_turn": {"entries": 3, "ok": 3, "failed": 0},
                     "tts": {"entries": 12, "ok": 12, "failed": 0},
                 },
                 "latency_ms": {
                     "audio_to_partial_transcript": {"count": 12, "p50": 90, "p95": 90, "max": 90},
-                    "final_transcript_to_first_audio": {"count": 12, "p50": 250, "p95": 250, "max": 250},
+                    "final_transcript_to_first_text": {"count": 3, "p50": 90, "p95": 90, "max": 90},
+                    "final_transcript_to_first_audio": {"count": 15, "p50": 250, "p95": 250, "max": 250},
                     "barge_in_ack": {"count": 3, "p50": 45, "p95": 45, "max": 45},
                 },
             },

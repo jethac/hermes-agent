@@ -80,7 +80,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Realtime voice smoke report OK: {result_count} result(s) across {len(runs)} run(s)")
         summary = summarize_realtime_voice_smoke_report_runs(runs)
         latency = summary.get("latency_ms", {})
-        for label in ("audio_to_partial_transcript", "final_transcript_to_first_audio", "barge_in_ack"):
+        for label in (
+            "audio_to_partial_transcript",
+            "final_transcript_to_first_text",
+            "final_transcript_to_first_audio",
+            "barge_in_ack",
+        ):
             metric = latency.get(label) if isinstance(latency, dict) else None
             if not isinstance(metric, dict) or not metric.get("count"):
                 continue

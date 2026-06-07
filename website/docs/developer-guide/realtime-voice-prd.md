@@ -196,6 +196,7 @@ Hermes oracle
 ## Success Metrics
 
 - Median first transcript partial: under 300 ms on LAN.
+- Median first assistant text after final user speech: under 500 ms for simple responses.
 - Median first assistant audio after final user speech: under 900 ms for simple responses.
 - Barge-in stop latency: under 150 ms from detected speech to playback cancellation.
 - Realtime server events expose session latency metrics for transcript, first-text, first-audio, and barge-in paths.
