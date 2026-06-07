@@ -4,7 +4,11 @@ import { useI18n } from '@/i18n'
 import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback'
 import { notify, notifyError } from '@/store/notifications'
 
-import { type RealtimeVoiceLatencyMetrics, useRealtimeVoiceSession } from './use-realtime-voice-session'
+import {
+  type RealtimeVoiceCaption,
+  type RealtimeVoiceLatencyMetrics,
+  useRealtimeVoiceSession
+} from './use-realtime-voice-session'
 import { useMicRecorder } from './use-mic-recorder'
 
 export type ConversationStatus = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking'
@@ -28,6 +32,7 @@ interface VoiceConversationOptions {
 }
 
 const EMPTY_REALTIME_METRICS: RealtimeVoiceLatencyMetrics = {}
+const EMPTY_REALTIME_CAPTION: RealtimeVoiceCaption | null = null
 
 export function useVoiceConversation({
   busy,
@@ -434,5 +439,15 @@ export function useVoiceConversation({
     return realtime
   }
 
-  return { end, level, metrics: EMPTY_REALTIME_METRICS, muted, start, status, stopTurn, toggleMute }
+  return {
+    caption: EMPTY_REALTIME_CAPTION,
+    end,
+    level,
+    metrics: EMPTY_REALTIME_METRICS,
+    muted,
+    start,
+    status,
+    stopTurn,
+    toggleMute
+  }
 }
