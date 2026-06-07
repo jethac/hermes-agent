@@ -118,7 +118,7 @@ def validate_realtime_voice_alpha_report_runs(
         manifest = _first_entry_by_kind(entries, "manifest")
         if manifest is None:
             continue
-        fingerprint = _alpha_manifest_fingerprint(manifest)
+        fingerprint = realtime_voice_alpha_manifest_fingerprint(manifest)
         if fingerprint not in fingerprints:
             fingerprints[fingerprint] = label
     if len(fingerprints) > 1:
@@ -383,7 +383,9 @@ def _first_entry_by_kind(entries: Sequence[Mapping[str, Any]], kind: str) -> Map
     return None
 
 
-def _alpha_manifest_fingerprint(entry: Mapping[str, Any]) -> tuple[Any, ...]:
+def realtime_voice_alpha_manifest_fingerprint(entry: Mapping[str, Any]) -> tuple[Any, ...]:
+    """Return the profile fields that make alpha evidence apply to one stack."""
+
     sidecar = entry.get("sidecar") if isinstance(entry.get("sidecar"), Mapping) else {}
     health = sidecar.get("health") if isinstance(sidecar.get("health"), Mapping) else {}
     frontend = health.get("frontend") if isinstance(health.get("frontend"), Mapping) else {}

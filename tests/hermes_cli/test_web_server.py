@@ -48,6 +48,9 @@ def _valid_realtime_voice_alpha_report():
         {
             "kind": "manifest",
             "ok": True,
+            "engine": "text_oracle_tts",
+            "frontend_provider": "",
+            "frontend_model": "",
             "available": True,
             "conversation_quality": {
                 "live_like": True,
@@ -62,6 +65,7 @@ def _valid_realtime_voice_alpha_report():
                 "barge_in_ack_ms": 150,
             },
             "sidecar": {
+                "mode": "external",
                 "healthy": True,
                 "health": {
                     "capabilities": {
@@ -6816,6 +6820,7 @@ class TestRealtimeVoiceWebSocket:
                             "streaming_stt": True,
                             "tts": True,
                             "native_s2s": False,
+                            "output_languages": ["en", "ja"],
                         },
                     }
                 ).encode("utf-8")
@@ -6891,6 +6896,7 @@ class TestRealtimeVoiceWebSocket:
                             "streaming_stt": True,
                             "tts": True,
                             "native_s2s": False,
+                            "output_languages": ["en", "ja"],
                         },
                     }
                 ).encode("utf-8")
@@ -6941,6 +6947,73 @@ class TestRealtimeVoiceWebSocket:
             },
             "issues": [],
         }
+
+    def test_status_rejects_production_evidence_from_different_realtime_stack(self, monkeypatch, tmp_path):
+        evidence_path = tmp_path / "evidence"
+        evidence_path.mkdir()
+        for index in range(3):
+            report = _valid_realtime_voice_alpha_report()
+            manifest = report[0]
+            manifest["engine"] = "native_s2s_oracle"
+            manifest["frontend_provider"] = "native_s2s"
+            manifest["conversation_quality"]["mode"] = "native_s2s"
+            manifest["sidecar"]["health"]["capabilities"] = {
+                "native_s2s": True,
+                "output_languages": ["en", "ja"],
+            }
+            (evidence_path / f"realtime-voice-alpha-{index}.json").write_text(
+                json.dumps(report, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": True,
+                            "tts": True,
+                            "native_s2s": False,
+                            "output_languages": ["en", "ja"],
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                        "production_evidence_report": str(evidence_path),
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        body = self.client.get("/api/voice/realtime/status").json()
+
+        assert body["available"] is True
+        assert body["production_readiness"]["ready"] is False
+        assert body["production_readiness"]["level"] == "live_like"
+        assert any(
+            "current realtime stack does not match evidence manifest" in issue
+            for issue in body["production_readiness"]["issues"]
+        )
 
     def test_status_require_live_like_keeps_turn_based_sidecar_unavailable(self, monkeypatch):
         class FakeResponse:
