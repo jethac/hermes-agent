@@ -1,5 +1,6 @@
 """Tests for hermes_cli.doctor."""
 
+import json
 import os
 import sys
 import types
@@ -14,6 +15,10 @@ import hermes_cli.doctor as doctor
 import hermes_cli.gateway as gateway_cli
 from hermes_cli import doctor as doctor_mod
 from hermes_cli.doctor import _has_provider_env_config
+from agent.realtime_voice_smoke import (
+    RealtimeVoiceSidecarSmokeResult,
+    realtime_voice_smoke_result_payload,
+)
 
 
 class TestDoctorPlatformHints:
@@ -58,6 +63,27 @@ class TestRealtimeVoiceReadiness:
         assert doctor._realtime_voice_cli_values("hello.webm") == ["hello.webm"]
         assert doctor._realtime_voice_cli_values(["en.webm", "ja.webm"]) == ["en.webm", "ja.webm"]
         assert doctor._realtime_voice_cli_values(["en.webm", ["ja.webm"]]) == ["en.webm", "ja.webm"]
+
+    def test_realtime_voice_smoke_result_payload_is_json_safe(self):
+        payload = realtime_voice_smoke_result_payload(
+            RealtimeVoiceSidecarSmokeResult(
+                ok=True,
+                ready_ms=12,
+                transcript_partial_ms=90,
+                transcript_final_ms=180,
+                first_audio_ms=250,
+                final_text="こんにちは",
+                audio_bytes=1234,
+                output_audio_bytes=4321,
+                events=("frontend.state", "transcript.final"),
+            ),
+            kind="audio_fixture",
+        )
+
+        assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
+        assert payload["kind"] == "audio_fixture"
+        assert payload["events"] == ["frontend.state", "transcript.final"]
+        assert payload["error"] is None
 
     def test_non_strict_disabled_realtime_voice_is_informational(self, monkeypatch, capsys):
         monkeypatch.setattr(doctor, "load_config", lambda: {}, raising=False)
@@ -336,6 +362,58 @@ class TestRealtimeVoiceReadiness:
         assert "transcript.partial=90ms <= 300ms" in output
         assert issues == []
 
+    def test_audio_fixture_smoke_appends_machine_readable_report(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={"quality_targets_ms": {"audio_to_partial_transcript_ms": 300}},
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_sidecar_audio_smoke_sync",
+            lambda _config, *, audio_fixture_path, audio_codec, timeout_seconds: SimpleNamespace(
+                audio_bytes=1234,
+                events=("frontend.state", "transcript.partial", "transcript.final"),
+                ok=True,
+                transcript_final_ms=180,
+                transcript_partial_ms=90,
+            ),
+        )
+        issues = []
+        reports = []
+
+        doctor._check_realtime_voice_audio_fixture_smoke(
+            issues,
+            audio_fixture_path="hello-ja.webm",
+            audio_codec="webm_opus",
+            reports=reports,
+        )
+
+        assert issues == []
+        assert reports == [
+            {
+                "kind": "audio_fixture",
+                "ok": True,
+                "ready_ms": None,
+                "transcript_partial_ms": 90,
+                "transcript_final_ms": 180,
+                "first_audio_ms": None,
+                "final_text": "",
+                "audio_bytes": 1234,
+                "output_audio_bytes": 0,
+                "events": ["frontend.state", "transcript.partial", "transcript.final"],
+                "error": None,
+                "fixture": "hello-ja.webm",
+                "codec": "webm_opus",
+                "target_ms": 300,
+                "timeout_seconds": 2.0,
+            }
+        ]
+        capsys.readouterr()
+
     def test_audio_fixture_smoke_records_missing_partial_issue(self, monkeypatch, capsys):
         monkeypatch.setattr(
             doctor,
@@ -455,6 +533,18 @@ class TestRealtimeVoiceReadiness:
         output = capsys.readouterr().out
         assert "first_audio=1200ms exceeds target 900ms" in output
         assert any("TTS smoke failure" in issue for issue in issues)
+
+    def test_realtime_voice_report_writer_preserves_unicode(self, tmp_path):
+        report_path = tmp_path / "voice-smoke.json"
+
+        doctor._write_realtime_voice_report(
+            report_path,
+            [{"kind": "tts", "ok": True, "final_text": "こんにちは"}],
+        )
+
+        assert json.loads(report_path.read_text(encoding="utf-8")) == [
+            {"kind": "tts", "ok": True, "final_text": "こんにちは"}
+        ]
 
 
 class TestDoctorEnvFileEncoding:
