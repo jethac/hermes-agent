@@ -2030,8 +2030,13 @@ DEFAULT_CONFIG = {
             "output_codec": "opus",
             "frontend_provider": "",
             "frontend_model": "",
+            "sidecar_base_url": "",
             "spark_base_url": "",
             "spark_token_env": "HERMES_SPARK_VOICE_TOKEN",
+            "sidecar_host": "127.0.0.1",
+            "sidecar_port": 8765,
+            "vllm_base_url": "",
+            "vllm_model": "",
         },
     },
     

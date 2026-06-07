@@ -6310,6 +6310,32 @@ class TestRealtimeVoiceWebSocket:
         assert config.spark_base_url == "http://spark.local:8080"
         assert config.spark_token == "secret-token"
 
+    def test_config_defaults_local_frontend_to_reference_sidecar(self, monkeypatch):
+        class FakeWebSocket:
+            query_params = {"session_id": "voice-local"}
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "frontend_provider": "local",
+                        "sidecar_host": "127.0.0.1",
+                        "sidecar_port": 8765,
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+
+        config = self.ws_module._realtime_voice_config_from_request(FakeWebSocket())
+
+        assert config.frontend_provider == "local"
+        assert config.spark_base_url == "http://127.0.0.1:8765"
+
 
 class TestDashboardPluginStaticAssetAllowlist:
     """``/dashboard-plugins/<name>/<path>`` is unauthenticated by design —
