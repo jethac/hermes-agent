@@ -73,6 +73,24 @@ The voice inference process owns:
 
 This split is why `sidecar_base_url` remains server-side configuration. The desktop cannot point Hermes at an arbitrary inference host through query params, and public docs/settings should describe sidecars by capability (`sidecar`, `local`, `reference`, `gemma4`, `vllm`, `native_s2s`) rather than by a specific workstation or accelerator name.
 
+## Production-Readiness Ladder
+
+Use this ladder when deciding what a profile may claim. The distinction matters because the same Hermes desktop can be connected to very different inference deployments.
+
+| Tier | Claim | Required capability/evidence |
+| --- | --- | --- |
+| 0. One-shot fallback | Voice works as turn-based dictation and playback. | Existing `/api/audio/transcribe` and `/api/audio/speak` paths work; realtime preflight can fail without stranding the microphone. |
+| 1. Portable realtime shell | The desktop can hold a realtime websocket session. | `/api/voice/realtime/status` is enabled; websocket auth and Host/Origin guards work; microphone frames, session state, barge-in events, playback generations, fallback, and durable transcript boundaries are covered by tests. |
+| 2. Text-oracle sidecar | Hermes can converse with live speech through STT/audio understanding and streaming TTS. | Sidecar `/health` advertises STT or audio-understanding plus `tts: true`; sidecar auth is configured; `hermes doctor --realtime-voice` passes; smoke reports include protocol and TTS evidence. |
+| 3. Live-like text oracle | The experience is close enough for private alpha live conversation. | `conversation_quality.live_like` is true, normally from `streaming_stt: true` plus `tts: true`; `voice.realtime.require_live_like: true` passes; EN/JA audio fixture and TTS smoke reports meet latency targets. |
+| 4. Gemma/frontend LLM path | Gemma 4 E4B-IT or another audio-capable frontend improves speech understanding without replacing Hermes. | The sidecar owns Gemma/vLLM media dependencies and returns sanitized transcript/frontend events; Hermes still calls the configured backend oracle model for tools, memory, files, MCP, approvals, and durable answers. |
+| 5. Native S2S path | A speech-to-speech sidecar handles low-level audio generation directly. | `engine: native_s2s_oracle`; sidecar `/health` advertises `native_s2s: true`; Hermes streams `oracle.hint`, enforces playback generations, and degrades rather than failing when hints are unavailable after session start. |
+| 6. Gemini Live-style production | The product can be compared to always-on commercial live voice APIs. | Multi-run latency distributions, barge-in reliability, remote sidecar degradation, TTS/provider failure behavior, EN/JA acceptance conversations, security review, and operator docs are all collected and reviewed. |
+
+Tier 2 is useful but not enough to claim Gemini Live-style interaction if it is utterance-based. Tier 3 is the first live-like private alpha target. Tier 4 can be reached with a remote model host or provider endpoint, but it is still a text-oracle architecture: Gemma is the speech frontend, not the Hermes authority. Tier 5 can be developed in parallel because it uses the same desktop protocol and Hermes oracle boundary; do not block native S2S work on finishing every text-oracle refinement.
+
+The ladder must stay portable. Documentation, config names, status payloads, doctor checks, and release notes should refer to capabilities such as `local`, `reference`, `sidecar`, `gemma4`, `vllm`, `streaming_stt`, `tts`, and `native_s2s`, not to a particular private workstation, accelerator product, tailnet host, or developer credential.
+
 ## Target File Layout
 
 ```text
@@ -245,6 +263,8 @@ Use this before treating a profile as live-voice ready. The strict gate requires
 ### Private Alpha Evidence Pack
 
 The shortest path to an evidence-backed private alpha is days, not weeks, if the scope stays on the portable sidecar contract and the first production languages remain English and Japanese. Do not gate alpha on a particular workstation, GPU, or native S2S model; gate it on repeatable artifacts from the configured realtime sidecar profile.
+
+Private alpha is not the same claim as Gemini Live-style production quality. Alpha readiness means one configured profile repeatedly proves live-like status, English/Japanese speech understanding, English/Japanese spoken output, barge-in plumbing, sanitized metadata, and latency targets through the doctor/report path. Production readiness also needs repeated human conversation sessions, noisy-room and headset coverage, remote-sidecar failure drills, provider/TTS outage behavior, transcript correction behavior, tool-call policy review, accessibility review, and clear operator docs for fallback.
 
 Minimum alpha fixture set:
 
