@@ -9,6 +9,7 @@ ready state, and round-trip a transcript turn through the realtime event stream.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple
@@ -259,9 +260,32 @@ async def run_realtime_voice_sidecar_barge_in_smoke(
     ready_ms: Optional[int] = None
     events: list[str] = []
     client = RealtimeVoiceSidecarClient()
+    event_queue: asyncio.Queue[VoiceEvent | None] = asyncio.Queue()
+    reader_task: Optional[asyncio.Task[None]] = None
+
+    async def read_events() -> None:
+        try:
+            async for event in client.events():
+                await event_queue.put(event)
+        finally:
+            await event_queue.put(None)
 
     try:
         await client.start(config)
+        reader_task = asyncio.create_task(read_events())
+        ready_ms, startup_events, startup_error = await _drain_barge_in_startup_events(
+            event_queue,
+            started_at=started_at,
+            timeout=timeout,
+        )
+        events.extend(startup_events)
+        if startup_error:
+            return RealtimeVoiceSidecarSmokeResult(
+                ok=False,
+                ready_ms=ready_ms,
+                events=tuple(events),
+                error=startup_error,
+            )
         await client.send_event(
             VoiceEvent(
                 type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
@@ -287,7 +311,6 @@ async def run_realtime_voice_sidecar_barge_in_smoke(
             )
         )
 
-        stream = client.events()
         deadline = started_at + timeout
         while True:
             remaining = deadline - time.perf_counter()
@@ -299,8 +322,15 @@ async def run_realtime_voice_sidecar_barge_in_smoke(
                     error=f"timed out after {timeout:g}s waiting for barge_in",
                 )
             try:
-                event = await asyncio.wait_for(anext(stream), timeout=remaining)
-            except StopAsyncIteration:
+                event = await asyncio.wait_for(event_queue.get(), timeout=remaining)
+            except asyncio.TimeoutError:
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=False,
+                    ready_ms=ready_ms,
+                    events=tuple(events),
+                    error=f"timed out after {timeout:g}s waiting for barge_in",
+                )
+            if event is None:
                 return RealtimeVoiceSidecarSmokeResult(
                     ok=False,
                     ready_ms=ready_ms,
@@ -340,4 +370,44 @@ async def run_realtime_voice_sidecar_barge_in_smoke(
             error=sanitize_realtime_voice_error(exc),
         )
     finally:
+        if reader_task is not None:
+            reader_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reader_task
         await client.close()
+
+
+async def _drain_barge_in_startup_events(
+    event_queue: asyncio.Queue[VoiceEvent | None],
+    *,
+    started_at: float,
+    timeout: float,
+) -> tuple[Optional[int], list[str], str]:
+    """Drain startup/degraded state so barge-in latency measures the ack path."""
+
+    ready_ms: Optional[int] = None
+    events: list[str] = []
+    deadline = time.perf_counter() + max(0.0, timeout)
+
+    while True:
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            return ready_ms, events, "timed out waiting for sidecar ready before barge_in"
+        try:
+            event = await asyncio.wait_for(event_queue.get(), timeout=remaining)
+        except asyncio.TimeoutError:
+            return ready_ms, events, "timed out waiting for sidecar ready before barge_in"
+        if event is None:
+            return ready_ms, events, "sidecar event stream ended before barge_in"
+
+        elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
+        events.append(event.type.value)
+        if event.type == VoiceEventType.FRONTEND_STATE:
+            if ready_ms is None:
+                ready_ms = elapsed_ms
+            if str(event.payload.get("status") or "").lower() == "ready":
+                return ready_ms, events, ""
+            continue
+        if event.type == VoiceEventType.SESSION_ERROR:
+            return ready_ms, events, str(event.payload.get("error") or "sidecar session error")
+        return ready_ms, events, ""
