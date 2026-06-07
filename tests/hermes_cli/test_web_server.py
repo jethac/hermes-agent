@@ -6146,6 +6146,7 @@ class TestRealtimeVoiceWebSocket:
                         "sidecar_token_env": "HERMES_VOICE_SIDECAR_TOKEN",
                         "sidecar_connect_timeout_seconds": 2.5,
                         "input_buffer_limit_bytes": 4096,
+                        "input_frame_ms": 80,
                     }
                 }
             },
@@ -6252,6 +6253,7 @@ class TestRealtimeVoiceWebSocket:
                         "sidecar_autostart": True,
                         "sidecar_connect_timeout_seconds": 3,
                         "input_buffer_limit_bytes": 4096,
+                        "input_frame_ms": 80,
                     }
                 }
             },
@@ -6266,6 +6268,7 @@ class TestRealtimeVoiceWebSocket:
         assert body["available"] is True
         assert body["frontend_provider"] == "gemma4"
         assert body["input_buffer_limit_bytes"] == 4096
+        assert body["input_frame_ms"] == 80
         assert body["sidecar"]["mode"] == "managed_loopback"
         assert body["sidecar"]["autostart"] is True
         assert body["sidecar"]["connect_timeout_seconds"] == 3
@@ -6355,6 +6358,26 @@ class TestRealtimeVoiceWebSocket:
         assert "secret" not in __import__("json").dumps(body["sidecar"]["health"])
         assert len(requests) == 2
         assert all(req.headers["Authorization"] == "Bearer secret-token" for req in requests)
+
+    def test_status_clamps_realtime_input_frame_ms(self, monkeypatch):
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "input_frame_ms": 5,
+                    }
+                }
+            },
+        )
+
+        response = self.client.get("/api/voice/realtime/status")
+
+        assert response.status_code == 200
+        assert response.json()["input_frame_ms"] == 40
 
     def test_status_reports_remote_unhealthy_sidecar_unavailable_and_redacted(self, monkeypatch):
         def fake_urlopen(url, timeout):

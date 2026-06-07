@@ -1985,6 +1985,7 @@ DEFAULT_CONFIG = {
             "input_codec": "webm_opus",
             "output_codec": "opus",
             "input_buffer_limit_bytes": 8388608,
+            "input_frame_ms": 100,
             "frontend_provider": "",
             "frontend_model": "",
             "sidecar_base_url": "",

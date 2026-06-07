@@ -10,6 +10,7 @@ import {
   realtimeAudioInputPayload,
   realtimeBinaryAudioInputFrame,
   realtimeVoiceCloseAction,
+  realtimeVoiceInputFrameMs,
   realtimeVoicePlaybackGeneration,
   realtimeVoiceSessionStatus,
   realtimeVoiceUrl,
@@ -338,6 +339,19 @@ describe('shouldSendRealtimeAudioFrame', () => {
       endOfUtterance: true,
       maxBufferedBytes: 256
     })).toBe(true)
+  })
+})
+
+describe('realtimeVoiceInputFrameMs', () => {
+  it('defaults to low-latency 100 ms microphone frames', () => {
+    expect(realtimeVoiceInputFrameMs(undefined)).toBe(100)
+    expect(realtimeVoiceInputFrameMs('fast')).toBe(100)
+  })
+
+  it('rounds and clamps configured microphone frame duration', () => {
+    expect(realtimeVoiceInputFrameMs(79.6)).toBe(80)
+    expect(realtimeVoiceInputFrameMs(10)).toBe(40)
+    expect(realtimeVoiceInputFrameMs(1_000)).toBe(500)
   })
 })
 
