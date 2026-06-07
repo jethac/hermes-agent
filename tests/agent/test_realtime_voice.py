@@ -1126,3 +1126,41 @@ def test_native_s2s_engine_barge_in_cancels_active_oracle_hint():
         assert ack.payload["playback_generation"] == 2
 
     asyncio.run(run())
+
+
+def test_native_s2s_engine_close_awaits_reader_task():
+    class FakeWs:
+        def __init__(self):
+            self.closed = False
+
+        async def close(self):
+            self.closed = True
+
+    async def run():
+        cancelled = {"reader": False}
+
+        async def reader():
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                cancelled["reader"] = True
+                raise
+
+        ws = FakeWs()
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = ws
+        engine._reader_task = asyncio.create_task(reader())
+        await asyncio.sleep(0)
+
+        await engine.close()
+
+        assert cancelled["reader"] is True
+        assert engine._reader_task.done()
+        assert ws.closed is True
+
+    asyncio.run(run())

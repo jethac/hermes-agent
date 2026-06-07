@@ -89,6 +89,8 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         self._cancel_oracle_hint()
         if self._reader_task:
             self._reader_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._reader_task
         if self._ws is not None:
             await self._ws.close()
         if self._oracle_hint_task:
