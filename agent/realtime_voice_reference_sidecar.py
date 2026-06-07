@@ -37,6 +37,7 @@ from agent.realtime_voice_errors import sanitize_realtime_voice_error
 
 TranscribeFn = Callable[[str], Mapping[str, Any]]
 SynthesizeFn = Callable[[str], Any]
+REFERENCE_SIDECAR_CLOSE_DRAIN_TIMEOUT_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -221,9 +222,13 @@ class ReferenceRealtimeVoiceSidecarSession:
         return tasks
 
     async def _drain_cancelled_tasks(self, tasks: list[asyncio.Task[None]]) -> None:
-        for task in tasks:
+        if not tasks:
+            return
+        done, pending = await asyncio.wait(tasks, timeout=REFERENCE_SIDECAR_CLOSE_DRAIN_TIMEOUT_SECONDS)
+        self._active_tasks.difference_update(pending)
+        for task in done:
             try:
-                await task
+                task.result()
             except (asyncio.CancelledError, Exception):
                 pass
 
