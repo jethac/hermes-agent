@@ -288,6 +288,10 @@ function finiteNonNegativeMs(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
 }
 
+function finitePositiveMs(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
+}
+
 function realtimeVoiceLanguageMetadata(payload?: Record<string, unknown>): RealtimeVoiceLanguageMetadata {
   const metadata: RealtimeVoiceLanguageMetadata = {}
 
@@ -359,12 +363,12 @@ export function realtimeVoiceQualityTargets(status: RealtimeVoiceStatus | null):
 
   return {
     audio_to_partial_transcript_ms:
-      finiteNonNegativeMs(raw?.audio_to_partial_transcript_ms) ?? 300,
-    barge_in_ack_ms: finiteNonNegativeMs(raw?.barge_in_ack_ms) ?? 150,
+      finitePositiveMs(raw?.audio_to_partial_transcript_ms) ?? 300,
+    barge_in_ack_ms: finitePositiveMs(raw?.barge_in_ack_ms) ?? 150,
     final_transcript_to_first_audio_ms:
-      finiteNonNegativeMs(raw?.final_transcript_to_first_audio_ms) ?? 900,
+      finitePositiveMs(raw?.final_transcript_to_first_audio_ms) ?? 900,
     final_transcript_to_first_text_ms:
-      finiteNonNegativeMs(raw?.final_transcript_to_first_text_ms) ?? 500
+      finitePositiveMs(raw?.final_transcript_to_first_text_ms) ?? 500
   }
 }
 

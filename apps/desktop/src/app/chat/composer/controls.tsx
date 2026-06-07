@@ -289,6 +289,7 @@ export function realtimeVoiceQuality(
 ): RealtimeVoiceQuality | null {
   const rows = [
     metricRow('ASR', metrics?.audioToPartialTranscriptMs, targets?.audio_to_partial_transcript_ms ?? 300),
+    metricRow('Text', metrics?.finalTranscriptToFirstTextMs, targets?.final_transcript_to_first_text_ms ?? 500),
     metricRow('Audio', metrics?.finalTranscriptToFirstAudioMs, targets?.final_transcript_to_first_audio_ms ?? 900),
     metricRow('Barge', metrics?.bargeInAckMs, targets?.barge_in_ack_ms ?? 150)
   ].filter((row): row is RealtimeVoiceQuality['tooltip'][number] => row !== null)

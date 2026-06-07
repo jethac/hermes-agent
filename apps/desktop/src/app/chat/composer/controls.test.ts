@@ -22,9 +22,20 @@ describe('realtimeVoiceQuality', () => {
     expect(realtimeVoiceQuality({
       audioToPartialTranscriptMs: 180,
       bargeInAckMs: 170,
+      finalTranscriptToFirstTextMs: 220,
       finalTranscriptToFirstAudioMs: 650
     })).toMatchObject({
       primaryMs: 650,
+      state: 'slow'
+    })
+  })
+
+  it('marks slow when assistant text misses its target before audio arrives', () => {
+    expect(realtimeVoiceQuality({
+      audioToPartialTranscriptMs: 180,
+      finalTranscriptToFirstTextMs: 650
+    })).toMatchObject({
+      primaryMs: 180,
       state: 'slow'
     })
   })
@@ -33,10 +44,12 @@ describe('realtimeVoiceQuality', () => {
     expect(realtimeVoiceQuality({
       audioToPartialTranscriptMs: 180,
       bargeInAckMs: 170,
+      finalTranscriptToFirstTextMs: 450,
       finalTranscriptToFirstAudioMs: 650
     }, {
       audio_to_partial_transcript_ms: 300,
       barge_in_ack_ms: 200,
+      final_transcript_to_first_text_ms: 500,
       final_transcript_to_first_audio_ms: 700
     })).toMatchObject({
       primaryMs: 650,
