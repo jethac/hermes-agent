@@ -14,6 +14,7 @@ from agent.realtime_voice_smoke_report import (
     summarize_realtime_voice_smoke_report_runs,
     validate_realtime_voice_alpha_report_runs,
 )
+from agent.realtime_voice_errors import sanitize_realtime_voice_error
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -85,9 +86,19 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  - {fixture}", file=sys.stderr)
         return 1
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        from hermes_cli.doctor import _realtime_voice_smoke_config, run_doctor
 
-    from hermes_cli.doctor import run_doctor
+        _realtime_voice_smoke_config()
+    except Exception as exc:
+        print(
+            "Realtime voice alpha evidence failed: realtime voice smoke is not configured "
+            f"({sanitize_realtime_voice_error(exc)})",
+            file=sys.stderr,
+        )
+        return 1
+
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     for ordinal, report_path in enumerate(report_paths, start=1):
         print(f"Realtime voice alpha evidence run {ordinal}/{run_count}: {report_path}")
