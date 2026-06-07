@@ -185,6 +185,40 @@ def test_deepgram_preset_apply_can_generate_bridge_token(monkeypatch, tmp_path, 
     assert env["HERMES_STREAMING_STT_BRIDGE_TOKEN"] not in output
 
 
+def test_deepgram_preset_apply_persists_custom_bridge_token_env(monkeypatch, tmp_path, capsys):
+    saved = {}
+    env = {}
+    writes = {}
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {"model": {"provider": "openrouter"}},
+    )
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+    monkeypatch.setattr("hermes_cli.config.load_env", lambda: dict(env))
+    monkeypatch.setattr("hermes_cli.config.save_env_value", lambda key, value: writes.setdefault(key, value))
+
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "deepgram",
+            "--apply",
+            "--generate-bridge-token",
+            "--streaming-stt-token-env",
+            "CUSTOM_BRIDGE_TOKEN",
+            "--streaming-tts-token-env",
+            "CUSTOM_BRIDGE_TOKEN",
+        ]
+    )
+
+    assert result == 0
+    assert "CUSTOM_BRIDGE_TOKEN" in writes
+    assert writes["HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV"] == "CUSTOM_BRIDGE_TOKEN"
+    assert "CUSTOM_BRIDGE_TOKEN" == saved["config"]["voice"]["realtime"]["streaming_stt_token_env"]
+    output = capsys.readouterr().out
+    assert writes["CUSTOM_BRIDGE_TOKEN"] not in output
+
+
 def test_deepgram_preset_apply_does_not_overwrite_existing_bridge_token(monkeypatch, tmp_path, capsys):
     saved = {}
     env = {"HERMES_STREAMING_STT_BRIDGE_TOKEN": "existing-token"}

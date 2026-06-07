@@ -327,6 +327,7 @@ def test_deepgram_bridge_cli_generate_token_accepts_custom_env(monkeypatch):
 
     assert result == 0
     assert "CUSTOM_BRIDGE_TOKEN" in saved
+    assert saved["HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV"] == "CUSTOM_BRIDGE_TOKEN"
     assert os.environ["HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV"] == "CUSTOM_BRIDGE_TOKEN"
 
 
