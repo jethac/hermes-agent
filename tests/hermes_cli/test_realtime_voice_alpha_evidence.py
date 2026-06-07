@@ -114,6 +114,12 @@ def _valid_alpha_report():
                 "reason": "streaming_stt_tts",
                 "sidecar_verified": True,
             },
+            "quality_targets_ms": {
+                "audio_to_partial_transcript_ms": 300,
+                "final_transcript_to_first_text_ms": 500,
+                "final_transcript_to_first_audio_ms": 900,
+                "barge_in_ack_ms": 150,
+            },
             "sidecar": {
                 "healthy": True,
                 "health": {
