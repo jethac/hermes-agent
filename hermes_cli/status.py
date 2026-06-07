@@ -140,10 +140,43 @@ def _print_realtime_voice_status() -> None:
     production_issues = production.get("issues") if isinstance(production.get("issues"), list) else []
     issue_suffix = f" ({', '.join(str(issue) for issue in production_issues[:3])})" if production_issues else ""
     print(f"  Production:   {check_mark(production_ready is True)} {production_level}{issue_suffix}")
+    evidence_line = _realtime_voice_evidence_line(production)
+    if evidence_line:
+        print(f"  Evidence:     {evidence_line}")
     print(f"  Require live: {_format_realtime_voice_bool(payload.get('require_live_like'))}")
     sidecar_mode = str(sidecar.get("mode") or "none")
     healthy = sidecar.get("healthy")
     print(f"  Sidecar:      {sidecar_mode} (healthy: {_format_realtime_voice_bool(healthy)})")
+
+
+def _realtime_voice_evidence_line(production: Mapping[str, Any]) -> str:
+    evidence = production.get("evidence")
+    if not isinstance(evidence, Mapping):
+        return ""
+    runs = evidence.get("runs")
+    min_runs = evidence.get("min_runs")
+    if not isinstance(runs, int) or not isinstance(min_runs, int):
+        return ""
+    parts = [f"runs {runs}/{min_runs}"]
+    summary = evidence.get("summary")
+    latency = summary.get("latency_ms") if isinstance(summary, Mapping) else None
+    if isinstance(latency, Mapping):
+        metric_parts = [
+            _realtime_voice_latency_summary_part(latency, "audio_to_partial_transcript", "partial"),
+            _realtime_voice_latency_summary_part(latency, "final_transcript_to_first_audio", "audio"),
+            _realtime_voice_latency_summary_part(latency, "barge_in_ack", "barge"),
+        ]
+        parts.extend(part for part in metric_parts if part)
+    return "; ".join(parts)
+
+
+def _realtime_voice_latency_summary_part(latency: Mapping[str, Any], key: str, label: str) -> str:
+    value = latency.get(key)
+    if not isinstance(value, Mapping) or not value.get("count"):
+        return ""
+    p95 = value.get("p95")
+    max_ms = value.get("max")
+    return f"{label} p95={p95}ms max={max_ms}ms"
 
 
 from hermes_constants import is_termux as _is_termux
