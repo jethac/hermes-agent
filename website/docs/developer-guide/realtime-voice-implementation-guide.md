@@ -328,6 +328,15 @@ After `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alp
 
 When the evidence gate passes, `production_readiness.level` becomes `evidence_ready`, not `production_ready`. To make the final production claim, set `voice.realtime.production_review_report` to a JSON file like:
 
+```bash
+python -m hermes_cli.realtime_voice_production_review \
+  ./artifacts/realtime-voice-production-review.json \
+  --write-template \
+  --reviewer "Realtime voice QA"
+python -m hermes_cli.realtime_voice_production_review \
+  ./artifacts/realtime-voice-production-review.json
+```
+
 ```json
 {
   "kind": "realtime_voice_production_review",
