@@ -12655,6 +12655,7 @@ def _realtime_voice_production_evidence_payload(realtime: Dict[str, Any]) -> Dic
             "configured": False,
             "verified": False,
             "report_path": None,
+            "runs": 0,
             "min_runs": min_runs,
             "issues": ["missing_evidence_report"],
         }

@@ -40,6 +40,17 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
                 "ready": True,
                 "level": "production_ready",
                 "issues": [],
+                "evidence": {
+                    "runs": 3,
+                    "min_runs": 3,
+                    "summary": {
+                        "latency_ms": {
+                            "audio_to_partial_transcript": {"count": 12, "p95": 120, "max": 140},
+                            "final_transcript_to_first_audio": {"count": 12, "p95": 420, "max": 500},
+                            "barge_in_ack": {"count": 3, "p95": 55, "max": 60},
+                        }
+                    },
+                },
             },
             "sidecar": {
                 "mode": "external",
@@ -60,6 +71,11 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
     assert "Live-like:    yes" in output
     assert "Production:" in output
     assert "production_ready" in output
+    assert "Evidence:" in output
+    assert "runs 3/3" in output
+    assert "partial p95=120ms max=140ms" in output
+    assert "audio p95=420ms max=500ms" in output
+    assert "barge p95=55ms max=60ms" in output
     assert "Require live: yes" in output
     assert "Sidecar:      external (healthy: yes)" in output
 
@@ -91,6 +107,14 @@ def test_show_status_reports_realtime_voice_live_like_required(monkeypatch, caps
                 "ready": False,
                 "level": "not_ready",
                 "issues": ["live_like_required", "not_live_like"],
+                "evidence": {
+                    "configured": False,
+                    "verified": False,
+                    "report_path": None,
+                    "runs": 0,
+                    "min_runs": 3,
+                    "issues": ["missing_evidence_report"],
+                },
             },
             "sidecar": {
                 "mode": "external",
@@ -107,6 +131,7 @@ def test_show_status_reports_realtime_voice_live_like_required(monkeypatch, caps
     assert "turn_based_text (utterance_stt_tts)" in output
     assert "Live-like:    no" in output
     assert "not_ready (live_like_required, not_live_like)" in output
+    assert "runs 0/3" in output
     assert "Require live: yes" in output
 
 
