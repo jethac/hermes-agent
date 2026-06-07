@@ -1183,6 +1183,50 @@ def test_text_engine_auto_barge_in_on_new_speech_while_answering(monkeypatch):
     asyncio.run(run())
 
 
+def test_text_engine_close_suppresses_cancelled_turn_commit(monkeypatch):
+    class SlowOracle:
+        async def stream_answer(self, transcript: str):
+            yield "Answer starts. "
+            await asyncio.Event().wait()
+            yield "stale"
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        engine = TextOracleTTSEngine(oracle=SlowOracle())
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello"},
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                break
+
+        await engine.close()
+
+        async for event in engine.events():
+            seen.append(event)
+
+        assert seen[-1].type == VoiceEventType.SESSION_CLOSED
+        assert not any(
+            event.type == VoiceEventType.ASSISTANT_COMMIT and event.payload.get("interrupted") is True
+            for event in seen
+        )
+
+    asyncio.run(run())
+
+
 def test_text_engine_suppresses_stale_cancelled_commit_when_new_turn_starts(monkeypatch):
     class BlockingOracle:
         def __init__(self):

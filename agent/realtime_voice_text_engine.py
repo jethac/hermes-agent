@@ -154,6 +154,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._closed = True
         if self._active_task and not self._active_task.done():
             self._active_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._active_task
         if self._sidecar_task and not self._sidecar_task.done():
             self._sidecar_task.cancel()
         if self._sidecar is not None:
@@ -470,7 +472,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 )
         except asyncio.CancelledError:
             await cancel_speak_tasks()
-            if playback_generation == self._playback_generation:
+            if not self._closed and playback_generation == self._playback_generation:
                 await self._emit(
                     VoiceEventType.ASSISTANT_COMMIT,
                     {"interrupted": True, "text": "", "playback_generation": playback_generation},
