@@ -21,6 +21,17 @@ ALPHA_REQUIRED_AUDIO_FIXTURES = (
     "./fixtures/realtime-voice/ja/tool-question.webm",
 )
 
+ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS = {
+    "./fixtures/realtime-voice/en/hello.webm": "Hello from Hermes.",
+    "./fixtures/realtime-voice/en/tool-question.webm": (
+        "What files can Hermes see in this workspace?"
+    ),
+    "./fixtures/realtime-voice/ja/hello.webm": "こんにちは、Hermesです。",
+    "./fixtures/realtime-voice/ja/tool-question.webm": (
+        "Hermesはこのワークスペースで何を確認できますか？"
+    ),
+}
+
 ALPHA_REQUIRED_TTS_TEXTS = (
     "Hello from Hermes.",
     "Can you hear me clearly?",

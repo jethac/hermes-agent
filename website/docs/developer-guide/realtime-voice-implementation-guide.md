@@ -339,11 +339,16 @@ Minimum TTS phrase set:
 For a private alpha release candidate, collect one JSON report per profile/run. For production readiness, collect at least three passing runs and point `production_evidence_report` at the directory that contains them:
 
 ```bash
+python -m hermes_cli.realtime_voice_fixture_pack \
+  --output-dir ./fixtures/realtime-voice \
+  --overwrite
 python -m hermes_cli.realtime_voice_alpha_evidence \
   --output-dir ./artifacts/realtime-voice-evidence \
   --runs 3
 python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-evidence/*.json --alpha --min-runs 3
 ```
+
+`realtime_voice_fixture_pack` uses Hermes' configured TTS provider to generate the required English/Japanese input utterances and converts them to WebM/Opus with `ffmpeg`. Teams may replace those generated files with hand-recorded fixtures, but the filenames and utterance intent should stay stable so report validation remains comparable across machines and sidecar providers.
 
 The alpha evidence helper preflights the four required audio fixture paths before starting any doctor run or sidecar smoke. If a fixture is missing, it fails immediately with the exact path to create, preserving the documented relative fixture identifiers used by report validation.
 
