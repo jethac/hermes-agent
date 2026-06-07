@@ -160,6 +160,7 @@ def test_deepgram_preset_apply_prints_bridge_next_steps(monkeypatch, tmp_path, c
     assert "realtime_voice_deepgram_bridge --check --strict" in output
     assert "--production-en-ja" in output
     assert "realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --production-en-ja" in output
+    assert "realtime_voice_alpha_evidence --runs 3 --apply" in output
 
 
 def test_deepgram_preset_apply_can_generate_bridge_token(monkeypatch, tmp_path, capsys):

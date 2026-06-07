@@ -140,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
                 "--host 127.0.0.1 --port 8766 --production-en-ja"
             )
         print("  python -m hermes_cli.realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice")
-        print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3")
+        print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply")
         return 0
 
     print(yaml.safe_dump({"voice": {"realtime": profile}}, sort_keys=False, allow_unicode=True).rstrip())

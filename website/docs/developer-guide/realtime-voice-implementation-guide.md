@@ -389,7 +389,8 @@ python -m hermes_cli.realtime_voice_fixture_pack \
   --overwrite
 python -m hermes_cli.realtime_voice_alpha_evidence \
   --output-dir ./artifacts/realtime-voice-evidence \
-  --runs 3
+  --runs 3 \
+  --apply
 python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-evidence/*.json --alpha --min-runs 3
 ```
 
