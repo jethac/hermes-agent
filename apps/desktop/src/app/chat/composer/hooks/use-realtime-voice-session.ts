@@ -89,6 +89,12 @@ interface RealtimeAudioInputPayloadOptions {
   mimeType: string
 }
 
+interface RealtimeEndMarkerInput {
+  closingInput: boolean
+  sentEndOfUtterance: boolean
+  stoppedForSilence: boolean
+}
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -195,6 +201,14 @@ export function realtimeAudioInputPayload({
   }
 }
 
+export function shouldSendRealtimeVoiceEndMarker({
+  closingInput,
+  sentEndOfUtterance,
+  stoppedForSilence
+}: RealtimeEndMarkerInput): boolean {
+  return stoppedForSilence && !closingInput && !sentEndOfUtterance
+}
+
 export function realtimeVoicePlaybackGeneration(payload?: Record<string, unknown>): number | null {
   const value = payload?.playback_generation
 
@@ -270,6 +284,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const sessionRef = useRef(`voice-${Math.random().toString(36).slice(2)}`)
   const heardSpeechRef = useRef(false)
   const silenceStartedAtRef = useRef<number | null>(null)
+  const sentEndOfUtteranceRef = useRef(false)
   const stoppingForSilenceRef = useRef(false)
   const playbackQueueRef = useRef<PlaybackItem[]>([])
   const playingRef = useRef<HTMLAudioElement | null>(null)
@@ -347,6 +362,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
       recorderRef.current = recorder
       stoppingForSilenceRef.current = false
+      sentEndOfUtteranceRef.current = false
       silenceStartedAtRef.current = null
 
       recorder.ondataavailable = event => {
@@ -359,6 +375,9 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
         const endOfUtterance = stoppingForSilenceRef.current
         const recorderMimeType = recorder.mimeType
+        if (endOfUtterance) {
+          sentEndOfUtteranceRef.current = true
+        }
 
         void blobToBase64(event.data).then(data_b64 => {
           sendEvent('audio.input.chunk', realtimeAudioInputPayload({
@@ -371,10 +390,24 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
       recorder.onstop = () => {
         const isCurrentRecorder = recorderRef.current === recorder
+        const stoppedForSilence = stoppingForSilenceRef.current
+        if (shouldSendRealtimeVoiceEndMarker({
+          closingInput: closingInputRef.current,
+          sentEndOfUtterance: sentEndOfUtteranceRef.current,
+          stoppedForSilence
+        })) {
+          sendEvent('audio.input.chunk', realtimeAudioInputPayload({
+            dataB64: '',
+            endOfUtterance: true,
+            mimeType: recorder.mimeType
+          }))
+          sentEndOfUtteranceRef.current = true
+        }
         if (isCurrentRecorder) {
           recorderRef.current = null
         }
         stoppingForSilenceRef.current = false
+        sentEndOfUtteranceRef.current = false
         if (!closingInputRef.current && isCurrentRecorder) {
           setStatus('thinking')
         }
@@ -492,6 +525,9 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     }
 
     stoppingForSilenceRef.current = true
+    if (recorder.state === 'recording') {
+      recorder.requestData()
+    }
     recorder.stop()
   }, [])
 

@@ -8,6 +8,7 @@ import {
   realtimeVoicePlaybackGeneration,
   realtimeVoiceUrl,
   shouldDropStaleRealtimeVoiceEvent,
+  shouldSendRealtimeVoiceEndMarker,
   updateRealtimeVoiceBargeInGate
 } from './use-realtime-voice-session'
 
@@ -203,6 +204,34 @@ describe('realtimeAudioInputPayload', () => {
       codec: 'opus',
       end_of_utterance: false
     })
+  })
+})
+
+describe('shouldSendRealtimeVoiceEndMarker', () => {
+  it('sends a fallback end marker when silence stopped the recorder before a final chunk was sent', () => {
+    expect(shouldSendRealtimeVoiceEndMarker({
+      closingInput: false,
+      sentEndOfUtterance: false,
+      stoppedForSilence: true
+    })).toBe(true)
+  })
+
+  it('does not send duplicate or shutdown end markers', () => {
+    expect(shouldSendRealtimeVoiceEndMarker({
+      closingInput: false,
+      sentEndOfUtterance: true,
+      stoppedForSilence: true
+    })).toBe(false)
+    expect(shouldSendRealtimeVoiceEndMarker({
+      closingInput: true,
+      sentEndOfUtterance: false,
+      stoppedForSilence: true
+    })).toBe(false)
+    expect(shouldSendRealtimeVoiceEndMarker({
+      closingInput: false,
+      sentEndOfUtterance: false,
+      stoppedForSilence: false
+    })).toBe(false)
   })
 })
 
