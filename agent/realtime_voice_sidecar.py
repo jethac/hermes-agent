@@ -51,10 +51,15 @@ class RealtimeVoiceSidecarClient:
         headers = {}
         if config.effective_sidecar_token:
             headers["Authorization"] = f"Bearer {config.effective_sidecar_token}"
+        timeout = max(0.1, float(config.sidecar_connect_timeout_seconds or 10.0))
         try:
-            self._ws = await websockets.connect(url, additional_headers=headers or None)
+            connect = websockets.connect(url, additional_headers=headers or None)
         except TypeError:
-            self._ws = await websockets.connect(url, extra_headers=headers or None)
+            connect = websockets.connect(url, extra_headers=headers or None)
+        try:
+            self._ws = await asyncio.wait_for(connect, timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError(f"realtime voice sidecar connect timed out after {timeout:g}s") from exc
         await self._ws.send(json.dumps({"type": "session.config", "payload": config.to_wire()}))
         self._reader_task = asyncio.create_task(self._read_events())
 

@@ -94,6 +94,7 @@ class RealtimeVoiceSessionConfig:
     tts_provider: Optional[str] = None
     sidecar_base_url: Optional[str] = None
     sidecar_token: Optional[str] = None
+    sidecar_connect_timeout_seconds: float = 10.0
     spark_base_url: Optional[str] = None
     spark_token: Optional[str] = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
@@ -122,6 +123,7 @@ class RealtimeVoiceSessionConfig:
             "tts_provider": self.tts_provider,
             "sidecar_base_url": sidecar_base_url,
             "sidecar_token": sidecar_token,
+            "sidecar_connect_timeout_seconds": self.sidecar_connect_timeout_seconds,
             "spark_base_url": sidecar_base_url,
             "spark_token": sidecar_token,
             "metadata": dict(self.metadata),
@@ -142,6 +144,10 @@ class RealtimeVoiceSessionConfig:
             tts_provider=_optional_str(payload.get("tts_provider")),
             sidecar_base_url=_optional_str(payload.get("sidecar_base_url")),
             sidecar_token=_optional_str(payload.get("sidecar_token")),
+            sidecar_connect_timeout_seconds=_positive_float(
+                payload.get("sidecar_connect_timeout_seconds"),
+                default=10.0,
+            ),
             spark_base_url=_optional_str(payload.get("spark_base_url")),
             spark_token=_optional_str(payload.get("spark_token")),
             metadata=_mapping(payload.get("metadata")),
@@ -256,3 +262,13 @@ def _mapping(value: Any) -> Dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError("expected an object mapping")
     return dict(value)
+
+
+def _positive_float(value: Any, *, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default

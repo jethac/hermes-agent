@@ -6115,6 +6115,7 @@ class TestRealtimeVoiceWebSocket:
                         "frontend_model": "gemma-4-e4b",
                         "sidecar_base_url": "http://voice.local:8080",
                         "sidecar_token_env": "HERMES_VOICE_SIDECAR_TOKEN",
+                        "sidecar_connect_timeout_seconds": 2.5,
                     }
                 }
             },
@@ -6128,6 +6129,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.frontend_model == "gemma-4-e4b"
         assert config.sidecar_base_url == "http://voice.local:8080"
         assert config.sidecar_token == "secret-token"
+        assert config.sidecar_connect_timeout_seconds == 2.5
         assert config.spark_base_url == "http://voice.local:8080"
         assert config.spark_token == "secret-token"
 
@@ -6217,6 +6219,7 @@ class TestRealtimeVoiceWebSocket:
                         "sidecar_host": "127.0.0.1",
                         "sidecar_port": 8765,
                         "sidecar_autostart": True,
+                        "sidecar_connect_timeout_seconds": 3,
                     }
                 }
             },
@@ -6232,6 +6235,7 @@ class TestRealtimeVoiceWebSocket:
         assert body["frontend_provider"] == "gemma4"
         assert body["sidecar"]["mode"] == "managed_loopback"
         assert body["sidecar"]["autostart"] is True
+        assert body["sidecar"]["connect_timeout_seconds"] == 3
         assert body["sidecar"]["loopback"] is True
         assert body["sidecar"]["healthy"] is False
 
