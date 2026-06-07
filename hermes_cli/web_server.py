@@ -12838,7 +12838,11 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         ),
         spark_base_url=str(sidecar_base_url or "") or None,
         spark_token=str(sidecar_token or "") or None,
-        metadata={"source": "desktop", "language_support": language_support},
+        metadata={
+            "source": "desktop",
+            "language_support": language_support,
+            "quality_targets_ms": quality_targets_ms,
+        },
     )
 
 

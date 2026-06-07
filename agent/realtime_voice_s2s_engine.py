@@ -21,6 +21,7 @@ from agent.realtime_voice import (
     create_realtime_voice_event_queue,
     event_from_binary_audio_frame,
     put_realtime_voice_event,
+    realtime_voice_session_contract_payload,
     transcript_event_payload_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
@@ -63,7 +64,18 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         self.config = config
         self._oracle = HermesRealtimeOracle(config)
         await self._connect_sidecar(config)
-        await self._emit(VoiceEventType.SESSION_STARTED, {"engine": self.kind.value})
+        await self._emit(
+            VoiceEventType.SESSION_STARTED,
+            {
+                "engine": self.kind.value,
+                "input_codec": config.input_codec.value,
+                "output_codec": config.output_codec.value,
+                "frontend_provider": config.frontend_provider or "",
+                "frontend_model": config.frontend_model or "",
+                "sidecar": True,
+                **realtime_voice_session_contract_payload(config),
+            },
+        )
 
     async def receive_event(self, event: VoiceEvent) -> None:
         if self._closed:

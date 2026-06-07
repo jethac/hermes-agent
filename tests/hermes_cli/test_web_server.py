@@ -6298,6 +6298,12 @@ class TestRealtimeVoiceWebSocket:
             "best_effort_languages": True,
             "sidecar_languages_are_diagnostics": True,
         }
+        assert config.metadata["quality_targets_ms"] == {
+            "audio_to_partial_transcript_ms": 300,
+            "final_transcript_to_first_text_ms": 500,
+            "final_transcript_to_first_audio_ms": 900,
+            "barge_in_ack_ms": 150,
+        }
 
     def test_config_defaults_local_frontend_to_reference_sidecar(self, monkeypatch):
         class FakeWebSocket:

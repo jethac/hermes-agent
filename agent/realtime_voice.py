@@ -258,6 +258,18 @@ class RealtimeVoiceEngine(abc.ABC):
         """Release resources and stop background work."""
 
 
+def realtime_voice_session_contract_payload(config: RealtimeVoiceSessionConfig) -> Dict[str, Any]:
+    """Return sanitized, non-secret session contract metadata for client events."""
+
+    metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
+    payload: Dict[str, Any] = {}
+    for key in ("language_support", "quality_targets_ms"):
+        value = metadata.get(key)
+        if isinstance(value, Mapping):
+            payload[key] = dict(value)
+    return payload
+
+
 def binary_audio_frame_from_event(event: VoiceEvent) -> Optional[bytes]:
     payload = dict(event.payload)
     raw = payload.pop("data_b64", None)

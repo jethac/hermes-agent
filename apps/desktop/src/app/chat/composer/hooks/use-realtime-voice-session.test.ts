@@ -26,6 +26,7 @@ import {
   realtimeVoiceSilenceTimeoutMs,
   realtimeVoiceUnavailableFrontendState,
   realtimeVoiceQualityTargets,
+  realtimeVoiceQualityTargetsFromPayload,
   realtimeVoiceUrl,
   shouldDropQueuedRealtimeAudioInput,
   shouldDropStaleRealtimeVoiceEvent,
@@ -213,6 +214,26 @@ describe('realtimeVoiceQualityTargets', () => {
       }
     })).toEqual({
       audio_to_partial_transcript_ms: 250,
+      barge_in_ack_ms: 150,
+      final_transcript_to_first_audio_ms: 900,
+      final_transcript_to_first_text_ms: 500
+    })
+  })
+
+  it('uses session-start payload targets without requiring status preflight', () => {
+    expect(realtimeVoiceQualityTargetsFromPayload({
+      audio_to_partial_transcript_ms: 220,
+      barge_in_ack_ms: 130,
+      final_transcript_to_first_audio_ms: 800,
+      final_transcript_to_first_text_ms: 420
+    })).toEqual({
+      audio_to_partial_transcript_ms: 220,
+      barge_in_ack_ms: 130,
+      final_transcript_to_first_audio_ms: 800,
+      final_transcript_to_first_text_ms: 420
+    })
+    expect(realtimeVoiceQualityTargetsFromPayload('slow')).toEqual({
+      audio_to_partial_transcript_ms: 300,
       barge_in_ack_ms: 150,
       final_transcript_to_first_audio_ms: 900,
       final_transcript_to_first_text_ms: 500
