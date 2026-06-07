@@ -181,6 +181,7 @@ export function ChatBar({
   focusKey,
   gateway,
   maxRecordingSeconds = 120,
+  realtimeVoiceEnabled = false,
   queueSessionKey,
   sessionId,
   state,
@@ -2000,7 +2001,9 @@ export function ChatBar({
     onFatalError: () => setVoiceConversationActive(false),
     onSubmit: submitVoiceTurn,
     onTranscribeAudio,
-    pendingResponse
+    pendingResponse,
+    realtimeEnabled: realtimeVoiceEnabled,
+    sessionId
   })
 
   // The `composer.voice` hotkey (Ctrl+B) toggles the conversation. Starting

@@ -4,6 +4,7 @@ import { useI18n } from '@/i18n'
 import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback'
 import { notify, notifyError } from '@/store/notifications'
 
+import { useRealtimeVoiceSession } from './use-realtime-voice-session'
 import { useMicRecorder } from './use-mic-recorder'
 
 export type ConversationStatus = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking'
@@ -21,7 +22,9 @@ interface VoiceConversationOptions {
   onSubmit: (text: string) => Promise<void> | void
   onTranscribeAudio?: (audio: Blob) => Promise<string>
   pendingResponse: () => PendingVoiceResponse | null
+  realtimeEnabled?: boolean
   consumePendingResponse: () => void
+  sessionId?: null | string
 }
 
 export function useVoiceConversation({
@@ -31,6 +34,8 @@ export function useVoiceConversation({
   onSubmit,
   onTranscribeAudio,
   pendingResponse,
+  realtimeEnabled = false,
+  sessionId,
   consumePendingResponse
 }: VoiceConversationOptions) {
   const { t } = useI18n()
@@ -50,6 +55,12 @@ export function useVoiceConversation({
   const busyRef = useRef(busy)
   const statusRef = useRef<ConversationStatus>('idle')
   const wasEnabledRef = useRef(enabled)
+  const realtime = useRealtimeVoiceSession({
+    busy,
+    enabled: enabled && realtimeEnabled,
+    onFatalError,
+    sessionId
+  })
 
   useEffect(() => {
     enabledRef.current = enabled
@@ -385,6 +396,10 @@ export function useVoiceConversation({
   }, [busy, consumePendingResponse, enabled, muted, pendingResponse, speak, startListening, status])
 
   useEffect(() => {
+    if (realtimeEnabled) {
+      return
+    }
+
     if (enabled && !wasEnabledRef.current) {
       void start()
     }
@@ -394,7 +409,11 @@ export function useVoiceConversation({
     }
 
     wasEnabledRef.current = enabled
-  }, [enabled, end, start])
+  }, [enabled, end, realtimeEnabled, start])
+
+  if (realtimeEnabled) {
+    return realtime
+  }
 
   return { end, level, muted, start, status, stopTurn, toggleMute }
 }

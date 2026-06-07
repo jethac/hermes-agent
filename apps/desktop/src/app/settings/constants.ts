@@ -259,7 +259,10 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   'tts.elevenlabs.model_id': ['eleven_multilingual_v2', 'eleven_turbo_v2_5', 'eleven_flash_v2_5'],
   // NeuTTS local inference device.
   'tts.neutts.device': ['cpu', 'cuda', 'mps'],
-  'updates.non_interactive_local_changes': ['stash', 'discard']
+  'updates.non_interactive_local_changes': ['stash', 'discard'],
+  'voice.realtime.engine': ['text_oracle_tts', 'native_s2s_oracle'],
+  'voice.realtime.input_codec': ['webm_opus', 'opus', 'pcm16'],
+  'voice.realtime.output_codec': ['opus', 'webm_opus', 'pcm16']
 }
 
 export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
@@ -320,7 +323,17 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
   voice: {
     recordKey: 'Voice Shortcut',
     maxRecordingSeconds: 'Max Recording Length',
-    autoTts: 'Read Responses Aloud'
+    autoTts: 'Read Responses Aloud',
+    realtime: {
+      enabled: 'Realtime Voice',
+      engine: 'Realtime Engine',
+      inputCodec: 'Realtime Input Codec',
+      outputCodec: 'Realtime Output Codec',
+      frontendProvider: 'Frontend Provider',
+      frontendModel: 'Frontend Model',
+      sparkBaseUrl: 'Spark Sidecar URL',
+      sparkTokenEnv: 'Spark Token Env Var'
+    }
   },
   stt: {
     enabled: 'Speech To Text',
@@ -462,7 +475,11 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
     enabled: 'Summarize older context when conversations get large.'
   },
   voice: {
-    autoTts: 'Automatically speak assistant responses.'
+    autoTts: 'Automatically speak assistant responses.',
+    realtime: {
+      enabled: 'Use the KAME-inspired realtime websocket path instead of the turn-based record/transcribe/speak loop.',
+      sparkBaseUrl: 'LAN URL for a DGX Spark or other model sidecar running Gemma, streaming TTS, or native S2S.'
+    }
   },
   tts: {
     xai: {
@@ -586,6 +603,14 @@ export const SECTIONS: DesktopConfigSection[] = [
       'stt.elevenlabs.language_code',
       'stt.elevenlabs.tag_audio_events',
       'stt.elevenlabs.diarize',
+      'voice.realtime.enabled',
+      'voice.realtime.engine',
+      'voice.realtime.input_codec',
+      'voice.realtime.output_codec',
+      'voice.realtime.frontend_provider',
+      'voice.realtime.frontend_model',
+      'voice.realtime.spark_base_url',
+      'voice.realtime.spark_token_env',
       'voice.record_key',
       'voice.max_recording_seconds'
     ]
