@@ -133,7 +133,19 @@ def wants_realtime_sidecar(config: RealtimeVoiceSessionConfig) -> bool:
     provider = (config.frontend_provider or "").strip().lower()
     if not config.spark_base_url:
         return False
-    return provider in {"sidecar", "spark", "dgx", "gemma", "gemma4", "lmstudio"} or bool(config.frontend_model)
+    return provider in {
+        "sidecar",
+        "reference",
+        "local",
+        "provider",
+        "spark",
+        "dgx",
+        "pgx",
+        "gemma",
+        "gemma4",
+        "vllm",
+        "lmstudio",
+    } or bool(config.frontend_model)
 
 
 def sidecar_ws_url(base_url: str, path: str) -> str:

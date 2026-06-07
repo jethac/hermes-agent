@@ -13,6 +13,10 @@ from agent.realtime_voice import (
     validate_server_event,
 )
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
+from agent.realtime_voice_reference_sidecar import (
+    ReferenceRealtimeVoiceSidecarSession,
+    ReferenceSidecarRuntimeConfig,
+)
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
 from agent.realtime_voice_sidecar import sidecar_ws_url, wants_realtime_sidecar
@@ -325,6 +329,140 @@ def test_sidecar_config_detection_and_url_building():
     assert sidecar_ws_url("http://spark.local:8080/base", "/v1/realtime-text/session") == (
         "ws://spark.local:8080/base/v1/realtime-text/session"
     )
+
+
+def test_reference_sidecar_accepts_transcript_payloads_without_gpu():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello hermes"},
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload={"transcript": "hello hermes", "end_of_utterance": True},
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                await sidecar.close()
+                break
+
+        assert [event.type for event in seen] == [
+            VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.TRANSCRIPT_PARTIAL,
+            VoiceEventType.TRANSCRIPT_FINAL,
+        ]
+        assert seen[-1].payload["text"] == "hello hermes"
+
+    asyncio.run(run())
+
+
+def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
+    def fake_transcribe(path):
+        assert path
+        return {"success": True, "transcript": "local transcript"}
+
+    def fake_synthesize(text):
+        audio = tmp_path / "speech.ogg"
+        audio.write_bytes(b"audio")
+        return {"success": True, "file_path": str(audio)}
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(vllm_base_url=None, vllm_model=None),
+            transcribe_audio_func=fake_transcribe,
+            synthesize_func=fake_synthesize,
+        )
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                },
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=2,
+                payload={"text": "hello back", "speak": True},
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            event_types = [event.type for event in seen]
+            if (
+                VoiceEventType.AUDIO_OUTPUT_CHUNK in event_types
+                and VoiceEventType.TRANSCRIPT_FINAL in event_types
+            ):
+                await sidecar.close()
+                break
+
+        assert VoiceEventType.TRANSCRIPT_FINAL in [event.type for event in seen]
+        assert [event.payload.get("text") for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL] == [
+            "local transcript"
+        ]
+        audio_events = [event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK]
+        assert audio_events[0].payload["data_b64"]
+
+    asyncio.run(run())
+
+
+def test_reference_sidecar_vllm_audio_frontend(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"choices":[{"message":{"content":"vllm transcript"}}]}'
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        captured["body"] = __import__("json").loads(req.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr("agent.realtime_voice_reference_sidecar.urllib.request.urlopen", fake_urlopen)
+
+    sidecar = ReferenceRealtimeVoiceSidecarSession(
+        ReferenceSidecarRuntimeConfig(
+            vllm_base_url="http://vllm.local:8000/v1",
+            vllm_model="google/gemma-4-E4B-it-qat-w4a16-ct",
+            vllm_timeout_seconds=12,
+        )
+    )
+
+    transcript = sidecar._transcribe_sync(b"audio", VoiceAudioCodec.WEBM_OPUS)
+
+    assert transcript == "vllm transcript"
+    assert captured["url"] == "http://vllm.local:8000/v1/chat/completions"
+    assert captured["timeout"] == 12
+    assert captured["body"]["model"] == "google/gemma-4-E4B-it-qat-w4a16-ct"
+    assert captured["body"]["messages"][0]["content"][0]["type"] == "audio_url"
 
 
 def test_session_persists_only_final_and_committed_messages(monkeypatch):

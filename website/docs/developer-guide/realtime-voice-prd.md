@@ -14,13 +14,17 @@ This project adds a KAME-inspired realtime voice subsystem. The subsystem must s
 1. **Text oracle + streaming TTS**: a speech understanding frontend, a Hermes oracle backed by the configured Hermes model, and streaming text-to-speech output.
 2. **Native S2S + Hermes oracle**: a Moshi/KAME-style speech-to-speech frontend that receives asynchronous oracle hints from Hermes.
 
-The first production milestone is the text-oracle path. The native S2S path is a compatible follow-up, not a prerequisite.
+The production architecture has three deployment tiers behind the same desktop protocol:
+
+1. **Local/provider tier**: no special hardware; local or cloud-configured STT/TTS providers drive the text-oracle path.
+2. **Gemma/vLLM audio tier**: a LAN or local sidecar hosts Gemma 4 E4B-IT audio understanding for higher-quality speech frontend behavior.
+3. **Native S2S tier**: a speech-to-speech sidecar emits low-latency audio directly while receiving Hermes oracle/tool hints.
 
 ## Goals
 
 - Let a user have a low-latency spoken conversation with Hermes in the desktop app.
 - Preserve Hermes' existing data boundary: memory, files, MCP, tools, profiles, approvals, and session state remain owned by Hermes.
-- Allow a DGX Spark or other LAN model sidecar to run Gemma, streaming STT, streaming TTS, and later native S2S inference.
+- Allow a local process, workstation, PGX/DGX-class box, or cloud endpoint to run Gemma, streaming STT, streaming TTS, and native S2S inference.
 - Keep the desktop UI protocol stable while engines change behind it.
 - Support barge-in: user speech interrupts assistant playback and updates the live session state.
 - Commit only stable transcript and assistant text to durable Hermes session history.
@@ -38,7 +42,8 @@ The first production milestone is the text-oracle path. The native S2S path is a
 - As a user, I can talk to Hermes without pressing send after every utterance.
 - As a user, I can interrupt Hermes while it is speaking and have the assistant stop immediately.
 - As a user, I can ask about my actual Hermes context, files, tools, and memories during a voice session.
-- As a user with a Mac desktop and DGX Spark, I can run the low-latency speech/frontend models on the Spark over the LAN.
+- As a user without a workstation GPU, I can still use realtime voice through configured STT/TTS providers.
+- As a user with a workstation GPU, I can run low-latency speech/frontend models over the LAN.
 - As a developer, I can swap the voice engine from text-oracle-TTS to native S2S without rewriting the desktop UI.
 
 ## Architecture
@@ -147,7 +152,7 @@ Hermes oracle
 ### Security and Privacy
 
 - Raw audio endpoints must be loopback, LAN-private, or authenticated.
-- Spark sidecar access should use a token, mTLS, SSH tunnel, or Tailscale.
+- Sidecar access should use a token, mTLS, SSH tunnel, loopback binding, or Tailscale.
 - Audio should not be sent to a cloud provider unless the user configured that provider.
 - Hermes remains the permission boundary for memory, MCP, file access, and tools.
 
@@ -165,8 +170,9 @@ Hermes oracle
 2. Add websocket session endpoint behind a config flag.
 3. Implement desktop audio frame streaming behind a feature flag.
 4. Implement text-oracle engine with streaming STT and streaming TTS.
-5. Add Spark sidecar adapter for Gemma/frontend and TTS.
-6. Add native S2S engine once the text-oracle path proves the session contract.
+5. Add reference sidecar adapter for local/provider STT and TTS.
+6. Add workstation sidecar adapter for Gemma/vLLM audio frontend and TTS.
+7. Keep native S2S as a first-class engine path behind the same protocol.
 
 ## Open Questions
 
