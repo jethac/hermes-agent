@@ -14,6 +14,7 @@ import {
   realtimeVoiceInputFrameMs,
   realtimeVoiceEventGeneration,
   realtimeVoicePlaybackGeneration,
+  realtimeVoicePlaybackQueueAction,
   realtimeVoicePreRollChunkLimit,
   realtimeVoiceSessionErrorAction,
   realtimeVoiceSessionReadyTimeoutMs,
@@ -692,6 +693,37 @@ describe('realtime playback generation helpers', () => {
     expect(shouldDropStaleRealtimeVoiceEvent(event('assistant.text.partial', 3), 2)).toBe(false)
     expect(shouldDropStaleRealtimeVoiceEvent(event('transcript.partial', 1), 2)).toBe(false)
     expect(shouldDropStaleRealtimeVoiceEvent(event('assistant.text.partial', undefined), 2)).toBe(false)
+  })
+})
+
+describe('realtimeVoicePlaybackQueueAction', () => {
+  it('continues queued playback after a chunk ends or fails', () => {
+    expect(realtimeVoicePlaybackQueueAction({
+      enabled: true,
+      hasQueuedAudio: true,
+      muted: false
+    })).toBe('play_next')
+  })
+
+  it('returns to listening when playback drains while realtime is enabled', () => {
+    expect(realtimeVoicePlaybackQueueAction({
+      enabled: true,
+      hasQueuedAudio: false,
+      muted: false
+    })).toBe('listening')
+  })
+
+  it('returns to idle when playback drains while muted or disabled', () => {
+    expect(realtimeVoicePlaybackQueueAction({
+      enabled: true,
+      hasQueuedAudio: false,
+      muted: true
+    })).toBe('idle')
+    expect(realtimeVoicePlaybackQueueAction({
+      enabled: false,
+      hasQueuedAudio: false,
+      muted: false
+    })).toBe('idle')
   })
 })
 

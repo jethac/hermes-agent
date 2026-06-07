@@ -177,6 +177,12 @@ interface RealtimeSessionErrorActionInput {
   sessionStarted: boolean
 }
 
+interface RealtimePlaybackQueueActionInput {
+  enabled: boolean
+  hasQueuedAudio: boolean
+  muted: boolean
+}
+
 function bytesFromBase64(value: string): Uint8Array {
   const raw = atob(value)
   const bytes = new Uint8Array(raw.length)
@@ -452,6 +458,18 @@ export function realtimeVoiceSessionErrorAction({
   sessionStarted
 }: RealtimeSessionErrorActionInput): 'fallback' | 'fatal' {
   return sessionStarted ? 'fatal' : 'fallback'
+}
+
+export function realtimeVoicePlaybackQueueAction({
+  enabled,
+  hasQueuedAudio,
+  muted
+}: RealtimePlaybackQueueActionInput): 'idle' | 'listening' | 'play_next' {
+  if (hasQueuedAudio) {
+    return 'play_next'
+  }
+
+  return enabled && !muted ? 'listening' : 'idle'
 }
 
 export function realtimeVoicePlaybackGeneration(payload?: Record<string, unknown>): number | null {
@@ -819,24 +837,36 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
     const url = URL.createObjectURL(item.blob)
     const audio = new Audio(url)
+    let settled = false
 
     playingRef.current = audio
     setStatus('speaking')
-    audio.onended = () => {
+
+    const settle = () => {
+      if (settled) {
+        return
+      }
+      settled = true
       URL.revokeObjectURL(url)
-      playingRef.current = null
-      if (playbackQueueRef.current.length) {
+      if (playingRef.current === audio) {
+        playingRef.current = null
+      }
+
+      const action = realtimeVoicePlaybackQueueAction({
+        enabled: enabledRef.current,
+        hasQueuedAudio: Boolean(playbackQueueRef.current.length),
+        muted: mutedRef.current
+      })
+      if (action === 'play_next') {
         playNext()
       } else {
-        setStatus(enabledRef.current && !mutedRef.current ? 'listening' : 'idle')
+        setStatus(action)
       }
     }
-    audio.onerror = () => {
-      URL.revokeObjectURL(url)
-      playingRef.current = null
-      setStatus('idle')
-    }
-    void audio.play()
+
+    audio.onended = settle
+    audio.onerror = settle
+    void audio.play().catch(settle)
   }, [])
 
   const enqueueAudio = useCallback(
