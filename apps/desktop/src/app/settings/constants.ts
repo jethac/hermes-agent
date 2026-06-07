@@ -331,6 +331,8 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
       outputCodec: 'Realtime Output Codec',
       frontendProvider: 'Frontend Provider',
       frontendModel: 'Frontend Model',
+      sidecarBaseUrl: 'Voice Sidecar URL',
+      sidecarTokenEnv: 'Voice Sidecar Token Env Var',
       sparkBaseUrl: 'Voice Sidecar URL',
       sparkTokenEnv: 'Voice Sidecar Token Env Var'
     }
@@ -478,7 +480,11 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
     autoTts: 'Automatically speak assistant responses.',
     realtime: {
       enabled: 'Use the KAME-inspired realtime websocket path instead of the turn-based record/transcribe/speak loop.',
-      sparkBaseUrl: 'LAN or private-network URL for a remote inference sidecar running Gemma, streaming TTS, or native S2S.'
+      sidecarBaseUrl:
+        'LAN or private-network URL for a remote inference sidecar running Gemma, streaming TTS, or native S2S.',
+      sidecarTokenEnv: 'Environment variable that contains the bearer token for the voice sidecar.',
+      sparkBaseUrl:
+        'Deprecated compatibility alias for the voice sidecar URL. Prefer voice.realtime.sidecar_base_url.'
     }
   },
   tts: {
@@ -609,8 +615,8 @@ export const SECTIONS: DesktopConfigSection[] = [
       'voice.realtime.output_codec',
       'voice.realtime.frontend_provider',
       'voice.realtime.frontend_model',
-      'voice.realtime.spark_base_url',
-      'voice.realtime.spark_token_env',
+      'voice.realtime.sidecar_base_url',
+      'voice.realtime.sidecar_token_env',
       'voice.record_key',
       'voice.max_recording_seconds'
     ]
