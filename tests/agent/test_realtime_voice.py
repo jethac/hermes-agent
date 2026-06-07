@@ -1720,6 +1720,70 @@ def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
     asyncio.run(run())
 
 
+def test_reference_sidecar_bounds_utterance_audio_buffer():
+    transcribe_called = False
+
+    def fake_transcribe(path):
+        nonlocal transcribe_called
+        transcribe_called = True
+        return {"success": True, "transcript": "should not run"}
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(vllm_base_url=None, vllm_model=None),
+            transcribe_audio_func=fake_transcribe,
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="local",
+                input_buffer_limit_bytes=3,
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"ab").to_payload(),
+                    "input_generation": 9,
+                },
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"cd").to_payload(),
+                    "end_of_utterance": True,
+                    "input_generation": 9,
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.FRONTEND_STATE and event.payload.get("reason") == "input_buffer_limit_exceeded":
+                await sidecar.close()
+                break
+
+        degraded = seen[-1]
+        assert degraded.payload["status"] == "degraded"
+        assert degraded.payload["reason"] == "input_buffer_limit_exceeded"
+        assert degraded.payload["sidecar"] is True
+        assert degraded.payload["limit_bytes"] == 3
+        assert sidecar._audio == []
+        assert sidecar._audio_bytes == 0
+        assert sidecar._audio_input_generation is None
+
+    asyncio.run(run())
+    assert transcribe_called is False
+
+
 def test_reference_sidecar_sanitizes_provider_errors():
     def failing_transcribe(path):
         raise RuntimeError("STT failed at http://user:pass@voice.local/v1?token=abc")
