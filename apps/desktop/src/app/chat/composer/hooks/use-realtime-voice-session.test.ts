@@ -22,6 +22,7 @@ import {
   realtimeVoiceSessionStatus,
   realtimeVoiceSilenceTimeoutMs,
   realtimeVoiceUnavailableFrontendState,
+  realtimeVoiceQualityTargets,
   realtimeVoiceUrl,
   shouldDropQueuedRealtimeAudioInput,
   shouldDropStaleRealtimeVoiceEvent,
@@ -74,6 +75,12 @@ describe('realtimeVoiceUrl', () => {
         production_scripts: ['Latn', 'Jpan'],
         sidecar_languages_are_diagnostics: true
       },
+      quality_targets_ms: {
+        audio_to_partial_transcript_ms: 250,
+        barge_in_ack_ms: 120,
+        final_transcript_to_first_audio_ms: 850,
+        final_transcript_to_first_text_ms: 450
+      },
       sidecar: {
         health: {
           capabilities: {
@@ -103,6 +110,10 @@ describe('realtimeVoiceUrl', () => {
       language_support: {
         production_languages: ['en', 'ja'],
         production_scripts: ['Latn', 'Jpan']
+      },
+      quality_targets_ms: {
+        audio_to_partial_transcript_ms: 250,
+        final_transcript_to_first_audio_ms: 850
       },
       sidecar: {
         health: {
@@ -175,6 +186,27 @@ describe('collectRealtimeVoiceMetrics', () => {
       finalTranscriptToFirstAudioMs: 250,
       sessionElapsedMs: 120,
       updatedAtMs: 1_500
+    })
+  })
+})
+
+describe('realtimeVoiceQualityTargets', () => {
+  it('uses backend targets and defaults malformed values', () => {
+    expect(realtimeVoiceQualityTargets({
+      available: true,
+      enabled: true,
+      engine: 'text_oracle_tts',
+      quality_targets_ms: {
+        audio_to_partial_transcript_ms: 250,
+        barge_in_ack_ms: -1,
+        final_transcript_to_first_audio_ms: 850,
+        final_transcript_to_first_text_ms: Number.NaN
+      }
+    })).toEqual({
+      audio_to_partial_transcript_ms: 250,
+      barge_in_ack_ms: 150,
+      final_transcript_to_first_audio_ms: 850,
+      final_transcript_to_first_text_ms: 500
     })
   })
 })

@@ -46,6 +46,13 @@ export interface RealtimeVoiceLatencyMetrics {
   updatedAtMs?: number
 }
 
+export interface RealtimeVoiceQualityTargetsMs {
+  audio_to_partial_transcript_ms?: number
+  barge_in_ack_ms?: number
+  final_transcript_to_first_audio_ms?: number
+  final_transcript_to_first_text_ms?: number
+}
+
 export interface RealtimeVoiceLanguageMetadata {
   language?: string
   locale?: string
@@ -82,6 +89,7 @@ export interface RealtimeVoiceStatus {
   input_buffer_limit_bytes?: number
   input_frame_ms?: number
   language_support?: RealtimeVoiceLanguageSupport
+  quality_targets_ms?: RealtimeVoiceQualityTargetsMs
   silence_timeout_ms?: number
   sidecar?: {
     autostart?: boolean
@@ -344,6 +352,20 @@ export function collectRealtimeVoiceMetrics(
   next.updatedAtMs = finiteNonNegativeMs(event.timestamp_ms) ?? Date.now()
 
   return next
+}
+
+export function realtimeVoiceQualityTargets(status: RealtimeVoiceStatus | null): RealtimeVoiceQualityTargetsMs {
+  const raw = status?.quality_targets_ms
+
+  return {
+    audio_to_partial_transcript_ms:
+      finiteNonNegativeMs(raw?.audio_to_partial_transcript_ms) ?? 300,
+    barge_in_ack_ms: finiteNonNegativeMs(raw?.barge_in_ack_ms) ?? 150,
+    final_transcript_to_first_audio_ms:
+      finiteNonNegativeMs(raw?.final_transcript_to_first_audio_ms) ?? 900,
+    final_transcript_to_first_text_ms:
+      finiteNonNegativeMs(raw?.final_transcript_to_first_text_ms) ?? 500
+  }
 }
 
 export function updateRealtimeVoiceBargeInGate({
@@ -730,6 +752,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   const [level, setLevel] = useState(0)
   const [muted, setMuted] = useState(false)
   const [metrics, setMetrics] = useState<RealtimeVoiceLatencyMetrics>({})
+  const [qualityTargets, setQualityTargets] = useState<RealtimeVoiceQualityTargetsMs>(realtimeVoiceQualityTargets(null))
   const socketRef = useRef<WebSocket | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -1284,6 +1307,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     }
     inputFrameMsRef.current = realtimeVoiceInputFrameMs(preflight?.input_frame_ms)
     silenceTimeoutMsRef.current = realtimeVoiceSilenceTimeoutMs(preflight?.silence_timeout_ms)
+    setQualityTargets(realtimeVoiceQualityTargets(preflight))
     const sessionReadyTimeoutMs = realtimeVoiceSessionReadyTimeoutMs(preflight)
 
     sessionRef.current = sessionId || sessionRef.current
@@ -1413,6 +1437,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     audioInputGenerationRef.current += 1
     setCaption(null)
     setFrontendState(null)
+    setQualityTargets(realtimeVoiceQualityTargets(null))
     setMuted(false)
     setStatus('idle')
   }, [cleanupInput, sendEvent, stopPlayback])
@@ -1454,5 +1479,5 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
   useEffect(() => () => void end(), [end])
 
-  return { caption, end, frontendState, level, metrics, muted, start, status, stopTurn, toggleMute }
+  return { caption, end, frontendState, level, metrics, muted, qualityTargets, start, status, stopTurn, toggleMute }
 }

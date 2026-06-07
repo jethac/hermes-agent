@@ -692,6 +692,26 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Allow non-production languages as best-effort realtime voice input and output",
         "category": "voice",
     },
+    "voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms": {
+        "type": "number",
+        "description": "Target milliseconds from user audio to first partial transcript",
+        "category": "voice",
+    },
+    "voice.realtime.quality_targets_ms.final_transcript_to_first_text_ms": {
+        "type": "number",
+        "description": "Target milliseconds from final transcript to first assistant text",
+        "category": "voice",
+    },
+    "voice.realtime.quality_targets_ms.final_transcript_to_first_audio_ms": {
+        "type": "number",
+        "description": "Target milliseconds from final transcript to first assistant audio",
+        "category": "voice",
+    },
+    "voice.realtime.quality_targets_ms.barge_in_ack_ms": {
+        "type": "number",
+        "description": "Target milliseconds for backend barge-in acknowledgement",
+        "category": "voice",
+    },
     "voice.realtime.sidecar_base_url": {
         "type": "string",
         "description": "Remote or local realtime voice sidecar URL",
@@ -2836,6 +2856,12 @@ _VOICE_SIDECAR_LOCK = threading.Lock()
 _LOCAL_VOICE_SIDECAR_PROVIDERS = {"local", "reference", "provider", "sidecar", "gemma", "gemma4", "lmstudio", "vllm"}
 _REALTIME_VOICE_DEFAULT_PRODUCTION_LANGUAGES = ("en", "ja")
 _REALTIME_VOICE_DEFAULT_PRODUCTION_SCRIPTS = ("Latn", "Jpan")
+_REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS = {
+    "audio_to_partial_transcript_ms": 300,
+    "final_transcript_to_first_text_ms": 500,
+    "final_transcript_to_first_audio_ms": 900,
+    "barge_in_ack_ms": 150,
+}
 _VOICE_SIDECAR_HEALTH_TIMEOUT = 0.75
 _VOICE_SIDECAR_START_TIMEOUT = 8.0
 
@@ -12893,6 +12919,18 @@ def _realtime_voice_language_support_payload(realtime: Dict[str, Any]) -> Dict[s
     }
 
 
+def _realtime_voice_quality_targets_payload(realtime: Dict[str, Any]) -> Dict[str, int]:
+    raw = realtime.get("quality_targets_ms") or realtime.get("latency_targets_ms")
+    targets = dict(_REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS)
+    if not isinstance(raw, dict):
+        return targets
+
+    for key in targets:
+        parsed = _positive_int_config(raw.get(key), default=targets[key])
+        targets[key] = parsed
+    return targets
+
+
 def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str, Any]:
     frontend = payload.get("frontend") if isinstance(payload.get("frontend"), dict) else {}
     capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
@@ -13093,6 +13131,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     provider = str(realtime.get("frontend_provider") or "")
     frontend_model = str(realtime.get("frontend_model") or "")
     language_support = _realtime_voice_language_support_payload(realtime)
+    quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
     base_url = _realtime_voice_sidecar_base_url(realtime)
     connect_timeout_seconds = _positive_float_config(
         realtime.get("sidecar_connect_timeout_seconds"),
@@ -13164,6 +13203,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "frontend_provider": provider or None,
         "frontend_model": frontend_model or None,
         "language_support": language_support,
+        "quality_targets_ms": quality_targets_ms,
         "sidecar": {
             "mode": sidecar_mode,
             "base_url": _redact_realtime_voice_url(base_url),

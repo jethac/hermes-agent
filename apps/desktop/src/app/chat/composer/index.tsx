@@ -705,6 +705,7 @@ export function ChatBar({
         level: conversation.level,
         metrics: conversation.metrics,
         muted: conversation.muted,
+        qualityTargets: conversation.qualityTargets,
         onEnd: endConversation,
         onStart: startConversation,
         onStopTurn: conversation.stopTurn,

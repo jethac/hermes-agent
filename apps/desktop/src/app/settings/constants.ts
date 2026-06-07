@@ -335,6 +335,12 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
       productionLanguages: 'Production Voice Languages',
       productionScripts: 'Production Voice Scripts',
       bestEffortLanguages: 'Best-Effort Other Languages',
+      qualityTargetsMs: {
+        audioToPartialTranscriptMs: 'ASR Target',
+        finalTranscriptToFirstTextMs: 'First Text Target',
+        finalTranscriptToFirstAudioMs: 'First Audio Target',
+        bargeInAckMs: 'Barge-In Target'
+      },
       frontendProvider: 'Frontend Provider',
       frontendModel: 'Frontend Model',
       sidecarBaseUrl: 'Voice Sidecar URL',
@@ -496,6 +502,12 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
         'Comma-separated ISO 15924 script tags covered by production realtime voice acceptance. Defaults to Latn and Jpan.',
       bestEffortLanguages:
         'Allow other languages to pass through captions, prompts, and provider auto-detection without claiming production quality.',
+      qualityTargetsMs: {
+        audioToPartialTranscriptMs: 'Milliseconds from user audio to the first partial transcript before realtime voice is considered slow.',
+        finalTranscriptToFirstTextMs: 'Milliseconds from final transcript to first assistant text before realtime voice is considered slow.',
+        finalTranscriptToFirstAudioMs: 'Milliseconds from final transcript to first assistant audio before realtime voice is considered slow.',
+        bargeInAckMs: 'Milliseconds for backend barge-in acknowledgement before realtime interruption is considered slow.'
+      },
       sidecarBaseUrl:
         'LAN or private-network URL for a remote inference sidecar running Gemma, streaming TTS, or native S2S.',
       sidecarTokenEnv: 'Environment variable that contains the bearer token for the voice sidecar.',
@@ -636,6 +648,10 @@ export const SECTIONS: DesktopConfigSection[] = [
       'voice.realtime.production_languages',
       'voice.realtime.production_scripts',
       'voice.realtime.best_effort_languages',
+      'voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms',
+      'voice.realtime.quality_targets_ms.final_transcript_to_first_text_ms',
+      'voice.realtime.quality_targets_ms.final_transcript_to_first_audio_ms',
+      'voice.realtime.quality_targets_ms.barge_in_ack_ms',
       'voice.realtime.frontend_provider',
       'voice.realtime.frontend_model',
       'voice.realtime.sidecar_base_url',

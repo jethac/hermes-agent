@@ -29,6 +29,21 @@ describe('realtimeVoiceQuality', () => {
     })
   })
 
+  it('uses backend-provided quality targets when available', () => {
+    expect(realtimeVoiceQuality({
+      audioToPartialTranscriptMs: 180,
+      bargeInAckMs: 170,
+      finalTranscriptToFirstAudioMs: 650
+    }, {
+      audio_to_partial_transcript_ms: 300,
+      barge_in_ack_ms: 200,
+      final_transcript_to_first_audio_ms: 700
+    })).toMatchObject({
+      primaryMs: 650,
+      state: 'good'
+    })
+  })
+
   it('uses transcript latency as the primary value until first audio is known', () => {
     expect(realtimeVoiceQuality({ audioToPartialTranscriptMs: 210 })).toMatchObject({
       primaryMs: 210,

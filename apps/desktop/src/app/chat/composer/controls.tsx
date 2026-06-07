@@ -12,7 +12,8 @@ import type { ConversationStatus } from './hooks/use-voice-conversation'
 import type {
   RealtimeVoiceCaption,
   RealtimeVoiceFrontendState,
-  RealtimeVoiceLatencyMetrics
+  RealtimeVoiceLatencyMetrics,
+  RealtimeVoiceQualityTargetsMs
 } from './hooks/use-realtime-voice-session'
 import { ModelPill } from './model-pill'
 import type { ChatBarState, VoiceStatus } from './types'
@@ -39,6 +40,7 @@ interface ConversationProps {
   level: number
   metrics?: RealtimeVoiceLatencyMetrics
   muted: boolean
+  qualityTargets?: RealtimeVoiceQualityTargetsMs
   status: ConversationStatus
   onEnd: () => void
   onStart: () => void
@@ -165,6 +167,7 @@ function ConversationPill({
   level,
   metrics,
   muted,
+  qualityTargets,
   onEnd,
   onStopTurn,
   onToggleMute,
@@ -174,7 +177,7 @@ function ConversationPill({
   const c = t.composer
   const speaking = status === 'speaking'
   const listening = status === 'listening' && !muted
-  const quality = realtimeVoiceQuality(metrics)
+  const quality = realtimeVoiceQuality(metrics, qualityTargets)
 
   const label =
     status === 'speaking'
@@ -285,11 +288,14 @@ export interface RealtimeVoiceQuality {
   tooltip: Array<{ label: string; ms: number; targetMs: number }>
 }
 
-export function realtimeVoiceQuality(metrics?: RealtimeVoiceLatencyMetrics): RealtimeVoiceQuality | null {
+export function realtimeVoiceQuality(
+  metrics?: RealtimeVoiceLatencyMetrics,
+  targets?: RealtimeVoiceQualityTargetsMs
+): RealtimeVoiceQuality | null {
   const rows = [
-    metricRow('ASR', metrics?.audioToPartialTranscriptMs, 300),
-    metricRow('Audio', metrics?.finalTranscriptToFirstAudioMs, 900),
-    metricRow('Barge', metrics?.bargeInAckMs, 150)
+    metricRow('ASR', metrics?.audioToPartialTranscriptMs, targets?.audio_to_partial_transcript_ms ?? 300),
+    metricRow('Audio', metrics?.finalTranscriptToFirstAudioMs, targets?.final_transcript_to_first_audio_ms ?? 900),
+    metricRow('Barge', metrics?.bargeInAckMs, targets?.barge_in_ack_ms ?? 150)
   ].filter((row): row is RealtimeVoiceQuality['tooltip'][number] => row !== null)
 
   if (!rows.length) {
