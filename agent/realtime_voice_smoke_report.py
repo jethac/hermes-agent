@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import math
+import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -482,6 +484,25 @@ def _validate_audio_fixture_entry(
         issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing transcript.final event", identifier))
     if _positive_int(entry.get("audio_bytes")) is None:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing audio bytes", identifier))
+    expected_text = ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS.get(identifier)
+    if expected_text:
+        final_text = str(entry.get("final_text") or "").strip()
+        if not final_text:
+            issues.append(
+                RealtimeVoiceSmokeReportIssue(
+                    "audio_fixture",
+                    "missing final_text for required fixture",
+                    identifier,
+                )
+            )
+        elif not _transcript_matches_expected(final_text, expected_text):
+            issues.append(
+                RealtimeVoiceSmokeReportIssue(
+                    "audio_fixture",
+                    "final_text did not match expected fixture transcript",
+                    identifier,
+                )
+            )
     partial_ms = _positive_int(entry.get("transcript_partial_ms"))
     target_ms = _positive_int(entry.get("target_ms"))
     if partial_ms is None:
@@ -695,6 +716,20 @@ def _events(entry: Mapping[str, Any]) -> set[str]:
     if not isinstance(raw, list):
         return set()
     return {str(item) for item in raw if isinstance(item, str)}
+
+
+def _transcript_matches_expected(actual: str, expected: str) -> bool:
+    actual_norm = _normalize_transcript_text(actual)
+    expected_norm = _normalize_transcript_text(expected)
+    return bool(actual_norm and expected_norm and actual_norm == expected_norm)
+
+
+_TRANSCRIPT_PUNCTUATION_RE = re.compile(r"[\s\.,!?;:'\"`~()\[\]{}<>/\\|_\-+=、。，．！？；：『』「」（）【】]")
+
+
+def _normalize_transcript_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    return _TRANSCRIPT_PUNCTUATION_RE.sub("", normalized)
 
 
 def _positive_int(value: Any) -> int | None:

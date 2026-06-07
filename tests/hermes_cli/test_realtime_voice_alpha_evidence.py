@@ -4,6 +4,7 @@ import types
 
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
+    ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS,
     ALPHA_REQUIRED_BARGE_IN_TEXTS,
     ALPHA_REQUIRED_TTS_METADATA,
     ALPHA_REQUIRED_TTS_TEXTS,
@@ -161,6 +162,7 @@ def _valid_alpha_report():
                 "fixture": fixture,
                 "codec": "webm_opus",
                 "audio_bytes": 1234,
+                "final_text": ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS[fixture],
                 "transcript_partial_ms": 90,
                 "transcript_final_ms": 180,
                 "target_ms": 300,

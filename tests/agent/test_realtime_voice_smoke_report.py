@@ -2,6 +2,7 @@ import json
 
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
+    ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS,
     ALPHA_REQUIRED_BARGE_IN_TEXTS,
     ALPHA_REQUIRED_SESSION_TURN_TEXTS,
     ALPHA_REQUIRED_TTS_METADATA,
@@ -88,6 +89,7 @@ def _valid_alpha_report():
                 "fixture": fixture,
                 "codec": "webm_opus",
                 "audio_bytes": 1234,
+                "final_text": ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS[fixture],
                 "transcript_partial_ms": 90,
                 "transcript_final_ms": 180,
                 "target_ms": 300,
@@ -261,6 +263,40 @@ def test_realtime_voice_alpha_report_requires_tts_language_metadata():
     issues = validate_realtime_voice_alpha_report(report)
 
     assert any("missing language=ja metadata" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_requires_audio_fixture_final_text():
+    report = _valid_alpha_report()
+    for entry in report:
+        if entry.get("fixture") == "./fixtures/realtime-voice/en/hello.webm":
+            entry["final_text"] = ""
+            break
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("missing final_text for required fixture" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_rejects_wrong_audio_fixture_final_text():
+    report = _valid_alpha_report()
+    for entry in report:
+        if entry.get("fixture") == "./fixtures/realtime-voice/ja/hello.webm":
+            entry["final_text"] = "こんにちは、別の人です。"
+            break
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("final_text did not match expected fixture transcript" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_accepts_normalized_audio_fixture_text():
+    report = _valid_alpha_report()
+    for entry in report:
+        if entry.get("fixture") == "./fixtures/realtime-voice/en/tool-question.webm":
+            entry["final_text"] = "what files can hermes see in this workspace"
+            break
+
+    assert validate_realtime_voice_alpha_report(report) == []
 
 
 def test_realtime_voice_alpha_report_rejects_barge_in_target_misses():
