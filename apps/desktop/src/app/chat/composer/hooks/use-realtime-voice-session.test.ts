@@ -297,6 +297,25 @@ describe('collectRealtimeVoiceCaption', () => {
     })
   })
 
+  it('allows clean caption language metadata outside the production target list', () => {
+    const caption = collectRealtimeVoiceCaption(null, event('transcript.final', {
+      language: 'ar',
+      locale: 'ar-EG',
+      script: 'Arab',
+      text: 'مرحبا'
+    }))
+
+    expect(caption).toEqual({
+      final: true,
+      language: 'ar',
+      locale: 'ar-EG',
+      script: 'Arab',
+      speaker: 'user',
+      text: 'مرحبا',
+      updatedAtMs: 1_234
+    })
+  })
+
   it('accumulates assistant text chunks until commit replaces the caption', () => {
     const first = collectRealtimeVoiceCaption(null, event('assistant.text.partial', { text: 'Answering ' }))
     const second = collectRealtimeVoiceCaption(first, event('assistant.text.partial', { text: 'now.' }, 1_300))
