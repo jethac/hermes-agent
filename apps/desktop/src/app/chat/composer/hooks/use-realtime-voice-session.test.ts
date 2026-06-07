@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   collectRealtimeVoiceMetrics,
   getRealtimeVoiceStatus,
-  realtimeVoiceUrl
+  realtimeVoiceUrl,
+  updateRealtimeVoiceBargeInGate
 } from './use-realtime-voice-session'
 
 import type { RealtimeVoiceLatencyMetrics, VoiceEvent } from './use-realtime-voice-session'
@@ -115,6 +116,44 @@ describe('collectRealtimeVoiceMetrics', () => {
       finalTranscriptToFirstAudioMs: 250,
       sessionElapsedMs: 120,
       updatedAtMs: 1_500
+    })
+  })
+})
+
+describe('updateRealtimeVoiceBargeInGate', () => {
+  it('does not trigger barge-in on the first loud playback frame', () => {
+    expect(updateRealtimeVoiceBargeInGate({
+      isSpeechActive: true,
+      minSpeechMs: 120,
+      nowMs: 1_000,
+      speechStartedAtMs: null
+    })).toEqual({
+      shouldBargeIn: false,
+      speechStartedAtMs: 1_000
+    })
+  })
+
+  it('triggers barge-in after speech remains active long enough', () => {
+    expect(updateRealtimeVoiceBargeInGate({
+      isSpeechActive: true,
+      minSpeechMs: 120,
+      nowMs: 1_121,
+      speechStartedAtMs: 1_000
+    })).toEqual({
+      shouldBargeIn: true,
+      speechStartedAtMs: 1_000
+    })
+  })
+
+  it('resets the pending barge-in candidate when speech drops below threshold', () => {
+    expect(updateRealtimeVoiceBargeInGate({
+      isSpeechActive: false,
+      minSpeechMs: 120,
+      nowMs: 1_060,
+      speechStartedAtMs: 1_000
+    })).toEqual({
+      shouldBargeIn: false,
+      speechStartedAtMs: null
     })
   })
 })
