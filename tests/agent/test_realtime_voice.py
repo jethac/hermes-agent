@@ -1855,6 +1855,93 @@ def test_native_s2s_engine_accepts_binary_audio_output_frame():
     asyncio.run(run())
 
 
+def test_native_s2s_engine_drops_stale_sidecar_transcript_before_oracle_hint():
+    class FakeWs:
+        def __init__(self, items):
+            self._items = list(items)
+            self.sent = []
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._items:
+                raise StopAsyncIteration
+            return self._items.pop(0)
+
+        async def send(self, payload):
+            self.sent.append(payload)
+
+    class FailingOracle:
+        async def stream_answer(self, transcript):
+            raise AssertionError("stale transcript should not start oracle hint")
+            yield transcript
+
+    async def run():
+        stale = VoiceEvent(
+            type=VoiceEventType.TRANSCRIPT_FINAL,
+            session_id="sidecar-session",
+            sequence=10,
+            payload={"text": "old turn", "playback_generation": 1},
+        )
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = FakeWs([__import__("json").dumps(stale.to_wire())])
+        engine._oracle = FailingOracle()
+        engine._playback_generation = 2
+
+        await engine._read_sidecar()
+
+        assert engine._oracle_hint_task is None
+        assert engine._events.empty()
+        assert engine._ws.sent == []
+
+    asyncio.run(run())
+
+
+def test_native_s2s_engine_drops_stale_binary_audio_output_frame():
+    class FakeWs:
+        def __init__(self, items):
+            self._items = list(items)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._items:
+                raise StopAsyncIteration
+            return self._items.pop(0)
+
+    async def run():
+        stale = VoiceEvent(
+            type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            session_id="sidecar-session",
+            sequence=44,
+            payload={
+                **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"stale-s2s-speaker").to_payload(),
+                "playback_generation": 1,
+            },
+        )
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = FakeWs([binary_audio_frame_from_event(stale)])
+        engine._playback_generation = 2
+
+        await engine._read_sidecar()
+
+        assert engine._events.empty()
+
+    asyncio.run(run())
+
+
 def test_native_s2s_engine_tags_legacy_raw_audio_with_active_generation():
     class FakeWs:
         def __init__(self):

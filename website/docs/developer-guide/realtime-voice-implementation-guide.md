@@ -369,7 +369,7 @@ GET  /health
 
 Hermes sends audio and transcript state. The sidecar returns transcript/frontend state, local draft hints, or audio chunks. `GET /health` returns liveness plus sanitized capability metadata so Hermes can diagnose local, remote, and provider-backed sidecars without exposing secrets.
 
-Native S2S sidecars should treat `oracle.hint` as a streaming hint channel from the Hermes oracle. Each hint includes accumulated `text`, the latest `delta`, `final`, `source: "hermes"`, and the active `playback_generation`. Sidecars can condition generation on these deltas immediately instead of waiting for the final hint. Hermes cancels the active hint stream and advances `playback_generation` on barge-in.
+Native S2S sidecars should treat `oracle.hint` as a streaming hint channel from the Hermes oracle. Each hint includes accumulated `text`, the latest `delta`, `final`, `source: "hermes"`, and the active `playback_generation`. Sidecars can condition generation on these deltas immediately instead of waiting for the final hint. Hermes cancels the active hint stream and advances `playback_generation` on barge-in. If a native sidecar later emits generated transcript, assistant text, commit, or audio events with an older `playback_generation`, Hermes drops them before forwarding to the desktop or starting a new oracle hint.
 
 The native S2S websocket uses the same binary audio envelope for `audio.input.chunk` and `audio.output.chunk` as the text-oracle sidecar websocket. JSON/base64 remains valid for control and compatibility events, and raw binary output without an envelope remains a legacy Opus fallback only.
 
