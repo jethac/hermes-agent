@@ -5,6 +5,7 @@ from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS,
     ALPHA_REQUIRED_BARGE_IN_TEXTS,
     ALPHA_REQUIRED_SESSION_TURN_TEXTS,
+    ALPHA_REQUIRED_SESSION_TURN_METADATA,
     ALPHA_REQUIRED_TTS_METADATA,
     ALPHA_REQUIRED_TTS_TEXTS,
     load_realtime_voice_smoke_report,
@@ -66,6 +67,7 @@ def _valid_alpha_report():
                 "kind": "session_turn",
                 "ok": True,
                 "text": text,
+                **ALPHA_REQUIRED_SESSION_TURN_METADATA[text],
                 "transcript_final_ms": 10,
                 "first_text_ms": 90,
                 "first_text_target_ms": 500,
@@ -253,6 +255,18 @@ def test_realtime_voice_alpha_report_rejects_slow_session_first_text():
     assert any("first_text_ms 650 exceeds target 500" in issue.format() for issue in issues)
 
 
+def test_realtime_voice_alpha_report_requires_session_turn_language_metadata():
+    report = _valid_alpha_report()
+    for entry in report:
+        if entry.get("kind") == "session_turn" and entry.get("text") == "こんにちは、Hermesです。":
+            entry.pop("language")
+            break
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("missing language=ja metadata" in issue.format() for issue in issues)
+
+
 def test_realtime_voice_alpha_report_requires_tts_language_metadata():
     report = _valid_alpha_report()
     for entry in report:
@@ -368,7 +382,7 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     output = capsys.readouterr().out
     assert "Realtime voice smoke report OK" in output
     assert "audio_to_partial_transcript: p50=90ms p95=90ms max=90ms n=4" in output
-    assert "final_transcript_to_first_text: p50=90ms p95=90ms max=90ms n=1" in output
+    assert "final_transcript_to_first_text: p50=90ms p95=90ms max=90ms n=2" in output
     assert "barge_in_ack: p50=45ms p95=45ms max=45ms n=1" in output
 
 
@@ -427,9 +441,9 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
     summary = summarize_realtime_voice_smoke_report_runs(runs)
 
     assert summary["runs"] == 3
-    assert summary["entries"] == 33
+    assert summary["entries"] == 36
     assert summary["kinds"]["audio_fixture"] == {"entries": 12, "ok": 12, "failed": 0}
-    assert summary["kinds"]["session_turn"] == {"entries": 3, "ok": 3, "failed": 0}
+    assert summary["kinds"]["session_turn"] == {"entries": 6, "ok": 6, "failed": 0}
     assert summary["latency_ms"]["audio_to_partial_transcript"] == {
         "count": 12,
         "p50": 90,
@@ -437,7 +451,7 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         "max": 120,
     }
     assert summary["latency_ms"]["final_transcript_to_first_text"] == {
-        "count": 3,
+        "count": 6,
         "p50": 90,
         "p95": 90,
         "max": 90,

@@ -54,7 +54,13 @@ ALPHA_REQUIRED_BARGE_IN_TEXTS = (
 
 ALPHA_REQUIRED_SESSION_TURN_TEXTS = (
     "Hello from Hermes.",
+    "こんにちは、Hermesです。",
 )
+
+ALPHA_REQUIRED_SESSION_TURN_METADATA = {
+    "Hello from Hermes.": {"language": "en", "script": "Latn"},
+    "こんにちは、Hermesです。": {"language": "ja", "script": "Jpan"},
+}
 
 ALPHA_REQUIRED_QUALITY_TARGETS_MS = {
     "audio_to_partial_transcript_ms": 300,
@@ -587,6 +593,18 @@ def _validate_session_turn_entry(
 ) -> list[RealtimeVoiceSmokeReportIssue]:
     identifier = str(entry.get("text") or "session_turn")
     issues = _validate_common_ok(entry, kind="session_turn", identifier=identifier)
+    expected_metadata = ALPHA_REQUIRED_SESSION_TURN_METADATA.get(str(entry.get("text") or ""))
+    if expected_metadata:
+        for key, expected_value in expected_metadata.items():
+            actual = str(entry.get(key) or "")
+            if actual != expected_value:
+                issues.append(
+                    RealtimeVoiceSmokeReportIssue(
+                        "session_turn",
+                        f"missing {key}={expected_value} metadata",
+                        identifier,
+                    )
+                )
     events = _events(entry)
     if "transcript.final" not in events:
         issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing transcript.final event", identifier))
