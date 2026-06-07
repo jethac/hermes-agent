@@ -540,7 +540,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 await self._emit(
                     VoiceEventType.FRONTEND_STATE,
                     {
-                        "status": "fallback",
+                        "status": "degraded",
                         "reason": "sidecar_tts_failed",
                         "error": sanitize_realtime_voice_error(exc),
                         "sidecar": False,
