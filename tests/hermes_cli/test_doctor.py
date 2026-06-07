@@ -295,6 +295,104 @@ class TestRealtimeVoiceReadiness:
         assert "events=frontend.state" in output
         assert any("protocol smoke failure" in issue for issue in issues)
 
+    def test_audio_fixture_smoke_reports_success_with_partial_target(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={"quality_targets_ms": {"audio_to_partial_transcript_ms": 300}},
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_sidecar_audio_smoke_sync",
+            lambda _config, *, audio_fixture_path, audio_codec, timeout_seconds: SimpleNamespace(
+                audio_bytes=1234,
+                events=("frontend.state", "transcript.partial", "transcript.final"),
+                ok=True,
+                transcript_final_ms=180,
+                transcript_partial_ms=90,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_audio_fixture_smoke(
+            issues,
+            audio_fixture_path="hello.webm",
+            audio_codec="webm_opus",
+        )
+
+        output = capsys.readouterr().out
+        assert "Realtime voice audio fixture smoke" in output
+        assert "bytes=1234" in output
+        assert "transcript.partial=90ms <= 300ms" in output
+        assert issues == []
+
+    def test_audio_fixture_smoke_records_missing_partial_issue(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={"quality_targets_ms": {"audio_to_partial_transcript_ms": 300}},
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_sidecar_audio_smoke_sync",
+            lambda _config, *, audio_fixture_path, audio_codec, timeout_seconds: SimpleNamespace(
+                audio_bytes=1234,
+                events=("frontend.state", "transcript.final"),
+                ok=True,
+                transcript_final_ms=180,
+                transcript_partial_ms=None,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_audio_fixture_smoke(
+            issues,
+            audio_fixture_path="hello.webm",
+            audio_codec="webm_opus",
+        )
+
+        output = capsys.readouterr().out
+        assert "missing transcript.partial" in output
+        assert any("audio fixture smoke failure" in issue for issue in issues)
+
+    def test_audio_fixture_smoke_records_partial_target_miss(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={"quality_targets_ms": {"audio_to_partial_transcript_ms": 300}},
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_sidecar_audio_smoke_sync",
+            lambda _config, *, audio_fixture_path, audio_codec, timeout_seconds: SimpleNamespace(
+                audio_bytes=1234,
+                events=("frontend.state", "transcript.partial", "transcript.final"),
+                ok=True,
+                transcript_final_ms=500,
+                transcript_partial_ms=450,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_audio_fixture_smoke(
+            issues,
+            audio_fixture_path="hello.webm",
+            audio_codec="webm_opus",
+        )
+
+        output = capsys.readouterr().out
+        assert "transcript.partial=450ms exceeds target 300ms" in output
+        assert any("audio fixture smoke failure" in issue for issue in issues)
+
 
 class TestDoctorEnvFileEncoding:
     """Regression for #18637 (bug 3): `hermes doctor` crashed on Windows
