@@ -5,6 +5,7 @@ import types
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
     ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS,
+    ALPHA_REQUIRED_AUDIO_SESSION_FIXTURES,
     ALPHA_REQUIRED_BARGE_IN_TEXTS,
     ALPHA_REQUIRED_SESSION_TURN_METADATA,
     ALPHA_REQUIRED_TTS_METADATA,
@@ -182,6 +183,33 @@ def _valid_alpha_report():
                 "transcript_final_ms": 180,
                 "target_ms": 300,
                 "events": ["frontend.state", "transcript.partial", "transcript.final"],
+            }
+        )
+    for fixture in ALPHA_REQUIRED_AUDIO_SESSION_FIXTURES:
+        entries.append(
+            {
+                "kind": "audio_session",
+                "ok": True,
+                "fixture": fixture,
+                "codec": "webm_opus",
+                "audio_bytes": 1234,
+                "final_text": ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS[fixture],
+                "transcript_partial_ms": 90,
+                "transcript_final_ms": 180,
+                "target_ms": 300,
+                "first_text_ms": 90,
+                "first_text_target_ms": 500,
+                "first_audio_ms": 250,
+                "first_audio_target_ms": 900,
+                "output_audio_bytes": 4321,
+                "events": [
+                    "session.started",
+                    "frontend.state",
+                    "transcript.partial",
+                    "transcript.final",
+                    "assistant.text.partial",
+                    "audio.output.chunk",
+                ],
             }
         )
     for text in ALPHA_REQUIRED_TTS_TEXTS:

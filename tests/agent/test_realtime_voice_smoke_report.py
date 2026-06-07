@@ -3,6 +3,7 @@ import json
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
     ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS,
+    ALPHA_REQUIRED_AUDIO_SESSION_FIXTURES,
     ALPHA_REQUIRED_BARGE_IN_TEXTS,
     ALPHA_REQUIRED_SESSION_TURN_TEXTS,
     ALPHA_REQUIRED_SESSION_TURN_METADATA,
@@ -96,6 +97,34 @@ def _valid_alpha_report():
                 "transcript_final_ms": 180,
                 "target_ms": 300,
                 "events": ["frontend.state", "transcript.partial", "transcript.final"],
+                "error": None,
+            }
+        )
+    for fixture in ALPHA_REQUIRED_AUDIO_SESSION_FIXTURES:
+        entries.append(
+            {
+                "kind": "audio_session",
+                "ok": True,
+                "fixture": fixture,
+                "codec": "webm_opus",
+                "audio_bytes": 1234,
+                "final_text": ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS[fixture],
+                "transcript_partial_ms": 90,
+                "transcript_final_ms": 180,
+                "target_ms": 300,
+                "first_text_ms": 90,
+                "first_text_target_ms": 500,
+                "first_audio_ms": 250,
+                "first_audio_target_ms": 900,
+                "output_audio_bytes": 4321,
+                "events": [
+                    "session.started",
+                    "frontend.state",
+                    "transcript.partial",
+                    "transcript.final",
+                    "assistant.text.partial",
+                    "audio.output.chunk",
+                ],
                 "error": None,
             }
         )
@@ -243,6 +272,38 @@ def test_realtime_voice_alpha_report_requires_session_turn_smoke():
     assert any("session_turn: missing required text" in issue.format() for issue in issues)
 
 
+def test_realtime_voice_alpha_report_requires_audio_session_smoke():
+    report = [entry for entry in _valid_alpha_report() if entry.get("kind") != "audio_session"]
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("audio_session: missing required fixture" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_rejects_wrong_audio_session_final_text():
+    report = _valid_alpha_report()
+    for entry in report:
+        if entry.get("kind") == "audio_session" and entry.get("fixture") == "./fixtures/realtime-voice/ja/hello.webm":
+            entry["final_text"] = "こんにちは、別の人です。"
+            break
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("final_text did not match expected fixture transcript" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_rejects_slow_audio_session_first_audio():
+    report = _valid_alpha_report()
+    for entry in report:
+        if entry.get("kind") == "audio_session":
+            entry["first_audio_ms"] = 950
+            break
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("audio_session: first_audio_ms 950 exceeds target 900" in issue.format() for issue in issues)
+
+
 def test_realtime_voice_alpha_report_rejects_slow_session_first_text():
     report = _valid_alpha_report()
     for entry in report:
@@ -381,8 +442,8 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     assert realtime_voice_report_main([str(path), "--alpha"]) == 0
     output = capsys.readouterr().out
     assert "Realtime voice smoke report OK" in output
-    assert "audio_to_partial_transcript: p50=90ms p95=90ms max=90ms n=4" in output
-    assert "final_transcript_to_first_text: p50=90ms p95=90ms max=90ms n=2" in output
+    assert "audio_to_partial_transcript: p50=90ms p95=90ms max=90ms n=6" in output
+    assert "final_transcript_to_first_text: p50=90ms p95=90ms max=90ms n=4" in output
     assert "barge_in_ack: p50=45ms p95=45ms max=45ms n=1" in output
 
 
@@ -441,17 +502,18 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
     summary = summarize_realtime_voice_smoke_report_runs(runs)
 
     assert summary["runs"] == 3
-    assert summary["entries"] == 36
+    assert summary["entries"] == 42
     assert summary["kinds"]["audio_fixture"] == {"entries": 12, "ok": 12, "failed": 0}
+    assert summary["kinds"]["audio_session"] == {"entries": 6, "ok": 6, "failed": 0}
     assert summary["kinds"]["session_turn"] == {"entries": 6, "ok": 6, "failed": 0}
     assert summary["latency_ms"]["audio_to_partial_transcript"] == {
-        "count": 12,
+        "count": 18,
         "p50": 90,
         "p95": 120,
         "max": 120,
     }
     assert summary["latency_ms"]["final_transcript_to_first_text"] == {
-        "count": 6,
+        "count": 12,
         "p50": 90,
         "p95": 90,
         "max": 90,

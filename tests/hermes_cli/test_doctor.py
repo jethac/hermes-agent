@@ -21,6 +21,7 @@ from agent.realtime_voice_smoke import (
 )
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
+    ALPHA_REQUIRED_AUDIO_SESSION_FIXTURES,
     ALPHA_REQUIRED_BARGE_IN_TEXTS,
     ALPHA_REQUIRED_TTS_TEXTS,
 )
@@ -801,6 +802,171 @@ class TestRealtimeVoiceReadiness:
         assert "first_text=650ms exceeds target 500ms" in output
         assert any("session turn smoke failure" in issue for issue in issues)
 
+    def test_session_audio_smoke_reports_success_with_all_targets(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={
+                    "quality_targets_ms": {
+                        "audio_to_partial_transcript_ms": 300,
+                        "final_transcript_to_first_text_ms": 500,
+                        "final_transcript_to_first_audio_ms": 900,
+                    }
+                },
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_session_audio_smoke_sync",
+            lambda _config, *, audio_fixture_path, audio_codec, timeout_seconds: SimpleNamespace(
+                audio_bytes=1234,
+                events=(
+                    "session.started",
+                    "frontend.state",
+                    "transcript.partial",
+                    "transcript.final",
+                    "assistant.text.partial",
+                    "audio.output.chunk",
+                ),
+                first_audio_ms=240,
+                first_text_ms=80,
+                ok=True,
+                output_audio_bytes=4321,
+                transcript_final_ms=180,
+                transcript_partial_ms=90,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_session_audio_smoke(
+            issues,
+            audio_fixture_path="hello.webm",
+            audio_codec="webm_opus",
+        )
+
+        output = capsys.readouterr().out
+        assert "Realtime voice audio session smoke" in output
+        assert "transcript.partial=90ms <= 300ms" in output
+        assert "first_text=80ms <= 500ms" in output
+        assert "first_audio=240ms <= 900ms" in output
+        assert issues == []
+
+    def test_session_audio_smoke_appends_machine_readable_report(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={
+                    "quality_targets_ms": {
+                        "audio_to_partial_transcript_ms": 300,
+                        "final_transcript_to_first_text_ms": 500,
+                        "final_transcript_to_first_audio_ms": 900,
+                    }
+                },
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_session_audio_smoke_sync",
+            lambda _config, *, audio_fixture_path, audio_codec, timeout_seconds: SimpleNamespace(
+                audio_bytes=1234,
+                events=("session.started", "transcript.partial", "transcript.final", "assistant.text.partial", "audio.output.chunk"),
+                final_text="こんにちは、Hermesです。",
+                first_audio_ms=240,
+                first_text_ms=80,
+                ok=True,
+                output_audio_bytes=4321,
+                transcript_final_ms=180,
+                transcript_partial_ms=90,
+            ),
+        )
+        issues = []
+        reports = []
+
+        doctor._check_realtime_voice_session_audio_smoke(
+            issues,
+            audio_fixture_path="hello-ja.webm",
+            audio_codec="webm_opus",
+            reports=reports,
+        )
+
+        assert issues == []
+        assert reports == [
+            {
+                "kind": "audio_session",
+                "ok": True,
+                "ready_ms": None,
+                "transcript_partial_ms": 90,
+                "transcript_final_ms": 180,
+                "first_text_ms": 80,
+                "first_audio_ms": 240,
+                "barge_in_ack_ms": None,
+                "final_text": "こんにちは、Hermesです。",
+                "audio_bytes": 1234,
+                "output_audio_bytes": 4321,
+                "audio_after_barge_in_bytes": 0,
+                "events": [
+                    "session.started",
+                    "transcript.partial",
+                    "transcript.final",
+                    "assistant.text.partial",
+                    "audio.output.chunk",
+                ],
+                "error": None,
+                "fixture": "hello-ja.webm",
+                "codec": "webm_opus",
+                "target_ms": 300,
+                "first_text_target_ms": 500,
+                "first_audio_target_ms": 900,
+                "timeout_seconds": 2.0,
+            }
+        ]
+        capsys.readouterr()
+
+    def test_session_audio_smoke_records_first_audio_target_miss(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={
+                    "quality_targets_ms": {
+                        "audio_to_partial_transcript_ms": 300,
+                        "final_transcript_to_first_text_ms": 500,
+                        "final_transcript_to_first_audio_ms": 900,
+                    }
+                },
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_session_audio_smoke_sync",
+            lambda _config, *, audio_fixture_path, audio_codec, timeout_seconds: SimpleNamespace(
+                audio_bytes=1234,
+                events=("session.started", "transcript.partial", "transcript.final", "assistant.text.partial", "audio.output.chunk"),
+                first_audio_ms=1200,
+                first_text_ms=80,
+                ok=True,
+                output_audio_bytes=4321,
+                transcript_final_ms=180,
+                transcript_partial_ms=90,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_session_audio_smoke(
+            issues,
+            audio_fixture_path="hello.webm",
+            audio_codec="webm_opus",
+        )
+
+        output = capsys.readouterr().out
+        assert "first_audio=1200ms exceeds target 900ms" in output
+        assert any("audio session smoke failure" in issue for issue in issues)
+
     def test_barge_in_smoke_records_ack_target_miss(self, monkeypatch, capsys):
         monkeypatch.setattr(
             doctor,
@@ -965,6 +1131,9 @@ class TestRealtimeVoiceReadiness:
         assert audio == [*ALPHA_REQUIRED_AUDIO_FIXTURES, "custom.webm"]
         assert tts == [*ALPHA_REQUIRED_TTS_TEXTS, "Extra phrase."]
         assert barge == list(ALPHA_REQUIRED_BARGE_IN_TEXTS)
+        assert doctor._realtime_voice_alpha_audio_session_fixtures() == list(
+            ALPHA_REQUIRED_AUDIO_SESSION_FIXTURES
+        )
         assert doctor._realtime_voice_alpha_session_turn_texts() == [
             "Hello from Hermes.",
             "こんにちは、Hermesです。",
