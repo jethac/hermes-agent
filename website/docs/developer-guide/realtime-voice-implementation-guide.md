@@ -261,6 +261,7 @@ voice:
     frontend_model: google/gemma-4-E4B-it-qat-w4a16-ct
     input_buffer_limit_bytes: 8388608
     input_frame_ms: 100
+    silence_timeout_ms: 650
     sidecar_host: 127.0.0.1
     sidecar_port: 8765
     sidecar_connect_timeout_seconds: 10
@@ -313,6 +314,7 @@ voice:
     frontend_provider: local
     input_buffer_limit_bytes: 8388608
     input_frame_ms: 100
+    silence_timeout_ms: 650
     sidecar_host: 127.0.0.1
     sidecar_port: 8765
     sidecar_autostart: true
@@ -335,13 +337,14 @@ voice:
     frontend_model: google/gemma-4-E4B-it-qat-w4a16-ct
     input_buffer_limit_bytes: 8388608
     input_frame_ms: 100
+    silence_timeout_ms: 650
     sidecar_base_url: "http://voice-inference.local:8765"
     sidecar_token_env: HERMES_VOICE_SIDECAR_TOKEN
     sidecar_connect_timeout_seconds: 10
     sidecar_autostart: false
 ```
 
-For `gemma4` or `vllm` frontends, the same supervised sidecar can call a remote vLLM audio endpoint through `vllm_base_url` and `vllm_model`. If `sidecar_base_url` points at a non-loopback host, Hermes treats that as an externally managed inference host and does not spawn a local process. Hermes bounds realtime sidecar websocket startup with `sidecar_connect_timeout_seconds` so an unreachable remote inference host can fall back or fail quickly instead of leaving the desktop waiting with an open microphone path. The desktop captures microphone chunks at `input_frame_ms` intervals; keep the default 100 ms for low-latency conversation, and raise it only when a browser or provider cannot keep up. The in-core local STT fallback also bounds unfinished utterance buffering with `input_buffer_limit_bytes`; when the cap is exceeded, Hermes clears the buffered audio and emits `frontend.state` with `status: "degraded"` and `reason: "input_buffer_limit_exceeded"` instead of storing audio without limit. Deprecated sidecar URL aliases remain accepted only for existing private profiles.
+For `gemma4` or `vllm` frontends, the same supervised sidecar can call a remote vLLM audio endpoint through `vllm_base_url` and `vllm_model`. If `sidecar_base_url` points at a non-loopback host, Hermes treats that as an externally managed inference host and does not spawn a local process. Hermes bounds realtime sidecar websocket startup with `sidecar_connect_timeout_seconds` so an unreachable remote inference host can fall back or fail quickly instead of leaving the desktop waiting with an open microphone path. The desktop captures microphone chunks at `input_frame_ms` intervals and closes a user turn after `silence_timeout_ms` of quiet; keep the defaults at 100 ms frames and 650 ms silence for low-latency conversation, and raise them only when a browser, room, or provider cannot keep up. The in-core local STT fallback also bounds unfinished utterance buffering with `input_buffer_limit_bytes`; when the cap is exceeded, Hermes clears the buffered audio and emits `frontend.state` with `status: "degraded"` and `reason: "input_buffer_limit_exceeded"` instead of storing audio without limit. Deprecated sidecar URL aliases remain accepted only for existing private profiles.
 
 Use capability names for `frontend_provider`, not machine names. Prefer `sidecar`, `reference`, `local`, `gemma4`, `vllm`, or a concrete `frontend_model`; do not encode a workstation or GPU product name into the provider value.
 

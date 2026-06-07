@@ -2030,6 +2030,7 @@ DEFAULT_CONFIG = {
             "output_codec": "opus",
             "input_buffer_limit_bytes": 8388608,
             "input_frame_ms": 100,
+            "silence_timeout_ms": 650,
             "frontend_provider": "",
             "frontend_model": "",
             "sidecar_base_url": "",

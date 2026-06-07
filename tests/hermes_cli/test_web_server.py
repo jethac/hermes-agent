@@ -6329,6 +6329,7 @@ class TestRealtimeVoiceWebSocket:
                         "sidecar_connect_timeout_seconds": 2.5,
                         "input_buffer_limit_bytes": 4096,
                         "input_frame_ms": 80,
+                        "silence_timeout_ms": 700,
                     }
                 }
             },
@@ -6436,6 +6437,7 @@ class TestRealtimeVoiceWebSocket:
                         "sidecar_connect_timeout_seconds": 3,
                         "input_buffer_limit_bytes": 4096,
                         "input_frame_ms": 80,
+                        "silence_timeout_ms": 700,
                     }
                 }
             },
@@ -6451,6 +6453,7 @@ class TestRealtimeVoiceWebSocket:
         assert body["frontend_provider"] == "gemma4"
         assert body["input_buffer_limit_bytes"] == 4096
         assert body["input_frame_ms"] == 80
+        assert body["silence_timeout_ms"] == 700
         assert body["sidecar"]["mode"] == "managed_loopback"
         assert body["sidecar"]["autostart"] is True
         assert body["sidecar"]["connect_timeout_seconds"] == 3
@@ -6560,6 +6563,26 @@ class TestRealtimeVoiceWebSocket:
 
         assert response.status_code == 200
         assert response.json()["input_frame_ms"] == 40
+
+    def test_status_clamps_realtime_silence_timeout_ms(self, monkeypatch):
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "silence_timeout_ms": 10_000,
+                    }
+                }
+            },
+        )
+
+        response = self.client.get("/api/voice/realtime/status")
+
+        assert response.status_code == 200
+        assert response.json()["silence_timeout_ms"] == 2000
 
     def test_status_reports_remote_unhealthy_sidecar_unavailable_and_redacted(self, monkeypatch):
         def fake_urlopen(url, timeout):
