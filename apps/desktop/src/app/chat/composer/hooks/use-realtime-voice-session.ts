@@ -830,7 +830,16 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     }
 
     setMuted(false)
-    await startListening()
+    try {
+      await startListening()
+    } catch (error) {
+      socket.close(1000, 'microphone unavailable')
+      if (socketRef.current === socket) {
+        socketRef.current = null
+      }
+      setStatus('idle')
+      throw error
+    }
   }, [handleEvent, onFatalError, onUnavailable, sessionId, startListening])
 
   const end = useCallback(async () => {
