@@ -25,6 +25,7 @@ from agent.realtime_voice_reference_sidecar import (
     runtime_config_from_env,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
+from agent.realtime_voice_oracle import _voice_oracle_prompt
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, sidecar_ws_url, wants_realtime_sidecar
@@ -402,9 +403,36 @@ def test_text_engine_accepts_transcript_payload_and_emits_oracle_text(monkeypatc
         assert final.payload["language"] == "ja"
         assert final.payload["locale"] == "ja-JP"
         assert final.payload["script"] == "Jpan"
+        assistant_partial = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL)
+        assert assistant_partial.payload["language"] == "ja"
+        assert assistant_partial.payload["locale"] == "ja-JP"
+        assert assistant_partial.payload["script"] == "Jpan"
         assert seen[-1].payload["text"] == "Answering: こんにちは hermes."
+        assert seen[-1].payload["language"] == "ja"
+        assert seen[-1].payload["locale"] == "ja-JP"
+        assert seen[-1].payload["script"] == "Jpan"
 
     asyncio.run(run())
+
+
+def test_realtime_oracle_prompt_preserves_sanitized_speech_language_metadata():
+    prompt = _voice_oracle_prompt(
+        "こんにちは",
+        {
+            "language": "ja",
+            "locale": "ja-JP",
+            "script": "Jpan",
+            "raw_language_url": "https://voice.local/secret",
+            "language_url": "https://voice.local/secret",
+        },
+    )
+
+    assert "Preserve the user's spoken language and script" in prompt
+    assert "language=ja" in prompt
+    assert "locale=ja-JP" in prompt
+    assert "script=Jpan" in prompt
+    assert "voice.local" not in prompt
+    assert "language_url" not in prompt
 
 
 def test_text_engine_speaks_stable_phrase_before_sentence_ends(monkeypatch):

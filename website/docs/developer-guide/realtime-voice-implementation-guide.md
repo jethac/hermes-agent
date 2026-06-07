@@ -275,6 +275,8 @@ The text-oracle engine starts TTS at stable sentence or phrase boundaries instea
 
 Do not make English the hidden default. The speech-understanding sidecar prompt must ask the model to preserve the speaker's language and script unless the user explicitly asks for translation. `transcript.partial`, `transcript.final`, `assistant.text.partial`, and `assistant.commit` payloads may carry optional `language`, `locale`, and `script` metadata, but downstream logic must not require it. The planner and chunker should work for languages without spaces between words and for punctuation such as `。`, `！？`, `؟`, `।`, `、`, `，`, `،`, and `；`.
 
+When sanitized transcript language metadata is available, the text-oracle engine carries it into assistant partial/commit events and the Hermes oracle prompt uses it as non-durable guidance to preserve the user's spoken language and script. The persisted user message remains the transcript text only; URLs, provider-specific fields, and malformed metadata must not enter the prompt or durable transcript.
+
 TTS is also language-sensitive. Prefer provider auto-detection or configured multilingual voices where available. If a configured voice is known to be language-limited, report a degraded `frontend.state` or use a configured fallback voice/provider; do not silently translate assistant output into English to satisfy a voice.
 
 Provider choices should be config-driven:

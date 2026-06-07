@@ -368,11 +368,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if metadata:
             payload.update(metadata)
         await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
-        self._active_task = asyncio.create_task(self._answer_and_speak(transcript, generation))
+        self._active_task = asyncio.create_task(self._answer_and_speak(transcript, generation, metadata or {}))
 
-    async def _answer_and_speak(self, transcript: str, playback_generation: int) -> None:
+    async def _answer_and_speak(self, transcript: str, playback_generation: int, metadata: dict) -> None:
         speak_tasks: List[asyncio.Task[None]] = []
         speak_chain: Optional[asyncio.Task[None]] = None
+        assistant_metadata = dict(metadata)
 
         def queue_speak(text: str) -> None:
             nonlocal speak_chain
@@ -398,7 +399,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             oracle = self._oracle or NullRealtimeOracle()
             answer = ""
             buffer = ""
-            async for delta in oracle.stream_answer(transcript):  # type: ignore[attr-defined]
+            async for delta in _stream_oracle_answer(oracle, transcript, assistant_metadata):
                 if playback_generation != self._playback_generation:
                     return
                 answer += delta
@@ -409,7 +410,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     if planned_chunk:
                         await self._emit(
                             VoiceEventType.ASSISTANT_TEXT_PARTIAL,
-                            {"text": planned_chunk, "playback_generation": playback_generation},
+                            {
+                                "text": planned_chunk,
+                                "playback_generation": playback_generation,
+                                **assistant_metadata,
+                            },
                         )
                         queue_speak(planned_chunk)
 
@@ -418,7 +423,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 if planned_chunk:
                     await self._emit(
                         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
-                        {"text": planned_chunk, "playback_generation": playback_generation},
+                        {
+                            "text": planned_chunk,
+                            "playback_generation": playback_generation,
+                            **assistant_metadata,
+                        },
                     )
                     queue_speak(planned_chunk)
 
@@ -430,7 +439,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             if playback_generation == self._playback_generation:
                 await self._emit(
                     VoiceEventType.ASSISTANT_COMMIT,
-                    {"text": plan.committed_text, "playback_generation": playback_generation},
+                    {
+                        "text": plan.committed_text,
+                        "playback_generation": playback_generation,
+                        **assistant_metadata,
+                    },
                 )
         except asyncio.CancelledError:
             await cancel_speak_tasks()
@@ -564,6 +577,17 @@ def _payload_generation(payload: dict) -> Optional[int]:
 def _payload_input_generation(payload: dict) -> Optional[int]:
     value = payload.get("input_generation")
     return _payload_int(value)
+
+
+async def _stream_oracle_answer(oracle: object, transcript: str, metadata: dict) -> AsyncIterator[str]:
+    metadata_stream = getattr(oracle, "stream_answer_with_metadata", None)
+    if callable(metadata_stream):
+        async for delta in metadata_stream(transcript, metadata):  # type: ignore[misc]
+            yield delta
+        return
+
+    async for delta in oracle.stream_answer(transcript):  # type: ignore[attr-defined]
+        yield delta
 
 
 def _payload_int(value: object) -> Optional[int]:
