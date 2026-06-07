@@ -13,9 +13,11 @@ from agent.realtime_voice import (
 from agent.realtime_voice_deepgram_bridge import (
     DeepgramStreamingSTTBridgeConfig,
     DeepgramStreamingSTTBridgeSession,
+    DeepgramStreamingTTSBridgeSession,
     deepgram_bridge_config_from_env,
     deepgram_listen_url,
     deepgram_result_to_transcript_payload,
+    deepgram_tts_url,
 )
 
 
@@ -40,6 +42,21 @@ def test_deepgram_listen_url_uses_streaming_defaults_for_pcm16():
     assert "interim_results=true" in url
     assert "endpointing=80" in url
     assert "language=ja" in url
+    assert "encoding=linear16" in url
+    assert "sample_rate=24000" in url
+
+
+def test_deepgram_tts_url_uses_streaming_audio_defaults():
+    url = deepgram_tts_url(
+        DeepgramStreamingSTTBridgeConfig(
+            deepgram_tts_url="wss://api.deepgram.com/v1/speak",
+            tts_model="aura-2-thalia-en",
+            tts_sample_rate_hz=24000,
+        )
+    )
+
+    assert url.startswith("wss://api.deepgram.com/v1/speak?")
+    assert "model=aura-2-thalia-en" in url
     assert "encoding=linear16" in url
     assert "sample_rate=24000" in url
 
@@ -75,8 +92,11 @@ def test_deepgram_runtime_reads_env(monkeypatch):
     monkeypatch.setenv("DEEPGRAM_API_KEY", "deepgram-secret")
     monkeypatch.setenv("HERMES_STREAMING_STT_BRIDGE_TOKEN", "bridge-token")
     monkeypatch.setenv("HERMES_DEEPGRAM_LISTEN_URL", "wss://deepgram.example.test/v1/listen")
+    monkeypatch.setenv("HERMES_DEEPGRAM_TTS_URL", "wss://deepgram.example.test/v1/speak")
     monkeypatch.setenv("HERMES_DEEPGRAM_MODEL", "nova-3")
+    monkeypatch.setenv("HERMES_DEEPGRAM_TTS_MODEL", "aura-2-thalia-en")
     monkeypatch.setenv("HERMES_DEEPGRAM_LANGUAGE", "en-US")
+    monkeypatch.setenv("HERMES_DEEPGRAM_TTS_SAMPLE_RATE_HZ", "48000")
     monkeypatch.setenv("HERMES_DEEPGRAM_ENDPOINTING_MS", "120")
     monkeypatch.setenv("HERMES_DEEPGRAM_CONNECT_TIMEOUT_SECONDS", "2.5")
 
@@ -85,8 +105,11 @@ def test_deepgram_runtime_reads_env(monkeypatch):
     assert runtime.api_key == "deepgram-secret"
     assert runtime.auth_token == "bridge-token"
     assert runtime.deepgram_url == "wss://deepgram.example.test/v1/listen"
+    assert runtime.deepgram_tts_url == "wss://deepgram.example.test/v1/speak"
     assert runtime.model == "nova-3"
+    assert runtime.tts_model == "aura-2-thalia-en"
     assert runtime.language == "en-US"
+    assert runtime.tts_sample_rate_hz == 48000
     assert runtime.endpointing_ms == 120
     assert runtime.connect_timeout_seconds == 2.5
 
@@ -220,5 +243,104 @@ def test_deepgram_session_streams_partial_and_final_events(monkeypatch):
             "language": "en-US",
             "input_generation": 9,
         }
+
+    asyncio.run(run())
+
+
+def test_deepgram_tts_session_streams_audio_and_barge_in(monkeypatch):
+    captured = {}
+
+    class FakeDeepgramTTSWebSocket:
+        def __init__(self):
+            self.sent = []
+            self.closed = False
+            self._messages = asyncio.Queue()
+
+        async def send(self, payload):
+            self.sent.append(payload)
+            if json.loads(payload).get("type") == "Flush":
+                await self._messages.put(b"pcm-audio")
+
+        async def close(self):
+            self.closed = True
+            await self._messages.put(None)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            item = await self._messages.get()
+            if item is None:
+                raise StopAsyncIteration
+            return item
+
+    fake_ws = FakeDeepgramTTSWebSocket()
+
+    async def fake_connect(url, additional_headers=None, extra_headers=None):
+        captured["url"] = url
+        captured["headers"] = additional_headers or extra_headers
+        return fake_ws
+
+    monkeypatch.setitem(sys.modules, "websockets", types.SimpleNamespace(connect=fake_connect))
+
+    async def run():
+        session = DeepgramStreamingTTSBridgeSession(
+            DeepgramStreamingSTTBridgeConfig(
+                api_key="deepgram-secret",
+                tts_model="aura-2-thalia-en",
+                tts_sample_rate_hz=24000,
+                connect_timeout_seconds=1,
+            )
+        )
+        await session.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await session.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "text": "hello from Hermes",
+                    "speak": True,
+                    "playback_generation": 3,
+                },
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                break
+
+        await session.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=2,
+                payload={"reason": "user_speech", "playback_generation": 4},
+            )
+        )
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.BARGE_IN:
+                await session.close()
+                break
+
+        assert captured["headers"] == {"Authorization": "Token deepgram-secret"}
+        assert captured["url"].startswith("wss://api.deepgram.com/v1/speak?")
+        assert json.loads(fake_ws.sent[0]) == {"type": "Speak", "text": "hello from Hermes"}
+        assert json.loads(fake_ws.sent[1]) == {"type": "Flush"}
+        assert json.loads(fake_ws.sent[2]) == {"type": "Clear"}
+        assert [event.type for event in seen] == [
+            VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            VoiceEventType.BARGE_IN,
+        ]
+        audio = AudioChunk.from_payload(seen[1].payload)
+        assert audio.codec == VoiceAudioCodec.PCM16
+        assert audio.data == b"pcm-audio"
+        assert audio.sample_rate_hz == 24000
+        assert seen[1].payload["playback_generation"] == 3
+        assert seen[2].payload["playback_generation"] == 4
 
     asyncio.run(run())

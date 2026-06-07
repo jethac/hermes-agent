@@ -80,17 +80,22 @@ The managed reference sidecar can bridge to a portable streaming STT service thr
 - `voice.realtime.streaming_stt_base_url`
 - `voice.realtime.streaming_stt_model`
 - `voice.realtime.streaming_stt_token_env`
+- `voice.realtime.streaming_tts_base_url`
+- `voice.realtime.streaming_tts_model`
+- `voice.realtime.streaming_tts_token_env`
 
 The downstream service must expose `GET /health` with `{"ok": true, "capabilities": {"streaming_stt": true}}` before the reference sidecar advertises `capabilities.streaming_stt: true`. It must also accept a websocket at `/v1/streaming-stt/session` using the same `session.config`, binary `audio.input.chunk`, `transcript.partial`, `transcript.final`, `barge_in`, and `session.error` event contract as the main Hermes sidecar protocol. Hermes forwards microphone chunks to that bridge, relays sanitized transcript metadata back to the desktop, and still uses the configured Hermes oracle plus TTS path for the assistant response.
 
+If `streaming_tts_base_url` is configured, the same reference sidecar probes the bridge for `capabilities.tts: true` and opens `/v1/streaming-tts/session` for assistant speech. It sends `assistant.text.partial` events with `speak: true`, relays `audio.output.chunk` events back to the desktop, and forwards `barge_in` so the TTS bridge can clear pending audio. This keeps low-latency output portable in the same way as streaming STT.
+
 This is intentionally not a Gemma/vLLM shortcut. A vLLM/Gemma chat-completions audio endpoint can improve utterance transcription, but it remains `utterance_stt` until it emits partial/final transcript events while audio is still arriving. Only a verified streaming STT bridge plus TTS, or a native S2S sidecar, can make `conversation_quality.live_like` true.
 
-Hermes ships a Deepgram-compatible bridge entrypoint for the first provider-backed streaming STT path:
+Hermes ships a Deepgram-compatible bridge entrypoint for the first provider-backed streaming STT and streaming TTS path:
 
 ```bash
 set DEEPGRAM_API_KEY=...
 set HERMES_STREAMING_STT_BRIDGE_TOKEN=...
-python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --model nova-3 --language en-US
+python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --model nova-3 --tts-model aura-2-thalia-en --language en-US
 ```
 
 Then configure the Hermes realtime profile so the managed reference sidecar can bridge to it:
@@ -105,6 +110,9 @@ voice:
     streaming_stt_base_url: http://127.0.0.1:8766
     streaming_stt_model: nova-3
     streaming_stt_token_env: HERMES_STREAMING_STT_BRIDGE_TOKEN
+    streaming_tts_base_url: http://127.0.0.1:8766
+    streaming_tts_model: aura-2-thalia-en
+    streaming_tts_token_env: HERMES_STREAMING_STT_BRIDGE_TOKEN
     require_live_like: true
 ```
 
