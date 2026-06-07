@@ -9,6 +9,7 @@ import sys
 import subprocess
 import shutil
 from pathlib import Path
+from typing import Any, Mapping
 
 from hermes_cli.config import get_project_root, get_hermes_home, get_env_path
 from hermes_cli.env_loader import load_hermes_dotenv
@@ -388,6 +389,205 @@ def _check_gateway_service_linger(issues: list[str]) -> None:
         check_warn("Could not verify systemd linger", f"({linger_detail})")
 
 
+def _realtime_voice_status_payload() -> Mapping[str, Any]:
+    from hermes_cli.web_server import _realtime_voice_status_payload as payload
+
+    return payload(probe_health=True)
+
+
+def _realtime_voice_bool(value: Any) -> str:
+    if value is True:
+        return "yes"
+    if value is False:
+        return "no"
+    return "unknown"
+
+
+def _realtime_voice_clean_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            token = item.strip()
+            if token:
+                result.append(token)
+    return result
+
+
+def _realtime_voice_provider_label(payload: Mapping[str, Any]) -> str:
+    provider = str(payload.get("frontend_provider") or "").strip()
+    if provider:
+        return provider
+    sidecar = payload.get("sidecar")
+    if isinstance(sidecar, Mapping):
+        health = sidecar.get("health")
+        if isinstance(health, Mapping):
+            frontend = health.get("frontend")
+            if isinstance(frontend, Mapping):
+                health_provider = str(frontend.get("provider") or "").strip()
+                if health_provider:
+                    return health_provider
+    return ""
+
+
+def _realtime_voice_has_machine_named_provider(payload: Mapping[str, Any]) -> bool:
+    text = " ".join(
+        part
+        for part in (
+            _realtime_voice_provider_label(payload),
+            str(payload.get("frontend_model") or ""),
+        )
+        if part
+    ).lower()
+    if not text:
+        return False
+    machine_tokens = (
+        "dgx",
+        "pgx",
+        "spark",
+        "workstation",
+        "gpu",
+        "rtx",
+        "a100",
+        "h100",
+        "h200",
+        "b200",
+    )
+    return any(token in text for token in machine_tokens)
+
+
+def _realtime_voice_enabled_in_config() -> bool:
+    try:
+        cfg = load_config()
+    except Exception:
+        return False
+    voice = cfg.get("voice") if isinstance(cfg, dict) else {}
+    realtime = voice.get("realtime") if isinstance(voice, dict) else {}
+    return isinstance(realtime, dict) and realtime.get("enabled") is True
+
+
+def _check_realtime_voice_readiness(issues: list[str], *, strict: bool = False) -> None:
+    """Report whether realtime voice is configured for portable live conversation."""
+    _section("Realtime Voice")
+
+    if not strict and not _realtime_voice_enabled_in_config():
+        check_warn("Realtime voice disabled", "(skipping live voice readiness gate)")
+        check_info("Realtime voice preflight skipped because realtime voice is disabled")
+        return
+
+    try:
+        payload = _realtime_voice_status_payload()
+    except Exception as exc:
+        check_warn("Realtime voice status", f"(could not check: {exc})")
+        if strict:
+            issues.append(f"Realtime voice status could not be checked: {exc}")
+        return
+
+    enabled = payload.get("enabled") is True
+    available = payload.get("available") is True
+    unavailable_reason = str(payload.get("unavailable_reason") or "").strip()
+    engine = str(payload.get("engine") or "text_oracle_tts")
+    require_live_like = payload.get("require_live_like") is True
+    quality = payload.get("conversation_quality")
+    quality = quality if isinstance(quality, Mapping) else {}
+    mode = str(quality.get("mode") or "unknown")
+    reason = str(quality.get("reason") or "unknown")
+    live_like = quality.get("live_like")
+
+    if enabled:
+        check_ok("Realtime voice enabled", f"({engine})")
+    elif strict:
+        _fail_and_issue(
+            "Realtime voice disabled",
+            "(enable voice.realtime.enabled for live voice readiness)",
+            "Enable voice.realtime.enabled before using realtime voice",
+            issues,
+        )
+    else:
+        check_warn("Realtime voice disabled", "(skipping live voice readiness gate)")
+
+    if enabled and available:
+        check_ok("Realtime voice preflight", "(available)")
+    elif enabled:
+        _fail_and_issue(
+            "Realtime voice preflight",
+            f"(unavailable: {unavailable_reason or 'unknown'})",
+            f"Fix realtime voice availability: {unavailable_reason or 'unknown'}",
+            issues,
+        )
+    elif strict:
+        check_fail("Realtime voice preflight", "(unavailable because realtime voice is disabled)")
+    else:
+        check_info("Realtime voice preflight skipped because realtime voice is disabled")
+
+    quality_detail = f"({mode}: {reason}, live-like: {_realtime_voice_bool(live_like)})"
+    if live_like is True:
+        check_ok("Live conversation quality", quality_detail)
+    elif enabled and (strict or require_live_like):
+        _fail_and_issue(
+            "Live conversation quality",
+            quality_detail,
+            "Configure a streaming STT/TTS sidecar or native S2S sidecar; turn-based voice is not live-like",
+            issues,
+        )
+    elif enabled:
+        check_warn("Live conversation quality", quality_detail)
+    else:
+        check_info(f"Live conversation quality not evaluated {quality_detail}")
+
+    language_support = payload.get("language_support")
+    language_support = language_support if isinstance(language_support, Mapping) else {}
+    production_languages = _realtime_voice_clean_list(language_support.get("production_languages"))
+    best_effort = language_support.get("best_effort_languages") is True
+    missing_targets = [lang for lang in ("en", "ja") if lang not in production_languages]
+    if not missing_targets:
+        detail = f"(production: {', '.join(production_languages) or 'none'}; best-effort: {_realtime_voice_bool(best_effort)})"
+        check_ok("Realtime voice language policy", detail)
+    else:
+        check_warn(
+            "Realtime voice language policy",
+            f"(missing production target(s): {', '.join(missing_targets)})",
+        )
+        if strict:
+            issues.append("Realtime voice production language targets should include English and Japanese")
+    if production_languages and best_effort is not True:
+        check_warn("Best-effort languages disabled", "(non-target languages may be rejected or hidden)")
+        if strict:
+            issues.append("Set voice.realtime.best_effort_languages: true unless intentionally limiting speech languages")
+
+    sidecar = payload.get("sidecar")
+    sidecar = sidecar if isinstance(sidecar, Mapping) else {}
+    sidecar_mode = str(sidecar.get("mode") or "none")
+    sidecar_healthy = sidecar.get("healthy")
+    if sidecar_mode == "none":
+        check_info("Voice sidecar not configured")
+    elif sidecar_healthy is True:
+        check_ok("Voice sidecar health", f"({sidecar_mode})")
+    elif enabled:
+        _fail_and_issue(
+            "Voice sidecar health",
+            f"({sidecar_mode}, healthy: {_realtime_voice_bool(sidecar_healthy)})",
+            "Start or fix the configured realtime voice sidecar",
+            issues,
+        )
+    else:
+        check_warn("Voice sidecar health", f"({sidecar_mode}, healthy: {_realtime_voice_bool(sidecar_healthy)})")
+
+    if _realtime_voice_has_machine_named_provider(payload):
+        check_warn(
+            "Portable voice provider naming",
+            "(provider/model appears to encode a machine or accelerator name)",
+        )
+        if strict:
+            issues.append(
+                "Use capability names like sidecar, reference, gemma4, vllm, or native_s2s; "
+                "do not encode a workstation/GPU name into realtime voice provider config"
+            )
+    else:
+        check_ok("Portable voice provider naming", "(capability-based)")
+
+
 _APIKEY_PROVIDERS_CACHE: list | None = None
 
 
@@ -512,6 +712,7 @@ def run_doctor(args):
     """Run diagnostic checks."""
     should_fix = getattr(args, 'fix', False)
     ack_target = getattr(args, 'ack', None)
+    strict_realtime_voice = getattr(args, 'realtime_voice', False)
 
     # Doctor runs from the interactive CLI, so CLI-gated tool availability
     # checks (like cronjob management) should see the same context as `hermes`.
@@ -1147,6 +1348,8 @@ def run_doctor(args):
                 check_info(xai_oauth_status["error"])
     except Exception:
         pass
+
+    _check_realtime_voice_readiness(issues, strict=strict_realtime_voice)
 
     _section("Directory Structure")
     hermes_home = HERMES_HOME

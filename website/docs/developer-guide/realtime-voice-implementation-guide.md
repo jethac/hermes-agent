@@ -222,6 +222,14 @@ When a sidecar is reachable, its `/health` response must include a JSON capabili
 
 Capture tuning is also server-owned. The desktop uses `speech_level_threshold`, `barge_in_min_speech_ms`, and `pre_roll_ms` from preflight status so microphone sensitivity, interruption confidence, and first-syllable preservation can be tuned per profile without rebuilding or reconfiguring the desktop.
 
+Operator readiness gate:
+
+```bash
+hermes doctor --realtime-voice
+```
+
+Use this before treating a profile as live-voice ready. The strict gate requires realtime voice to be enabled, preflight-available, and live-like according to the same `conversation_quality` payload the desktop uses. It also checks that English and Japanese remain the production acceptance languages, that best-effort language pass-through is enabled unless deliberately disabled, that the configured sidecar is healthy, and that public provider naming stays capability-based rather than tied to a specific workstation or accelerator. Plain `hermes doctor` reports the same section informatively without failing ordinary installs that have not opted into realtime voice.
+
 Implementation notes:
 
 - Reuse existing websocket host/origin/auth guards in `web_server.py`.
