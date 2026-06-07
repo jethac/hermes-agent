@@ -357,6 +357,87 @@ def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
     asyncio.run(run())
 
 
+def test_text_engine_reports_sidecar_start_failure_as_frontend_fallback():
+    class FailingStartSidecar:
+        async def start(self, config):
+            raise RuntimeError("sidecar down")
+
+    async def run():
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=FailingStartSidecar())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="gemma4",
+                sidecar_base_url="http://voice.local:8080",
+            )
+        )
+
+        events = [await anext(engine.events()), await anext(engine.events())]
+
+        assert [event.type for event in events] == [
+            VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.SESSION_STARTED,
+        ]
+        assert events[0].payload["status"] == "fallback"
+        assert events[0].payload["reason"] == "sidecar_unavailable"
+        assert events[0].payload["sidecar"] is False
+        assert "sidecar down" in events[0].payload["error"]
+        assert events[1].payload["sidecar"] is False
+
+    asyncio.run(run())
+
+
+def test_text_engine_falls_back_to_local_stt_when_sidecar_send_fails(monkeypatch):
+    class FailingSendSidecar(FakeSidecar):
+        async def send_event(self, event):
+            raise RuntimeError("send failed")
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+        monkeypatch.setattr(TextOracleTTSEngine, "_transcribe_sync", lambda self, audio, codec: "local transcript")
+
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=FailingSendSidecar())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="gemma4",
+                sidecar_base_url="http://voice.local:8080",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                await engine.close()
+                break
+
+        fallback = next(event for event in seen if event.type == VoiceEventType.FRONTEND_STATE)
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+
+        assert fallback.payload["status"] == "fallback"
+        assert fallback.payload["reason"] == "sidecar_send_failed"
+        assert fallback.payload["sidecar"] is False
+        assert final.payload["text"] == "local transcript"
+        assert VoiceEventType.SESSION_ERROR not in [event.type for event in seen]
+
+    asyncio.run(run())
+
+
 def test_text_engine_barge_in_interrupts_oracle_and_sidecar():
     class InterruptibleOracle(FakeOracle):
         def __init__(self):
