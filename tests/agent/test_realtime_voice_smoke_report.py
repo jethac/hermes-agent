@@ -25,6 +25,12 @@ def _valid_manifest():
             "reason": "streaming_stt_tts",
             "sidecar_verified": True,
         },
+        "quality_targets_ms": {
+            "audio_to_partial_transcript_ms": 300,
+            "final_transcript_to_first_text_ms": 500,
+            "final_transcript_to_first_audio_ms": 900,
+            "barge_in_ack_ms": 150,
+        },
         "sidecar": {
             "healthy": True,
             "health": {
@@ -136,6 +142,16 @@ def test_realtime_voice_alpha_report_requires_live_like_manifest():
     assert any("manifest was not live-like" in issue.format() for issue in issues)
 
 
+def test_realtime_voice_alpha_report_rejects_loose_manifest_quality_targets():
+    manifest = _valid_manifest()
+    manifest["quality_targets_ms"]["final_transcript_to_first_audio_ms"] = 1200
+    report = [manifest, *_valid_alpha_report()[1:]]
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("quality target final_transcript_to_first_audio_ms 1200 exceeds alpha ceiling 900" in issue.format() for issue in issues)
+
+
 def test_realtime_voice_alpha_report_requires_live_sidecar_manifest_capabilities():
     manifest = _valid_manifest()
     manifest["sidecar"]["health"]["capabilities"] = {
@@ -210,6 +226,19 @@ def test_realtime_voice_alpha_report_rejects_barge_in_target_misses():
     issues = validate_realtime_voice_alpha_report(report)
 
     assert any("barge_in_ack_ms 250 exceeds target 150" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_rejects_loose_entry_targets():
+    report = _valid_alpha_report()
+    for entry in report:
+        if entry.get("kind") == "tts":
+            entry["first_audio_ms"] = 950
+            entry["target_ms"] = 1200
+            break
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("target_ms 1200 exceeds alpha ceiling 900" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_smoke_report_rejects_latency_target_misses():

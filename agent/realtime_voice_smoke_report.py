@@ -50,6 +50,13 @@ ALPHA_REQUIRED_BARGE_IN_TEXTS = (
     "Hello from Hermes.",
 )
 
+ALPHA_REQUIRED_QUALITY_TARGETS_MS = {
+    "audio_to_partial_transcript_ms": 300,
+    "final_transcript_to_first_text_ms": 500,
+    "final_transcript_to_first_audio_ms": 900,
+    "barge_in_ack_ms": 150,
+}
+
 
 @dataclass(frozen=True)
 class RealtimeVoiceSmokeReportIssue:
@@ -172,6 +179,7 @@ def validate_realtime_voice_smoke_report(
     required_barge_in_texts: Iterable[str] = (),
     require_protocol: bool = True,
     require_manifest: bool = False,
+    require_alpha_targets: bool = False,
 ) -> list[RealtimeVoiceSmokeReportIssue]:
     issues: list[RealtimeVoiceSmokeReportIssue] = []
     by_kind = _entries_by_kind(entries)
@@ -179,7 +187,10 @@ def validate_realtime_voice_smoke_report(
     if not manifest_entries and require_manifest:
         issues.append(RealtimeVoiceSmokeReportIssue("manifest", "missing manifest entry"))
     elif manifest_entries:
-        issues.extend(_validate_alpha_manifest_entry(manifest_entries[0]))
+        issues.extend(_validate_alpha_manifest_entry(
+            manifest_entries[0],
+            require_alpha_targets=require_alpha_targets,
+        ))
 
     if require_protocol:
         protocol_entries = by_kind.get("protocol", [])
@@ -213,11 +224,32 @@ def validate_realtime_voice_smoke_report(
     ))
 
     for entry in audio_entries:
-        issues.extend(_validate_audio_fixture_entry(entry))
+        issues.extend(_validate_audio_fixture_entry(
+            entry,
+            max_target_ms=(
+                ALPHA_REQUIRED_QUALITY_TARGETS_MS["audio_to_partial_transcript_ms"]
+                if require_alpha_targets
+                else None
+            ),
+        ))
     for entry in tts_entries:
-        issues.extend(_validate_tts_entry(entry))
+        issues.extend(_validate_tts_entry(
+            entry,
+            max_target_ms=(
+                ALPHA_REQUIRED_QUALITY_TARGETS_MS["final_transcript_to_first_audio_ms"]
+                if require_alpha_targets
+                else None
+            ),
+        ))
     for entry in barge_in_entries:
-        issues.extend(_validate_barge_in_entry(entry))
+        issues.extend(_validate_barge_in_entry(
+            entry,
+            max_target_ms=(
+                ALPHA_REQUIRED_QUALITY_TARGETS_MS["barge_in_ack_ms"]
+                if require_alpha_targets
+                else None
+            ),
+        ))
 
     return issues
 
@@ -230,10 +262,15 @@ def validate_realtime_voice_alpha_report(entries: Sequence[Mapping[str, Any]]) -
         required_barge_in_texts=ALPHA_REQUIRED_BARGE_IN_TEXTS,
         require_protocol=True,
         require_manifest=True,
+        require_alpha_targets=True,
     )
 
 
-def _validate_alpha_manifest_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmokeReportIssue]:
+def _validate_alpha_manifest_entry(
+    entry: Mapping[str, Any],
+    *,
+    require_alpha_targets: bool = False,
+) -> list[RealtimeVoiceSmokeReportIssue]:
     issues: list[RealtimeVoiceSmokeReportIssue] = []
     if entry.get("ok") is not True:
         issues.append(RealtimeVoiceSmokeReportIssue("manifest", "manifest entry was not ok", "manifest"))
@@ -246,6 +283,30 @@ def _validate_alpha_manifest_entry(entry: Mapping[str, Any]) -> list[RealtimeVoi
     )
     if conversation_quality.get("live_like") is not True:
         issues.append(RealtimeVoiceSmokeReportIssue("manifest", "manifest was not live-like", "manifest"))
+    if require_alpha_targets:
+        quality_targets = (
+            entry.get("quality_targets_ms")
+            if isinstance(entry.get("quality_targets_ms"), Mapping)
+            else {}
+        )
+        for key, ceiling in ALPHA_REQUIRED_QUALITY_TARGETS_MS.items():
+            actual = _positive_int(quality_targets.get(key))
+            if actual is None:
+                issues.append(
+                    RealtimeVoiceSmokeReportIssue(
+                        "manifest",
+                        f"missing quality target {key}",
+                        "manifest",
+                    )
+                )
+            elif actual > ceiling:
+                issues.append(
+                    RealtimeVoiceSmokeReportIssue(
+                        "manifest",
+                        f"quality target {key} {actual} exceeds alpha ceiling {ceiling}",
+                        "manifest",
+                    )
+                )
 
     sidecar = entry.get("sidecar") if isinstance(entry.get("sidecar"), Mapping) else {}
     if sidecar.get("healthy") is not True:
@@ -374,7 +435,11 @@ def _validate_protocol_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmok
     return issues
 
 
-def _validate_audio_fixture_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmokeReportIssue]:
+def _validate_audio_fixture_entry(
+    entry: Mapping[str, Any],
+    *,
+    max_target_ms: int | None = None,
+) -> list[RealtimeVoiceSmokeReportIssue]:
     identifier = str(entry.get("fixture") or "audio_fixture")
     issues = _validate_common_ok(entry, kind="audio_fixture", identifier=identifier)
     events = _events(entry)
@@ -390,6 +455,14 @@ def _validate_audio_fixture_entry(entry: Mapping[str, Any]) -> list[RealtimeVoic
         issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing transcript_partial_ms", identifier))
     if target_ms is None:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing target_ms", identifier))
+    elif max_target_ms is not None and target_ms > max_target_ms:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "audio_fixture",
+                f"target_ms {target_ms} exceeds alpha ceiling {max_target_ms}",
+                identifier,
+            )
+        )
     elif partial_ms is not None and partial_ms > target_ms:
         issues.append(
             RealtimeVoiceSmokeReportIssue(
@@ -403,7 +476,11 @@ def _validate_audio_fixture_entry(entry: Mapping[str, Any]) -> list[RealtimeVoic
     return issues
 
 
-def _validate_tts_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmokeReportIssue]:
+def _validate_tts_entry(
+    entry: Mapping[str, Any],
+    *,
+    max_target_ms: int | None = None,
+) -> list[RealtimeVoiceSmokeReportIssue]:
     identifier = str(entry.get("text") or "tts")
     issues = _validate_common_ok(entry, kind="tts", identifier=identifier)
     expected_metadata = ALPHA_REQUIRED_TTS_METADATA.get(str(entry.get("text") or ""))
@@ -429,6 +506,14 @@ def _validate_tts_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmokeRepo
         issues.append(RealtimeVoiceSmokeReportIssue("tts", "missing first_audio_ms", identifier))
     if target_ms is None:
         issues.append(RealtimeVoiceSmokeReportIssue("tts", "missing target_ms", identifier))
+    elif max_target_ms is not None and target_ms > max_target_ms:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "tts",
+                f"target_ms {target_ms} exceeds alpha ceiling {max_target_ms}",
+                identifier,
+            )
+        )
     elif first_audio_ms is not None and first_audio_ms > target_ms:
         issues.append(
             RealtimeVoiceSmokeReportIssue(
@@ -440,7 +525,11 @@ def _validate_tts_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmokeRepo
     return issues
 
 
-def _validate_barge_in_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmokeReportIssue]:
+def _validate_barge_in_entry(
+    entry: Mapping[str, Any],
+    *,
+    max_target_ms: int | None = None,
+) -> list[RealtimeVoiceSmokeReportIssue]:
     identifier = str(entry.get("text") or "barge_in")
     issues = _validate_common_ok(entry, kind="barge_in", identifier=identifier)
     events = _events(entry)
@@ -452,6 +541,14 @@ def _validate_barge_in_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmok
         issues.append(RealtimeVoiceSmokeReportIssue("barge_in", "missing barge_in_ack_ms", identifier))
     if target_ms is None:
         issues.append(RealtimeVoiceSmokeReportIssue("barge_in", "missing target_ms", identifier))
+    elif max_target_ms is not None and target_ms > max_target_ms:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "barge_in",
+                f"target_ms {target_ms} exceeds alpha ceiling {max_target_ms}",
+                identifier,
+            )
+        )
     elif ack_ms is not None and ack_ms > target_ms:
         issues.append(
             RealtimeVoiceSmokeReportIssue(
