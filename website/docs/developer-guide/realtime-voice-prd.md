@@ -28,6 +28,7 @@ The production architecture has three deployment tiers behind the same desktop p
 - Make the desktop portable by separating microphone/playback/session UI from the machine or service that performs voice inference.
 - Autostart the reference sidecar for loopback local/Gemma/vLLM configurations so basic realtime voice does not require a second manual process.
 - Keep the desktop UI protocol stable while engines change behind it.
+- Preserve the user's spoken language and script by default; realtime voice must not silently translate to English or assume English punctuation/word boundaries.
 - Support barge-in: user speech interrupts assistant playback and updates the live session state.
 - Commit only stable transcript and assistant text to durable Hermes session history.
 
@@ -118,6 +119,16 @@ Hermes oracle
 - The engine emits `transcript.partial` for unstable speech.
 - The engine emits `transcript.final` when a segment is stable enough to commit to the live session state.
 - Gemma can be used as a speech understanding/frontend model, but Hermes must not depend on Gemma being the backend oracle model.
+- STT/audio-understanding prompts must preserve source language and script unless the user explicitly asks for translation.
+- Transcript events may include `language`, `locale`, `script`, and provider confidence metadata when available, but the protocol must also work when a provider cannot identify language.
+
+### Language and Locale
+
+- Language selection is provider/config driven, not hardcoded in the realtime protocol.
+- The desktop UI language is not automatically the speech language. Use explicit voice/STT config, provider auto-detection, or per-session metadata.
+- Speech chunking and planning must handle common non-ASCII sentence and phrase delimiters, and must not require whitespace-delimited words.
+- TTS provider selection must allow multilingual voices. If the configured voice cannot speak the transcript/assistant language, the engine should emit a degraded frontend state or fall back to a compatible configured provider instead of forcing English.
+- Native S2S sidecars should report language capability in `/health` when known; Hermes uses that for diagnostics, not for granting tool authority.
 
 ### Hermes Oracle
 

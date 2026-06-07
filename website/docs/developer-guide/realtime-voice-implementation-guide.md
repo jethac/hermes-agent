@@ -41,7 +41,7 @@ The realtime voice implementation now has both engine families behind the same p
 - `agent/realtime_voice_reference_sidecar.py` implements the reference sidecar server that can run on ordinary machines with configured STT/TTS providers, or call a vLLM/Gemma audio endpoint when available.
 - `agent/realtime_voice_text_engine.py` implements the text-oracle path: audio or transcript input, streaming frontend events from a configured sidecar, local STT fallback via Hermes' existing transcription provider chain at utterance boundaries, streaming Hermes oracle deltas, speech planning, and chunked audio output via sidecar TTS or the existing TTS provider chain.
 - `agent/realtime_voice_s2s_engine.py` implements the native S2S path as a websocket bridge to a local, remote, or cloud model sidecar. When the sidecar emits final transcript events, Hermes calls the configured oracle model and sends `oracle.hint` events back to the sidecar.
-- `hermes_cli/web_server.py` exposes `/api/voice/realtime` behind the same websocket auth and Host/Origin guards as the dashboard chat websocket. For loopback `local`, `reference`, `gemma`, `gemma4`, `lmstudio`, and `vllm` frontends, it can also supervise the reference sidecar process automatically.
+- `hermes_cli/web_server.py` exposes `/api/voice/realtime` behind the same websocket auth and Host/Origin guards as the dashboard chat websocket. For loopback `local`, `reference`, `sidecar`, `gemma`, `gemma4`, `lmstudio`, and `vllm` frontends, it can also supervise the reference sidecar process automatically.
 - `apps/desktop/src/app/chat/composer/hooks/use-realtime-voice-session.ts` implements the desktop websocket client, microphone frame capture, simple VAD, playback queue, and barge-in cancellation.
 
 The existing one-shot voice mode remains the fallback. Realtime voice is opt-in via `voice.realtime.enabled`.
@@ -71,7 +71,7 @@ The voice inference process owns:
 - streaming TTS or native S2S audio generation
 - model-specific media dependencies and GPU scheduling
 
-This split is why `sidecar_base_url` remains server-side configuration. The desktop cannot point Hermes at an arbitrary inference host through query params, and public docs/settings should describe sidecars by capability (`local`, `reference`, `gemma4`, `vllm`, `native_s2s`) rather than by a specific workstation or accelerator name.
+This split is why `sidecar_base_url` remains server-side configuration. The desktop cannot point Hermes at an arbitrary inference host through query params, and public docs/settings should describe sidecars by capability (`sidecar`, `local`, `reference`, `gemma4`, `vllm`, `native_s2s`) rather than by a specific workstation or accelerator name.
 
 ## Target File Layout
 
@@ -263,6 +263,10 @@ receive audio chunk
 
 The text-oracle engine starts TTS at stable sentence or phrase boundaries instead of waiting for the full response. Prefer punctuation boundaries, including common non-ASCII sentence and phrase delimiters, and only use whitespace splits as a fallback. This lets the local/provider tier improve first-audio latency without assuming English text or a native S2S model.
 
+Do not make English the hidden default. The speech-understanding sidecar prompt must ask the model to preserve the speaker's language and script unless the user explicitly asks for translation. `transcript.partial`, `transcript.final`, `assistant.text.partial`, and `assistant.commit` payloads may carry optional `language`, `locale`, and `script` metadata, but downstream logic must not require it. The planner and chunker should work for languages without spaces between words and for punctuation such as `。`, `！？`, `؟`, `।`, `、`, `，`, `،`, and `；`.
+
+TTS is also language-sensitive. Prefer provider auto-detection or configured multilingual voices where available. If a configured voice is known to be language-limited, report a degraded `frontend.state` or use a configured fallback voice/provider; do not silently translate assistant output into English to satisfy a voice.
+
 Provider choices should be config-driven:
 
 ```yaml
@@ -361,7 +365,7 @@ voice:
 
 For `gemma4` or `vllm` frontends, the same supervised sidecar can call a remote vLLM audio endpoint through `vllm_base_url` and `vllm_model`. If `sidecar_base_url` points at a non-loopback host, Hermes treats that as an externally managed inference host and does not spawn a local process. Hermes bounds realtime sidecar websocket startup with `sidecar_connect_timeout_seconds` so an unreachable remote inference host can fall back or fail quickly instead of leaving the desktop waiting with an open microphone path. The desktop captures microphone chunks at `input_frame_ms` intervals and closes a user turn after `silence_timeout_ms` of quiet; keep the defaults at 100 ms frames and 650 ms silence for low-latency conversation, and raise them only when a browser, room, or provider cannot keep up. The in-core local STT fallback also bounds unfinished utterance buffering with `input_buffer_limit_bytes`; when the cap is exceeded, Hermes clears the buffered audio and emits `frontend.state` with `status: "degraded"` and `reason: "input_buffer_limit_exceeded"` instead of storing audio without limit. Deprecated sidecar URL aliases remain accepted only for existing private profiles.
 
-Use capability names for `frontend_provider`, not machine names. Prefer `sidecar`, `reference`, `local`, `gemma4`, `vllm`, or a concrete `frontend_model`; do not encode a workstation or GPU product name into the provider value.
+Use capability names for `frontend_provider`, not machine names. Prefer `sidecar`, `reference`, `local`, `gemma4`, `vllm`, or a concrete `frontend_model`; do not encode a workstation or GPU product name into the provider value. `sidecar` is the portable alias for "use the configured/default voice sidecar" and should get the same local loopback defaulting and managed-autostart behavior as `local` or `reference` when no explicit remote `sidecar_base_url` is set.
 
 Suggested sidecar API expansion:
 
@@ -499,3 +503,4 @@ npm run test:ui -- src/app/chat/composer/hooks/use-realtime-voice-session.test.t
 - Websocket auth matches existing dashboard boundaries.
 - Sidecar credentials are profile-safe.
 - Provider dependencies are optional or lazy-installed.
+- No English-only assumptions in speech planning, transcript prompts, language metadata, or TTS fallback.

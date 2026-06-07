@@ -2818,7 +2818,7 @@ _ACTION_RESULTS: Dict[str, Dict[str, Any]] = {}
 
 _VOICE_SIDECAR_PROC: Optional[subprocess.Popen] = None
 _VOICE_SIDECAR_LOCK = threading.Lock()
-_LOCAL_VOICE_SIDECAR_PROVIDERS = {"local", "reference", "provider", "gemma", "gemma4", "lmstudio", "vllm"}
+_LOCAL_VOICE_SIDECAR_PROVIDERS = {"local", "reference", "provider", "sidecar", "gemma", "gemma4", "lmstudio", "vllm"}
 _VOICE_SIDECAR_HEALTH_TIMEOUT = 0.75
 _VOICE_SIDECAR_START_TIMEOUT = 8.0
 

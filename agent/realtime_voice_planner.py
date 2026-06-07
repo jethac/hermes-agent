@@ -45,26 +45,50 @@ class RealtimeSpeechPlanner:
         chunks: List[str] = []
         remaining = text.strip()
         while remaining:
-            match = re.match(r"^(.{24,220}?[.!?。！？])(?:\s+|$)", remaining)
-            if match:
-                chunk = match.group(1).strip()
-                chunks.append(chunk)
-                remaining = remaining[len(match.group(1)):].strip()
+            has_whitespace = any(character.isspace() for character in remaining)
+            sentence_at = _find_delimiter(remaining, _NON_ASCII_SENTENCE_BOUNDARY_CHARS, start=8, end=220)
+            if sentence_at < 0:
+                sentence_min = 24 if has_whitespace else 8
+                sentence_at = _find_delimiter(remaining, _ASCII_SENTENCE_BOUNDARY_CHARS, start=sentence_min, end=220)
+            if sentence_at >= 0:
+                chunks.append(remaining[: sentence_at + 1].strip())
+                remaining = remaining[sentence_at + 1 :].strip()
                 continue
+
+            phrase_min = 80 if has_whitespace else 16
+            phrase_trigger = 220 if has_whitespace else 32
+            if len(remaining) >= phrase_trigger:
+                phrase_at = _find_delimiter(remaining, _PHRASE_BOUNDARY_CHARS, start=phrase_min, end=220)
+                if phrase_at >= phrase_min:
+                    chunks.append(remaining[: phrase_at + 1].strip())
+                    remaining = remaining[phrase_at + 1 :].strip()
+                    continue
 
             if len(remaining) <= 220:
                 chunks.append(remaining)
                 break
 
             split_at = max(
-                remaining.rfind(", ", 0, 220),
-                remaining.rfind("; ", 0, 220),
-                remaining.rfind(": ", 0, 220),
+                _find_delimiter(remaining, _PHRASE_BOUNDARY_CHARS, start=phrase_min, end=220),
                 remaining.rfind(" ", 0, 220),
             )
             if split_at < 80:
                 split_at = 220
-            chunks.append(remaining[:split_at].strip())
-            remaining = remaining[split_at:].strip()
+            suffix_start = split_at + 1 if remaining[split_at] in _PHRASE_BOUNDARY_CHARS else split_at
+            chunks.append(remaining[:suffix_start].strip())
+            remaining = remaining[suffix_start:].strip()
 
         return chunks
+
+
+_ASCII_SENTENCE_BOUNDARY_CHARS = frozenset(".!?")
+_NON_ASCII_SENTENCE_BOUNDARY_CHARS = frozenset("。！？؟।")
+_PHRASE_BOUNDARY_CHARS = frozenset(",;:，、；：،؛")
+
+
+def _find_delimiter(text: str, delimiters: frozenset[str], *, start: int, end: int) -> int:
+    upper = min(len(text), end)
+    for index in range(upper - 1, max(-1, start - 1), -1):
+        if text[index] in delimiters:
+            return index
+    return -1

@@ -251,7 +251,10 @@ class ReferenceRealtimeVoiceSidecarSession:
                         {"type": "audio_url", "audio_url": {"url": f"data:{mime_type};base64,{audio_b64}"}},
                         {
                             "type": "text",
-                            "text": "Transcribe the speech in this audio. Return only the spoken words.",
+                            "text": (
+                                "Transcribe the speech in this audio. Preserve the speaker's language "
+                                "and script. Return only the spoken words; do not translate or add commentary."
+                            ),
                         },
                     ],
                 }
