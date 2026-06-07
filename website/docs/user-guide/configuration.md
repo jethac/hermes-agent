@@ -1581,6 +1581,9 @@ voice:
   realtime:
     enabled: false              # Enable the desktop realtime voice websocket path
     engine: text_oracle_tts     # text_oracle_tts | native_s2s_oracle
+    speech_level_threshold: 0.075
+    barge_in_min_speech_ms: 120
+    pre_roll_ms: 300
     production_languages: ["en", "ja"]
     production_scripts: ["Latn", "Jpan"]
     best_effort_languages: true # Keep other languages available without claiming production quality
