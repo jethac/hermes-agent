@@ -53,6 +53,13 @@ def build_doctor_parser(subparsers, *, cmd_doctor: Callable) -> None:
         help="Run the strict realtime voice gate plus a sidecar TTS first-audio smoke; repeat for multiple phrases",
     )
     doctor_parser.add_argument(
+        "--realtime-voice-barge-in-smoke",
+        action="append",
+        metavar="TEXT",
+        default=None,
+        help="Run the strict realtime voice gate plus a sidecar barge-in acknowledgement smoke; repeat for multiple phrases",
+    )
+    doctor_parser.add_argument(
         "--realtime-voice-report",
         metavar="PATH",
         default=None,

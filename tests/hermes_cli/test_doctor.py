@@ -72,6 +72,7 @@ class TestRealtimeVoiceReadiness:
                 transcript_partial_ms=90,
                 transcript_final_ms=180,
                 first_audio_ms=250,
+                barge_in_ack_ms=45,
                 final_text="こんにちは",
                 audio_bytes=1234,
                 output_audio_bytes=4321,
@@ -83,6 +84,7 @@ class TestRealtimeVoiceReadiness:
         assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
         assert payload["kind"] == "audio_fixture"
         assert payload["events"] == ["frontend.state", "transcript.final"]
+        assert payload["barge_in_ack_ms"] == 45
         assert payload["error"] is None
 
     def test_non_strict_disabled_realtime_voice_is_informational(self, monkeypatch, capsys):
@@ -424,6 +426,7 @@ class TestRealtimeVoiceReadiness:
                 "transcript_partial_ms": 90,
                 "transcript_final_ms": 180,
                 "first_audio_ms": None,
+                "barge_in_ack_ms": None,
                 "final_text": "",
                 "audio_bytes": 1234,
                 "output_audio_bytes": 0,
@@ -556,6 +559,59 @@ class TestRealtimeVoiceReadiness:
         output = capsys.readouterr().out
         assert "first_audio=1200ms exceeds target 900ms" in output
         assert any("TTS smoke failure" in issue for issue in issues)
+
+    def test_barge_in_smoke_reports_success_with_ack_target(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={"quality_targets_ms": {"barge_in_ack_ms": 150}},
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_sidecar_barge_in_smoke_sync",
+            lambda _config, *, text, timeout_seconds: SimpleNamespace(
+                barge_in_ack_ms=45,
+                events=("frontend.state", "barge_in"),
+                ok=True,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_barge_in_smoke(issues, text="Hello from Hermes.")
+
+        output = capsys.readouterr().out
+        assert "Realtime voice barge-in smoke" in output
+        assert "barge_in_ack=45ms <= 150ms" in output
+        assert issues == []
+
+    def test_barge_in_smoke_records_ack_target_miss(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(
+                metadata={"quality_targets_ms": {"barge_in_ack_ms": 150}},
+                sidecar_connect_timeout_seconds=2.0,
+            ),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_sidecar_barge_in_smoke_sync",
+            lambda _config, *, text, timeout_seconds: SimpleNamespace(
+                barge_in_ack_ms=240,
+                events=("frontend.state", "barge_in"),
+                ok=True,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_barge_in_smoke(issues, text="Hello from Hermes.")
+
+        output = capsys.readouterr().out
+        assert "barge_in_ack=240ms exceeds target 150ms" in output
+        assert any("barge-in smoke failure" in issue for issue in issues)
 
     def test_realtime_voice_report_writer_preserves_unicode(self, tmp_path):
         report_path = tmp_path / "voice-smoke.json"

@@ -578,6 +578,7 @@ def _realtime_voice_smoke_report_payload(result: Any, *, kind: str, **extra: Any
             getattr(result, "transcript_final_ms", None),
         ),
         "first_audio_ms": mapping.get("first_audio_ms", getattr(result, "first_audio_ms", None)),
+        "barge_in_ack_ms": mapping.get("barge_in_ack_ms", getattr(result, "barge_in_ack_ms", None)),
         "final_text": str(mapping.get("final_text", getattr(result, "final_text", "")) or ""),
         "audio_bytes": int(mapping.get("audio_bytes", getattr(result, "audio_bytes", 0)) or 0),
         "output_audio_bytes": int(
@@ -716,6 +717,23 @@ def _run_realtime_voice_sidecar_tts_smoke_sync(
     )
 
 
+def _run_realtime_voice_sidecar_barge_in_smoke_sync(
+    config,
+    *,
+    text: str,
+    timeout_seconds: float,
+):
+    from agent.realtime_voice_smoke import run_realtime_voice_sidecar_barge_in_smoke
+
+    return asyncio.run(
+        run_realtime_voice_sidecar_barge_in_smoke(
+            config,
+            text=text,
+            timeout_seconds=timeout_seconds,
+        )
+    )
+
+
 def _check_realtime_voice_sidecar_smoke(
     issues: list[str],
     *,
@@ -773,6 +791,82 @@ def _check_realtime_voice_sidecar_smoke(
         "Realtime voice sidecar smoke",
         f"({detail})",
         f"Fix realtime voice sidecar protocol smoke failure: {detail}",
+        issues,
+    )
+
+
+def _check_realtime_voice_barge_in_smoke(
+    issues: list[str],
+    *,
+    text: str,
+    reports: list[dict[str, Any]] | None = None,
+) -> None:
+    try:
+        config = _realtime_voice_smoke_config()
+    except Exception as exc:
+        _append_realtime_voice_smoke_report(
+            reports,
+            {"ok": False, "error": f"could not build config: {exc}"},
+            kind="barge_in",
+            text=text,
+        )
+        _fail_and_issue(
+            "Realtime voice barge-in smoke",
+            f"(could not build config: {exc})",
+            f"Fix realtime voice barge-in smoke configuration: {exc}",
+            issues,
+        )
+        return
+
+    timeout_seconds = min(max(float(config.sidecar_connect_timeout_seconds or 10.0), 1.0), 30.0)
+    try:
+        result = _run_realtime_voice_sidecar_barge_in_smoke_sync(
+            config,
+            text=text,
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception as exc:
+        _append_realtime_voice_smoke_report(
+            reports,
+            {"ok": False, "error": f"failed: {exc}"},
+            kind="barge_in",
+            text=text,
+            timeout_seconds=timeout_seconds,
+        )
+        _fail_and_issue(
+            "Realtime voice barge-in smoke",
+            f"(failed: {exc})",
+            f"Fix realtime voice barge-in smoke failure: {exc}",
+            issues,
+        )
+        return
+
+    target_ms = _quality_target_from_config(config, "barge_in_ack_ms", 150)
+    _append_realtime_voice_smoke_report(
+        reports,
+        result,
+        kind="barge_in",
+        text=text,
+        target_ms=target_ms,
+        timeout_seconds=timeout_seconds,
+    )
+    if result.ok and result.barge_in_ack_ms is not None and result.barge_in_ack_ms <= target_ms:
+        check_ok(
+            "Realtime voice barge-in smoke",
+            f"(barge_in_ack={result.barge_in_ack_ms}ms <= {target_ms}ms)",
+        )
+        return
+
+    detail = getattr(result, "error", "") or "barge-in smoke failed"
+    if result.ok and result.barge_in_ack_ms is not None:
+        detail = f"barge_in_ack={result.barge_in_ack_ms}ms exceeds target {target_ms}ms"
+    events = tuple(getattr(result, "events", ()) or ())
+    if events:
+        detail = f"{detail}; events={','.join(events)}"
+    _fail_and_issue(
+        "Realtime voice barge-in smoke",
+        f"({detail})",
+        f"Fix realtime voice barge-in smoke failure: {detail}",
         issues,
     )
 
@@ -1205,6 +1299,9 @@ def run_doctor(args):
     realtime_voice_tts_smokes = _realtime_voice_cli_values(
         getattr(args, 'realtime_voice_tts_smoke', None)
     )
+    realtime_voice_barge_in_smokes = _realtime_voice_cli_values(
+        getattr(args, 'realtime_voice_barge_in_smoke', None)
+    )
     realtime_voice_report_path = getattr(args, 'realtime_voice_report', None)
     realtime_voice_reports: list[dict[str, Any]] | None = [] if realtime_voice_report_path else None
     strict_realtime_voice = (
@@ -1212,6 +1309,7 @@ def run_doctor(args):
         or smoke_realtime_voice
         or bool(realtime_voice_audio_fixtures)
         or bool(realtime_voice_tts_smokes)
+        or bool(realtime_voice_barge_in_smokes)
     )
 
     # Doctor runs from the interactive CLI, so CLI-gated tool availability
@@ -1863,6 +1961,12 @@ def run_doctor(args):
         _check_realtime_voice_tts_smoke(
             issues,
             text=realtime_voice_tts_smoke,
+            reports=realtime_voice_reports,
+        )
+    for realtime_voice_barge_in_smoke in realtime_voice_barge_in_smokes:
+        _check_realtime_voice_barge_in_smoke(
+            issues,
+            text=realtime_voice_barge_in_smoke,
             reports=realtime_voice_reports,
         )
     if realtime_voice_report_path:

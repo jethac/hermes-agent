@@ -27,6 +27,10 @@ ALPHA_REQUIRED_TTS_TEXTS = (
     "音声で会話できますか？",
 )
 
+ALPHA_REQUIRED_BARGE_IN_TEXTS = (
+    "Hello from Hermes.",
+)
+
 
 @dataclass(frozen=True)
 class RealtimeVoiceSmokeReportIssue:
@@ -57,6 +61,7 @@ def validate_realtime_voice_smoke_report(
     *,
     required_audio_fixtures: Iterable[str] = (),
     required_tts_texts: Iterable[str] = (),
+    required_barge_in_texts: Iterable[str] = (),
     require_protocol: bool = True,
 ) -> list[RealtimeVoiceSmokeReportIssue]:
     issues: list[RealtimeVoiceSmokeReportIssue] = []
@@ -72,6 +77,7 @@ def validate_realtime_voice_smoke_report(
 
     audio_entries = by_kind.get("audio_fixture", [])
     tts_entries = by_kind.get("tts", [])
+    barge_in_entries = by_kind.get("barge_in", [])
 
     issues.extend(_validate_required_entries(
         entries=audio_entries,
@@ -85,11 +91,19 @@ def validate_realtime_voice_smoke_report(
         field="text",
         kind="tts",
     ))
+    issues.extend(_validate_required_entries(
+        entries=barge_in_entries,
+        required=required_barge_in_texts,
+        field="text",
+        kind="barge_in",
+    ))
 
     for entry in audio_entries:
         issues.extend(_validate_audio_fixture_entry(entry))
     for entry in tts_entries:
         issues.extend(_validate_tts_entry(entry))
+    for entry in barge_in_entries:
+        issues.extend(_validate_barge_in_entry(entry))
 
     return issues
 
@@ -99,6 +113,7 @@ def validate_realtime_voice_alpha_report(entries: Sequence[Mapping[str, Any]]) -
         entries,
         required_audio_fixtures=ALPHA_REQUIRED_AUDIO_FIXTURES,
         required_tts_texts=ALPHA_REQUIRED_TTS_TEXTS,
+        required_barge_in_texts=ALPHA_REQUIRED_BARGE_IN_TEXTS,
         require_protocol=True,
     )
 
@@ -195,6 +210,29 @@ def _validate_tts_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmokeRepo
     return issues
 
 
+def _validate_barge_in_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmokeReportIssue]:
+    identifier = str(entry.get("text") or "barge_in")
+    issues = _validate_common_ok(entry, kind="barge_in", identifier=identifier)
+    events = _events(entry)
+    if "barge_in" not in events:
+        issues.append(RealtimeVoiceSmokeReportIssue("barge_in", "missing barge_in event", identifier))
+    ack_ms = _nonnegative_int(entry.get("barge_in_ack_ms"))
+    target_ms = _positive_int(entry.get("target_ms"))
+    if ack_ms is None:
+        issues.append(RealtimeVoiceSmokeReportIssue("barge_in", "missing barge_in_ack_ms", identifier))
+    if target_ms is None:
+        issues.append(RealtimeVoiceSmokeReportIssue("barge_in", "missing target_ms", identifier))
+    elif ack_ms is not None and ack_ms > target_ms:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "barge_in",
+                f"barge_in_ack_ms {ack_ms} exceeds target {target_ms}",
+                identifier,
+            )
+        )
+    return issues
+
+
 def _validate_common_ok(
     entry: Mapping[str, Any],
     *,
@@ -224,4 +262,16 @@ def _positive_int(value: Any) -> int | None:
     if isinstance(value, str) and value.isdigit():
         parsed = int(value)
         return parsed if parsed > 0 else None
+    return None
+
+
+def _nonnegative_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value >= 0:
+        return value
+    if isinstance(value, float) and value.is_integer() and value >= 0:
+        return int(value)
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
     return None
