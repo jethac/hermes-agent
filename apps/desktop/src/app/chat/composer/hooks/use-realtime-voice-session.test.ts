@@ -65,7 +65,20 @@ describe('realtimeVoiceUrl', () => {
       available: false,
       enabled: true,
       engine: 'native_s2s_oracle',
-      sidecar: { mode: 'none' }
+      sidecar: {
+        health: {
+          capabilities: {
+            input_languages: ['en', 'ja'],
+            output_languages: ['en', 'ja'],
+            scripts: ['Latn', 'Jpan']
+          },
+          frontend: {
+            languages: ['en', 'ja'],
+            scripts: ['Latn', 'Jpan']
+          }
+        },
+        mode: 'none'
+      }
     }))
 
     Object.defineProperty(window, 'hermesDesktop', {
@@ -76,7 +89,16 @@ describe('realtimeVoiceUrl', () => {
     await expect(getRealtimeVoiceStatus()).resolves.toMatchObject({
       available: false,
       enabled: true,
-      engine: 'native_s2s_oracle'
+      engine: 'native_s2s_oracle',
+      sidecar: {
+        health: {
+          capabilities: {
+            input_languages: ['en', 'ja'],
+            output_languages: ['en', 'ja'],
+            scripts: ['Latn', 'Jpan']
+          }
+        }
+      }
     })
     expect(api).toHaveBeenCalledWith({ path: '/api/voice/realtime/status' })
   })
@@ -152,20 +174,48 @@ describe('collectRealtimeVoiceCaption', () => {
   })
 
   it('tracks user partial and final transcript captions', () => {
-    const partial = collectRealtimeVoiceCaption(null, event('transcript.partial', { text: 'hello her' }))
-    const final = collectRealtimeVoiceCaption(partial, event('transcript.final', { text: 'hello hermes' }, 1_500))
+    const partial = collectRealtimeVoiceCaption(null, event('transcript.partial', {
+      language: 'ja',
+      locale: 'ja-JP',
+      script: 'Jpan',
+      text: 'こんにちは'
+    }))
+    const final = collectRealtimeVoiceCaption(partial, event('transcript.final', { text: 'こんにちは Hermes' }, 1_500))
 
     expect(partial).toEqual({
       final: false,
+      language: 'ja',
+      locale: 'ja-JP',
+      script: 'Jpan',
       speaker: 'user',
-      text: 'hello her',
+      text: 'こんにちは',
       updatedAtMs: 1_234
     })
     expect(final).toEqual({
       final: true,
+      language: 'ja',
+      locale: 'ja-JP',
+      script: 'Jpan',
       speaker: 'user',
-      text: 'hello hermes',
+      text: 'こんにちは Hermes',
       updatedAtMs: 1_500
+    })
+  })
+
+  it('filters malformed caption language metadata', () => {
+    const caption = collectRealtimeVoiceCaption(null, event('transcript.final', {
+      language: 'https://voice.local/secret',
+      locale: 'ja-JP',
+      script: 'bad/script',
+      text: 'こんにちは'
+    }))
+
+    expect(caption).toEqual({
+      final: true,
+      locale: 'ja-JP',
+      speaker: 'user',
+      text: 'こんにちは',
+      updatedAtMs: 1_234
     })
   })
 
@@ -189,13 +239,21 @@ describe('collectRealtimeVoiceCaption', () => {
   })
 
   it('accumulates assistant deltas from live provider-style partials', () => {
-    const first = collectRealtimeVoiceCaption(null, event('assistant.text.partial', { delta: 'Answering ' }))
-    const second = collectRealtimeVoiceCaption(first, event('assistant.text.partial', { delta: 'now.' }, 1_300))
+    const first = collectRealtimeVoiceCaption(null, event('assistant.text.partial', {
+      delta: '回答します。',
+      language: 'ja',
+      locale: 'ja-JP',
+      script: 'Jpan'
+    }))
+    const second = collectRealtimeVoiceCaption(first, event('assistant.text.partial', { delta: '続けます。' }, 1_300))
 
     expect(second).toEqual({
       final: false,
+      language: 'ja',
+      locale: 'ja-JP',
+      script: 'Jpan',
       speaker: 'assistant',
-      text: 'Answering now.',
+      text: '回答します。続けます。',
       updatedAtMs: 1_300
     })
   })

@@ -46,9 +46,18 @@ export interface RealtimeVoiceLatencyMetrics {
   updatedAtMs?: number
 }
 
+export interface RealtimeVoiceLanguageMetadata {
+  language?: string
+  locale?: string
+  script?: string
+}
+
 export interface RealtimeVoiceCaption {
   final: boolean
+  language?: string
+  locale?: string
   speaker: 'assistant' | 'user'
+  script?: string
   text: string
   updatedAtMs?: number
 }
@@ -69,6 +78,30 @@ export interface RealtimeVoiceStatus {
   sidecar?: {
     autostart?: boolean
     connect_timeout_seconds?: number
+    health?: {
+      capabilities?: {
+        input_languages?: string[]
+        native_s2s?: boolean
+        output_languages?: string[]
+        scripts?: string[]
+        streaming_stt?: boolean
+        tts?: boolean
+        utterance_stt?: boolean
+        vllm_audio_frontend?: boolean
+      }
+      frontend?: {
+        languages?: string[]
+        model?: null | string
+        provider?: null | string
+        scripts?: string[]
+      }
+      kind?: null | string
+      local?: {
+        stt?: boolean
+        tts?: boolean
+      }
+      ok?: boolean
+    }
     healthy?: boolean | null
     mode?: string
   }
@@ -101,6 +134,7 @@ const DEFAULT_REALTIME_SESSION_READY_TIMEOUT_MS = 12_000
 const MIN_REALTIME_SESSION_READY_TIMEOUT_MS = 3_000
 const MAX_REALTIME_SESSION_READY_TIMEOUT_MS = 30_000
 const DEFAULT_REALTIME_PRE_ROLL_MS = 300
+const REALTIME_LANGUAGE_METADATA_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const GENERATION_EVENT_TYPES = new Set([
   'audio.output.chunk',
   'assistant.commit',
@@ -224,6 +258,41 @@ export function getRealtimeVoiceStatus(): Promise<RealtimeVoiceStatus> {
 
 function finiteNonNegativeMs(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
+
+function realtimeVoiceLanguageMetadata(payload?: Record<string, unknown>): RealtimeVoiceLanguageMetadata {
+  const metadata: RealtimeVoiceLanguageMetadata = {}
+
+  for (const key of ['language', 'locale', 'script'] as const) {
+    const value = payload?.[key]
+
+    if (typeof value !== 'string') {
+      continue
+    }
+
+    const token = value.trim()
+    if (REALTIME_LANGUAGE_METADATA_RE.test(token)) {
+      metadata[key] = token
+    }
+  }
+
+  return metadata
+}
+
+function mergeRealtimeVoiceLanguageMetadata(
+  previous: RealtimeVoiceCaption | null,
+  metadata: RealtimeVoiceLanguageMetadata,
+  speaker: RealtimeVoiceCaption['speaker']
+): RealtimeVoiceLanguageMetadata {
+  if (Object.keys(metadata).length > 0 || previous?.speaker !== speaker) {
+    return metadata
+  }
+
+  return {
+    ...(previous.language ? { language: previous.language } : {}),
+    ...(previous.locale ? { locale: previous.locale } : {}),
+    ...(previous.script ? { script: previous.script } : {})
+  }
 }
 
 export function collectRealtimeVoiceMetrics(
@@ -518,14 +587,20 @@ export function collectRealtimeVoiceCaption(
   const rawText = typeof event.payload?.text === 'string' ? event.payload.text : ''
   const text = rawText.trim()
   const updatedAtMs = finiteNonNegativeMs(event.timestamp_ms) ?? Date.now()
+  const metadata = realtimeVoiceLanguageMetadata(event.payload)
 
   if (event.type === 'transcript.partial') {
-    return text ? { final: false, speaker: 'user', text, updatedAtMs } : previous
+    const language = mergeRealtimeVoiceLanguageMetadata(previous, metadata, 'user')
+
+    return text ? { final: false, speaker: 'user', text, updatedAtMs, ...language } : previous
   }
   if (event.type === 'transcript.final') {
-    return text ? { final: true, speaker: 'user', text, updatedAtMs } : previous
+    const language = mergeRealtimeVoiceLanguageMetadata(previous, metadata, 'user')
+
+    return text ? { final: true, speaker: 'user', text, updatedAtMs, ...language } : previous
   }
   if (event.type === 'assistant.text.partial') {
+    const language = mergeRealtimeVoiceLanguageMetadata(previous, metadata, 'assistant')
     const rawDelta = typeof event.payload?.delta === 'string' ? event.payload.delta : ''
     const hasDelta = rawDelta.length > 0
     if (!text && !hasDelta) {
@@ -536,16 +611,18 @@ export function collectRealtimeVoiceCaption(
       const prefix = previous?.speaker === 'assistant' ? previous.text : rawText.trimStart()
       const nextText = previous?.speaker === 'assistant' ? `${prefix}${chunk}` : prefix || chunk
 
-      return { final: false, speaker: 'assistant', text: nextText, updatedAtMs }
+      return { final: false, speaker: 'assistant', text: nextText, updatedAtMs, ...language }
     }
 
     const chunk = previous?.speaker === 'assistant' ? rawText : rawText.trimStart()
     const nextText = previous?.speaker === 'assistant' ? `${previous.text}${chunk}` : chunk
 
-    return { final: false, speaker: 'assistant', text: nextText, updatedAtMs }
+    return { final: false, speaker: 'assistant', text: nextText, updatedAtMs, ...language }
   }
   if (event.type === 'assistant.commit') {
-    return text ? { final: true, speaker: 'assistant', text, updatedAtMs } : previous
+    const language = mergeRealtimeVoiceLanguageMetadata(previous, metadata, 'assistant')
+
+    return text ? { final: true, speaker: 'assistant', text, updatedAtMs, ...language } : previous
   }
   if (event.type === 'barge_in') {
     return previous?.speaker === 'assistant' ? null : previous
