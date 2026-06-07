@@ -1207,6 +1207,47 @@ def test_text_engine_barge_in_interrupts_oracle_and_sidecar():
     asyncio.run(run())
 
 
+def test_text_engine_barge_in_ack_is_not_blocked_by_slow_sidecar():
+    class SlowSidecar(FakeSidecar):
+        def __init__(self):
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def send_event(self, event):
+            self.received.append(event)
+            self.entered.set()
+            await self.release.wait()
+
+    async def run():
+        sidecar = SlowSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123", sidecar_base_url="http://voice.local"))
+        assert (await anext(engine.events())).type == VoiceEventType.SESSION_STARTED
+
+        receive_task = asyncio.create_task(
+            engine.receive_event(
+                VoiceEvent(
+                    type=VoiceEventType.BARGE_IN,
+                    session_id="voice-123",
+                    sequence=1,
+                    payload={"reason": "test"},
+                )
+            )
+        )
+
+        event = await asyncio.wait_for(anext(engine.events()), timeout=0.1)
+        assert event.type == VoiceEventType.BARGE_IN
+        assert event.payload["playback_generation"] == 1
+        assert receive_task.done() is False
+        sidecar.release.set()
+        await asyncio.wait_for(receive_task, timeout=1)
+        assert sidecar.received[0].type == VoiceEventType.BARGE_IN
+        await engine.close()
+
+    asyncio.run(run())
+
+
 def test_text_engine_auto_barge_in_on_new_speech_while_answering(monkeypatch):
     class SlowInterruptibleOracle:
         def __init__(self):

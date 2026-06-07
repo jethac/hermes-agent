@@ -194,6 +194,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if hasattr(oracle, "interrupt"):
             oracle.interrupt("Realtime voice barge-in")  # type: ignore[attr-defined]
         self._clear_inbound_audio()
+        await self._emit(VoiceEventType.BARGE_IN, payload)
         if self._sidecar is not None:
             await self._send_sidecar_event(
                 VoiceEvent(
@@ -204,7 +205,6 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     payload=payload,
                 )
             )
-        await self._emit(VoiceEventType.BARGE_IN, payload)
 
     async def _consume_sidecar_events(self) -> None:
         if self._sidecar is None:
