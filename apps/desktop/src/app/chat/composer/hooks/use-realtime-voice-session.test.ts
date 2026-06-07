@@ -1,3 +1,4 @@
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -40,7 +41,8 @@ import {
   shouldSendRealtimeAudioFrame,
   shouldSendRealtimeVoiceEndMarker,
   shouldStartRealtimeTurnCapture,
-  updateRealtimeVoiceBargeInGate
+  updateRealtimeVoiceBargeInGate,
+  useRealtimeVoiceSession
 } from './use-realtime-voice-session'
 
 import type { RealtimeVoiceLatencyMetrics, VoiceEvent } from './use-realtime-voice-session'
@@ -52,6 +54,49 @@ const { resolveGatewayWsUrlMock } = vi.hoisted(() => ({
 vi.mock('@/lib/gateway-ws-url', () => ({
   resolveGatewayWsUrl: resolveGatewayWsUrlMock
 }))
+
+class MockRealtimeVoiceWebSocket {
+  static CLOSED = 3
+  static CLOSING = 2
+  static CONNECTING = 0
+  static instances: MockRealtimeVoiceWebSocket[] = []
+  static OPEN = 1
+
+  readonly url: string
+  onclose: ((event: CloseEvent) => void) | null = null
+  onerror: ((event: Event) => void) | null = null
+  onmessage: ((event: MessageEvent) => void) | null = null
+  onopen: ((event: Event) => void) | null = null
+  readyState = MockRealtimeVoiceWebSocket.CONNECTING
+
+  constructor(url: string) {
+    this.url = url
+    MockRealtimeVoiceWebSocket.instances.push(this)
+  }
+
+  close() {
+    this.readyState = MockRealtimeVoiceWebSocket.CLOSED
+  }
+
+  send = vi.fn()
+}
+
+function installRealtimeVoiceWebSocketMock() {
+  const originalWebSocket = window.WebSocket
+
+  MockRealtimeVoiceWebSocket.instances = []
+  Object.defineProperty(window, 'WebSocket', {
+    configurable: true,
+    value: MockRealtimeVoiceWebSocket
+  })
+
+  return () => {
+    Object.defineProperty(window, 'WebSocket', {
+      configurable: true,
+      value: originalWebSocket
+    })
+  }
+}
 
 describe('realtimeVoiceUrl', () => {
   afterEach(() => {
@@ -143,6 +188,64 @@ describe('realtimeVoiceUrl', () => {
       unavailable_reason: 'sidecar_required'
     })
     expect(api).toHaveBeenCalledWith({ path: '/api/voice/realtime/status' })
+  })
+})
+
+describe('useRealtimeVoiceSession reconnect handling', () => {
+  afterEach(() => {
+    vi.clearAllMocks()
+    Reflect.deleteProperty(window, 'hermesDesktop')
+  })
+
+  it('keeps realtime degraded instead of notifying fallback while startup reconnect is available', async () => {
+    const restoreWebSocket = installRealtimeVoiceWebSocketMock()
+    try {
+      const api = vi.fn(async () => ({
+        available: true,
+        conversation_quality: {
+          live_like: true,
+          mode: 'streaming_text',
+          reason: 'streaming_stt_tts'
+        },
+        enabled: true,
+        quality_targets_ms: {}
+      }))
+      const getConnection = vi.fn(async () => ({ gatewayUrl: 'http://127.0.0.1:9119' }))
+      const onUnavailable = vi.fn()
+
+      Object.defineProperty(window, 'hermesDesktop', {
+        configurable: true,
+        value: { api, getConnection }
+      })
+
+      const { result, unmount } = renderHook(() =>
+        useRealtimeVoiceSession({
+          busy: false,
+          enabled: true,
+          onUnavailable,
+          sessionId: 'voice-test'
+        })
+      )
+
+      await waitFor(() => expect(MockRealtimeVoiceWebSocket.instances).toHaveLength(1))
+
+      await act(async () => {
+        MockRealtimeVoiceWebSocket.instances[0].onerror?.(new Event('error'))
+        await Promise.resolve()
+      })
+
+      await waitFor(() =>
+        expect(result.current.frontendState).toMatchObject({
+          reason: 'reconnecting_1',
+          status: 'degraded'
+        })
+      )
+      expect(onUnavailable).not.toHaveBeenCalled()
+
+      unmount()
+    } finally {
+      restoreWebSocket()
+    }
   })
 })
 

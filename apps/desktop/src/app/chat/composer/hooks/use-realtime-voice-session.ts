@@ -1041,6 +1041,21 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     return true
   }, [clearReconnectTimer, onFatalError])
 
+  const handleRecoverableFailure = useCallback(
+    (reason: string, updatedAtMs = Date.now()) => {
+      if (scheduleReconnect()) {
+        return true
+      }
+
+      const state = realtimeVoiceFailureFrontendState(reason, updatedAtMs)
+      setFrontendState(state)
+      onUnavailable?.(state)
+
+      return false
+    },
+    [onUnavailable, scheduleReconnect]
+  )
+
   const sendEvent = useCallback((type: string, payload: Record<string, unknown> = {}) => {
     const socket = socketRef.current
 
@@ -1534,13 +1549,11 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         notifyError(new Error(String(event.payload?.error || 'Realtime voice failed')), 'Realtime voice failed')
         if (realtimeVoiceSessionErrorAction({ sessionStarted: sessionStartedRef.current }) === 'fallback') {
           sessionFailedRef.current = true
-          const state = realtimeVoiceFailureFrontendState(
+          handleRecoverableFailure(
             'session_error',
             finiteNonNegativeMs(event.timestamp_ms) ?? Date.now()
           )
-          setFrontendState(state)
-          onUnavailable?.(state)
-          scheduleReconnect()
+          socketRef.current?.close(1011, 'session error')
         } else {
           onFatalError?.()
         }
@@ -1549,7 +1562,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         advancePlaybackGeneration(event.payload?.playback_generation)
       }
     },
-    [advancePlaybackGeneration, enqueueAudio, onFatalError, onUnavailable, scheduleReconnect, startListening, stopPlayback]
+    [advancePlaybackGeneration, enqueueAudio, handleRecoverableFailure, onFatalError, startListening, stopPlayback]
   )
 
   const start = useCallback(async () => {
@@ -1633,10 +1646,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       resolveSessionReady?.(false)
       resolveSessionReady = null
       if (action === 'fallback') {
-        const state = realtimeVoiceFailureFrontendState('websocket_closed', Date.now())
-        setFrontendState(state)
-        onUnavailable?.(state)
-        scheduleReconnect()
+        handleRecoverableFailure('websocket_closed')
       } else if (action === 'fatal') {
         onFatalError?.()
       }
@@ -1651,7 +1661,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
     })
 
     if (!opened) {
-      onUnavailable?.()
+      handleRecoverableFailure('websocket_open_failed')
       socket.close()
       if (socketRef.current === socket) {
         socketRef.current = null
@@ -1676,7 +1686,9 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         socketRef.current = null
       }
       if (sessionReadyTimedOut) {
-        onUnavailable?.()
+        handleRecoverableFailure('session_ready_timeout')
+      } else if (!sessionFailedRef.current) {
+        handleRecoverableFailure('session_not_ready')
       }
       setStatus('idle')
       return
@@ -1694,7 +1706,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       setStatus('idle')
       throw error
     }
-  }, [clearReconnectTimer, handleEvent, onFatalError, onUnavailable, scheduleReconnect, sessionId, startListening])
+  }, [clearReconnectTimer, handleEvent, handleRecoverableFailure, onFatalError, onUnavailable, sessionId, startListening])
 
   const end = useCallback(async () => {
     clearReconnectTimer()
