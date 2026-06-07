@@ -2789,6 +2789,9 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.production_scripts"]["type"] == "list"
         assert CONFIG_SCHEMA["voice.realtime.best_effort_languages"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.production_languages"]["category"] == "voice"
+        assert "English and Japanese" in CONFIG_SCHEMA["voice.realtime.production_languages"]["description"]
+        assert "Latn and Jpan" in CONFIG_SCHEMA["voice.realtime.production_scripts"]["description"]
+        assert "without claiming production quality" in CONFIG_SCHEMA["voice.realtime.best_effort_languages"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.speech_level_threshold"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.barge_in_min_speech_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.pre_roll_ms"]["type"] == "number"
