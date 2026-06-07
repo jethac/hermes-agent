@@ -460,6 +460,19 @@ export function realtimeVoicePlaybackGeneration(payload?: Record<string, unknown
   return null
 }
 
+export function nextRealtimeVoicePlaybackGeneration(current: number, generation?: unknown): number {
+  const parsed = realtimeVoicePlaybackGeneration({ playback_generation: generation })
+
+  return parsed !== null ? Math.max(current, parsed) : current + 1
+}
+
+export function realtimeVoiceEventGeneration(
+  payload: Record<string, unknown> | undefined,
+  activeGeneration: number
+): number {
+  return realtimeVoicePlaybackGeneration(payload) ?? activeGeneration
+}
+
 export function shouldDropStaleRealtimeVoiceEvent(event: VoiceEvent, activeGeneration: number): boolean {
   if (!GENERATION_EVENT_TYPES.has(event.type)) {
     return false
@@ -758,9 +771,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
   )
 
   const advancePlaybackGeneration = useCallback((generation?: unknown) => {
-    const next = typeof generation === 'number' && Number.isFinite(generation)
-      ? Math.max(playbackGenerationRef.current, generation)
-      : playbackGenerationRef.current + 1
+    const next = nextRealtimeVoicePlaybackGeneration(playbackGenerationRef.current, generation)
 
     playbackGenerationRef.current = next
 
@@ -826,11 +837,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
       if (!binaryData && !data) {
         return
       }
-      const rawGeneration = payload.playback_generation
-      const generation =
-        typeof rawGeneration === 'number' && Number.isFinite(rawGeneration)
-          ? rawGeneration
-          : playbackGenerationRef.current
+      const generation = realtimeVoiceEventGeneration(payload, playbackGenerationRef.current)
 
       if (generation < playbackGenerationRef.current) {
         return
