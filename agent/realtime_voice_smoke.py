@@ -396,6 +396,164 @@ async def run_realtime_voice_session_turn_smoke(
         await session.close()
 
 
+async def run_realtime_voice_session_audio_smoke(
+    config: RealtimeVoiceSessionConfig,
+    *,
+    audio: bytes,
+    audio_codec: VoiceAudioCodec = VoiceAudioCodec.WEBM_OPUS,
+    answer: str = "Hello from Hermes.",
+    timeout_seconds: float = 5.0,
+    sidecar: Optional[object] = None,
+) -> RealtimeVoiceSidecarSmokeResult:
+    """Run audio -> STT -> Hermes oracle text -> TTS in one session."""
+
+    timeout = max(0.1, float(timeout_seconds or 5.0))
+    audio_bytes = len(audio or b"")
+    started_at = time.perf_counter()
+    transcript_final_elapsed_ms: Optional[int] = None
+    transcript_partial_ms: Optional[int] = None
+    transcript_final_ms: Optional[int] = None
+    first_text_ms: Optional[int] = None
+    first_audio_ms: Optional[int] = None
+    output_audio_bytes = 0
+    final_text = ""
+    events: list[str] = []
+    engine = TextOracleTTSEngine(oracle=_StaticRealtimeOracle(answer), sidecar=sidecar)
+    session = RealtimeVoiceSession(config, engine=engine)
+
+    try:
+        await session.start()
+        payload = AudioChunk(
+            codec=audio_codec,
+            data=audio,
+            sample_rate_hz=config.sample_rate_hz,
+            channels=config.channels,
+        ).to_payload()
+        payload["end_of_utterance"] = True
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id=config.session_id,
+                sequence=1,
+                payload=payload,
+            )
+        )
+
+        stream = session.events()
+        deadline = started_at + timeout
+        while True:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=False,
+                    transcript_partial_ms=transcript_partial_ms,
+                    transcript_final_ms=transcript_final_ms,
+                    first_text_ms=first_text_ms,
+                    first_audio_ms=first_audio_ms,
+                    final_text=final_text,
+                    audio_bytes=audio_bytes,
+                    output_audio_bytes=output_audio_bytes,
+                    events=tuple(events),
+                    error=f"timed out after {timeout:g}s waiting for audio session transcript/text/audio",
+                )
+            try:
+                event = await asyncio.wait_for(anext(stream), timeout=remaining)
+            except StopAsyncIteration:
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=False,
+                    transcript_partial_ms=transcript_partial_ms,
+                    transcript_final_ms=transcript_final_ms,
+                    first_text_ms=first_text_ms,
+                    first_audio_ms=first_audio_ms,
+                    final_text=final_text,
+                    audio_bytes=audio_bytes,
+                    output_audio_bytes=output_audio_bytes,
+                    events=tuple(events),
+                    error="session event stream ended before audio session transcript/text/audio",
+                )
+
+            elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
+            events.append(event.type.value)
+
+            if event.type == VoiceEventType.SESSION_ERROR:
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=False,
+                    transcript_partial_ms=transcript_partial_ms,
+                    transcript_final_ms=transcript_final_ms,
+                    first_text_ms=first_text_ms,
+                    first_audio_ms=first_audio_ms,
+                    final_text=final_text,
+                    audio_bytes=audio_bytes,
+                    output_audio_bytes=output_audio_bytes,
+                    events=tuple(events),
+                    error=str(event.payload.get("error") or "session error"),
+                )
+            if event.type == VoiceEventType.TRANSCRIPT_PARTIAL and transcript_partial_ms is None:
+                transcript_partial_ms = _metric_ms(
+                    event.payload,
+                    "audio_to_partial_transcript_ms",
+                    fallback=elapsed_ms,
+                )
+            elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                transcript_final_elapsed_ms = elapsed_ms
+                transcript_final_ms = _metric_ms(
+                    event.payload,
+                    "audio_to_final_transcript_ms",
+                    fallback=elapsed_ms,
+                )
+                final_text = str(event.payload.get("text") or final_text).strip()
+            elif event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and first_text_ms is None:
+                first_text_ms = _metric_ms(
+                    event.payload,
+                    "final_transcript_to_first_text_ms",
+                    fallback=_elapsed_from(transcript_final_elapsed_ms, elapsed_ms),
+                )
+            elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK and first_audio_ms is None:
+                first_audio_ms = _metric_ms(
+                    event.payload,
+                    "final_transcript_to_first_audio_ms",
+                    fallback=_elapsed_from(transcript_final_elapsed_ms, elapsed_ms),
+                )
+                try:
+                    output_audio_bytes = len(AudioChunk.from_payload(event.payload).data)
+                except Exception:
+                    output_audio_bytes = 0
+
+            if (
+                transcript_partial_ms is not None
+                and final_text
+                and first_text_ms is not None
+                and first_audio_ms is not None
+            ):
+                return RealtimeVoiceSidecarSmokeResult(
+                    ok=output_audio_bytes > 0,
+                    transcript_partial_ms=transcript_partial_ms,
+                    transcript_final_ms=transcript_final_ms,
+                    first_text_ms=first_text_ms,
+                    first_audio_ms=first_audio_ms,
+                    final_text=final_text,
+                    audio_bytes=audio_bytes,
+                    output_audio_bytes=output_audio_bytes,
+                    events=tuple(events),
+                    error="" if output_audio_bytes > 0 else "audio.output.chunk contained no audio bytes",
+                )
+    except Exception as exc:
+        return RealtimeVoiceSidecarSmokeResult(
+            ok=False,
+            transcript_partial_ms=transcript_partial_ms,
+            transcript_final_ms=transcript_final_ms,
+            first_text_ms=first_text_ms,
+            first_audio_ms=first_audio_ms,
+            final_text=final_text,
+            audio_bytes=audio_bytes,
+            output_audio_bytes=output_audio_bytes,
+            events=tuple(events),
+            error=sanitize_realtime_voice_error(exc),
+        )
+    finally:
+        await session.close()
+
+
 def realtime_voice_smoke_text_metadata(text: str) -> dict[str, str]:
     value = str(text or "")
     if _contains_japanese_script(value):

@@ -3,6 +3,7 @@ import asyncio
 from agent.realtime_voice import AudioChunk, RealtimeVoiceSessionConfig, VoiceAudioCodec, VoiceEvent, VoiceEventType
 from agent.realtime_voice_smoke import (
     realtime_voice_smoke_text_metadata,
+    run_realtime_voice_session_audio_smoke,
     run_realtime_voice_session_turn_smoke,
     run_realtime_voice_sidecar_barge_in_smoke,
     run_realtime_voice_sidecar_tts_smoke,
@@ -92,6 +93,82 @@ def test_session_turn_smoke_measures_first_text_and_audio(monkeypatch):
     assert result.final_text == "Hello from Hermes."
     assert result.events == (
         "session.started",
+        "transcript.final",
+        "assistant.text.partial",
+        "audio.output.chunk",
+    )
+
+
+def test_session_audio_smoke_uses_sidecar_stt_and_tts_in_one_session():
+    sent = []
+
+    class FakeSidecar:
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            sent.append(event)
+
+        async def speak(self, event):
+            sent.append(event)
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.FRONTEND_STATE,
+                session_id=self.config.session_id,
+                sequence=1,
+                payload={"status": "ready"},
+            )
+            while not any(event.type == VoiceEventType.AUDIO_INPUT_CHUNK for event in sent):
+                await asyncio.sleep(0)
+            yield VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_PARTIAL,
+                session_id=self.config.session_id,
+                sequence=2,
+                payload={"text": "Hello from", "input_generation": 1},
+            )
+            yield VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id=self.config.session_id,
+                sequence=3,
+                payload={"text": "Hello from Hermes.", "input_generation": 1},
+            )
+            while not any(event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL for event in sent):
+                await asyncio.sleep(0)
+            yield VoiceEvent(
+                type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                session_id=self.config.session_id,
+                sequence=4,
+                payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+            )
+
+        async def close(self):
+            return None
+
+    result = asyncio.run(
+        run_realtime_voice_session_audio_smoke(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-smoke",
+                sidecar_base_url="http://voice.example.test:8765",
+            ),
+            audio=b"webm bytes",
+            answer="Hello from Hermes.",
+            timeout_seconds=1,
+            sidecar=FakeSidecar(),
+        )
+    )
+
+    assert result.ok is True
+    assert result.audio_bytes == len(b"webm bytes")
+    assert result.output_audio_bytes == len(b"audio")
+    assert result.final_text == "Hello from Hermes."
+    assert result.transcript_partial_ms is not None
+    assert result.first_text_ms is not None
+    assert result.first_audio_ms is not None
+    assert result.events == (
+        "session.started",
+        "frontend.state",
+        "transcript.partial",
         "transcript.final",
         "assistant.text.partial",
         "audio.output.chunk",

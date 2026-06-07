@@ -40,6 +40,7 @@ def _valid_realtime_voice_alpha_report():
     from agent.realtime_voice_smoke_report import (
         ALPHA_REQUIRED_AUDIO_FIXTURES,
         ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS,
+        ALPHA_REQUIRED_AUDIO_SESSION_FIXTURES,
         ALPHA_REQUIRED_BARGE_IN_TEXTS,
         ALPHA_REQUIRED_SESSION_TURN_METADATA,
         ALPHA_REQUIRED_TTS_METADATA,
@@ -130,6 +131,34 @@ def _valid_realtime_voice_alpha_report():
                 "transcript_final_ms": 180,
                 "target_ms": 300,
                 "events": ["frontend.state", "transcript.partial", "transcript.final"],
+                "error": None,
+            }
+        )
+    for fixture in ALPHA_REQUIRED_AUDIO_SESSION_FIXTURES:
+        entries.append(
+            {
+                "kind": "audio_session",
+                "ok": True,
+                "fixture": fixture,
+                "codec": "webm_opus",
+                "audio_bytes": 1234,
+                "final_text": ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS[fixture],
+                "transcript_partial_ms": 90,
+                "transcript_final_ms": 180,
+                "target_ms": 300,
+                "first_text_ms": 90,
+                "first_text_target_ms": 500,
+                "first_audio_ms": 250,
+                "first_audio_target_ms": 900,
+                "output_audio_bytes": 4321,
+                "events": [
+                    "session.started",
+                    "frontend.state",
+                    "transcript.partial",
+                    "transcript.final",
+                    "assistant.text.partial",
+                    "audio.output.chunk",
+                ],
                 "error": None,
             }
         )
@@ -7104,21 +7133,22 @@ class TestRealtimeVoiceWebSocket:
             "report_path": str(evidence_path),
             "runs": 3,
             "min_runs": 3,
-            "entries": 39,
+            "entries": 45,
             "summary": {
                 "runs": 3,
-                "entries": 36,
+                "entries": 42,
                 "kinds": {
                     "audio_fixture": {"entries": 12, "ok": 12, "failed": 0},
+                    "audio_session": {"entries": 6, "ok": 6, "failed": 0},
                     "barge_in": {"entries": 3, "ok": 3, "failed": 0},
                     "protocol": {"entries": 3, "ok": 3, "failed": 0},
                     "session_turn": {"entries": 6, "ok": 6, "failed": 0},
                     "tts": {"entries": 12, "ok": 12, "failed": 0},
                 },
                 "latency_ms": {
-                    "audio_to_partial_transcript": {"count": 12, "p50": 90, "p95": 90, "max": 90},
-                    "final_transcript_to_first_text": {"count": 6, "p50": 90, "p95": 90, "max": 90},
-                    "final_transcript_to_first_audio": {"count": 18, "p50": 250, "p95": 250, "max": 250},
+                    "audio_to_partial_transcript": {"count": 18, "p50": 90, "p95": 90, "max": 90},
+                    "final_transcript_to_first_text": {"count": 12, "p50": 90, "p95": 90, "max": 90},
+                    "final_transcript_to_first_audio": {"count": 24, "p50": 250, "p95": 250, "max": 250},
                     "barge_in_ack": {"count": 3, "p50": 45, "p95": 45, "max": 45},
                 },
             },

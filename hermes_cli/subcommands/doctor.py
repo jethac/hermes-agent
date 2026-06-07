@@ -37,8 +37,8 @@ def build_doctor_parser(subparsers, *, cmd_doctor: Callable) -> None:
         action="store_true",
         help=(
             "Run the documented realtime voice private-alpha evidence set: protocol smoke, "
-            "required English/Japanese audio fixtures, required English/Japanese TTS phrases, "
-            "and barge-in smoke"
+            "required English/Japanese audio fixtures, full audio-session smokes, "
+            "required English/Japanese TTS phrases, and barge-in smoke"
         ),
     )
     doctor_parser.add_argument(
