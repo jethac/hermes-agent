@@ -14,6 +14,7 @@ from agent.realtime_voice import (
     VoiceEvent,
     VoiceEventType,
 )
+from agent.realtime_voice_oracle import HermesRealtimeOracle
 
 
 class NativeS2SSidecarEngine(RealtimeVoiceEngine):
@@ -26,6 +27,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         self._closed = False
         self._ws: Any = None
         self._reader_task: Optional[asyncio.Task[None]] = None
+        self._oracle: Optional[HermesRealtimeOracle] = None
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -35,6 +37,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         if not config.spark_base_url:
             raise RuntimeError("native S2S engine requires voice.realtime.spark_base_url")
         self.config = config
+        self._oracle = HermesRealtimeOracle(config)
         await self._connect_sidecar(config)
         await self._emit(VoiceEventType.SESSION_STARTED, {"engine": self.kind.value})
 
@@ -98,6 +101,8 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
                 except Exception:
                     await self._emit(VoiceEventType.SESSION_ERROR, {"error": "invalid sidecar event"})
                     continue
+                if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                    asyncio.create_task(self._send_oracle_hint(str(event.payload.get("text") or "")))
                 await self._events.put(event)
         except asyncio.CancelledError:
             raise
@@ -116,6 +121,24 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
                 payload=payload,
             )
         )
+
+    async def _send_oracle_hint(self, transcript: str) -> None:
+        if not transcript.strip() or self._oracle is None or self._ws is None:
+            return
+        try:
+            answer = await self._oracle.answer(transcript)
+            if not answer:
+                return
+            event = VoiceEvent(
+                type=VoiceEventType.ORACLE_HINT,
+                session_id=self.config.session_id if self.config else "",
+                sequence=0,
+                payload={"text": answer, "source": "hermes"},
+            )
+            await self._ws.send(json.dumps(event.to_wire()))
+            await self._events.put(event)
+        except Exception as exc:
+            await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"oracle hint failed: {exc}"})
 
 
 def _sidecar_ws_url(base_url: str, path: str) -> str:

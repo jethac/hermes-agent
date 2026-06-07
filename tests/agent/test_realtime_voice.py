@@ -14,12 +14,17 @@ from agent.realtime_voice import (
 )
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState
+from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
 from agent.realtime_voice_text_engine import TextOracleTTSEngine
 
 
 class FakeOracle:
     async def answer(self, transcript: str) -> str:
         return f"Answering: {transcript}."
+
+    async def stream_answer(self, transcript: str):
+        yield "Answering: "
+        yield f"{transcript}."
 
 
 def test_session_config_round_trips_wire_payload():
@@ -144,6 +149,41 @@ def test_text_engine_accepts_transcript_payload_and_emits_oracle_text(monkeypatc
     asyncio.run(run())
 
 
+def test_text_engine_speaks_before_oracle_stream_finishes(monkeypatch):
+    class StreamingOracle:
+        async def stream_answer(self, transcript: str):
+            yield "First sentence. "
+            yield "Second sentence."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text):
+            spoken.append(text)
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        engine = TextOracleTTSEngine(oracle=StreamingOracle())
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello"},
+            )
+        )
+
+        async for event in engine.events():
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                await engine.close()
+                break
+
+        assert spoken == ["First sentence.", "Second sentence."]
+
+    asyncio.run(run())
+
+
 def test_session_persists_only_final_and_committed_messages(monkeypatch):
     async def run():
         async def fake_speak(self, text):
@@ -173,5 +213,34 @@ def test_session_persists_only_final_and_committed_messages(monkeypatch):
             {"role": "assistant", "content": "Answering: what is kame."},
         ]
         await session.close()
+
+    asyncio.run(run())
+
+
+def test_native_s2s_engine_sends_oracle_hint_to_sidecar():
+    class FakeWs:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, payload):
+            self.sent.append(payload)
+
+    async def run():
+        ws = FakeWs()
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            spark_base_url="ws://spark.local",
+        )
+        engine._ws = ws
+        engine._oracle = FakeOracle()
+
+        await engine._send_oracle_hint("what is kame")
+
+        assert ws.sent
+        event = VoiceEvent.from_wire(__import__("json").loads(ws.sent[0]))
+        assert event.type == VoiceEventType.ORACLE_HINT
+        assert event.payload["text"] == "Answering: what is kame."
 
     asyncio.run(run())

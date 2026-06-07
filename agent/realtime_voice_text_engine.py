@@ -124,13 +124,27 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
     async def _answer_and_speak(self, transcript: str) -> None:
         try:
             oracle = self._oracle or NullRealtimeOracle()
-            answer = await oracle.answer(transcript)  # type: ignore[attr-defined]
+            answer = ""
+            buffer = ""
+            async for delta in oracle.stream_answer(transcript):  # type: ignore[attr-defined]
+                answer += delta
+                buffer += delta
+                chunk, buffer = _take_speakable_chunk(buffer)
+                if chunk:
+                    planned_chunk = self._planner.clean(chunk)
+                    if planned_chunk:
+                        await self._emit(VoiceEventType.ASSISTANT_TEXT_PARTIAL, {"text": planned_chunk})
+                        await self._speak_chunk(planned_chunk)
+
+            if buffer.strip():
+                planned_chunk = self._planner.clean(buffer)
+                if planned_chunk:
+                    await self._emit(VoiceEventType.ASSISTANT_TEXT_PARTIAL, {"text": planned_chunk})
+                    await self._speak_chunk(planned_chunk)
+
             plan = self._planner.plan(answer)
             if not plan.committed_text:
                 return
-            for chunk in plan.chunks:
-                await self._emit(VoiceEventType.ASSISTANT_TEXT_PARTIAL, {"text": chunk})
-                await self._speak_chunk(chunk)
             await self._emit(VoiceEventType.ASSISTANT_COMMIT, {"text": plan.committed_text})
         except asyncio.CancelledError:
             await self._emit(VoiceEventType.ASSISTANT_COMMIT, {"interrupted": True, "text": ""})
@@ -214,3 +228,28 @@ def _mime_type_for_path(path: str) -> str:
         ".wav": "audio/wav",
         ".flac": "audio/flac",
     }.get(ext, "audio/mpeg")
+
+
+def _take_speakable_chunk(buffer: str) -> tuple[Optional[str], str]:
+    normalized = " ".join((buffer or "").split())
+    if not normalized:
+        return None, ""
+
+    import re
+
+    match = re.match(r"^(.{8,260}?[.!?。！？])(?:\s+|$)", normalized)
+    if match:
+        chunk = match.group(1).strip()
+        return chunk, normalized[len(match.group(1)):].strip()
+
+    if len(normalized) > 260:
+        split_at = max(
+            normalized.rfind(", ", 0, 220),
+            normalized.rfind("; ", 0, 220),
+            normalized.rfind(": ", 0, 220),
+            normalized.rfind(" ", 0, 220),
+        )
+        if split_at >= 80:
+            return normalized[:split_at].strip(), normalized[split_at:].strip()
+
+    return None, normalized

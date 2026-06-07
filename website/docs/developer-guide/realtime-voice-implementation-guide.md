@@ -37,12 +37,18 @@ Treat this module as the shared contract between the desktop app, FastAPI websoc
 The realtime voice implementation now has both engine families behind the same protocol:
 
 - `agent/realtime_voice_session.py` owns the session state machine, monotonically increasing client sequence validation, barge-in state, and the durable transcript boundary.
-- `agent/realtime_voice_text_engine.py` implements the text-oracle path: audio or transcript input, STT via the existing Hermes transcription provider chain, Hermes oracle calls, speech planning, and audio output via the existing TTS provider chain.
-- `agent/realtime_voice_s2s_engine.py` implements the native S2S path as a websocket bridge to a DGX Spark or other model sidecar.
+- `agent/realtime_voice_text_engine.py` implements the text-oracle path: audio or transcript input, STT via the existing Hermes transcription provider chain at utterance boundaries, streaming Hermes oracle deltas, speech planning, and chunked audio output via the existing TTS provider chain.
+- `agent/realtime_voice_s2s_engine.py` implements the native S2S path as a websocket bridge to a DGX Spark or other model sidecar. When the sidecar emits final transcript events, Hermes calls the configured oracle model and sends `oracle.hint` events back to the sidecar.
 - `hermes_cli/web_server.py` exposes `/api/voice/realtime` behind the same websocket auth and Host/Origin guards as the dashboard chat websocket.
 - `apps/desktop/src/app/chat/composer/hooks/use-realtime-voice-session.ts` implements the desktop websocket client, microphone frame capture, simple VAD, playback queue, and barge-in cancellation.
 
 The existing one-shot voice mode remains the fallback. Realtime voice is opt-in via `voice.realtime.enabled`.
+
+Current limits:
+
+- In-core STT still uses Hermes' existing file-based transcription providers after an utterance boundary. Fully streaming STT should be added as a provider/sidecar capability behind the same event protocol.
+- The native S2S model itself is not shipped in Hermes. Hermes provides the sidecar bridge and oracle hint stream; the DGX/Spark service owns model inference.
+- Audio frames are JSON/base64 for the first implementation. Binary websocket frames can replace this without changing the semantic event contract.
 
 ## Target File Layout
 
@@ -272,11 +278,11 @@ scripts/run_tests.sh tests/agent/test_realtime_voice.py
 2. Add fake in-process `RealtimeVoiceEngine` for websocket testing.
 3. Add `/api/voice/realtime` endpoint behind `voice.realtime.enabled`. Done.
 4. Add desktop websocket client and playback path. Done.
-5. Add STT provider adapter. Done by reusing Hermes' existing provider chain at utterance boundaries.
+5. Add STT provider adapter. Partially done by reusing Hermes' existing provider chain at utterance boundaries; true streaming STT remains a provider/sidecar follow-up.
 6. Add Hermes oracle adapter. Done.
 7. Add TTS adapter. Done by reusing Hermes' existing provider chain.
 8. Add barge-in and commit semantics. Done in the session and desktop playback layers.
-9. Add Spark sidecar adapter. Done for native S2S websocket bridging.
+9. Add Spark sidecar adapter. Done for native S2S websocket bridging and oracle hints.
 10. Add native S2S engine. Done as a sidecar-backed engine; model-sidecar deployment is external to Hermes.
 
 ## Review Checklist
