@@ -185,6 +185,37 @@ def test_deepgram_bridge_prerequisite_check_requires_output_languages():
     assert any("missing required language(s) ja" in issue for issue in issues)
 
 
+def test_deepgram_bridge_prerequisite_check_requires_multi_input_for_en_ja():
+    issues = deepgram_bridge_prerequisite_issues(
+        DeepgramStreamingSTTBridgeConfig(
+            api_key="deepgram-secret",
+            auth_token="bridge-token",
+            language="en",
+        ),
+        require_auth_token=True,
+        required_input_languages=("en", "ja"),
+        module_available=lambda name: name == "websockets",
+    )
+
+    assert any("input language must be multi" in issue for issue in issues)
+    assert any("configured input language: en" in issue for issue in issues)
+
+
+def test_deepgram_bridge_prerequisite_check_accepts_multi_input_for_en_ja():
+    issues = deepgram_bridge_prerequisite_issues(
+        DeepgramStreamingSTTBridgeConfig(
+            api_key="deepgram-secret",
+            auth_token="bridge-token",
+            language="multi",
+        ),
+        require_auth_token=True,
+        required_input_languages=("en", "ja"),
+        module_available=lambda name: name == "websockets",
+    )
+
+    assert issues == []
+
+
 def test_deepgram_bridge_prerequisite_check_accepts_required_output_languages():
     issues = deepgram_bridge_prerequisite_issues(
         DeepgramStreamingSTTBridgeConfig(
@@ -246,6 +277,7 @@ def test_deepgram_bridge_health_advertises_output_languages():
         create_deepgram_streaming_stt_bridge_app(
             DeepgramStreamingSTTBridgeConfig(
                 api_key="deepgram-secret",
+                language="multi",
                 tts_model="aura-2-thalia-en",
                 tts_model_by_language={"ja": "aura-2-akiko-ja"},
             )
@@ -255,6 +287,7 @@ def test_deepgram_bridge_health_advertises_output_languages():
     body = client.get("/health").json()
 
     assert body["ok"] is True
+    assert body["frontend"]["language"] == "multi"
     assert body["frontend"]["tts_model_languages"] == ["ja"]
     assert body["capabilities"]["streaming_stt"] is True
     assert body["capabilities"]["streaming_tts"] is True
@@ -364,6 +397,7 @@ def test_deepgram_bridge_cli_check_requires_output_languages(monkeypatch, capsys
     monkeypatch.delenv("HERMES_DEEPGRAM_OUTPUT_LANGUAGES", raising=False)
     monkeypatch.delenv("HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE", raising=False)
     monkeypatch.delenv("HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV", raising=False)
+    monkeypatch.delenv("HERMES_DEEPGRAM_LANGUAGE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.config.load_env",
         lambda: {
@@ -392,6 +426,7 @@ def test_deepgram_bridge_cli_production_en_ja_preset_routes_tts(monkeypatch, cap
     monkeypatch.delenv("HERMES_DEEPGRAM_OUTPUT_LANGUAGES", raising=False)
     monkeypatch.delenv("HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE", raising=False)
     monkeypatch.delenv("HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV", raising=False)
+    monkeypatch.delenv("HERMES_DEEPGRAM_LANGUAGE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.config.load_env",
         lambda: {
@@ -410,8 +445,38 @@ def test_deepgram_bridge_cli_production_en_ja_preset_routes_tts(monkeypatch, cap
     output = capsys.readouterr().out
     assert "Deepgram realtime voice bridge check OK" in output
     assert "tts_model_by_language: en,ja" in output
+    assert "language: multi" in output
     assert "deepgram-secret" not in output
     assert "bridge-token" not in output
+
+
+def test_deepgram_bridge_cli_production_en_ja_rejects_english_locked_stt(monkeypatch, capsys):
+    from hermes_cli import realtime_voice_deepgram_bridge
+
+    monkeypatch.delenv("HERMES_DEEPGRAM_OUTPUT_LANGUAGES", raising=False)
+    monkeypatch.delenv("HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE", raising=False)
+    monkeypatch.delenv("HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV", raising=False)
+    monkeypatch.delenv("HERMES_DEEPGRAM_LANGUAGE", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.config.load_env",
+        lambda: {
+            "DEEPGRAM_API_KEY": "deepgram-secret",
+            "HERMES_STREAMING_STT_BRIDGE_TOKEN": "bridge-token",
+            "HERMES_DEEPGRAM_LANGUAGE": "en",
+        },
+    )
+    monkeypatch.setattr(
+        "agent.realtime_voice_deepgram_bridge._module_available",
+        lambda name: name == "websockets",
+    )
+
+    result = realtime_voice_deepgram_bridge.main(["--check", "--strict", "--production-en-ja"])
+
+    assert result == 1
+    output = capsys.readouterr().out
+    assert "Deepgram realtime voice bridge check failed" in output
+    assert "input language must be multi" in output
+    assert "configured input language: en" in output
 
 
 def test_voice_extra_installs_websocket_client():

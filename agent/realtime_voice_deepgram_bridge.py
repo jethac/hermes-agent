@@ -433,6 +433,7 @@ def create_deepgram_streaming_stt_bridge_app(runtime: Optional[DeepgramStreaming
             "frontend": {
                 "provider": "deepgram",
                 "model": runtime.model,
+                "language": runtime.language or "default(en)",
                 "tts_model": runtime.tts_model,
                 "tts_model_languages": sorted(runtime.tts_model_by_language.keys()),
             },
@@ -598,6 +599,7 @@ def deepgram_bridge_prerequisite_issues(
     runtime: Optional[DeepgramStreamingSTTBridgeConfig] = None,
     *,
     require_auth_token: bool = False,
+    required_input_languages: Sequence[str] = (),
     required_output_languages: Sequence[str] = (),
     module_available: Optional[Any] = None,
 ) -> list[str]:
@@ -613,6 +615,20 @@ def deepgram_bridge_prerequisite_issues(
         )
     if require_auth_token and not runtime.auth_token:
         issues.append("HERMES_STREAMING_STT_BRIDGE_TOKEN is required in strict mode")
+    required_input_language_set = {
+        language
+        for language in (_primary_language(value) for value in required_input_languages)
+        if language
+    }
+    if len(required_input_language_set) > 1:
+        configured_input_language = _clean_language(runtime.language).lower()
+        if configured_input_language != "multi":
+            required = ",".join(sorted(required_input_language_set))
+            configured = configured_input_language or "default(en)"
+            issues.append(
+                "Deepgram streaming STT input language must be multi for required "
+                f"language(s) {required}; configured input language: {configured}"
+            )
     configured_output_languages = {_primary_language(language) for language in deepgram_tts_output_languages(runtime)}
     configured_output_languages.discard("")
     missing_output_languages = [
