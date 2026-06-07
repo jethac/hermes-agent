@@ -25,6 +25,8 @@ from agent.realtime_voice import (
     VoiceAudioCodec,
     VoiceEvent,
     VoiceEventType,
+    binary_audio_frame_from_event,
+    event_from_binary_audio_frame,
 )
 
 
@@ -307,11 +309,33 @@ def create_reference_sidecar_app(runtime: Optional[ReferenceSidecarRuntimeConfig
         async def pump_events() -> None:
             assert session is not None
             async for event in session.events():
+                frame = binary_audio_frame_from_event(event)
+                if frame is not None and event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                    await ws.send_bytes(frame)
+                    continue
                 await ws.send_json(event.to_wire())
 
         try:
             while True:
-                raw = await ws.receive_text()
+                message = await ws.receive()
+                if message.get("type") == "websocket.disconnect":
+                    raise WebSocketDisconnect(code=int(message.get("code") or 1000))
+                frame = message.get("bytes")
+                if isinstance(frame, bytes):
+                    if session is None:
+                        await ws.send_json({"type": "session.error", "payload": {"error": "missing session.config"}})
+                        continue
+                    try:
+                        event = event_from_binary_audio_frame(frame, expected_type=VoiceEventType.AUDIO_INPUT_CHUNK)
+                    except Exception:
+                        await ws.send_json({"type": "session.error", "payload": {"error": "invalid binary audio frame"}})
+                        continue
+                    await session.receive_event(event)
+                    continue
+                raw = message.get("text")
+                if not isinstance(raw, str):
+                    await ws.send_json({"type": "session.error", "payload": {"error": "invalid websocket frame"}})
+                    continue
                 data = json.loads(raw)
                 if data.get("type") == "session.config":
                     config = RealtimeVoiceSessionConfig.from_wire(data.get("payload") or {})

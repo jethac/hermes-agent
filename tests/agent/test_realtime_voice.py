@@ -10,6 +10,8 @@ from agent.realtime_voice import (
     VoiceAudioCodec,
     VoiceEvent,
     VoiceEventType,
+    binary_audio_frame_from_event,
+    event_from_binary_audio_frame,
     validate_client_event,
     validate_server_event,
 )
@@ -156,6 +158,28 @@ def test_audio_chunk_round_trips_base64_payload():
     restored = AudioChunk.from_payload(chunk.to_payload())
 
     assert restored == chunk
+
+
+def test_binary_audio_frame_round_trips_audio_event_payload():
+    event = VoiceEvent(
+        type=VoiceEventType.AUDIO_INPUT_CHUNK,
+        session_id="voice-123",
+        sequence=7,
+        payload={
+            **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+            "end_of_utterance": True,
+        },
+    )
+
+    frame = binary_audio_frame_from_event(event)
+
+    assert frame is not None
+    restored = event_from_binary_audio_frame(frame, expected_type=VoiceEventType.AUDIO_INPUT_CHUNK)
+    assert restored.type == VoiceEventType.AUDIO_INPUT_CHUNK
+    assert restored.session_id == "voice-123"
+    assert restored.sequence == 7
+    assert restored.payload["end_of_utterance"] is True
+    assert AudioChunk.from_payload(restored.payload).data == b"audio"
 
 
 def test_event_validation_separates_client_and_server_events():
@@ -687,6 +711,124 @@ def test_sidecar_client_uses_configured_connect_timeout(monkeypatch):
         assert captured["url"] == "ws://voice.local:8765/v1/realtime-text/session"
         assert captured["timeout"] == 2.5
         assert fake_ws.sent
+        assert __import__("json").loads(fake_ws.sent[0])["type"] == "session.config"
+        await client.close()
+
+    asyncio.run(run())
+
+
+def test_sidecar_client_sends_audio_input_as_binary_frame(monkeypatch):
+    class FakeWs:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, payload):
+            self.sent.append(payload)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+        async def close(self):
+            return None
+
+    async def run():
+        fake_ws = FakeWs()
+
+        async def fake_connect(url, **kwargs):
+            return fake_ws
+
+        async def fake_wait_for(awaitable, timeout):
+            return await awaitable
+
+        monkeypatch.setitem(__import__("sys").modules, "websockets", types.SimpleNamespace(connect=fake_connect))
+        monkeypatch.setattr("agent.realtime_voice_sidecar.asyncio.wait_for", fake_wait_for)
+
+        client = RealtimeVoiceSidecarClient()
+        await client.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="gemma4",
+                sidecar_base_url="http://voice.local:8765",
+            )
+        )
+
+        await client.send_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"mic-audio").to_payload(),
+            )
+        )
+
+        assert isinstance(fake_ws.sent[0], str)
+        assert isinstance(fake_ws.sent[-1], bytes)
+        restored = event_from_binary_audio_frame(fake_ws.sent[-1], expected_type=VoiceEventType.AUDIO_INPUT_CHUNK)
+        assert restored.sequence == 2
+        assert AudioChunk.from_payload(restored.payload).data == b"mic-audio"
+        await client.close()
+
+    asyncio.run(run())
+
+
+def test_sidecar_client_accepts_binary_audio_output_frame(monkeypatch):
+    class FakeWs:
+        def __init__(self, items):
+            self._items = list(items)
+            self.sent = []
+
+        async def send(self, payload):
+            self.sent.append(payload)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._items:
+                raise StopAsyncIteration
+            return self._items.pop(0)
+
+        async def close(self):
+            return None
+
+    async def run():
+        output = VoiceEvent(
+            type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            session_id="sidecar-session",
+            sequence=9,
+            payload={
+                **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"speaker-audio").to_payload(),
+                "playback_generation": 3,
+            },
+        )
+        fake_ws = FakeWs([binary_audio_frame_from_event(output)])
+
+        async def fake_connect(url, **kwargs):
+            return fake_ws
+
+        async def fake_wait_for(awaitable, timeout):
+            return await awaitable
+
+        monkeypatch.setitem(__import__("sys").modules, "websockets", types.SimpleNamespace(connect=fake_connect))
+        monkeypatch.setattr("agent.realtime_voice_sidecar.asyncio.wait_for", fake_wait_for)
+
+        client = RealtimeVoiceSidecarClient()
+        await client.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="gemma4",
+                sidecar_base_url="http://voice.local:8765",
+            )
+        )
+
+        event = await asyncio.wait_for(client._events.get(), timeout=1)
+        assert event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
+        assert event.sequence == 9
+        assert event.payload["playback_generation"] == 3
+        assert AudioChunk.from_payload(event.payload).data == b"speaker-audio"
         await client.close()
 
     asyncio.run(run())

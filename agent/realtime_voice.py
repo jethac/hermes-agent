@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import abc
 import base64
+import json
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -76,6 +77,9 @@ SERVER_EVENT_TYPES = frozenset(
         VoiceEventType.TOOL_RESULT,
     }
 )
+
+BINARY_AUDIO_FRAME_HEADER_BYTES = 4
+BINARY_AUDIO_FRAME_HEADER_LIMIT = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -243,6 +247,53 @@ class RealtimeVoiceEngine(abc.ABC):
     @abc.abstractmethod
     async def close(self) -> None:
         """Release resources and stop background work."""
+
+
+def binary_audio_frame_from_event(event: VoiceEvent) -> Optional[bytes]:
+    payload = dict(event.payload)
+    raw = payload.pop("data_b64", None)
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        audio = base64.b64decode(raw.encode("ascii"), validate=True)
+    except Exception:
+        return None
+
+    wire = event.to_wire()
+    wire["payload"] = payload
+    header = json.dumps(wire, separators=(",", ":")).encode("utf-8")
+    if not header or len(header) > BINARY_AUDIO_FRAME_HEADER_LIMIT:
+        return None
+
+    return len(header).to_bytes(BINARY_AUDIO_FRAME_HEADER_BYTES, "big") + header + audio
+
+
+def event_from_binary_audio_frame(frame: bytes, *, expected_type: Optional[VoiceEventType] = None) -> VoiceEvent:
+    if len(frame) < BINARY_AUDIO_FRAME_HEADER_BYTES:
+        raise ValueError("binary audio frame missing header length")
+
+    header_length = int.from_bytes(frame[:BINARY_AUDIO_FRAME_HEADER_BYTES], "big", signed=False)
+    if header_length <= 0 or header_length > BINARY_AUDIO_FRAME_HEADER_LIMIT:
+        raise ValueError("binary audio frame header length is invalid")
+
+    header_start = BINARY_AUDIO_FRAME_HEADER_BYTES
+    header_end = header_start + header_length
+    if len(frame) < header_end:
+        raise ValueError("binary audio frame header is truncated")
+
+    header = json.loads(frame[header_start:header_end].decode("utf-8"))
+    if not isinstance(header, dict):
+        raise ValueError("binary audio frame header must be a JSON object")
+
+    payload = header.get("payload")
+    payload = dict(payload) if isinstance(payload, dict) else {}
+    header["payload"] = payload
+    payload["data_b64"] = base64.b64encode(frame[header_end:]).decode("ascii")
+
+    event = VoiceEvent.from_wire(header)
+    if expected_type is not None and event.type != expected_type:
+        raise ValueError(f"binary audio frame must carry {expected_type.value}")
+    return event
 
 
 def validate_client_event(event: VoiceEvent) -> None:

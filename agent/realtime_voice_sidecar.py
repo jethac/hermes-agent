@@ -13,6 +13,8 @@ from agent.realtime_voice import (
     VoiceAudioCodec,
     VoiceEvent,
     VoiceEventType,
+    binary_audio_frame_from_event,
+    event_from_binary_audio_frame,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 
@@ -66,6 +68,10 @@ class RealtimeVoiceSidecarClient:
     async def send_event(self, event: VoiceEvent) -> None:
         if not self.connected:
             raise RuntimeError("realtime voice sidecar is not connected")
+        frame = binary_audio_frame_from_event(event)
+        if frame is not None and event.type == VoiceEventType.AUDIO_INPUT_CHUNK:
+            await self._ws.send(frame)
+            return
         await self._ws.send(json.dumps(event.to_wire()))
 
     async def speak(self, event: VoiceEvent) -> None:
@@ -96,6 +102,13 @@ class RealtimeVoiceSidecarClient:
         try:
             async for raw in self._ws:
                 if isinstance(raw, bytes):
+                    try:
+                        await self._events.put(
+                            event_from_binary_audio_frame(raw, expected_type=VoiceEventType.AUDIO_OUTPUT_CHUNK)
+                        )
+                        continue
+                    except Exception:
+                        pass
                     await self._events.put(
                         VoiceEvent(
                             type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
