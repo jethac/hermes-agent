@@ -672,6 +672,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Environment variable containing the realtime voice sidecar bearer token",
         "category": "voice",
     },
+    "voice.realtime.sidecar_connect_timeout_seconds": {
+        "type": "number",
+        "description": "Seconds to wait when connecting to a realtime voice sidecar",
+        "category": "voice",
+    },
     "voice.realtime.spark_base_url": {
         "type": "string",
         "description": "Deprecated alias for voice.realtime.sidecar_base_url",
@@ -12667,6 +12672,16 @@ def _truthy_config(value: Any, *, default: bool = False) -> bool:
     return str(value).strip().lower() not in {"", "0", "false", "no", "off"}
 
 
+def _positive_float_config(value: Any, *, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
 def _realtime_voice_sidecar_is_loopback(base_url: str) -> bool:
     try:
         parsed = urllib.parse.urlparse(base_url)
@@ -12911,6 +12926,10 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     provider = str(realtime.get("frontend_provider") or "")
     frontend_model = str(realtime.get("frontend_model") or "")
     base_url = _realtime_voice_sidecar_base_url(realtime)
+    connect_timeout_seconds = _positive_float_config(
+        realtime.get("sidecar_connect_timeout_seconds"),
+        default=10.0,
+    )
     loopback = _realtime_voice_sidecar_is_loopback(base_url) if base_url else False
     autostart = _realtime_voice_should_autostart_sidecar(realtime, base_url)
     externally_managed = bool(base_url and not autostart)
@@ -12948,6 +12967,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "health_url": _redact_realtime_voice_url(_realtime_voice_sidecar_health_url(base_url)) if base_url else "",
             "loopback": loopback,
             "autostart": autostart,
+            "connect_timeout_seconds": connect_timeout_seconds,
             "healthy": healthy,
             "externally_managed": externally_managed,
             "health": health_payload,
@@ -12995,6 +13015,10 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         tts_provider=str(realtime.get("tts_provider") or "") or None,
         sidecar_base_url=str(sidecar_base_url or "") or None,
         sidecar_token=str(sidecar_token or "") or None,
+        sidecar_connect_timeout_seconds=_positive_float_config(
+            realtime.get("sidecar_connect_timeout_seconds"),
+            default=10.0,
+        ),
         spark_base_url=str(sidecar_base_url or "") or None,
         spark_token=str(sidecar_token or "") or None,
         metadata={"source": "desktop"},

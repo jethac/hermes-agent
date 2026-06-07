@@ -333,6 +333,7 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
       frontendModel: 'Frontend Model',
       sidecarBaseUrl: 'Voice Sidecar URL',
       sidecarTokenEnv: 'Voice Sidecar Token Env Var',
+      sidecarConnectTimeoutSeconds: 'Voice Sidecar Connect Timeout',
       sparkBaseUrl: 'Voice Sidecar URL',
       sparkTokenEnv: 'Voice Sidecar Token Env Var'
     }
@@ -483,6 +484,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
       sidecarBaseUrl:
         'LAN or private-network URL for a remote inference sidecar running Gemma, streaming TTS, or native S2S.',
       sidecarTokenEnv: 'Environment variable that contains the bearer token for the voice sidecar.',
+      sidecarConnectTimeoutSeconds: 'Seconds Hermes waits for a realtime voice sidecar websocket before falling back or failing.',
       sparkBaseUrl:
         'Deprecated compatibility alias for the voice sidecar URL. Prefer voice.realtime.sidecar_base_url.'
     }
@@ -617,6 +619,7 @@ export const SECTIONS: DesktopConfigSection[] = [
       'voice.realtime.frontend_model',
       'voice.realtime.sidecar_base_url',
       'voice.realtime.sidecar_token_env',
+      'voice.realtime.sidecar_connect_timeout_seconds',
       'voice.record_key',
       'voice.max_recording_seconds'
     ]

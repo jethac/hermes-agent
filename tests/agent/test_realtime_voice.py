@@ -1,4 +1,5 @@
 import asyncio
+import types
 
 import pytest
 
@@ -22,7 +23,7 @@ from agent.realtime_voice_reference_sidecar import (
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
-from agent.realtime_voice_sidecar import sidecar_ws_url, wants_realtime_sidecar
+from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, sidecar_ws_url, wants_realtime_sidecar
 from agent.realtime_voice_text_engine import TextOracleTTSEngine
 
 
@@ -117,6 +118,7 @@ def test_session_config_round_trips_wire_payload():
         tts_provider="edge",
         sidecar_base_url="http://voice.local:8080",
         sidecar_token="secret-token",
+        sidecar_connect_timeout_seconds=3.5,
         metadata={"profile": "default"},
     )
 
@@ -125,6 +127,7 @@ def test_session_config_round_trips_wire_payload():
     assert restored.to_wire() == config.to_wire()
     assert restored.effective_sidecar_base_url == "http://voice.local:8080"
     assert restored.effective_sidecar_token == "secret-token"
+    assert restored.sidecar_connect_timeout_seconds == 3.5
 
 
 def test_session_config_accepts_legacy_spark_sidecar_wire_payload():
@@ -595,6 +598,57 @@ def test_sidecar_detection_does_not_depend_on_hardware_aliases():
     )
 
 
+def test_sidecar_client_uses_configured_connect_timeout(monkeypatch):
+    class FakeWs:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, payload):
+            self.sent.append(payload)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+        async def close(self):
+            return None
+
+    async def run():
+        captured = {}
+        fake_ws = FakeWs()
+
+        async def fake_connect(url, **kwargs):
+            captured["url"] = url
+            captured["kwargs"] = kwargs
+            return fake_ws
+
+        async def fake_wait_for(awaitable, timeout):
+            captured["timeout"] = timeout
+            return await awaitable
+
+        monkeypatch.setitem(__import__("sys").modules, "websockets", types.SimpleNamespace(connect=fake_connect))
+        monkeypatch.setattr("agent.realtime_voice_sidecar.asyncio.wait_for", fake_wait_for)
+
+        client = RealtimeVoiceSidecarClient()
+        await client.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="gemma4",
+                sidecar_base_url="http://voice.local:8765",
+                sidecar_connect_timeout_seconds=2.5,
+            )
+        )
+
+        assert captured["url"] == "ws://voice.local:8765/v1/realtime-text/session"
+        assert captured["timeout"] == 2.5
+        assert fake_ws.sent
+        await client.close()
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_accepts_transcript_payloads_without_gpu():
     async def run():
         sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
@@ -1041,6 +1095,57 @@ def test_native_s2s_engine_streams_oracle_hint_to_sidecar():
             "final": True,
             "source": "hermes",
         }
+
+    asyncio.run(run())
+
+
+def test_native_s2s_engine_uses_configured_connect_timeout(monkeypatch):
+    class FakeWs:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, payload):
+            self.sent.append(payload)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+        async def close(self):
+            return None
+
+    async def run():
+        captured = {}
+        fake_ws = FakeWs()
+
+        async def fake_connect(url, **kwargs):
+            captured["url"] = url
+            captured["kwargs"] = kwargs
+            return fake_ws
+
+        async def fake_wait_for(awaitable, timeout):
+            captured["timeout"] = timeout
+            return await awaitable
+
+        monkeypatch.setitem(__import__("sys").modules, "websockets", types.SimpleNamespace(connect=fake_connect))
+        monkeypatch.setattr("agent.realtime_voice_s2s_engine.asyncio.wait_for", fake_wait_for)
+
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+            sidecar_connect_timeout_seconds=4.0,
+        )
+
+        await engine._connect_sidecar(engine.config)
+
+        assert captured["url"] == "ws://voice.local/v1/s2s/session"
+        assert captured["timeout"] == 4.0
+        assert fake_ws.sent
+        await engine.close()
 
     asyncio.run(run())
 

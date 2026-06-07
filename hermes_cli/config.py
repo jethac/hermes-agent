@@ -2037,6 +2037,7 @@ DEFAULT_CONFIG = {
             "sidecar_host": "127.0.0.1",
             "sidecar_port": 8765,
             "sidecar_autostart": True,
+            "sidecar_connect_timeout_seconds": 10.0,
             "vllm_base_url": "",
             "vllm_model": "",
         },

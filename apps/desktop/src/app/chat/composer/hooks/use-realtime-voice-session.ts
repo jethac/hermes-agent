@@ -56,6 +56,7 @@ export interface RealtimeVoiceStatus {
   engine: string
   sidecar?: {
     autostart?: boolean
+    connect_timeout_seconds?: number
     healthy?: boolean | null
     mode?: string
   }
