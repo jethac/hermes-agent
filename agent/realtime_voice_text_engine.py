@@ -61,8 +61,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 self._sidecar_task = asyncio.create_task(self._consume_sidecar_events())
             except Exception as exc:
                 await self._emit(
-                    VoiceEventType.SESSION_ERROR,
-                    {"error": f"realtime voice sidecar unavailable; falling back to local STT/TTS: {exc}"},
+                    VoiceEventType.FRONTEND_STATE,
+                    {
+                        "status": "fallback",
+                        "reason": "sidecar_unavailable",
+                        "error": str(exc),
+                        "sidecar": False,
+                    },
                 )
                 self._sidecar = None
         await self._emit(
@@ -180,7 +185,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"sidecar event stream failed: {exc}"})
+            self._sidecar = None
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "sidecar_event_stream_failed",
+                    "error": str(exc),
+                    "sidecar": False,
+                },
+            )
 
     async def _send_sidecar_event(self, event: VoiceEvent) -> bool:
         if self._sidecar is None:
@@ -189,7 +203,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             await self._sidecar.send_event(event)  # type: ignore[attr-defined]
             return True
         except Exception as exc:
-            await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"sidecar send failed: {exc}"})
+            self._sidecar = None
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "fallback",
+                    "reason": "sidecar_send_failed",
+                    "error": str(exc),
+                    "sidecar": False,
+                },
+            )
             return False
 
     async def _transcribe_and_answer(self, audio: bytes, codec: VoiceAudioCodec) -> None:
@@ -293,7 +316,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 await self._sidecar.speak(event)  # type: ignore[attr-defined]
                 return
             except Exception as exc:
-                await self._emit(VoiceEventType.SESSION_ERROR, {"error": f"sidecar TTS failed; falling back: {exc}"})
+                self._sidecar = None
+                await self._emit(
+                    VoiceEventType.FRONTEND_STATE,
+                    {
+                        "status": "fallback",
+                        "reason": "sidecar_tts_failed",
+                        "error": str(exc),
+                        "sidecar": False,
+                    },
+                )
 
         file_path = await asyncio.to_thread(self._tts_sync, text)
         if not file_path:
