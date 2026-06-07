@@ -844,6 +844,8 @@ def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
         assert sidecar.received[0].payload["input_generation"] == 1
         assert sidecar.spoken
         assert sidecar.spoken[0].payload["playback_generation"] == 1
+        assert sidecar.spoken[0].payload["language"] == "ja"
+        assert sidecar.spoken[0].payload["script"] == "Jpan"
         assert VoiceEventType.TRANSCRIPT_PARTIAL in [event.type for event in seen]
         assert VoiceEventType.TRANSCRIPT_FINAL in [event.type for event in seen]
         partial_events = [event for event in seen if event.type == VoiceEventType.TRANSCRIPT_PARTIAL]

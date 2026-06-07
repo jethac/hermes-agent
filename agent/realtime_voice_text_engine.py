@@ -54,6 +54,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._pending_turn_generation: Optional[int] = None
         self._input_generation = 0
         self._input_generation_active = False
+        self._assistant_metadata_by_generation: dict[int, dict] = {}
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -373,6 +374,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if metadata:
             payload.update(metadata)
         await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
+        self._assistant_metadata_by_generation[generation] = dict(metadata or {})
         self._active_task = asyncio.create_task(self._answer_and_speak(transcript, generation, metadata or {}))
 
     async def _answer_and_speak(self, transcript: str, playback_generation: int, metadata: dict) -> None:
@@ -487,6 +489,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 VoiceEventType.SESSION_ERROR,
                 {"error": f"oracle/tts failed: {sanitize_realtime_voice_error(exc)}"},
             )
+        finally:
+            self._assistant_metadata_by_generation.pop(playback_generation, None)
 
     def _transcribe_sync(self, audio: bytes, codec: VoiceAudioCodec) -> str:
         from tools.transcription_tools import transcribe_audio
@@ -515,12 +519,18 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
     async def _speak_chunk(self, text: str, playback_generation: int) -> None:
         if playback_generation != self._playback_generation:
             return
+        metadata = self._assistant_metadata_by_generation.get(playback_generation) or {}
         if self._sidecar is not None and self.config is not None:
             event = VoiceEvent(
                 type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                 session_id=self.config.session_id,
                 sequence=self._sequence + 1,
-                payload={"text": text, "speak": True, "playback_generation": playback_generation},
+                payload={
+                    "text": text,
+                    "speak": True,
+                    "playback_generation": playback_generation,
+                    **metadata,
+                },
             )
             try:
                 await self._sidecar.speak(event)  # type: ignore[attr-defined]
@@ -552,6 +562,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 payload = AudioChunk(codec=VoiceAudioCodec.OPUS, data=data).to_payload()
                 payload["mime_type"] = _mime_type_for_path(file_path)
                 payload["playback_generation"] = playback_generation
+                payload.update(metadata)
                 await self._emit(
                     VoiceEventType.AUDIO_OUTPUT_CHUNK,
                     payload,
