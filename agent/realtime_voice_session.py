@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import AsyncIterator, List, Optional
+from typing import AsyncIterator, Dict, List, Optional
 
 from agent.realtime_voice import (
     RealtimeVoiceEngine,
@@ -55,8 +56,16 @@ class RealtimeVoiceSession:
         self.transcript = RealtimeVoiceTranscript()
         self._last_client_sequence = 0
         self._closed = False
+        self._started_at_monotonic: Optional[float] = None
+        self._turn_audio_started_at: Optional[float] = None
+        self._turn_eou_at: Optional[float] = None
+        self._last_transcript_final_at: Optional[float] = None
+        self._last_barge_in_at: Optional[float] = None
+        self._turn_first_assistant_text = False
+        self._turn_first_audio_output = False
 
     async def start(self) -> None:
+        self._started_at_monotonic = time.monotonic()
         self.state = RealtimeVoiceSessionState.STARTING
         await self.engine.start(self.config)
         self.state = RealtimeVoiceSessionState.LISTENING
@@ -66,7 +75,14 @@ class RealtimeVoiceSession:
         if event.sequence <= self._last_client_sequence:
             raise ValueError("client event sequence must increase monotonically")
         self._last_client_sequence = event.sequence
+        now = time.monotonic()
+        if event.type == VoiceEventType.AUDIO_INPUT_CHUNK:
+            if self._turn_audio_started_at is None:
+                self._turn_audio_started_at = now
+            if event.payload.get("end_of_utterance") is True:
+                self._turn_eou_at = now
         if event.type == VoiceEventType.BARGE_IN:
+            self._last_barge_in_at = now
             self.state = RealtimeVoiceSessionState.LISTENING
             if self.transcript.assistant_draft:
                 self.transcript.interrupted_assistant_segments.append(self.transcript.assistant_draft)
@@ -78,8 +94,9 @@ class RealtimeVoiceSession:
     async def events(self) -> AsyncIterator[VoiceEvent]:
         async for event in self.engine.events():
             validate_server_event(event)
-            self._apply_server_event(event)
-            yield event
+            annotated = self._annotate_server_event(event)
+            self._apply_server_event(annotated)
+            yield annotated
 
     async def close(self) -> None:
         if self._closed:
@@ -141,6 +158,54 @@ class RealtimeVoiceSession:
         elif event.type == VoiceEventType.SESSION_CLOSED:
             self.state = RealtimeVoiceSessionState.CLOSED
 
+    def _annotate_server_event(self, event: VoiceEvent) -> VoiceEvent:
+        metrics = self._event_metrics(event)
+        if not metrics:
+            return event
+        payload = dict(event.payload)
+        existing = payload.get("metrics")
+        if isinstance(existing, dict):
+            payload["metrics"] = {**existing, **metrics}
+        else:
+            payload["metrics"] = metrics
+        return VoiceEvent(
+            type=event.type,
+            session_id=event.session_id,
+            sequence=event.sequence,
+            timestamp_ms=event.timestamp_ms,
+            payload=payload,
+        )
+
+    def _event_metrics(self, event: VoiceEvent) -> Dict[str, int]:
+        now = time.monotonic()
+        metrics: Dict[str, int] = {}
+        if self._started_at_monotonic is not None:
+            metrics["session_elapsed_ms"] = _elapsed_ms(self._started_at_monotonic, now)
+
+        if event.type == VoiceEventType.TRANSCRIPT_PARTIAL and self._turn_audio_started_at is not None:
+            metrics["audio_to_partial_transcript_ms"] = _elapsed_ms(self._turn_audio_started_at, now)
+        elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
+            if self._turn_audio_started_at is not None:
+                metrics["audio_to_final_transcript_ms"] = _elapsed_ms(self._turn_audio_started_at, now)
+            if self._turn_eou_at is not None:
+                metrics["eou_to_final_transcript_ms"] = _elapsed_ms(self._turn_eou_at, now)
+            self._last_transcript_final_at = now
+            self._turn_audio_started_at = None
+            self._turn_eou_at = None
+            self._turn_first_assistant_text = False
+            self._turn_first_audio_output = False
+        elif event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+            if self._last_transcript_final_at is not None and not self._turn_first_assistant_text:
+                metrics["final_transcript_to_first_text_ms"] = _elapsed_ms(self._last_transcript_final_at, now)
+                self._turn_first_assistant_text = True
+        elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+            if self._last_transcript_final_at is not None and not self._turn_first_audio_output:
+                metrics["final_transcript_to_first_audio_ms"] = _elapsed_ms(self._last_transcript_final_at, now)
+                self._turn_first_audio_output = True
+        elif event.type == VoiceEventType.BARGE_IN and self._last_barge_in_at is not None:
+            metrics["barge_in_ack_ms"] = _elapsed_ms(self._last_barge_in_at, now)
+        return metrics
+
 
 def _payload_generation(payload: dict) -> Optional[int]:
     value = payload.get("playback_generation")
@@ -151,6 +216,10 @@ def _payload_generation(payload: dict) -> Optional[int]:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+def _elapsed_ms(start: float, end: float) -> int:
+    return max(0, int((end - start) * 1000))
 
 
 def create_realtime_voice_engine(config: RealtimeVoiceSessionConfig) -> RealtimeVoiceEngine:

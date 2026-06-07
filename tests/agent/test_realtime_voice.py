@@ -555,6 +555,87 @@ def test_session_ignores_stale_interrupted_commit_from_prior_generation():
     asyncio.run(run())
 
 
+def test_session_adds_latency_metrics_to_realtime_events(monkeypatch):
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            await self._emit(
+                VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                {
+                    **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+                    "playback_generation": playback_generation,
+                },
+            )
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(session_id="voice-123"),
+            engine=TextOracleTTSEngine(oracle=FakeOracle()),
+        )
+        await session.start()
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello metrics", "end_of_utterance": True},
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+            event_types = [seen_event.type for seen_event in seen]
+            if (
+                VoiceEventType.ASSISTANT_COMMIT in event_types
+                and VoiceEventType.AUDIO_OUTPUT_CHUNK in event_types
+            ):
+                break
+
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        text = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL)
+        audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
+
+        assert final.payload["metrics"]["session_elapsed_ms"] >= 0
+        assert final.payload["metrics"]["audio_to_final_transcript_ms"] >= 0
+        assert final.payload["metrics"]["eou_to_final_transcript_ms"] >= 0
+        assert text.payload["metrics"]["final_transcript_to_first_text_ms"] >= 0
+        assert audio.payload["metrics"]["final_transcript_to_first_audio_ms"] >= 0
+        await session.close()
+
+    asyncio.run(run())
+
+
+def test_session_adds_barge_in_ack_latency_metric():
+    async def run():
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(session_id="voice-123"),
+            engine=TextOracleTTSEngine(oracle=FakeOracle()),
+        )
+        await session.start()
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=1,
+                payload={"reason": "test"},
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.BARGE_IN:
+                break
+
+        barge_in = seen[-1]
+        assert barge_in.payload["metrics"]["barge_in_ack_ms"] >= 0
+        assert barge_in.payload["metrics"]["session_elapsed_ms"] >= 0
+        await session.close()
+
+    asyncio.run(run())
+
+
 def test_native_s2s_engine_sends_oracle_hint_to_sidecar():
     class FakeWs:
         def __init__(self):
