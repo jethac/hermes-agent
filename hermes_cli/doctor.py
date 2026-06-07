@@ -736,6 +736,9 @@ def _realtime_voice_manifest_health(value: Any) -> dict[str, Any] | None:
         "frontend": {
             "provider": str(frontend.get("provider") or "") or None,
             "model": str(frontend.get("model") or "") or None,
+            "tts_model_languages": _realtime_voice_manifest_metadata_list(
+                frontend.get("tts_model_languages")
+            ),
             "languages": _realtime_voice_manifest_metadata_list(frontend.get("languages")),
             "scripts": _realtime_voice_manifest_metadata_list(frontend.get("scripts")),
         },

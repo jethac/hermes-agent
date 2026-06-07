@@ -12504,6 +12504,9 @@ def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str
         "frontend": {
             "provider": str(frontend.get("provider") or "") or None,
             "model": str(frontend.get("model") or "") or None,
+            "tts_model_languages": _sanitize_realtime_voice_health_metadata(
+                frontend.get("tts_model_languages")
+            ),
             "languages": _sanitize_realtime_voice_health_metadata(
                 frontend.get("languages", frontend.get("language"))
             ),
