@@ -103,6 +103,14 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         with managed_realtime_voice_sidecar_for_evidence():
+            live_like_issue = realtime_voice_live_like_preflight_issue()
+            if live_like_issue:
+                print(
+                    "Realtime voice alpha evidence failed: live-like realtime voice is not ready "
+                    f"({live_like_issue})",
+                    file=sys.stderr,
+                )
+                return 1
             for ordinal, report_path in enumerate(report_paths, start=1):
                 print(f"Realtime voice alpha evidence run {ordinal}/{run_count}: {report_path}")
                 run_doctor(
@@ -183,6 +191,36 @@ def managed_realtime_voice_sidecar_for_evidence() -> Iterator[None]:
                 proc.wait(timeout=5)
             except Exception:
                 proc.kill()
+
+
+def realtime_voice_live_like_preflight_issue() -> str:
+    try:
+        from hermes_cli import web_server
+
+        status = web_server._realtime_voice_status_payload()
+    except AttributeError:
+        return ""
+    except Exception as exc:
+        return f"status unavailable: {sanitize_realtime_voice_error(exc)}"
+    if not isinstance(status, dict):
+        return "status unavailable"
+    if status.get("enabled") is not True:
+        return "disabled"
+    unavailable = str(status.get("unavailable_reason") or "").strip()
+    conversation_quality = status.get("conversation_quality")
+    conversation_quality = conversation_quality if isinstance(conversation_quality, dict) else {}
+    if status.get("available") is not True and unavailable:
+        mode = str(conversation_quality.get("mode") or "unknown")
+        reason = str(conversation_quality.get("reason") or "unknown")
+        return f"{unavailable}; mode={mode}; reason={reason}"
+    if conversation_quality.get("live_like") is not True:
+        mode = str(conversation_quality.get("mode") or "unknown")
+        reason = str(conversation_quality.get("reason") or "unknown")
+        return (
+            f"not_live_like; mode={mode}; reason={reason}; "
+            "configure streaming STT/TTS or native S2S"
+        )
+    return ""
 
 
 def _print_summary(runs: list[tuple[str, list[dict[str, Any]]]]) -> None:

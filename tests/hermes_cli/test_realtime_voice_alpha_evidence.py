@@ -47,7 +47,14 @@ class _FakeSidecarProcess:
         self.alive = False
 
 
-def _fake_web_server_module(*, autostart=False, healthy=True, proc=None, ensure_error=None):
+def _fake_web_server_module(
+    *,
+    autostart=False,
+    healthy=True,
+    proc=None,
+    ensure_error=None,
+    status_payload=None,
+):
     module = types.SimpleNamespace()
     module._VOICE_SIDECAR_PROC = proc
     module.load_env = lambda: {}
@@ -72,6 +79,16 @@ def _fake_web_server_module(*, autostart=False, healthy=True, proc=None, ensure_
 
     module._realtime_voice_sidecar_healthy = fake_healthy
     module._ensure_realtime_voice_sidecar = fake_ensure
+    module._realtime_voice_status_payload = lambda: status_payload or {
+        "enabled": True,
+        "available": True,
+        "unavailable_reason": None,
+        "conversation_quality": {
+            "live_like": True,
+            "mode": "streaming_text",
+            "reason": "streaming_stt_tts",
+        },
+    }
     return module
 
 
@@ -421,3 +438,53 @@ def test_alpha_evidence_runner_reports_managed_sidecar_start_failure(
     assert result == 1
     assert calls == []
     assert "managed sidecar is not ready" in capsys.readouterr().err
+
+
+def test_alpha_evidence_runner_requires_live_like_status_before_collecting(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(
+            status_payload={
+                "enabled": True,
+                "available": False,
+                "unavailable_reason": "live_like_required",
+                "conversation_quality": {
+                    "live_like": False,
+                    "mode": "turn_based_text",
+                    "reason": "utterance_stt_tts",
+                },
+            },
+        ),
+    )
+
+    calls = []
+
+    def fake_run_doctor(args):
+        calls.append(args)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+        ]
+    )
+
+    assert result == 1
+    assert calls == []
+    assert "live-like realtime voice is not ready" in capsys.readouterr().err
