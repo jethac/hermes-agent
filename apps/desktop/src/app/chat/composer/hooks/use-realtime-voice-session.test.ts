@@ -946,12 +946,12 @@ describe('realtimeVoiceCloseAction', () => {
     })).toBe('fallback')
   })
 
-  it('treats active-session abnormal closes as fatal', () => {
+  it('falls back when realtime closes during an active backend session', () => {
     expect(realtimeVoiceCloseAction({
       closeCode: 1011,
       enabled: true,
       sessionStarted: true
-    })).toBe('fatal')
+    })).toBe('fallback')
   })
 
   it('ignores normal or disabled closes', () => {
@@ -982,8 +982,8 @@ describe('realtimeVoiceSessionErrorAction', () => {
     expect(realtimeVoiceSessionErrorAction({ sessionStarted: false })).toBe('fallback')
   })
 
-  it('treats active-session errors as fatal', () => {
-    expect(realtimeVoiceSessionErrorAction({ sessionStarted: true })).toBe('fatal')
+  it('falls back for active-session errors so the voice session can continue degraded', () => {
+    expect(realtimeVoiceSessionErrorAction({ sessionStarted: true })).toBe('fallback')
   })
 })
 
