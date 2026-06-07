@@ -12,6 +12,7 @@ from agent.realtime_voice import (
     VoiceEventType,
     binary_audio_frame_from_event,
     event_from_binary_audio_frame,
+    put_realtime_voice_event,
     validate_client_event,
     validate_server_event,
 )
@@ -180,6 +181,60 @@ def test_binary_audio_frame_round_trips_audio_event_payload():
     assert restored.sequence == 7
     assert restored.payload["end_of_utterance"] is True
     assert AudioChunk.from_payload(restored.payload).data == b"audio"
+
+
+def test_realtime_voice_event_queue_drops_oldest_audio_for_control_event():
+    async def run():
+        queue = asyncio.Queue(maxsize=2)
+        first_audio = VoiceEvent(
+            type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            session_id="voice-123",
+            sequence=1,
+            payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"one").to_payload(),
+        )
+        second_audio = VoiceEvent(
+            type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            session_id="voice-123",
+            sequence=2,
+            payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"two").to_payload(),
+        )
+        state = VoiceEvent(
+            type=VoiceEventType.FRONTEND_STATE,
+            session_id="voice-123",
+            sequence=3,
+            payload={"status": "degraded"},
+        )
+
+        assert await put_realtime_voice_event(queue, first_audio)
+        assert await put_realtime_voice_event(queue, second_audio)
+        assert await put_realtime_voice_event(queue, state)
+
+        assert [queue.get_nowait().sequence, queue.get_nowait().sequence] == [2, 3]
+
+    asyncio.run(run())
+
+
+def test_realtime_voice_event_queue_drops_new_audio_when_control_queue_is_full():
+    async def run():
+        queue = asyncio.Queue(maxsize=1)
+        state = VoiceEvent(
+            type=VoiceEventType.FRONTEND_STATE,
+            session_id="voice-123",
+            sequence=1,
+            payload={"status": "ok"},
+        )
+        audio = VoiceEvent(
+            type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            session_id="voice-123",
+            sequence=2,
+            payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+        )
+
+        assert await put_realtime_voice_event(queue, state)
+        assert not await put_realtime_voice_event(queue, audio)
+        assert queue.get_nowait().sequence == 1
+
+    asyncio.run(run())
 
 
 def test_event_validation_separates_client_and_server_events():

@@ -17,6 +17,8 @@ from agent.realtime_voice import (
     VoiceAudioCodec,
     VoiceEvent,
     VoiceEventType,
+    create_realtime_voice_event_queue,
+    put_realtime_voice_event,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_oracle import HermesRealtimeOracle, NullRealtimeOracle
@@ -35,7 +37,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
 
     def __init__(self, *, oracle: Optional[object] = None, sidecar: Optional[object] = None):
         self.config: Optional[RealtimeVoiceSessionConfig] = None
-        self._events: asyncio.Queue[VoiceEvent | None] = asyncio.Queue()
+        self._events: asyncio.Queue[VoiceEvent | None] = create_realtime_voice_event_queue()
         self._inbound_audio: List[bytes] = []
         self._inbound_audio_bytes = 0
         self._sequence = 0
@@ -161,7 +163,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             with contextlib.suppress(asyncio.CancelledError):
                 await self._sidecar_task
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
-        await self._events.put(None)
+        await put_realtime_voice_event(self._events, None)
 
     async def _consume_sidecar_events(self) -> None:
         if self._sidecar is None:
@@ -392,7 +394,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if self.config is None:
             return
         self._sequence += 1
-        await self._events.put(
+        await put_realtime_voice_event(
+            self._events,
             VoiceEvent(
                 type=event_type,
                 session_id=self.config.session_id,

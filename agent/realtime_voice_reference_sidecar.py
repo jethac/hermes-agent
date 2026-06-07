@@ -26,7 +26,9 @@ from agent.realtime_voice import (
     VoiceEvent,
     VoiceEventType,
     binary_audio_frame_from_event,
+    create_realtime_voice_event_queue,
     event_from_binary_audio_frame,
+    put_realtime_voice_event,
 )
 
 
@@ -90,7 +92,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self.config: Optional[RealtimeVoiceSessionConfig] = None
         self._transcribe_audio_func = transcribe_audio_func
         self._synthesize_func = synthesize_func
-        self._events: asyncio.Queue[VoiceEvent | None] = asyncio.Queue()
+        self._events: asyncio.Queue[VoiceEvent | None] = create_realtime_voice_event_queue()
         self._audio: list[bytes] = []
         self._sequence = 0
         self._closed = False
@@ -164,7 +166,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._closed = True
         self._cancel_active_tasks()
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
-        await self._events.put(None)
+        await put_realtime_voice_event(self._events, None)
 
     def _track_task(self, task: asyncio.Task[None]) -> None:
         self._active_tasks.add(task)
@@ -273,7 +275,8 @@ class ReferenceRealtimeVoiceSidecarSession:
         if self.config is None:
             return
         self._sequence += 1
-        await self._events.put(
+        await put_realtime_voice_event(
+            self._events,
             VoiceEvent(
                 type=event_type,
                 session_id=self.config.session_id,

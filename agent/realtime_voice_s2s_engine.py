@@ -17,7 +17,9 @@ from agent.realtime_voice import (
     VoiceEvent,
     VoiceEventType,
     binary_audio_frame_from_event,
+    create_realtime_voice_event_queue,
     event_from_binary_audio_frame,
+    put_realtime_voice_event,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_oracle import HermesRealtimeOracle
@@ -28,7 +30,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
 
     def __init__(self):
         self.config: Optional[RealtimeVoiceSessionConfig] = None
-        self._events: asyncio.Queue[VoiceEvent | None] = asyncio.Queue()
+        self._events: asyncio.Queue[VoiceEvent | None] = create_realtime_voice_event_queue()
         self._sequence = 0
         self._closed = False
         self._ws: Any = None
@@ -105,7 +107,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             with contextlib.suppress(asyncio.CancelledError):
                 await self._oracle_hint_task
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
-        await self._events.put(None)
+        await put_realtime_voice_event(self._events, None)
 
     async def _connect_sidecar(self, config: RealtimeVoiceSessionConfig) -> None:
         try:
@@ -176,7 +178,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             sequence=self._sequence,
             payload=payload,
         )
-        await self._events.put(event)
+        await put_realtime_voice_event(self._events, event)
         return event
 
     async def _queue_sidecar_event(self, event: VoiceEvent) -> None:
