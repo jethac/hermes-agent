@@ -48,6 +48,8 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         self._oracle: Optional[HermesRealtimeOracle] = None
         self._oracle_hint_task: Optional[asyncio.Task[None]] = None
         self._playback_generation = 0
+        self._assistant_output_active = False
+        self._auto_barge_in_input_active = False
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -67,33 +69,13 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         if event.type == VoiceEventType.SESSION_CLOSED:
             await self.close()
             return
+        if event.type == VoiceEventType.AUDIO_INPUT_CHUNK:
+            await self._auto_barge_in_for_speech(event)
         if event.type == VoiceEventType.BARGE_IN:
-            self._playback_generation += 1
-            self._cancel_oracle_hint("Realtime voice native S2S turn interrupted")
-            event = VoiceEvent(
-                type=event.type,
-                session_id=event.session_id,
-                sequence=event.sequence,
-                timestamp_ms=event.timestamp_ms,
-                payload={
-                    **dict(event.payload),
-                    "reason": event.payload.get("reason") or "client",
-                    "playback_generation": self._playback_generation,
-                },
-            )
-            await self._emit(
-                VoiceEventType.BARGE_IN,
-                {
-                    "reason": event.payload.get("reason") or "client",
-                    "playback_generation": self._playback_generation,
-                },
-            )
-        if self._ws is not None:
-            frame = binary_audio_frame_from_event(event)
-            if frame is not None and event.type == VoiceEventType.AUDIO_INPUT_CHUNK:
-                await self._ws.send(frame)
-                return
-            await self._ws.send(json.dumps(event.to_wire()))
+            event = await self._interrupt_active_turn(event, reason=str(event.payload.get("reason") or "client"))
+        await self._send_sidecar_event(event)
+        if event.type == VoiceEventType.AUDIO_INPUT_CHUNK and event.payload.get("end_of_utterance") is True:
+            self._auto_barge_in_input_active = False
 
     async def events(self) -> AsyncIterator[VoiceEvent]:
         while True:
@@ -140,6 +122,55 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             raise RuntimeError(f"native S2S sidecar connect timed out after {timeout:g}s") from exc
         await self._ws.send(json.dumps({"type": "session.config", "payload": config.to_wire()}))
         self._reader_task = asyncio.create_task(self._read_sidecar())
+
+    async def _auto_barge_in_for_speech(self, event: VoiceEvent) -> None:
+        if self._auto_barge_in_input_active:
+            return
+        if not _payload_has_audio(event.payload):
+            return
+        if not self._has_active_generation_work():
+            return
+
+        self._auto_barge_in_input_active = True
+        barge_in = await self._interrupt_active_turn(event, reason="user_speech")
+        await self._send_sidecar_event(barge_in)
+
+    async def _interrupt_active_turn(self, event: VoiceEvent, *, reason: str) -> VoiceEvent:
+        self._playback_generation += 1
+        self._assistant_output_active = False
+        self._cancel_oracle_hint("Realtime voice native S2S turn interrupted")
+        payload = {
+            **dict(event.payload),
+            "reason": reason or "client",
+            "playback_generation": self._playback_generation,
+        }
+        forwarded = VoiceEvent(
+            type=VoiceEventType.BARGE_IN,
+            session_id=event.session_id,
+            sequence=event.sequence,
+            timestamp_ms=event.timestamp_ms,
+            payload=payload,
+        )
+        await self._emit(
+            VoiceEventType.BARGE_IN,
+            {
+                "reason": payload["reason"],
+                "playback_generation": self._playback_generation,
+            },
+        )
+        return forwarded
+
+    def _has_active_generation_work(self) -> bool:
+        return self._assistant_output_active or bool(self._oracle_hint_task and not self._oracle_hint_task.done())
+
+    async def _send_sidecar_event(self, event: VoiceEvent) -> None:
+        if self._ws is None:
+            return
+        frame = binary_audio_frame_from_event(event)
+        if frame is not None and event.type == VoiceEventType.AUDIO_INPUT_CHUNK:
+            await self._ws.send(frame)
+            return
+        await self._ws.send(json.dumps(event.to_wire()))
 
     async def _read_sidecar(self) -> None:
         try:
@@ -196,7 +227,16 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         return event
 
     async def _queue_sidecar_event(self, event: VoiceEvent) -> None:
+        self._track_sidecar_output_state(event)
         await self._emit(event.type, dict(event.payload))
+
+    def _track_sidecar_output_state(self, event: VoiceEvent) -> None:
+        if event.type in {VoiceEventType.AUDIO_OUTPUT_CHUNK, VoiceEventType.ASSISTANT_TEXT_PARTIAL}:
+            self._assistant_output_active = True
+        elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
+            self._auto_barge_in_input_active = False
+        elif event.type in {VoiceEventType.ASSISTANT_COMMIT, VoiceEventType.BARGE_IN, VoiceEventType.SESSION_ERROR}:
+            self._assistant_output_active = False
 
     def _is_stale_sidecar_event(self, event: VoiceEvent) -> bool:
         if event.type not in STALE_SIDECAR_GENERATION_EVENT_TYPES:
@@ -317,3 +357,11 @@ def _payload_generation(payload: dict) -> Optional[int]:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+def _payload_has_audio(payload: dict) -> bool:
+    data = payload.get("data_b64")
+    if isinstance(data, str) and data:
+        return True
+    data_bytes = payload.get("data_bytes")
+    return isinstance(data_bytes, (bytes, bytearray, memoryview)) and len(data_bytes) > 0
