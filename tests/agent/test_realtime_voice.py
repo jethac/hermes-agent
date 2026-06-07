@@ -2390,6 +2390,62 @@ def test_session_adds_latency_metrics_to_realtime_events(monkeypatch):
     asyncio.run(run())
 
 
+def test_session_marks_latency_quality_target_misses(monkeypatch):
+    class PartialTranscriptEngine:
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            return None
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_PARTIAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"text": "hello"},
+            )
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                metadata={
+                    "quality_targets_ms": {
+                        "audio_to_partial_transcript_ms": 300,
+                    },
+                },
+            ),
+            engine=PartialTranscriptEngine(),
+        )
+        monkeypatch.setattr(
+            session,
+            "_event_metrics",
+            lambda event: {
+                "audio_to_partial_transcript_ms": 500,
+                "session_elapsed_ms": 500,
+            },
+        )
+        await session.start()
+
+        event = await anext(session.events())
+
+        assert event.payload["metrics"]["audio_to_partial_transcript_ms"] == 500
+        assert event.payload["quality_target_misses"] == [
+            {
+                "metric": "audio_to_partial_transcript_ms",
+                "actual_ms": 500,
+                "target_ms": 300,
+            }
+        ]
+        await session.close()
+
+    asyncio.run(run())
+
+
 def test_session_adds_turn_state_to_realtime_events(monkeypatch):
     async def run():
         async def fake_speak(self, text, playback_generation):

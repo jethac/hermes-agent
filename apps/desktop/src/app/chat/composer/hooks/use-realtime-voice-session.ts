@@ -768,6 +768,18 @@ export function collectRealtimeVoiceFrontendState(
   event: VoiceEvent
 ): RealtimeVoiceFrontendState | null {
   if (event.type !== 'frontend.state') {
+    if (Array.isArray(event.payload?.quality_target_misses) && event.payload.quality_target_misses.length > 0) {
+      if (previous?.status === 'fallback') {
+        return previous
+      }
+
+      return {
+        reason: 'quality_target_missed',
+        status: 'degraded',
+        updatedAtMs: finiteNonNegativeMs(event.timestamp_ms) ?? Date.now()
+      }
+    }
+
     return previous
   }
 
