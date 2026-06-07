@@ -55,6 +55,7 @@ class ReferenceSidecarRuntimeConfig:
     streaming_stt_model: Optional[str] = None
     streaming_stt_token: Optional[str] = None
     streaming_stt_timeout_seconds: float = 10.0
+    streaming_bridge_health_timeout_seconds: float = 0.2
     streaming_tts_base_url: Optional[str] = None
     streaming_tts_model: Optional[str] = None
     streaming_tts_token: Optional[str] = None
@@ -762,6 +763,9 @@ def runtime_config_from_env() -> ReferenceSidecarRuntimeConfig:
         streaming_stt_model=os.environ.get("HERMES_VOICE_STREAMING_STT_MODEL") or None,
         streaming_stt_token=os.environ.get("HERMES_VOICE_STREAMING_STT_TOKEN") or None,
         streaming_stt_timeout_seconds=float(os.environ.get("HERMES_VOICE_STREAMING_STT_TIMEOUT_SECONDS") or 10),
+        streaming_bridge_health_timeout_seconds=float(
+            os.environ.get("HERMES_VOICE_STREAMING_BRIDGE_HEALTH_TIMEOUT_SECONDS") or 0.2
+        ),
         streaming_tts_base_url=os.environ.get("HERMES_VOICE_STREAMING_TTS_BASE_URL") or None,
         streaming_tts_model=os.environ.get("HERMES_VOICE_STREAMING_TTS_MODEL") or None,
         streaming_tts_token=os.environ.get("HERMES_VOICE_STREAMING_TTS_TOKEN") or None,
@@ -808,7 +812,10 @@ def _probe_streaming_stt_health_sync(runtime: ReferenceSidecarRuntimeConfig) -> 
         headers["Authorization"] = f"Bearer {runtime.streaming_stt_token}"
     request = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        with urllib.request.urlopen(request, timeout=runtime.streaming_stt_timeout_seconds) as response:
+        with urllib.request.urlopen(
+            request,
+            timeout=runtime.streaming_bridge_health_timeout_seconds,
+        ) as response:
             data = json.loads(response.read().decode("utf-8"))
     except Exception:
         return None
@@ -824,7 +831,10 @@ def _probe_streaming_tts_health_sync(runtime: ReferenceSidecarRuntimeConfig) -> 
         headers["Authorization"] = f"Bearer {runtime.streaming_tts_token}"
     request = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        with urllib.request.urlopen(request, timeout=runtime.streaming_tts_timeout_seconds) as response:
+        with urllib.request.urlopen(
+            request,
+            timeout=runtime.streaming_bridge_health_timeout_seconds,
+        ) as response:
             data = json.loads(response.read().decode("utf-8"))
     except Exception:
         return None
