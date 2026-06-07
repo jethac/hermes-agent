@@ -48,6 +48,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._sidecar = sidecar
         self._sidecar_task: Optional[asyncio.Task[None]] = None
         self._playback_generation = 0
+        self._input_generation = 0
+        self._input_generation_active = False
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -91,6 +93,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             return
         if event.type == VoiceEventType.BARGE_IN:
             self._playback_generation += 1
+            self._input_generation += 1
+            self._input_generation_active = False
             payload = {
                 "reason": event.payload.get("reason") or "client",
                 "playback_generation": self._playback_generation,
@@ -130,7 +134,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         try:
             chunk = AudioChunk.from_payload(event.payload)
             if self._sidecar is not None:
-                if await self._send_sidecar_event(event):
+                sidecar_event = self._sidecar_input_event(event)
+                if await self._send_sidecar_event(sidecar_event):
+                    self._finish_input_generation_if_needed(sidecar_event)
                     return
             if not await self._append_inbound_audio(chunk.data):
                 return
@@ -139,6 +145,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             return
 
         if event.payload.get("end_of_utterance") is True:
+            self._finish_input_generation_if_needed(event)
             audio = b"".join(self._inbound_audio)
             self._clear_inbound_audio()
             if audio:
@@ -177,11 +184,17 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         try:
             async for event in self._sidecar.events():  # type: ignore[attr-defined]
                 if event.type == VoiceEventType.TRANSCRIPT_PARTIAL:
-                    await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, dict(event.payload))
+                    payload = dict(event.payload)
+                    if self._is_stale_sidecar_input(payload):
+                        continue
+                    await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, payload)
                 elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
-                    text = str(event.payload.get("text") or "").strip()
+                    payload = dict(event.payload)
+                    if self._is_stale_sidecar_input(payload):
+                        continue
+                    text = str(payload.get("text") or "").strip()
                     if text:
-                        await self._start_turn(text)
+                        await self._start_turn(text, input_generation=_payload_input_generation(payload))
                 elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
                     payload = dict(event.payload)
                     generation = _payload_generation(payload)
@@ -226,6 +239,28 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             )
             return False
 
+    def _sidecar_input_event(self, event: VoiceEvent) -> VoiceEvent:
+        if not self._input_generation_active:
+            self._input_generation += 1
+            self._input_generation_active = True
+        payload = dict(event.payload)
+        payload["input_generation"] = self._input_generation
+        return VoiceEvent(
+            type=event.type,
+            session_id=event.session_id,
+            sequence=event.sequence,
+            timestamp_ms=event.timestamp_ms,
+            payload=payload,
+        )
+
+    def _finish_input_generation_if_needed(self, event: VoiceEvent) -> None:
+        if event.payload.get("end_of_utterance") is True:
+            self._input_generation_active = False
+
+    def _is_stale_sidecar_input(self, payload: dict) -> bool:
+        generation = _payload_input_generation(payload)
+        return generation is not None and generation < self._input_generation
+
     async def _append_inbound_audio(self, data: bytes) -> bool:
         config = self.config
         limit = int(config.input_buffer_limit_bytes if config is not None else 8 * 1024 * 1024)
@@ -262,12 +297,15 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 {"error": f"transcription failed: {sanitize_realtime_voice_error(exc)}"},
             )
 
-    async def _start_turn(self, transcript: str) -> None:
+    async def _start_turn(self, transcript: str, *, input_generation: Optional[int] = None) -> None:
         if self._active_task and not self._active_task.done():
             self._active_task.cancel()
         self._playback_generation += 1
         generation = self._playback_generation
-        await self._emit(VoiceEventType.TRANSCRIPT_FINAL, {"text": transcript, "playback_generation": generation})
+        payload = {"text": transcript, "playback_generation": generation}
+        if input_generation is not None:
+            payload["input_generation"] = input_generation
+        await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
         self._active_task = asyncio.create_task(self._answer_and_speak(transcript, generation))
 
     async def _answer_and_speak(self, transcript: str, playback_generation: int) -> None:
@@ -424,6 +462,15 @@ def _mime_type_for_path(path: str) -> str:
 
 def _payload_generation(payload: dict) -> Optional[int]:
     value = payload.get("playback_generation")
+    return _payload_int(value)
+
+
+def _payload_input_generation(payload: dict) -> Optional[int]:
+    value = payload.get("input_generation")
+    return _payload_int(value)
+
+
+def _payload_int(value: object) -> Optional[int]:
     if isinstance(value, bool):
         return None
     if isinstance(value, int):

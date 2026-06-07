@@ -95,6 +95,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._synthesize_func = synthesize_func
         self._events: asyncio.Queue[VoiceEvent | None] = create_realtime_voice_event_queue()
         self._audio: list[bytes] = []
+        self._audio_input_generation: Optional[int] = None
         self._sequence = 0
         self._closed = False
         self._active_tasks: set[asyncio.Task[None]] = set()
@@ -121,6 +122,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             return
         if event.type == VoiceEventType.BARGE_IN:
             self._audio.clear()
+            self._audio_input_generation = None
             self._cancel_active_tasks()
             payload = {"reason": event.payload.get("reason") or "client"}
             playback_generation = _payload_generation(event.payload)
@@ -138,10 +140,15 @@ class ReferenceRealtimeVoiceSidecarSession:
 
         transcript = str(event.payload.get("transcript") or "").strip()
         if transcript:
+            payload = {"text": transcript}
+            input_generation = _payload_input_generation(event.payload)
+            if input_generation is not None:
+                payload["input_generation"] = input_generation
             if event.payload.get("end_of_utterance") is True:
-                await self._emit(VoiceEventType.TRANSCRIPT_FINAL, {"text": transcript})
+                await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
             else:
-                await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, {"text": transcript, "stability": 0.8})
+                payload["stability"] = 0.8
+                await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, payload)
             return
 
         try:
@@ -150,13 +157,23 @@ class ReferenceRealtimeVoiceSidecarSession:
             await self._emit(VoiceEventType.SESSION_ERROR, {"error": "invalid audio chunk"})
             return
 
+        input_generation = _payload_input_generation(event.payload)
+        if input_generation is not None:
+            if self._audio_input_generation is not None and input_generation != self._audio_input_generation:
+                self._audio.clear()
+            self._audio_input_generation = input_generation
         self._audio.append(chunk.data)
         if event.payload.get("end_of_utterance") is True:
             audio = b"".join(self._audio)
+            audio_input_generation = self._audio_input_generation
             self._audio.clear()
+            self._audio_input_generation = None
             if audio:
-                await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, {"text": "", "stability": 0.1})
-                self._track_task(asyncio.create_task(self._transcribe(audio, chunk.codec)))
+                payload = {"text": "", "stability": 0.1}
+                if audio_input_generation is not None:
+                    payload["input_generation"] = audio_input_generation
+                await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, payload)
+                self._track_task(asyncio.create_task(self._transcribe(audio, chunk.codec, audio_input_generation)))
 
     async def events(self) -> AsyncIterator[VoiceEvent]:
         while True:
@@ -182,11 +199,19 @@ class ReferenceRealtimeVoiceSidecarSession:
             if not task.done():
                 task.cancel()
 
-    async def _transcribe(self, audio: bytes, codec: VoiceAudioCodec) -> None:
+    async def _transcribe(
+        self,
+        audio: bytes,
+        codec: VoiceAudioCodec,
+        input_generation: Optional[int] = None,
+    ) -> None:
         try:
             transcript = await asyncio.to_thread(self._transcribe_sync, audio, codec)
             if transcript:
-                await self._emit(VoiceEventType.TRANSCRIPT_FINAL, {"text": transcript})
+                payload = {"text": transcript}
+                if input_generation is not None:
+                    payload["input_generation"] = input_generation
+                await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -423,6 +448,15 @@ def _mime_type_for_path(path: str) -> str:
 
 def _payload_generation(payload: Mapping[str, Any]) -> Optional[int]:
     value = payload.get("playback_generation")
+    return _payload_int(value)
+
+
+def _payload_input_generation(payload: Mapping[str, Any]) -> Optional[int]:
+    value = payload.get("input_generation")
+    return _payload_int(value)
+
+
+def _payload_int(value: Any) -> Optional[int]:
     if isinstance(value, bool):
         return None
     if isinstance(value, int):

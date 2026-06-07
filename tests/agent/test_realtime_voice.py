@@ -54,12 +54,15 @@ class FakeSidecar:
     async def send_event(self, event):
         self.received.append(event)
         if event.type == VoiceEventType.AUDIO_INPUT_CHUNK and event.payload.get("end_of_utterance") is True:
+            transcript_payload = {}
+            if "input_generation" in event.payload:
+                transcript_payload["input_generation"] = event.payload["input_generation"]
             await self._events.put(
                 VoiceEvent(
                     type=VoiceEventType.TRANSCRIPT_PARTIAL,
                     session_id=event.session_id,
                     sequence=1,
-                    payload={"text": "hello", "stability": 0.7},
+                    payload={"text": "hello", "stability": 0.7, **transcript_payload},
                 )
             )
             await self._events.put(
@@ -67,7 +70,7 @@ class FakeSidecar:
                     type=VoiceEventType.TRANSCRIPT_FINAL,
                     session_id=event.session_id,
                     sequence=2,
-                    payload={"text": "hello hermes"},
+                    payload={"text": "hello hermes", **transcript_payload},
                 )
             )
 
@@ -514,6 +517,7 @@ def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
 
         assert sidecar.started is True
         assert sidecar.received[0].type == VoiceEventType.AUDIO_INPUT_CHUNK
+        assert sidecar.received[0].payload["input_generation"] == 1
         assert sidecar.spoken
         assert sidecar.spoken[0].payload["playback_generation"] == 1
         assert VoiceEventType.TRANSCRIPT_PARTIAL in [event.type for event in seen]
@@ -521,8 +525,91 @@ def test_text_engine_streams_audio_to_sidecar_then_uses_hermes_oracle():
         commit_events = [event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT]
         assert commit_events[0].payload["text"] == "Answering: hello hermes."
         assert commit_events[0].payload["playback_generation"] == 1
+        final_events = [event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL]
+        assert final_events[0].payload["input_generation"] == 1
         audio_events = [event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK]
         assert audio_events[0].payload["playback_generation"] == 1
+
+    asyncio.run(run())
+
+
+def test_text_engine_drops_stale_sidecar_transcript_after_new_input(monkeypatch):
+    class ManualSidecar(FakeSidecar):
+        async def send_event(self, event):
+            self.received.append(event)
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        sidecar = ManualSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123", sidecar_base_url="http://voice.local"))
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"old-audio").to_payload(),
+                    "end_of_utterance": True,
+                },
+            )
+        )
+        old_generation = sidecar.received[-1].payload["input_generation"]
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=2,
+                payload={"reason": "user_speech"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=3,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"new-audio").to_payload(),
+                    "end_of_utterance": True,
+                },
+            )
+        )
+        new_generation = sidecar.received[-1].payload["input_generation"]
+
+        await sidecar._events.put(
+            VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"text": "stale transcript", "input_generation": old_generation},
+            )
+        )
+        await sidecar._events.put(
+            VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=2,
+                payload={"text": "fresh transcript", "input_generation": new_generation},
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                await engine.close()
+                break
+
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        assert old_generation < new_generation
+        assert final.payload["text"] == "fresh transcript"
+        assert final.payload["input_generation"] == new_generation
 
     asyncio.run(run())
 
@@ -972,7 +1059,7 @@ def test_reference_sidecar_accepts_transcript_payloads_without_gpu():
                 type=VoiceEventType.AUDIO_INPUT_CHUNK,
                 session_id="voice-123",
                 sequence=1,
-                payload={"transcript": "hello hermes"},
+                payload={"transcript": "hello hermes", "input_generation": 5},
             )
         )
         await sidecar.receive_event(
@@ -980,7 +1067,7 @@ def test_reference_sidecar_accepts_transcript_payloads_without_gpu():
                 type=VoiceEventType.AUDIO_INPUT_CHUNK,
                 session_id="voice-123",
                 sequence=2,
-                payload={"transcript": "hello hermes", "end_of_utterance": True},
+                payload={"transcript": "hello hermes", "end_of_utterance": True, "input_generation": 5},
             )
         )
 
@@ -997,6 +1084,7 @@ def test_reference_sidecar_accepts_transcript_payloads_without_gpu():
             VoiceEventType.TRANSCRIPT_FINAL,
         ]
         assert seen[-1].payload["text"] == "hello hermes"
+        assert [event.payload.get("input_generation") for event in seen[1:]] == [5, 5]
 
     asyncio.run(run())
 
@@ -1053,6 +1141,7 @@ def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
                 payload={
                     **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
                     "end_of_utterance": True,
+                    "input_generation": 9,
                 },
             )
         )
@@ -1080,6 +1169,8 @@ def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
         assert [event.payload.get("text") for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL] == [
             "local transcript"
         ]
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        assert final.payload["input_generation"] == 9
         audio_events = [event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK]
         assert audio_events[0].payload["data_b64"]
         assert audio_events[0].payload["playback_generation"] == 7
