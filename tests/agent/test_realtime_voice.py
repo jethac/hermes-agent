@@ -2498,6 +2498,70 @@ def test_native_s2s_engine_barge_in_cancels_active_oracle_hint():
     asyncio.run(run())
 
 
+def test_native_s2s_engine_auto_barge_in_on_new_speech_while_output_active():
+    class FakeWs:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, payload):
+            self.sent.append(payload)
+
+    class InterruptibleOracle:
+        def __init__(self):
+            self.interrupted = []
+
+        def interrupt(self, message=""):
+            self.interrupted.append(message)
+
+    async def run():
+        ws = FakeWs()
+        oracle = InterruptibleOracle()
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = ws
+        engine._oracle = oracle
+        engine._playback_generation = 1
+        engine._assistant_output_active = True
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=12,
+                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"new-speech-1").to_payload(),
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=13,
+                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"new-speech-2").to_payload(),
+            )
+        )
+
+        forwarded_barge = VoiceEvent.from_wire(__import__("json").loads(ws.sent[0]))
+        assert forwarded_barge.type == VoiceEventType.BARGE_IN
+        assert forwarded_barge.payload["reason"] == "user_speech"
+        assert forwarded_barge.payload["playback_generation"] == 2
+        assert isinstance(ws.sent[1], bytes)
+        assert isinstance(ws.sent[2], bytes)
+        assert oracle.interrupted
+        assert [VoiceEvent.from_wire(__import__("json").loads(item)).type for item in ws.sent if isinstance(item, str)] == [
+            VoiceEventType.BARGE_IN
+        ]
+
+        ack = await engine._events.get()
+        assert ack.type == VoiceEventType.BARGE_IN
+        assert ack.payload["playback_generation"] == 2
+
+    asyncio.run(run())
+
+
 def test_native_s2s_engine_close_awaits_reader_task():
     class FakeWs:
         def __init__(self):
