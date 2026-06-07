@@ -694,17 +694,17 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "voice.realtime.production_languages": {
         "type": "list",
-        "description": "Production acceptance languages for realtime voice quality",
+        "description": "BCP-47 language tags Hermes treats as production realtime voice targets; defaults to English and Japanese",
         "category": "voice",
     },
     "voice.realtime.production_scripts": {
         "type": "list",
-        "description": "Production acceptance scripts for realtime voice quality",
+        "description": "ISO 15924 scripts covered by production realtime voice acceptance; defaults to Latn and Jpan",
         "category": "voice",
     },
     "voice.realtime.best_effort_languages": {
         "type": "boolean",
-        "description": "Allow non-production languages as best-effort realtime voice input and output",
+        "description": "Allow other languages through captions, prompts, and provider auto-detection without claiming production quality",
         "category": "voice",
     },
     "voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms": {
