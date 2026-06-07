@@ -208,6 +208,8 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if self._closed:
+                return
             await self._emit(
                 VoiceEventType.SESSION_ERROR,
                 {"error": f"sidecar closed: {sanitize_realtime_voice_error(exc)}"},
