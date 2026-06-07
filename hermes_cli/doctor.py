@@ -83,6 +83,12 @@ def _realtime_voice_alpha_barge_in_texts() -> list[str]:
     return list(ALPHA_REQUIRED_BARGE_IN_TEXTS)
 
 
+def _realtime_voice_alpha_session_turn_texts() -> list[str]:
+    from agent.realtime_voice_smoke_report import ALPHA_REQUIRED_SESSION_TURN_TEXTS
+
+    return list(ALPHA_REQUIRED_SESSION_TURN_TEXTS)
+
+
 from hermes_constants import is_termux as _is_termux
 
 
@@ -1177,11 +1183,14 @@ def _check_realtime_voice_session_turn_smoke(
 
     first_text_target_ms = _quality_target_from_config(config, "final_transcript_to_first_text_ms", 500)
     first_audio_target_ms = _quality_target_from_config(config, "final_transcript_to_first_audio_ms", 900)
+    from agent.realtime_voice_smoke import realtime_voice_smoke_text_metadata
+
     _append_realtime_voice_smoke_report(
         reports,
         result,
         kind="session_turn",
         text=text,
+        **realtime_voice_smoke_text_metadata(text),
         first_text_target_ms=first_text_target_ms,
         first_audio_target_ms=first_audio_target_ms,
         timeout_seconds=timeout_seconds,
@@ -2393,11 +2402,17 @@ def run_doctor(args):
     _check_realtime_voice_readiness(issues, strict=strict_realtime_voice)
     if smoke_realtime_voice:
         _check_realtime_voice_sidecar_smoke(issues, reports=realtime_voice_reports)
-        _check_realtime_voice_session_turn_smoke(
-            issues,
-            text="Hello from Hermes.",
-            reports=realtime_voice_reports,
+        session_turn_texts = (
+            _realtime_voice_alpha_session_turn_texts()
+            if realtime_voice_alpha
+            else ["Hello from Hermes."]
         )
+        for realtime_voice_session_turn_smoke in session_turn_texts:
+            _check_realtime_voice_session_turn_smoke(
+                issues,
+                text=realtime_voice_session_turn_smoke,
+                reports=realtime_voice_reports,
+            )
     for realtime_voice_audio_fixture in realtime_voice_audio_fixtures:
         _check_realtime_voice_audio_fixture_smoke(
             issues,

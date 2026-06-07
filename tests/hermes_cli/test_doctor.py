@@ -965,6 +965,10 @@ class TestRealtimeVoiceReadiness:
         assert audio == [*ALPHA_REQUIRED_AUDIO_FIXTURES, "custom.webm"]
         assert tts == [*ALPHA_REQUIRED_TTS_TEXTS, "Extra phrase."]
         assert barge == list(ALPHA_REQUIRED_BARGE_IN_TEXTS)
+        assert doctor._realtime_voice_alpha_session_turn_texts() == [
+            "Hello from Hermes.",
+            "こんにちは、Hermesです。",
+        ]
 
 
 class TestDoctorEnvFileEncoding:
