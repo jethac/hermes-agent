@@ -6523,6 +6523,140 @@ class TestRealtimeVoiceWebSocket:
         assert config.sidecar_base_url == "http://127.0.0.1:8765"
         assert config.spark_base_url == "http://127.0.0.1:8765"
 
+    def test_config_metadata_uses_verified_live_like_sidecar_evidence(self, monkeypatch, tmp_path):
+        evidence_path = tmp_path / "evidence"
+        evidence_path.mkdir()
+        for index in range(3):
+            (evidence_path / f"realtime-voice-alpha-{index}.json").write_text(
+                json.dumps(_valid_realtime_voice_alpha_report(), ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+        class FakeWebSocket:
+            query_params = {"session_id": "voice-live-like"}
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": True,
+                            "tts": True,
+                            "native_s2s": False,
+                            "output_languages": ["en", "ja"],
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                        "require_live_like": True,
+                        "production_evidence_report": str(evidence_path),
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        config = self.ws_module._realtime_voice_config_from_request(FakeWebSocket())
+
+        assert config.metadata["conversation_quality"]["mode"] == "streaming_text"
+        assert config.metadata["conversation_quality"]["live_like"] is True
+        assert config.metadata["production_readiness"]["ready"] is True
+        assert config.metadata["production_readiness"]["level"] == "production_ready"
+        assert config.metadata["production_readiness"]["issues"] == []
+
+    def test_config_metadata_rejects_evidence_from_different_realtime_stack(self, monkeypatch, tmp_path):
+        evidence_path = tmp_path / "evidence"
+        evidence_path.mkdir()
+        for index in range(3):
+            report = _valid_realtime_voice_alpha_report()
+            manifest = report[0]
+            manifest["engine"] = "native_s2s_oracle"
+            manifest["frontend_provider"] = "native_s2s"
+            manifest["conversation_quality"]["mode"] = "native_s2s"
+            manifest["sidecar"]["health"]["capabilities"] = {
+                "native_s2s": True,
+                "output_languages": ["en", "ja"],
+            }
+            (evidence_path / f"realtime-voice-alpha-{index}.json").write_text(
+                json.dumps(report, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+        class FakeWebSocket:
+            query_params = {"session_id": "voice-live-like"}
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": True,
+                            "tts": True,
+                            "native_s2s": False,
+                            "output_languages": ["en", "ja"],
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                        "require_live_like": True,
+                        "production_evidence_report": str(evidence_path),
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        config = self.ws_module._realtime_voice_config_from_request(FakeWebSocket())
+
+        assert config.metadata["conversation_quality"]["mode"] == "streaming_text"
+        assert config.metadata["conversation_quality"]["live_like"] is True
+        assert config.metadata["production_readiness"]["ready"] is False
+        assert config.metadata["production_readiness"]["level"] == "live_like"
+        assert any(
+            "current realtime stack does not match evidence manifest" in issue
+            for issue in config.metadata["production_readiness"]["issues"]
+        )
+
     def test_status_reports_disabled_realtime_voice(self, monkeypatch):
         monkeypatch.setattr(self.ws_module, "load_config", lambda: {"voice": {"realtime": {"enabled": False}}})
 
