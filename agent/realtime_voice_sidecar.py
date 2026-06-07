@@ -1,0 +1,144 @@
+"""Realtime voice model-sidecar client."""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import json
+import urllib.parse
+from typing import Any, AsyncIterator, Optional
+
+from agent.realtime_voice import (
+    RealtimeVoiceSessionConfig,
+    VoiceAudioCodec,
+    VoiceEvent,
+    VoiceEventType,
+)
+
+
+class RealtimeVoiceSidecarClient:
+    """Websocket client for a Gemma/STT/TTS realtime sidecar.
+
+    Hermes owns authorization, session state, the backend oracle, and durable
+    history. The sidecar owns realtime audio front-end work such as streaming
+    STT/audio understanding and optional streaming TTS.
+    """
+
+    def __init__(self, *, path: str = "/v1/realtime-text/session"):
+        self.path = path
+        self.config: Optional[RealtimeVoiceSessionConfig] = None
+        self._ws: Any = None
+        self._reader_task: Optional[asyncio.Task[None]] = None
+        self._events: asyncio.Queue[VoiceEvent | None] = asyncio.Queue()
+        self._closed = False
+
+    @property
+    def connected(self) -> bool:
+        return self._ws is not None and not self._closed
+
+    async def start(self, config: RealtimeVoiceSessionConfig) -> None:
+        if not config.spark_base_url:
+            raise RuntimeError("realtime voice sidecar requires voice.realtime.spark_base_url")
+        try:
+            import websockets
+        except ImportError as exc:
+            raise RuntimeError("realtime voice sidecar requires the websockets package") from exc
+
+        self.config = config
+        url = sidecar_ws_url(config.spark_base_url, self.path)
+        headers = {}
+        if config.spark_token:
+            headers["Authorization"] = f"Bearer {config.spark_token}"
+        try:
+            self._ws = await websockets.connect(url, additional_headers=headers or None)
+        except TypeError:
+            self._ws = await websockets.connect(url, extra_headers=headers or None)
+        await self._ws.send(json.dumps({"type": "session.config", "payload": config.to_wire()}))
+        self._reader_task = asyncio.create_task(self._read_events())
+
+    async def send_event(self, event: VoiceEvent) -> None:
+        if not self.connected:
+            raise RuntimeError("realtime voice sidecar is not connected")
+        await self._ws.send(json.dumps(event.to_wire()))
+
+    async def speak(self, event: VoiceEvent) -> None:
+        await self.send_event(event)
+
+    async def events(self) -> AsyncIterator[VoiceEvent]:
+        while True:
+            event = await self._events.get()
+            if event is None:
+                return
+            yield event
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._reader_task:
+            self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except asyncio.CancelledError:
+                pass
+        if self._ws is not None:
+            await self._ws.close()
+        await self._events.put(None)
+
+    async def _read_events(self) -> None:
+        try:
+            async for raw in self._ws:
+                if isinstance(raw, bytes):
+                    await self._events.put(
+                        VoiceEvent(
+                            type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                            session_id=self.config.session_id if self.config else "",
+                            sequence=0,
+                            payload={
+                                "codec": VoiceAudioCodec.OPUS.value,
+                                "sample_rate_hz": 16000,
+                                "channels": 1,
+                                "data_b64": base64.b64encode(raw).decode("ascii"),
+                            },
+                        )
+                    )
+                    continue
+                try:
+                    event = VoiceEvent.from_wire(json.loads(raw))
+                except Exception as exc:
+                    await self._events.put(
+                        VoiceEvent(
+                            type=VoiceEventType.SESSION_ERROR,
+                            session_id=self.config.session_id if self.config else "",
+                            sequence=0,
+                            payload={"error": f"invalid sidecar event: {exc}"},
+                        )
+                    )
+                    continue
+                await self._events.put(event)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._events.put(
+                VoiceEvent(
+                    type=VoiceEventType.SESSION_ERROR,
+                    session_id=self.config.session_id if self.config else "",
+                    sequence=0,
+                    payload={"error": f"sidecar closed: {exc}"},
+                )
+            )
+
+
+def wants_realtime_sidecar(config: RealtimeVoiceSessionConfig) -> bool:
+    provider = (config.frontend_provider or "").strip().lower()
+    if not config.spark_base_url:
+        return False
+    return provider in {"sidecar", "spark", "dgx", "gemma", "gemma4", "lmstudio"} or bool(config.frontend_model)
+
+
+def sidecar_ws_url(base_url: str, path: str) -> str:
+    parsed = urllib.parse.urlparse(base_url)
+    scheme = "wss" if parsed.scheme == "https" else "ws"
+    netloc = parsed.netloc or parsed.path
+    root = parsed.path if parsed.netloc else ""
+    return urllib.parse.urlunparse((scheme, netloc, f"{root.rstrip('/')}{path}", "", "", ""))

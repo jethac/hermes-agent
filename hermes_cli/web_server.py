@@ -12644,7 +12644,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     engine = ws.query_params.get("engine") or realtime.get("engine") or "text_oracle_tts"
     input_codec = ws.query_params.get("input_codec") or realtime.get("input_codec") or "webm_opus"
     output_codec = ws.query_params.get("output_codec") or realtime.get("output_codec") or "opus"
-    spark_base_url = ws.query_params.get("spark_base_url") or realtime.get("spark_base_url") or ""
+    spark_base_url = realtime.get("spark_base_url") or ""
     spark_token_env = str(realtime.get("spark_token_env") or "HERMES_SPARK_VOICE_TOKEN")
     env = load_env()
     spark_token = env.get(spark_token_env) or os.environ.get(spark_token_env) or ""
@@ -12654,6 +12654,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         engine=RealtimeVoiceEngineKind(str(engine)),
         input_codec=VoiceAudioCodec(str(input_codec)),
         output_codec=VoiceAudioCodec(str(output_codec)),
+        frontend_provider=str(realtime.get("frontend_provider") or "") or None,
         frontend_model=str(realtime.get("frontend_model") or "") or None,
         oracle_model=str(realtime.get("oracle_model") or "") or None,
         tts_provider=str(realtime.get("tts_provider") or "") or None,

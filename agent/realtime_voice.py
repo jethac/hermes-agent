@@ -88,6 +88,7 @@ class RealtimeVoiceSessionConfig:
     output_codec: VoiceAudioCodec = VoiceAudioCodec.OPUS
     sample_rate_hz: int = 16000
     channels: int = 1
+    frontend_provider: Optional[str] = None
     frontend_model: Optional[str] = None
     oracle_model: Optional[str] = None
     tts_provider: Optional[str] = None
@@ -103,6 +104,7 @@ class RealtimeVoiceSessionConfig:
             "output_codec": self.output_codec.value,
             "sample_rate_hz": self.sample_rate_hz,
             "channels": self.channels,
+            "frontend_provider": self.frontend_provider,
             "frontend_model": self.frontend_model,
             "oracle_model": self.oracle_model,
             "tts_provider": self.tts_provider,
@@ -120,6 +122,7 @@ class RealtimeVoiceSessionConfig:
             output_codec=VoiceAudioCodec(str(payload.get("output_codec") or VoiceAudioCodec.OPUS.value)),
             sample_rate_hz=int(payload.get("sample_rate_hz") or 16000),
             channels=int(payload.get("channels") or 1),
+            frontend_provider=_optional_str(payload.get("frontend_provider")),
             frontend_model=_optional_str(payload.get("frontend_model")),
             oracle_model=_optional_str(payload.get("oracle_model")),
             tts_provider=_optional_str(payload.get("tts_provider")),
