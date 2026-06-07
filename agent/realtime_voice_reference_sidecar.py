@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 import json
 import os
 import re
@@ -36,7 +37,7 @@ from agent.realtime_voice_errors import sanitize_realtime_voice_error
 
 
 TranscribeFn = Callable[[str], Mapping[str, Any]]
-SynthesizeFn = Callable[[str], Any]
+SynthesizeFn = Callable[..., Any]
 REFERENCE_SIDECAR_CLOSE_DRAIN_TIMEOUT_SECONDS = 1.0
 
 
@@ -154,7 +155,15 @@ class ReferenceRealtimeVoiceSidecarSession:
         if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("speak") is True:
             text = str(event.payload.get("text") or "").strip()
             if text:
-                self._track_task(asyncio.create_task(self._speak(text, _payload_generation(event.payload))))
+                self._track_task(
+                    asyncio.create_task(
+                        self._speak(
+                            text,
+                            _payload_generation(event.payload),
+                            transcript_metadata_from_payload(event.payload),
+                        )
+                    )
+                )
             return
         if event.type != VoiceEventType.AUDIO_INPUT_CHUNK:
             return
@@ -331,11 +340,17 @@ class ReferenceRealtimeVoiceSidecarSession:
             data = json.loads(response.read().decode("utf-8"))
         return str(data["choices"][0]["message"].get("content") or "").strip()
 
-    async def _speak(self, text: str, playback_generation: Optional[int] = None) -> None:
+    async def _speak(
+        self,
+        text: str,
+        playback_generation: Optional[int] = None,
+        metadata: Optional[Mapping[str, str]] = None,
+    ) -> None:
         if not self.runtime.local_tts_enabled:
             return
+        clean_metadata = dict(metadata or {})
         try:
-            file_path = await asyncio.to_thread(self._speak_sync, text)
+            file_path = await asyncio.to_thread(self._speak_sync, text, clean_metadata)
             if not file_path:
                 return
             try:
@@ -346,6 +361,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                     payload["mime_type"] = _mime_type_for_path(file_path)
                     if playback_generation is not None:
                         payload["playback_generation"] = playback_generation
+                    payload.update(clean_metadata)
                     await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
             finally:
                 _unlink(file_path)
@@ -357,12 +373,12 @@ class ReferenceRealtimeVoiceSidecarSession:
                 {"error": f"tts failed: {sanitize_realtime_voice_error(exc)}"},
             )
 
-    def _speak_sync(self, text: str) -> str:
+    def _speak_sync(self, text: str, metadata: Optional[Mapping[str, str]] = None) -> str:
         synthesize = self._synthesize_func
         if synthesize is None:
             from tools.tts_tool import text_to_speech_tool as synthesize
 
-        raw = synthesize(text)
+        raw = _call_synthesize(synthesize, text, metadata or {})
         result = json.loads(raw) if isinstance(raw, str) else raw
         if not result.get("success"):
             raise RuntimeError(str(result.get("error") or "speech synthesis failed"))
@@ -515,6 +531,23 @@ def _mime_type_for_path(path: str) -> str:
         ".wav": "audio/wav",
         ".flac": "audio/flac",
     }.get(ext, "audio/mpeg")
+
+
+def _call_synthesize(synthesize: SynthesizeFn, text: str, metadata: Mapping[str, str]) -> Any:
+    if metadata and _synthesize_accepts_metadata(synthesize):
+        return synthesize(text, metadata=metadata)
+    return synthesize(text)
+
+
+def _synthesize_accepts_metadata(synthesize: SynthesizeFn) -> bool:
+    try:
+        signature = inspect.signature(synthesize)
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD or parameter.name == "metadata"
+        for parameter in signature.parameters.values()
+    )
 
 
 def _payload_generation(payload: Mapping[str, Any]) -> Optional[int]:
