@@ -2441,6 +2441,69 @@ def test_session_marks_latency_quality_target_misses(monkeypatch):
                 "target_ms": 300,
             }
         ]
+        assert event.payload["quality_summary"] == {
+            "target_miss_count": 1,
+            "last_target_miss": {
+                "metric": "audio_to_partial_transcript_ms",
+                "actual_ms": 500,
+                "target_ms": 300,
+            },
+        }
+        await session.close()
+
+    asyncio.run(run())
+
+
+def test_session_carries_quality_summary_after_target_miss(monkeypatch):
+    class TwoEventEngine:
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            return None
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_PARTIAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"text": "hello"},
+            )
+            yield VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=2,
+                payload={"text": "hello"},
+            )
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                metadata={
+                    "quality_targets_ms": {
+                        "audio_to_partial_transcript_ms": 300,
+                    },
+                },
+            ),
+            engine=TwoEventEngine(),
+        )
+        metric_payloads = iter([
+            {"audio_to_partial_transcript_ms": 500},
+            {"audio_to_final_transcript_ms": 550},
+        ])
+        monkeypatch.setattr(session, "_event_metrics", lambda event: next(metric_payloads))
+        await session.start()
+
+        first = await anext(session.events())
+        second = await anext(session.events())
+
+        assert first.payload["quality_summary"]["target_miss_count"] == 1
+        assert "quality_target_misses" not in second.payload
+        assert second.payload["quality_summary"] == first.payload["quality_summary"]
         await session.close()
 
     asyncio.run(run())
