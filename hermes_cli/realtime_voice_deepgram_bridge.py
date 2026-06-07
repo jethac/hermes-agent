@@ -8,6 +8,7 @@ import os
 from agent.realtime_voice_deepgram_bridge import (
     create_deepgram_streaming_stt_bridge_app,
     deepgram_bridge_config_from_env,
+    deepgram_bridge_prerequisite_issues,
 )
 
 
@@ -28,10 +29,20 @@ def build_parser() -> argparse.ArgumentParser:
         default=int(os.environ.get("HERMES_DEEPGRAM_ENDPOINTING_MS", "80")),
         type=int,
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Check bridge prerequisites and exit without starting the server",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="With --check, also require a bridge bearer token",
+    )
     return parser
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.model:
         os.environ["HERMES_DEEPGRAM_MODEL"] = args.model
@@ -44,11 +55,26 @@ def main(argv: list[str] | None = None) -> None:
     if args.endpointing_ms:
         os.environ["HERMES_DEEPGRAM_ENDPOINTING_MS"] = str(args.endpointing_ms)
 
+    runtime = deepgram_bridge_config_from_env()
+    if args.check:
+        issues = deepgram_bridge_prerequisite_issues(runtime, require_auth_token=bool(args.strict))
+        if issues:
+            print(f"Deepgram realtime voice bridge check failed: {len(issues)} issue(s)")
+            for issue in issues:
+                print(f"  - {issue}")
+            return 1
+        print("Deepgram realtime voice bridge check OK")
+        print(f"  model: {runtime.model}")
+        print(f"  tts_model: {runtime.tts_model}")
+        print(f"  auth_token: {'configured' if runtime.auth_token else 'not configured'}")
+        return 0
+
     import uvicorn
 
-    app = create_deepgram_streaming_stt_bridge_app(deepgram_bridge_config_from_env())
+    app = create_deepgram_streaming_stt_bridge_app(runtime)
     uvicorn.run(app, host=args.host, port=args.port)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

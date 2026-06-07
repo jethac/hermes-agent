@@ -95,6 +95,7 @@ Hermes ships a Deepgram-compatible bridge entrypoint for the first provider-back
 ```bash
 set DEEPGRAM_API_KEY=...
 set HERMES_STREAMING_STT_BRIDGE_TOKEN=...
+python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict
 python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --model nova-3 --tts-model aura-2-thalia-en --language en-US
 ```
 
