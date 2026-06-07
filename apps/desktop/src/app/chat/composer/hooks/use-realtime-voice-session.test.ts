@@ -15,6 +15,7 @@ import {
   realtimeVoiceEventGeneration,
   realtimeVoicePlaybackGeneration,
   realtimeVoicePreRollChunkLimit,
+  realtimeVoiceSessionErrorAction,
   realtimeVoiceSessionReadyTimeoutMs,
   realtimeVoiceSessionStatus,
   realtimeVoiceSilenceTimeoutMs,
@@ -617,6 +618,16 @@ describe('realtimeVoiceCloseAction', () => {
       sessionFailed: true,
       sessionStarted: false
     })).toBe('ignore')
+  })
+})
+
+describe('realtimeVoiceSessionErrorAction', () => {
+  it('falls back for startup errors before session.started', () => {
+    expect(realtimeVoiceSessionErrorAction({ sessionStarted: false })).toBe('fallback')
+  })
+
+  it('treats active-session errors as fatal', () => {
+    expect(realtimeVoiceSessionErrorAction({ sessionStarted: true })).toBe('fatal')
   })
 })
 
