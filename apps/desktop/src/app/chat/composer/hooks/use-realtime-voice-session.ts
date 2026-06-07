@@ -108,6 +108,14 @@ interface RealtimeAudioInputPayloadOptions {
   mimeType: string
 }
 
+interface RealtimeBinaryAudioInputFrameOptions {
+  audioData: ArrayBuffer
+  endOfUtterance: boolean
+  mimeType: string
+  sequence: number
+  sessionId: string
+}
+
 interface RealtimeAudioFrameBackpressureInput {
   bufferedAmount: number
   endOfUtterance: boolean
@@ -125,19 +133,6 @@ interface RealtimeCloseActionInput {
   enabled: boolean
   sessionFailed?: boolean
   sessionStarted: boolean
-}
-
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-
-    reader.onerror = () => reject(reader.error || new Error('Could not read recorded audio'))
-    reader.onload = () => {
-      const value = String(reader.result || '')
-      resolve(value.includes(',') ? value.split(',', 2)[1] : value)
-    }
-    reader.readAsDataURL(blob)
-  })
 }
 
 function bytesFromBase64(value: string): Uint8Array {
@@ -244,6 +239,36 @@ export function realtimeAudioInputPayload({
     data_b64: dataB64,
     end_of_utterance: endOfUtterance
   }
+}
+
+export function realtimeBinaryAudioInputFrame({
+  audioData,
+  endOfUtterance,
+  mimeType,
+  sequence,
+  sessionId
+}: RealtimeBinaryAudioInputFrameOptions): ArrayBuffer {
+  const payload = realtimeAudioInputPayload({
+    dataB64: '',
+    endOfUtterance,
+    mimeType
+  })
+  Reflect.deleteProperty(payload, 'data_b64')
+
+  const header = new TextEncoder().encode(JSON.stringify({
+    type: 'audio.input.chunk',
+    session_id: sessionId,
+    sequence,
+    payload
+  }))
+  const frame = new Uint8Array(4 + header.byteLength + audioData.byteLength)
+  const view = new DataView(frame.buffer)
+
+  view.setUint32(0, header.byteLength, false)
+  frame.set(header, 4)
+  frame.set(new Uint8Array(audioData), 4 + header.byteLength)
+
+  return frame.buffer
 }
 
 export function shouldSendRealtimeAudioFrame({
@@ -452,15 +477,17 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
             return
           }
 
-          const data_b64 = blob.size > 0 ? await blobToBase64(blob) : ''
+          const audioData = blob.size > 0 ? await blob.arrayBuffer() : new ArrayBuffer(0)
           if (audioInputGeneration !== audioInputGenerationRef.current) {
             return
           }
 
-          sendEvent('audio.input.chunk', realtimeAudioInputPayload({
-            dataB64: data_b64,
+          socket.send(realtimeBinaryAudioInputFrame({
+            audioData,
             endOfUtterance,
-            mimeType
+            mimeType,
+            sequence: nextSequence(),
+            sessionId: sessionRef.current
           }))
         },
         error => {
@@ -469,7 +496,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         }
       )
     },
-    [onFatalError, sendEvent]
+    [onFatalError]
   )
 
   const cleanupInput = useCallback(() => {
