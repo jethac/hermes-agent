@@ -582,6 +582,11 @@ def test_text_engine_session_started_includes_non_secret_runtime_contract():
                         "final_transcript_to_first_audio_ms": 850,
                         "barge_in_ack_ms": 120,
                     },
+                    "conversation_quality": {
+                        "mode": "streaming_text",
+                        "reason": "streaming_stt_tts",
+                        "live_like": True,
+                    },
                     "sidecar_token": "do-not-forward",
                 },
             )
@@ -592,6 +597,7 @@ def test_text_engine_session_started_includes_non_secret_runtime_contract():
         assert event.type == VoiceEventType.SESSION_STARTED
         assert event.payload["language_support"]["production_languages"] == ["en", "ja"]
         assert event.payload["quality_targets_ms"]["final_transcript_to_first_audio_ms"] == 850
+        assert event.payload["conversation_quality"]["mode"] == "streaming_text"
         assert "metadata" not in event.payload
         serialized = json.dumps(event.to_wire())
         assert "secret-token" not in serialized
@@ -2561,6 +2567,11 @@ def test_native_s2s_engine_session_started_matches_realtime_contract(monkeypatch
                         "final_transcript_to_first_audio_ms": 850,
                         "barge_in_ack_ms": 120,
                     },
+                    "conversation_quality": {
+                        "mode": "native_s2s",
+                        "reason": "native_s2s",
+                        "live_like": True,
+                    },
                 },
             )
         )
@@ -2576,6 +2587,7 @@ def test_native_s2s_engine_session_started_matches_realtime_contract(monkeypatch
         assert event.payload["sidecar"] is True
         assert event.payload["language_support"]["production_languages"] == ["en", "ja"]
         assert event.payload["quality_targets_ms"]["barge_in_ack_ms"] == 120
+        assert event.payload["conversation_quality"]["mode"] == "native_s2s"
         await engine.close()
 
     asyncio.run(run())

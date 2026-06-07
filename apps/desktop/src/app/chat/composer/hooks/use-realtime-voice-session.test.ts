@@ -24,6 +24,7 @@ import {
   realtimeVoiceSessionReadyTimeoutMs,
   realtimeVoiceSessionStatus,
   realtimeVoiceSilenceTimeoutMs,
+  realtimeVoiceConversationQualityFrontendState,
   realtimeVoiceUnavailableFrontendState,
   realtimeVoiceQualityTargets,
   realtimeVoiceQualityTargetsFromPayload,
@@ -910,6 +911,44 @@ describe('realtimeVoiceSessionErrorAction', () => {
 
   it('treats active-session errors as fatal', () => {
     expect(realtimeVoiceSessionErrorAction({ sessionStarted: true })).toBe('fatal')
+  })
+})
+
+describe('realtimeVoiceConversationQualityFrontendState', () => {
+  it('marks available turn-based realtime as degraded instead of fallback', () => {
+    expect(realtimeVoiceConversationQualityFrontendState({
+      available: true,
+      enabled: true,
+      conversation_quality: {
+        live_like: false,
+        mode: 'turn_based_text',
+        reason: 'utterance_stt_tts'
+      }
+    }, 1_234)).toEqual({
+      reason: 'utterance_stt_tts',
+      status: 'degraded',
+      updatedAtMs: 1_234
+    })
+  })
+
+  it('does not degrade unavailable or live-like realtime sessions', () => {
+    expect(realtimeVoiceConversationQualityFrontendState({
+      available: false,
+      enabled: true,
+      conversation_quality: {
+        live_like: false,
+        reason: 'sidecar_unhealthy'
+      }
+    }, 1_234)).toBeNull()
+    expect(realtimeVoiceConversationQualityFrontendState({
+      available: true,
+      enabled: true,
+      conversation_quality: {
+        live_like: true,
+        mode: 'streaming_text',
+        reason: 'streaming_stt_tts'
+      }
+    }, 1_234)).toBeNull()
   })
 })
 

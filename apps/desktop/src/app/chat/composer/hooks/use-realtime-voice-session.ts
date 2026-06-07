@@ -53,6 +53,19 @@ export interface RealtimeVoiceQualityTargetsMs {
   final_transcript_to_first_text_ms?: number
 }
 
+export interface RealtimeVoiceConversationQuality {
+  barge_in?: boolean
+  live_like?: boolean
+  mode?: string
+  native_s2s?: boolean
+  partial_transcripts?: boolean
+  reason?: string
+  sidecar_verified?: boolean
+  streaming_stt?: boolean
+  tts?: boolean
+  utterance_stt?: boolean
+}
+
 export interface RealtimeVoiceLanguageMetadata {
   language?: string
   locale?: string
@@ -87,6 +100,7 @@ export interface RealtimeVoiceStatus {
   enabled: boolean
   engine: string
   barge_in_min_speech_ms?: number
+  conversation_quality?: RealtimeVoiceConversationQuality
   input_buffer_limit_bytes?: number
   input_frame_ms?: number
   language_support?: RealtimeVoiceLanguageSupport
@@ -792,6 +806,30 @@ export function realtimeVoiceUnavailableFrontendState(
   }
 }
 
+export function realtimeVoiceConversationQualityFrontendState(
+  status: Pick<RealtimeVoiceStatus, 'available' | 'conversation_quality' | 'enabled'> | null,
+  updatedAtMs = Date.now()
+): RealtimeVoiceFrontendState | null {
+  if (!status || !status.enabled || !status.available) {
+    return null
+  }
+
+  const quality = status.conversation_quality
+  if (!quality || quality.live_like !== false) {
+    return null
+  }
+
+  const reason = typeof quality.reason === 'string' && quality.reason.trim()
+    ? quality.reason.trim()
+    : 'not_live_like'
+
+  return {
+    reason,
+    status: 'degraded',
+    updatedAtMs
+  }
+}
+
 export function realtimeVoiceSessionStatus(event: VoiceEvent): ConversationStatus | null {
   const state = typeof event.payload?.session_state === 'string' ? event.payload.session_state : ''
 
@@ -1331,6 +1369,14 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
         enqueueAudio(event.payload || {})
       } else if (event.type === 'session.started') {
         setQualityTargets(realtimeVoiceQualityTargetsFromPayload(event.payload?.quality_targets_ms))
+        const qualityState = realtimeVoiceConversationQualityFrontendState({
+          available: true,
+          conversation_quality: event.payload?.conversation_quality as RealtimeVoiceConversationQuality | undefined,
+          enabled: true
+        }, finiteNonNegativeMs(event.timestamp_ms) ?? Date.now())
+        if (qualityState) {
+          setFrontendState(current => current ?? qualityState)
+        }
       } else if (event.type === 'assistant.text.partial') {
         if (!sessionStatus) {
           setStatus('speaking')
@@ -1367,6 +1413,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
       return
     }
+    const initialFrontendState = realtimeVoiceConversationQualityFrontendState(preflight)
     inputFrameMsRef.current = realtimeVoiceInputFrameMs(preflight?.input_frame_ms)
     silenceTimeoutMsRef.current = realtimeVoiceSilenceTimeoutMs(preflight?.silence_timeout_ms)
     speechLevelThresholdRef.current = realtimeVoiceSpeechLevelThreshold(preflight?.speech_level_threshold)
@@ -1377,7 +1424,7 @@ export function useRealtimeVoiceSession({ busy, enabled, onFatalError, onUnavail
 
     sessionRef.current = sessionId || sessionRef.current
     setCaption(null)
-    setFrontendState(null)
+    setFrontendState(initialFrontendState)
     setMetrics({})
     const url = await realtimeVoiceUrl(sessionRef.current)
     const socket = new WebSocket(url)
