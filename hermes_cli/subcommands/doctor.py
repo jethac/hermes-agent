@@ -28,6 +28,11 @@ def build_doctor_parser(subparsers, *, cmd_doctor: Callable) -> None:
         help="Treat realtime voice live-conversation readiness as a required doctor gate",
     )
     doctor_parser.add_argument(
+        "--realtime-voice-smoke",
+        action="store_true",
+        help="Run the strict realtime voice gate plus a sidecar websocket protocol smoke",
+    )
+    doctor_parser.add_argument(
         "--ack",
         metavar="ADVISORY_ID",
         default=None,

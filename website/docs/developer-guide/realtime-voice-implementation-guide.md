@@ -226,9 +226,12 @@ Operator readiness gate:
 
 ```bash
 hermes doctor --realtime-voice
+hermes doctor --realtime-voice-smoke
 ```
 
 Use this before treating a profile as live-voice ready. The strict gate requires realtime voice to be enabled, preflight-available, live-like according to the same `conversation_quality` payload the desktop uses, and configured with latency targets no looser than the PRD live-conversation targets. It also checks that English and Japanese remain the production acceptance languages, that best-effort language pass-through is enabled unless deliberately disabled, that the configured sidecar is healthy, and that public provider naming stays capability-based rather than tied to a specific workstation or accelerator. Plain `hermes doctor` reports the same section informatively without failing ordinary installs that have not opted into realtime voice.
+
+`--realtime-voice-smoke` implies the strict gate, then opens the configured sidecar websocket, sends a transcript-backed `audio.input.chunk`, and waits for `frontend.state` plus `transcript.final`. This is a protocol smoke, not a microphone/acoustic benchmark: it proves sidecar auth, session startup, event streaming, and basic transcript turn latency without requiring a particular GPU or audio device.
 
 Implementation notes:
 

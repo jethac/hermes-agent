@@ -244,6 +244,57 @@ class TestRealtimeVoiceReadiness:
         assert "machine or accelerator name" in output
         assert any("workstation/GPU" in issue for issue in issues)
 
+    def test_sidecar_smoke_reports_success(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(sidecar_connect_timeout_seconds=2.0),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_sidecar_smoke_sync",
+            lambda _config, *, timeout_seconds: SimpleNamespace(
+                events=("frontend.state", "transcript.final"),
+                ok=True,
+                ready_ms=12,
+                transcript_final_ms=25,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_sidecar_smoke(issues)
+
+        output = capsys.readouterr().out
+        assert "Realtime voice sidecar smoke" in output
+        assert "ready=12ms" in output
+        assert "transcript.final=25ms" in output
+        assert issues == []
+
+    def test_sidecar_smoke_records_failure_issue(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_smoke_config",
+            lambda: SimpleNamespace(sidecar_connect_timeout_seconds=2.0),
+        )
+        monkeypatch.setattr(
+            doctor,
+            "_run_realtime_voice_sidecar_smoke_sync",
+            lambda _config, *, timeout_seconds: SimpleNamespace(
+                error="timed out after 2s waiting for transcript.final",
+                events=("frontend.state",),
+                ok=False,
+            ),
+        )
+        issues = []
+
+        doctor._check_realtime_voice_sidecar_smoke(issues)
+
+        output = capsys.readouterr().out
+        assert "Realtime voice sidecar smoke" in output
+        assert "timed out after 2s" in output
+        assert "events=frontend.state" in output
+        assert any("protocol smoke failure" in issue for issue in issues)
+
 
 class TestDoctorEnvFileEncoding:
     """Regression for #18637 (bug 3): `hermes doctor` crashed on Windows
