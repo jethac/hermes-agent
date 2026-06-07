@@ -152,6 +152,7 @@ def apply_production_review_report(report_path: str | Path) -> Path:
 
 def build_production_review_report(
     *,
+    evidence: Mapping[str, Any] | None = None,
     reviewer: str = "",
     passed_checks: Mapping[str, Any] | list[str] | tuple[str, ...] | set[str] = (),
 ) -> dict[str, Any]:
@@ -159,12 +160,17 @@ def build_production_review_report(
         passed = set(passed_checks.keys())
     else:
         passed = {str(key) for key in passed_checks}
+    evidence = evidence if isinstance(evidence, Mapping) else {}
     return {
         "kind": "realtime_voice_production_review",
         "reviewer": str(reviewer or ""),
         "reviewed_at": datetime.now(timezone.utc).isoformat(),
         "checks": {
             key: key in passed
+            for key in REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
+        },
+        "evidence": {
+            key: _production_review_evidence_template(evidence.get(key))
             for key in REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
         },
     }
@@ -206,10 +212,43 @@ def validate_production_review_report(report: Mapping[str, Any]) -> list[str]:
     checks = checks if isinstance(checks, Mapping) else {}
     if not checks:
         issues.append("missing_checks")
+    evidence = report.get("evidence")
+    evidence = evidence if isinstance(evidence, Mapping) else {}
+    if not evidence:
+        issues.append("missing_evidence")
     for key in REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS:
         if checks.get(key) is not True:
             issues.append(f"review_check_missing:{key}")
+        elif not _production_review_evidence_is_supported(evidence.get(key)):
+            issues.append(f"review_evidence_missing:{key}")
     return list(dict.fromkeys(issues))
+
+
+def _production_review_evidence_template(value: Any) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        artifacts = value.get("artifacts")
+        artifacts = artifacts if isinstance(artifacts, list) else []
+        return {
+            "notes": str(value.get("notes") or ""),
+            "artifacts": [str(item) for item in artifacts if str(item or "").strip()],
+        }
+    if isinstance(value, str) and value.strip():
+        return {"notes": value.strip(), "artifacts": []}
+    return {"notes": "", "artifacts": []}
+
+
+def _production_review_evidence_is_supported(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if not isinstance(value, Mapping):
+        return False
+    notes = str(value.get("notes") or "").strip()
+    if notes:
+        return True
+    artifacts = value.get("artifacts")
+    if isinstance(artifacts, list) and any(str(item or "").strip() for item in artifacts):
+        return True
+    return False
 
 
 if __name__ == "__main__":

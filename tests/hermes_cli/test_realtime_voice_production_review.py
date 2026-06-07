@@ -6,6 +6,24 @@ from hermes_cli.realtime_voice_production_review import (
 )
 
 
+def _review_evidence():
+    return {
+        key: {
+            "notes": f"{key} passed in production review.",
+            "artifacts": [f"./artifacts/realtime-voice-review/{key}.md"],
+        }
+        for key in REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
+    }
+
+
+def _passed_review_report(*, reviewer="qa@example.test"):
+    return realtime_voice_production_review.build_production_review_report(
+        evidence=_review_evidence(),
+        reviewer=reviewer,
+        passed_checks=REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS,
+    )
+
+
 def test_production_review_template_defaults_to_pending_checks(tmp_path, capsys):
     report_path = tmp_path / "review.json"
 
@@ -23,7 +41,9 @@ def test_production_review_template_defaults_to_pending_checks(tmp_path, capsys)
     assert report["kind"] == "realtime_voice_production_review"
     assert report["reviewer"] == "qa@example.test"
     assert set(report["checks"]) == set(REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS)
+    assert set(report["evidence"]) == set(REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS)
     assert all(value is False for value in report["checks"].values())
+    assert all(value == {"notes": "", "artifacts": []} for value in report["evidence"].values())
     output = capsys.readouterr().out
     assert "Pending check(s)" in output
 
@@ -64,6 +84,7 @@ def test_production_review_requires_desktop_reconnect_recovery_check(tmp_path, c
                 "reviewer": "qa@example.test",
                 "reviewed_at": "2026-06-08T00:00:00Z",
                 "checks": checks,
+                "evidence": _review_evidence(),
             }
         ),
         encoding="utf-8",
@@ -75,7 +96,7 @@ def test_production_review_requires_desktop_reconnect_recovery_check(tmp_path, c
     assert "review_check_missing:desktop_reconnect_recovery" in capsys.readouterr().err
 
 
-def test_production_review_validation_accepts_all_checks(tmp_path, capsys):
+def test_production_review_validation_requires_evidence_for_passed_checks(tmp_path, capsys):
     report_path = tmp_path / "review.json"
     report_path.write_text(
         json.dumps(
@@ -84,6 +105,45 @@ def test_production_review_validation_accepts_all_checks(tmp_path, capsys):
                 passed_checks=REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS,
             )
         ),
+        encoding="utf-8",
+    )
+
+    result = realtime_voice_production_review.main([str(report_path)])
+
+    assert result == 1
+    error = capsys.readouterr().err
+    assert "review_evidence_missing:human_en_ja_conversations" in error
+    assert "review_evidence_missing:desktop_reconnect_recovery" in error
+
+
+def test_production_review_validation_accepts_string_evidence(tmp_path, capsys):
+    report_path = tmp_path / "review.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "kind": "realtime_voice_production_review",
+                "reviewer": "qa@example.test",
+                "reviewed_at": "2026-06-08T00:00:00Z",
+                "checks": {key: True for key in REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS},
+                "evidence": {
+                    key: f"reviewed {key}"
+                    for key in REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = realtime_voice_production_review.main([str(report_path)])
+
+    assert result == 0
+    assert "Realtime voice production review OK" in capsys.readouterr().out
+
+
+def test_production_review_validation_accepts_all_checks(tmp_path, capsys):
+    report_path = tmp_path / "review.json"
+    report_path.write_text(
+        json.dumps(_passed_review_report()),
         encoding="utf-8",
     )
 
@@ -96,12 +156,7 @@ def test_production_review_validation_accepts_all_checks(tmp_path, capsys):
 def test_production_review_apply_updates_config_after_validation(monkeypatch, tmp_path, capsys):
     report_path = tmp_path / "review.json"
     report_path.write_text(
-        json.dumps(
-            realtime_voice_production_review.build_production_review_report(
-                reviewer="qa@example.test",
-                passed_checks=REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS,
-            )
-        ),
+        json.dumps(_passed_review_report()),
         encoding="utf-8",
     )
     saved = {}

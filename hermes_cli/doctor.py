@@ -605,6 +605,8 @@ def _realtime_voice_has_production_review_issue(readiness_issues: list[str]) -> 
         issue == "missing_production_review_report"
         or issue.startswith("invalid_production_review_report:")
         or issue.startswith("review_check_missing:")
+        or issue == "missing_evidence"
+        or issue.startswith("review_evidence_missing:")
         for issue in readiness_issues
     )
 

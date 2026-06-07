@@ -307,7 +307,7 @@ When a sidecar is reachable, its `/health` response must include a JSON capabili
 
 `quality_targets_ms` is the active live-conversation quality contract. The desktop compares observed realtime metrics against these targets for its quality pill, and operators can tune them in `voice.realtime.quality_targets_ms` for slower local-only setups without changing the protocol.
 
-`production_readiness` is stricter than `conversation_quality`. A profile may be `live_like` from sidecar capabilities, but it is not even `evidence_ready` until `voice.realtime.production_evidence_report` points at JSON reports that pass the alpha EN/JA verifier. It is not `production_ready` until `voice.realtime.production_review_report` also points at a launch-review JSON report covering human conversation, noisy-room/headset, remote sidecar, provider failure, barge-in, tool policy, accessibility, security, and operator-doc checks. This prevents a healthy streaming sidecar from being marketed as Gemini Live-style production quality without both repeatable speech evidence and human/failure review.
+`production_readiness` is stricter than `conversation_quality`. A profile may be `live_like` from sidecar capabilities, but it is not even `evidence_ready` until `voice.realtime.production_evidence_report` points at JSON reports that pass the alpha EN/JA verifier. It is not `production_ready` until `voice.realtime.production_review_report` also points at an evidence-backed launch-review JSON report covering human conversation, noisy-room/headset, remote sidecar, desktop reconnect recovery, provider failure, barge-in, tool policy, accessibility, security, and operator-doc checks. This prevents a healthy streaming sidecar from being marketed as Gemini Live-style production quality without both repeatable speech evidence and human/failure review.
 
 Capture tuning is also server-owned. The desktop uses `speech_level_threshold`, `barge_in_min_speech_ms`, and `pre_roll_ms` from preflight status so microphone sensitivity, interruption confidence, and first-syllable preservation can be tuned per profile without rebuilding or reconfiguring the desktop.
 
@@ -359,23 +359,34 @@ python -m hermes_cli.realtime_voice_production_review \
     "human_en_ja_conversations": true,
     "noisy_room_and_headset_coverage": true,
     "remote_sidecar_latency_drill": true,
+    "desktop_reconnect_recovery": true,
     "provider_failure_drill": true,
     "barge_in_reliability": true,
     "tool_call_policy_review": true,
     "accessibility_review": true,
     "security_review": true,
     "operator_docs_review": true
+  },
+  "evidence": {
+    "human_en_ja_conversations": {
+      "notes": "Three English and three Japanese human conversations completed against the release profile.",
+      "artifacts": ["./artifacts/realtime-voice-review/human-en-ja.md"]
+    },
+    "desktop_reconnect_recovery": {
+      "notes": "Killed the bridge during active playback; desktop stopped playback, released mic capture, cleared queued audio, and recovered.",
+      "artifacts": ["./artifacts/realtime-voice-review/desktop-reconnect.md"]
+    }
   }
 }
 ```
 
-Only after both `production_evidence_report` and `production_review_report` pass does `production_readiness.ready` become true and `production_readiness.level` become `production_ready`.
+Every passed production review check must include either non-empty `evidence.<check>.notes` or at least one artifact reference in `evidence.<check>.artifacts`; the example above omits the remaining evidence entries for brevity. Only after both `production_evidence_report` and `production_review_report` pass does `production_readiness.ready` become true and `production_readiness.level` become `production_ready`.
 
 ### Private Alpha Evidence Pack
 
 The shortest path to an evidence-backed private alpha is days, not weeks, if the scope stays on the portable sidecar contract and the first production languages remain English and Japanese. Do not gate alpha on a particular workstation, GPU, or native S2S model; gate it on repeatable artifacts from the configured realtime sidecar profile.
 
-Private alpha is not the same claim as Gemini Live-style production quality. Alpha readiness means one configured profile repeatedly proves live-like status, English/Japanese speech understanding, full audio-session flow from real fixture audio through Hermes oracle text to spoken output, English/Japanese spoken output, barge-in plumbing, sanitized metadata, and latency targets through the doctor/report path. That makes the profile `evidence_ready`. Production readiness also needs `production_review_report` to document repeated human conversation sessions, noisy-room and headset coverage, remote-sidecar failure drills, provider/TTS outage behavior, transcript correction behavior, tool-call policy review, accessibility review, security review, and clear operator docs for fallback.
+Private alpha is not the same claim as Gemini Live-style production quality. Alpha readiness means one configured profile repeatedly proves live-like status, English/Japanese speech understanding, full audio-session flow from real fixture audio through Hermes oracle text to spoken output, English/Japanese spoken output, barge-in plumbing, sanitized metadata, and latency targets through the doctor/report path. That makes the profile `evidence_ready`. Production readiness also needs `production_review_report` to document repeated human conversation sessions, noisy-room and headset coverage, remote-sidecar failure drills, desktop reconnect recovery, provider/TTS outage behavior, transcript correction behavior, tool-call policy review, accessibility review, security review, and clear operator docs for fallback.
 
 Minimum alpha fixture set:
 

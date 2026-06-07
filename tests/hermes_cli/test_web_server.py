@@ -201,6 +201,13 @@ def _valid_realtime_voice_production_review_report():
         "reviewer": "qa@example.test",
         "reviewed_at": "2026-06-08T00:00:00Z",
         "checks": {key: True for key in _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS},
+        "evidence": {
+            key: {
+                "notes": f"{key} passed in production review.",
+                "artifacts": [f"./artifacts/realtime-voice-review/{key}.md"],
+            }
+            for key in _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
+        },
     }
 
 
@@ -7223,6 +7230,10 @@ class TestRealtimeVoiceWebSocket:
         assert readiness["launch_review"]["required"] is True
         assert readiness["launch_review"]["verified"] is True
         assert readiness["launch_review"]["report_path"] == str(review_path)
+        assert readiness["launch_review"]["evidence"]["desktop_reconnect_recovery"] == {
+            "notes": True,
+            "artifacts": 1,
+        }
 
     def test_status_rejects_production_evidence_from_different_realtime_stack(self, monkeypatch, tmp_path):
         evidence_path = tmp_path / "evidence"
