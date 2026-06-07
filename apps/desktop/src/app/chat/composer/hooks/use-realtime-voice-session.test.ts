@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  applyRealtimePlaybackQueueBackpressure,
   collectRealtimeVoiceCaption,
   collectRealtimeVoiceFrontendState,
   collectRealtimeVoiceMetrics,
@@ -430,6 +431,37 @@ describe('shouldSendRealtimeAudioFrame', () => {
       endOfUtterance: true,
       maxBufferedBytes: 256
     })).toBe(true)
+  })
+})
+
+describe('applyRealtimePlaybackQueueBackpressure', () => {
+  it('keeps queued playback unchanged while under the live backlog limit', () => {
+    const queue = ['a', 'b']
+
+    expect(applyRealtimePlaybackQueueBackpressure({ maxItems: 3, queue })).toEqual({
+      dropped: 0,
+      queue
+    })
+  })
+
+  it('drops the oldest queued playback chunks when the browser falls behind', () => {
+    expect(applyRealtimePlaybackQueueBackpressure({
+      maxItems: 3,
+      queue: ['old-1', 'old-2', 'new-1', 'new-2', 'new-3']
+    })).toEqual({
+      dropped: 2,
+      queue: ['new-1', 'new-2', 'new-3']
+    })
+  })
+
+  it('treats malformed limits as zero so callers fail closed', () => {
+    expect(applyRealtimePlaybackQueueBackpressure({
+      maxItems: Number.NaN,
+      queue: ['stale']
+    })).toEqual({
+      dropped: 1,
+      queue: []
+    })
   })
 })
 

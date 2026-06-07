@@ -459,6 +459,7 @@ Responsibilities:
 - Maintain and surface captions from transcript and assistant text events.
 - Surface recoverable `frontend.state` fallback/degraded events without ending the voice session.
 - Play `audio.output.chunk` through a queue.
+- Bound the browser playback queue. If assistant audio arrives faster than the browser can play it, drop the oldest queued chunks for the current generation, surface degraded frontend state, and keep the session live instead of allowing seconds of playback latency to accumulate.
 - Treat audio element end, error, and rejected `play()` promises as the same queue-settlement path: continue queued audio when present, otherwise return to listening or idle.
 - Cancel playback immediately on local barge-in.
 - Require a short sustained-speech window before local barge-in so isolated playback echo frames do not self-interrupt the assistant.
