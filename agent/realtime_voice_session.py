@@ -150,9 +150,10 @@ class RealtimeVoiceSession:
                 if generation < self.transcript.active_playback_generation:
                     return
                 self.transcript.active_playback_generation = generation
-            self.transcript.assistant_draft = (
-                self.transcript.assistant_draft + " " + str(event.payload.get("text") or "")
-            ).strip()
+            self.transcript.assistant_draft = _assistant_draft_after_partial(
+                self.transcript.assistant_draft,
+                event.payload,
+            )
             self.state = RealtimeVoiceSessionState.SPEAKING
         elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
             generation = _payload_generation(event.payload)
@@ -273,6 +274,18 @@ def _payload_generation(payload: dict) -> Optional[int]:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+def _assistant_draft_after_partial(current: str, payload: dict) -> str:
+    delta = payload.get("delta")
+    if isinstance(delta, str) and delta:
+        return f"{current}{delta}" if current else delta.lstrip()
+
+    text = payload.get("text")
+    if isinstance(text, str) and text:
+        return text.strip()
+
+    return current
 
 
 def _elapsed_ms(start: float, end: float) -> int:
