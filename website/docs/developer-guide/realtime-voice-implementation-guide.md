@@ -339,11 +339,19 @@ Minimum TTS phrase set:
 For a private alpha release candidate, collect one JSON report per profile/run. For production readiness, collect at least three passing runs and point `production_evidence_report` at the directory that contains them:
 
 ```bash
+python -m hermes_cli.realtime_voice_alpha_evidence \
+  --output-dir ./artifacts/realtime-voice-evidence \
+  --runs 3
+python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-evidence/*.json --alpha --min-runs 3
+```
+
+For a single debug run, the helper above is equivalent to:
+
+```bash
 hermes doctor \
   --realtime-voice-alpha \
   --realtime-voice-audio-codec webm_opus \
   --realtime-voice-report ./artifacts/realtime-voice-alpha-001.json
-python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha-*.json --alpha --min-runs 3
 ```
 
 CI shape:
