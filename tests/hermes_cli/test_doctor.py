@@ -52,6 +52,13 @@ class TestProviderEnvDetection:
 
 
 class TestRealtimeVoiceReadiness:
+    def test_realtime_voice_cli_values_accept_single_and_repeated_args(self):
+        assert doctor._realtime_voice_cli_values(None) == []
+        assert doctor._realtime_voice_cli_values("") == []
+        assert doctor._realtime_voice_cli_values("hello.webm") == ["hello.webm"]
+        assert doctor._realtime_voice_cli_values(["en.webm", "ja.webm"]) == ["en.webm", "ja.webm"]
+        assert doctor._realtime_voice_cli_values(["en.webm", ["ja.webm"]]) == ["en.webm", "ja.webm"]
+
     def test_non_strict_disabled_realtime_voice_is_informational(self, monkeypatch, capsys):
         monkeypatch.setattr(doctor, "load_config", lambda: {}, raising=False)
         monkeypatch.setattr(
