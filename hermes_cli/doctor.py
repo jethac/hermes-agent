@@ -595,6 +595,33 @@ def _run_realtime_voice_sidecar_smoke_sync(config, *, timeout_seconds: float):
     )
 
 
+def _run_realtime_voice_sidecar_audio_smoke_sync(
+    config,
+    *,
+    audio_fixture_path: str,
+    audio_codec: str,
+    timeout_seconds: float,
+):
+    from agent.realtime_voice import VoiceAudioCodec
+    from agent.realtime_voice_smoke import run_realtime_voice_sidecar_smoke
+
+    audio_path = Path(audio_fixture_path).expanduser()
+    if not audio_path.exists() or not audio_path.is_file():
+        raise RuntimeError(f"audio fixture not found: {audio_fixture_path}")
+    audio = audio_path.read_bytes()
+    if not audio:
+        raise RuntimeError(f"audio fixture is empty: {audio_fixture_path}")
+
+    return asyncio.run(
+        run_realtime_voice_sidecar_smoke(
+            config,
+            audio=audio,
+            audio_codec=VoiceAudioCodec(str(audio_codec)),
+            timeout_seconds=timeout_seconds,
+        )
+    )
+
+
 def _check_realtime_voice_sidecar_smoke(issues: list[str]) -> None:
     try:
         config = _realtime_voice_smoke_config()
@@ -631,6 +658,75 @@ def _check_realtime_voice_sidecar_smoke(issues: list[str]) -> None:
         "Realtime voice sidecar smoke",
         f"({detail})",
         f"Fix realtime voice sidecar protocol smoke failure: {detail}",
+        issues,
+    )
+
+
+def _quality_target_from_config(config, key: str, default: int) -> int:
+    metadata = getattr(config, "metadata", None)
+    targets = metadata.get("quality_targets_ms") if isinstance(metadata, Mapping) else {}
+    value = _realtime_voice_positive_int(targets.get(key)) if isinstance(targets, Mapping) else None
+    return value if value is not None else default
+
+
+def _check_realtime_voice_audio_fixture_smoke(
+    issues: list[str],
+    *,
+    audio_fixture_path: str,
+    audio_codec: str,
+) -> None:
+    try:
+        config = _realtime_voice_smoke_config()
+    except Exception as exc:
+        _fail_and_issue(
+            "Realtime voice audio fixture smoke",
+            f"(could not build config: {exc})",
+            f"Fix realtime voice audio smoke configuration: {exc}",
+            issues,
+        )
+        return
+
+    timeout_seconds = min(max(float(config.sidecar_connect_timeout_seconds or 10.0), 1.0), 30.0)
+    try:
+        result = _run_realtime_voice_sidecar_audio_smoke_sync(
+            config,
+            audio_fixture_path=audio_fixture_path,
+            audio_codec=audio_codec,
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception as exc:
+        _fail_and_issue(
+            "Realtime voice audio fixture smoke",
+            f"(failed: {exc})",
+            f"Fix realtime voice audio fixture smoke failure: {exc}",
+            issues,
+        )
+        return
+
+    target_ms = _quality_target_from_config(config, "audio_to_partial_transcript_ms", 300)
+    if result.ok and result.transcript_partial_ms is not None and result.transcript_partial_ms <= target_ms:
+        final = f"{result.transcript_final_ms}ms" if result.transcript_final_ms is not None else "unknown"
+        check_ok(
+            "Realtime voice audio fixture smoke",
+            (
+                f"(bytes={result.audio_bytes}, transcript.partial={result.transcript_partial_ms}ms"
+                f" <= {target_ms}ms, transcript.final={final})"
+            ),
+        )
+        return
+
+    detail = getattr(result, "error", "") or "audio fixture smoke failed"
+    if result.ok and result.transcript_partial_ms is None:
+        detail = f"missing transcript.partial before transcript.final; transcript.final={result.transcript_final_ms}ms"
+    elif result.ok and result.transcript_partial_ms is not None:
+        detail = f"transcript.partial={result.transcript_partial_ms}ms exceeds target {target_ms}ms"
+    events = tuple(getattr(result, "events", ()) or ())
+    if events:
+        detail = f"{detail}; events={','.join(events)}"
+    _fail_and_issue(
+        "Realtime voice audio fixture smoke",
+        f"({detail})",
+        f"Fix realtime voice audio fixture smoke failure: {detail}",
         issues,
     )
 
@@ -883,7 +979,12 @@ def run_doctor(args):
     should_fix = getattr(args, 'fix', False)
     ack_target = getattr(args, 'ack', None)
     smoke_realtime_voice = getattr(args, 'realtime_voice_smoke', False)
-    strict_realtime_voice = getattr(args, 'realtime_voice', False) or smoke_realtime_voice
+    realtime_voice_audio_fixture = getattr(args, 'realtime_voice_audio_fixture', None)
+    strict_realtime_voice = (
+        getattr(args, 'realtime_voice', False)
+        or smoke_realtime_voice
+        or bool(realtime_voice_audio_fixture)
+    )
 
     # Doctor runs from the interactive CLI, so CLI-gated tool availability
     # checks (like cronjob management) should see the same context as `hermes`.
@@ -1523,6 +1624,12 @@ def run_doctor(args):
     _check_realtime_voice_readiness(issues, strict=strict_realtime_voice)
     if smoke_realtime_voice:
         _check_realtime_voice_sidecar_smoke(issues)
+    if realtime_voice_audio_fixture:
+        _check_realtime_voice_audio_fixture_smoke(
+            issues,
+            audio_fixture_path=str(realtime_voice_audio_fixture),
+            audio_codec=str(getattr(args, 'realtime_voice_audio_codec', "webm_opus")),
+        )
 
     _section("Directory Structure")
     hermes_home = HERMES_HOME

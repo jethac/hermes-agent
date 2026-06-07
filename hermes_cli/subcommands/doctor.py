@@ -33,6 +33,18 @@ def build_doctor_parser(subparsers, *, cmd_doctor: Callable) -> None:
         help="Run the strict realtime voice gate plus a sidecar websocket protocol smoke",
     )
     doctor_parser.add_argument(
+        "--realtime-voice-audio-fixture",
+        metavar="PATH",
+        default=None,
+        help="Run the strict realtime voice gate plus a sidecar audio fixture smoke",
+    )
+    doctor_parser.add_argument(
+        "--realtime-voice-audio-codec",
+        choices=("webm_opus", "opus", "pcm16"),
+        default="webm_opus",
+        help="Codec for --realtime-voice-audio-fixture (default: webm_opus)",
+    )
+    doctor_parser.add_argument(
         "--ack",
         metavar="ADVISORY_ID",
         default=None,
