@@ -234,7 +234,9 @@ Keep these pieces of state:
 - playback generation id
 - last inbound and outbound sequence numbers
 
-When a new final user turn or barge-in advances `playback_generation`, cancelled work from older generations must not emit assistant commits or audio. When a sidecar handles microphone input, Hermes also advances an `input_generation` across utterances and barge-in boundaries; generation-aware sidecars echo it with transcript events so Hermes can drop late STT results before they start an obsolete oracle turn. The Hermes session layer drops stale generated audio, assistant text, assistant commits, and generated final transcripts before forwarding events to the desktop.
+When a new final user turn or barge-in advances `playback_generation`, cancelled work from older generations must not emit assistant commits or audio. The text-oracle engine also treats incoming speech or transcript frames during an active answer as an implicit barge-in: it cancels the active oracle/TTS work, emits a `barge_in` acknowledgement, reserves that new `playback_generation` for the incoming turn, and then continues buffering or processing the new speech. The desktop should still send explicit `barge_in` as soon as local VAD detects sustained speech over playback, but backend cancellation must not depend on the client remembering that extra event.
+
+When a sidecar handles microphone input, Hermes also advances an `input_generation` across utterances and barge-in boundaries; generation-aware sidecars echo it with transcript events so Hermes can drop late STT results before they start an obsolete oracle turn. The Hermes session layer drops stale generated audio, assistant text, assistant commits, and generated final transcripts before forwarding events to the desktop.
 
 The session owns persistence. Engines produce events; the session decides which events become durable Hermes messages.
 
