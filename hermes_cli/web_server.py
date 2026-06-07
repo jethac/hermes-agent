@@ -12330,7 +12330,7 @@ def _realtime_voice_sidecar_capability_error(
     health_payload: Optional[Dict[str, Any]],
 ) -> str:
     if not health_payload:
-        return ""
+        return "sidecar_missing_capabilities"
     if health_payload.get("ok") is not True:
         return "sidecar_not_ready"
 
@@ -12475,9 +12475,13 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         if probe_health and base_url and healthy is True
         else None
     )
-    sidecar_capability_error = _realtime_voice_sidecar_capability_error(
-        engine=engine,
-        health_payload=health_payload,
+    sidecar_capability_error = (
+        _realtime_voice_sidecar_capability_error(
+            engine=engine,
+            health_payload=health_payload,
+        )
+        if base_url and healthy is True
+        else ""
     )
 
     sidecar_mode = "none"
