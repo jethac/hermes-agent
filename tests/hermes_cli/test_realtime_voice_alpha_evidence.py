@@ -569,6 +569,11 @@ def test_alpha_evidence_runner_can_start_deepgram_bridge(monkeypatch, tmp_path):
         return proc
 
     monkeypatch.setattr(realtime_voice_alpha_evidence, "_deepgram_bridge_healthy", fake_health)
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_deepgram_bridge_prerequisite_issues_for_evidence",
+        lambda env_on_disk: [],
+    )
     monkeypatch.setattr(realtime_voice_alpha_evidence, "_spawn_deepgram_bridge_for_evidence", fake_spawn)
 
     def fake_run_doctor(args):
@@ -683,6 +688,11 @@ def test_alpha_evidence_runner_refuses_to_autostart_remote_deepgram_bridge(
         "_deepgram_bridge_healthy",
         lambda url, *, token="": False,
     )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_deepgram_bridge_prerequisite_issues_for_evidence",
+        lambda env_on_disk: [],
+    )
     calls = []
 
     def fake_run_doctor(args):
@@ -711,6 +721,67 @@ def test_alpha_evidence_runner_refuses_to_autostart_remote_deepgram_bridge(
     assert "configured streaming bridge URL is not loopback" in capsys.readouterr().err
 
 
+def test_alpha_evidence_runner_reports_deepgram_prerequisite_failure_before_spawn(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(
+            realtime_config={
+                "frontend_provider": "reference",
+                "streaming_stt_base_url": "http://127.0.0.1:8766",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_deepgram_bridge_healthy",
+        lambda url, *, token="": False,
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_deepgram_bridge_prerequisite_issues_for_evidence",
+        lambda env_on_disk: ["DEEPGRAM_API_KEY or HERMES_DEEPGRAM_API_KEY is required"],
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_spawn_deepgram_bridge_for_evidence",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not spawn")),
+    )
+    calls = []
+
+    def fake_run_doctor(args):
+        calls.append(args)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+            "--start-deepgram-bridge",
+        ]
+    )
+
+    assert result == 1
+    assert calls == []
+    error = capsys.readouterr().err
+    assert "Deepgram bridge prerequisite check failed" in error
+    assert "DEEPGRAM_API_KEY or HERMES_DEEPGRAM_API_KEY is required" in error
+
+
 def test_alpha_evidence_runner_stops_failed_deepgram_bridge_start(
     monkeypatch,
     tmp_path,
@@ -732,6 +803,11 @@ def test_alpha_evidence_runner_stops_failed_deepgram_bridge_start(
         realtime_voice_alpha_evidence,
         "_deepgram_bridge_healthy",
         lambda url, *, token="": False,
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_deepgram_bridge_prerequisite_issues_for_evidence",
+        lambda env_on_disk: [],
     )
     monkeypatch.setattr(
         realtime_voice_alpha_evidence,
