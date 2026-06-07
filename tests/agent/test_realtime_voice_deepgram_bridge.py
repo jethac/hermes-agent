@@ -163,6 +163,52 @@ def test_deepgram_bridge_cli_check_reports_missing_env(monkeypatch, capsys):
     assert "HERMES_STREAMING_STT_BRIDGE_TOKEN" in output
 
 
+def test_deepgram_bridge_cli_generates_bridge_token(monkeypatch, capsys):
+    from hermes_cli import realtime_voice_deepgram_bridge
+
+    saved = {}
+    monkeypatch.delenv("HERMES_STREAMING_STT_BRIDGE_TOKEN", raising=False)
+    monkeypatch.setattr("hermes_cli.config.save_env_value", lambda key, value: saved.setdefault(key, value))
+
+    result = realtime_voice_deepgram_bridge.main(["--generate-token"])
+
+    assert result == 0
+    assert "HERMES_STREAMING_STT_BRIDGE_TOKEN" in saved
+    assert len(saved["HERMES_STREAMING_STT_BRIDGE_TOKEN"]) >= 32
+    output = capsys.readouterr().out
+    assert "stored in HERMES_STREAMING_STT_BRIDGE_TOKEN" in output
+    assert saved["HERMES_STREAMING_STT_BRIDGE_TOKEN"] not in output
+
+
+def test_deepgram_bridge_cli_does_not_overwrite_existing_token(monkeypatch, capsys):
+    from hermes_cli import realtime_voice_deepgram_bridge
+
+    calls = []
+    monkeypatch.setenv("HERMES_STREAMING_STT_BRIDGE_TOKEN", "existing-token")
+    monkeypatch.setattr("hermes_cli.config.save_env_value", lambda key, value: calls.append((key, value)))
+
+    result = realtime_voice_deepgram_bridge.main(["--generate-token"])
+
+    assert result == 0
+    assert calls == []
+    assert "already configured" in capsys.readouterr().out
+
+
+def test_deepgram_bridge_cli_generate_token_accepts_custom_env(monkeypatch):
+    from hermes_cli import realtime_voice_deepgram_bridge
+
+    saved = {}
+    monkeypatch.delenv("CUSTOM_BRIDGE_TOKEN", raising=False)
+    monkeypatch.setattr("hermes_cli.config.save_env_value", lambda key, value: saved.setdefault(key, value))
+
+    result = realtime_voice_deepgram_bridge.main(
+        ["--generate-token", "--token-env", "CUSTOM_BRIDGE_TOKEN"]
+    )
+
+    assert result == 0
+    assert "CUSTOM_BRIDGE_TOKEN" in saved
+
+
 def test_voice_extra_installs_websocket_client():
     pyproject = tomllib.loads(
         (Path(__file__).parents[2] / "pyproject.toml").read_text(encoding="utf-8")
