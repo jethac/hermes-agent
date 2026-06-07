@@ -315,8 +315,13 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             raise
         except Exception as exc:
             await self._emit(
-                VoiceEventType.SESSION_ERROR,
-                {"error": f"oracle hint failed: {sanitize_realtime_voice_error(exc)}"},
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "oracle_hint_failed",
+                    "error": sanitize_realtime_voice_error(exc),
+                    "sidecar": True,
+                },
             )
 
     async def _send_oracle_hint_event(
