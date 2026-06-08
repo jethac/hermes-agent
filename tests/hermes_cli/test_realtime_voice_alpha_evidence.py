@@ -145,6 +145,7 @@ def _valid_alpha_report():
             "sidecar": {
                 "healthy": True,
                 "health": {
+                    "ok": True,
                     "capabilities": {
                         "streaming_stt": True,
                         "streaming_tts": True,
