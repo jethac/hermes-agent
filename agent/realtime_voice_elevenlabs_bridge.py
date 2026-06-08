@@ -246,7 +246,8 @@ class ElevenLabsStreamingTTSBridgeSession:
         generation = _payload_int(event.payload.get("playback_generation"))
         if generation is not None:
             self._playback_generation = generation
-        await self._elevenlabs_ws.send(json.dumps({"text": text}))
+        await self._elevenlabs_ws.send(json.dumps({"text": text, "try_trigger_generation": True}))
+        await self._elevenlabs_ws.send(json.dumps({"text": "", "flush": True}))
 
     async def events(self) -> AsyncIterator[VoiceEvent]:
         while True:
