@@ -316,6 +316,46 @@ def test_alpha_evidence_runner_collects_and_validates_runs(monkeypatch, tmp_path
     assert "final_transcript_to_first_text" in output
 
 
+def test_alpha_evidence_runner_marks_elevenlabs_partial_latency_ceiling(monkeypatch, tmp_path):
+    reports_dir = tmp_path / "reports"
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(monkeypatch)
+
+    def fake_run_doctor(args):
+        report = _valid_alpha_report()
+        report[0]["quality_targets_ms"]["audio_to_partial_transcript_ms"] = 1000
+        for entry in report:
+            if entry.get("kind") in {"audio_fixture", "audio_session"}:
+                entry["target_ms"] = 1000
+                entry["transcript_partial_ms"] = 831
+        with open(args.realtime_voice_report, "w", encoding="utf-8") as handle:
+            json.dump(report, handle, ensure_ascii=False)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(reports_dir),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+            "--provider",
+            "elevenlabs",
+        ]
+    )
+
+    assert result == 0
+    report = json.loads((reports_dir / "alpha-001.json").read_text(encoding="utf-8"))
+    assert report[0]["quality_target_ceilings_ms"]["audio_to_partial_transcript_ms"] == 1000
+
+
 def test_alpha_evidence_runner_apply_updates_production_evidence_report(
     monkeypatch,
     tmp_path,

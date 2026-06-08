@@ -8,8 +8,12 @@ import contextlib
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
+import tempfile
 import urllib.parse
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, AsyncIterator, Mapping, Optional, Sequence
 
 from starlette.requests import Request
@@ -46,6 +50,8 @@ class ElevenLabsRealtimeBridgeConfig:
     output_languages: tuple[str, ...] = ()
     voice_settings: Mapping[str, Any] = field(default_factory=dict)
     chunk_length_schedule: tuple[int, ...] = (80, 120, 180, 240)
+    stt_chunk_bytes: int = 6400
+    stt_chunk_sleep_seconds: float = 0.02
     connect_timeout_seconds: float = 10.0
 
 
@@ -101,13 +107,44 @@ class ElevenLabsStreamingSTTBridgeSession:
         input_generation = _payload_int(event.payload.get("input_generation"))
         if input_generation is not None:
             self._last_input_generation = input_generation
+        try:
+            audio = elevenlabs_stt_audio_bytes(chunk, self.config)
+        except Exception as exc:
+            await self._emit(
+                VoiceEventType.SESSION_ERROR,
+                {"error": f"elevenlabs stt audio conversion failed: {sanitize_realtime_voice_error(exc)}"},
+            )
+            return
+        config = self.config
+        await self._send_elevenlabs_audio(
+            audio,
+            commit=event.payload.get("end_of_utterance") is True,
+            sample_rate=max(1, int(chunk.sample_rate_hz or (config.sample_rate_hz if config is not None else 16000) or 16000)),
+        )
+
+    async def _send_elevenlabs_audio(self, audio: bytes, *, commit: bool, sample_rate: int) -> None:
+        if not audio and not commit:
+            return
+        chunk_bytes = max(1, int(self.runtime.stt_chunk_bytes or len(audio) or 1))
+        sleep_seconds = max(0.0, float(self.runtime.stt_chunk_sleep_seconds or 0.0))
+        if not audio:
+            await self._send_elevenlabs_audio_message(b"", commit=True, sample_rate=sample_rate)
+            return
+        chunks = [audio[index:index + chunk_bytes] for index in range(0, len(audio), chunk_bytes)]
+        for index, part in enumerate(chunks):
+            is_last = index == len(chunks) - 1
+            await self._send_elevenlabs_audio_message(part, commit=commit and is_last, sample_rate=sample_rate)
+            if sleep_seconds and not is_last:
+                await asyncio.sleep(sleep_seconds)
+
+    async def _send_elevenlabs_audio_message(self, audio: bytes, *, commit: bool, sample_rate: int) -> None:
         await self._elevenlabs_ws.send(
             json.dumps(
                 {
                     "message_type": "input_audio_chunk",
-                    "audio_base_64": base64.b64encode(chunk.data).decode("ascii"),
-                    "commit": event.payload.get("end_of_utterance") is True,
-                    "sample_rate": max(1, int(chunk.sample_rate_hz or self.config.sample_rate_hz or 16000)),
+                    "audio_base_64": base64.b64encode(audio).decode("ascii"),
+                    "commit": commit,
+                    "sample_rate": sample_rate,
                 }
             )
         )
@@ -419,6 +456,81 @@ def elevenlabs_stt_message_to_transcript_payload(
     return event_type, payload
 
 
+def elevenlabs_stt_audio_bytes(
+    chunk: AudioChunk,
+    config: Optional[RealtimeVoiceSessionConfig] = None,
+) -> bytes:
+    """Return raw PCM16LE audio bytes for ElevenLabs realtime STT.
+
+    Hermes accepts browser-friendly audio such as WebM/Opus at the provider-
+    neutral realtime boundary. ElevenLabs realtime STT is configured with an
+    audio_format=pcm_* query parameter, so compressed container bytes must be
+    normalized at this provider bridge before upload.
+    """
+
+    if chunk.codec == VoiceAudioCodec.PCM16:
+        return chunk.data
+    sample_rate_hz = max(
+        1,
+        int(chunk.sample_rate_hz or (config.sample_rate_hz if config is not None else 16000) or 16000),
+    )
+    channels = max(1, int(chunk.channels or (config.channels if config is not None else 1) or 1))
+    return _ffmpeg_to_pcm16le(
+        chunk.data,
+        codec=chunk.codec,
+        sample_rate_hz=sample_rate_hz,
+        channels=channels,
+    )
+
+
+def _ffmpeg_to_pcm16le(
+    audio: bytes,
+    *,
+    codec: VoiceAudioCodec,
+    sample_rate_hz: int,
+    channels: int,
+) -> bytes:
+    if not audio:
+        return b""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("ffmpeg is required to convert compressed audio to PCM16 for ElevenLabs STT")
+    suffix = ".webm" if codec == VoiceAudioCodec.WEBM_OPUS else ".opus"
+    with tempfile.TemporaryDirectory(prefix="hermes-elevenlabs-stt-") as tmp:
+        src = Path(tmp) / f"input{suffix}"
+        src.write_bytes(audio)
+        completed = subprocess.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-i",
+                str(src),
+                "-ac",
+                str(channels),
+                "-ar",
+                str(sample_rate_hz),
+                "-f",
+                "s16le",
+                "-acodec",
+                "pcm_s16le",
+                "pipe:1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=10,
+            check=False,
+        )
+    if completed.returncode != 0:
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(stderr or "ffmpeg audio conversion failed")
+    if not completed.stdout:
+        raise RuntimeError("ffmpeg produced no PCM audio")
+    return completed.stdout
+
+
 def elevenlabs_error_from_message(data: Mapping[str, Any]) -> str:
     message_type = str(data.get("message_type") or "")
     if not message_type.endswith("_error") and "error" not in message_type:
@@ -609,6 +721,8 @@ def elevenlabs_bridge_config_from_env() -> ElevenLabsRealtimeBridgeConfig:
         chunk_length_schedule=tuple(
             _parse_int_list(os.environ.get("HERMES_ELEVENLABS_CHUNK_LENGTH_SCHEDULE") or "80,120,180,240")
         ),
+        stt_chunk_bytes=int(os.environ.get("HERMES_ELEVENLABS_STT_CHUNK_BYTES") or 6400),
+        stt_chunk_sleep_seconds=float(os.environ.get("HERMES_ELEVENLABS_STT_CHUNK_SLEEP_SECONDS") or 0.02),
         connect_timeout_seconds=float(os.environ.get("HERMES_ELEVENLABS_CONNECT_TIMEOUT_SECONDS") or 10),
     )
 

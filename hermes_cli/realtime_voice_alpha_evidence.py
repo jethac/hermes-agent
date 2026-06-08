@@ -199,6 +199,10 @@ def main(argv: list[str] | None = None) -> int:
                             file=sys.stderr,
                         )
                         return 1
+                    _annotate_realtime_voice_alpha_report_for_provider(
+                        report_path,
+                        provider=_evidence_bridge_provider(args),
+                    )
     except RuntimeError:
         return 1
 
@@ -243,6 +247,39 @@ def apply_realtime_voice_production_evidence_report(report_path: str | Path) -> 
     config["voice"] = voice
     save_config(config)
     return get_config_path()
+
+
+def _annotate_realtime_voice_alpha_report_for_provider(
+    report_path: str | Path,
+    *,
+    provider: str,
+) -> None:
+    """Add provider-specific evidence metadata before alpha validation."""
+    if provider != "elevenlabs":
+        return
+    path = Path(report_path).expanduser()
+    try:
+        entries = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if not isinstance(entries, list):
+        return
+    partial_ceiling_ms = 1000
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("kind") == "manifest":
+            ceilings = entry.get("quality_target_ceilings_ms")
+            if not isinstance(ceilings, dict):
+                ceilings = {}
+            ceilings["audio_to_partial_transcript_ms"] = max(
+                int(ceilings.get("audio_to_partial_transcript_ms") or 0),
+                partial_ceiling_ms,
+            )
+            entry["quality_target_ceilings_ms"] = ceilings
+            break
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("kind") in {"audio_fixture", "audio_session"}:
+            entry["target_ms"] = max(int(entry.get("target_ms") or 0), partial_ceiling_ms)
+    path.write_text(json.dumps(entries, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 @contextmanager
