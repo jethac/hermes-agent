@@ -138,7 +138,7 @@ python -m hermes_cli.realtime_voice_alpha_evidence \
   --start-deepgram-bridge
 ```
 
-`--start-deepgram-bridge` probes the configured `streaming_stt_base_url` first and leaves an already healthy bridge alone. If the bridge is not running and the configured URL is loopback, it runs the same strict EN/JA prerequisite check as `realtime_voice_deepgram_bridge --check --strict --production-en-ja`, starts `hermes_cli.realtime_voice_deepgram_bridge --production-en-ja`, waits for `/health` using the saved bridge bearer token, then starts the managed reference sidecar and collects the evidence run. For remote or shared inference hosts, start the bridge on that host or pass an explicit bind host with `--deepgram-bridge-host`; Hermes still verifies the configured URL before accepting the run.
+`--start-deepgram-bridge` runs the same strict EN/JA prerequisite check as `realtime_voice_deepgram_bridge --check --strict --production-en-ja`, then probes the configured `streaming_stt_base_url` with the saved bridge bearer token and accepts only `/health` responses with `ok: true`. It leaves an already healthy bridge alone. If the bridge is not running and the configured URL is loopback, it starts `hermes_cli.realtime_voice_deepgram_bridge --production-en-ja`, waits for `/health.ok`, then starts the managed reference sidecar and collects the evidence run. For remote or shared inference hosts, start the bridge on that host or pass an explicit bind host with `--deepgram-bridge-host`; Hermes still verifies the configured URL before accepting the run.
 
 ## Production-Readiness Ladder
 
