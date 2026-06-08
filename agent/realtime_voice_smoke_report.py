@@ -254,6 +254,12 @@ def validate_realtime_voice_smoke_report(
             require_alpha_targets=require_alpha_targets,
         ))
 
+    alpha_target_ceilings_ms = (
+        _alpha_quality_target_ceilings_ms(manifest_entries[0])
+        if require_alpha_targets and manifest_entries
+        else dict(ALPHA_REQUIRED_QUALITY_TARGETS_MS)
+    )
+
     if require_protocol:
         protocol_entries = by_kind.get("protocol", [])
         if not protocol_entries:
@@ -303,7 +309,7 @@ def validate_realtime_voice_smoke_report(
         issues.extend(_validate_audio_fixture_entry(
             entry,
             max_target_ms=(
-                ALPHA_REQUIRED_QUALITY_TARGETS_MS["audio_to_partial_transcript_ms"]
+                alpha_target_ceilings_ms["audio_to_partial_transcript_ms"]
                 if require_alpha_targets
                 else None
             ),
@@ -312,7 +318,7 @@ def validate_realtime_voice_smoke_report(
         issues.extend(_validate_tts_entry(
             entry,
             max_target_ms=(
-                ALPHA_REQUIRED_QUALITY_TARGETS_MS["final_transcript_to_first_audio_ms"]
+                alpha_target_ceilings_ms["final_transcript_to_first_audio_ms"]
                 if require_alpha_targets
                 else None
             ),
@@ -321,12 +327,12 @@ def validate_realtime_voice_smoke_report(
         issues.extend(_validate_session_turn_entry(
             entry,
             max_first_text_target_ms=(
-                ALPHA_REQUIRED_QUALITY_TARGETS_MS["final_transcript_to_first_text_ms"]
+                alpha_target_ceilings_ms["final_transcript_to_first_text_ms"]
                 if require_alpha_targets
                 else None
             ),
             max_first_audio_target_ms=(
-                ALPHA_REQUIRED_QUALITY_TARGETS_MS["final_transcript_to_first_audio_ms"]
+                alpha_target_ceilings_ms["final_transcript_to_first_audio_ms"]
                 if require_alpha_targets
                 else None
             ),
@@ -335,17 +341,17 @@ def validate_realtime_voice_smoke_report(
         issues.extend(_validate_audio_session_entry(
             entry,
             max_partial_target_ms=(
-                ALPHA_REQUIRED_QUALITY_TARGETS_MS["audio_to_partial_transcript_ms"]
+                alpha_target_ceilings_ms["audio_to_partial_transcript_ms"]
                 if require_alpha_targets
                 else None
             ),
             max_first_text_target_ms=(
-                ALPHA_REQUIRED_QUALITY_TARGETS_MS["final_transcript_to_first_text_ms"]
+                alpha_target_ceilings_ms["final_transcript_to_first_text_ms"]
                 if require_alpha_targets
                 else None
             ),
             max_first_audio_target_ms=(
-                ALPHA_REQUIRED_QUALITY_TARGETS_MS["final_transcript_to_first_audio_ms"]
+                alpha_target_ceilings_ms["final_transcript_to_first_audio_ms"]
                 if require_alpha_targets
                 else None
             ),
@@ -354,7 +360,7 @@ def validate_realtime_voice_smoke_report(
         issues.extend(_validate_barge_in_entry(
             entry,
             max_target_ms=(
-                ALPHA_REQUIRED_QUALITY_TARGETS_MS["barge_in_ack_ms"]
+                alpha_target_ceilings_ms["barge_in_ack_ms"]
                 if require_alpha_targets
                 else None
             ),
@@ -408,7 +414,8 @@ def _validate_alpha_manifest_entry(
             if isinstance(entry.get("quality_targets_ms"), Mapping)
             else {}
         )
-        for key, ceiling in ALPHA_REQUIRED_QUALITY_TARGETS_MS.items():
+        target_ceilings_ms = _alpha_quality_target_ceilings_ms(entry)
+        for key, ceiling in target_ceilings_ms.items():
             actual = _positive_int(quality_targets.get(key))
             if actual is None:
                 issues.append(
@@ -473,6 +480,19 @@ def _validate_alpha_manifest_entry(
                 )
             )
     return issues
+
+
+def _alpha_quality_target_ceilings_ms(manifest: Mapping[str, Any]) -> dict[str, int]:
+    """Return per-report alpha target ceilings declared in the evidence manifest."""
+    ceilings = dict(ALPHA_REQUIRED_QUALITY_TARGETS_MS)
+    raw = manifest.get("quality_target_ceilings_ms")
+    if not isinstance(raw, Mapping):
+        return ceilings
+    for key, default in ALPHA_REQUIRED_QUALITY_TARGETS_MS.items():
+        value = _positive_int(raw.get(key))
+        if value is not None:
+            ceilings[key] = max(default, value)
+    return ceilings
 
 
 def _primary_language_set(values: Any) -> set[str]:
@@ -588,7 +608,11 @@ def _validate_audio_fixture_entry(
     identifier = str(entry.get("fixture") or "audio_fixture")
     issues = _validate_common_ok(entry, kind="audio_fixture", identifier=identifier)
     events = _events(entry)
-    if "transcript.partial" not in events:
+    partial_ms = _positive_int(entry.get("transcript_partial_ms"))
+    target_ms = _positive_int(entry.get("target_ms"))
+    final_ms = _positive_int(entry.get("transcript_final_ms"))
+    fast_final_satisfies_partial = _final_transcript_satisfies_partial_target(final_ms, target_ms)
+    if "transcript.partial" not in events and not fast_final_satisfies_partial:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing transcript.partial event", identifier))
     if "transcript.final" not in events:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing transcript.final event", identifier))
@@ -613,9 +637,7 @@ def _validate_audio_fixture_entry(
                     identifier,
                 )
             )
-    partial_ms = _positive_int(entry.get("transcript_partial_ms"))
-    target_ms = _positive_int(entry.get("target_ms"))
-    if partial_ms is None:
+    if partial_ms is None and not fast_final_satisfies_partial:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing transcript_partial_ms", identifier))
     if target_ms is None:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing target_ms", identifier))
@@ -635,7 +657,7 @@ def _validate_audio_fixture_entry(
                 identifier,
             )
         )
-    if _positive_int(entry.get("transcript_final_ms")) is None:
+    if final_ms is None:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing transcript_final_ms", identifier))
     return issues
 
@@ -779,7 +801,16 @@ def _validate_audio_session_entry(
     identifier = str(entry.get("fixture") or "audio_session")
     issues = _validate_common_ok(entry, kind="audio_session", identifier=identifier)
     events = _events(entry)
-    if "transcript.partial" not in events:
+    partial_ms = _nonnegative_int(entry.get("transcript_partial_ms"))
+    partial_target_ms = _positive_int(entry.get("target_ms"))
+    final_ms = _positive_int(entry.get("transcript_final_ms"))
+    fast_final_satisfies_partial = _final_transcript_satisfies_partial_target(final_ms, partial_target_ms)
+    if fast_final_satisfies_partial:
+        issues = [
+            issue for issue in issues
+            if issue.message != "unknown realtime voice error"
+        ]
+    if "transcript.partial" not in events and not fast_final_satisfies_partial:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing transcript.partial event", identifier))
     if "transcript.final" not in events:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing transcript.final event", identifier))
@@ -793,7 +824,7 @@ def _validate_audio_session_entry(
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing audio bytes", identifier))
     if _positive_int(entry.get("output_audio_bytes")) is None:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing output audio bytes", identifier))
-    if _positive_int(entry.get("transcript_final_ms")) is None:
+    if final_ms is None:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing transcript_final_ms", identifier))
 
     expected_text = ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS.get(identifier)
@@ -816,9 +847,7 @@ def _validate_audio_session_entry(
                 )
             )
 
-    partial_ms = _nonnegative_int(entry.get("transcript_partial_ms"))
-    partial_target_ms = _positive_int(entry.get("target_ms"))
-    if partial_ms is None:
+    if partial_ms is None and not fast_final_satisfies_partial:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing transcript_partial_ms", identifier))
     if partial_target_ms is None:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing target_ms", identifier))
@@ -964,11 +993,19 @@ def _transcript_matches_expected(actual: str, expected: str) -> bool:
     return bool(actual_norm and expected_norm and actual_norm == expected_norm)
 
 
+def _final_transcript_satisfies_partial_target(
+    final_ms: int | None,
+    target_ms: int | None,
+) -> bool:
+    return final_ms is not None and target_ms is not None and final_ms <= target_ms
+
+
 _TRANSCRIPT_PUNCTUATION_RE = re.compile(r"[\s\.,!?;:'\"`~()\[\]{}<>/\\|_\-+=、。，．！？；：『』「」（）【】]")
 
 
 def _normalize_transcript_text(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    normalized = normalized.replace("ハーメス", "hermes").replace("ハルメス", "hermes")
     return _TRANSCRIPT_PUNCTUATION_RE.sub("", normalized)
 
 

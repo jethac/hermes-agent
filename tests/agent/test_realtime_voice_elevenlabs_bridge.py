@@ -19,6 +19,7 @@ from agent.realtime_voice_elevenlabs_bridge import (
     create_elevenlabs_realtime_bridge_app,
     elevenlabs_bridge_config_from_env,
     elevenlabs_bridge_prerequisite_issues,
+    elevenlabs_stt_audio_bytes,
     elevenlabs_stt_message_to_transcript_payload,
     elevenlabs_stt_url,
     elevenlabs_tts_start_message,
@@ -198,6 +199,26 @@ def test_elevenlabs_bridge_health_advertises_streaming_stt_tts():
     assert body["capabilities"]["streaming_tts"] is True
     assert body["capabilities"]["input_languages"] == ["en", "ja"]
     assert body["capabilities"]["output_languages"] == ["en", "ja"]
+
+
+def test_elevenlabs_stt_audio_bytes_passes_pcm16_through():
+    chunk = AudioChunk(codec=VoiceAudioCodec.PCM16, data=b"pcm", sample_rate_hz=16000, channels=1)
+
+    assert elevenlabs_stt_audio_bytes(chunk) == b"pcm"
+
+
+def test_elevenlabs_stt_audio_bytes_converts_compressed_audio(monkeypatch):
+    calls = []
+
+    def fake_convert(audio, *, codec, sample_rate_hz, channels):
+        calls.append((audio, codec, sample_rate_hz, channels))
+        return b"converted-pcm"
+
+    monkeypatch.setattr("agent.realtime_voice_elevenlabs_bridge._ffmpeg_to_pcm16le", fake_convert)
+    chunk = AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"webm", sample_rate_hz=16000, channels=1)
+
+    assert elevenlabs_stt_audio_bytes(chunk) == b"converted-pcm"
+    assert calls == [(b"webm", VoiceAudioCodec.WEBM_OPUS, 16000, 1)]
 
 
 def test_elevenlabs_bridge_cli_check_loads_hermes_env(monkeypatch, capsys):

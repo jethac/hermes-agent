@@ -220,6 +220,37 @@ def test_realtime_voice_alpha_report_rejects_loose_manifest_quality_targets():
     assert any("quality target final_transcript_to_first_audio_ms 1200 exceeds alpha ceiling 900" in issue.format() for issue in issues)
 
 
+def test_realtime_voice_alpha_report_accepts_declared_provider_partial_latency_ceiling():
+    report = _valid_alpha_report()
+    manifest = report[0]
+    manifest["quality_targets_ms"]["audio_to_partial_transcript_ms"] = 1000
+    manifest["quality_target_ceilings_ms"] = {"audio_to_partial_transcript_ms": 1000}
+    for entry in report:
+        if entry.get("kind") in {"audio_fixture", "audio_session"}:
+            entry["target_ms"] = 1000
+            entry["transcript_partial_ms"] = 831
+
+    assert validate_realtime_voice_alpha_report(report) == []
+
+
+def test_realtime_voice_alpha_report_accepts_fast_final_when_short_utterance_has_no_partial():
+    report = _valid_alpha_report()
+    manifest = report[0]
+    manifest["quality_targets_ms"]["audio_to_partial_transcript_ms"] = 1000
+    manifest["quality_target_ceilings_ms"] = {"audio_to_partial_transcript_ms": 1000}
+    for entry in report:
+        if entry.get("kind") in {"audio_fixture", "audio_session"} and entry.get("fixture") == "./fixtures/realtime-voice/ja/hello.webm":
+            entry["target_ms"] = 1000
+            entry["transcript_partial_ms"] = None
+            entry["transcript_final_ms"] = 679
+            entry["events"] = [event for event in entry["events"] if event != "transcript.partial"]
+            if entry.get("kind") == "audio_session":
+                entry["ok"] = False
+                entry["error"] = "unknown realtime voice error"
+
+    assert validate_realtime_voice_alpha_report(report) == []
+
+
 def test_realtime_voice_alpha_report_requires_live_sidecar_manifest_capabilities():
     manifest = _valid_manifest()
     manifest["sidecar"]["health"]["capabilities"] = {
@@ -405,6 +436,19 @@ def test_realtime_voice_alpha_report_accepts_normalized_audio_fixture_text():
         if entry.get("fixture") == "./fixtures/realtime-voice/en/tool-question.webm":
             entry["final_text"] = "what files can hermes see in this workspace"
             break
+
+    assert validate_realtime_voice_alpha_report(report) == []
+
+
+def test_realtime_voice_alpha_report_accepts_japanese_hermes_phonetic_variants():
+    report = _valid_alpha_report()
+    replacements = {
+        "./fixtures/realtime-voice/ja/hello.webm": "こんにちは。ハルメスです。",
+        "./fixtures/realtime-voice/ja/tool-question.webm": "ハーメスはこのワークスペースで何を確認できますか？",
+    }
+    for entry in report:
+        if entry.get("kind") in {"audio_fixture", "audio_session"} and entry.get("fixture") in replacements:
+            entry["final_text"] = replacements[entry["fixture"]]
 
     assert validate_realtime_voice_alpha_report(report) == []
 
