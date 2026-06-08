@@ -12921,14 +12921,11 @@ def _realtime_voice_sidecar_healthy(
     timeout: float = _VOICE_SIDECAR_HEALTH_TIMEOUT,
     token: str = "",
 ) -> bool:
-    if not base_url:
-        return False
-    try:
-        with urllib.request.urlopen(_realtime_voice_sidecar_health_request(base_url, token), timeout=timeout) as response:
-            status = int(getattr(response, "status", 200))
-            return 200 <= status < 300
-    except Exception:
-        return False
+    return _realtime_voice_sidecar_health_probe(
+        base_url,
+        timeout=timeout,
+        token=token,
+    )[0]
 
 
 def _realtime_voice_sidecar_health_payload(
@@ -12959,10 +12956,11 @@ def _realtime_voice_sidecar_health_probe(
     try:
         payload = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else str(raw))
     except Exception:
-        return True, None
+        return False, None
     if not isinstance(payload, dict):
-        return True, None
-    return True, _sanitize_realtime_voice_sidecar_health(payload)
+        return False, None
+    sanitized = _sanitize_realtime_voice_sidecar_health(payload)
+    return sanitized.get("ok") is True, sanitized
 
 
 _REALTIME_VOICE_HEALTH_METADATA_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -13118,7 +13116,8 @@ def _realtime_voice_conversation_quality_payload(
     base_url: str,
     health_payload: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    capabilities = health_payload.get("capabilities") if isinstance(health_payload, dict) else {}
+    sidecar_ready = isinstance(health_payload, dict) and health_payload.get("ok") is True
+    capabilities = health_payload.get("capabilities") if sidecar_ready else {}
     capabilities = capabilities if isinstance(capabilities, dict) else {}
     native_s2s = engine == "native_s2s_oracle" and capabilities.get("native_s2s") is True
     streaming_stt = capabilities.get("streaming_stt") is True
@@ -13136,6 +13135,10 @@ def _realtime_voice_conversation_quality_payload(
     elif utterance_stt and tts:
         mode = "turn_based_text"
         reason = "utterance_stt_tts"
+        live_like = False
+    elif base_url and isinstance(health_payload, dict):
+        mode = "unready_sidecar"
+        reason = "sidecar_not_ready"
         live_like = False
     elif base_url and health_payload:
         mode = "limited_sidecar"
@@ -13160,7 +13163,7 @@ def _realtime_voice_conversation_quality_payload(
         "streaming_stt": streaming_stt,
         "utterance_stt": utterance_stt,
         "tts": tts,
-        "sidecar_verified": isinstance(health_payload, dict),
+        "sidecar_verified": sidecar_ready,
     }
 
 

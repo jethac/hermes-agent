@@ -6568,7 +6568,12 @@ class TestRealtimeVoiceWebSocket:
                 return False
 
             def read(self):
-                return b"not-json"
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "kind": "reference",
+                    }
+                ).encode("utf-8")
 
         monkeypatch.setattr(
             self.ws_module,
@@ -6591,7 +6596,7 @@ class TestRealtimeVoiceWebSocket:
             with self.client.websocket_connect(self._url()):
                 pass
         assert exc.value.code == 1011
-        assert "sidecar_missing_capabilities" in exc.value.reason
+        assert "sidecar_missing_stt" in exc.value.reason
 
     def test_rejects_native_s2s_without_configured_sidecar(self, monkeypatch):
         from starlette.websockets import WebSocketDisconnect
@@ -7751,7 +7756,12 @@ class TestRealtimeVoiceWebSocket:
                 return False
 
             def read(self):
-                return b"not-json"
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "kind": "reference",
+                    }
+                ).encode("utf-8")
 
         monkeypatch.setattr(
             self.ws_module,
@@ -7774,9 +7784,107 @@ class TestRealtimeVoiceWebSocket:
         assert response.status_code == 200
         body = response.json()
         assert body["sidecar"]["healthy"] is True
+        assert body["sidecar"]["health"]["ok"] is True
+        assert body["available"] is False
+        assert body["unavailable_reason"] == "sidecar_missing_stt"
+
+    def test_status_marks_invalid_sidecar_health_unhealthy(self, monkeypatch):
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"not-json"
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "frontend_provider": "sidecar",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        response = self.client.get("/api/voice/realtime/status")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["sidecar"]["healthy"] is False
         assert body["sidecar"]["health"] is None
         assert body["available"] is False
-        assert body["unavailable_reason"] == "sidecar_missing_capabilities"
+        assert body["unavailable_reason"] == "sidecar_unhealthy"
+
+    def test_status_rejects_unready_sidecar_capabilities_for_live_like(self, monkeypatch):
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": False,
+                        "kind": "reference",
+                        "capabilities": {
+                            "streaming_stt": True,
+                            "tts": True,
+                            "native_s2s": False,
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "frontend_provider": "sidecar",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        response = self.client.get("/api/voice/realtime/status")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["sidecar"]["healthy"] is False
+        assert body["sidecar"]["health"]["ok"] is False
+        assert body["conversation_quality"] == {
+            "mode": "unready_sidecar",
+            "reason": "sidecar_not_ready",
+            "live_like": False,
+            "partial_transcripts": False,
+            "barge_in": True,
+            "native_s2s": False,
+            "streaming_stt": False,
+            "utterance_stt": False,
+            "tts": False,
+            "sidecar_verified": False,
+        }
+        assert body["available"] is False
+        assert body["unavailable_reason"] == "sidecar_unhealthy"
 
     def test_status_marks_native_s2s_sidecar_unavailable_without_native_capability(self, monkeypatch):
         class FakeResponse:
