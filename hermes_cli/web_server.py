@@ -645,6 +645,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Minimum verified realtime voice smoke report runs required for production readiness",
         "category": "voice",
     },
+    "voice.realtime.production_evidence_max_age_days": {
+        "type": "number",
+        "description": "Maximum age in days for realtime voice production evidence before it must be re-collected",
+        "category": "voice",
+    },
     "voice.realtime.production_review_report": {
         "type": "string",
         "description": "Path to a realtime voice production launch-review JSON report required after smoke evidence passes",
@@ -12828,6 +12833,7 @@ def _realtime_voice_production_evidence_payload(
     current_manifest: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     min_runs = _positive_int_config(realtime.get("production_evidence_min_runs"), default=3)
+    max_age_days = _positive_int_config(realtime.get("production_evidence_max_age_days"), default=14)
     raw_path = str(
         realtime.get("production_evidence_report")
         or realtime.get("alpha_evidence_report")
@@ -12840,6 +12846,7 @@ def _realtime_voice_production_evidence_payload(
             "report_path": None,
             "runs": 0,
             "min_runs": min_runs,
+            "max_age_days": max_age_days,
             "issues": ["missing_evidence_report"],
         }
 
@@ -12854,7 +12861,11 @@ def _realtime_voice_production_evidence_payload(
         )
 
         runs = load_realtime_voice_smoke_report_runs(report_path)
-        issues = validate_realtime_voice_alpha_report_runs(runs, min_runs=min_runs)
+        issues = validate_realtime_voice_alpha_report_runs(
+            runs,
+            min_runs=min_runs,
+            max_collected_age_days=max_age_days,
+        )
         if current_manifest is not None:
             evidence_manifest = _realtime_voice_first_evidence_manifest(runs)
             if evidence_manifest is not None and (
@@ -12875,6 +12886,7 @@ def _realtime_voice_production_evidence_payload(
             "verified": False,
             "report_path": raw_path,
             "min_runs": min_runs,
+            "max_age_days": max_age_days,
             "issues": [f"invalid_evidence_report:{sanitize_realtime_voice_error(exc)}"],
         }
 
@@ -12885,6 +12897,7 @@ def _realtime_voice_production_evidence_payload(
         "report_path": raw_path,
         "runs": len(runs),
         "min_runs": min_runs,
+        "max_age_days": max_age_days,
         "entries": sum(len(entries) for _label, entries in runs),
         "summary": summary,
         "issues": formatted_issues,
