@@ -12,6 +12,7 @@ import math
 import re
 import unicodedata
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -74,6 +75,8 @@ ALPHA_REQUIRED_QUALITY_TARGETS_MS = {
     "barge_in_ack_ms": 150,
 }
 
+_EVIDENCE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
+
 
 @dataclass(frozen=True)
 class RealtimeVoiceSmokeReportIssue:
@@ -131,6 +134,7 @@ def validate_realtime_voice_alpha_report_runs(
                 )
             )
     fingerprints: dict[tuple[Any, ...], str] = {}
+    run_ids: dict[str, str] = {}
     for label, entries in runs:
         manifest = _first_entry_by_kind(entries, "manifest")
         if manifest is None:
@@ -138,6 +142,19 @@ def validate_realtime_voice_alpha_report_runs(
         fingerprint = realtime_voice_alpha_manifest_fingerprint(manifest)
         if fingerprint not in fingerprints:
             fingerprints[fingerprint] = label
+        run_id = _manifest_run_id(manifest)
+        if run_id:
+            previous_label = run_ids.get(run_id)
+            if previous_label is not None:
+                issues.append(
+                    RealtimeVoiceSmokeReportIssue(
+                        "evidence",
+                        "alpha runs reused evidence run_id",
+                        f"{previous_label}, {label}: {run_id}",
+                    )
+                )
+            else:
+                run_ids[run_id] = label
     if len(fingerprints) > 1:
         labels = ", ".join(sorted(fingerprints.values()))
         issues.append(
@@ -352,6 +369,14 @@ def _validate_alpha_manifest_entry(
         issues.append(RealtimeVoiceSmokeReportIssue("manifest", "manifest entry was not ok", "manifest"))
     if entry.get("available") is not True:
         issues.append(RealtimeVoiceSmokeReportIssue("manifest", "manifest was not realtime-available", "manifest"))
+    run_id = _manifest_run_id(entry)
+    if not run_id:
+        issues.append(RealtimeVoiceSmokeReportIssue("manifest", "missing valid evidence run_id", "manifest"))
+    collected_at = str(entry.get("collected_at") or "").strip()
+    if not collected_at:
+        issues.append(RealtimeVoiceSmokeReportIssue("manifest", "missing collected_at timestamp", "manifest"))
+    elif not _valid_manifest_timestamp(collected_at):
+        issues.append(RealtimeVoiceSmokeReportIssue("manifest", "invalid collected_at timestamp", "manifest"))
     conversation_quality = (
         entry.get("conversation_quality")
         if isinstance(entry.get("conversation_quality"), Mapping)
@@ -442,6 +467,22 @@ def _primary_language_set(values: Any) -> set[str]:
         for language in [item.strip().lower().split("-", 1)[0]]
         if language
     }
+
+
+def _manifest_run_id(entry: Mapping[str, Any]) -> str:
+    value = str(entry.get("run_id") or "").strip()
+    return value if _EVIDENCE_RUN_ID_RE.fullmatch(value) else ""
+
+
+def _valid_manifest_timestamp(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
 
 
 def _entries_by_kind(entries: Sequence[Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:

@@ -6,6 +6,7 @@ import os
 import json
 import shutil
 import sys
+from itertools import count
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
@@ -24,6 +25,12 @@ from hermes_cli.config import (
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
+
+_REALTIME_VOICE_RUN_ID_COUNTER = count(1)
+
+
+def _next_realtime_voice_run_id():
+    return f"web-status-test-run-{next(_REALTIME_VOICE_RUN_ID_COUNTER):04d}"
 
 
 # Path to the test-only example-dashboard plugin. Lives under
@@ -51,6 +58,8 @@ def _valid_realtime_voice_alpha_report():
         {
             "kind": "manifest",
             "ok": True,
+            "run_id": _next_realtime_voice_run_id(),
+            "collected_at": "2026-06-08T00:00:00Z",
             "engine": "text_oracle_tts",
             "frontend_provider": "",
             "frontend_model": "",
