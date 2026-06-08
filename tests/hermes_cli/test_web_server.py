@@ -7,6 +7,7 @@ import json
 import shutil
 import sys
 from itertools import count
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
@@ -31,6 +32,10 @@ _REALTIME_VOICE_RUN_ID_COUNTER = count(1)
 
 def _next_realtime_voice_run_id():
     return f"web-status-test-run-{next(_REALTIME_VOICE_RUN_ID_COUNTER):04d}"
+
+
+def _fresh_realtime_voice_collected_at():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 # Path to the test-only example-dashboard plugin. Lives under
@@ -59,7 +64,7 @@ def _valid_realtime_voice_alpha_report():
             "kind": "manifest",
             "ok": True,
             "run_id": _next_realtime_voice_run_id(),
-            "collected_at": "2026-06-08T00:00:00Z",
+            "collected_at": _fresh_realtime_voice_collected_at(),
             "engine": "text_oracle_tts",
             "frontend_provider": "",
             "frontend_model": "",
@@ -3167,6 +3172,7 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["type"] == "string"
         assert "smoke report" in CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.production_evidence_min_runs"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.production_evidence_max_age_days"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.production_review_report"]["type"] == "string"
         assert "launch-review" in CONFIG_SCHEMA["voice.realtime.production_review_report"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
@@ -6708,6 +6714,7 @@ class TestRealtimeVoiceWebSocket:
             "report_path": None,
             "runs": 0,
             "min_runs": 3,
+            "max_age_days": 14,
             "issues": ["missing_evidence_report"],
         }
         assert readiness["launch_review"]["required"] is False
@@ -7270,6 +7277,7 @@ class TestRealtimeVoiceWebSocket:
             "report_path": None,
             "runs": 0,
             "min_runs": 3,
+            "max_age_days": 14,
             "issues": ["missing_evidence_report"],
         }
         assert readiness["launch_review"]["required"] is False
@@ -7337,6 +7345,7 @@ class TestRealtimeVoiceWebSocket:
             "report_path": str(evidence_path),
             "runs": 3,
             "min_runs": 3,
+            "max_age_days": 14,
             "entries": 45,
             "summary": {
                 "runs": 3,
@@ -7358,6 +7367,70 @@ class TestRealtimeVoiceWebSocket:
             },
             "issues": [],
         }
+
+    def test_status_rejects_stale_realtime_voice_production_evidence(self, monkeypatch, tmp_path):
+        evidence_path = tmp_path / "evidence"
+        evidence_path.mkdir()
+        stale_timestamp = (
+            datetime.now(timezone.utc) - timedelta(days=30)
+        ).isoformat().replace("+00:00", "Z")
+        for index in range(3):
+            report = _valid_realtime_voice_alpha_report()
+            report[0]["collected_at"] = stale_timestamp
+            (evidence_path / f"realtime-voice-alpha-{index}.json").write_text(
+                json.dumps(report, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": True,
+                            "tts": True,
+                            "native_s2s": False,
+                            "output_languages": ["en", "ja"],
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                        "production_evidence_report": str(evidence_path),
+                        "production_evidence_max_age_days": 14,
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        body = self.client.get("/api/voice/realtime/status").json()
+
+        readiness = body["production_readiness"]
+        assert readiness["ready"] is False
+        assert readiness["evidence_ready"] is False
+        assert readiness["level"] == "live_like"
+        assert readiness["evidence"]["verified"] is False
+        assert readiness["evidence"]["max_age_days"] == 14
+        assert any("alpha run evidence is older than 14 day(s)" in issue for issue in readiness["issues"])
 
     def test_status_marks_streaming_text_sidecar_production_ready_with_launch_review(
         self,

@@ -12,7 +12,7 @@ import math
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -114,9 +114,15 @@ def validate_realtime_voice_alpha_report_runs(
     runs: Sequence[tuple[str, Sequence[Mapping[str, Any]]]],
     *,
     min_runs: int = 1,
+    max_collected_age_days: int | None = None,
+    now: datetime | None = None,
 ) -> list[RealtimeVoiceSmokeReportIssue]:
     issues: list[RealtimeVoiceSmokeReportIssue] = []
     required_runs = max(1, int(min_runs or 1))
+    max_age_days = _positive_int(max_collected_age_days)
+    current_time = now if isinstance(now, datetime) else datetime.now(timezone.utc)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=timezone.utc)
     if len(runs) < required_runs:
         issues.append(
             RealtimeVoiceSmokeReportIssue(
@@ -155,6 +161,18 @@ def validate_realtime_voice_alpha_report_runs(
                 )
             else:
                 run_ids[run_id] = label
+        collected_at = _parse_manifest_timestamp(str(manifest.get("collected_at") or ""))
+        if collected_at is not None and max_age_days is not None:
+            age_seconds = (current_time - collected_at).total_seconds()
+            max_age_seconds = max_age_days * 24 * 60 * 60
+            if age_seconds > max_age_seconds:
+                issues.append(
+                    RealtimeVoiceSmokeReportIssue(
+                        "evidence",
+                        f"alpha run evidence is older than {max_age_days} day(s)",
+                        f"{label}: {manifest.get('collected_at')}",
+                    )
+                )
     if len(fingerprints) > 1:
         labels = ", ".join(sorted(fingerprints.values()))
         issues.append(
@@ -475,14 +493,20 @@ def _manifest_run_id(entry: Mapping[str, Any]) -> str:
 
 
 def _valid_manifest_timestamp(value: str) -> bool:
+    return _parse_manifest_timestamp(value) is not None
+
+
+def _parse_manifest_timestamp(value: str) -> datetime | None:
     text = str(value or "").strip()
     if not text:
-        return False
+        return None
     try:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
-        return False
-    return parsed.tzinfo is not None
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
 
 
 def _entries_by_kind(entries: Sequence[Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:

@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from itertools import count
 
 from agent.realtime_voice_smoke_report import (
@@ -534,6 +535,25 @@ def test_realtime_voice_alpha_report_runs_reject_duplicate_run_ids(tmp_path):
     issues = validate_realtime_voice_alpha_report_runs(runs, min_runs=3)
 
     assert any("alpha runs reused evidence run_id" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_runs_reject_stale_evidence_when_max_age_is_set(tmp_path):
+    runs = []
+    for index in range(3):
+        report = _valid_alpha_report()
+        report[0]["collected_at"] = "2026-05-01T00:00:00Z"
+        path = tmp_path / f"voice-smoke-{index}.json"
+        path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+        runs.append((str(path), load_realtime_voice_smoke_report(path)))
+
+    issues = validate_realtime_voice_alpha_report_runs(
+        runs,
+        min_runs=3,
+        max_collected_age_days=14,
+        now=datetime(2026, 6, 8, tzinfo=timezone.utc),
+    )
+
+    assert any("alpha run evidence is older than 14 day(s)" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path):
