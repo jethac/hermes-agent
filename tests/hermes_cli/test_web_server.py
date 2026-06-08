@@ -214,7 +214,7 @@ def _valid_realtime_voice_production_review_report():
     return {
         "kind": "realtime_voice_production_review",
         "reviewer": "qa@example.test",
-        "reviewed_at": "2026-06-08T00:00:00Z",
+        "reviewed_at": _fresh_realtime_voice_collected_at(),
         "checks": {key: True for key in _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS},
         "evidence": {
             key: {
@@ -7157,7 +7157,9 @@ class TestRealtimeVoiceWebSocket:
         assert body["production_readiness"]["issues"] == ["missing_production_review_report"]
         assert body["production_readiness"]["launch_review"]["required"] is True
         assert body["production_readiness"]["launch_review"]["verified"] is False
-        assert body["production_readiness"]["evidence"] == {
+        evidence = body["production_readiness"]["evidence"]
+        assert evidence["newest_collected_at"]
+        assert evidence == {
             "configured": True,
             "verified": True,
             "report_path": str(evidence_path),
@@ -7165,6 +7167,7 @@ class TestRealtimeVoiceWebSocket:
             "min_runs": 3,
             "max_age_days": 14,
             "entries": 45,
+            "newest_collected_at": evidence["newest_collected_at"],
             "summary": {
                 "runs": 3,
                 "entries": 42,
@@ -7322,6 +7325,71 @@ class TestRealtimeVoiceWebSocket:
             "notes": True,
             "artifacts": 1,
         }
+
+    def test_status_rejects_launch_review_that_predates_alpha_evidence(
+        self,
+        monkeypatch,
+        tmp_path,
+    ):
+        evidence_path = tmp_path / "evidence"
+        evidence_path.mkdir()
+        for index in range(3):
+            (evidence_path / f"realtime-voice-alpha-{index}.json").write_text(
+                json.dumps(_valid_realtime_voice_alpha_report(), ensure_ascii=False),
+                encoding="utf-8",
+            )
+        review = _valid_realtime_voice_production_review_report()
+        review["reviewed_at"] = "2026-01-01T00:00:00Z"
+        review_path = tmp_path / "production-review.json"
+        review_path.write_text(json.dumps(review, ensure_ascii=False), encoding="utf-8")
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": True,
+                            "tts": True,
+                            "native_s2s": False,
+                            "output_languages": ["en", "ja"],
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                        "production_evidence_report": str(evidence_path),
+                        "production_review_report": str(review_path),
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        readiness = self.client.get("/api/voice/realtime/status").json()["production_readiness"]
+
+        assert readiness["ready"] is False
+        assert readiness["evidence_ready"] is True
+        assert readiness["level"] == "evidence_ready"
+        assert readiness["launch_review"]["verified"] is False
+        assert "review_predates_evidence" in readiness["issues"]
 
     def test_status_rejects_production_evidence_from_different_realtime_stack(self, monkeypatch, tmp_path):
         evidence_path = tmp_path / "evidence"

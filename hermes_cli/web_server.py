@@ -12742,6 +12742,7 @@ def _realtime_voice_production_launch_review_payload(
     realtime: Dict[str, Any],
     *,
     required: bool,
+    evidence: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     required_checks = dict(_REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS)
     raw_path = str(
@@ -12783,8 +12784,17 @@ def _realtime_voice_production_launch_review_payload(
     issues = validate_production_review_report(report)
     reviewed_at = report.get("reviewed_at")
     reviewer = report.get("reviewer")
-    evidence = report.get("evidence")
-    evidence = evidence if isinstance(evidence, Mapping) else {}
+    raw_review_evidence = report.get("evidence")
+    review_evidence = raw_review_evidence if isinstance(raw_review_evidence, Mapping) else {}
+    reviewed_at_dt = _realtime_voice_parse_timestamp(reviewed_at)
+    production_evidence = evidence if isinstance(evidence, Mapping) else {}
+    newest_collected_at = str(production_evidence.get("newest_collected_at") or "").strip()
+    newest_collected_dt = _realtime_voice_parse_timestamp(newest_collected_at)
+    if newest_collected_dt is not None:
+        if reviewed_at_dt is None:
+            issues.append("reviewed_at_invalid")
+        elif reviewed_at_dt < newest_collected_dt:
+            issues.append("review_predates_evidence")
     return {
         "required": True,
         "configured": True,
@@ -12793,7 +12803,7 @@ def _realtime_voice_production_launch_review_payload(
         "reviewed_at": str(reviewed_at or "") or None,
         "reviewer": str(reviewer or "") or None,
         "required_checks": required_checks,
-        "evidence": _realtime_voice_production_review_evidence_summary(evidence),
+        "evidence": _realtime_voice_production_review_evidence_summary(review_evidence),
         "issues": issues,
     }
 
@@ -12880,6 +12890,7 @@ def _realtime_voice_production_evidence_payload(
                     )
                 )
         summary = summarize_realtime_voice_smoke_report_runs(runs)
+        newest_collected_at = _realtime_voice_newest_evidence_collected_at(runs)
     except Exception as exc:
         return {
             "configured": True,
@@ -12899,9 +12910,51 @@ def _realtime_voice_production_evidence_payload(
         "min_runs": min_runs,
         "max_age_days": max_age_days,
         "entries": sum(len(entries) for _label, entries in runs),
+        "newest_collected_at": newest_collected_at,
         "summary": summary,
         "issues": formatted_issues,
     }
+
+
+def _realtime_voice_newest_evidence_collected_at(
+    runs: Sequence[tuple[str, Sequence[Mapping[str, Any]]]],
+) -> Optional[str]:
+    newest_dt: Optional[datetime] = None
+    newest_value = ""
+    for _label, entries in runs:
+        manifest = _realtime_voice_first_manifest_entry(entries)
+        if manifest is None:
+            continue
+        value = str(manifest.get("collected_at") or "").strip()
+        parsed = _realtime_voice_parse_timestamp(value)
+        if parsed is None:
+            continue
+        if newest_dt is None or parsed > newest_dt:
+            newest_dt = parsed
+            newest_value = value
+    return newest_value or None
+
+
+def _realtime_voice_first_manifest_entry(
+    entries: Sequence[Mapping[str, Any]],
+) -> Optional[Mapping[str, Any]]:
+    for entry in entries:
+        if str(entry.get("kind") or "").strip() == "manifest":
+            return entry
+    return None
+
+
+def _realtime_voice_parse_timestamp(value: Any) -> Optional[datetime]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
 
 
 def _realtime_voice_current_evidence_manifest(
@@ -13187,6 +13240,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     launch_review = _realtime_voice_production_launch_review_payload(
         realtime,
         required=production_evidence.get("verified") is True,
+        evidence=production_evidence,
     )
 
     unavailable_reason = ""
@@ -13370,6 +13424,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     launch_review = _realtime_voice_production_launch_review_payload(
         realtime,
         required=production_evidence.get("verified") is True,
+        evidence=production_evidence,
     )
     production_readiness = _realtime_voice_production_readiness_payload(
         enabled=realtime.get("enabled") is True,
