@@ -427,8 +427,9 @@ def create_deepgram_streaming_stt_bridge_app(runtime: Optional[DeepgramStreaming
     async def health(request: Request):
         if not _authorized(request.headers, runtime.auth_token):
             raise HTTPException(status_code=401, detail="unauthorized")
+        ready = bool(runtime.api_key) and _module_available("websockets")
         return {
-            "ok": bool(runtime.api_key),
+            "ok": ready,
             "kind": "streaming_stt_bridge",
             "frontend": {
                 "provider": "deepgram",
@@ -438,9 +439,9 @@ def create_deepgram_streaming_stt_bridge_app(runtime: Optional[DeepgramStreaming
                 "tts_model_languages": sorted(runtime.tts_model_by_language.keys()),
             },
             "capabilities": {
-                "streaming_stt": bool(runtime.api_key),
-                "tts": bool(runtime.api_key),
-                "streaming_tts": bool(runtime.api_key),
+                "streaming_stt": ready,
+                "tts": ready,
+                "streaming_tts": ready,
                 "native_s2s": False,
                 "output_languages": deepgram_tts_output_languages(runtime),
             },

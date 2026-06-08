@@ -294,6 +294,32 @@ def test_deepgram_bridge_health_advertises_output_languages():
     assert body["capabilities"]["output_languages"] == ["en", "ja"]
 
 
+def test_deepgram_bridge_health_requires_websocket_dependency(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_deepgram_bridge._module_available",
+        lambda name: name != "websockets",
+    )
+    client = TestClient(
+        create_deepgram_streaming_stt_bridge_app(
+            DeepgramStreamingSTTBridgeConfig(
+                api_key="deepgram-secret",
+                language="multi",
+                tts_model_by_language={"ja": "aura-2-akiko-ja"},
+            )
+        )
+    )
+
+    body = client.get("/health").json()
+
+    assert body["ok"] is False
+    assert body["capabilities"]["streaming_stt"] is False
+    assert body["capabilities"]["tts"] is False
+    assert body["capabilities"]["streaming_tts"] is False
+    assert body["capabilities"]["output_languages"] == ["en", "ja"]
+
+
 def test_deepgram_bridge_cli_check_reports_missing_env(monkeypatch, capsys):
     from hermes_cli import realtime_voice_deepgram_bridge
 
