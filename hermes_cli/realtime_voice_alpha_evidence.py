@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -235,13 +236,13 @@ def managed_deepgram_bridge_for_evidence(args: argparse.Namespace) -> Iterator[N
         if not bridge_url:
             raise RuntimeError("voice.realtime.streaming_stt_base_url is required")
         token = _streaming_bridge_token_for_evidence(realtime, env_on_disk)
+        prerequisite_issues = _deepgram_bridge_prerequisite_issues_for_evidence(env_on_disk)
+        if prerequisite_issues:
+            raise RuntimeError(
+                "Deepgram bridge prerequisite check failed: "
+                + "; ".join(prerequisite_issues)
+            )
         if not _deepgram_bridge_healthy(bridge_url, token=token):
-            prerequisite_issues = _deepgram_bridge_prerequisite_issues_for_evidence(env_on_disk)
-            if prerequisite_issues:
-                raise RuntimeError(
-                    "Deepgram bridge prerequisite check failed: "
-                    + "; ".join(prerequisite_issues)
-                )
             host, port = _deepgram_bridge_bind(args, bridge_url)
             proc = _spawn_deepgram_bridge_for_evidence(host, port, env_on_disk)
             _wait_for_deepgram_bridge_health(
@@ -438,7 +439,15 @@ def _deepgram_bridge_healthy(bridge_url: str, *, token: str = "") -> bool:
     request = Request(f"{bridge_url.rstrip('/')}/health", headers=headers)
     try:
         with urlopen(request, timeout=1.0) as response:
-            return int(getattr(response, "status", 0) or 0) == 200
+            if int(getattr(response, "status", 0) or 0) != 200:
+                return False
+            try:
+                payload = json.loads(response.read().decode("utf-8"))
+            except Exception:
+                return False
+            if not isinstance(payload, dict):
+                return False
+            return payload.get("ok") is True
     except (OSError, URLError):
         return False
 

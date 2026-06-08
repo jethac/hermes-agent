@@ -51,6 +51,21 @@ class _FakeSidecarProcess:
         self.alive = False
 
 
+class _FakeHealthResponse:
+    def __init__(self, payload, status=200):
+        self.payload = payload
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
+
+
 def _fake_web_server_module(
     *,
     autostart=False,
@@ -541,6 +556,33 @@ def test_alpha_evidence_runner_leaves_existing_healthy_sidecar_running(monkeypat
     assert proc.terminated is False
 
 
+def test_deepgram_bridge_health_requires_ok_true(monkeypatch):
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return _FakeHealthResponse({"ok": True})
+
+    monkeypatch.setattr(realtime_voice_alpha_evidence, "urlopen", fake_urlopen)
+
+    assert realtime_voice_alpha_evidence._deepgram_bridge_healthy(
+        "http://127.0.0.1:8766",
+        token="secret-token",
+    ) is True
+    assert requests[0][0].headers["Authorization"] == "Bearer secret-token"
+    assert requests[0][1] == 1.0
+
+
+def test_deepgram_bridge_health_rejects_ok_false(monkeypatch):
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "urlopen",
+        lambda request, timeout: _FakeHealthResponse({"ok": False}),
+    )
+
+    assert realtime_voice_alpha_evidence._deepgram_bridge_healthy("http://127.0.0.1:8766") is False
+
+
 def test_alpha_evidence_runner_can_start_deepgram_bridge(monkeypatch, tmp_path):
     _write_required_audio_fixtures(tmp_path)
     monkeypatch.chdir(tmp_path)
@@ -636,6 +678,12 @@ def test_alpha_evidence_runner_does_not_start_existing_healthy_deepgram_bridge(
         "_deepgram_bridge_healthy",
         lambda url, *, token="": True,
     )
+    prerequisite_calls = []
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_deepgram_bridge_prerequisite_issues_for_evidence",
+        lambda env_on_disk: prerequisite_calls.append(dict(env_on_disk)) or [],
+    )
     monkeypatch.setattr(
         realtime_voice_alpha_evidence,
         "_spawn_deepgram_bridge_for_evidence",
@@ -665,6 +713,68 @@ def test_alpha_evidence_runner_does_not_start_existing_healthy_deepgram_bridge(
     )
 
     assert result == 0
+    assert prerequisite_calls == [{"HERMES_STREAMING_STT_BRIDGE_TOKEN": "secret-token"}]
+
+
+def test_alpha_evidence_runner_rejects_existing_deepgram_bridge_when_prerequisites_fail(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(
+            realtime_config={
+                "frontend_provider": "reference",
+                "streaming_stt_base_url": "http://127.0.0.1:8766",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_deepgram_bridge_healthy",
+        lambda url, *, token="": True,
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_deepgram_bridge_prerequisite_issues_for_evidence",
+        lambda env_on_disk: ["HERMES_STREAMING_STT_BRIDGE_TOKEN is required in strict mode"],
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_spawn_deepgram_bridge_for_evidence",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not spawn")),
+    )
+    calls = []
+
+    def fake_run_doctor(args):
+        calls.append(args)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+            "--start-deepgram-bridge",
+        ]
+    )
+
+    assert result == 1
+    assert calls == []
+    error = capsys.readouterr().err
+    assert "Deepgram bridge prerequisite check failed" in error
+    assert "HERMES_STREAMING_STT_BRIDGE_TOKEN is required in strict mode" in error
 
 
 def test_alpha_evidence_runner_refuses_to_autostart_remote_deepgram_bridge(
