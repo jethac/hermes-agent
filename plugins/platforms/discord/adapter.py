@@ -121,6 +121,11 @@ from gateway.platforms.base import (
 )
 from tools.url_safety import is_safe_url
 
+try:
+    from realtime_voice import DiscordRealtimeVoiceSession
+except ImportError:
+    from .realtime_voice import DiscordRealtimeVoiceSession
+
 
 async def _wait_for_ready_or_bot_exit(
     ready_event: asyncio.Event,
@@ -356,9 +361,17 @@ class VoiceReceiver:
     SAMPLE_RATE = 48000        # Discord native rate
     CHANNELS = 2               # Discord sends stereo
 
-    def __init__(self, voice_client, allowed_user_ids: set = None):
+    def __init__(
+        self,
+        voice_client,
+        allowed_user_ids: Optional[set] = None,
+        realtime_frame_callback: Optional[Callable[[int, bytes], None]] = None,
+        realtime_speech_start_callback: Optional[Callable[[int], None]] = None,
+    ):
         self._vc = voice_client
         self._allowed_user_ids = allowed_user_ids or set()
+        self._realtime_frame_callback = realtime_frame_callback
+        self._realtime_speech_start_callback = realtime_speech_start_callback
         self._running = False
 
         # Decryption
@@ -591,9 +604,25 @@ class VoiceReceiver:
             if ssrc not in self._decoders:
                 self._decoders[ssrc] = discord.opus.Decoder()
             pcm = self._decoders[ssrc].decode(decrypted)
+            realtime_user_id = 0
+            realtime_speech_started = False
             with self._lock:
+                realtime_speech_started = not self._buffers[ssrc]
                 self._buffers[ssrc].extend(pcm)
                 self._last_packet_time[ssrc] = time.monotonic()
+                realtime_user_id = self._ssrc_to_user.get(ssrc, 0)
+            if not realtime_user_id:
+                realtime_user_id = self._infer_user_for_ssrc(ssrc)
+            if realtime_user_id and realtime_speech_started and self._realtime_speech_start_callback:
+                try:
+                    self._realtime_speech_start_callback(realtime_user_id)
+                except Exception as cb_exc:
+                    logger.debug("Discord realtime voice speech-start callback failed: %s", cb_exc)
+            if realtime_user_id and self._realtime_frame_callback:
+                try:
+                    self._realtime_frame_callback(realtime_user_id, pcm)
+                except Exception as cb_exc:
+                    logger.debug("Discord realtime voice frame callback failed: %s", cb_exc)
         except Exception as e:
             with self._lock:
                 self._decoders.pop(ssrc, None)
@@ -789,6 +818,10 @@ class DiscordAdapter(BasePlatformAdapter):
         self._voice_mixers: Dict[int, Any] = {}  # guild_id -> VoiceMixer
         self._ambient_pcm_cache: Optional[bytes] = None  # decoded ambient bed
         self._voice_fx_cfg: Dict[str, Any] = self._load_voice_fx_config()
+        # Realtime voice sidecar bridge.  Opt-in: keeps legacy Discord voice
+        # capture/TTS behavior unchanged unless discord.realtime_voice.enabled.
+        self._realtime_voice_cfg: Dict[str, Any] = self._load_realtime_voice_config()
+        self._realtime_voice_sessions: Dict[int, DiscordRealtimeVoiceSession] = {}
         # Track threads where the bot has participated so follow-up messages
         # in those threads don't require @mention.  Persisted to disk so the
         # set survives gateway restarts.
@@ -2612,6 +2645,67 @@ class DiscordAdapter(BasePlatformAdapter):
             logger.debug("Could not load discord.voice_fx config: %s", e)
         return defaults
 
+    def _load_realtime_voice_config(self) -> Dict[str, Any]:
+        """Read Discord realtime voice settings from config.yaml.
+
+        Feature is disabled by default. Configure under
+        ``discord.realtime_voice``; ``voice.realtime`` is also consulted for
+        shared sidecar/provider defaults.
+        """
+        defaults: Dict[str, Any] = {
+            "enabled": False,
+            "sidecar_base_url": "",
+            "sidecar_token": "",
+            "frontend_provider": None,
+            "frontend_model": None,
+            "oracle_model": None,
+            "tts_provider": None,
+            "sidecar_connect_timeout_seconds": 10.0,
+        }
+        try:
+            from hermes_cli.config import read_raw_config
+            cfg = read_raw_config() or {}
+            shared = (((cfg.get("voice") or {}).get("realtime") or {}) if isinstance(cfg, dict) else {})
+            discord_rt = (((cfg.get("discord") or {}).get("realtime_voice") or {}) if isinstance(cfg, dict) else {})
+            if isinstance(shared, dict):
+                for key, value in shared.items():
+                    if key != "enabled" and key in defaults and value is not None:
+                        defaults[key] = value
+            if isinstance(discord_rt, dict):
+                for key, value in discord_rt.items():
+                    if key in defaults and value is not None:
+                        defaults[key] = value
+        except Exception as e:
+            logger.debug("Could not load discord.realtime_voice config: %s", e)
+        if not defaults.get("sidecar_base_url"):
+            defaults["sidecar_base_url"] = os.getenv("HERMES_REALTIME_VOICE_SIDECAR_URL", "")
+        if not defaults.get("sidecar_token"):
+            defaults["sidecar_token"] = os.getenv("HERMES_REALTIME_VOICE_SIDECAR_TOKEN", "")
+        return defaults
+
+    def _schedule_realtime_voice_frame(self, guild_id: int, user_id: int, pcm: bytes) -> None:
+        session = self._realtime_voice_sessions.get(guild_id)
+        if session is None:
+            return
+        task = asyncio.create_task(session.handle_pcm_frame(user_id=user_id, pcm48_stereo=pcm))
+        task.add_done_callback(self._log_realtime_voice_task_result)
+
+    def _schedule_realtime_voice_speech_start(self, guild_id: int, user_id: int) -> None:
+        session = self._realtime_voice_sessions.get(guild_id)
+        if session is None:
+            return
+        task = asyncio.create_task(session.handle_speech_start(user_id=user_id))
+        task.add_done_callback(self._log_realtime_voice_task_result)
+
+    @staticmethod
+    def _log_realtime_voice_task_result(task: asyncio.Task) -> None:
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.debug("Discord realtime voice callback task failed: %s", exc)
+
     def _get_ambient_pcm(self) -> Optional[bytes]:
         """Return decoded 48k/stereo/s16le PCM for the ambient idle bed.
 
@@ -2637,6 +2731,37 @@ class DiscordAdapter(BasePlatformAdapter):
             pcm = synth_ambient_pcm()
         self._ambient_pcm_cache = pcm
         return pcm
+
+    async def _start_realtime_voice_session(self, guild_id: int, voice_channel_id: int) -> None:
+        """Start the Discord realtime sidecar bridge for a joined voice channel."""
+        cfg = getattr(self, "_realtime_voice_cfg", {}) or {}
+        sidecar_base_url = str(cfg.get("sidecar_base_url") or "").strip()
+        if not sidecar_base_url:
+            logger.warning("discord.realtime_voice.enabled is true but no sidecar_base_url is configured")
+            return
+        existing = self._realtime_voice_sessions.pop(guild_id, None)
+        if existing:
+            await existing.close()
+        session = DiscordRealtimeVoiceSession(
+            guild_id=guild_id,
+            voice_channel_id=voice_channel_id,
+            text_channel_id=self._voice_text_channels.get(guild_id),
+            sidecar_base_url=sidecar_base_url,
+            sidecar_token=str(cfg.get("sidecar_token") or "") or None,
+            frontend_provider=cfg.get("frontend_provider"),
+            frontend_model=cfg.get("frontend_model"),
+            oracle_model=cfg.get("oracle_model"),
+            tts_provider=cfg.get("tts_provider"),
+            sidecar_connect_timeout_seconds=float(cfg.get("sidecar_connect_timeout_seconds") or 10.0),
+            mixer=getattr(self, "_voice_mixers", {}).get(guild_id),
+        )
+        try:
+            await session.start()
+        except Exception:
+            await session.close()
+            raise
+        self._realtime_voice_sessions[guild_id] = session
+        logger.info("Discord realtime voice session started (guild=%d, channel=%d)", guild_id, voice_channel_id)
 
     async def _install_voice_mixer(self, guild_id: int, vc) -> None:
         """Create a VoiceMixer, start the ambient bed, and play it on the VC.
@@ -2752,7 +2877,29 @@ class DiscordAdapter(BasePlatformAdapter):
 
             # Start voice receiver (Phase 2: listen to users)
             try:
-                receiver = VoiceReceiver(vc, allowed_user_ids=self._allowed_user_ids)
+                loop = asyncio.get_running_loop()
+
+                def _realtime_frame_callback(user_id: int, pcm: bytes) -> None:
+                    loop.call_soon_threadsafe(
+                        self._schedule_realtime_voice_frame,
+                        guild_id,
+                        user_id,
+                        bytes(pcm),
+                    )
+
+                def _realtime_speech_start_callback(user_id: int) -> None:
+                    loop.call_soon_threadsafe(
+                        self._schedule_realtime_voice_speech_start,
+                        guild_id,
+                        user_id,
+                    )
+
+                receiver = VoiceReceiver(
+                    vc,
+                    allowed_user_ids=self._allowed_user_ids,
+                    realtime_frame_callback=_realtime_frame_callback,
+                    realtime_speech_start_callback=_realtime_speech_start_callback,
+                )
                 receiver.start()
                 self._voice_receivers[guild_id] = receiver
                 self._voice_listen_tasks[guild_id] = asyncio.ensure_future(
@@ -2764,17 +2911,32 @@ class DiscordAdapter(BasePlatformAdapter):
             # Phase 3: install the continuous mixer (ambient bed + ducked
             # speech).  Best-effort — if it fails we fall back to the legacy
             # one-shot FFmpegPCMAudio playback path in play_in_voice_channel.
-            if getattr(self, "_voice_fx_cfg", {}).get("enabled"):
+            realtime_enabled = bool(getattr(self, "_realtime_voice_cfg", {}).get("enabled"))
+            if getattr(self, "_voice_fx_cfg", {}).get("enabled") or realtime_enabled:
                 try:
                     await self._install_voice_mixer(guild_id, vc)
                 except Exception as e:
                     logger.warning("Voice mixer failed to start: %s", e)
+
+            if realtime_enabled:
+                try:
+                    await self._start_realtime_voice_session(guild_id, channel.id)
+                except Exception as e:
+                    logger.warning("Discord realtime voice session failed to start: %s", e)
 
             return True
 
     async def leave_voice_channel(self, guild_id: int) -> None:
         """Disconnect from the voice channel in a guild."""
         async with self._voice_locks.setdefault(guild_id, asyncio.Lock()):
+            # Close realtime sidecar bridge before tearing down transport.
+            realtime_session = getattr(self, "_realtime_voice_sessions", {}).pop(guild_id, None)
+            if realtime_session:
+                try:
+                    await realtime_session.close()
+                except Exception as e:
+                    logger.debug("Discord realtime voice session close failed: %s", e)
+
             # Stop voice receiver first
             receiver = self._voice_receivers.pop(guild_id, None)
             if receiver:
