@@ -714,6 +714,34 @@ Notes:
 - All settings live in `config.yaml` (not `.env`) — they're behavioral, not secrets.
 - When `voice_fx.enabled` is `false`, voice playback uses the original one-shot path and nothing changes.
 
+### Realtime Voice Channels (sidecar bridge)
+
+Hermes can also bridge a Discord voice channel into the provider-neutral realtime voice sidecar protocol. In this mode, Discord's inbound Opus packets are decoded to PCM, downsampled to 16 kHz mono, streamed to the sidecar, and sidecar audio output is upsampled back into the Discord voice mixer so Hermes can speak in the channel like a human participant.
+
+This is **off by default** and does not change legacy `/voice join` behavior unless enabled:
+
+```yaml
+voice:
+  realtime:
+    sidecar_base_url: "http://127.0.0.1:8766"
+    frontend_provider: "elevenlabs"   # optional
+    frontend_model: ""                # optional
+    oracle_model: ""                  # optional
+    tts_provider: ""                  # optional
+
+discord:
+  realtime_voice:
+    enabled: true
+    # Optional Discord-specific overrides for any voice.realtime setting:
+    # sidecar_base_url: "http://127.0.0.1:8766"
+```
+
+Notes:
+- The sidecar URL may also be provided with `HERMES_REALTIME_VOICE_SIDECAR_URL`.
+- If a sidecar token is needed, prefer `HERMES_REALTIME_VOICE_SIDECAR_TOKEN` in `.env`; `discord.realtime_voice.sidecar_token` is also accepted for local-only setups.
+- Realtime voice installs the Discord voice mixer automatically for sidecar audio output, even if `discord.voice_fx.enabled` is false.
+- If the sidecar is unavailable, Hermes logs a warning and still joins the voice channel using the existing non-realtime voice path.
+
 
 ## Forum Channels
 

@@ -132,6 +132,8 @@ class MixerChild:
         self._pos += FRAME_SIZE
         if len(chunk) < FRAME_SIZE:
             chunk = chunk + b"\x00" * (FRAME_SIZE - len(chunk))
+        if self._pos >= len(self._pcm) and not self.loop:
+            self._finished = True
 
         samples = np.frombuffer(chunk, dtype=np.int16).astype(np.float32)
 
@@ -222,6 +224,16 @@ class VoiceMixer:
             if self._ambient is not None:
                 self._ambient.gain = self._duck_gain
 
+    def enqueue_speech_frame(self, pcm: bytes, *, gain: Optional[float] = None,
+                             fade_in_ms: int = 0) -> None:
+        """Enqueue realtime speech PCM, usually one Discord-sized frame.
+
+        Realtime providers deliver audio incrementally. This mirrors
+        :meth:`play_speech` but exposes intent at the call site and defaults to
+        no fade so frame-by-frame TTS does not repeatedly ramp every 20 ms.
+        """
+        self.play_speech(pcm, gain=gain, fade_in_ms=fade_in_ms)
+
     @property
     def speech_active(self) -> bool:
         with self._lock:
@@ -263,7 +275,8 @@ class VoiceMixer:
                     if frame is None:
                         continue
                     acc = frame if acc is None else acc + frame
-                    still_live.append(child)
+                    if not child.finished:
+                        still_live.append(child)
                 self._speech = still_live
                 if not self._speech and self._speech_active:
                     self._begin_duck_release_locked()

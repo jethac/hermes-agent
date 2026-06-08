@@ -1,5 +1,6 @@
 """Tests for the /voice command and auto voice reply in the gateway."""
 
+import asyncio
 import importlib.util
 import json
 import os
@@ -1106,6 +1107,11 @@ class TestDiscordVoiceChannelMethods:
         adapter._voice_timeout_tasks = {}
         adapter._voice_receivers = {}
         adapter._voice_listen_tasks = {}
+        adapter._voice_mixers = {}
+        adapter._realtime_voice_sessions = {}
+        adapter._realtime_voice_cfg = {"enabled": False}
+        adapter._voice_fx_cfg = {"enabled": False}
+        adapter._ambient_pcm_cache = None
         adapter._voice_input_callback = None
         adapter._allowed_user_ids = set()
         adapter._running = True
@@ -1164,6 +1170,143 @@ class TestDiscordVoiceChannelMethods:
         """Leave when not connected — no crash."""
         adapter = self._make_adapter()
         await adapter.leave_voice_channel(111)  # should not raise
+
+    @pytest.mark.asyncio
+    async def test_join_voice_channel_starts_realtime_session_when_enabled(self):
+        adapter = self._make_adapter()
+        adapter._realtime_voice_cfg = {
+            "enabled": True,
+            "sidecar_base_url": "http://127.0.0.1:8766",
+            "frontend_provider": "elevenlabs",
+        }
+        adapter._reset_voice_timeout = MagicMock()
+        fake_session = AsyncMock()
+        fake_session.start = AsyncMock()
+
+        mock_vc = MagicMock()
+        mock_vc.is_connected.return_value = True
+        mock_vc.channel.id = 222
+        mock_channel = MagicMock()
+        mock_channel.id = 222
+        mock_channel.guild.id = 111
+        mock_channel.connect = AsyncMock(return_value=mock_vc)
+
+        with patch("plugins.platforms.discord.adapter.DISCORD_AVAILABLE", True), \
+             patch("plugins.platforms.discord.adapter.VoiceReceiver") as receiver_cls, \
+             patch("plugins.platforms.discord.adapter.DiscordRealtimeVoiceSession", return_value=fake_session):
+            receiver_cls.return_value.start = MagicMock()
+            ok = await adapter.join_voice_channel(mock_channel)
+
+        assert ok is True
+        assert adapter._realtime_voice_sessions[111] is fake_session
+        fake_session.start.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_join_voice_channel_wires_realtime_frame_and_speech_start_callbacks(self):
+        adapter = self._make_adapter()
+        adapter._realtime_voice_cfg = {
+            "enabled": True,
+            "sidecar_base_url": "http://127.0.0.1:8766",
+        }
+        adapter._reset_voice_timeout = MagicMock()
+        fake_session = AsyncMock()
+        fake_session.start = AsyncMock()
+        fake_session.handle_pcm_frame = AsyncMock()
+        fake_session.handle_speech_start = AsyncMock()
+
+        mock_vc = MagicMock()
+        mock_vc.is_connected.return_value = True
+        mock_vc.channel.id = 222
+        mock_channel = MagicMock()
+        mock_channel.id = 222
+        mock_channel.guild.id = 111
+        mock_channel.connect = AsyncMock(return_value=mock_vc)
+
+        with patch("plugins.platforms.discord.adapter.DISCORD_AVAILABLE", True), \
+             patch("plugins.platforms.discord.adapter.VoiceReceiver") as receiver_cls, \
+             patch("plugins.platforms.discord.adapter.DiscordRealtimeVoiceSession", return_value=fake_session):
+            receiver_cls.return_value.start = MagicMock()
+            ok = await adapter.join_voice_channel(mock_channel)
+            assert ok is True
+            kwargs = receiver_cls.call_args.kwargs
+            frame_callback = kwargs["realtime_frame_callback"]
+            speech_start_callback = kwargs["realtime_speech_start_callback"]
+            frame_callback(42, b"pcm")
+            speech_start_callback(42)
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+
+        fake_session.handle_pcm_frame.assert_awaited_once_with(user_id=42, pcm48_stereo=b"pcm")
+        fake_session.handle_speech_start.assert_awaited_once_with(user_id=42)
+
+    @pytest.mark.asyncio
+    async def test_leave_voice_channel_closes_realtime_session(self):
+        adapter = self._make_adapter()
+        fake_session = AsyncMock()
+        fake_session.close = AsyncMock()
+        adapter._realtime_voice_sessions[111] = fake_session
+
+        await adapter.leave_voice_channel(111)
+
+        fake_session.close.assert_awaited_once()
+        assert 111 not in adapter._realtime_voice_sessions
+
+    def test_realtime_voice_shared_config_does_not_enable_discord(self):
+        adapter = self._make_adapter()
+        raw_config = {
+            "voice": {
+                "realtime": {
+                    "enabled": True,
+                    "sidecar_base_url": "http://shared.local:8766",
+                    "frontend_provider": "elevenlabs",
+                    "sidecar_connect_timeout_seconds": 0.25,
+                }
+            },
+            "discord": {
+                "realtime_voice": {
+                    "frontend_model": "discord-model",
+                }
+            },
+        }
+
+        with patch("hermes_cli.config.read_raw_config", return_value=raw_config):
+            cfg = adapter._load_realtime_voice_config()
+
+        assert cfg["enabled"] is False
+        assert cfg["sidecar_base_url"] == "http://shared.local:8766"
+        assert cfg["frontend_provider"] == "elevenlabs"
+        assert cfg["frontend_model"] == "discord-model"
+        assert cfg["sidecar_connect_timeout_seconds"] == 0.25
+
+    @pytest.mark.asyncio
+    async def test_join_voice_channel_keeps_legacy_path_when_realtime_sidecar_start_fails(self):
+        adapter = self._make_adapter()
+        adapter._realtime_voice_cfg = {
+            "enabled": True,
+            "sidecar_base_url": "http://127.0.0.1:8766",
+        }
+        adapter._reset_voice_timeout = MagicMock()
+        fake_session = AsyncMock()
+        fake_session.start = AsyncMock(side_effect=RuntimeError("sidecar unavailable"))
+
+        mock_vc = MagicMock()
+        mock_vc.is_connected.return_value = True
+        mock_vc.channel.id = 222
+        mock_channel = MagicMock()
+        mock_channel.id = 222
+        mock_channel.guild.id = 111
+        mock_channel.connect = AsyncMock(return_value=mock_vc)
+
+        with patch("plugins.platforms.discord.adapter.DISCORD_AVAILABLE", True), \
+             patch("plugins.platforms.discord.adapter.VoiceReceiver") as receiver_cls, \
+             patch("plugins.platforms.discord.adapter.DiscordRealtimeVoiceSession", return_value=fake_session):
+            receiver_cls.return_value.start = MagicMock()
+            ok = await adapter.join_voice_channel(mock_channel)
+
+        assert ok is True
+        assert adapter._voice_clients[111] is mock_vc
+        assert 111 not in adapter._realtime_voice_sessions
+        fake_session.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_get_user_voice_channel_no_client(self):
