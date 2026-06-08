@@ -2207,6 +2207,32 @@ def test_reference_sidecar_health_marks_streaming_stt_only_after_bridge_health()
     assert verified["capabilities"]["utterance_stt"] is True
 
 
+def test_reference_sidecar_health_rejects_unready_streaming_stt_bridge():
+    runtime = ReferenceSidecarRuntimeConfig(
+        streaming_stt_base_url="http://streaming-stt.local:9000",
+        streaming_stt_model="portable-streaming-asr",
+        local_stt_enabled=False,
+    )
+
+    payload = reference_sidecar_health_payload(
+        runtime,
+        streaming_stt_health={
+            "ok": False,
+            "capabilities": {
+                "streaming_stt": True,
+            },
+        },
+    )
+
+    assert payload["frontend"]["provider"] == "local"
+    assert payload["frontend"]["streaming_stt_bridge"] == {
+        "configured": True,
+        "healthy": False,
+    }
+    assert payload["capabilities"]["streaming_stt"] is False
+    assert payload["capabilities"]["utterance_stt"] is False
+
+
 def test_reference_sidecar_health_marks_streaming_tts_bridge_after_health():
     runtime = ReferenceSidecarRuntimeConfig(
         streaming_tts_base_url="http://streaming-tts.local:9001",
@@ -2245,6 +2271,39 @@ def test_reference_sidecar_health_marks_streaming_tts_bridge_after_health():
     assert verified["frontend"]["streaming_tts_bridge"] == {
         "configured": True,
         "healthy": True,
+        "model": "portable-streaming-voice",
+    }
+
+
+def test_reference_sidecar_health_rejects_unready_streaming_tts_bridge_metadata():
+    runtime = ReferenceSidecarRuntimeConfig(
+        streaming_tts_base_url="http://streaming-tts.local:9001",
+        streaming_tts_model="portable-streaming-voice",
+        local_tts_enabled=False,
+        output_languages=("en", "ja"),
+    )
+
+    payload = reference_sidecar_health_payload(
+        runtime,
+        streaming_tts_health={
+            "ok": False,
+            "frontend": {
+                "tts_model_languages": ["en", "ja"],
+            },
+            "capabilities": {
+                "tts": True,
+                "streaming_tts": True,
+                "output_languages": ["en", "ja"],
+            },
+        },
+    )
+
+    assert payload["capabilities"]["tts"] is False
+    assert "output_languages" not in payload["capabilities"]
+    assert "tts_model_languages" not in payload["frontend"]
+    assert payload["frontend"]["streaming_tts_bridge"] == {
+        "configured": True,
+        "healthy": False,
         "model": "portable-streaming-voice",
     }
 
