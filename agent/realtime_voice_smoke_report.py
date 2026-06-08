@@ -388,6 +388,8 @@ def _validate_alpha_manifest_entry(
     if sidecar.get("healthy") is not True:
         issues.append(RealtimeVoiceSmokeReportIssue("manifest", "manifest sidecar was not healthy", "manifest"))
     health = sidecar.get("health") if isinstance(sidecar.get("health"), Mapping) else {}
+    if health.get("ok") is not True:
+        issues.append(RealtimeVoiceSmokeReportIssue("manifest", "manifest sidecar health was not ok", "manifest"))
     capabilities = health.get("capabilities") if isinstance(health.get("capabilities"), Mapping) else {}
     if capabilities.get("native_s2s") is not True and not (
         capabilities.get("streaming_stt") is True and capabilities.get("tts") is True

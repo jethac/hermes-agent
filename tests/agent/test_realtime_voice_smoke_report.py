@@ -38,6 +38,7 @@ def _valid_manifest():
         "sidecar": {
             "healthy": True,
             "health": {
+                "ok": True,
                 "capabilities": {
                     "streaming_stt": True,
                     "streaming_tts": True,
@@ -220,6 +221,16 @@ def test_realtime_voice_alpha_report_requires_live_sidecar_manifest_capabilities
     issues = validate_realtime_voice_alpha_report(report)
 
     assert any("missing native_s2s or streaming_stt+tts" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_requires_sidecar_health_ok():
+    manifest = _valid_manifest()
+    manifest["sidecar"]["health"]["ok"] = False
+    report = [manifest, *_valid_alpha_report()[1:]]
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("manifest sidecar health was not ok" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_alpha_report_requires_manifest_output_language_evidence():
