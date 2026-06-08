@@ -68,26 +68,54 @@ def build_parser() -> argparse.ArgumentParser:
         help="After validation succeeds, set voice.realtime.production_evidence_report in config.yaml",
     )
     parser.add_argument(
+        "--provider",
+        choices=("deepgram", "elevenlabs"),
+        default="deepgram",
+        help="Streaming voice bridge provider to start when --start-bridge is set",
+    )
+    parser.add_argument(
+        "--start-bridge",
+        action="store_true",
+        help="Start the configured local streaming STT/TTS provider bridge for this evidence run",
+    )
+    parser.add_argument(
+        "--bridge-host",
+        default="",
+        help="Host for --start-bridge; defaults to the configured streaming bridge URL host",
+    )
+    parser.add_argument(
+        "--bridge-port",
+        type=int,
+        default=0,
+        help="Port for --start-bridge; defaults to the configured streaming bridge URL port",
+    )
+    parser.add_argument(
+        "--bridge-timeout-seconds",
+        type=float,
+        default=15.0,
+        help="Seconds to wait for an auto-started provider bridge to become healthy",
+    )
+    parser.add_argument(
         "--start-deepgram-bridge",
         action="store_true",
-        help="Start the configured local Deepgram streaming bridge for this evidence run",
+        help="Backward-compatible alias for --provider deepgram --start-bridge",
     )
     parser.add_argument(
         "--deepgram-bridge-host",
         default="",
-        help="Host for --start-deepgram-bridge; defaults to the configured streaming bridge URL host",
+        help="Backward-compatible alias for --bridge-host with --start-deepgram-bridge",
     )
     parser.add_argument(
         "--deepgram-bridge-port",
         type=int,
         default=0,
-        help="Port for --start-deepgram-bridge; defaults to the configured streaming bridge URL port",
+        help="Backward-compatible alias for --bridge-port with --start-deepgram-bridge",
     )
     parser.add_argument(
         "--deepgram-bridge-timeout-seconds",
         type=float,
-        default=15.0,
-        help="Seconds to wait for an auto-started Deepgram bridge to become healthy",
+        default=None,
+        help="Backward-compatible alias for --bridge-timeout-seconds with --start-deepgram-bridge",
     )
     return parser
 
@@ -138,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        with managed_deepgram_bridge_for_evidence(args):
+        with managed_streaming_bridge_for_evidence(args):
             with managed_realtime_voice_sidecar_for_evidence():
                 live_like_issue = realtime_voice_live_like_preflight_issue()
                 if live_like_issue:
@@ -218,59 +246,123 @@ def apply_realtime_voice_production_evidence_report(report_path: str | Path) -> 
 
 
 @contextmanager
-def managed_deepgram_bridge_for_evidence(args: argparse.Namespace) -> Iterator[None]:
-    """Optionally start the configured local Deepgram bridge for evidence runs."""
+def managed_streaming_bridge_for_evidence(args: argparse.Namespace) -> Iterator[None]:
+    """Optionally start the configured local streaming provider bridge for evidence runs."""
 
-    if not getattr(args, "start_deepgram_bridge", False):
+    provider = _evidence_bridge_provider(args)
+    start_bridge = bool(getattr(args, "start_bridge", False) or getattr(args, "start_deepgram_bridge", False))
+    if not start_bridge:
         yield
         return
 
     proc = None
-    bridge_url = ""
     try:
         from hermes_cli import web_server
 
         realtime = web_server._realtime_voice_config_dict()
         env_on_disk = web_server.load_env()
-        bridge_url = _configured_deepgram_bridge_url(realtime)
+        bridge_url = _configured_streaming_bridge_url(realtime)
         if not bridge_url:
             raise RuntimeError("voice.realtime.streaming_stt_base_url is required")
         token = _streaming_bridge_token_for_evidence(realtime, env_on_disk)
-        prerequisite_issues = _deepgram_bridge_prerequisite_issues_for_evidence(env_on_disk)
+        if provider == "deepgram":
+            prerequisite_issues = _deepgram_bridge_prerequisite_issues_for_evidence(env_on_disk)
+        else:
+            prerequisite_issues = _streaming_bridge_prerequisite_issues_for_evidence(provider, env_on_disk)
         if prerequisite_issues:
             raise RuntimeError(
-                "Deepgram bridge prerequisite check failed: "
+                f"{_bridge_provider_label(provider)} bridge prerequisite check failed: "
                 + "; ".join(prerequisite_issues)
             )
-        if not _deepgram_bridge_healthy(bridge_url, token=token):
-            host, port = _deepgram_bridge_bind(args, bridge_url)
-            proc = _spawn_deepgram_bridge_for_evidence(host, port, env_on_disk)
-            _wait_for_deepgram_bridge_health(
-                bridge_url,
-                token=token,
-                proc=proc,
-                timeout_seconds=max(0.1, float(getattr(args, "deepgram_bridge_timeout_seconds", 15.0) or 15.0)),
+        healthy = (
+            _deepgram_bridge_healthy(bridge_url, token=token)
+            if provider == "deepgram"
+            else _streaming_bridge_healthy(bridge_url, token=token)
+        )
+        if not healthy:
+            host, port = (
+                _deepgram_bridge_bind(args, bridge_url)
+                if provider == "deepgram"
+                else _streaming_bridge_bind(args, bridge_url, provider=provider)
             )
+            proc = (
+                _spawn_deepgram_bridge_for_evidence(host, port, env_on_disk)
+                if provider == "deepgram"
+                else _spawn_streaming_bridge_for_evidence(provider, host, port, env_on_disk)
+            )
+            if provider == "deepgram":
+                _wait_for_deepgram_bridge_health(
+                    bridge_url,
+                    token=token,
+                    proc=proc,
+                    timeout_seconds=max(0.1, float(_bridge_timeout_seconds(args) or 15.0)),
+                )
+            else:
+                _wait_for_streaming_bridge_health(
+                    bridge_url,
+                    token=token,
+                    proc=proc,
+                    provider=provider,
+                    timeout_seconds=max(0.1, float(_bridge_timeout_seconds(args) or 15.0)),
+                )
     except Exception as exc:
         _terminate_process(proc)
+        label = _bridge_provider_label(provider)
         print(
-            "Realtime voice alpha evidence failed: Deepgram bridge is not ready "
+            f"Realtime voice alpha evidence failed: {label} bridge is not ready "
             f"({sanitize_realtime_voice_error(exc)})",
             file=sys.stderr,
         )
-        raise RuntimeError("Deepgram bridge is not ready") from exc
+        raise RuntimeError(f"{label} bridge is not ready") from exc
     try:
         yield
     finally:
         _terminate_process(proc)
 
 
-def _configured_deepgram_bridge_url(realtime: dict[str, Any]) -> str:
+@contextmanager
+def managed_deepgram_bridge_for_evidence(args: argparse.Namespace) -> Iterator[None]:
+    """Backward-compatible Deepgram-only wrapper for evidence runs."""
+
+    setattr(args, "provider", "deepgram")
+    setattr(args, "start_bridge", getattr(args, "start_deepgram_bridge", False))
+    with managed_streaming_bridge_for_evidence(args):
+        yield
+
+
+def _evidence_bridge_provider(args: argparse.Namespace) -> str:
+    if getattr(args, "start_deepgram_bridge", False):
+        return "deepgram"
+    provider = str(getattr(args, "provider", "deepgram") or "deepgram").strip().lower()
+    if provider not in {"deepgram", "elevenlabs"}:
+        raise RuntimeError("--provider must be deepgram or elevenlabs")
+    return provider
+
+
+def _bridge_provider_label(provider: str) -> str:
+    return "ElevenLabs" if provider == "elevenlabs" else "Deepgram"
+
+
+def _bridge_default_port(provider: str) -> int:
+    return 8767 if provider == "elevenlabs" else 8766
+
+
+def _bridge_timeout_seconds(args: argparse.Namespace) -> float:
+    if getattr(args, "deepgram_bridge_timeout_seconds", None) is not None:
+        return float(getattr(args, "deepgram_bridge_timeout_seconds") or 15.0)
+    return float(getattr(args, "bridge_timeout_seconds", 15.0) or 15.0)
+
+
+def _configured_streaming_bridge_url(realtime: dict[str, Any]) -> str:
     return str(
         realtime.get("streaming_stt_base_url")
         or realtime.get("streaming_tts_base_url")
         or ""
     ).strip().rstrip("/")
+
+
+def _configured_deepgram_bridge_url(realtime: dict[str, Any]) -> str:
+    return _configured_streaming_bridge_url(realtime)
 
 
 def _streaming_bridge_token_for_evidence(
@@ -287,50 +379,69 @@ def _streaming_bridge_token_for_evidence(
     return str(env_on_disk.get(token_env) or os.environ.get(token_env) or "")
 
 
-def _deepgram_bridge_bind(args: argparse.Namespace, bridge_url: str) -> tuple[str, int]:
+def _streaming_bridge_bind(
+    args: argparse.Namespace,
+    bridge_url: str,
+    *,
+    provider: str,
+) -> tuple[str, int]:
     parsed = urlparse(bridge_url)
-    host = str(getattr(args, "deepgram_bridge_host", "") or "").strip()
+    legacy_host = str(getattr(args, "deepgram_bridge_host", "") or "").strip()
+    host = str(getattr(args, "bridge_host", "") or legacy_host or "").strip()
     if not host:
         host = parsed.hostname or "127.0.0.1"
-    port = int(getattr(args, "deepgram_bridge_port", 0) or 0)
+    legacy_port = int(getattr(args, "deepgram_bridge_port", 0) or 0)
+    port = int(getattr(args, "bridge_port", 0) or legacy_port or 0)
     if port <= 0:
         try:
-            port = int(parsed.port or 8766)
+            port = int(parsed.port or _bridge_default_port(provider))
         except ValueError:
-            port = 8766
+            port = _bridge_default_port(provider)
     if port <= 0 or port > 65535:
-        raise RuntimeError("--deepgram-bridge-port must be between 1 and 65535")
+        raise RuntimeError("--bridge-port must be between 1 and 65535")
     configured_host = parsed.hostname or ""
+    explicit_host = str(getattr(args, "bridge_host", "") or legacy_host or "").strip()
     if (
         configured_host
         and configured_host not in {"127.0.0.1", "localhost", "::1"}
-        and not str(getattr(args, "deepgram_bridge_host", "") or "").strip()
+        and not explicit_host
     ):
         raise RuntimeError(
             "configured streaming bridge URL is not loopback; start that bridge on its host "
-            "or pass --deepgram-bridge-host for an explicit local bind"
+            "or pass --bridge-host for an explicit local bind"
         )
     return host, port
 
 
-def _spawn_deepgram_bridge_for_evidence(
+def _deepgram_bridge_bind(args: argparse.Namespace, bridge_url: str) -> tuple[str, int]:
+    return _streaming_bridge_bind(args, bridge_url, provider="deepgram")
+
+
+def _spawn_streaming_bridge_for_evidence(
+    provider: str,
     host: str,
     port: int,
     env_on_disk: dict[str, str],
 ) -> subprocess.Popen:
-    log_path = _deepgram_bridge_log_path()
+    log_path = _streaming_bridge_log_path(provider)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_file = open(log_path, "ab", buffering=0)
-    log_file.write(f"\n=== Deepgram realtime voice bridge started {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode())
+    label = _bridge_provider_label(provider)
+    log_file.write(f"\n=== {label} realtime voice bridge started {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode())
     child_env = {
         **os.environ,
         **env_on_disk,
         "HERMES_NONINTERACTIVE": "1",
     }
+    module = (
+        "hermes_cli.realtime_voice_elevenlabs_bridge"
+        if provider == "elevenlabs"
+        else "hermes_cli.realtime_voice_deepgram_bridge"
+    )
     command = [
         sys.executable,
         "-m",
-        "hermes_cli.realtime_voice_deepgram_bridge",
+        module,
         "--host",
         str(host),
         "--port",
@@ -354,6 +465,14 @@ def _spawn_deepgram_bridge_for_evidence(
         return subprocess.Popen(command, **popen_kwargs)
     finally:
         log_file.close()
+
+
+def _spawn_deepgram_bridge_for_evidence(
+    host: str,
+    port: int,
+    env_on_disk: dict[str, str],
+) -> subprocess.Popen:
+    return _spawn_streaming_bridge_for_evidence("deepgram", host, port, env_on_disk)
 
 
 def _deepgram_bridge_prerequisite_issues_for_evidence(env_on_disk: dict[str, str]) -> list[str]:
@@ -385,6 +504,43 @@ def _deepgram_bridge_prerequisite_issues_for_evidence(env_on_disk: dict[str, str
         )
 
 
+def _streaming_bridge_prerequisite_issues_for_evidence(
+    provider: str,
+    env_on_disk: dict[str, str],
+) -> list[str]:
+    if provider == "elevenlabs":
+        return _elevenlabs_bridge_prerequisite_issues_for_evidence(env_on_disk)
+    return _deepgram_bridge_prerequisite_issues_for_evidence(env_on_disk)
+
+
+def _elevenlabs_bridge_prerequisite_issues_for_evidence(env_on_disk: dict[str, str]) -> list[str]:
+    from agent.realtime_voice_elevenlabs_bridge import (
+        elevenlabs_bridge_config_from_env,
+        elevenlabs_bridge_prerequisite_issues,
+    )
+    from hermes_cli.realtime_voice_elevenlabs_bridge import DEFAULT_PRODUCTION_EN_JA_OUTPUT_LANGUAGES
+
+    merged_env = {
+        **os.environ,
+        **env_on_disk,
+    }
+    if not str(merged_env.get("HERMES_ELEVENLABS_OUTPUT_LANGUAGES") or "").strip():
+        merged_env["HERMES_ELEVENLABS_OUTPUT_LANGUAGES"] = DEFAULT_PRODUCTION_EN_JA_OUTPUT_LANGUAGES
+    if not str(merged_env.get("HERMES_ELEVENLABS_REQUIRE_OUTPUT_LANGUAGES") or "").strip():
+        merged_env["HERMES_ELEVENLABS_REQUIRE_OUTPUT_LANGUAGES"] = DEFAULT_PRODUCTION_EN_JA_OUTPUT_LANGUAGES
+    if not str(merged_env.get("HERMES_ELEVENLABS_LANGUAGE") or "").strip():
+        merged_env["HERMES_ELEVENLABS_LANGUAGE"] = "auto"
+
+    with _temporary_environ(merged_env):
+        runtime = elevenlabs_bridge_config_from_env()
+        return elevenlabs_bridge_prerequisite_issues(
+            runtime,
+            require_auth_token=True,
+            required_input_languages=("en", "ja"),
+            required_output_languages=("en", "ja"),
+        )
+
+
 @contextmanager
 def _temporary_environ(values: dict[str, str]) -> Iterator[None]:
     previous = {key: os.environ.get(key) for key in values}
@@ -399,16 +555,44 @@ def _temporary_environ(values: dict[str, str]) -> Iterator[None]:
                 os.environ[key] = value
 
 
-def _deepgram_bridge_log_path() -> Path:
+def _streaming_bridge_log_path(provider: str) -> Path:
+    provider_name = "elevenlabs" if provider == "elevenlabs" else "deepgram"
     try:
         from hermes_cli import web_server
 
         action_log_dir = getattr(web_server, "_ACTION_LOG_DIR", None)
         if action_log_dir:
-            return Path(action_log_dir) / "realtime-voice-deepgram-bridge.log"
+            return Path(action_log_dir) / f"realtime-voice-{provider_name}-bridge.log"
     except Exception:
         pass
-    return Path.home() / ".hermes" / "logs" / "realtime-voice-deepgram-bridge.log"
+    return Path.home() / ".hermes" / "logs" / f"realtime-voice-{provider_name}-bridge.log"
+
+
+def _deepgram_bridge_log_path() -> Path:
+    return _streaming_bridge_log_path("deepgram")
+
+
+def _wait_for_streaming_bridge_health(
+    bridge_url: str,
+    *,
+    token: str,
+    proc: subprocess.Popen,
+    provider: str,
+    timeout_seconds: float,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    last_error = "health check did not run"
+    label = _bridge_provider_label(provider)
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(f"{label} bridge exited with code {proc.returncode}")
+        try:
+            if _streaming_bridge_healthy(bridge_url, token=token):
+                return
+        except Exception as exc:
+            last_error = sanitize_realtime_voice_error(exc)
+        time.sleep(0.2)
+    raise RuntimeError(f"{label} bridge health did not become ready at {bridge_url}/health: {last_error}")
 
 
 def _wait_for_deepgram_bridge_health(
@@ -432,7 +616,7 @@ def _wait_for_deepgram_bridge_health(
     raise RuntimeError(f"Deepgram bridge health did not become ready at {bridge_url}/health: {last_error}")
 
 
-def _deepgram_bridge_healthy(bridge_url: str, *, token: str = "") -> bool:
+def _streaming_bridge_healthy(bridge_url: str, *, token: str = "") -> bool:
     headers = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -450,6 +634,10 @@ def _deepgram_bridge_healthy(bridge_url: str, *, token: str = "") -> bool:
             return payload.get("ok") is True
     except (OSError, URLError):
         return False
+
+
+def _deepgram_bridge_healthy(bridge_url: str, *, token: str = "") -> bool:
+    return _streaming_bridge_healthy(bridge_url, token=token)
 
 
 def _terminate_process(proc: Any) -> None:

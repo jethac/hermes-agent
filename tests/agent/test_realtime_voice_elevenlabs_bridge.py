@@ -360,7 +360,7 @@ def test_elevenlabs_tts_session_streams_audio_and_barge_in(monkeypatch):
         async def send(self, payload):
             self.sent.append(payload)
             data = json.loads(payload)
-            if data.get("text") == "hello from Hermes":
+            if data.get("text") == "" and data.get("flush") is True:
                 await self._messages.put(json.dumps({"audio": base64.b64encode(b"pcm-audio").decode("ascii")}))
 
         async def close(self):
@@ -432,8 +432,12 @@ def test_elevenlabs_tts_session_streams_audio_and_barge_in(monkeypatch):
             "wss://api.elevenlabs.io/v1/text-to-speech/voice-123/stream-input?"
         )
         assert json.loads(sockets[0].sent[0])["xi_api_key"] == "elevenlabs-secret"
-        assert json.loads(sockets[0].sent[1]) == {"text": "hello from Hermes"}
-        assert json.loads(sockets[0].sent[2]) == {"text": ""}
+        assert json.loads(sockets[0].sent[1]) == {
+            "text": "hello from Hermes",
+            "try_trigger_generation": True,
+        }
+        assert json.loads(sockets[0].sent[2]) == {"text": "", "flush": True}
+        assert json.loads(sockets[0].sent[3]) == {"text": ""}
         assert [event.type for event in seen] == [
             VoiceEventType.FRONTEND_STATE,
             VoiceEventType.AUDIO_OUTPUT_CHUNK,

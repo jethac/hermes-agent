@@ -75,9 +75,27 @@ The bridge `--check` command verifies local configuration, the websocket Python
 dependency, voice id presence, and Hermes bearer-token configuration. It does
 not spend provider quota or prove the API key is active.
 
+```powershell
+python -m hermes_cli.realtime_voice_elevenlabs_bridge --check --strict --production-en-ja
+```
+
 For a minimal live key check, call ElevenLabs' voices endpoint with
 `xi-api-key` and confirm a `200` response before running production evidence.
 Do not commit the key or write it into repo-local config.
+
+After the bridge prerequisites pass, production alpha evidence can auto-start
+the ElevenLabs provider bridge through the provider-neutral evidence runner:
+
+```powershell
+python -m hermes_cli.realtime_voice_alpha_evidence `
+  --provider elevenlabs `
+  --start-bridge `
+  --output-dir evidence/realtime-voice/elevenlabs
+```
+
+`--start-deepgram-bridge` remains supported as a backward-compatible alias for
+Deepgram-only runs. New provider integrations should use `--provider <name>`
+with `--start-bridge` so the evidence runner stays speech-provider-neutral.
 
 ## Current Limits
 
