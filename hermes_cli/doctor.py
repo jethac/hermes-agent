@@ -10,6 +10,8 @@ import asyncio
 import json
 import subprocess
 import shutil
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -804,6 +806,8 @@ def _realtime_voice_evidence_manifest_payload() -> dict[str, Any]:
         "ok": True,
         "schema_version": 1,
         "source": "hermes doctor --realtime-voice-report",
+        "run_id": uuid.uuid4().hex,
+        "collected_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "engine": str(status.get("engine") or ""),
         "frontend_provider": str(status.get("frontend_provider") or ""),
         "frontend_model": str(status.get("frontend_model") or ""),

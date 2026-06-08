@@ -1,4 +1,5 @@
 import json
+from itertools import count
 
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
@@ -18,10 +19,19 @@ from agent.realtime_voice_smoke_report import (
 from hermes_cli.realtime_voice_report import main as realtime_voice_report_main
 
 
+_RUN_ID_COUNTER = count(1)
+
+
+def _next_run_id():
+    return f"test-run-{next(_RUN_ID_COUNTER):04d}"
+
+
 def _valid_manifest():
     return {
         "kind": "manifest",
         "ok": True,
+        "run_id": _next_run_id(),
+        "collected_at": "2026-06-08T00:00:00Z",
         "available": True,
         "conversation_quality": {
             "live_like": True,
@@ -231,6 +241,19 @@ def test_realtime_voice_alpha_report_requires_sidecar_health_ok():
     issues = validate_realtime_voice_alpha_report(report)
 
     assert any("manifest sidecar health was not ok" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_requires_manifest_run_identity():
+    manifest = _valid_manifest()
+    manifest.pop("run_id")
+    manifest.pop("collected_at")
+    report = [manifest, *_valid_alpha_report()[1:]]
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    formatted = [issue.format() for issue in issues]
+    assert any("missing valid evidence run_id" in issue for issue in formatted)
+    assert any("missing collected_at timestamp" in issue for issue in formatted)
 
 
 def test_realtime_voice_alpha_report_requires_manifest_output_language_evidence():
@@ -497,6 +520,20 @@ def test_realtime_voice_alpha_report_runs_reject_mixed_stack_manifests(tmp_path)
     issues = validate_realtime_voice_alpha_report_runs(runs, min_runs=3)
 
     assert any("mixed realtime voice stack manifests" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_runs_reject_duplicate_run_ids(tmp_path):
+    runs = []
+    for index in range(3):
+        report = _valid_alpha_report()
+        report[0]["run_id"] = "duplicated-run-id"
+        path = tmp_path / f"voice-smoke-{index}.json"
+        path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+        runs.append((str(path), load_realtime_voice_smoke_report(path)))
+
+    issues = validate_realtime_voice_alpha_report_runs(runs, min_runs=3)
+
+    assert any("alpha runs reused evidence run_id" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path):

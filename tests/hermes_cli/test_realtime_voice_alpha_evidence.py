@@ -1,6 +1,7 @@
 import json
 import sys
 import types
+from itertools import count
 
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
@@ -12,6 +13,13 @@ from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_TTS_TEXTS,
 )
 from hermes_cli import realtime_voice_alpha_evidence
+
+
+_RUN_ID_COUNTER = count(1)
+
+
+def _next_run_id():
+    return f"alpha-evidence-test-run-{next(_RUN_ID_COUNTER):04d}"
 
 
 def _write_required_audio_fixtures(root):
@@ -129,6 +137,8 @@ def _valid_alpha_report():
         {
             "kind": "manifest",
             "ok": True,
+            "run_id": _next_run_id(),
+            "collected_at": "2026-06-08T00:00:00Z",
             "available": True,
             "conversation_quality": {
                 "live_like": True,
