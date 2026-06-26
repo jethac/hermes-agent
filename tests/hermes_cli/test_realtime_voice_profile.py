@@ -126,6 +126,38 @@ def test_elevenlabs_preset_accepts_custom_bridge_base_url(capsys):
     assert realtime["streaming_tts_base_url"] == "http://voice-bridge.local:8767"
 
 
+def test_cartesia_preset_prints_applyable_portable_profile(capsys):
+    result = realtime_voice_profile.main(["--preset", "cartesia"])
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8768"
+    assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8768"
+    assert realtime["streaming_stt_model"] == "ink-2"
+    assert realtime["streaming_tts_model"] == "sonic-3.5"
+    assert realtime["streaming_stt_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    assert realtime["streaming_tts_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    assert realtime["require_live_like"] is True
+
+
+def test_cartesia_preset_accepts_custom_bridge_base_url(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "cartesia",
+            "--bridge-base-url",
+            "http://voice-bridge.local:8768/",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["streaming_stt_base_url"] == "http://voice-bridge.local:8768"
+    assert realtime["streaming_tts_base_url"] == "http://voice-bridge.local:8768"
+
+
 def test_openai_preset_prints_managed_realtime_profile(capsys):
     result = realtime_voice_profile.main(["--preset", "openai"])
 
@@ -378,6 +410,29 @@ def test_elevenlabs_preset_apply_prints_bridge_next_steps(monkeypatch, tmp_path,
     assert "realtime_voice_elevenlabs_bridge --check --strict --production-en-ja" in output
     assert "realtime_voice_elevenlabs_bridge --host 127.0.0.1 --port 8767 --production-en-ja" in output
     assert "realtime_voice_alpha_evidence --runs 3 --apply --provider elevenlabs --start-bridge" in output
+    assert "realtime_voice_live_evidence --require-live-discord --require-openai-realtime" in output
+
+
+def test_cartesia_preset_apply_prints_bridge_next_steps(monkeypatch, tmp_path, capsys):
+    saved = {}
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {"model": {"provider": "openrouter"}},
+    )
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+
+    result = realtime_voice_profile.main(["--preset", "cartesia", "--apply"])
+
+    assert result == 0
+    realtime = saved["config"]["voice"]["realtime"]
+    assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8768"
+    assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8768"
+    output = capsys.readouterr().out
+    assert "realtime_voice_cartesia_bridge --generate-token" in output
+    assert "realtime_voice_cartesia_bridge --check --strict --production-en-ja" in output
+    assert "realtime_voice_cartesia_bridge --host 127.0.0.1 --port 8768 --production-en-ja" in output
+    assert "realtime_voice_alpha_evidence --runs 3 --apply --provider cartesia --start-bridge" in output
     assert "realtime_voice_live_evidence --require-live-discord --require-openai-realtime" in output
 
 

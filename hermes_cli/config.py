@@ -3611,6 +3611,22 @@ OPTIONAL_ENV_VARS = {
         "password": True,
         "category": "tool",
     },
+    "CARTESIA_API_KEY": {
+        "description": "Cartesia API key for realtime voice bridge STT/TTS",
+        "prompt": "Cartesia API key",
+        "url": "https://play.cartesia.ai/keys",
+        "tools": ["realtime_voice"],
+        "password": True,
+        "category": "tool",
+    },
+    "CARTESIA_VOICE_ID": {
+        "description": "Cartesia voice ID used by the realtime voice bridge",
+        "prompt": "Cartesia voice ID",
+        "url": "https://play.cartesia.ai/voices",
+        "tools": ["realtime_voice"],
+        "password": False,
+        "category": "tool",
+    },
     "MISTRAL_API_KEY": {
         "description": "Mistral API key for Voxtral TTS and transcription (STT)",
         "prompt": "Mistral API key",

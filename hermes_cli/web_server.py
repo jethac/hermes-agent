@@ -13658,12 +13658,15 @@ def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk
             "provider": "reference",
             "label": "Cartesia bridge",
             "kind": "stt_tts_bridge",
-            "model": "sonic-3.5",
-            "voice": "",
+            "model": str(realtime.get("streaming_tts_model") or "sonic-3.5"),
+            "voice": str(realtime.get("streaming_tts_voice") or ""),
             "api_key_env": "CARTESIA_API_KEY",
             "api_key_present": _realtime_voice_env_present(env_on_disk, "CARTESIA_API_KEY"),
-            "implemented": False,
-            "status": "planned",
+            "voice_id_env": "CARTESIA_VOICE_ID",
+            "voice_id_present": _realtime_voice_env_present(env_on_disk, "CARTESIA_VOICE_ID"),
+            "bridge_token_env": tts_token_env,
+            "bridge_token_present": _realtime_voice_env_present(env_on_disk, tts_token_env),
+            "implemented": True,
         },
     ]
 
@@ -13716,6 +13719,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
     from hermes_cli.realtime_voice_profile import (
         DEFAULT_DEEPGRAM_STT_MODEL,
         DEFAULT_DEEPGRAM_TTS_MODEL,
+        DEFAULT_CARTESIA_STT_MODEL,
+        DEFAULT_CARTESIA_TTS_MODEL,
         DEFAULT_ELEVENLABS_STT_MODEL,
         DEFAULT_ELEVENLABS_TTS_MODEL,
         DEFAULT_GEMINI_LIVE_MODEL,
@@ -13757,6 +13762,13 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8766",
             streaming_stt_model=body.streaming_stt_model or DEFAULT_DEEPGRAM_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or DEFAULT_DEEPGRAM_TTS_MODEL,
+        )
+    if preset == "cartesia":
+        return build_realtime_voice_live_like_profile(
+            streaming_stt_base_url=body.streaming_stt_base_url or "http://127.0.0.1:8768",
+            streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8768",
+            streaming_stt_model=body.streaming_stt_model or DEFAULT_CARTESIA_STT_MODEL,
+            streaming_tts_model=body.streaming_tts_model or body.model or DEFAULT_CARTESIA_TTS_MODEL,
         )
     if preset == "reference":
         return build_realtime_voice_live_like_profile(

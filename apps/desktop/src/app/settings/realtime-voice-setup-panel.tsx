@@ -33,8 +33,20 @@ const PROVIDER_MODELS: Record<string, string[]> = {
   openai: ['gpt-realtime-2'],
   gemini: ['gemini-3.1-flash-live-preview', 'gemini-2.5-flash-live-preview'],
   elevenlabs: ['eleven_flash_v2_5', 'eleven_multilingual_v2'],
-  deepgram: ['nova-3', 'aura-2-thalia-en'],
+  deepgram: ['aura-2-thalia-en', 'aura-2-asteria-en'],
   cartesia: ['sonic-3.5']
+}
+
+const PROVIDER_STT_MODELS: Record<string, string[]> = {
+  elevenlabs: ['scribe_v2_realtime'],
+  deepgram: ['nova-3'],
+  cartesia: ['ink-2']
+}
+
+const PROVIDER_BRIDGE_URLS: Record<string, string> = {
+  elevenlabs: 'http://127.0.0.1:8767',
+  deepgram: 'http://127.0.0.1:8766',
+  cartesia: 'http://127.0.0.1:8768'
 }
 
 const PROVIDER_VOICES: Record<string, string[]> = {
@@ -56,6 +68,7 @@ function setupProviderFor(config: HermesConfigRecord): string {
   if (provider === 'openai_realtime' || provider === 'openai') return 'openai'
   if (provider === 'gemini_live' || provider === 'gemini') return 'gemini'
   if (sttUrl.includes('8767') || sttModel.includes('scribe')) return 'elevenlabs'
+  if (sttUrl.includes('8768') || sttModel.includes('ink')) return 'cartesia'
   if (sttUrl.includes('8766') || sttModel.includes('nova')) return 'deepgram'
   return 'openai'
 }
@@ -92,6 +105,8 @@ function ProviderCard({
       <div className="mt-2 flex flex-wrap gap-1.5">
         <Pill>{provider.kind === 'native_s2s' ? 'Native S2S' : 'Bridge'}</Pill>
         {provider.implemented === false ? <Pill>Planned</Pill> : envPill(provider.api_key_env || 'API key', provider.api_key_present)}
+        {provider.voice_id_env ? envPill('Voice ID', provider.voice_id_present) : null}
+        {provider.bridge_token_env ? envPill('Bridge token', provider.bridge_token_present) : null}
       </div>
       <div className="mt-2 truncate font-mono text-[0.68rem] text-muted-foreground/70">
         {provider.model || provider.provider || provider.id}
@@ -149,12 +164,15 @@ export function RealtimeVoiceSetupPanel({
   const [selectedProvider, setSelectedProvider] = useState(() => setupProviderFor(config))
   const [model, setModel] = useState(String(getNested(config, 'voice.realtime.frontend_model') ?? ''))
   const [voice, setVoice] = useState('')
+  const [streamingSttModel, setStreamingSttModel] = useState(String(getNested(config, 'voice.realtime.streaming_stt_model') ?? ''))
+  const [bridgeBaseUrl, setBridgeBaseUrl] = useState(String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? ''))
   const [requireDiscordSmoke, setRequireDiscordSmoke] = useState(true)
   const [requireInboundSmoke, setRequireInboundSmoke] = useState(false)
 
   const activeProvider = useMemo(() => setupProviderFor(config), [config])
   const providers = setup?.providers ?? []
   const selectedSetup = providers.find(provider => provider.id === selectedProvider)
+  const selectedIsBridge = selectedSetup?.kind === 'stt_tts_bridge'
   const discord = setup?.discord
 
   async function refresh() {
@@ -177,15 +195,28 @@ export function RealtimeVoiceSetupPanel({
   }, [activeProvider])
 
   useEffect(() => {
-    const nextModel = String(getNested(config, 'voice.realtime.frontend_model') ?? '')
+    if (selectedProvider === activeProvider) return
+    setModel(PROVIDER_MODELS[selectedProvider]?.[0] || '')
+    setVoice(PROVIDER_VOICES[selectedProvider]?.[0] || '')
+    setStreamingSttModel(PROVIDER_STT_MODELS[selectedProvider]?.[0] || '')
+    setBridgeBaseUrl(PROVIDER_BRIDGE_URLS[selectedProvider] || '')
+  }, [activeProvider, selectedProvider])
+
+  useEffect(() => {
+    const nextModel =
+      activeProvider === 'openai' || activeProvider === 'gemini'
+        ? String(getNested(config, 'voice.realtime.frontend_model') ?? '')
+        : String(getNested(config, 'voice.realtime.streaming_tts_model') ?? '')
     const nextVoice =
       activeProvider === 'openai'
         ? String(getNested(config, 'voice.realtime.openai_realtime_voice') ?? '')
         : activeProvider === 'gemini'
           ? String(getNested(config, 'voice.realtime.gemini_live_voice') ?? '')
           : ''
-    setModel(nextModel)
+    setModel(nextModel || PROVIDER_MODELS[activeProvider]?.[0] || '')
     setVoice(nextVoice)
+    setStreamingSttModel(String(getNested(config, 'voice.realtime.streaming_stt_model') ?? PROVIDER_STT_MODELS[activeProvider]?.[0] ?? ''))
+    setBridgeBaseUrl(String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? PROVIDER_BRIDGE_URLS[activeProvider] ?? ''))
   }, [activeProvider, config])
 
   function patchConfig(key: string, value: unknown) {
@@ -193,16 +224,16 @@ export function RealtimeVoiceSetupPanel({
   }
 
   async function applyProvider() {
-    if (selectedProvider === 'cartesia') {
-      notify({ kind: 'info', title: 'Cartesia bridge is planned', message: 'The setup UI is ready; the bridge implementation is not wired yet.' })
-      return
-    }
     setApplying(true)
     try {
       const result = await applyRealtimeVoiceProfile({
         preset: selectedProvider,
         model,
         voice,
+        streaming_stt_base_url: selectedIsBridge ? bridgeBaseUrl || PROVIDER_BRIDGE_URLS[selectedProvider] : undefined,
+        streaming_tts_base_url: selectedIsBridge ? bridgeBaseUrl || PROVIDER_BRIDGE_URLS[selectedProvider] : undefined,
+        streaming_stt_model: selectedIsBridge ? streamingSttModel || PROVIDER_STT_MODELS[selectedProvider]?.[0] : undefined,
+        streaming_tts_model: selectedIsBridge ? model || PROVIDER_MODELS[selectedProvider]?.[0] : undefined,
         enable_discord: Boolean(getNested(config, 'discord.realtime_voice.enabled')),
         google_search: Boolean(getNested(config, 'voice.realtime.gemini_live_google_search')),
         oracle_tool: Boolean(getNested(config, 'voice.realtime.gemini_live_oracle_tool') ?? true)
@@ -282,9 +313,42 @@ export function RealtimeVoiceSetupPanel({
               </SelectContent>
             </Select>
           }
-          description={selectedSetup?.kind === 'native_s2s' ? 'Low-latency interface model.' : 'Streaming bridge model label.'}
-          title="Model"
+          description={selectedSetup?.kind === 'native_s2s' ? 'Low-latency interface model.' : 'Streaming bridge TTS model.'}
+          title={selectedSetup?.kind === 'native_s2s' ? 'Model' : 'TTS model'}
         />
+        {selectedIsBridge ? (
+          <>
+            <ListRow
+              action={
+                <Input
+                  className={CONTROL_TEXT}
+                  onChange={event => setBridgeBaseUrl(event.target.value)}
+                  value={bridgeBaseUrl || PROVIDER_BRIDGE_URLS[selectedProvider] || ''}
+                />
+              }
+              description="Local Hermes-compatible STT/TTS bridge base URL."
+              title="Bridge URL"
+            />
+            <ListRow
+              action={
+                <Select onValueChange={setStreamingSttModel} value={streamingSttModel || PROVIDER_STT_MODELS[selectedProvider]?.[0] || ''}>
+                  <SelectTrigger className={CONTROL_TEXT}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(PROVIDER_STT_MODELS[selectedProvider] ?? [streamingSttModel]).filter(Boolean).map(option => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              }
+              description="Streaming bridge STT model."
+              title="STT model"
+            />
+          </>
+        ) : null}
         {selectedSetup?.kind === 'native_s2s' ? (
           <ListRow
             action={
@@ -310,7 +374,7 @@ export function RealtimeVoiceSetupPanel({
             <RefreshCw />
             Refresh
           </Button>
-          <Button disabled={applying || selectedProvider === 'cartesia'} onClick={() => void applyProvider()} size="sm" type="button">
+          <Button disabled={applying} onClick={() => void applyProvider()} size="sm" type="button">
             {applying ? <Loader2 className="animate-spin" /> : <Volume2 />}
             Apply Provider
           </Button>
