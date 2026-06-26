@@ -34,6 +34,93 @@ export interface ElevenLabsVoicesResponse {
   voices: ElevenLabsVoice[]
 }
 
+export interface RealtimeVoiceProviderSetup {
+  api_key_env?: string
+  api_key_present?: boolean
+  bridge_token_env?: string
+  bridge_token_present?: boolean
+  id: string
+  implemented?: boolean
+  kind?: string
+  label: string
+  model?: string
+  provider?: string
+  status?: string
+  voice?: string
+}
+
+export interface RealtimeVoiceSetupResponse {
+  active_model?: string
+  active_provider?: string
+  config_path?: string
+  discord?: {
+    bot_token_present?: boolean
+    enabled?: boolean
+    guild_id_present?: boolean
+    sidecar_base_url?: string
+    voice_channel_id_present?: boolean
+    voice_channel_name_present?: boolean
+  }
+  enabled?: boolean
+  env_path?: string
+  profile?: string
+  providers: RealtimeVoiceProviderSetup[]
+  status: {
+    available: boolean
+    conversation_quality?: Record<string, unknown>
+    enabled: boolean
+    engine: string
+    frontend_model?: null | string
+    frontend_provider?: null | string
+    production_readiness?: Record<string, unknown>
+    sidecar?: {
+      autostart?: boolean
+      base_url?: string
+      externally_managed?: boolean
+      health?: {
+        capabilities?: Record<string, unknown>
+        frontend?: Record<string, unknown>
+        ok?: boolean
+      } | null
+      healthy?: boolean | null
+      mode?: string
+    }
+    unavailable_reason?: null | string
+  }
+}
+
+export interface RealtimeVoiceProfileRequest {
+  api_key_env?: string
+  enable_discord?: boolean
+  google_search?: boolean
+  model?: string
+  oracle_tool?: boolean
+  preset: string
+  streaming_stt_base_url?: string
+  streaming_stt_model?: string
+  streaming_tts_base_url?: string
+  streaming_tts_model?: string
+  voice?: string
+}
+
+export interface RealtimeVoiceProfileResponse {
+  config: HermesConfigRecord
+  ok: boolean
+  setup: RealtimeVoiceSetupResponse
+}
+
+export interface RealtimeVoiceSmokeResponse {
+  exit_code?: null | number
+  ok: boolean
+  output_dir: string
+  result?: {
+    issues?: string[]
+    reports?: Record<string, string>
+  }
+  stderr?: string
+  stdout?: string
+}
+
 export interface OAuthProviderStatus {
   error?: string
   expires_at?: null | string

@@ -1023,6 +1023,29 @@ class ConfigUpdate(BaseModel):
     profile: Optional[str] = None
 
 
+class RealtimeVoiceProfileApply(BaseModel):
+    preset: str
+    model: str = ""
+    voice: str = ""
+    api_key_env: str = ""
+    streaming_stt_base_url: str = ""
+    streaming_tts_base_url: str = ""
+    streaming_stt_model: str = ""
+    streaming_tts_model: str = ""
+    google_search: bool = False
+    oracle_tool: bool = True
+    enable_discord: bool = False
+    profile: Optional[str] = None
+
+
+class RealtimeVoiceSmokeRequest(BaseModel):
+    require_discord: bool = False
+    require_inbound: bool = False
+    wait_seconds: float = 5.0
+    output_dir: str = ""
+    profile: Optional[str] = None
+
+
 class EnvVarUpdate(BaseModel):
     key: str
     value: str
@@ -13570,6 +13593,226 @@ def _realtime_voice_open_unavailable_reason(realtime: Dict[str, Any]) -> str:
     return ""
 
 
+def _realtime_voice_env_present(env_on_disk: Mapping[str, Any], key: str) -> bool:
+    return bool(str(env_on_disk.get(key) or os.environ.get(key) or "").strip())
+
+
+def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    openai_key_env = str(realtime.get("openai_realtime_api_key_env") or "OPENAI_API_KEY")
+    gemini_key_env = str(realtime.get("gemini_live_api_key_env") or "GEMINI_API_KEY")
+    stt_token_env = str(realtime.get("streaming_stt_token_env") or "HERMES_STREAMING_STT_BRIDGE_TOKEN")
+    tts_token_env = str(realtime.get("streaming_tts_token_env") or stt_token_env)
+    return [
+        {
+            "id": "openai",
+            "provider": "openai_realtime",
+            "label": "OpenAI Realtime",
+            "kind": "native_s2s",
+            "model": str(realtime.get("frontend_model") or realtime.get("openai_realtime_model") or "gpt-realtime-2"),
+            "voice": str(realtime.get("openai_realtime_voice") or "marin"),
+            "api_key_env": openai_key_env,
+            "api_key_present": _realtime_voice_env_present(env_on_disk, openai_key_env)
+            or _realtime_voice_env_present(env_on_disk, "HERMES_OPENAI_REALTIME_API_KEY"),
+            "implemented": True,
+        },
+        {
+            "id": "gemini",
+            "provider": "gemini_live",
+            "label": "Gemini Live",
+            "kind": "native_s2s",
+            "model": str(realtime.get("frontend_model") or realtime.get("gemini_live_model") or "gemini-3.1-flash-live-preview"),
+            "voice": str(realtime.get("gemini_live_voice") or "Puck"),
+            "api_key_env": gemini_key_env,
+            "api_key_present": _realtime_voice_env_present(env_on_disk, gemini_key_env)
+            or _realtime_voice_env_present(env_on_disk, "HERMES_GEMINI_LIVE_API_KEY"),
+            "implemented": True,
+        },
+        {
+            "id": "elevenlabs",
+            "provider": "reference",
+            "label": "ElevenLabs bridge",
+            "kind": "stt_tts_bridge",
+            "model": str(realtime.get("streaming_tts_model") or "eleven_flash_v2_5"),
+            "voice": str(realtime.get("streaming_tts_voice") or ""),
+            "api_key_env": "ELEVENLABS_API_KEY",
+            "api_key_present": _realtime_voice_env_present(env_on_disk, "ELEVENLABS_API_KEY"),
+            "bridge_token_env": tts_token_env,
+            "bridge_token_present": _realtime_voice_env_present(env_on_disk, tts_token_env),
+            "implemented": True,
+        },
+        {
+            "id": "deepgram",
+            "provider": "reference",
+            "label": "Deepgram bridge",
+            "kind": "stt_tts_bridge",
+            "model": str(realtime.get("streaming_stt_model") or "nova-3"),
+            "voice": str(realtime.get("streaming_tts_model") or "aura-2-thalia-en"),
+            "api_key_env": "DEEPGRAM_API_KEY",
+            "api_key_present": _realtime_voice_env_present(env_on_disk, "DEEPGRAM_API_KEY"),
+            "bridge_token_env": stt_token_env,
+            "bridge_token_present": _realtime_voice_env_present(env_on_disk, stt_token_env),
+            "implemented": True,
+        },
+        {
+            "id": "cartesia",
+            "provider": "reference",
+            "label": "Cartesia bridge",
+            "kind": "stt_tts_bridge",
+            "model": "sonic-3.5",
+            "voice": "",
+            "api_key_env": "CARTESIA_API_KEY",
+            "api_key_present": _realtime_voice_env_present(env_on_disk, "CARTESIA_API_KEY"),
+            "implemented": False,
+            "status": "planned",
+        },
+    ]
+
+
+def _realtime_voice_discord_setup(realtime: Mapping[str, Any], env_on_disk: Mapping[str, Any]) -> Dict[str, Any]:
+    cfg = load_config()
+    discord_cfg = cfg.get("discord") if isinstance(cfg, dict) else {}
+    discord_rt = discord_cfg.get("realtime_voice") if isinstance(discord_cfg, dict) else {}
+    if not isinstance(discord_rt, dict):
+        discord_rt = {}
+    sidecar_base_url = str(
+        discord_rt.get("sidecar_base_url")
+        or realtime.get("sidecar_base_url")
+        or (
+            f"http://{realtime.get('sidecar_host') or '127.0.0.1'}:{int(realtime.get('sidecar_port') or 8765)}"
+            if realtime.get("sidecar_autostart") is True
+            else ""
+        )
+    ).strip()
+    return {
+        "enabled": bool(discord_rt.get("enabled")),
+        "sidecar_base_url": sidecar_base_url,
+        "bot_token_present": _realtime_voice_env_present(env_on_disk, "DISCORD_BOT_TOKEN"),
+        "guild_id_present": _realtime_voice_env_present(env_on_disk, "DISCORD_GUILD_ID"),
+        "voice_channel_id_present": _realtime_voice_env_present(env_on_disk, "DISCORD_VOICE_CHANNEL_ID"),
+        "voice_channel_name_present": _realtime_voice_env_present(env_on_disk, "DISCORD_VOICE_CHANNEL_NAME"),
+    }
+
+
+def _realtime_voice_setup_payload(profile: Optional[str] = None) -> Dict[str, Any]:
+    with _profile_scope(profile):
+        cfg = load_config()
+        env_on_disk = load_env()
+        realtime = _realtime_voice_config_dict()
+        status = _realtime_voice_status_payload()
+        return {
+            "status": status,
+            "providers": _realtime_voice_provider_setup_rows(realtime, env_on_disk),
+            "discord": _realtime_voice_discord_setup(realtime, env_on_disk),
+            "config_path": str(get_config_path()),
+            "env_path": str(get_env_path()),
+            "active_provider": str(realtime.get("frontend_provider") or ""),
+            "active_model": str(realtime.get("frontend_model") or ""),
+            "enabled": bool(realtime.get("enabled")),
+            "profile": profile or "",
+        }
+
+
+def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict[str, Any]:
+    from hermes_cli.realtime_voice_profile import (
+        DEFAULT_DEEPGRAM_STT_MODEL,
+        DEFAULT_DEEPGRAM_TTS_MODEL,
+        DEFAULT_ELEVENLABS_STT_MODEL,
+        DEFAULT_ELEVENLABS_TTS_MODEL,
+        DEFAULT_GEMINI_LIVE_MODEL,
+        DEFAULT_GEMINI_LIVE_VOICE,
+        DEFAULT_OPENAI_REALTIME_MODEL,
+        DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL,
+        DEFAULT_OPENAI_REALTIME_VOICE,
+        build_gemini_live_voice_profile,
+        build_openai_realtime_voice_profile,
+        build_realtime_voice_live_like_profile,
+    )
+
+    preset = str(body.preset or "").strip().lower()
+    if preset in {"openai", "openai_realtime"}:
+        return build_openai_realtime_voice_profile(
+            model=body.model or DEFAULT_OPENAI_REALTIME_MODEL,
+            voice=body.voice or DEFAULT_OPENAI_REALTIME_VOICE,
+            transcription_model=DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL,
+            api_key_env=body.api_key_env or "OPENAI_API_KEY",
+        )
+    if preset in {"gemini", "gemini_live"}:
+        return build_gemini_live_voice_profile(
+            model=body.model or DEFAULT_GEMINI_LIVE_MODEL,
+            voice=body.voice or DEFAULT_GEMINI_LIVE_VOICE,
+            api_key_env=body.api_key_env or "GEMINI_API_KEY",
+            google_search=bool(body.google_search),
+            oracle_tool=bool(body.oracle_tool),
+        )
+    if preset == "elevenlabs":
+        return build_realtime_voice_live_like_profile(
+            streaming_stt_base_url=body.streaming_stt_base_url or "http://127.0.0.1:8767",
+            streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8767",
+            streaming_stt_model=body.streaming_stt_model or DEFAULT_ELEVENLABS_STT_MODEL,
+            streaming_tts_model=body.streaming_tts_model or DEFAULT_ELEVENLABS_TTS_MODEL,
+        )
+    if preset == "deepgram":
+        return build_realtime_voice_live_like_profile(
+            streaming_stt_base_url=body.streaming_stt_base_url or "http://127.0.0.1:8766",
+            streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8766",
+            streaming_stt_model=body.streaming_stt_model or DEFAULT_DEEPGRAM_STT_MODEL,
+            streaming_tts_model=body.streaming_tts_model or DEFAULT_DEEPGRAM_TTS_MODEL,
+        )
+    if preset == "reference":
+        return build_realtime_voice_live_like_profile(
+            streaming_stt_base_url=body.streaming_stt_base_url,
+            streaming_tts_base_url=body.streaming_tts_base_url,
+            streaming_stt_model=body.streaming_stt_model or "portable-streaming-asr",
+            streaming_tts_model=body.streaming_tts_model or "portable-streaming-voice",
+        )
+    raise HTTPException(status_code=400, detail=f"unknown realtime voice preset: {body.preset}")
+
+
+def _apply_realtime_voice_profile_body(body: RealtimeVoiceProfileApply, profile: Optional[str]) -> Dict[str, Any]:
+    from hermes_cli.realtime_voice_profile import merge_realtime_voice_profile
+
+    target_profile = body.profile or profile
+    profile_cfg = _realtime_voice_profile_for_request(body)
+    with _profile_scope(target_profile):
+        cfg = load_config()
+        updated = merge_realtime_voice_profile(cfg, profile_cfg)
+        if body.enable_discord:
+            discord = updated.get("discord")
+            if not isinstance(discord, dict):
+                discord = {}
+            realtime = updated.get("voice", {}).get("realtime", {}) if isinstance(updated.get("voice"), dict) else {}
+            sidecar_base_url = (
+                str(realtime.get("sidecar_base_url") or "").strip()
+                or f"http://{realtime.get('sidecar_host') or '127.0.0.1'}:{int(realtime.get('sidecar_port') or 8765)}"
+            )
+            discord["realtime_voice"] = {
+                **(discord.get("realtime_voice") if isinstance(discord.get("realtime_voice"), dict) else {}),
+                "enabled": True,
+                "sidecar_base_url": sidecar_base_url,
+                "frontend_provider": realtime.get("frontend_provider") or "",
+                "frontend_model": realtime.get("frontend_model") or "",
+            }
+            updated["discord"] = discord
+        save_config(updated)
+        normalized = _normalize_config_for_web(load_config())
+    return {
+        "ok": True,
+        "config": {k: v for k, v in normalized.items() if not k.startswith("_")},
+        "setup": _realtime_voice_setup_payload(target_profile),
+    }
+
+
+def _realtime_voice_profile_home(profile: Optional[str]) -> str:
+    if not profile:
+        return str(get_hermes_home())
+    try:
+        from hermes_cli.profiles import resolve_profile_env
+
+        return resolve_profile_env(profile)
+    except Exception:
+        return str(get_hermes_home())
+
+
 def _realtime_voice_config_from_request(ws: WebSocket):
     """Build a realtime voice session config from profile config + query params."""
     from agent.realtime_voice import (
@@ -13765,6 +14008,110 @@ async def _send_realtime_voice_server_event(ws: WebSocket, event) -> bool:
         except Exception:
             pass
         return False
+
+
+@app.get("/api/voice/realtime/setup")
+async def realtime_voice_setup(profile: Optional[str] = None) -> Dict[str, Any]:
+    """Return provider-aware realtime voice setup state for GUI surfaces."""
+    return _realtime_voice_setup_payload(profile)
+
+
+@app.post("/api/voice/realtime/profile")
+async def realtime_voice_apply_profile(
+    body: RealtimeVoiceProfileApply,
+    profile: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Apply a known realtime voice provider preset."""
+    try:
+        return _apply_realtime_voice_profile_body(body, profile)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log.exception("POST /api/voice/realtime/profile failed")
+        raise HTTPException(status_code=500, detail=sanitize_realtime_voice_error(exc))
+
+
+@app.post("/api/voice/realtime/smoke")
+async def realtime_voice_smoke(
+    body: RealtimeVoiceSmokeRequest,
+    profile: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Run the focused realtime voice evidence collector from the GUI."""
+    target_profile = body.profile or profile
+
+    def _run() -> Dict[str, Any]:
+        with _profile_scope(target_profile):
+            env_on_disk = load_env()
+            realtime = _realtime_voice_config_dict()
+            provider = str(realtime.get("frontend_provider") or "").strip().lower()
+            hermes_home = _realtime_voice_profile_home(target_profile)
+            output_dir = str(body.output_dir or "").strip()
+            if not output_dir:
+                output_dir = str(Path(hermes_home) / "artifacts" / "realtime-voice-evidence" / "gui-current")
+            env = {
+                **os.environ,
+                **{k: str(v) for k, v in env_on_disk.items() if v is not None},
+                "HERMES_HOME": hermes_home,
+            }
+            cmd = [
+                sys.executable,
+                "-m",
+                "hermes_cli.realtime_voice_live_evidence",
+                "--output-dir",
+                output_dir,
+                "--wait-seconds",
+                str(max(0.0, float(body.wait_seconds or 0.0))),
+            ]
+            if body.require_discord:
+                cmd.append("--require-live-discord")
+            if body.require_inbound:
+                cmd.append("--require-inbound")
+            if provider in {"openai", "openai_realtime"}:
+                cmd.append("--require-openai-realtime")
+            if provider in {"gemini", "gemini_live"}:
+                cmd.append("--require-gemini-live")
+
+        timeout = max(20.0, float(body.wait_seconds or 0.0) + 25.0)
+        result = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            cwd=str(PROJECT_ROOT),
+            env=env,
+            text=True,
+            timeout=timeout,
+        )
+        payload: Dict[str, Any] = {}
+        if result.stdout.strip():
+            try:
+                parsed = json.loads(result.stdout)
+                if isinstance(parsed, dict):
+                    payload = parsed
+            except json.JSONDecodeError:
+                payload = {}
+        return {
+            "ok": result.returncode == 0,
+            "exit_code": result.returncode,
+            "output_dir": output_dir,
+            "stdout": result.stdout[-12000:],
+            "stderr": result.stderr[-12000:],
+            "result": payload,
+        }
+
+    try:
+        return await asyncio.to_thread(_run)
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "ok": False,
+            "exit_code": None,
+            "output_dir": body.output_dir or "",
+            "stdout": (exc.stdout or "")[-12000:] if isinstance(exc.stdout, str) else "",
+            "stderr": (exc.stderr or "")[-12000:] if isinstance(exc.stderr, str) else "",
+            "result": {"issues": ["smoke_test_timed_out"]},
+        }
+    except Exception as exc:
+        _log.exception("POST /api/voice/realtime/smoke failed")
+        raise HTTPException(status_code=500, detail=sanitize_realtime_voice_error(exc))
 
 
 @app.get("/api/voice/realtime/status")
