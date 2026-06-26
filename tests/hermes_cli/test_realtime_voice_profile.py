@@ -94,6 +94,80 @@ def test_deepgram_preset_preserves_explicit_streaming_models(capsys):
     assert realtime["streaming_tts_model"] == "custom-voice"
 
 
+def test_elevenlabs_preset_prints_applyable_portable_profile(capsys):
+    result = realtime_voice_profile.main(["--preset", "elevenlabs"])
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8767"
+    assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8767"
+    assert realtime["streaming_stt_model"] == "scribe_v2_realtime"
+    assert realtime["streaming_tts_model"] == "eleven_flash_v2_5"
+    assert realtime["streaming_stt_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    assert realtime["streaming_tts_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    assert realtime["require_live_like"] is True
+
+
+def test_elevenlabs_preset_accepts_custom_bridge_base_url(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "elevenlabs",
+            "--bridge-base-url",
+            "http://voice-bridge.local:8767/",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["streaming_stt_base_url"] == "http://voice-bridge.local:8767"
+    assert realtime["streaming_tts_base_url"] == "http://voice-bridge.local:8767"
+
+
+def test_openai_preset_prints_managed_realtime_profile(capsys):
+    result = realtime_voice_profile.main(["--preset", "openai"])
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["frontend_provider"] == "openai_realtime"
+    assert realtime["frontend_model"] == "gpt-realtime-2"
+    assert realtime["openai_realtime_api_key_env"] == "OPENAI_API_KEY"
+    assert realtime["openai_realtime_base_url"] == "wss://api.openai.com/v1/realtime"
+    assert realtime["openai_realtime_voice"] == "marin"
+    assert realtime["openai_realtime_transcription_model"] == "gpt-realtime-whisper"
+    assert realtime["sidecar_autostart"] is True
+    assert realtime["require_live_like"] is True
+    assert "streaming_stt_base_url" not in realtime
+
+
+def test_openai_preset_accepts_explicit_model_voice_and_key_env(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "openai",
+            "--openai-realtime-model",
+            "gpt-realtime-2",
+            "--openai-realtime-voice",
+            "cedar",
+            "--openai-realtime-transcription-model",
+            "gpt-realtime-whisper",
+            "--openai-realtime-api-key-env",
+            "HERMES_OPENAI_KEY",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["frontend_model"] == "gpt-realtime-2"
+    assert realtime["openai_realtime_voice"] == "cedar"
+    assert realtime["openai_realtime_transcription_model"] == "gpt-realtime-whisper"
+    assert realtime["openai_realtime_api_key_env"] == "HERMES_OPENAI_KEY"
+
+
 def test_merge_realtime_voice_profile_preserves_unrelated_config():
     existing = {
         "model": {"provider": "openrouter", "default": "gpt-5"},
@@ -161,6 +235,7 @@ def test_deepgram_preset_apply_prints_bridge_next_steps(monkeypatch, tmp_path, c
     assert "--production-en-ja" in output
     assert "realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --production-en-ja" in output
     assert "realtime_voice_alpha_evidence --runs 3 --apply" in output
+    assert "realtime_voice_live_evidence --require-live-discord --require-openai-realtime" in output
 
 
 def test_deepgram_preset_apply_can_generate_bridge_token(monkeypatch, tmp_path, capsys):
@@ -238,3 +313,47 @@ def test_deepgram_preset_apply_does_not_overwrite_existing_bridge_token(monkeypa
     assert result == 0
     assert writes == []
     assert "already configured in HERMES_STREAMING_STT_BRIDGE_TOKEN" in capsys.readouterr().out
+
+
+def test_elevenlabs_preset_apply_prints_bridge_next_steps(monkeypatch, tmp_path, capsys):
+    saved = {}
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {"model": {"provider": "openrouter"}},
+    )
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+
+    result = realtime_voice_profile.main(["--preset", "elevenlabs", "--apply"])
+
+    assert result == 0
+    realtime = saved["config"]["voice"]["realtime"]
+    assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8767"
+    assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8767"
+    output = capsys.readouterr().out
+    assert "realtime_voice_elevenlabs_bridge --generate-token" in output
+    assert "realtime_voice_elevenlabs_bridge --check --strict --production-en-ja" in output
+    assert "realtime_voice_elevenlabs_bridge --host 127.0.0.1 --port 8767 --production-en-ja" in output
+    assert "realtime_voice_alpha_evidence --runs 3 --apply --provider elevenlabs --start-bridge" in output
+    assert "realtime_voice_live_evidence --require-live-discord --require-openai-realtime" in output
+
+
+def test_openai_preset_apply_prints_live_evidence_next_steps(monkeypatch, tmp_path, capsys):
+    saved = {}
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {"model": {"provider": "openrouter"}},
+    )
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+
+    result = realtime_voice_profile.main(["--preset", "openai", "--apply"])
+
+    assert result == 0
+    realtime = saved["config"]["voice"]["realtime"]
+    assert realtime["frontend_provider"] == "openai_realtime"
+    output = capsys.readouterr().out
+    assert "export OPENAI_API_KEY=..." in output
+    assert "export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=..." in output
+    assert "realtime_voice_sidecar --host 127.0.0.1 --port 8765" in output
+    assert "realtime_voice_live_evidence --require-live-discord --require-openai-realtime" in output

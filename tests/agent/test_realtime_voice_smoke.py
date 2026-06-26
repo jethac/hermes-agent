@@ -69,6 +69,7 @@ def test_session_turn_smoke_measures_first_text_and_audio(monkeypatch):
             {
                 **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
                 "playback_generation": playback_generation,
+                "metrics": {"tts_synthesis_ms": 123},
             },
         )
 
@@ -89,6 +90,7 @@ def test_session_turn_smoke_measures_first_text_and_audio(monkeypatch):
     assert result.ok is True
     assert result.first_text_ms is not None
     assert result.first_audio_ms is not None
+    assert result.first_audio_metrics["tts_synthesis_ms"] == 123
     assert result.output_audio_bytes == len(b"audio")
     assert result.final_text == "Hello from Hermes."
     assert result.events == (
@@ -96,6 +98,7 @@ def test_session_turn_smoke_measures_first_text_and_audio(monkeypatch):
         "transcript.final",
         "assistant.text.partial",
         "audio.output.chunk",
+        "assistant.commit",
     )
 
 
@@ -139,7 +142,10 @@ def test_session_audio_smoke_uses_sidecar_stt_and_tts_in_one_session():
                 type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
                 session_id=self.config.session_id,
                 sequence=4,
-                payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+                    "metrics": {"tts_synthesis_ms": 456},
+                },
             )
 
         async def close(self):
@@ -165,6 +171,7 @@ def test_session_audio_smoke_uses_sidecar_stt_and_tts_in_one_session():
     assert result.transcript_partial_ms is not None
     assert result.first_text_ms is not None
     assert result.first_audio_ms is not None
+    assert result.first_audio_metrics["tts_synthesis_ms"] == 456
     assert result.events == (
         "session.started",
         "frontend.state",

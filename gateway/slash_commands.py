@@ -2442,11 +2442,43 @@ class GatewaySlashCommandsMixin:
             if guild_id and hasattr(adapter, "get_voice_channel_info"):
                 info = adapter.get_voice_channel_info(guild_id)
                 if info:
+                    session = info.get("voice_session") or {}
+                    voice_mode = session.get("mode") or "unknown"
+                    session_state = session.get("session_state") or "unknown"
+                    fallback_reason = session.get("fallback_reason")
+                    streaming_speech = session.get("streaming_speech")
                     lines = [
                         t("gateway.voice.status_mode", label=labels.get(mode, mode)),
                         t("gateway.voice.status_channel", channel=info['channel_name']),
                         t("gateway.voice.status_participants", count=info['member_count']),
+                        f"Live voice session: {voice_mode}",
+                        f"Lifecycle: {session_state}",
+                        f"Mixer: {'on' if session.get('mixer_installed') else 'off'}",
+                        f"Realtime sidecar: {'on' if session.get('sidecar_running') else 'off'}",
+                        f"Playback: {'active' if session.get('playback_active') else 'idle'}",
                     ]
+                    if isinstance(streaming_speech, dict) and streaming_speech:
+                        queue_depth = streaming_speech.get("queue_depth", 0)
+                        dropped_frames = streaming_speech.get("dropped_frames", 0)
+                        lines.append(
+                            f"Realtime audio queue: depth={queue_depth}, dropped={dropped_frames}"
+                        )
+                    if session.get("last_realtime_event"):
+                        lines.append(f"Last realtime event: {session['last_realtime_event']}")
+                    latency_metrics = session.get("latency_metrics_ms")
+                    if isinstance(latency_metrics, dict) and latency_metrics:
+                        metric_parts = [
+                            f"{key}={value}ms"
+                            for key, value in sorted(latency_metrics.items())
+                            if isinstance(value, int)
+                        ]
+                        if metric_parts:
+                            lines.append(f"Realtime latency: {', '.join(metric_parts)}")
+                    quality_misses = session.get("quality_target_misses")
+                    if isinstance(quality_misses, list) and quality_misses:
+                        lines.append(f"Quality target misses: {len(quality_misses)}")
+                    if fallback_reason:
+                        lines.append(f"Fallback reason: {fallback_reason}")
                     for m in info["members"]:
                         status = t("gateway.voice.speaking") if m.get("is_speaking") else ""
                         lines.append(t("gateway.voice.status_member", name=m['display_name'], status=status))

@@ -401,6 +401,48 @@ def test_alpha_evidence_runner_apply_updates_production_evidence_report(
     assert "Updated realtime voice production_evidence_report" in capsys.readouterr().out
 
 
+def test_alpha_evidence_runner_refuses_to_apply_loopback_evidence(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    saved = {}
+    reports_dir = tmp_path / "reports"
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(monkeypatch)
+    monkeypatch.setattr("hermes_cli.config.read_raw_config", lambda: {"voice": {"realtime": {"enabled": True}}})
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+
+    def fake_run_doctor(args):
+        with open(args.realtime_voice_report, "w", encoding="utf-8") as handle:
+            json.dump(_valid_alpha_report(), handle, ensure_ascii=False)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(reports_dir),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+            "--provider",
+            "loopback",
+            "--apply",
+        ]
+    )
+
+    assert result == 1
+    assert saved == {}
+    assert "loopback validation cannot be applied as production evidence" in capsys.readouterr().err
+
+
 def test_alpha_evidence_runner_refuses_to_overwrite_existing_report(tmp_path, capsys):
     (tmp_path / "alpha-001.json").write_text("[]", encoding="utf-8")
 
@@ -716,6 +758,71 @@ def test_alpha_evidence_runner_can_start_elevenlabs_bridge_with_provider_flag(mo
     ]
     assert proc.terminated is True
     assert proc.waited is True
+
+
+def test_alpha_evidence_runner_can_start_loopback_bridge_with_provider_flag(monkeypatch, tmp_path):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    proc = _FakeSidecarProcess()
+    _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(
+            realtime_config={
+                "frontend_provider": "reference",
+                "streaming_stt_base_url": "http://127.0.0.1:8768",
+                "streaming_tts_base_url": "http://127.0.0.1:8768",
+            },
+        ),
+    )
+    health_calls = []
+    spawned = []
+
+    def fake_health(url, *, token=""):
+        health_calls.append((url, token))
+        return len(health_calls) >= 2
+
+    def fake_spawn(provider, host, port, env_on_disk):
+        spawned.append((provider, host, port, dict(env_on_disk)))
+        return proc
+
+    monkeypatch.setattr(realtime_voice_alpha_evidence, "_streaming_bridge_healthy", fake_health)
+    monkeypatch.setattr(realtime_voice_alpha_evidence, "_spawn_streaming_bridge_for_evidence", fake_spawn)
+
+    def fake_run_doctor(args):
+        with open(args.realtime_voice_report, "w", encoding="utf-8") as handle:
+            json.dump(_valid_alpha_report(), handle, ensure_ascii=False)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+            "--provider",
+            "loopback",
+            "--start-bridge",
+        ]
+    )
+
+    assert result == 0
+    assert spawned == [("loopback", "127.0.0.1", 8768, {})]
+    assert health_calls == [
+        ("http://127.0.0.1:8768", ""),
+        ("http://127.0.0.1:8768", ""),
+    ]
+    assert proc.terminated is True
+    assert proc.waited is True
+    report = json.loads((tmp_path / "reports" / "alpha-001.json").read_text(encoding="utf-8"))
+    assert all(entry.get("evidence_provider") == "loopback" for entry in report if isinstance(entry, dict))
+    assert all(entry.get("loopback_validation") is True for entry in report if isinstance(entry, dict))
 
 
 def test_alpha_evidence_runner_can_start_deepgram_bridge(monkeypatch, tmp_path):

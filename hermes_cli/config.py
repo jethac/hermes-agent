@@ -2045,8 +2045,13 @@ DEFAULT_CONFIG = {
             "sidecar_port": 8765,
             "sidecar_autostart": True,
             "sidecar_connect_timeout_seconds": 10.0,
+            "sidecar_close_timeout_seconds": 2.0,
             "vllm_base_url": "",
             "vllm_model": "",
+            "openai_realtime_api_key_env": "OPENAI_API_KEY",
+            "openai_realtime_base_url": "wss://api.openai.com/v1/realtime",
+            "openai_realtime_voice": "marin",
+            "openai_realtime_transcription_model": "gpt-realtime-whisper",
             "production_languages": ["en", "ja"],
             "production_scripts": ["Latn", "Jpan"],
             "best_effort_languages": True,
@@ -2054,6 +2059,10 @@ DEFAULT_CONFIG = {
             "production_evidence_min_runs": 3,
             "production_evidence_max_age_days": 14,
             "production_review_report": "",
+            "turn_acknowledgement": {
+                "enabled": True,
+                "text": "One moment.",
+            },
             "quality_targets_ms": {
                 "audio_to_partial_transcript_ms": 300,
                 "final_transcript_to_first_text_ms": 500,
@@ -2386,6 +2395,20 @@ DEFAULT_CONFIG = {
                 "Give me a sec.",
                 "On it.",
             ],
+        },
+        # Discord live voice sidecar bridge. OFF by default and scoped away
+        # from desktop/browser voice; shared provider defaults can still come
+        # from voice.realtime when explicitly enabled here.
+        "realtime_voice": {
+            "enabled": False,
+            "sidecar_base_url": "",
+            "sidecar_token": "",
+            "frontend_provider": "",
+            "frontend_model": "",
+            "oracle_model": "",
+            "tts_provider": "",
+            "sidecar_connect_timeout_seconds": 10.0,
+            "sidecar_close_timeout_seconds": 2.0,
         },
     },
 

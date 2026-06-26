@@ -119,6 +119,65 @@ class TestVoiceMixerCore:
         out = mx.read()
         assert len(out) == vm.FRAME_SIZE
 
+    def test_realtime_speech_stream_plays_queued_frames_in_order(self):
+        mx = vm.VoiceMixer()
+        first = (np.ones(vm.SAMPLES_PER_FRAME * vm.CHANNELS) * 1000).astype(np.int16).tobytes()
+        second = (np.ones(vm.SAMPLES_PER_FRAME * vm.CHANNELS) * 2000).astype(np.int16).tobytes()
+
+        mx.enqueue_speech_frame(first)
+        mx.enqueue_speech_frame(second)
+
+        assert int(np.max(np.frombuffer(mx.read(), dtype=np.int16))) == 1000
+        assert int(np.max(np.frombuffer(mx.read(), dtype=np.int16))) == 2000
+
+    def test_realtime_speech_stream_survives_idle_gap_until_finished(self):
+        mx = vm.VoiceMixer()
+        first = (np.ones(vm.SAMPLES_PER_FRAME * vm.CHANNELS) * 1000).astype(np.int16).tobytes()
+        second = (np.ones(vm.SAMPLES_PER_FRAME * vm.CHANNELS) * 2000).astype(np.int16).tobytes()
+
+        mx.enqueue_speech_frame(first)
+        assert int(np.max(np.frombuffer(mx.read(), dtype=np.int16))) == 1000
+        assert mx.read() == vm.SILENCE_FRAME
+        assert mx.speech_active
+
+        mx.enqueue_speech_frame(second)
+        assert int(np.max(np.frombuffer(mx.read(), dtype=np.int16))) == 2000
+        mx.finish_speech_stream()
+        assert mx.read() == vm.SILENCE_FRAME
+        assert not mx.speech_active
+
+    def test_realtime_speech_stream_stop_clears_queue(self):
+        mx = vm.VoiceMixer()
+        frame = (np.ones(vm.SAMPLES_PER_FRAME * vm.CHANNELS) * 1000).astype(np.int16).tobytes()
+
+        mx.enqueue_speech_frame(frame)
+        assert mx.speech_active
+        mx.stop_speech()
+
+        assert mx.read() == vm.SILENCE_FRAME
+        assert not mx.speech_active
+        assert mx.streaming_speech_stats() == {
+            "queue_depth": 0,
+            "dropped_frames": 0,
+            "active": False,
+        }
+
+    def test_realtime_speech_stream_drops_oldest_when_bounded(self):
+        mx = vm.VoiceMixer(streaming_speech_max_frames=2)
+        frames = [
+            (np.ones(vm.SAMPLES_PER_FRAME * vm.CHANNELS) * value).astype(np.int16).tobytes()
+            for value in (1000, 2000, 3000)
+        ]
+
+        for frame in frames:
+            mx.enqueue_speech_frame(frame)
+
+        stats = mx.streaming_speech_stats()
+        assert stats["queue_depth"] == 2
+        assert stats["dropped_frames"] == 1
+        assert int(np.max(np.frombuffer(mx.read(), dtype=np.int16))) == 2000
+        assert int(np.max(np.frombuffer(mx.read(), dtype=np.int16))) == 3000
+
     def test_synth_ambient_is_stereo_and_frame_aligned(self):
         pcm = vm.synth_ambient_pcm(seconds=1.0)
         assert len(pcm) % (vm.CHANNELS * vm.SAMPLE_WIDTH) == 0

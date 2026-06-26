@@ -171,6 +171,33 @@ def _valid_alpha_report():
     return entries
 
 
+def _discord_live_probe_report(*, inbound: bool = False):
+    return {
+        "kind": "discord_live_probe",
+        "ok": True,
+        "guild_name": "jetha dev server",
+        "voice_channel_name": "General",
+        "connect_perm": True,
+        "speak_perm": True,
+        "members_before": 2 if inbound else 0,
+        "connected": True,
+        "opus_loaded": True,
+        "accepted_audio_source": True,
+        "played": True,
+        "playing_during_probe": True,
+        "receiver_started": True,
+        "receiver_frames": 12 if inbound else 0,
+        "receiver_speech_start": 1 if inbound else 0,
+        "inbound_observed": inbound,
+        "members_after": 2 if inbound else 0,
+        "disconnected": True,
+        "require_inbound": inbound,
+        "wait_seconds": 5.0,
+        "failure_reason": None,
+        "error": None,
+    }
+
+
 def test_realtime_voice_alpha_report_accepts_required_en_ja_smokes():
     assert validate_realtime_voice_alpha_report(_valid_alpha_report()) == []
 
@@ -534,6 +561,151 @@ def test_realtime_voice_report_cli_enforces_minimum_alpha_runs(tmp_path, capsys)
     assert "requires at least 3 run(s), found 1" in capsys.readouterr().err
 
 
+def test_realtime_voice_report_cli_validates_discord_live_probe(tmp_path, capsys):
+    path = tmp_path / "discord-live.json"
+    path.write_text(
+        json.dumps(
+            [
+                {"kind": "manifest", "ok": True},
+                _discord_live_probe_report(inbound=True),
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert realtime_voice_report_main([str(path), "--discord-live-probe", "--require-inbound"]) == 0
+    assert "Realtime voice smoke report OK: 1 result(s) across 1 run(s)" in capsys.readouterr().out
+
+
+def test_realtime_voice_report_cli_rejects_discord_live_probe_without_inbound(
+    tmp_path,
+    capsys,
+):
+    path = tmp_path / "discord-live.json"
+    probe = _discord_live_probe_report(inbound=False)
+    probe["ok"] = False
+    probe["require_inbound"] = True
+    probe["failure_reason"] = "inbound_required_but_no_other_members"
+    probe["error"] = "live Discord voice probe did not satisfy invariants: inbound_required_but_no_other_members"
+    path.write_text(json.dumps([{"kind": "manifest", "ok": True}, probe], ensure_ascii=False), encoding="utf-8")
+
+    assert realtime_voice_report_main([str(path), "--discord-live-probe", "--require-inbound"]) == 1
+    error = capsys.readouterr().err
+    assert "no passing probe" in error
+    assert "inbound speech not observed" in error
+    assert "inbound_required_but_no_other_members" in error
+
+
+def test_realtime_voice_report_cli_rejects_missing_discord_live_probe(tmp_path, capsys):
+    path = tmp_path / "voice-smoke.json"
+    path.write_text(json.dumps(_valid_alpha_report(), ensure_ascii=False), encoding="utf-8")
+
+    assert realtime_voice_report_main([str(path), "--discord-live-probe"]) == 1
+    assert "missing Discord live probe result" in capsys.readouterr().err
+
+
+def test_realtime_voice_report_cli_apply_requires_alpha(tmp_path, capsys):
+    path = tmp_path / "voice-smoke.json"
+    path.write_text(json.dumps(_valid_alpha_report(), ensure_ascii=False), encoding="utf-8")
+
+    assert realtime_voice_report_main([str(path), "--apply-production-evidence"]) == 1
+    assert "--apply-production-evidence requires --alpha" in capsys.readouterr().err
+
+
+def test_realtime_voice_report_cli_applies_validated_production_evidence(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    saved = {}
+    for index in range(3):
+        path = reports_dir / f"voice-smoke-{index}.json"
+        path.write_text(json.dumps(_valid_alpha_report(), ensure_ascii=False), encoding="utf-8")
+
+    monkeypatch.setattr("hermes_cli.config.read_raw_config", lambda: {"voice": {"realtime": {"enabled": True}}})
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+
+    assert (
+        realtime_voice_report_main(
+            [
+                *[str(path) for path in sorted(reports_dir.glob("*.json"))],
+                "--alpha",
+                "--min-runs",
+                "3",
+                "--apply-production-evidence",
+            ]
+        )
+        == 0
+    )
+
+    assert saved["config"]["voice"]["realtime"]["production_evidence_report"] == str(reports_dir)
+    assert "Updated realtime voice production_evidence_report" in capsys.readouterr().out
+
+
+def test_realtime_voice_report_cli_apply_rejects_loopback_evidence(tmp_path, capsys):
+    reports = []
+    for index in range(3):
+        report = _valid_alpha_report()
+        for entry in report:
+            entry["evidence_provider"] = "loopback"
+            entry["loopback_validation"] = True
+        path = tmp_path / f"voice-smoke-{index}.json"
+        path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+        reports.append(str(path))
+
+    assert (
+        realtime_voice_report_main(
+            [
+                *reports,
+                "--alpha",
+                "--min-runs",
+                "3",
+                "--apply-production-evidence",
+            ]
+        )
+        == 1
+    )
+    assert "loopback validation cannot satisfy production evidence" in capsys.readouterr().err
+
+
+def test_realtime_voice_report_cli_apply_rejects_mixed_report_directories(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    saved = {}
+    reports = []
+    for index in range(3):
+        report_dir = tmp_path / f"reports-{index}"
+        report_dir.mkdir()
+        path = report_dir / "voice-smoke.json"
+        path.write_text(json.dumps(_valid_alpha_report(), ensure_ascii=False), encoding="utf-8")
+        reports.append(str(path))
+
+    monkeypatch.setattr("hermes_cli.config.read_raw_config", lambda: {"voice": {"realtime": {"enabled": True}}})
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+
+    assert (
+        realtime_voice_report_main(
+            [
+                *reports,
+                "--alpha",
+                "--min-runs",
+                "3",
+                "--apply-production-evidence",
+            ]
+        )
+        == 1
+    )
+
+    assert saved == {}
+    assert "multiple reports requires all reports to share one directory" in capsys.readouterr().err
+
+
 def test_realtime_voice_alpha_report_runs_accept_multiple_reports(tmp_path):
     runs = []
     for index in range(3):
@@ -542,6 +714,28 @@ def test_realtime_voice_alpha_report_runs_accept_multiple_reports(tmp_path):
         runs.append((str(path), load_realtime_voice_smoke_report(path)))
 
     assert validate_realtime_voice_alpha_report_runs(runs, min_runs=3) == []
+
+
+def test_realtime_voice_alpha_report_runs_can_reject_loopback_for_production(tmp_path):
+    runs = []
+    for index in range(3):
+        report = _valid_alpha_report()
+        for entry in report:
+            entry["evidence_provider"] = "loopback"
+            entry["loopback_validation"] = True
+        path = tmp_path / f"voice-smoke-{index}.json"
+        path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+        runs.append((str(path), load_realtime_voice_smoke_report(path)))
+
+    assert validate_realtime_voice_alpha_report_runs(runs, min_runs=3) == []
+
+    issues = validate_realtime_voice_alpha_report_runs(
+        runs,
+        min_runs=3,
+        allow_loopback_validation=False,
+    )
+
+    assert any("loopback validation cannot satisfy production evidence" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_alpha_report_runs_reject_mixed_stack_manifests(tmp_path):

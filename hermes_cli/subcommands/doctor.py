@@ -33,6 +33,37 @@ def build_doctor_parser(subparsers, *, cmd_doctor: Callable) -> None:
         help="Run the strict realtime voice gate plus a sidecar websocket protocol smoke",
     )
     doctor_parser.add_argument(
+        "--discord-realtime-voice-smoke",
+        action="store_true",
+        help="Run the strict realtime voice gate plus a local Discord voice bridge smoke",
+    )
+    doctor_parser.add_argument(
+        "--discord-voice-live-probe",
+        action="store_true",
+        help="Join a real Discord voice channel, install the receiver, play mixer audio, and leave",
+    )
+    doctor_parser.add_argument(
+        "--discord-voice-live-probe-require-inbound",
+        action="store_true",
+        help="With --discord-voice-live-probe, fail unless inbound live speech frames are observed",
+    )
+    doctor_parser.add_argument(
+        "--discord-voice-live-probe-wait-seconds",
+        type=float,
+        default=2.0,
+        help="Seconds to wait in the voice channel during --discord-voice-live-probe",
+    )
+    doctor_parser.add_argument(
+        "--discord-voice-live-probe-channel-id",
+        default="",
+        help="Voice channel ID for --discord-voice-live-probe; defaults to DISCORD_VOICE_CHANNEL_ID",
+    )
+    doctor_parser.add_argument(
+        "--discord-voice-live-probe-channel-name",
+        default="",
+        help="Voice channel name for --discord-voice-live-probe; defaults to DISCORD_VOICE_CHANNEL_NAME or General",
+    )
+    doctor_parser.add_argument(
         "--realtime-voice-alpha",
         action="store_true",
         help=(

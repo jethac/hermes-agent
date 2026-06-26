@@ -35,6 +35,8 @@ class RealtimeVoiceSidecarSmokeResult:
     output_audio_bytes: int = 0
     audio_after_barge_in_bytes: int = 0
     events: Tuple[str, ...] = ()
+    first_audio_metrics: Optional[Mapping[str, Any]] = None
+    transport: str = ""
     error: str = ""
 
 
@@ -58,6 +60,8 @@ def realtime_voice_smoke_result_payload(
         "output_audio_bytes": result.output_audio_bytes,
         "audio_after_barge_in_bytes": result.audio_after_barge_in_bytes,
         "events": list(result.events),
+        "first_audio_metrics": dict(result.first_audio_metrics or {}) or None,
+        "transport": result.transport or None,
         "error": result.error or None,
     }
 
@@ -179,6 +183,7 @@ async def run_realtime_voice_sidecar_tts_smoke(
     started_at = time.perf_counter()
     ready_ms: Optional[int] = None
     events: list[str] = []
+    first_audio_metrics: Optional[dict[str, Any]] = None
     client = RealtimeVoiceSidecarClient()
 
     try:
@@ -232,6 +237,7 @@ async def run_realtime_voice_sidecar_tts_smoke(
                     error=error,
                 )
             if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                first_audio_metrics = _safe_metrics(event.payload)
                 try:
                     output_audio_bytes = len(AudioChunk.from_payload(event.payload).data)
                 except Exception:
@@ -242,6 +248,7 @@ async def run_realtime_voice_sidecar_tts_smoke(
                     first_audio_ms=elapsed_ms,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
+                    first_audio_metrics=first_audio_metrics,
                     error="" if output_audio_bytes > 0 else "audio.output.chunk contained no audio bytes",
                 )
     except Exception as exc:
@@ -279,8 +286,10 @@ async def run_realtime_voice_session_turn_smoke(
     transcript_final_ms: Optional[int] = None
     first_text_ms: Optional[int] = None
     first_audio_ms: Optional[int] = None
+    first_audio_metrics: Optional[dict[str, Any]] = None
     output_audio_bytes = 0
     final_text = ""
+    assistant_committed = False
     events: list[str] = []
     engine = TextOracleTTSEngine(oracle=_StaticRealtimeOracle(answer))
     session = RealtimeVoiceSession(config, engine=engine)
@@ -358,6 +367,7 @@ async def run_realtime_voice_session_turn_smoke(
                 )
                 final_text = _assistant_text_from_payload(event.payload) or final_text
             elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK and first_audio_ms is None:
+                first_audio_metrics = _safe_metrics(event.payload)
                 first_audio_ms = _metric_ms(
                     event.payload,
                     "final_transcript_to_first_audio_ms",
@@ -369,8 +379,9 @@ async def run_realtime_voice_session_turn_smoke(
                     output_audio_bytes = 0
             elif event.type == VoiceEventType.ASSISTANT_COMMIT:
                 final_text = str(event.payload.get("text") or final_text)
+                assistant_committed = True
 
-            if first_text_ms is not None and first_audio_ms is not None:
+            if first_text_ms is not None and first_audio_ms is not None and assistant_committed:
                 return RealtimeVoiceSidecarSmokeResult(
                     ok=output_audio_bytes > 0,
                     transcript_final_ms=transcript_final_ms,
@@ -379,6 +390,7 @@ async def run_realtime_voice_session_turn_smoke(
                     final_text=final_text,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
+                    first_audio_metrics=first_audio_metrics,
                     error="" if output_audio_bytes > 0 else "audio.output.chunk contained no audio bytes",
                 )
     except Exception as exc:
@@ -390,6 +402,7 @@ async def run_realtime_voice_session_turn_smoke(
             final_text=final_text,
             output_audio_bytes=output_audio_bytes,
             events=tuple(events),
+            first_audio_metrics=first_audio_metrics,
             error=sanitize_realtime_voice_error(exc),
         )
     finally:
@@ -415,6 +428,7 @@ async def run_realtime_voice_session_audio_smoke(
     transcript_final_ms: Optional[int] = None
     first_text_ms: Optional[int] = None
     first_audio_ms: Optional[int] = None
+    first_audio_metrics: Optional[dict[str, Any]] = None
     output_audio_bytes = 0
     final_text = ""
     events: list[str] = []
@@ -509,6 +523,7 @@ async def run_realtime_voice_session_audio_smoke(
                     fallback=_elapsed_from(transcript_final_elapsed_ms, elapsed_ms),
                 )
             elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK and first_audio_ms is None:
+                first_audio_metrics = _safe_metrics(event.payload)
                 first_audio_ms = _metric_ms(
                     event.payload,
                     "final_transcript_to_first_audio_ms",
@@ -535,6 +550,7 @@ async def run_realtime_voice_session_audio_smoke(
                     audio_bytes=audio_bytes,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
+                    first_audio_metrics=first_audio_metrics,
                     error="" if output_audio_bytes > 0 else "audio.output.chunk contained no audio bytes",
                 )
     except Exception as exc:
@@ -548,6 +564,7 @@ async def run_realtime_voice_session_audio_smoke(
             audio_bytes=audio_bytes,
             output_audio_bytes=output_audio_bytes,
             events=tuple(events),
+            first_audio_metrics=first_audio_metrics,
             error=sanitize_realtime_voice_error(exc),
         )
     finally:
@@ -583,6 +600,21 @@ def _metric_ms(payload: Mapping[str, Any], key: str, *, fallback: Optional[int] 
         if value is not None:
             return value
     return fallback
+
+
+def _safe_metrics(payload: Mapping[str, Any]) -> dict[str, Any]:
+    metrics = payload.get("metrics") if isinstance(payload, Mapping) else None
+    if not isinstance(metrics, Mapping):
+        return {}
+    safe: dict[str, Any] = {}
+    for key, value in metrics.items():
+        if not isinstance(key, str):
+            continue
+        if isinstance(value, bool):
+            safe[key] = value
+        elif isinstance(value, (int, float, str)) or value is None:
+            safe[key] = value
+    return safe
 
 
 def _elapsed_from(start_ms: Optional[int], end_ms: int) -> Optional[int]:

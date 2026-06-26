@@ -738,6 +738,16 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Allow other languages through captions, prompts, and provider auto-detection without claiming production quality",
         "category": "voice",
     },
+    "voice.realtime.turn_acknowledgement.enabled": {
+        "type": "boolean",
+        "description": "Speak a short acknowledgement immediately after a final transcript while the full voice response is generated",
+        "category": "voice",
+    },
+    "voice.realtime.turn_acknowledgement.text": {
+        "type": "string",
+        "description": "Short spoken acknowledgement used for realtime voice turns before the final response is ready",
+        "category": "voice",
+    },
     "voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms": {
         "type": "number",
         "description": "Target milliseconds from user audio to first partial transcript",
@@ -773,6 +783,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Seconds to wait when connecting to a realtime voice sidecar",
         "category": "voice",
     },
+    "voice.realtime.sidecar_close_timeout_seconds": {
+        "type": "number",
+        "description": "Seconds to wait while closing a realtime voice sidecar session",
+        "category": "voice",
+    },
     "voice.realtime.streaming_stt_base_url": {
         "type": "string",
         "description": "Optional compatible streaming STT bridge URL used by the managed reference sidecar",
@@ -803,10 +818,75 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Environment variable containing the streaming TTS bridge bearer token",
         "category": "voice",
     },
+    "voice.realtime.openai_realtime_api_key_env": {
+        "type": "string",
+        "description": "Environment variable containing the OpenAI Realtime API key; secrets stay outside config",
+        "category": "voice",
+    },
+    "voice.realtime.openai_realtime_base_url": {
+        "type": "string",
+        "description": "OpenAI Realtime WebSocket base URL for managed reference-sidecar sessions",
+        "category": "voice",
+    },
+    "voice.realtime.openai_realtime_voice": {
+        "type": "string",
+        "description": "OpenAI Realtime voice used by the low-latency frontend provider",
+        "category": "voice",
+    },
+    "voice.realtime.openai_realtime_transcription_model": {
+        "type": "string",
+        "description": "OpenAI Realtime transcription model used for frontend speech-to-text events",
+        "category": "voice",
+    },
     "voice.realtime.spark_base_url": {
         "type": "string",
         "description": "Deprecated alias for voice.realtime.sidecar_base_url",
         "category": "voice",
+    },
+    "discord.realtime_voice.enabled": {
+        "type": "boolean",
+        "description": "Enable Discord voice-channel realtime sidecar mode",
+        "category": "discord",
+    },
+    "discord.realtime_voice.sidecar_base_url": {
+        "type": "string",
+        "description": "Discord realtime voice sidecar URL; falls back to voice.realtime.sidecar_base_url when unset",
+        "category": "discord",
+    },
+    "discord.realtime_voice.sidecar_token": {
+        "type": "string",
+        "description": "Bearer token for the Discord realtime voice sidecar; prefer HERMES_REALTIME_VOICE_SIDECAR_TOKEN for secrets",
+        "category": "discord",
+    },
+    "discord.realtime_voice.frontend_provider": {
+        "type": "string",
+        "description": "Low-latency realtime voice frontend provider override for Discord voice sessions",
+        "category": "discord",
+    },
+    "discord.realtime_voice.frontend_model": {
+        "type": "string",
+        "description": "Low-latency realtime interface model override for Discord voice sessions",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_model": {
+        "type": "string",
+        "description": "Hermes backend oracle model override for Discord realtime voice sessions",
+        "category": "discord",
+    },
+    "discord.realtime_voice.tts_provider": {
+        "type": "string",
+        "description": "TTS provider override for Discord realtime voice fallback speech",
+        "category": "discord",
+    },
+    "discord.realtime_voice.sidecar_connect_timeout_seconds": {
+        "type": "number",
+        "description": "Seconds to wait when connecting Discord voice to the realtime sidecar",
+        "category": "discord",
+    },
+    "discord.realtime_voice.sidecar_close_timeout_seconds": {
+        "type": "number",
+        "description": "Seconds to wait while closing a Discord realtime sidecar session",
+        "category": "discord",
     },
     "display.skin": {
         "type": "select",
@@ -13032,6 +13112,18 @@ def _realtime_voice_quality_targets_payload(realtime: Dict[str, Any]) -> Dict[st
     return targets
 
 
+def _realtime_voice_turn_acknowledgement_payload(realtime: Dict[str, Any]) -> Dict[str, Any]:
+    raw = realtime.get("turn_acknowledgement")
+    if not isinstance(raw, dict):
+        raw = {}
+    enabled = _truthy_config(raw.get("enabled"), default=False)
+    text = str(raw.get("text") or "One moment.").strip()
+    return {
+        "enabled": enabled,
+        "text": text[:120] if text else "One moment.",
+    }
+
+
 def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str, Any]:
     frontend = payload.get("frontend") if isinstance(payload.get("frontend"), dict) else {}
     capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
@@ -13392,6 +13484,7 @@ def _realtime_voice_production_evidence_payload(
             runs,
             min_runs=min_runs,
             max_collected_age_days=max_age_days,
+            allow_loopback_validation=False,
         )
         if current_manifest is not None:
             evidence_manifest = _realtime_voice_first_evidence_manifest(runs)
@@ -13548,6 +13641,18 @@ def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
         cmd.extend(["--streaming-tts-base-url", streaming_tts_base_url])
     if streaming_tts_model:
         cmd.extend(["--streaming-tts-model", streaming_tts_model])
+    openai_realtime_base_url = str(realtime.get("openai_realtime_base_url") or "").strip()
+    openai_realtime_model = str(realtime.get("frontend_model") or realtime.get("openai_realtime_model") or "").strip()
+    openai_realtime_voice = str(realtime.get("openai_realtime_voice") or "").strip()
+    openai_realtime_transcription_model = str(realtime.get("openai_realtime_transcription_model") or "").strip()
+    if openai_realtime_base_url:
+        cmd.extend(["--openai-realtime-base-url", openai_realtime_base_url])
+    if openai_realtime_model:
+        cmd.extend(["--openai-realtime-model", openai_realtime_model])
+    if openai_realtime_voice:
+        cmd.extend(["--openai-realtime-voice", openai_realtime_voice])
+    if openai_realtime_transcription_model:
+        cmd.extend(["--openai-realtime-transcription-model", openai_realtime_transcription_model])
     input_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_input_languages(realtime))
     output_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_output_languages(realtime))
     scripts = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_scripts(realtime))
@@ -13627,6 +13732,26 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
         child_env["HERMES_VOICE_STREAMING_TTS_MODEL"] = streaming_tts_model
     if streaming_tts_token:
         child_env["HERMES_VOICE_STREAMING_TTS_TOKEN"] = streaming_tts_token
+    openai_realtime_api_key_env = str(realtime.get("openai_realtime_api_key_env") or "OPENAI_API_KEY")
+    openai_realtime_api_key = str(
+        env_on_disk.get(openai_realtime_api_key_env)
+        or os.environ.get(openai_realtime_api_key_env)
+        or ""
+    )
+    openai_realtime_base_url = str(realtime.get("openai_realtime_base_url") or "").strip()
+    openai_realtime_model = str(realtime.get("frontend_model") or realtime.get("openai_realtime_model") or "").strip()
+    openai_realtime_voice = str(realtime.get("openai_realtime_voice") or "").strip()
+    openai_realtime_transcription_model = str(realtime.get("openai_realtime_transcription_model") or "").strip()
+    if openai_realtime_api_key:
+        child_env["HERMES_OPENAI_REALTIME_API_KEY"] = openai_realtime_api_key
+    if openai_realtime_base_url:
+        child_env["HERMES_OPENAI_REALTIME_BASE_URL"] = openai_realtime_base_url
+    if openai_realtime_model:
+        child_env["HERMES_OPENAI_REALTIME_MODEL"] = openai_realtime_model
+    if openai_realtime_voice:
+        child_env["HERMES_OPENAI_REALTIME_VOICE"] = openai_realtime_voice
+    if openai_realtime_transcription_model:
+        child_env["HERMES_OPENAI_REALTIME_TRANSCRIPTION_MODEL"] = openai_realtime_transcription_model
     input_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_input_languages(realtime))
     output_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_output_languages(realtime))
     scripts = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_scripts(realtime))
@@ -13708,6 +13833,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     engine = str(realtime.get("engine") or "text_oracle_tts")
     provider = str(realtime.get("frontend_provider") or "")
     frontend_model = str(realtime.get("frontend_model") or "")
+    oracle_model = str(realtime.get("oracle_model") or "")
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     language_support = _realtime_voice_language_support_payload(realtime)
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
@@ -13829,8 +13955,12 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             minimum=0,
             maximum=1000,
         ),
+        "voice_architecture": "kame_frontend_oracle",
+        "frontend_role": "low_latency_voice_interface",
+        "oracle_role": "hermes_backend_oracle",
         "frontend_provider": provider or None,
         "frontend_model": frontend_model or None,
+        "oracle_model": oracle_model or None,
         "language_support": language_support,
         "quality_targets_ms": quality_targets_ms,
         "conversation_quality": conversation_quality,
@@ -13977,8 +14107,15 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         spark_token=str(sidecar_token or "") or None,
         metadata={
             "source": "desktop",
+            "voice_architecture": "kame_frontend_oracle",
+            "frontend_role": "low_latency_voice_interface",
+            "oracle_role": "hermes_backend_oracle",
+            "frontend_provider": str(realtime.get("frontend_provider") or "") or None,
+            "frontend_model": str(realtime.get("frontend_model") or "") or None,
+            "oracle_model": str(realtime.get("oracle_model") or "") or None,
             "language_support": language_support,
             "quality_targets_ms": quality_targets_ms,
+            "turn_acknowledgement": _realtime_voice_turn_acknowledgement_payload(realtime),
             "conversation_quality": conversation_quality,
             "production_readiness": production_readiness,
             "require_live_like": require_live_like,

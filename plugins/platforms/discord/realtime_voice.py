@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 import logging
 import sys
 from array import array
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from agent.realtime_voice import (
     AudioChunk,
@@ -20,6 +21,7 @@ from agent.realtime_voice import (
     VoiceEvent,
     VoiceEventType,
 )
+from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient
 
 logger = logging.getLogger(__name__)
@@ -125,8 +127,11 @@ class DiscordRealtimeVoiceSession:
         oracle_model: Optional[str] = None,
         tts_provider: Optional[str] = None,
         sidecar_connect_timeout_seconds: float = 10.0,
+        turn_acknowledgement: Optional[dict] = None,
         sidecar: Any = None,
         mixer: Any = None,
+        degraded_callback: Optional[Callable[[str, str], Any]] = None,
+        event_callback: Optional[Callable[[str, dict[str, Any]], Any]] = None,
     ) -> None:
         self.guild_id = int(guild_id)
         self.voice_channel_id = int(voice_channel_id)
@@ -138,8 +143,11 @@ class DiscordRealtimeVoiceSession:
         self.oracle_model = oracle_model
         self.tts_provider = tts_provider
         self.sidecar_connect_timeout_seconds = sidecar_connect_timeout_seconds
+        self.turn_acknowledgement = dict(turn_acknowledgement or {})
         self.sidecar = sidecar if sidecar is not None else RealtimeVoiceSidecarClient()
         self.mixer = mixer
+        self.degraded_callback = degraded_callback
+        self.event_callback = event_callback
         self.session_id = f"discord:{self.guild_id}:{self.voice_channel_id}"
         self._sequence = 0
         self._reader_task: Optional[asyncio.Task[None]] = None
@@ -147,6 +155,7 @@ class DiscordRealtimeVoiceSession:
         self._started = False
         self._activity = asyncio.Event()
         self._playback_pcm48_stereo_buffer = bytearray()
+        self._active_playback_generation = 0
 
     async def start(self) -> None:
         config = RealtimeVoiceSessionConfig(
@@ -164,9 +173,16 @@ class DiscordRealtimeVoiceSession:
             sidecar_connect_timeout_seconds=self.sidecar_connect_timeout_seconds,
             metadata={
                 "transport": "discord_voice",
+                "voice_architecture": "kame_frontend_oracle",
+                "frontend_role": "low_latency_voice_interface",
+                "oracle_role": "hermes_backend_oracle",
+                "frontend_provider": self.frontend_provider,
+                "frontend_model": self.frontend_model,
+                "oracle_model": self.oracle_model,
                 "guild_id": str(self.guild_id),
                 "voice_channel_id": str(self.voice_channel_id),
                 "text_channel_id": str(self.text_channel_id) if self.text_channel_id is not None else None,
+                "turn_acknowledgement": dict(self.turn_acknowledgement),
             },
         )
         await self.sidecar.start(config)
@@ -197,15 +213,23 @@ class DiscordRealtimeVoiceSession:
     async def handle_speech_start(self, *, user_id: int | str) -> None:
         if self._closed or not self._started:
             return
+        playback_active = False
         if self.mixer is not None and getattr(self.mixer, "speech_active", False):
+            playback_active = True
             stop = getattr(self.mixer, "stop_speech", None)
             if callable(stop):
                 stop()
             self._playback_pcm48_stereo_buffer.clear()
-            await self._send_event(
-                VoiceEventType.BARGE_IN,
-                {"user_id": str(user_id), "transport": "discord_voice"},
-            )
+        self._active_playback_generation += 1
+        await self._send_event(
+            VoiceEventType.BARGE_IN,
+            {
+                "user_id": str(user_id),
+                "transport": "discord_voice",
+                "playback_active": playback_active,
+                "playback_generation": self._active_playback_generation,
+            },
+        )
 
     async def handle_pcm_frame(self, *, user_id: int | str, pcm48_stereo: bytes) -> None:
         if self._closed or not self._started or not pcm48_stereo:
@@ -245,20 +269,83 @@ class DiscordRealtimeVoiceSession:
         try:
             async for event in self.sidecar.events():
                 if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                    if self._drop_stale_playback_event(event):
+                        continue
                     self._handle_audio_output(event)
-                elif event.type in {VoiceEventType.ASSISTANT_COMMIT, VoiceEventType.SESSION_CLOSED}:
+                elif event.type == VoiceEventType.ASSISTANT_COMMIT:
+                    if self._drop_stale_playback_event(event):
+                        continue
+                    self._flush_playback_buffer()
+                elif event.type == VoiceEventType.SESSION_CLOSED:
                     self._flush_playback_buffer()
                 elif event.type == VoiceEventType.BARGE_IN:
+                    self._advance_playback_generation(event)
                     self._playback_pcm48_stereo_buffer.clear()
                     if self.mixer is not None:
                         stop = getattr(self.mixer, "stop_speech", None)
                         if callable(stop):
                             stop()
+                elif event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                    self._advance_playback_generation(event)
+                elif event.type == VoiceEventType.SESSION_ERROR:
+                    error = sanitize_realtime_voice_error(event.payload.get("error") or "sidecar session error")
+                    logger.warning("Discord realtime voice sidecar reported session error: %s", error)
+                    await self._notify_event_observed(event)
+                    await self._notify_degraded("sidecar_session_error", error)
+                    self._activity.set()
+                    return
+                await self._notify_event_observed(event)
                 self._activity.set()
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # pragma: no cover - defensive gateway logging
-            logger.warning("Discord realtime voice sidecar event loop failed: %s", exc, exc_info=True)
+            error = sanitize_realtime_voice_error(exc)
+            logger.warning("Discord realtime voice sidecar event loop failed: %s", error, exc_info=True)
+            await self._notify_degraded("sidecar_event_stream_failed", error)
+            self._activity.set()
+
+    async def _notify_degraded(self, reason: str, error: str) -> None:
+        callback = self.degraded_callback
+        if callback is None:
+            return
+        try:
+            result = callback(reason, error)
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:  # pragma: no cover - defensive callback isolation
+            logger.debug("Discord realtime degradation callback failed: %s", exc)
+
+    async def _notify_event_observed(self, event: VoiceEvent) -> None:
+        callback = self.event_callback
+        if callback is None:
+            return
+        try:
+            result = callback(event.type.value, dict(event.payload))
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:  # pragma: no cover - defensive callback isolation
+            logger.debug("Discord realtime event callback failed: %s", exc)
+
+    def _drop_stale_playback_event(self, event: VoiceEvent) -> bool:
+        generation = _payload_generation(event.payload)
+        if generation is None:
+            return False
+        if generation < self._active_playback_generation:
+            logger.debug(
+                "Dropping stale Discord realtime playback event: generation=%s active=%s type=%s",
+                generation,
+                self._active_playback_generation,
+                event.type.value,
+            )
+            return True
+        self._active_playback_generation = generation
+        return False
+
+    def _advance_playback_generation(self, event: VoiceEvent) -> None:
+        generation = _payload_generation(event.payload)
+        if generation is None:
+            return
+        self._active_playback_generation = max(self._active_playback_generation, generation)
 
     def _handle_audio_output(self, event: VoiceEvent) -> None:
         if self.mixer is None:
@@ -304,10 +391,29 @@ class DiscordRealtimeVoiceSession:
                 self.mixer.play_speech(frame, fade_in_ms=0)
 
     def _flush_playback_buffer(self) -> None:
-        if self.mixer is None or not self._playback_pcm48_stereo_buffer:
+        if self.mixer is None:
             self._playback_pcm48_stereo_buffer.clear()
+            return
+        if not self._playback_pcm48_stereo_buffer:
+            finish = getattr(self.mixer, "finish_speech_stream", None)
+            if callable(finish):
+                finish()
             return
         remainder = len(self._playback_pcm48_stereo_buffer) % DISCORD_FRAME_BYTES
         if remainder:
             self._playback_pcm48_stereo_buffer.extend(b"\x00" * (DISCORD_FRAME_BYTES - remainder))
         self._enqueue_mixer_pcm(b"")
+        finish = getattr(self.mixer, "finish_speech_stream", None)
+        if callable(finish):
+            finish()
+
+
+def _payload_generation(payload: dict[str, Any]) -> Optional[int]:
+    value = payload.get("playback_generation")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None

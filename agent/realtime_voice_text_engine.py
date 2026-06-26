@@ -7,7 +7,8 @@ import contextlib
 import json
 import os
 import tempfile
-from typing import AsyncIterator, List, Optional
+import time
+from typing import Any, AsyncIterator, List, Mapping, Optional
 
 from agent.realtime_voice import (
     AudioChunk,
@@ -54,6 +55,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._pending_turn_generation: Optional[int] = None
         self._input_generation = 0
         self._input_generation_active = False
+        self._frontend_output_active = False
         self._assistant_metadata_by_generation: dict[int, dict] = {}
 
     @property
@@ -176,7 +178,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
     async def _auto_barge_in_for_speech(self, event: VoiceEvent) -> None:
         if self._pending_turn_generation is not None:
             return
-        if self._active_task is None or self._active_task.done():
+        backend_active = self._active_task is not None and not self._active_task.done()
+        if not backend_active and not self._frontend_output_active:
             return
         await self._interrupt_active_turn(event, reason="user_speech")
 
@@ -185,11 +188,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._pending_turn_generation = self._playback_generation
         self._input_generation += 1
         self._input_generation_active = False
+        self._frontend_output_active = False
+        backend_interrupt_requested = bool(self._active_task and not self._active_task.done())
+        frontend_cancel_requested = self._sidecar is not None
         payload = {
             "reason": reason or "client",
             "playback_generation": self._playback_generation,
+            "frontend_cancel_requested": frontend_cancel_requested,
+            "backend_interrupt_requested": backend_interrupt_requested,
         }
-        if self._active_task and not self._active_task.done():
+        if backend_interrupt_requested and self._active_task is not None:
             self._active_task.cancel()
         oracle = self._oracle
         if hasattr(oracle, "interrupt"):
@@ -233,11 +241,38 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     generation = _payload_generation(payload)
                     if generation is not None and generation < self._playback_generation:
                         continue
+                    if generation is not None:
+                        self._playback_generation = max(self._playback_generation, generation)
                     payload.setdefault("playback_generation", self._playback_generation)
+                    self._frontend_output_active = True
                     await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
+                elif event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                    payload = dict(event.payload)
+                    generation = _payload_generation(payload)
+                    if generation is not None and generation < self._playback_generation:
+                        continue
+                    if generation is not None:
+                        self._playback_generation = max(self._playback_generation, generation)
+                    payload.setdefault("playback_generation", self._playback_generation)
+                    self._frontend_output_active = True
+                    await self._emit(VoiceEventType.ASSISTANT_TEXT_PARTIAL, payload)
+                elif event.type == VoiceEventType.ASSISTANT_COMMIT:
+                    payload = dict(event.payload)
+                    generation = _payload_generation(payload)
+                    if generation is not None and generation < self._playback_generation:
+                        continue
+                    if generation is not None:
+                        self._playback_generation = max(self._playback_generation, generation)
+                    payload.setdefault("playback_generation", self._playback_generation)
+                    self._frontend_output_active = False
+                    await self._emit(VoiceEventType.ASSISTANT_COMMIT, payload)
+                elif event.type == VoiceEventType.BARGE_IN:
+                    self._frontend_output_active = False
+                    await self._emit(VoiceEventType.BARGE_IN, dict(event.payload))
                 elif event.type == VoiceEventType.FRONTEND_STATE:
                     await self._emit(VoiceEventType.FRONTEND_STATE, dict(event.payload))
                 elif event.type == VoiceEventType.SESSION_ERROR:
+                    self._frontend_output_active = False
                     await self._disable_sidecar()
                     await self._emit(
                         VoiceEventType.FRONTEND_STATE,
@@ -426,6 +461,21 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     await task
 
         try:
+            acknowledgement = _turn_acknowledgement_text(self.config)
+            if acknowledgement:
+                planned_acknowledgement = self._planner.clean(acknowledgement)
+                if planned_acknowledgement:
+                    await self._emit(
+                        VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                        {
+                            "text": planned_acknowledgement,
+                            "playback_generation": playback_generation,
+                            "acknowledgement": True,
+                            **assistant_metadata,
+                        },
+                    )
+                    queue_speak(planned_acknowledgement)
+
             oracle = self._oracle or NullRealtimeOracle()
             answer = ""
             buffer = ""
@@ -547,7 +597,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     },
                 )
 
+        tts_started_at = time.perf_counter()
         file_path = await asyncio.to_thread(self._tts_sync, text)
+        tts_synthesis_ms = int(round((time.perf_counter() - tts_started_at) * 1000))
         if playback_generation != self._playback_generation:
             if file_path:
                 with contextlib.suppress(OSError):
@@ -563,6 +615,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 payload["mime_type"] = _mime_type_for_path(file_path)
                 payload["playback_generation"] = playback_generation
                 payload.update(metadata)
+                existing_metrics = payload.get("metrics")
+                metrics = dict(existing_metrics) if isinstance(existing_metrics, dict) else {}
+                metrics["tts_synthesis_ms"] = tts_synthesis_ms
+                payload["metrics"] = metrics
                 await self._emit(
                     VoiceEventType.AUDIO_OUTPUT_CHUNK,
                     payload,
@@ -611,6 +667,30 @@ def _mime_type_for_path(path: str) -> str:
 def _payload_generation(payload: dict) -> Optional[int]:
     value = payload.get("playback_generation")
     return _payload_int(value)
+
+
+def _turn_acknowledgement_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:
+    if config is None or not isinstance(config.metadata, Mapping):
+        return ""
+    acknowledgement = config.metadata.get("turn_acknowledgement")
+    if not isinstance(acknowledgement, Mapping):
+        return ""
+    if not _metadata_bool(acknowledgement.get("enabled"), default=False):
+        return ""
+    text = str(acknowledgement.get("text") or "One moment.").strip()
+    if not text:
+        return ""
+    return text[:120]
+
+
+def _metadata_bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() not in {"", "0", "false", "no", "off"}
 
 
 def _payload_input_generation(payload: dict) -> Optional[int]:

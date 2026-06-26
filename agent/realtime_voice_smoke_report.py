@@ -115,6 +115,7 @@ def validate_realtime_voice_alpha_report_runs(
     *,
     min_runs: int = 1,
     max_collected_age_days: int | None = None,
+    allow_loopback_validation: bool = True,
     now: datetime | None = None,
 ) -> list[RealtimeVoiceSmokeReportIssue]:
     issues: list[RealtimeVoiceSmokeReportIssue] = []
@@ -137,6 +138,14 @@ def validate_realtime_voice_alpha_report_runs(
                     issue.kind,
                     issue.message,
                     f"{label}: {issue.identifier}" if issue.identifier else label,
+                )
+            )
+        if not allow_loopback_validation and _report_is_loopback_validation(entries):
+            issues.append(
+                RealtimeVoiceSmokeReportIssue(
+                    "evidence",
+                    "loopback validation cannot satisfy production evidence",
+                    label,
                 )
             )
     fingerprints: dict[tuple[Any, ...], str] = {}
@@ -183,6 +192,17 @@ def validate_realtime_voice_alpha_report_runs(
             )
         )
     return issues
+
+
+def _report_is_loopback_validation(entries: Sequence[Mapping[str, Any]]) -> bool:
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        if entry.get("loopback_validation") is True:
+            return True
+        if str(entry.get("evidence_provider") or "").strip().lower() == "loopback":
+            return True
+    return False
 
 
 def summarize_realtime_voice_smoke_report_runs(
