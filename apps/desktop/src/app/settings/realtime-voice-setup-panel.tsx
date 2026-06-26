@@ -46,7 +46,7 @@ const PROVIDER_STT_MODELS: Record<string, string[]> = {
 const PROVIDER_BRIDGE_URLS: Record<string, string> = {
   elevenlabs: 'http://127.0.0.1:8767',
   deepgram: 'http://127.0.0.1:8766',
-  cartesia: 'http://127.0.0.1:8768'
+  cartesia: 'http://127.0.0.1:8769'
 }
 
 const PROVIDER_VOICES: Record<string, string[]> = {
@@ -68,7 +68,7 @@ function setupProviderFor(config: HermesConfigRecord): string {
   if (provider === 'openai_realtime' || provider === 'openai') return 'openai'
   if (provider === 'gemini_live' || provider === 'gemini') return 'gemini'
   if (sttUrl.includes('8767') || sttModel.includes('scribe')) return 'elevenlabs'
-  if (sttUrl.includes('8768') || sttModel.includes('ink')) return 'cartesia'
+  if (sttUrl.includes('8769') || sttModel.includes('ink')) return 'cartesia'
   if (sttUrl.includes('8766') || sttModel.includes('nova')) return 'deepgram'
   return 'openai'
 }

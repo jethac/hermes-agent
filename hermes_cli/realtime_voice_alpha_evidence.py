@@ -404,7 +404,7 @@ def _bridge_default_port(provider: str) -> int:
     if provider == "loopback":
         return 8768
     if provider == "cartesia":
-        return 8768
+        return 8769
     return 8767 if provider == "elevenlabs" else 8766
 
 
