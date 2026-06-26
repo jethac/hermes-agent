@@ -35,6 +35,9 @@ import {
   Shield,
   FileOutput,
   RefreshCw,
+  CheckCircle,
+  AlertTriangle,
+  Play,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { getNestedValue, setNestedValue } from "@/lib/nested";
@@ -95,6 +98,171 @@ function CategoryIcon({
 }) {
   const Icon = CATEGORY_ICONS[category] ?? FileQuestion;
   return <Icon className={className ?? "h-4 w-4"} />;
+}
+
+function RealtimeVoiceDashboardPanel({
+  config,
+  onConfigChange,
+  onToast,
+}: {
+  config: Record<string, unknown>;
+  onConfigChange: (config: Record<string, unknown>) => void;
+  onToast: (message: string, type?: "success" | "error" | "info") => void;
+}) {
+  const [setup, setSetup] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [applying, setApplying] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const providers = Array.isArray(setup?.providers)
+    ? (setup.providers as Record<string, unknown>[])
+    : [];
+  const status = (setup?.status ?? {}) as Record<string, unknown>;
+  const sidecar = (status.sidecar ?? {}) as Record<string, unknown>;
+  const discord = (setup?.discord ?? {}) as Record<string, unknown>;
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      setSetup(await api.getRealtimeVoiceSetup());
+    } catch (e) {
+      onToast(`Realtime voice setup failed: ${e}`, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const applyPreset = async (preset: string) => {
+    setApplying(preset);
+    try {
+      const result = await api.applyRealtimeVoiceProfile({
+        preset,
+        enable_discord: Boolean(getNestedValue(config, "discord.realtime_voice.enabled")),
+      });
+      if (result.config && typeof result.config === "object") {
+        onConfigChange(result.config as Record<string, unknown>);
+      }
+      if (result.setup && typeof result.setup === "object") {
+        setSetup(result.setup as Record<string, unknown>);
+      } else {
+        await refresh();
+      }
+      onToast(`Applied ${preset} realtime voice profile`, "success");
+    } catch (e) {
+      onToast(`Realtime voice profile failed: ${e}`, "error");
+    } finally {
+      setApplying(null);
+    }
+  };
+
+  const runSmoke = async () => {
+    setRunning(true);
+    try {
+      const result = await api.runRealtimeVoiceSmoke({
+        require_discord: true,
+        require_inbound: false,
+        wait_seconds: 5,
+      });
+      const issues = ((result.result as Record<string, unknown> | undefined)?.issues ?? []) as string[];
+      onToast(
+        result.ok
+          ? `Realtime smoke passed: ${String(result.output_dir ?? "")}`
+          : `Realtime smoke failed: ${issues.join(" | ") || "see evidence output"}`,
+        result.ok ? "success" : "error",
+      );
+    } catch (e) {
+      onToast(`Realtime smoke failed: ${e}`, "error");
+    } finally {
+      setRunning(false);
+      void refresh();
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="py-3 px-4">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Mic className="h-4 w-4" />
+            Realtime Voice Setup
+          </CardTitle>
+          <Button ghost size="xs" onClick={refresh} disabled={loading}>
+            <RefreshCw className={loading ? "animate-spin" : ""} />
+            Refresh
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-3 px-4 pb-4">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="border border-border bg-muted/20 px-3 py-2">
+            <div className="text-xs font-medium">Availability</div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              <Badge tone={status.enabled ? "primary" : "secondary"}>{status.enabled ? "On" : "Off"}</Badge>
+              <Badge tone={status.available ? "primary" : "secondary"}>
+                {status.available ? "Ready" : String(status.unavailable_reason ?? "Unavailable")}
+              </Badge>
+            </div>
+          </div>
+          <div className="border border-border bg-muted/20 px-3 py-2">
+            <div className="text-xs font-medium">Sidecar</div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              <Badge tone={sidecar.healthy || sidecar.autostart ? "primary" : "secondary"}>
+                {String(sidecar.mode ?? "none")}
+              </Badge>
+              {sidecar.autostart ? <Badge tone="primary">Autostart</Badge> : null}
+            </div>
+          </div>
+          <div className="border border-border bg-muted/20 px-3 py-2">
+            <div className="text-xs font-medium">Discord</div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              <Badge tone={discord.enabled ? "primary" : "secondary"}>{discord.enabled ? "/voice ready" : "/voice off"}</Badge>
+              <Badge tone={discord.bot_token_present ? "primary" : "secondary"}>Bot token</Badge>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {providers.map((provider) => {
+            const id = String(provider.id ?? "");
+            const implemented = provider.implemented !== false;
+            return (
+              <button
+                key={id}
+                type="button"
+                disabled={!implemented || Boolean(applying)}
+                onClick={() => applyPreset(id)}
+                className="min-w-0 border border-border bg-muted/20 px-3 py-3 text-left hover:bg-muted/35 disabled:opacity-60"
+              >
+                <div className="flex items-center justify-between gap-2 text-sm font-medium">
+                  <span className="truncate">{String(provider.label ?? id)}</span>
+                  {implemented ? <CheckCircle className="h-4 w-4 text-primary" /> : <AlertTriangle className="h-4 w-4 text-muted-foreground" />}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <Badge tone={provider.api_key_present ? "primary" : "secondary"}>
+                    {provider.api_key_present ? "Key set" : "Key missing"}
+                  </Badge>
+                  {implemented ? null : <Badge tone="secondary">Planned</Badge>}
+                </div>
+                <div className="mt-2 truncate font-mono text-[0.68rem] text-muted-foreground">
+                  {String(provider.model ?? "")}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button size="sm" onClick={runSmoke} disabled={running}>
+            <Play className={running ? "animate-pulse" : ""} />
+            Run Smoke
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -621,29 +789,38 @@ export default function ConfigPage() {
               </Card>
             ) : (
               /* Active category */
-              <Card>
-                <CardHeader className="py-3 px-4">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <CategoryIcon
-                        category={activeCategory}
-                        className="h-4 w-4"
-                      />
-                      {prettyCategoryName(activeCategory)}
-                    </CardTitle>
-                    <Badge tone="secondary" className="text-xs">
-                      {activeFields.length}{" "}
-                      {t.config.fields.replace(
-                        "{s}",
-                        activeFields.length !== 1 ? "s" : "",
-                      )}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="grid gap-2 px-4 pb-4">
-                  {renderFields(activeFields)}
-                </CardContent>
-              </Card>
+              <div className="grid gap-4">
+                {activeCategory === "voice" ? (
+                  <RealtimeVoiceDashboardPanel
+                    config={config}
+                    onConfigChange={setConfig}
+                    onToast={showToast}
+                  />
+                ) : null}
+                <Card>
+                  <CardHeader className="py-3 px-4">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <CategoryIcon
+                          category={activeCategory}
+                          className="h-4 w-4"
+                        />
+                        {prettyCategoryName(activeCategory)}
+                      </CardTitle>
+                      <Badge tone="secondary" className="text-xs">
+                        {activeFields.length}{" "}
+                        {t.config.fields.replace(
+                          "{s}",
+                          activeFields.length !== 1 ? "s" : "",
+                        )}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="grid gap-2 px-4 pb-4">
+                    {renderFields(activeFields)}
+                  </CardContent>
+                </Card>
+              </div>
             )}
           </div>
         </div>

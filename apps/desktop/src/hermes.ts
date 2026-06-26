@@ -34,6 +34,10 @@ import type {
   OAuthSubmitResponse,
   PaginatedSessions,
   ProfileCreatePayload,
+  RealtimeVoiceProfileRequest,
+  RealtimeVoiceProfileResponse,
+  RealtimeVoiceSetupResponse,
+  RealtimeVoiceSmokeResponse,
   ProfileSetupCommand,
   ProfileSoul,
   ProfilesResponse,
@@ -106,6 +110,11 @@ export type {
   PaginatedSessions,
   ProfileCreatePayload,
   ProfileInfo,
+  RealtimeVoiceProfileRequest,
+  RealtimeVoiceProfileResponse,
+  RealtimeVoiceProviderSetup,
+  RealtimeVoiceSetupResponse,
+  RealtimeVoiceSmokeResponse,
   ProfileSetupCommand,
   ProfileSoul,
   ProfilesResponse,
@@ -364,6 +373,38 @@ export function saveHermesConfig(config: HermesConfigRecord): Promise<{ ok: bool
     path: '/api/config',
     method: 'PUT',
     body: { config }
+  })
+}
+
+export function getRealtimeVoiceSetup(): Promise<RealtimeVoiceSetupResponse> {
+  return window.hermesDesktop.api<RealtimeVoiceSetupResponse>({
+    ...profileScoped(),
+    path: '/api/voice/realtime/setup'
+  })
+}
+
+export function applyRealtimeVoiceProfile(
+  body: RealtimeVoiceProfileRequest
+): Promise<RealtimeVoiceProfileResponse> {
+  return window.hermesDesktop.api<RealtimeVoiceProfileResponse>({
+    ...profileScoped(),
+    path: '/api/voice/realtime/profile',
+    method: 'POST',
+    body
+  })
+}
+
+export function runRealtimeVoiceSmoke(body: {
+  require_discord?: boolean
+  require_inbound?: boolean
+  wait_seconds?: number
+}): Promise<RealtimeVoiceSmokeResponse> {
+  return window.hermesDesktop.api<RealtimeVoiceSmokeResponse>({
+    ...profileScoped(),
+    path: '/api/voice/realtime/smoke',
+    method: 'POST',
+    body,
+    timeoutMs: 90_000
   })
 }
 

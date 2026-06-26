@@ -474,6 +474,19 @@ export const api = {
   getConfig: () => fetchJSON<Record<string, unknown>>("/api/config"),
   getDefaults: () => fetchJSON<Record<string, unknown>>("/api/config/defaults"),
   getSchema: () => fetchJSON<{ fields: Record<string, unknown>; category_order: string[] }>("/api/config/schema"),
+  getRealtimeVoiceSetup: () => fetchJSON<Record<string, unknown>>("/api/voice/realtime/setup"),
+  applyRealtimeVoiceProfile: (body: Record<string, unknown>) =>
+    fetchJSON<Record<string, unknown>>("/api/voice/realtime/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  runRealtimeVoiceSmoke: (body: Record<string, unknown>) =>
+    fetchJSON<Record<string, unknown>>("/api/voice/realtime/smoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   getModelInfo: () => fetchJSON<ModelInfoResponse>("/api/model/info"),
   getModelOptions: (profile?: string) =>
     fetchJSON<ModelOptionsResponse>(`/api/model/options${profileQuery(profile)}`),

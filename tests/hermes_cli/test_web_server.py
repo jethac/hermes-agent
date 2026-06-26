@@ -6541,6 +6541,104 @@ class TestRealtimeVoiceWebSocket:
         header_end = 4 + header_length
         return json.loads(frame[4:header_end].decode("utf-8")), frame[header_end:]
 
+    def test_realtime_voice_setup_reports_provider_and_discord_readiness(self, monkeypatch):
+        from hermes_cli.config import load_config, save_config, save_env_value
+
+        cfg = load_config()
+        cfg.setdefault("voice", {}).setdefault("realtime", {}).update(
+            {
+                "enabled": True,
+                "frontend_provider": "gemini_live",
+                "frontend_model": "gemini-3.1-flash-live-preview",
+                "gemini_live_api_key_env": "GEMINI_API_KEY",
+                "sidecar_autostart": True,
+                "sidecar_host": "127.0.0.1",
+                "sidecar_port": 8765,
+            }
+        )
+        cfg.setdefault("discord", {}).setdefault("realtime_voice", {}).update({"enabled": True})
+        save_config(cfg)
+        save_env_value("GEMINI_API_KEY", "test-gemini-key")
+        save_env_value("DISCORD_BOT_TOKEN", "test-discord-token")
+
+        monkeypatch.setattr(self.ws_module, "_realtime_voice_sidecar_health_probe", lambda *_args, **_kwargs: (False, None))
+
+        response = self.client.get("/api/voice/realtime/setup")
+        assert response.status_code == 200
+        payload = response.json()
+        gemini = next(provider for provider in payload["providers"] if provider["id"] == "gemini")
+        cartesia = next(provider for provider in payload["providers"] if provider["id"] == "cartesia")
+        assert gemini["api_key_present"] is True
+        assert cartesia["implemented"] is False
+        assert payload["discord"]["enabled"] is True
+        assert payload["discord"]["bot_token_present"] is True
+        assert payload["discord"]["sidecar_base_url"] == "http://127.0.0.1:8765"
+
+    def test_realtime_voice_apply_profile_sets_provider_and_discord_overlay(self):
+        response = self.client.post(
+            "/api/voice/realtime/profile",
+            json={
+                "preset": "gemini",
+                "model": "gemini-3.1-flash-live-preview",
+                "voice": "Puck",
+                "enable_discord": True,
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        realtime = payload["config"]["voice"]["realtime"]
+        discord = payload["config"]["discord"]["realtime_voice"]
+        assert realtime["frontend_provider"] == "gemini_live"
+        assert realtime["frontend_model"] == "gemini-3.1-flash-live-preview"
+        assert realtime["gemini_live_voice"] == "Puck"
+        assert discord["enabled"] is True
+        assert discord["sidecar_base_url"] == "http://127.0.0.1:8765"
+        assert discord["frontend_provider"] == "gemini_live"
+
+    def test_realtime_voice_smoke_route_runs_evidence_collector(self, monkeypatch, tmp_path):
+        from hermes_cli.config import load_config, save_config
+
+        cfg = load_config()
+        cfg.setdefault("voice", {}).setdefault("realtime", {}).update(
+            {
+                "enabled": True,
+                "frontend_provider": "openai_realtime",
+                "frontend_model": "gpt-realtime-2",
+            }
+        )
+        save_config(cfg)
+        calls = []
+
+        class FakeCompleted:
+            returncode = 1
+            stdout = json.dumps(
+                {
+                    "ok": False,
+                    "output_dir": str(tmp_path),
+                    "issues": ["openai_realtime: OPENAI_API_KEY or HERMES_OPENAI_REALTIME_API_KEY is required"],
+                }
+            )
+            stderr = ""
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return FakeCompleted()
+
+        monkeypatch.setattr(self.ws_module.subprocess, "run", fake_run)
+
+        response = self.client.post(
+            "/api/voice/realtime/smoke",
+            json={"require_discord": True, "require_inbound": True, "wait_seconds": 1, "output_dir": str(tmp_path)},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["ok"] is False
+        cmd = calls[0][0]
+        assert "--require-live-discord" in cmd
+        assert "--require-inbound" in cmd
+        assert "--require-openai-realtime" in cmd
+        assert "--output-dir" in cmd
+
     def test_rejects_when_realtime_voice_disabled(self, monkeypatch):
         from starlette.websockets import WebSocketDisconnect
 
