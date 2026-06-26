@@ -114,6 +114,7 @@ def test_elevenlabs_stt_message_to_transcript_payload_maps_partial_and_final():
 
 def test_elevenlabs_runtime_reads_env(monkeypatch):
     monkeypatch.setenv("ELEVENLABS_API_KEY", "elevenlabs-secret")
+    monkeypatch.delenv("ELEVENLABS_VOICE_ID", raising=False)
     monkeypatch.setenv("HERMES_STREAMING_STT_BRIDGE_TOKEN", "bridge-token")
     monkeypatch.setenv("HERMES_ELEVENLABS_STT_URL", "wss://elevenlabs.example.test/stt")
     monkeypatch.setenv("HERMES_ELEVENLABS_TTS_URL", "wss://elevenlabs.example.test/tts")
