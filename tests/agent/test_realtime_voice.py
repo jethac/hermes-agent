@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import types
 
@@ -513,6 +514,63 @@ def test_text_engine_speaks_stable_phrase_before_sentence_ends(monkeypatch):
         assert spoken[0] == "This response starts with a stable opening phrase,"
         assert seen[-1].payload["text"] == "This response starts with a stable opening phrase,"
         await engine.close()
+
+    asyncio.run(run())
+
+
+def test_text_engine_speaks_configured_acknowledgement_before_slow_oracle(monkeypatch):
+    class SlowOracle:
+        def __init__(self):
+            self.release = asyncio.Event()
+
+        async def stream_answer(self, transcript: str):
+            await self.release.wait()
+            yield "Done."
+
+    async def run():
+        spoken = []
+        spoke = asyncio.Event()
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+            spoke.set()
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        oracle = SlowOracle()
+        engine = TextOracleTTSEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                metadata={"turn_acknowledgement": {"enabled": True, "text": "One moment."}},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "run something slow"},
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                break
+
+        await asyncio.wait_for(spoke.wait(), timeout=1)
+        assert seen[-1].payload["text"] == "One moment."
+        assert seen[-1].payload["acknowledgement"] is True
+        assert spoken == ["One moment."]
+
+        oracle.release.set()
+        async for event in engine.events():
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                assert event.payload["text"] == "Done."
+                await engine.close()
+                break
 
     asyncio.run(run())
 
@@ -1203,8 +1261,11 @@ def test_text_engine_barge_in_interrupts_oracle_and_sidecar():
         event = await anext(engine.events())
         assert event.type == VoiceEventType.BARGE_IN
         assert oracle.interrupted is True
+        assert event.payload["frontend_cancel_requested"] is True
+        assert event.payload["backend_interrupt_requested"] is False
         assert sidecar.received[0].type == VoiceEventType.BARGE_IN
         assert sidecar.received[0].payload["playback_generation"] == 1
+        assert sidecar.received[0].payload["frontend_cancel_requested"] is True
         await engine.close()
 
     asyncio.run(run())
@@ -1305,12 +1366,116 @@ def test_text_engine_auto_barge_in_on_new_speech_while_answering(monkeypatch):
         assert barge_in.type == VoiceEventType.BARGE_IN
         assert barge_in.payload["reason"] == "user_speech"
         assert barge_in.payload["playback_generation"] == 2
+        assert barge_in.payload["backend_interrupt_requested"] is True
         assert oracle.interrupted is True
         assert engine._inbound_audio == [b"new-speech"]
         assert not any(
             event.payload.get("interrupted") is True and event.payload.get("playback_generation") == 1
             for event in seen
         )
+
+    asyncio.run(run())
+
+
+def test_text_engine_auto_barge_in_on_new_speech_while_frontend_output_active():
+    class ManualSidecar(FakeSidecar):
+        async def send_event(self, event):
+            self.received.append(event)
+
+    async def run():
+        sidecar = ManualSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="sidecar",
+                sidecar_base_url="http://voice.local",
+            )
+        )
+        assert (await anext(engine.events())).type == VoiceEventType.SESSION_STARTED
+
+        await sidecar._events.put(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"frontend-audio").to_payload(),
+                    "playback_generation": 7,
+                },
+            )
+        )
+
+        audio = await anext(engine.events())
+        assert audio.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
+        assert engine._frontend_output_active is True
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"new-speech").to_payload(),
+            )
+        )
+
+        barge_in = await anext(engine.events())
+        await engine.close()
+
+        assert barge_in.type == VoiceEventType.BARGE_IN
+        assert barge_in.payload["reason"] == "user_speech"
+        assert barge_in.payload["playback_generation"] == 8
+        assert barge_in.payload["frontend_cancel_requested"] is True
+        assert barge_in.payload["backend_interrupt_requested"] is False
+        assert [event.type for event in sidecar.received] == [
+            VoiceEventType.BARGE_IN,
+            VoiceEventType.AUDIO_INPUT_CHUNK,
+        ]
+        assert sidecar.received[0].payload["playback_generation"] == 8
+        assert engine._frontend_output_active is False
+
+    asyncio.run(run())
+
+
+def test_text_engine_forwards_frontend_commit_and_clears_output_active():
+    async def run():
+        sidecar = FakeSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="sidecar",
+                sidecar_base_url="http://voice.local",
+            )
+        )
+        assert (await anext(engine.events())).type == VoiceEventType.SESSION_STARTED
+
+        await sidecar._events.put(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"text": "frontend reply", "playback_generation": 3},
+            )
+        )
+        partial = await anext(engine.events())
+        assert partial.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL
+        assert engine._frontend_output_active is True
+
+        await sidecar._events.put(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_COMMIT,
+                session_id="voice-123",
+                sequence=2,
+                payload={"text": "frontend reply", "playback_generation": 3},
+            )
+        )
+        commit = await anext(engine.events())
+        await engine.close()
+
+        assert commit.type == VoiceEventType.ASSISTANT_COMMIT
+        assert commit.payload["text"] == "frontend reply"
+        assert engine._frontend_output_active is False
 
     asyncio.run(run())
 
@@ -1876,6 +2041,7 @@ def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
         audio_events = [event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK]
         assert audio_events[0].payload["data_b64"]
         assert audio_events[0].payload["playback_generation"] == 7
+        assert audio_events[0].payload["metrics"]["tts_synthesis_ms"] >= 0
 
     asyncio.run(run())
 
@@ -1933,6 +2099,54 @@ def test_reference_sidecar_passes_language_metadata_to_tts_callback(tmp_path):
         assert audio.payload["locale"] == "ja-JP"
         assert audio.payload["script"] == "Jpan"
         assert "language_url" not in audio.payload
+
+    asyncio.run(run())
+
+
+def test_reference_sidecar_uses_prewarmed_acknowledgement_audio(tmp_path):
+    synth_calls = []
+
+    def fake_synthesize(text):
+        synth_calls.append(text)
+        audio = tmp_path / f"speech-{len(synth_calls)}.ogg"
+        audio.write_bytes(f"audio-{len(synth_calls)}".encode())
+        return {"success": True, "file_path": str(audio)}
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(vllm_base_url=None, vllm_model=None),
+            synthesize_func=fake_synthesize,
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="local",
+                metadata={"turn_acknowledgement": {"enabled": True, "text": "One moment."}},
+            )
+        )
+        assert synth_calls == ["One moment."]
+
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"text": "One moment.", "speak": True, "playback_generation": 7},
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                await sidecar.close()
+                break
+
+        audio = seen[-1]
+        assert synth_calls == ["One moment."]
+        assert base64.b64decode(audio.payload["data_b64"]) == b"audio-1"
+        assert audio.payload["metrics"]["tts_cache"] == "prewarmed"
+        assert audio.payload["metrics"]["tts_synthesis_ms"] >= 0
 
     asyncio.run(run())
 
@@ -2399,6 +2613,12 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_MODEL", "portable-streaming-voice")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_TOKEN", "tts-secret-token")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_TIMEOUT_SECONDS", "3.5")
+    monkeypatch.setenv("HERMES_OPENAI_REALTIME_API_KEY", "openai-secret-token")
+    monkeypatch.setenv("HERMES_OPENAI_REALTIME_BASE_URL", "wss://api.openai.example.test/v1/realtime")
+    monkeypatch.setenv("HERMES_OPENAI_REALTIME_MODEL", "gpt-realtime-2")
+    monkeypatch.setenv("HERMES_OPENAI_REALTIME_VOICE", "cedar")
+    monkeypatch.setenv("HERMES_OPENAI_REALTIME_TRANSCRIPTION_MODEL", "gpt-realtime-whisper")
+    monkeypatch.setenv("HERMES_OPENAI_REALTIME_SAFETY_IDENTIFIER", "stable-user")
 
     runtime = runtime_config_from_env()
 
@@ -2414,6 +2634,12 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     assert runtime.streaming_tts_model == "portable-streaming-voice"
     assert runtime.streaming_tts_token == "tts-secret-token"
     assert runtime.streaming_tts_timeout_seconds == 3.5
+    assert runtime.openai_realtime_api_key == "openai-secret-token"
+    assert runtime.openai_realtime_base_url == "wss://api.openai.example.test/v1/realtime"
+    assert runtime.openai_realtime_model == "gpt-realtime-2"
+    assert runtime.openai_realtime_voice == "cedar"
+    assert runtime.openai_realtime_transcription_model == "gpt-realtime-whisper"
+    assert runtime.openai_realtime_safety_identifier == "stable-user"
 
 
 def test_reference_sidecar_health_probe_uses_short_bridge_health_timeout(monkeypatch):
@@ -3005,6 +3231,28 @@ def test_session_adds_latency_metrics_to_realtime_events(monkeypatch):
         assert text.payload["metrics"]["final_transcript_to_first_text_ms"] >= 0
         assert audio.payload["metrics"]["final_transcript_to_first_audio_ms"] >= 0
         await session.close()
+
+    asyncio.run(run())
+
+
+def test_text_engine_file_tts_audio_chunk_includes_synthesis_metric(monkeypatch, tmp_path):
+    async def run():
+        audio_path = tmp_path / "tts.mp3"
+        audio_path.write_bytes(b"audio")
+        engine = TextOracleTTSEngine(oracle=FakeOracle())
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        monkeypatch.setattr(engine, "_tts_sync", lambda text: str(audio_path))
+        engine._playback_generation = 1
+        engine._assistant_metadata_by_generation[1] = {}
+
+        await engine._speak_chunk("hello", 1)
+        event = await asyncio.wait_for(engine._events.get(), timeout=1)
+
+        assert event.type == VoiceEventType.SESSION_STARTED
+        event = await asyncio.wait_for(engine._events.get(), timeout=1)
+        assert event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
+        assert event.payload["metrics"]["tts_synthesis_ms"] >= 0
+        await engine.close()
 
     asyncio.run(run())
 

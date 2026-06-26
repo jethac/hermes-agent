@@ -1766,6 +1766,32 @@ logger = logging.getLogger(__name__)
 _AGENT_PENDING_SENTINEL = object()
 
 
+def _config_bool(value: object, *, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in {"1", "true", "yes", "on"}:
+            return True
+        if token in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
+def _load_discord_voice_transcript_agent_turns() -> bool:
+    """Return whether Discord voice transcripts should invoke the agent."""
+    try:
+        from hermes_cli.config import read_raw_config
+
+        cfg = read_raw_config() or {}
+        discord_cfg = cfg.get("discord") if isinstance(cfg, dict) else {}
+        if isinstance(discord_cfg, dict) and "voice_transcript_agent_turns" in discord_cfg:
+            return _config_bool(discord_cfg.get("voice_transcript_agent_turns"), default=False)
+    except Exception:
+        pass
+    return False
+
+
 def _resolve_runtime_agent_kwargs() -> dict:
     """Resolve provider credentials for gateway-created AIAgent instances.
 
@@ -2834,6 +2860,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         # Per-chat voice reply mode: "off" | "voice_only" | "all"
         self._voice_mode: Dict[str, str] = self._load_voice_modes()
+        self._discord_voice_transcript_agent_turns = _load_discord_voice_transcript_agent_turns()
         # Recent voice transcripts per (guild,user) for duplicate suppression.
         # Protects against the same utterance being emitted twice by the voice
         # capture / STT pipeline, which otherwise produces a second delayed reply.
@@ -11383,12 +11410,24 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             adapter._voice_mode_getter = lambda chat_id: self._voice_mode.get(
                 self._voice_key(Platform.DISCORD, str(chat_id)), "off"
             )
+        voice_text_channels = getattr(adapter, "_voice_text_channels", None)
+        if isinstance(voice_text_channels, dict):
+            voice_text_channels[guild_id] = int(event.source.chat_id)
+        voice_sources = getattr(adapter, "_voice_sources", None)
+        if isinstance(voice_sources, dict):
+            voice_sources[guild_id] = event.source.to_dict()
 
         try:
             success = await adapter.join_voice_channel(voice_channel)
         except Exception as e:
             logger.warning("Failed to join voice channel: %s", e)
             adapter._voice_input_callback = None
+            voice_text_channels = getattr(adapter, "_voice_text_channels", None)
+            if isinstance(voice_text_channels, dict):
+                voice_text_channels.pop(guild_id, None)
+            voice_sources = getattr(adapter, "_voice_sources", None)
+            if isinstance(voice_sources, dict):
+                voice_sources.pop(guild_id, None)
             err_lower = str(e).lower()
             if "pynacl" in err_lower or "nacl" in err_lower or "davey" in err_lower:
                 return (
@@ -11398,18 +11437,44 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return f"Failed to join voice channel: {e}"
 
         if success:
-            adapter._voice_text_channels[guild_id] = int(event.source.chat_id)
-            if hasattr(adapter, "_voice_sources"):
-                adapter._voice_sources[guild_id] = event.source.to_dict()
             self._voice_mode[self._voice_key(event.source.platform, event.source.chat_id)] = "all"
             self._save_voice_modes()
             self._set_adapter_auto_tts_enabled(adapter, event.source.chat_id, enabled=True)
+            voice_status = {}
+            if hasattr(adapter, "get_voice_session_status"):
+                try:
+                    voice_status = adapter.get_voice_session_status(guild_id) or {}
+                    if asyncio.iscoroutine(voice_status):
+                        voice_status = await voice_status
+                    if not isinstance(voice_status, dict):
+                        voice_status = {}
+                except Exception:
+                    voice_status = {}
+            session_mode = voice_status.get("mode")
+            fallback_reason = voice_status.get("fallback_reason")
+            if session_mode == "realtime_active":
+                mode_line = "Realtime voice is active."
+            elif session_mode == "degraded_no_sidecar":
+                mode_line = "Voice is connected in legacy fallback mode."
+            elif session_mode == "legacy_voice_active":
+                mode_line = "Voice is connected in legacy mode."
+            else:
+                mode_line = "Voice is connected."
+            if fallback_reason:
+                mode_line = f"{mode_line} Fallback reason: {fallback_reason}"
             return (
                 f"Joined voice channel **{voice_channel.name}**.\n"
-                f"I'll speak my replies and listen to you. Use /voice leave to disconnect."
+                f"{mode_line}\n"
+                f"I'll speak my replies and listen to you. Use /voice status for details or /voice leave to disconnect."
             )
         # Join failed — clear callback
         adapter._voice_input_callback = None
+        voice_text_channels = getattr(adapter, "_voice_text_channels", None)
+        if isinstance(voice_text_channels, dict):
+            voice_text_channels.pop(guild_id, None)
+        voice_sources = getattr(adapter, "_voice_sources", None)
+        if isinstance(voice_sources, dict):
+            voice_sources.pop(guild_id, None)
         return "Failed to join voice channel. Check bot permissions (Connect + Speak)."
 
     async def _handle_voice_channel_leave(self, event: MessageEvent) -> str:
@@ -11540,6 +11605,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 await channel.send(f"**[Voice]** <@{user_id}>: {safe_text}")
         except Exception:
             pass
+
+        transcript_agent_turns = getattr(self, "_discord_voice_transcript_agent_turns", None)
+        if transcript_agent_turns is None:
+            transcript_agent_turns = _load_discord_voice_transcript_agent_turns()
+            self._discord_voice_transcript_agent_turns = transcript_agent_turns
+        if not transcript_agent_turns:
+            return
 
         # Build a synthetic MessageEvent and feed through the normal pipeline
         # Use SimpleNamespace as raw_message so _get_guild_id() can extract

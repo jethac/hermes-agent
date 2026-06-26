@@ -11,6 +11,8 @@ import json
 import subprocess
 import shutil
 import uuid
+from argparse import Namespace
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -597,8 +599,20 @@ def _emit_realtime_voice_production_evidence_hint(readiness_issues: list[str]) -
     check_info("  python -m hermes_cli.realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice")
     check_info("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --start-deepgram-bridge")
     check_info(
+        "  python -m hermes_cli.realtime_voice_alpha_evidence "
+        "--runs 3 --apply --provider elevenlabs --start-bridge"
+    )
+    check_info(
         "  python -m hermes_cli.realtime_voice_report "
         "./artifacts/realtime-voice-evidence/*.json --alpha --min-runs 3"
+    )
+    check_info(
+        "  python -m hermes_cli.realtime_voice_report "
+        "./artifacts/realtime-voice-evidence/*.json --alpha --min-runs 3 --apply-production-evidence"
+    )
+    check_info(
+        "  python -m hermes_cli.realtime_voice_live_evidence "
+        "--require-live-discord --require-openai-realtime"
     )
 
 
@@ -647,6 +661,12 @@ def _emit_realtime_voice_live_setup_hint(payload: Mapping[str, Any]) -> None:
     check_info("  python -m hermes_cli.realtime_voice_deepgram_bridge --check --strict --production-en-ja")
     check_info("  python -m hermes_cli.realtime_voice_deepgram_bridge --host 127.0.0.1 --port 8766 --production-en-ja")
     check_info("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --start-deepgram-bridge")
+    check_info("  or:")
+    check_info("  python -m hermes_cli.realtime_voice_profile --preset elevenlabs --apply --generate-bridge-token")
+    check_info("  set ELEVENLABS_API_KEY=... and ELEVENLABS_VOICE_ID=...")
+    check_info("  python -m hermes_cli.realtime_voice_elevenlabs_bridge --check --strict --production-en-ja")
+    check_info("  python -m hermes_cli.realtime_voice_elevenlabs_bridge --host 127.0.0.1 --port 8767 --production-en-ja")
+    check_info("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --provider elevenlabs --start-bridge")
 
 
 def _realtime_voice_cli_values(value: Any) -> list[str]:
@@ -735,6 +755,11 @@ def _realtime_voice_smoke_report_payload(result: Any, *, kind: str, **extra: Any
             or 0
         ),
         "events": list(tuple(mapping.get("events", getattr(result, "events", ())) or ())),
+        "first_audio_metrics": (
+            dict(mapping.get("first_audio_metrics", getattr(result, "first_audio_metrics", None)) or {})
+            or None
+        ),
+        "transport": str(mapping.get("transport", getattr(result, "transport", "")) or "") or None,
         "error": str(mapping.get("error", getattr(result, "error", "")) or "") or None,
     }
     payload.update(extra)
@@ -751,6 +776,94 @@ def _append_realtime_voice_smoke_report(
     if reports is None:
         return
     reports.append(_realtime_voice_smoke_report_payload(result, kind=kind, **extra))
+
+
+def _discord_realtime_voice_smoke_report_payload(result: Any, **extra: Any) -> dict[str, Any]:
+    mapping = result if isinstance(result, Mapping) else {}
+    payload = {
+        "kind": "discord_bridge",
+        "ok": bool(mapping.get("ok", getattr(result, "ok", False))),
+        "mode": str(mapping.get("mode", getattr(result, "mode", "")) or ""),
+        "transport": str(mapping.get("transport", getattr(result, "transport", "")) or "") or None,
+        "input_pcm48_bytes": int(
+            mapping.get("input_pcm48_bytes", getattr(result, "input_pcm48_bytes", 0)) or 0
+        ),
+        "sidecar_pcm16_bytes": int(
+            mapping.get("sidecar_pcm16_bytes", getattr(result, "sidecar_pcm16_bytes", 0)) or 0
+        ),
+        "mixer_frames": int(mapping.get("mixer_frames", getattr(result, "mixer_frames", 0)) or 0),
+        "mixer_frame_bytes": int(
+            mapping.get("mixer_frame_bytes", getattr(result, "mixer_frame_bytes", 0)) or 0
+        ),
+        "barge_in_sent": bool(mapping.get("barge_in_sent", getattr(result, "barge_in_sent", False))),
+        "mixer_stop_calls": int(
+            mapping.get("mixer_stop_calls", getattr(result, "mixer_stop_calls", 0)) or 0
+        ),
+        "events": list(tuple(mapping.get("events", getattr(result, "events", ())) or ())),
+        "error": str(mapping.get("error", getattr(result, "error", "")) or "") or None,
+    }
+    payload.update(extra)
+    return payload
+
+
+def _append_discord_realtime_voice_smoke_report(
+    reports: list[dict[str, Any]] | None,
+    result: Any,
+    **extra: Any,
+) -> None:
+    if reports is None:
+        return
+    reports.append(_discord_realtime_voice_smoke_report_payload(result, **extra))
+
+
+def _discord_voice_live_probe_report_payload(result: Any, **extra: Any) -> dict[str, Any]:
+    mapping = result if isinstance(result, Mapping) else {}
+
+    def _int_field(name: str) -> int:
+        return int(mapping.get(name, getattr(result, name, 0)) or 0)
+
+    def _bool_field(name: str) -> bool:
+        return bool(mapping.get(name, getattr(result, name, False)))
+
+    def _str_field(name: str) -> str:
+        return str(mapping.get(name, getattr(result, name, "")) or "")
+
+    payload = {
+        "kind": "discord_live_probe",
+        "ok": _bool_field("ok"),
+        "guild_name": _str_field("guild_name"),
+        "voice_channel_name": _str_field("voice_channel_name"),
+        "connect_perm": _bool_field("connect_perm"),
+        "speak_perm": _bool_field("speak_perm"),
+        "members_before": _int_field("members_before"),
+        "connected": _bool_field("connected"),
+        "opus_loaded": _bool_field("opus_loaded"),
+        "accepted_audio_source": _bool_field("accepted_audio_source"),
+        "played": _bool_field("played"),
+        "playing_during_probe": _bool_field("playing_during_probe"),
+        "receiver_started": _bool_field("receiver_started"),
+        "receiver_frames": _int_field("receiver_frames"),
+        "receiver_speech_start": _int_field("receiver_speech_start"),
+        "inbound_observed": _bool_field("inbound_observed"),
+        "members_after": _int_field("members_after"),
+        "disconnected": _bool_field("disconnected"),
+        "require_inbound": _bool_field("require_inbound"),
+        "wait_seconds": float(mapping.get("wait_seconds", getattr(result, "wait_seconds", 0.0)) or 0.0),
+        "failure_reason": _str_field("failure_reason") or None,
+        "error": _str_field("error") or None,
+    }
+    payload.update(extra)
+    return payload
+
+
+def _append_discord_voice_live_probe_report(
+    reports: list[dict[str, Any]] | None,
+    result: Any,
+    **extra: Any,
+) -> None:
+    if reports is None:
+        return
+    reports.append(_discord_voice_live_probe_report_payload(result, **extra))
 
 
 def _write_realtime_voice_report(path: str | os.PathLike[str], reports: list[dict[str, Any]]) -> None:
@@ -922,6 +1035,7 @@ def _realtime_voice_smoke_config():
         _realtime_voice_quality_targets_payload,
         _realtime_voice_sidecar_base_url,
         _realtime_voice_sidecar_token,
+        _realtime_voice_turn_acknowledgement_payload,
         _truthy_config,
     )
 
@@ -952,8 +1066,16 @@ def _realtime_voice_smoke_config():
         ),
         metadata={
             "source": "doctor_smoke",
+            "transport": str(realtime.get("transport") or "doctor_smoke"),
+            "voice_architecture": "kame_frontend_oracle",
+            "frontend_role": "low_latency_voice_interface",
+            "oracle_role": "hermes_backend_oracle",
+            "frontend_provider": str(realtime.get("frontend_provider") or "") or None,
+            "frontend_model": str(realtime.get("frontend_model") or "") or None,
+            "oracle_model": str(realtime.get("oracle_model") or "") or None,
             "language_support": _realtime_voice_language_support_payload(realtime),
             "quality_targets_ms": _realtime_voice_quality_targets_payload(realtime),
+            "turn_acknowledgement": _realtime_voice_turn_acknowledgement_payload(realtime),
             "conversation_quality": _realtime_voice_conversation_quality_payload(
                 engine=engine,
                 base_url=str(base_url or ""),
@@ -967,12 +1089,13 @@ def _realtime_voice_smoke_config():
 def _run_realtime_voice_sidecar_smoke_sync(config, *, timeout_seconds: float):
     from agent.realtime_voice_smoke import run_realtime_voice_sidecar_smoke
 
-    return asyncio.run(
+    result = asyncio.run(
         run_realtime_voice_sidecar_smoke(
             config,
             timeout_seconds=timeout_seconds,
         )
     )
+    return _realtime_voice_result_with_transport(result, config)
 
 
 def _run_realtime_voice_sidecar_audio_smoke_sync(
@@ -992,7 +1115,7 @@ def _run_realtime_voice_sidecar_audio_smoke_sync(
     if not audio:
         raise RuntimeError(f"audio fixture is empty: {audio_fixture_path}")
 
-    return asyncio.run(
+    result = asyncio.run(
         run_realtime_voice_sidecar_smoke(
             config,
             audio=audio,
@@ -1000,6 +1123,7 @@ def _run_realtime_voice_sidecar_audio_smoke_sync(
             timeout_seconds=timeout_seconds,
         )
     )
+    return _realtime_voice_result_with_transport(result, config)
 
 
 def _run_realtime_voice_sidecar_tts_smoke_sync(
@@ -1011,7 +1135,7 @@ def _run_realtime_voice_sidecar_tts_smoke_sync(
 ):
     from agent.realtime_voice_smoke import run_realtime_voice_sidecar_tts_smoke
 
-    return asyncio.run(
+    result = asyncio.run(
         run_realtime_voice_sidecar_tts_smoke(
             config,
             text=text,
@@ -1019,6 +1143,7 @@ def _run_realtime_voice_sidecar_tts_smoke_sync(
             timeout_seconds=timeout_seconds,
         )
     )
+    return _realtime_voice_result_with_transport(result, config)
 
 
 def _run_realtime_voice_sidecar_barge_in_smoke_sync(
@@ -1029,13 +1154,14 @@ def _run_realtime_voice_sidecar_barge_in_smoke_sync(
 ):
     from agent.realtime_voice_smoke import run_realtime_voice_sidecar_barge_in_smoke
 
-    return asyncio.run(
+    result = asyncio.run(
         run_realtime_voice_sidecar_barge_in_smoke(
             config,
             text=text,
             timeout_seconds=timeout_seconds,
         )
     )
+    return _realtime_voice_result_with_transport(result, config)
 
 
 def _run_realtime_voice_session_turn_smoke_sync(
@@ -1049,7 +1175,7 @@ def _run_realtime_voice_session_turn_smoke_sync(
         run_realtime_voice_session_turn_smoke,
     )
 
-    return asyncio.run(
+    result = asyncio.run(
         run_realtime_voice_session_turn_smoke(
             config,
             answer=text,
@@ -1058,6 +1184,7 @@ def _run_realtime_voice_session_turn_smoke_sync(
             timeout_seconds=timeout_seconds,
         )
     )
+    return _realtime_voice_result_with_transport(result, config)
 
 
 def _run_realtime_voice_session_audio_smoke_sync(
@@ -1079,7 +1206,7 @@ def _run_realtime_voice_session_audio_smoke_sync(
         raise RuntimeError(f"audio fixture is empty: {audio_fixture_path}")
 
     expected_text = ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS.get(audio_fixture_path, "Hello from Hermes.")
-    return asyncio.run(
+    result = asyncio.run(
         run_realtime_voice_session_audio_smoke(
             config,
             audio=audio,
@@ -1087,6 +1214,157 @@ def _run_realtime_voice_session_audio_smoke_sync(
             answer=expected_text,
             timeout_seconds=timeout_seconds,
         )
+    )
+    return _realtime_voice_result_with_transport(result, config)
+
+
+def _run_discord_realtime_voice_smoke_sync():
+    from hermes_cli.discord_realtime_voice_smoke import run_discord_realtime_voice_smoke
+
+    return asyncio.run(run_discord_realtime_voice_smoke())
+
+
+def _run_discord_voice_live_probe_sync(
+    *,
+    wait_seconds: float,
+    require_inbound: bool,
+    voice_channel_id: str = "",
+    voice_channel_name: str = "",
+):
+    from hermes_cli.discord_voice_live_probe import run_discord_voice_live_probe
+
+    args = Namespace(
+        guild_id=os.environ.get("DISCORD_GUILD_ID", ""),
+        text_channel_id=os.environ.get("DISCORD_HOME_CHANNEL", ""),
+        voice_channel_id=str(voice_channel_id or os.environ.get("DISCORD_VOICE_CHANNEL_ID", "")),
+        voice_channel_name=str(
+            voice_channel_name or os.environ.get("DISCORD_VOICE_CHANNEL_NAME", "General")
+        ),
+        wait_seconds=max(0.0, float(wait_seconds or 0.0)),
+        require_inbound=bool(require_inbound),
+    )
+    return asyncio.run(run_discord_voice_live_probe(args))
+
+
+def _realtime_voice_result_with_transport(result: Any, config: Any) -> Any:
+    metadata = getattr(config, "metadata", None)
+    transport = ""
+    if isinstance(metadata, Mapping):
+        transport = str(metadata.get("transport") or "").strip()
+    if not transport:
+        return result
+    try:
+        from agent.realtime_voice_smoke import RealtimeVoiceSidecarSmokeResult
+
+        if isinstance(result, RealtimeVoiceSidecarSmokeResult):
+            return replace(result, transport=transport)
+    except Exception:
+        pass
+    return result
+
+
+def _check_discord_realtime_voice_smoke(
+    issues: list[str],
+    *,
+    reports: list[dict[str, Any]] | None = None,
+) -> None:
+    try:
+        result = _run_discord_realtime_voice_smoke_sync()
+    except Exception as exc:
+        _append_discord_realtime_voice_smoke_report(
+            reports,
+            {"ok": False, "error": f"failed: {exc}"},
+        )
+        _fail_and_issue(
+            "Discord realtime voice bridge smoke",
+            f"(failed: {exc})",
+            f"Fix Discord realtime voice bridge smoke failure: {exc}",
+            issues,
+        )
+        return
+
+    _append_discord_realtime_voice_smoke_report(reports, result)
+    if result.ok:
+        check_ok(
+            "Discord realtime voice bridge smoke",
+            (
+                f"(pcm48={result.input_pcm48_bytes}B, "
+                f"pcm16={result.sidecar_pcm16_bytes}B, "
+                f"mixer_frames={result.mixer_frames}, "
+                f"barge_in={_realtime_voice_bool(result.barge_in_sent)})"
+            ),
+        )
+        return
+
+    detail = result.error or "discord realtime bridge smoke failed"
+    if result.events:
+        detail = f"{detail}; events={','.join(result.events)}"
+    _fail_and_issue(
+        "Discord realtime voice bridge smoke",
+        f"({detail})",
+        f"Fix Discord realtime voice bridge smoke failure: {detail}",
+        issues,
+    )
+
+
+def _check_discord_voice_live_probe(
+    issues: list[str],
+    *,
+    reports: list[dict[str, Any]] | None = None,
+    wait_seconds: float = 2.0,
+    require_inbound: bool = False,
+    voice_channel_id: str = "",
+    voice_channel_name: str = "",
+) -> None:
+    try:
+        result = _run_discord_voice_live_probe_sync(
+            wait_seconds=wait_seconds,
+            require_inbound=require_inbound,
+            voice_channel_id=voice_channel_id,
+            voice_channel_name=voice_channel_name,
+        )
+    except Exception as exc:
+        _append_discord_voice_live_probe_report(
+            reports,
+            {
+                "ok": False,
+                "error": f"failed: {exc}",
+                "wait_seconds": wait_seconds,
+                "require_inbound": require_inbound,
+            },
+        )
+        _fail_and_issue(
+            "Discord live voice probe",
+            f"(failed: {exc})",
+            f"Fix Discord live voice probe failure: {exc}",
+            issues,
+        )
+        return
+
+    _append_discord_voice_live_probe_report(reports, result)
+    if result.ok:
+        inbound = "yes" if result.inbound_observed else "no"
+        check_ok(
+            "Discord live voice probe",
+            (
+                f"({result.guild_name} / {result.voice_channel_name}, "
+                f"members={result.members_before}->{result.members_after}, "
+                f"receiver_frames={result.receiver_frames}, inbound={inbound})"
+            ),
+        )
+        return
+
+    detail = result.error or result.failure_reason or "discord live voice probe failed"
+    fix = f"Fix Discord live voice probe failure: {detail}"
+    if getattr(result, "failure_reason", "") == "inbound_required_but_no_other_members":
+        fix = "Rerun while a human or controlled second Discord client is speaking in the voice channel"
+    elif getattr(result, "failure_reason", "") == "inbound_required_but_no_frames":
+        fix = "Verify Discord receiver callback wiring and rerun while inbound speech is active"
+    _fail_and_issue(
+        "Discord live voice probe",
+        f"({detail})",
+        fix,
+        issues,
     )
 
 
@@ -1853,6 +2131,8 @@ def run_doctor(args):
     ack_target = getattr(args, 'ack', None)
     realtime_voice_alpha = getattr(args, 'realtime_voice_alpha', False)
     smoke_realtime_voice = getattr(args, 'realtime_voice_smoke', False)
+    smoke_discord_realtime_voice = getattr(args, 'discord_realtime_voice_smoke', False)
+    discord_voice_live_probe = getattr(args, 'discord_voice_live_probe', False)
     realtime_voice_audio_fixtures = _realtime_voice_cli_values(
         getattr(args, 'realtime_voice_audio_fixture', None)
     )
@@ -1879,6 +2159,7 @@ def run_doctor(args):
     strict_realtime_voice = (
         getattr(args, 'realtime_voice', False)
         or smoke_realtime_voice
+        or smoke_discord_realtime_voice
         or bool(realtime_voice_audio_fixtures)
         or bool(realtime_voice_tts_smokes)
         or bool(realtime_voice_barge_in_smokes)
@@ -2559,6 +2840,17 @@ def run_doctor(args):
             issues,
             text=realtime_voice_barge_in_smoke,
             reports=realtime_voice_reports,
+        )
+    if smoke_discord_realtime_voice:
+        _check_discord_realtime_voice_smoke(issues, reports=realtime_voice_reports)
+    if discord_voice_live_probe:
+        _check_discord_voice_live_probe(
+            issues,
+            reports=realtime_voice_reports,
+            wait_seconds=float(getattr(args, 'discord_voice_live_probe_wait_seconds', 2.0) or 0.0),
+            require_inbound=bool(getattr(args, 'discord_voice_live_probe_require_inbound', False)),
+            voice_channel_id=str(getattr(args, 'discord_voice_live_probe_channel_id', "") or ""),
+            voice_channel_name=str(getattr(args, 'discord_voice_live_probe_channel_name', "") or ""),
         )
     if realtime_voice_report_path:
         try:

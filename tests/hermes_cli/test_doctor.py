@@ -77,6 +77,42 @@ class TestRealtimeVoiceReadiness:
             ["a", "d"],
         ) == ["a", "b", "c", "d"]
 
+    def test_realtime_voice_smoke_config_includes_kame_role_metadata(self, monkeypatch):
+        import hermes_cli.web_server as web_server
+
+        config = {
+            "voice": {
+                "realtime": {
+                    "enabled": True,
+                    "engine": "text_oracle_tts",
+                    "sidecar_base_url": "http://voice.local:8765",
+                    "frontend_provider": "gemma4",
+                    "frontend_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                    "oracle_model": "deep-hermes",
+                }
+            }
+        }
+        monkeypatch.setattr(
+            doctor,
+            "load_config",
+            lambda: config,
+            raising=False,
+        )
+        monkeypatch.setattr(web_server, "load_config", lambda: config, raising=False)
+        monkeypatch.setattr(doctor, "_realtime_voice_sidecar_token", lambda realtime: "", raising=False)
+
+        smoke_config = doctor._realtime_voice_smoke_config()
+
+        assert smoke_config.frontend_provider == "gemma4"
+        assert smoke_config.frontend_model == "google/gemma-4-E4B-it-qat-w4a16-ct"
+        assert smoke_config.oracle_model == "deep-hermes"
+        assert smoke_config.metadata["voice_architecture"] == "kame_frontend_oracle"
+        assert smoke_config.metadata["frontend_role"] == "low_latency_voice_interface"
+        assert smoke_config.metadata["oracle_role"] == "hermes_backend_oracle"
+        assert smoke_config.metadata["frontend_provider"] == "gemma4"
+        assert smoke_config.metadata["frontend_model"] == "google/gemma-4-E4B-it-qat-w4a16-ct"
+        assert smoke_config.metadata["oracle_model"] == "deep-hermes"
+
     def test_realtime_voice_smoke_result_payload_is_json_safe(self):
         payload = realtime_voice_smoke_result_payload(
             RealtimeVoiceSidecarSmokeResult(
@@ -92,6 +128,7 @@ class TestRealtimeVoiceReadiness:
                 output_audio_bytes=4321,
                 audio_after_barge_in_bytes=0,
                 events=("frontend.state", "transcript.final"),
+                first_audio_metrics={"tts_synthesis_ms": 123},
             ),
             kind="audio_fixture",
         )
@@ -102,6 +139,98 @@ class TestRealtimeVoiceReadiness:
         assert payload["first_text_ms"] == 95
         assert payload["barge_in_ack_ms"] == 45
         assert payload["audio_after_barge_in_bytes"] == 0
+        assert payload["first_audio_metrics"] == {"tts_synthesis_ms": 123}
+        assert payload["transport"] is None
+        assert payload["error"] is None
+
+    def test_realtime_voice_smoke_result_payload_includes_diagnostics(self):
+        payload = realtime_voice_smoke_result_payload(
+            RealtimeVoiceSidecarSmokeResult(
+                ok=True,
+                events=("frontend.state",),
+                first_audio_metrics={"tts_synthesis_ms": 123},
+                transport="discord_voice",
+            ),
+            kind="protocol",
+        )
+
+        assert payload["transport"] == "discord_voice"
+        assert payload["first_audio_metrics"] == {"tts_synthesis_ms": 123}
+
+    def test_realtime_voice_report_payload_preserves_transport(self):
+        result = RealtimeVoiceSidecarSmokeResult(ok=True, transport="discord_voice")
+
+        payload = doctor._realtime_voice_smoke_report_payload(result, kind="protocol")
+
+        assert payload["transport"] == "discord_voice"
+
+    def test_realtime_voice_result_with_transport_uses_config_metadata(self):
+        result = RealtimeVoiceSidecarSmokeResult(ok=True)
+        config = SimpleNamespace(metadata={"transport": "discord_voice"})
+
+        tagged = doctor._realtime_voice_result_with_transport(result, config)
+
+        assert tagged.transport == "discord_voice"
+        assert result.transport == ""
+
+    def test_discord_realtime_voice_smoke_report_payload_is_json_safe(self):
+        payload = doctor._discord_realtime_voice_smoke_report_payload(
+            SimpleNamespace(
+                ok=True,
+                mode="discord_loopback",
+                transport="discord_voice",
+                input_pcm48_bytes=3840,
+                sidecar_pcm16_bytes=640,
+                mixer_frames=1,
+                mixer_frame_bytes=3840,
+                barge_in_sent=True,
+                mixer_stop_calls=2,
+                events=("transcript.final", "barge_in"),
+                error="",
+            )
+        )
+
+        assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
+        assert payload["kind"] == "discord_bridge"
+        assert payload["transport"] == "discord_voice"
+        assert payload["sidecar_pcm16_bytes"] == 640
+        assert payload["barge_in_sent"] is True
+        assert payload["error"] is None
+
+    def test_discord_voice_live_probe_report_payload_is_json_safe(self):
+        payload = doctor._discord_voice_live_probe_report_payload(
+            SimpleNamespace(
+                ok=True,
+                guild_name="jetha dev server",
+                voice_channel_name="General",
+                connect_perm=True,
+                speak_perm=True,
+                members_before=2,
+                connected=True,
+                opus_loaded=True,
+                accepted_audio_source=True,
+                played=True,
+                playing_during_probe=True,
+                receiver_started=True,
+                receiver_frames=12,
+                receiver_speech_start=1,
+                inbound_observed=True,
+                members_after=2,
+                disconnected=True,
+                require_inbound=True,
+                wait_seconds=5.0,
+                failure_reason="",
+                error="",
+            )
+        )
+
+        assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
+        assert payload["kind"] == "discord_live_probe"
+        assert payload["guild_name"] == "jetha dev server"
+        assert payload["voice_channel_name"] == "General"
+        assert payload["receiver_frames"] == 12
+        assert payload["inbound_observed"] is True
+        assert payload["failure_reason"] is None
         assert payload["error"] is None
 
     def test_non_strict_disabled_realtime_voice_is_informational(self, monkeypatch, capsys):
@@ -177,7 +306,9 @@ class TestRealtimeVoiceReadiness:
         assert "Best-effort languages disabled" in output
         assert "Voice sidecar health" in output
         assert "realtime_voice_profile --preset deepgram --apply --generate-bridge-token" in output
+        assert "realtime_voice_profile --preset elevenlabs --apply --generate-bridge-token" in output
         assert "realtime_voice_deepgram_bridge --check --strict --production-en-ja" in output
+        assert "realtime_voice_elevenlabs_bridge --check --strict --production-en-ja" in output
         assert "realtime_voice_alpha_evidence --runs 3 --apply" in output
         assert any("live-like" in issue for issue in issues)
         assert any("production_evidence_report" in issue for issue in issues)
@@ -331,7 +462,13 @@ class TestRealtimeVoiceReadiness:
         assert "Production evidence:" in output
         assert "realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice" in output
         assert "realtime_voice_alpha_evidence --runs 3 --apply" in output
+        assert "realtime_voice_alpha_evidence --runs 3 --apply --provider elevenlabs --start-bridge" in output
         assert "realtime_voice_report ./artifacts/realtime-voice-evidence/*.json --alpha --min-runs 3" in output
+        assert (
+            "realtime_voice_report ./artifacts/realtime-voice-evidence/*.json --alpha "
+            "--min-runs 3 --apply-production-evidence"
+        ) in output
+        assert "realtime_voice_live_evidence --require-live-discord --require-openai-realtime" in output
         assert any("production_evidence_report" in issue for issue in issues)
         assert "Production launch review:" not in output
 
@@ -474,6 +611,178 @@ class TestRealtimeVoiceReadiness:
         assert "events=frontend.state" in output
         assert any("protocol smoke failure" in issue for issue in issues)
 
+    def test_discord_realtime_voice_smoke_reports_success(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_run_discord_realtime_voice_smoke_sync",
+            lambda: SimpleNamespace(
+                ok=True,
+                mode="discord_loopback",
+                transport="discord_voice",
+                input_pcm48_bytes=3840,
+                sidecar_pcm16_bytes=640,
+                mixer_frames=1,
+                mixer_frame_bytes=3840,
+                barge_in_sent=True,
+                mixer_stop_calls=2,
+                events=("transcript.final", "barge_in"),
+                error="",
+            ),
+        )
+        issues = []
+        reports = []
+
+        doctor._check_discord_realtime_voice_smoke(issues, reports=reports)
+
+        output = capsys.readouterr().out
+        assert "Discord realtime voice bridge smoke" in output
+        assert "pcm48=3840B" in output
+        assert "pcm16=640B" in output
+        assert "barge_in=yes" in output
+        assert issues == []
+        assert reports == [
+            {
+                "kind": "discord_bridge",
+                "ok": True,
+                "mode": "discord_loopback",
+                "transport": "discord_voice",
+                "input_pcm48_bytes": 3840,
+                "sidecar_pcm16_bytes": 640,
+                "mixer_frames": 1,
+                "mixer_frame_bytes": 3840,
+                "barge_in_sent": True,
+                "mixer_stop_calls": 2,
+                "events": ["transcript.final", "barge_in"],
+                "error": None,
+            }
+        ]
+
+    def test_discord_realtime_voice_smoke_records_failure_issue(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_run_discord_realtime_voice_smoke_sync",
+            lambda: SimpleNamespace(
+                ok=False,
+                mode="discord_loopback",
+                transport="discord_voice",
+                input_pcm48_bytes=3840,
+                sidecar_pcm16_bytes=0,
+                mixer_frames=0,
+                mixer_frame_bytes=0,
+                barge_in_sent=False,
+                mixer_stop_calls=0,
+                events=("transcript.partial",),
+                error="discord realtime loopback smoke did not satisfy invariants",
+            ),
+        )
+        issues = []
+
+        doctor._check_discord_realtime_voice_smoke(issues)
+
+        output = capsys.readouterr().out
+        assert "Discord realtime voice bridge smoke" in output
+        assert "did not satisfy invariants" in output
+        assert "events=transcript.partial" in output
+        assert any("Discord realtime voice bridge smoke failure" in issue for issue in issues)
+
+    def test_discord_voice_live_probe_reports_success(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_run_discord_voice_live_probe_sync",
+            lambda **kwargs: SimpleNamespace(
+                ok=True,
+                guild_name="jetha dev server",
+                voice_channel_name="General",
+                connect_perm=True,
+                speak_perm=True,
+                members_before=2,
+                connected=True,
+                opus_loaded=True,
+                accepted_audio_source=True,
+                played=True,
+                playing_during_probe=True,
+                receiver_started=True,
+                receiver_frames=15,
+                receiver_speech_start=1,
+                inbound_observed=True,
+                members_after=2,
+                disconnected=True,
+                require_inbound=kwargs["require_inbound"],
+                wait_seconds=kwargs["wait_seconds"],
+                failure_reason="",
+                error="",
+            ),
+        )
+        issues = []
+        reports = []
+
+        doctor._check_discord_voice_live_probe(
+            issues,
+            reports=reports,
+            wait_seconds=5.0,
+            require_inbound=True,
+            voice_channel_name="General",
+        )
+
+        output = capsys.readouterr().out
+        assert "Discord live voice probe" in output
+        assert "jetha dev server / General" in output
+        assert "receiver_frames=15" in output
+        assert "inbound=yes" in output
+        assert issues == []
+        assert reports[0]["kind"] == "discord_live_probe"
+        assert reports[0]["ok"] is True
+        assert reports[0]["receiver_frames"] == 15
+        assert reports[0]["require_inbound"] is True
+
+    def test_discord_voice_live_probe_explains_empty_channel_failure(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_run_discord_voice_live_probe_sync",
+            lambda **_kwargs: SimpleNamespace(
+                ok=False,
+                guild_name="jetha dev server",
+                voice_channel_name="General",
+                connect_perm=True,
+                speak_perm=True,
+                members_before=0,
+                connected=True,
+                opus_loaded=True,
+                accepted_audio_source=True,
+                played=True,
+                playing_during_probe=True,
+                receiver_started=True,
+                receiver_frames=0,
+                receiver_speech_start=0,
+                inbound_observed=False,
+                members_after=0,
+                disconnected=True,
+                require_inbound=True,
+                wait_seconds=1.0,
+                failure_reason="inbound_required_but_no_other_members",
+                error=(
+                    "live Discord voice probe did not satisfy invariants: "
+                    "inbound_required_but_no_other_members"
+                ),
+            ),
+        )
+        issues = []
+        reports = []
+
+        doctor._check_discord_voice_live_probe(
+            issues,
+            reports=reports,
+            wait_seconds=1.0,
+            require_inbound=True,
+        )
+
+        output = capsys.readouterr().out
+        assert "Discord live voice probe" in output
+        assert "inbound_required_but_no_other_members" in output
+        assert any("controlled second Discord client" in issue for issue in issues)
+        assert reports[0]["kind"] == "discord_live_probe"
+        assert reports[0]["failure_reason"] == "inbound_required_but_no_other_members"
+
     def test_audio_fixture_smoke_reports_success_with_partial_target(self, monkeypatch, capsys):
         monkeypatch.setattr(
             doctor,
@@ -554,6 +863,8 @@ class TestRealtimeVoiceReadiness:
                 "output_audio_bytes": 0,
                 "audio_after_barge_in_bytes": 0,
                 "events": ["frontend.state", "transcript.partial", "transcript.final"],
+                "first_audio_metrics": None,
+                "transport": None,
                 "error": None,
                 "fixture": "hello-ja.webm",
                 "codec": "webm_opus",
@@ -891,6 +1202,8 @@ class TestRealtimeVoiceReadiness:
                     "assistant.text.partial",
                     "audio.output.chunk",
                 ],
+                "first_audio_metrics": None,
+                "transport": None,
                 "error": None,
                 "fixture": "hello-ja.webm",
                 "codec": "webm_opus",

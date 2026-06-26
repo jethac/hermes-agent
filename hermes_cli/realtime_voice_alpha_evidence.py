@@ -69,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider",
-        choices=("deepgram", "elevenlabs"),
+        choices=("deepgram", "elevenlabs", "loopback"),
         default="deepgram",
         help="Streaming voice bridge provider to start when --start-bridge is set",
     )
@@ -216,6 +216,12 @@ def main(argv: list[str] | None = None) -> int:
 
     _print_summary(runs)
     if args.apply:
+        if _evidence_bridge_provider(args) == "loopback":
+            print(
+                "Realtime voice alpha evidence failed: loopback validation cannot be applied as production evidence",
+                file=sys.stderr,
+            )
+            return 1
         config_path = apply_realtime_voice_production_evidence_report(output_dir)
         print(f"Updated realtime voice production_evidence_report in {config_path}")
     return 0
@@ -255,7 +261,7 @@ def _annotate_realtime_voice_alpha_report_for_provider(
     provider: str,
 ) -> None:
     """Add provider-specific evidence metadata before alpha validation."""
-    if provider != "elevenlabs":
+    if provider not in {"elevenlabs", "loopback"}:
         return
     path = Path(report_path).expanduser()
     try:
@@ -263,6 +269,14 @@ def _annotate_realtime_voice_alpha_report_for_provider(
     except Exception:
         return
     if not isinstance(entries, list):
+        return
+    if provider == "loopback":
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            entry["evidence_provider"] = "loopback"
+            entry["loopback_validation"] = True
+        path.write_text(json.dumps(entries, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         return
     partial_ceiling_ms = 1000
     for entry in entries:
@@ -371,16 +385,22 @@ def _evidence_bridge_provider(args: argparse.Namespace) -> str:
     if getattr(args, "start_deepgram_bridge", False):
         return "deepgram"
     provider = str(getattr(args, "provider", "deepgram") or "deepgram").strip().lower()
-    if provider not in {"deepgram", "elevenlabs"}:
-        raise RuntimeError("--provider must be deepgram or elevenlabs")
+    if provider not in {"deepgram", "elevenlabs", "loopback"}:
+        raise RuntimeError("--provider must be deepgram, elevenlabs, or loopback")
     return provider
 
 
 def _bridge_provider_label(provider: str) -> str:
-    return "ElevenLabs" if provider == "elevenlabs" else "Deepgram"
+    if provider == "elevenlabs":
+        return "ElevenLabs"
+    if provider == "loopback":
+        return "Loopback"
+    return "Deepgram"
 
 
 def _bridge_default_port(provider: str) -> int:
+    if provider == "loopback":
+        return 8768
     return 8767 if provider == "elevenlabs" else 8766
 
 
@@ -473,6 +493,8 @@ def _spawn_streaming_bridge_for_evidence(
     module = (
         "hermes_cli.realtime_voice_elevenlabs_bridge"
         if provider == "elevenlabs"
+        else "hermes_cli.realtime_voice_loopback_bridge"
+        if provider == "loopback"
         else "hermes_cli.realtime_voice_deepgram_bridge"
     )
     command = [
@@ -545,6 +567,8 @@ def _streaming_bridge_prerequisite_issues_for_evidence(
     provider: str,
     env_on_disk: dict[str, str],
 ) -> list[str]:
+    if provider == "loopback":
+        return []
     if provider == "elevenlabs":
         return _elevenlabs_bridge_prerequisite_issues_for_evidence(env_on_disk)
     return _deepgram_bridge_prerequisite_issues_for_evidence(env_on_disk)
@@ -593,7 +617,7 @@ def _temporary_environ(values: dict[str, str]) -> Iterator[None]:
 
 
 def _streaming_bridge_log_path(provider: str) -> Path:
-    provider_name = "elevenlabs" if provider == "elevenlabs" else "deepgram"
+    provider_name = provider if provider in {"deepgram", "elevenlabs", "loopback"} else "deepgram"
     try:
         from hermes_cli import web_server
 

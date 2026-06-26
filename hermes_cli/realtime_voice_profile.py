@@ -18,6 +18,12 @@ DEFAULT_STREAMING_TTS_MODEL = "portable-streaming-voice"
 DEFAULT_DEEPGRAM_BRIDGE_BASE_URL = "http://127.0.0.1:8766"
 DEFAULT_DEEPGRAM_STT_MODEL = "nova-3"
 DEFAULT_DEEPGRAM_TTS_MODEL = "aura-2-thalia-en"
+DEFAULT_ELEVENLABS_BRIDGE_BASE_URL = "http://127.0.0.1:8767"
+DEFAULT_ELEVENLABS_STT_MODEL = "scribe_v2_realtime"
+DEFAULT_ELEVENLABS_TTS_MODEL = "eleven_flash_v2_5"
+DEFAULT_OPENAI_REALTIME_MODEL = "gpt-realtime-2"
+DEFAULT_OPENAI_REALTIME_VOICE = "marin"
+DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL = "gpt-realtime-whisper"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--preset",
-        choices=("generic", "deepgram"),
+        choices=("generic", "deepgram", "elevenlabs", "openai"),
         default="generic",
         help="Provider preset for common portable realtime voice stacks",
     )
@@ -65,6 +71,26 @@ def build_parser() -> argparse.ArgumentParser:
         default="HERMES_STREAMING_STT_BRIDGE_TOKEN",
         help="Environment variable containing the streaming TTS bridge bearer token",
     )
+    parser.add_argument(
+        "--openai-realtime-model",
+        default=DEFAULT_OPENAI_REALTIME_MODEL,
+        help="OpenAI Realtime model for --preset openai",
+    )
+    parser.add_argument(
+        "--openai-realtime-voice",
+        default=DEFAULT_OPENAI_REALTIME_VOICE,
+        help="OpenAI Realtime voice for --preset openai",
+    )
+    parser.add_argument(
+        "--openai-realtime-transcription-model",
+        default=DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL,
+        help="OpenAI Realtime transcription model for --preset openai",
+    )
+    parser.add_argument(
+        "--openai-realtime-api-key-env",
+        default="OPENAI_API_KEY",
+        help="Environment variable containing the OpenAI Realtime API key",
+    )
     parser.add_argument("--sidecar-host", default="127.0.0.1")
     parser.add_argument("--sidecar-port", type=int, default=8765)
     parser.add_argument(
@@ -99,18 +125,29 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     preset = _profile_preset_values(args)
     try:
-        profile = build_realtime_voice_live_like_profile(
-            streaming_stt_base_url=preset["streaming_stt_base_url"],
-            streaming_tts_base_url=preset["streaming_tts_base_url"],
-            streaming_stt_model=preset["streaming_stt_model"],
-            streaming_tts_model=preset["streaming_tts_model"],
-            streaming_stt_token_env=args.streaming_stt_token_env,
-            streaming_tts_token_env=args.streaming_tts_token_env,
-            sidecar_host=args.sidecar_host,
-            sidecar_port=args.sidecar_port,
-            production_evidence_report=args.production_evidence_report,
-            allow_template_urls=bool(args.allow_template_urls and not args.apply),
-        )
+        if args.preset == "openai":
+            profile = build_openai_realtime_voice_profile(
+                model=preset["openai_realtime_model"],
+                voice=preset["openai_realtime_voice"],
+                transcription_model=preset["openai_realtime_transcription_model"],
+                api_key_env=args.openai_realtime_api_key_env,
+                sidecar_host=args.sidecar_host,
+                sidecar_port=args.sidecar_port,
+                production_evidence_report=args.production_evidence_report,
+            )
+        else:
+            profile = build_realtime_voice_live_like_profile(
+                streaming_stt_base_url=preset["streaming_stt_base_url"],
+                streaming_tts_base_url=preset["streaming_tts_base_url"],
+                streaming_stt_model=preset["streaming_stt_model"],
+                streaming_tts_model=preset["streaming_tts_model"],
+                streaming_stt_token_env=args.streaming_stt_token_env,
+                streaming_tts_token_env=args.streaming_tts_token_env,
+                sidecar_host=args.sidecar_host,
+                sidecar_port=args.sidecar_port,
+                production_evidence_report=args.production_evidence_report,
+                allow_template_urls=bool(args.allow_template_urls and not args.apply),
+            )
     except ValueError as exc:
         print(f"Realtime voice profile failed: {exc}", file=sys.stderr)
         return 1
@@ -139,8 +176,28 @@ def main(argv: list[str] | None = None) -> int:
                 "  python -m hermes_cli.realtime_voice_deepgram_bridge "
                 "--host 127.0.0.1 --port 8766 --production-en-ja"
             )
+            print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --start-deepgram-bridge")
+        elif args.preset == "elevenlabs":
+            if not args.generate_bridge_token:
+                print("  python -m hermes_cli.realtime_voice_elevenlabs_bridge --generate-token")
+            print("  python -m hermes_cli.realtime_voice_elevenlabs_bridge --check --strict --production-en-ja")
+            print(
+                "  python -m hermes_cli.realtime_voice_elevenlabs_bridge "
+                "--host 127.0.0.1 --port 8767 --production-en-ja"
+            )
+            print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --provider elevenlabs --start-bridge")
+        elif args.preset == "openai":
+            print("  export OPENAI_API_KEY=...")
+            print("  export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=...")
+            print("  python -m hermes_cli.realtime_voice_sidecar --host 127.0.0.1 --port 8765")
+            print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply")
+        else:
+            print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --start-bridge")
+        print(
+            "  python -m hermes_cli.realtime_voice_live_evidence "
+            "--require-live-discord --require-openai-realtime"
+        )
         print("  python -m hermes_cli.realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice")
-        print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --start-deepgram-bridge")
         return 0
 
     print(yaml.safe_dump({"voice": {"realtime": profile}}, sort_keys=False, allow_unicode=True).rstrip())
@@ -177,12 +234,42 @@ def _profile_preset_values(args: argparse.Namespace) -> dict[str, str]:
     streaming_stt_model = str(args.streaming_stt_model or DEFAULT_STREAMING_STT_MODEL)
     streaming_tts_model = str(args.streaming_tts_model or DEFAULT_STREAMING_TTS_MODEL)
 
-    if args.preset != "deepgram":
+    if args.preset == "generic":
         return {
             "streaming_stt_base_url": streaming_stt_base_url,
             "streaming_tts_base_url": streaming_tts_base_url,
             "streaming_stt_model": streaming_stt_model,
             "streaming_tts_model": streaming_tts_model,
+        }
+
+    if args.preset == "openai":
+        return {
+            "streaming_stt_base_url": streaming_stt_base_url,
+            "streaming_tts_base_url": streaming_tts_base_url,
+            "streaming_stt_model": streaming_stt_model,
+            "streaming_tts_model": streaming_tts_model,
+            "openai_realtime_model": str(args.openai_realtime_model or DEFAULT_OPENAI_REALTIME_MODEL),
+            "openai_realtime_voice": str(args.openai_realtime_voice or DEFAULT_OPENAI_REALTIME_VOICE),
+            "openai_realtime_transcription_model": str(
+                args.openai_realtime_transcription_model or DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL
+            ),
+        }
+
+    if args.preset == "elevenlabs":
+        bridge_base_url = _clean_url(str(args.bridge_base_url or DEFAULT_ELEVENLABS_BRIDGE_BASE_URL))
+        return {
+            "streaming_stt_base_url": streaming_stt_base_url or bridge_base_url,
+            "streaming_tts_base_url": streaming_tts_base_url or streaming_stt_base_url or bridge_base_url,
+            "streaming_stt_model": (
+                DEFAULT_ELEVENLABS_STT_MODEL
+                if streaming_stt_model == DEFAULT_STREAMING_STT_MODEL
+                else streaming_stt_model
+            ),
+            "streaming_tts_model": (
+                DEFAULT_ELEVENLABS_TTS_MODEL
+                if streaming_tts_model == DEFAULT_STREAMING_TTS_MODEL
+                else streaming_tts_model
+            ),
         }
 
     bridge_base_url = _clean_url(str(args.bridge_base_url or DEFAULT_DEEPGRAM_BRIDGE_BASE_URL))
@@ -262,6 +349,67 @@ def build_realtime_voice_live_like_profile(
         "best_effort_languages": True,
         "production_evidence_report": str(production_evidence_report or DEFAULT_EVIDENCE_REPORT),
         "production_evidence_min_runs": 3,
+        "turn_acknowledgement": {
+            "enabled": True,
+            "text": "One moment.",
+        },
+        "quality_targets_ms": {
+            "audio_to_partial_transcript_ms": 300,
+            "final_transcript_to_first_text_ms": 500,
+            "final_transcript_to_first_audio_ms": 900,
+            "barge_in_ack_ms": 150,
+        },
+    }
+
+
+def build_openai_realtime_voice_profile(
+    *,
+    model: str = DEFAULT_OPENAI_REALTIME_MODEL,
+    voice: str = DEFAULT_OPENAI_REALTIME_VOICE,
+    transcription_model: str = DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL,
+    api_key_env: str = "OPENAI_API_KEY",
+    sidecar_host: str = "127.0.0.1",
+    sidecar_port: int = 8765,
+    production_evidence_report: str = DEFAULT_EVIDENCE_REPORT,
+) -> dict[str, Any]:
+    port = int(sidecar_port or 8765)
+    if port <= 0 or port > 65535:
+        raise ValueError("--sidecar-port must be between 1 and 65535")
+    return {
+        "enabled": True,
+        "engine": "text_oracle_tts",
+        "input_codec": "webm_opus",
+        "output_codec": "opus",
+        "input_buffer_limit_bytes": 8 * 1024 * 1024,
+        "input_frame_ms": 100,
+        "silence_timeout_ms": 650,
+        "speech_level_threshold": 0.075,
+        "barge_in_min_speech_ms": 120,
+        "pre_roll_ms": 300,
+        "require_live_like": True,
+        "frontend_provider": "openai_realtime",
+        "frontend_model": str(model or DEFAULT_OPENAI_REALTIME_MODEL),
+        "sidecar_base_url": "",
+        "spark_base_url": "",
+        "sidecar_host": str(sidecar_host or "127.0.0.1"),
+        "sidecar_port": port,
+        "sidecar_autostart": True,
+        "sidecar_connect_timeout_seconds": 10.0,
+        "openai_realtime_api_key_env": _clean_env_name(api_key_env) or "OPENAI_API_KEY",
+        "openai_realtime_base_url": "wss://api.openai.com/v1/realtime",
+        "openai_realtime_voice": str(voice or DEFAULT_OPENAI_REALTIME_VOICE),
+        "openai_realtime_transcription_model": str(
+            transcription_model or DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL
+        ),
+        "production_languages": ["en", "ja"],
+        "production_scripts": ["Latn", "Jpan"],
+        "best_effort_languages": True,
+        "production_evidence_report": str(production_evidence_report or DEFAULT_EVIDENCE_REPORT),
+        "production_evidence_min_runs": 3,
+        "turn_acknowledgement": {
+            "enabled": True,
+            "text": "One moment.",
+        },
         "quality_targets_ms": {
             "audio_to_partial_transcript_ms": 300,
             "final_transcript_to_first_text_ms": 500,

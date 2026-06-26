@@ -701,6 +701,21 @@ class TestVoiceReceiver:
         # Buffer should be cleared after extraction
         assert len(receiver._buffers[100]) == 0
 
+    def test_check_silence_flushes_max_duration_utterance(self):
+        receiver = self._make_receiver()
+        receiver.map_ssrc(100, 42)
+        receiver._buffers[100] = bytearray(b"\x00" * 96000)
+        receiver._buffer_start_time[100] = time.monotonic() - (receiver.MAX_UTTERANCE_DURATION + 1)
+        receiver._last_packet_time[100] = time.monotonic()
+
+        completed = receiver.check_silence()
+
+        assert len(completed) == 1
+        assert completed[0][0] == 42
+        assert len(completed[0][1]) == 96000
+        assert len(receiver._buffers[100]) == 0
+        assert 100 not in receiver._buffer_start_time
+
     def test_check_silence_ignores_short_buffer(self):
         receiver = self._make_receiver()
         receiver.map_ssrc(100, 42)
@@ -730,10 +745,12 @@ class TestVoiceReceiver:
         receiver = self._make_receiver()
         # Buffer with no user mapping and very old timestamp
         receiver._buffers[200] = bytearray(b"\x00" * 100)
+        receiver._buffer_start_time[200] = time.monotonic() - 10.0
         receiver._last_packet_time[200] = time.monotonic() - 10.0
         receiver.check_silence()
         # Stale buffer (> 2x threshold) should be discarded
         assert 200 not in receiver._buffers
+        assert 200 not in receiver._buffer_start_time
 
     def test_on_packet_skips_when_not_running(self):
         receiver = self._make_receiver()
@@ -848,6 +865,31 @@ class TestVoiceChannelCommands:
         assert mock_adapter._voice_sources[111]["chat_type"] == "group"
 
     @pytest.mark.asyncio
+    async def test_join_success_reports_degraded_voice_status(self, runner):
+        """Successful join should still report when voice is in fallback mode."""
+        mock_channel = MagicMock()
+        mock_channel.name = "General"
+        mock_adapter = AsyncMock()
+        mock_adapter.join_voice_channel = AsyncMock(return_value=True)
+        mock_adapter.get_user_voice_channel = AsyncMock(return_value=mock_channel)
+        mock_adapter.get_voice_session_status = MagicMock(return_value={
+            "mode": "degraded_no_sidecar",
+            "fallback_reason": "sidecar_start_failed: unavailable",
+        })
+        mock_adapter._voice_text_channels = {}
+        mock_adapter._voice_sources = {}
+        mock_adapter._voice_input_callback = None
+        event = self._make_discord_event()
+        event.source.chat_type = "group"
+        event.source.chat_name = "Hermes Server / #general"
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_channel_join(event)
+
+        assert "legacy fallback mode" in result
+        assert "sidecar_start_failed: unavailable" in result
+
+    @pytest.mark.asyncio
     async def test_join_failure(self, runner):
         """Failed join returns permissions error."""
         mock_channel = MagicMock()
@@ -890,6 +932,53 @@ class TestVoiceChannelCommands:
 
         assert "voice dependencies are missing" in result.lower()
         assert "PyNaCl" in result
+
+    @pytest.mark.asyncio
+    async def test_voice_status_reports_realtime_latency_metrics(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.get_voice_channel_info.return_value = {
+            "channel_name": "General",
+            "member_count": 1,
+            "members": [{"display_name": "jetha", "is_speaking": False}],
+            "voice_session": {
+                "mode": "realtime_active",
+                "session_state": "ready",
+                "mixer_installed": True,
+                "sidecar_running": True,
+                "playback_active": True,
+                "streaming_speech": {
+                    "queue_depth": 3,
+                    "dropped_frames": 2,
+                    "active": True,
+                },
+                "last_realtime_event": "audio.output.chunk",
+                "latency_metrics_ms": {
+                    "final_transcript_to_first_audio_ms": 812,
+                    "barge_in_ack_ms": 45,
+                },
+                "quality_target_misses": [
+                    {
+                        "metric": "final_transcript_to_first_audio_ms",
+                        "actual_ms": 812,
+                        "target_ms": 500,
+                    }
+                ],
+            },
+        }
+        event = self._make_discord_event("/voice status")
+        runner.adapters[event.source.platform] = mock_adapter
+        runner._voice_mode["discord:123"] = "all"
+
+        result = await runner._handle_voice_command(event)
+
+        assert "Last realtime event: audio.output.chunk" in result
+        assert "Lifecycle: ready" in result
+        assert "Playback: active" in result
+        assert "Realtime audio queue: depth=3, dropped=2" in result
+        assert "Realtime latency:" in result
+        assert "barge_in_ack_ms=45ms" in result
+        assert "final_transcript_to_first_audio_ms=812ms" in result
+        assert "Quality target misses: 1" in result
 
     # -- _handle_voice_channel_leave --
 
@@ -949,6 +1038,7 @@ class TestVoiceChannelCommands:
     async def test_input_creates_event_and_dispatches(self, runner):
         """Voice input creates synthetic event and calls handle_message."""
         from gateway.config import Platform
+        runner._discord_voice_transcript_agent_turns = True
         mock_adapter = AsyncMock()
         mock_adapter._voice_text_channels = {111: 123}
         mock_adapter._voice_sources = {}
@@ -969,6 +1059,7 @@ class TestVoiceChannelCommands:
     async def test_input_reuses_bound_source_metadata(self, runner):
         """Voice input should share the linked text channel session metadata."""
         from gateway.config import Platform
+        runner._discord_voice_transcript_agent_turns = True
 
         bound_source = SessionSource(
             chat_id="123",
@@ -1011,6 +1102,7 @@ class TestVoiceChannelCommands:
         runner.adapters[Platform.DISCORD] = mock_adapter
         await runner._handle_voice_channel_input(111, 42, "Test transcript")
         mock_channel.send.assert_called_once()
+        mock_adapter.handle_message.assert_not_called()
         msg = mock_channel.send.call_args[0][0]
         assert "Test transcript" in msg
         assert "42" in msg  # user_id in mention
@@ -1019,6 +1111,7 @@ class TestVoiceChannelCommands:
     async def test_input_suppresses_duplicate_transcript(self, runner):
         """Near-immediate duplicate STT output should not dispatch twice."""
         from gateway.config import Platform
+        runner._discord_voice_transcript_agent_turns = True
 
         mock_adapter = AsyncMock()
         mock_adapter._voice_text_channels = {111: 123}
@@ -1039,6 +1132,7 @@ class TestVoiceChannelCommands:
     async def test_input_suppresses_near_duplicate_transcript(self, runner):
         """Small STT wording drift should still be treated as the same utterance."""
         from gateway.config import Platform
+        runner._discord_voice_transcript_agent_turns = True
 
         mock_adapter = AsyncMock()
         mock_adapter._voice_text_channels = {111: 123}
@@ -1108,7 +1202,9 @@ class TestDiscordVoiceChannelMethods:
         adapter._voice_receivers = {}
         adapter._voice_listen_tasks = {}
         adapter._voice_mixers = {}
+        adapter._last_voice_activity_timeout_refresh = {}
         adapter._realtime_voice_sessions = {}
+        adapter._voice_session_states = {}
         adapter._realtime_voice_cfg = {"enabled": False}
         adapter._voice_fx_cfg = {"enabled": False}
         adapter._ambient_pcm_cache = None
@@ -1116,6 +1212,18 @@ class TestDiscordVoiceChannelMethods:
         adapter._allowed_user_ids = set()
         adapter._running = True
         return adapter
+
+    def test_note_voice_activity_refreshes_timeout_with_throttle(self):
+        adapter = self._make_adapter()
+        adapter._reset_voice_timeout = MagicMock()
+
+        adapter._note_voice_activity(111, now=100.0)
+        adapter._note_voice_activity(111, now=120.0)
+        adapter._note_voice_activity(111, now=131.0)
+
+        assert adapter._reset_voice_timeout.call_count == 2
+        adapter._reset_voice_timeout.assert_called_with(111)
+        assert adapter._last_voice_activity_timeout_refresh[111] == 131.0
 
     def test_is_in_voice_channel_true(self):
         adapter = self._make_adapter()
@@ -1164,12 +1272,17 @@ class TestDiscordVoiceChannelMethods:
         assert 111 not in adapter._voice_text_channels
         assert 111 not in adapter._voice_sources
         assert 111 not in adapter._voice_receivers
+        status = adapter.get_voice_session_status(111)
+        assert status["session_state"] == "closed"
+        assert status["sidecar_running"] is False
+        assert status["receiver_running"] is False
 
     @pytest.mark.asyncio
     async def test_leave_voice_channel_no_connection(self):
         """Leave when not connected — no crash."""
         adapter = self._make_adapter()
         await adapter.leave_voice_channel(111)  # should not raise
+        assert adapter.get_voice_session_status(111)["session_state"] == "closed"
 
     @pytest.mark.asyncio
     async def test_join_voice_channel_starts_realtime_session_when_enabled(self):
@@ -1178,6 +1291,8 @@ class TestDiscordVoiceChannelMethods:
             "enabled": True,
             "sidecar_base_url": "http://127.0.0.1:8766",
             "frontend_provider": "elevenlabs",
+            "frontend_model": "realtime-voice",
+            "oracle_model": "deep-hermes",
         }
         adapter._reset_voice_timeout = MagicMock()
         fake_session = AsyncMock()
@@ -1193,13 +1308,24 @@ class TestDiscordVoiceChannelMethods:
 
         with patch("plugins.platforms.discord.adapter.DISCORD_AVAILABLE", True), \
              patch("plugins.platforms.discord.adapter.VoiceReceiver") as receiver_cls, \
-             patch("plugins.platforms.discord.adapter.DiscordRealtimeVoiceSession", return_value=fake_session):
+             patch("plugins.platforms.discord.adapter.DiscordRealtimeVoiceSession", return_value=fake_session) as session_cls:
             receiver_cls.return_value.start = MagicMock()
             ok = await adapter.join_voice_channel(mock_channel)
 
         assert ok is True
         assert adapter._realtime_voice_sessions[111] is fake_session
         fake_session.start.assert_awaited_once()
+        assert session_cls.call_args.kwargs["frontend_provider"] == "elevenlabs"
+        assert session_cls.call_args.kwargs["frontend_model"] == "realtime-voice"
+        assert session_cls.call_args.kwargs["oracle_model"] == "deep-hermes"
+        status = adapter.get_voice_session_status(111)
+        assert status["session_state"] == "ready"
+        assert status["voice_architecture"] == "kame_frontend_oracle"
+        assert status["frontend_role"] == "low_latency_voice_interface"
+        assert status["oracle_role"] == "hermes_backend_oracle"
+        assert status["frontend_provider"] == "elevenlabs"
+        assert status["frontend_model"] == "realtime-voice"
+        assert status["oracle_model"] == "deep-hermes"
 
     @pytest.mark.asyncio
     async def test_join_voice_channel_wires_realtime_frame_and_speech_start_callbacks(self):
@@ -1260,6 +1386,11 @@ class TestDiscordVoiceChannelMethods:
                     "sidecar_base_url": "http://shared.local:8766",
                     "frontend_provider": "elevenlabs",
                     "sidecar_connect_timeout_seconds": 0.25,
+                    "sidecar_close_timeout_seconds": 0.75,
+                    "turn_acknowledgement": {
+                        "enabled": True,
+                        "text": "Got it.",
+                    },
                 }
             },
             "discord": {
@@ -1277,6 +1408,8 @@ class TestDiscordVoiceChannelMethods:
         assert cfg["frontend_provider"] == "elevenlabs"
         assert cfg["frontend_model"] == "discord-model"
         assert cfg["sidecar_connect_timeout_seconds"] == 0.25
+        assert cfg["sidecar_close_timeout_seconds"] == 0.75
+        assert cfg["turn_acknowledgement"] == {"enabled": True, "text": "Got it."}
 
     @pytest.mark.asyncio
     async def test_join_voice_channel_keeps_legacy_path_when_realtime_sidecar_start_fails(self):
@@ -1307,6 +1440,207 @@ class TestDiscordVoiceChannelMethods:
         assert adapter._voice_clients[111] is mock_vc
         assert 111 not in adapter._realtime_voice_sessions
         fake_session.close.assert_awaited_once()
+        status = adapter.get_voice_session_status(111)
+        assert status["mode"] == "degraded_no_sidecar"
+        assert status["session_state"] == "degraded"
+        assert status["sidecar_running"] is False
+        assert "sidecar_start_failed" in status["fallback_reason"]
+
+    @pytest.mark.asyncio
+    async def test_join_voice_channel_degrades_when_realtime_sidecar_url_missing(self):
+        adapter = self._make_adapter()
+        adapter._realtime_voice_cfg = {
+            "enabled": True,
+            "sidecar_base_url": "",
+        }
+        adapter._reset_voice_timeout = MagicMock()
+
+        mock_vc = MagicMock()
+        mock_vc.is_connected.return_value = True
+        mock_vc.is_playing.return_value = False
+        mock_vc.channel.id = 222
+        mock_channel = MagicMock()
+        mock_channel.id = 222
+        mock_channel.guild.id = 111
+        mock_channel.connect = AsyncMock(return_value=mock_vc)
+
+        with patch("plugins.platforms.discord.adapter.DISCORD_AVAILABLE", True), \
+             patch("plugins.platforms.discord.adapter.VoiceReceiver") as receiver_cls:
+            receiver_cls.return_value.start = MagicMock()
+            ok = await adapter.join_voice_channel(mock_channel)
+
+        assert ok is True
+        assert 111 not in adapter._realtime_voice_sessions
+        status = adapter.get_voice_session_status(111)
+        assert status["mode"] == "degraded_no_sidecar"
+        assert status["session_state"] == "degraded"
+        assert status["sidecar_running"] is False
+        assert "sidecar_start_failed" in status["fallback_reason"]
+        assert "sidecar_base_url is not configured" in status["fallback_reason"]
+
+    def test_legacy_voice_input_is_disabled_only_when_realtime_session_is_active(self):
+        adapter = self._make_adapter()
+
+        assert adapter._should_process_legacy_voice_input(111) is True
+
+        adapter._realtime_voice_sessions[111] = object()
+
+        assert adapter._should_process_legacy_voice_input(111) is False
+
+    def test_degraded_voice_state_allows_legacy_voice_input(self):
+        adapter = self._make_adapter()
+        adapter._update_voice_state(
+            111,
+            mode="degraded_no_sidecar",
+            receiver_running=True,
+            fallback_reason="sidecar_start_failed: unavailable",
+        )
+
+        assert adapter._should_process_legacy_voice_input(111) is True
+
+    def test_degraded_voice_state_allows_legacy_voice_input_with_stale_session_object(self):
+        adapter = self._make_adapter()
+        adapter._realtime_voice_sessions[111] = object()
+        adapter._update_voice_state(
+            111,
+            mode="degraded_no_sidecar",
+            receiver_running=True,
+            fallback_reason="sidecar_event_stream_failed: lost websocket",
+        )
+
+        assert adapter._should_process_legacy_voice_input(111) is True
+
+    def test_realtime_voice_state_disables_legacy_voice_input_without_session_object(self):
+        adapter = self._make_adapter()
+        adapter._update_voice_state(
+            111,
+            mode="realtime_active",
+            receiver_running=True,
+            sidecar_running=True,
+        )
+
+        assert adapter._should_process_legacy_voice_input(111) is False
+
+    def test_realtime_voice_event_updates_status_metrics(self):
+        adapter = self._make_adapter()
+        mixer = MagicMock()
+        mixer.speech_active = True
+        mixer.streaming_speech_stats.return_value = {
+            "queue_depth": 4,
+            "dropped_frames": 1,
+            "active": True,
+        }
+        adapter._voice_mixers[111] = mixer
+        adapter._update_voice_state(
+            111,
+            mode="realtime_active",
+            receiver_running=True,
+            sidecar_running=True,
+        )
+
+        adapter._handle_realtime_voice_event(
+            111,
+            "audio.output.chunk",
+            {
+                "metrics": {
+                    "final_transcript_to_first_audio_ms": 812,
+                    "ignored": -1,
+                    "string_metric": "42",
+                },
+                "quality_target_misses": [
+                    {
+                        "metric": "final_transcript_to_first_audio_ms",
+                        "actual_ms": 812,
+                        "target_ms": 500,
+                    },
+                    {"metric": "", "actual_ms": 1, "target_ms": 1},
+                ],
+            },
+        )
+
+        status = adapter.get_voice_session_status(111)
+        assert status["playback_active"] is True
+        assert status["streaming_speech"] == {
+            "queue_depth": 4,
+            "dropped_frames": 1,
+            "active": True,
+        }
+        assert status["last_realtime_event"] == "audio.output.chunk"
+        assert status["latency_metrics_ms"] == {
+            "final_transcript_to_first_audio_ms": 812,
+            "string_metric": 42,
+        }
+        assert status["quality_target_misses"] == [
+            {
+                "metric": "final_transcript_to_first_audio_ms",
+                "actual_ms": 812,
+                "target_ms": 500,
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_realtime_speech_start_stops_one_shot_playback_when_mixer_missing(self):
+        adapter = self._make_adapter()
+        fake_session = MagicMock()
+        fake_session.handle_speech_start = AsyncMock()
+        adapter._realtime_voice_sessions[111] = fake_session
+
+        mock_vc = MagicMock()
+        mock_vc.is_connected.return_value = True
+        mock_vc.is_playing.return_value = True
+        adapter._voice_clients[111] = mock_vc
+
+        adapter._schedule_realtime_voice_speech_start(111, 42)
+        await asyncio.sleep(0)
+
+        mock_vc.stop.assert_called_once()
+        fake_session.handle_speech_start.assert_awaited_once_with(user_id=42)
+
+    @pytest.mark.asyncio
+    async def test_runtime_sidecar_degradation_removes_session_and_enables_legacy_voice_input(self):
+        adapter = self._make_adapter()
+        fake_session = AsyncMock()
+        fake_session.close = AsyncMock()
+        adapter._realtime_voice_sessions[111] = fake_session
+        adapter._update_voice_state(
+            111,
+            mode="realtime_active",
+            receiver_running=True,
+            mixer_installed=True,
+            sidecar_running=True,
+        )
+
+        adapter._handle_realtime_voice_degraded(
+            111,
+            "sidecar_event_stream_failed",
+            "websocket closed",
+        )
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        assert 111 not in adapter._realtime_voice_sessions
+        assert adapter._should_process_legacy_voice_input(111) is True
+        fake_session.close.assert_awaited_once()
+        status = adapter.get_voice_session_status(111)
+        assert status["mode"] == "degraded_no_sidecar"
+        assert status["session_state"] == "degraded"
+        assert status["sidecar_running"] is False
+        assert status["fallback_reason"] == "sidecar_event_stream_failed: websocket closed"
+
+    @pytest.mark.asyncio
+    async def test_leave_voice_channel_times_out_hung_realtime_session_close(self):
+        adapter = self._make_adapter()
+        adapter._realtime_voice_cfg = {"sidecar_close_timeout_seconds": 0.01}
+
+        class HangingSession:
+            async def close(self):
+                await asyncio.Event().wait()
+
+        adapter._realtime_voice_sessions[111] = HangingSession()
+
+        await adapter.leave_voice_channel(111)
+
+        assert 111 not in adapter._realtime_voice_sessions
 
     @pytest.mark.asyncio
     async def test_get_user_voice_channel_no_client(self):
@@ -2345,6 +2679,7 @@ class TestVoiceChannelAwareness:
         adapter._voice_text_channels = {}
         adapter._voice_sources = {}
         adapter._voice_receivers = {}
+        adapter._voice_session_states = {}
         adapter._client = MagicMock()
         adapter._client.user = SimpleNamespace(id=99999, name="HermesBot")
         return adapter
@@ -2423,6 +2758,61 @@ class TestVoiceChannelAwareness:
         assert "#chat-room" in ctx
         assert "1 participant" in ctx
         assert "Alice" in ctx
+        assert "Discord live voice session" in ctx
+        assert "Do not claim you cannot hear or speak in Discord voice" in ctx
+
+    def test_context_includes_realtime_voice_capability_state(self):
+        adapter = self._make_adapter()
+        adapter._realtime_voice_cfg = {
+            "frontend_provider": "elevenlabs",
+            "frontend_model": "realtime-voice",
+            "oracle_model": "deep-hermes",
+        }
+        vc = MagicMock()
+        vc.is_connected.return_value = True
+        user_a = self._make_member(1001, "Alice")
+        vc.channel.name = "chat-room"
+        vc.channel.members = [user_a]
+        adapter._voice_clients[111] = vc
+        adapter._update_voice_state(
+            111,
+            mode="realtime_active",
+            receiver_running=True,
+            mixer_installed=True,
+            sidecar_running=True,
+        )
+
+        ctx = adapter.get_voice_channel_context(111)
+
+        assert "realtime live voice" in ctx
+        assert "Listening: yes" in ctx
+        assert "Speaking into channel: yes" in ctx
+        assert "low-latency voice frontend handles live audio" in ctx
+        assert "elevenlabs realtime-voice" in ctx
+        assert "Hermes backend oracle handles reasoning" in ctx
+        assert "deep-hermes" in ctx
+
+    def test_context_includes_degraded_voice_reason(self):
+        adapter = self._make_adapter()
+        vc = MagicMock()
+        vc.is_connected.return_value = True
+        user_a = self._make_member(1001, "Alice")
+        vc.channel.name = "chat-room"
+        vc.channel.members = [user_a]
+        adapter._voice_clients[111] = vc
+        adapter._update_voice_state(
+            111,
+            mode="degraded_no_sidecar",
+            receiver_running=True,
+            mixer_installed=False,
+            sidecar_running=False,
+            fallback_reason="sidecar_start_failed: unavailable",
+        )
+
+        ctx = adapter.get_voice_channel_context(111)
+
+        assert "degraded legacy voice fallback" in ctx
+        assert "Voice degradation reason: sidecar_start_failed: unavailable" in ctx
 
     def test_context_empty_when_not_connected(self):
         adapter = self._make_adapter()

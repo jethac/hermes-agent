@@ -22,9 +22,104 @@ import threading
 import time
 from collections import defaultdict
 from contextlib import suppress
+from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Any, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+DISCORD_VOICE_MODE_REALTIME = "realtime_active"
+DISCORD_VOICE_MODE_LEGACY = "legacy_voice_active"
+DISCORD_VOICE_MODE_DEGRADED = "degraded_no_sidecar"
+DISCORD_VOICE_MODE_FAILED = "failed"
+DISCORD_VOICE_SESSION_INACTIVE = "inactive"
+DISCORD_VOICE_SESSION_CONNECTING = "connecting"
+DISCORD_VOICE_SESSION_READY = "ready"
+DISCORD_VOICE_SESSION_DEGRADED = "degraded"
+DISCORD_VOICE_SESSION_SHUTTING_DOWN = "shutting_down"
+DISCORD_VOICE_SESSION_CLOSED = "closed"
+DISCORD_VOICE_ARCHITECTURE_KAME = "kame_frontend_oracle"
+DISCORD_VOICE_FRONTEND_ROLE = "low_latency_voice_interface"
+DISCORD_VOICE_ORACLE_ROLE = "hermes_backend_oracle"
+
+
+@dataclass
+class DiscordVoiceSessionState:
+    """Current Discord voice-channel runtime state for one guild."""
+
+    mode: str = DISCORD_VOICE_MODE_FAILED
+    session_state: str = DISCORD_VOICE_SESSION_INACTIVE
+    voice_channel_id: Optional[int] = None
+    text_channel_id: Optional[int] = None
+    mixer_installed: bool = False
+    receiver_running: bool = False
+    sidecar_running: bool = False
+    fallback_reason: Optional[str] = None
+    last_realtime_event: Optional[str] = None
+    voice_architecture: str = DISCORD_VOICE_ARCHITECTURE_KAME
+    frontend_role: str = DISCORD_VOICE_FRONTEND_ROLE
+    oracle_role: str = DISCORD_VOICE_ORACLE_ROLE
+    frontend_provider: Optional[str] = None
+    frontend_model: Optional[str] = None
+    oracle_model: Optional[str] = None
+    latency_metrics_ms: Dict[str, int] = field(default_factory=dict)
+    quality_target_misses: List[Dict[str, Any]] = field(default_factory=list)
+    updated_at: float = field(default_factory=time.monotonic)
+
+    def update(self, **values: Any) -> "DiscordVoiceSessionState":
+        for key, value in values.items():
+            setattr(self, key, value)
+        self.updated_at = time.monotonic()
+        return self
+
+
+def _discord_voice_latency_metrics(value: Any) -> Dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    metrics: Dict[str, int] = {}
+    for key, raw in value.items():
+        if isinstance(raw, bool):
+            continue
+        if isinstance(raw, int):
+            parsed = raw
+        elif isinstance(raw, float) and raw.is_integer():
+            parsed = int(raw)
+        elif isinstance(raw, str) and raw.isdigit():
+            parsed = int(raw)
+        else:
+            continue
+        if parsed >= 0:
+            metrics[str(key)] = parsed
+    return metrics
+
+
+def _discord_voice_quality_target_misses(value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    misses: List[Dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        metric = str(item.get("metric") or "").strip()
+        actual_ms = _discord_voice_nonnegative_int(item.get("actual_ms"))
+        target_ms = _discord_voice_nonnegative_int(item.get("target_ms"))
+        if not metric or actual_ms is None or target_ms is None:
+            continue
+        misses.append({"metric": metric, "actual_ms": actual_ms, "target_ms": target_ms})
+    return misses
+
+
+def _discord_voice_nonnegative_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float) and value.is_integer():
+        parsed = int(value)
+        return parsed if parsed >= 0 else None
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
 
 
 class _Snowflake:
@@ -344,6 +439,7 @@ class VoiceReceiver:
 
     SILENCE_THRESHOLD = 1.5    # seconds of silence → end of utterance
     MIN_SPEECH_DURATION = 0.5  # minimum seconds to process (skip noise)
+    MAX_UTTERANCE_DURATION = 30.0  # force flush long live speech even without silence
     SAMPLE_RATE = 48000        # Discord native rate
     CHANNELS = 2               # Discord sends stereo
 
@@ -371,6 +467,7 @@ class VoiceReceiver:
 
         # Per-user audio buffers
         self._buffers: Dict[int, bytearray] = defaultdict(bytearray)
+        self._buffer_start_time: Dict[int, float] = {}
         self._last_packet_time: Dict[int, float] = {}
 
         # Opus decoder per SSRC (each user needs own decoder state)
@@ -407,6 +504,7 @@ class VoiceReceiver:
             pass
         with self._lock:
             self._buffers.clear()
+            self._buffer_start_time.clear()
             self._last_packet_time.clear()
             self._decoders.clear()
             self._ssrc_to_user.clear()
@@ -592,10 +690,13 @@ class VoiceReceiver:
             pcm = self._decoders[ssrc].decode(decrypted)
             realtime_user_id = 0
             realtime_speech_started = False
+            now = time.monotonic()
             with self._lock:
                 realtime_speech_started = not self._buffers[ssrc]
+                if realtime_speech_started:
+                    self._buffer_start_time[ssrc] = now
                 self._buffers[ssrc].extend(pcm)
-                self._last_packet_time[ssrc] = time.monotonic()
+                self._last_packet_time[ssrc] = now
                 realtime_user_id = self._ssrc_to_user.get(ssrc, 0)
             if not realtime_user_id:
                 realtime_user_id = self._infer_user_for_ssrc(ssrc)
@@ -660,12 +761,16 @@ class VoiceReceiver:
 
             for ssrc in ssrc_list:
                 last_time = self._last_packet_time.get(ssrc, now)
+                start_time = self._buffer_start_time.get(ssrc, last_time)
                 silence_duration = now - last_time
                 buf = self._buffers[ssrc]
                 # 48kHz, 16-bit, stereo = 192000 bytes/sec
                 buf_duration = len(buf) / (self.SAMPLE_RATE * self.CHANNELS * 2)
+                utterance_duration = now - start_time
+                reached_silence = silence_duration >= self.SILENCE_THRESHOLD
+                reached_max_duration = utterance_duration >= self.MAX_UTTERANCE_DURATION
 
-                if silence_duration >= self.SILENCE_THRESHOLD and buf_duration >= self.MIN_SPEECH_DURATION:
+                if (reached_silence or reached_max_duration) and buf_duration >= self.MIN_SPEECH_DURATION:
                     user_id = ssrc_user_map.get(ssrc, 0)
                     if not user_id:
                         # SSRC not mapped (SPEAKING event missing after bot rejoin).
@@ -674,10 +779,16 @@ class VoiceReceiver:
                     if user_id:
                         completed.append((user_id, bytes(buf)))
                     self._buffers[ssrc] = bytearray()
+                    self._buffer_start_time.pop(ssrc, None)
+                    self._last_packet_time.pop(ssrc, None)
+                elif reached_max_duration:
+                    self._buffers[ssrc] = bytearray()
+                    self._buffer_start_time.pop(ssrc, None)
                     self._last_packet_time.pop(ssrc, None)
                 elif silence_duration >= self.SILENCE_THRESHOLD * 2:
                     # Stale buffer with no valid user — discard
                     self._buffers.pop(ssrc, None)
+                    self._buffer_start_time.pop(ssrc, None)
                     self._last_packet_time.pop(ssrc, None)
 
         return completed
@@ -766,6 +877,7 @@ class DiscordAdapter(BasePlatformAdapter):
 
     # Auto-disconnect from voice channel after this many seconds of inactivity
     VOICE_TIMEOUT = 300
+    VOICE_ACTIVITY_TIMEOUT_REFRESH = 30.0
 
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.DISCORD)
@@ -785,6 +897,7 @@ class DiscordAdapter(BasePlatformAdapter):
         self._voice_text_channels: Dict[int, int] = {}  # guild_id -> text_channel_id
         self._voice_sources: Dict[int, Dict[str, Any]] = {}  # guild_id -> linked text channel source metadata
         self._voice_timeout_tasks: Dict[int, asyncio.Task] = {}  # guild_id -> timeout task
+        self._last_voice_activity_timeout_refresh: Dict[int, float] = {}
         # Phase 2: voice listening
         self._voice_receivers: Dict[int, VoiceReceiver] = {}  # guild_id -> VoiceReceiver
         self._voice_listen_tasks: Dict[int, asyncio.Task] = {}  # guild_id -> listen loop
@@ -805,6 +918,7 @@ class DiscordAdapter(BasePlatformAdapter):
         # capture/TTS behavior unchanged unless discord.realtime_voice.enabled.
         self._realtime_voice_cfg: Dict[str, Any] = self._load_realtime_voice_config()
         self._realtime_voice_sessions: Dict[int, DiscordRealtimeVoiceSession] = {}
+        self._voice_session_states: Dict[int, DiscordVoiceSessionState] = {}
         # Track threads where the bot has participated so follow-up messages
         # in those threads don't require @mention.  Persisted to disk so the
         # set survives gateway restarts.
@@ -2294,6 +2408,11 @@ class DiscordAdapter(BasePlatformAdapter):
             "oracle_model": None,
             "tts_provider": None,
             "sidecar_connect_timeout_seconds": 10.0,
+            "sidecar_close_timeout_seconds": 2.0,
+            "turn_acknowledgement": {
+                "enabled": True,
+                "text": "One moment.",
+            },
         }
         try:
             from hermes_cli.config import read_raw_config
@@ -2320,6 +2439,7 @@ class DiscordAdapter(BasePlatformAdapter):
         session = self._realtime_voice_sessions.get(guild_id)
         if session is None:
             return
+        self._note_voice_activity(guild_id)
         task = asyncio.create_task(session.handle_pcm_frame(user_id=user_id, pcm48_stereo=pcm))
         task.add_done_callback(self._log_realtime_voice_task_result)
 
@@ -2327,6 +2447,13 @@ class DiscordAdapter(BasePlatformAdapter):
         session = self._realtime_voice_sessions.get(guild_id)
         if session is None:
             return
+        if not getattr(self, "_voice_mixers", {}).get(guild_id):
+            vc = getattr(self, "_voice_clients", {}).get(guild_id)
+            try:
+                if vc and vc.is_connected() and vc.is_playing():
+                    vc.stop()
+            except Exception:
+                pass
         task = asyncio.create_task(session.handle_speech_start(user_id=user_id))
         task.add_done_callback(self._log_realtime_voice_task_result)
 
@@ -2365,16 +2492,125 @@ class DiscordAdapter(BasePlatformAdapter):
         self._ambient_pcm_cache = pcm
         return pcm
 
+    def _should_process_legacy_voice_input(self, guild_id: int) -> bool:
+        """Legacy STT is fallback-only once Discord realtime voice is live."""
+        states = getattr(self, "_voice_session_states", {}) or {}
+        state = states.get(guild_id)
+        if state is not None:
+            return state.mode != DISCORD_VOICE_MODE_REALTIME
+        return not bool(getattr(self, "_realtime_voice_sessions", {}).get(guild_id))
+
+    def _voice_state(self, guild_id: int) -> DiscordVoiceSessionState:
+        states = getattr(self, "_voice_session_states", None)
+        if states is None:
+            self._voice_session_states = {}
+            states = self._voice_session_states
+        state = states.get(guild_id)
+        if state is None:
+            state = DiscordVoiceSessionState()
+            states[guild_id] = state
+        return state
+
+    def _update_voice_state(self, guild_id: int, **values: Any) -> DiscordVoiceSessionState:
+        state = self._voice_state(guild_id)
+        state.update(**values)
+        logger.debug(
+            "Discord voice state updated: guild=%d mode=%s session_state=%s receiver=%s mixer=%s sidecar=%s fallback=%s",
+            guild_id,
+            state.mode,
+            state.session_state,
+            state.receiver_running,
+            state.mixer_installed,
+            state.sidecar_running,
+            state.fallback_reason,
+        )
+        return state
+
+    def _voice_architecture_status(self) -> Dict[str, Any]:
+        cfg = getattr(self, "_realtime_voice_cfg", {}) or {}
+        return {
+            "voice_architecture": DISCORD_VOICE_ARCHITECTURE_KAME,
+            "frontend_role": DISCORD_VOICE_FRONTEND_ROLE,
+            "oracle_role": DISCORD_VOICE_ORACLE_ROLE,
+            "frontend_provider": str(cfg.get("frontend_provider") or "") or None,
+            "frontend_model": str(cfg.get("frontend_model") or "") or None,
+            "oracle_model": str(cfg.get("oracle_model") or "") or None,
+        }
+
+    def _voice_playback_status(self, guild_id: int) -> Dict[str, Any]:
+        mixer = getattr(self, "_voice_mixers", {}).get(guild_id)
+        if mixer is None:
+            return {
+                "playback_active": False,
+                "streaming_speech": {"queue_depth": 0, "dropped_frames": 0, "active": False},
+            }
+        speech_active = bool(getattr(mixer, "speech_active", False))
+        stats_func = getattr(mixer, "streaming_speech_stats", None)
+        stats: Dict[str, Any] = {"queue_depth": 0, "dropped_frames": 0, "active": speech_active}
+        if callable(stats_func):
+            try:
+                raw_stats = stats_func()
+                if isinstance(raw_stats, dict):
+                    stats.update(raw_stats)
+            except Exception:
+                pass
+        return {"playback_active": speech_active, "streaming_speech": stats}
+
+    def get_voice_session_status(self, guild_id: int) -> Dict[str, Any]:
+        states = getattr(self, "_voice_session_states", {}) or {}
+        state = states.get(guild_id)
+        architecture = self._voice_architecture_status()
+        playback = self._voice_playback_status(guild_id)
+        if state is None:
+            return {
+                "mode": DISCORD_VOICE_MODE_FAILED,
+                "session_state": DISCORD_VOICE_SESSION_INACTIVE,
+                "voice_channel_id": None,
+                "text_channel_id": getattr(self, "_voice_text_channels", {}).get(guild_id),
+                "mixer_installed": bool(getattr(self, "_voice_mixers", {}).get(guild_id)),
+                "receiver_running": bool(getattr(self, "_voice_receivers", {}).get(guild_id)),
+                "sidecar_running": bool(getattr(self, "_realtime_voice_sessions", {}).get(guild_id)),
+                "fallback_reason": None,
+                "last_realtime_event": None,
+                "latency_metrics_ms": {},
+                "quality_target_misses": [],
+                **playback,
+                **architecture,
+            }
+        return {
+            "mode": state.mode,
+            "session_state": state.session_state,
+            "voice_channel_id": state.voice_channel_id,
+            "text_channel_id": state.text_channel_id,
+            "mixer_installed": state.mixer_installed,
+            "receiver_running": state.receiver_running,
+            "sidecar_running": state.sidecar_running,
+            "fallback_reason": state.fallback_reason,
+            "last_realtime_event": state.last_realtime_event,
+            "voice_architecture": state.voice_architecture or architecture["voice_architecture"],
+            "frontend_role": state.frontend_role or architecture["frontend_role"],
+            "oracle_role": state.oracle_role or architecture["oracle_role"],
+            "frontend_provider": state.frontend_provider or architecture["frontend_provider"],
+            "frontend_model": state.frontend_model or architecture["frontend_model"],
+            "oracle_model": state.oracle_model or architecture["oracle_model"],
+            "latency_metrics_ms": dict(state.latency_metrics_ms),
+            "quality_target_misses": [dict(item) for item in state.quality_target_misses],
+            **playback,
+        }
+
     async def _start_realtime_voice_session(self, guild_id: int, voice_channel_id: int) -> None:
         """Start the Discord realtime sidecar bridge for a joined voice channel."""
         cfg = getattr(self, "_realtime_voice_cfg", {}) or {}
         sidecar_base_url = str(cfg.get("sidecar_base_url") or "").strip()
         if not sidecar_base_url:
             logger.warning("discord.realtime_voice.enabled is true but no sidecar_base_url is configured")
-            return
+            raise RuntimeError("sidecar_base_url is not configured")
         existing = self._realtime_voice_sessions.pop(guild_id, None)
         if existing:
-            await existing.close()
+            try:
+                await self._close_realtime_voice_session(existing)
+            except Exception as exc:
+                logger.debug("Previous Discord realtime voice session close failed: %s", exc)
         session = DiscordRealtimeVoiceSession(
             guild_id=guild_id,
             voice_channel_id=voice_channel_id,
@@ -2386,15 +2622,81 @@ class DiscordAdapter(BasePlatformAdapter):
             oracle_model=cfg.get("oracle_model"),
             tts_provider=cfg.get("tts_provider"),
             sidecar_connect_timeout_seconds=float(cfg.get("sidecar_connect_timeout_seconds") or 10.0),
+            turn_acknowledgement=cfg.get("turn_acknowledgement") if isinstance(cfg.get("turn_acknowledgement"), dict) else {},
             mixer=getattr(self, "_voice_mixers", {}).get(guild_id),
+            degraded_callback=lambda reason, error: self._handle_realtime_voice_degraded(
+                guild_id,
+                reason,
+                error,
+            ),
+            event_callback=lambda event_type, payload: self._handle_realtime_voice_event(
+                guild_id,
+                event_type,
+                payload,
+            ),
         )
         try:
             await session.start()
         except Exception:
-            await session.close()
+            try:
+                await self._close_realtime_voice_session(session)
+            except Exception as exc:
+                logger.debug("Failed Discord realtime voice session cleanup failed: %s", exc)
             raise
         self._realtime_voice_sessions[guild_id] = session
         logger.info("Discord realtime voice session started (guild=%d, channel=%d)", guild_id, voice_channel_id)
+
+    async def _close_realtime_voice_session(self, session: Any) -> None:
+        """Close a realtime sidecar session without letting shutdown hang."""
+        cfg = getattr(self, "_realtime_voice_cfg", {}) or {}
+        try:
+            timeout = float(cfg.get("sidecar_close_timeout_seconds") or 2.0)
+        except (TypeError, ValueError):
+            timeout = 2.0
+        await asyncio.wait_for(session.close(), timeout=max(timeout, 0.1))
+
+    def _handle_realtime_voice_degraded(self, guild_id: int, reason: str, error: str) -> None:
+        """Demote a live realtime session after a runtime sidecar failure."""
+        sessions = getattr(self, "_realtime_voice_sessions", {})
+        session = sessions.pop(guild_id, None)
+        fallback_reason = f"{reason}: {error}" if error else reason
+        logger.warning(
+            "Discord realtime voice degraded (guild=%d): %s",
+            guild_id,
+            fallback_reason,
+        )
+        self._update_voice_state(
+            guild_id,
+            mode=DISCORD_VOICE_MODE_DEGRADED,
+            session_state=DISCORD_VOICE_SESSION_DEGRADED,
+            sidecar_running=False,
+            fallback_reason=fallback_reason,
+        )
+        if session is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(self._close_realtime_voice_session(session))
+        task.add_done_callback(self._log_realtime_voice_task_result)
+
+    def _handle_realtime_voice_event(self, guild_id: int, event_type: str, payload: Dict[str, Any]) -> None:
+        """Record sidecar event metrics for Discord voice diagnostics."""
+        metrics = _discord_voice_latency_metrics(payload.get("metrics"))
+        misses = _discord_voice_quality_target_misses(payload.get("quality_target_misses"))
+        updates: Dict[str, Any] = {"last_realtime_event": event_type}
+        if metrics:
+            updates["latency_metrics_ms"] = metrics
+        if misses:
+            updates["quality_target_misses"] = misses
+            logger.warning(
+                "Discord realtime voice quality target missed (guild=%d, event=%s): %s",
+                guild_id,
+                event_type,
+                misses,
+            )
+        self._update_voice_state(guild_id, **updates)
 
     async def _install_voice_mixer(self, guild_id: int, vc) -> None:
         """Create a VoiceMixer, start the ambient bed, and play it on the VC.
@@ -2424,6 +2726,7 @@ class DiscordAdapter(BasePlatformAdapter):
             vc.stop()
         vc.play(mixer, after=_after)
         self._voice_mixers[guild_id] = mixer
+        self._update_voice_state(guild_id, mixer_installed=True)
         logger.info("Voice mixer installed (guild=%d, ambient=%s)", guild_id, bool(ambient))
 
     async def play_ack_in_voice(self, guild_id: int, phrase: Optional[str] = None) -> bool:
@@ -2507,6 +2810,17 @@ class DiscordAdapter(BasePlatformAdapter):
             vc = await channel.connect()
             self._voice_clients[guild_id] = vc
             self._reset_voice_timeout(guild_id)
+            self._update_voice_state(
+                guild_id,
+                mode=DISCORD_VOICE_MODE_LEGACY,
+                session_state=DISCORD_VOICE_SESSION_CONNECTING,
+                voice_channel_id=int(channel.id),
+                text_channel_id=self._voice_text_channels.get(guild_id),
+                mixer_installed=False,
+                receiver_running=False,
+                sidecar_running=False,
+                fallback_reason=None,
+            )
 
             # Start voice receiver (Phase 2: listen to users)
             try:
@@ -2538,8 +2852,16 @@ class DiscordAdapter(BasePlatformAdapter):
                 self._voice_listen_tasks[guild_id] = asyncio.ensure_future(
                     self._voice_listen_loop(guild_id)
                 )
+                self._update_voice_state(guild_id, receiver_running=True)
             except Exception as e:
                 logger.warning("Voice receiver failed to start: %s", e)
+                self._update_voice_state(
+                    guild_id,
+                    mode=DISCORD_VOICE_MODE_FAILED,
+                    session_state=DISCORD_VOICE_SESSION_DEGRADED,
+                    receiver_running=False,
+                    fallback_reason=f"receiver_start_failed: {e}",
+                )
 
             # Phase 3: install the continuous mixer (ambient bed + ducked
             # speech).  Best-effort — if it fails we fall back to the legacy
@@ -2550,23 +2872,75 @@ class DiscordAdapter(BasePlatformAdapter):
                     await self._install_voice_mixer(guild_id, vc)
                 except Exception as e:
                     logger.warning("Voice mixer failed to start: %s", e)
+                    fallback_mode = (
+                        DISCORD_VOICE_MODE_DEGRADED if realtime_enabled else DISCORD_VOICE_MODE_LEGACY
+                    )
+                    self._update_voice_state(
+                        guild_id,
+                        mode=fallback_mode,
+                        session_state=(
+                            DISCORD_VOICE_SESSION_DEGRADED
+                            if realtime_enabled
+                            else DISCORD_VOICE_SESSION_READY
+                        ),
+                        mixer_installed=False,
+                        fallback_reason=f"mixer_start_failed: {e}",
+                    )
 
-            if realtime_enabled:
+            if realtime_enabled and not getattr(self, "_voice_mixers", {}).get(guild_id):
+                state = self.get_voice_session_status(guild_id)
+                reason = state.get("fallback_reason") or "mixer_unavailable"
+                self._update_voice_state(
+                    guild_id,
+                    mode=DISCORD_VOICE_MODE_DEGRADED,
+                    session_state=DISCORD_VOICE_SESSION_DEGRADED,
+                    sidecar_running=False,
+                    fallback_reason=reason,
+                )
+            elif realtime_enabled:
                 try:
+                    self._update_voice_state(
+                        guild_id,
+                        session_state=DISCORD_VOICE_SESSION_CONNECTING,
+                    )
                     await self._start_realtime_voice_session(guild_id, channel.id)
+                    self._update_voice_state(
+                        guild_id,
+                        mode=DISCORD_VOICE_MODE_REALTIME,
+                        session_state=DISCORD_VOICE_SESSION_READY,
+                        sidecar_running=True,
+                        fallback_reason=None,
+                        **self._voice_architecture_status(),
+                    )
                 except Exception as e:
                     logger.warning("Discord realtime voice session failed to start: %s", e)
+                    self._update_voice_state(
+                        guild_id,
+                        mode=DISCORD_VOICE_MODE_DEGRADED,
+                        session_state=DISCORD_VOICE_SESSION_DEGRADED,
+                        sidecar_running=False,
+                        fallback_reason=f"sidecar_start_failed: {e}",
+                    )
+            else:
+                self._update_voice_state(guild_id, session_state=DISCORD_VOICE_SESSION_READY)
 
             return True
 
     async def leave_voice_channel(self, guild_id: int) -> None:
         """Disconnect from the voice channel in a guild."""
         async with self._voice_locks.setdefault(guild_id, asyncio.Lock()):
+            self._update_voice_state(
+                guild_id,
+                session_state=DISCORD_VOICE_SESSION_SHUTTING_DOWN,
+                sidecar_running=False,
+            )
             # Close realtime sidecar bridge before tearing down transport.
             realtime_session = getattr(self, "_realtime_voice_sessions", {}).pop(guild_id, None)
             if realtime_session:
                 try:
-                    await realtime_session.close()
+                    await self._close_realtime_voice_session(realtime_session)
+                except asyncio.TimeoutError:
+                    logger.warning("Discord realtime voice session close timed out (guild=%d)", guild_id)
                 except Exception as e:
                     logger.debug("Discord realtime voice session close failed: %s", e)
 
@@ -2577,6 +2951,7 @@ class DiscordAdapter(BasePlatformAdapter):
             listen_task = self._voice_listen_tasks.pop(guild_id, None)
             if listen_task:
                 listen_task.cancel()
+            getattr(self, "_last_voice_activity_timeout_refresh", {}).pop(guild_id, None)
 
             # Tear down the mixer (stops the continuous outgoing stream).
             if getattr(self, "_voice_mixers", None) is not None:
@@ -2595,6 +2970,17 @@ class DiscordAdapter(BasePlatformAdapter):
                 task.cancel()
             self._voice_text_channels.pop(guild_id, None)
             self._voice_sources.pop(guild_id, None)
+            if getattr(self, "_voice_session_states", None) is not None:
+                self._update_voice_state(
+                    guild_id,
+                    mode=DISCORD_VOICE_MODE_FAILED,
+                    session_state=DISCORD_VOICE_SESSION_CLOSED,
+                    voice_channel_id=None,
+                    text_channel_id=None,
+                    mixer_installed=False,
+                    receiver_running=False,
+                    sidecar_running=False,
+                )
 
     # Maximum seconds to wait for voice playback before giving up
     PLAYBACK_TIMEOUT = 120
@@ -2639,8 +3025,10 @@ class DiscordAdapter(BasePlatformAdapter):
         # ── Legacy one-shot path (no mixer) ─────────────────────────────
         # Pause voice receiver while playing (echo prevention)
         receiver = self._voice_receivers.get(guild_id)
-        if receiver:
+        receiver_paused = False
+        if receiver and self._should_process_legacy_voice_input(guild_id):
             receiver.pause()
+            receiver_paused = True
 
         try:
             # Wait for current playback to finish (with timeout)
@@ -2671,7 +3059,7 @@ class DiscordAdapter(BasePlatformAdapter):
             self._reset_voice_timeout(guild_id)
             return True
         finally:
-            if receiver:
+            if receiver and receiver_paused:
                 receiver.resume()
 
     async def get_user_voice_channel(self, guild_id: int, user_id: str):
@@ -2694,6 +3082,19 @@ class DiscordAdapter(BasePlatformAdapter):
         self._voice_timeout_tasks[guild_id] = asyncio.ensure_future(
             self._voice_timeout_handler(guild_id)
         )
+
+    def _note_voice_activity(self, guild_id: int, *, now: Optional[float] = None) -> None:
+        """Refresh inactivity timeout for inbound voice without per-frame churn."""
+        now = time.monotonic() if now is None else now
+        refreshes = getattr(self, "_last_voice_activity_timeout_refresh", None)
+        if refreshes is None:
+            self._last_voice_activity_timeout_refresh = {}
+            refreshes = self._last_voice_activity_timeout_refresh
+        last = refreshes.get(guild_id, 0.0)
+        if now - last < self.VOICE_ACTIVITY_TIMEOUT_REFRESH:
+            return
+        refreshes[guild_id] = now
+        self._reset_voice_timeout(guild_id)
 
     async def _voice_timeout_handler(self, guild_id: int) -> None:
         """Auto-disconnect after VOICE_TIMEOUT seconds of inactivity."""
@@ -2785,6 +3186,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "member_count": len(members_info),
             "members": members_info,
             "speaking_count": len(speaking_user_ids),
+            "voice_session": self.get_voice_session_status(guild_id),
         }
 
     def get_voice_channel_context(self, guild_id: int) -> str:
@@ -2797,7 +3199,50 @@ class DiscordAdapter(BasePlatformAdapter):
         if not info:
             return ""
 
-        parts = [f"[Voice channel: #{info['channel_name']} — {info['member_count']} participant(s)]"]
+        session = info.get("voice_session") or {}
+        mode = session.get("mode") or DISCORD_VOICE_MODE_LEGACY
+        fallback_reason = session.get("fallback_reason")
+        can_listen = bool(session.get("receiver_running"))
+        can_speak = bool(session.get("mixer_installed") or self.is_in_voice_channel(guild_id))
+        if mode == DISCORD_VOICE_MODE_REALTIME:
+            mode_label = "realtime live voice"
+        elif mode == DISCORD_VOICE_MODE_DEGRADED:
+            mode_label = "degraded legacy voice fallback"
+        elif mode == DISCORD_VOICE_MODE_LEGACY:
+            mode_label = "legacy voice"
+        else:
+            mode_label = "voice unavailable"
+
+        parts = [
+            f"[Discord live voice session: {mode_label}]",
+            f"Voice channel: #{info['channel_name']} — {info['member_count']} participant(s)",
+            (
+                "Hermes is connected to this Discord voice channel. "
+                f"Listening: {'yes' if can_listen else 'no'}. "
+                f"Speaking into channel: {'yes' if can_speak else 'no'}."
+            ),
+            (
+                "When listening is yes, user speech in this channel is being delivered "
+                "to you as transcribed voice input. Do not claim you cannot hear or "
+                "speak in Discord voice unless this state says listening/speaking is no."
+            ),
+            "Use concise spoken replies; avoid markdown-heavy formatting in voice responses.",
+        ]
+        if fallback_reason:
+            parts.append(f"Voice degradation reason: {fallback_reason}")
+        if mode == DISCORD_VOICE_MODE_REALTIME:
+            frontend_label = " ".join(
+                str(value)
+                for value in (session.get("frontend_provider"), session.get("frontend_model"))
+                if value
+            )
+            oracle_label = str(session.get("oracle_model") or "the configured Hermes model")
+            frontend_suffix = f" ({frontend_label})" if frontend_label else ""
+            parts.append(
+                "Voice architecture: a low-latency voice frontend handles live audio, "
+                f"turn-taking, and spoken output{frontend_suffix}; "
+                f"the Hermes backend oracle handles reasoning, tools, memory, and durable work ({oracle_label})."
+            )
         for m in info["members"]:
             status = " (speaking)" if m["is_speaking"] else ""
             parts.append(f"  - {m['display_name']}{status}")
@@ -2835,6 +3280,13 @@ class DiscordAdapter(BasePlatformAdapter):
                         pass
 
                 completed = receiver.check_silence()
+                if not self._should_process_legacy_voice_input(guild_id):
+                    if completed:
+                        logger.debug(
+                            "Skipping %d legacy voice utterance(s); realtime voice session is active",
+                            len(completed),
+                        )
+                    continue
                 # Voice inputs always originate from a specific guild
                 # (guild_id is in scope). Pass it so role checks are
                 # guild-scoped and not cross-guild.

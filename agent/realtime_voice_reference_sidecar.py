@@ -12,16 +12,20 @@ import base64
 import contextlib
 import inspect
 import json
+import logging
 import math
 import os
 import re
 import tempfile
+import time
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Mapping, Optional
 
 from starlette.requests import Request
 from starlette.websockets import WebSocket, WebSocketDisconnect
+
+logger = logging.getLogger(__name__)
 
 from agent.realtime_voice import (
     AudioChunk,
@@ -60,6 +64,12 @@ class ReferenceSidecarRuntimeConfig:
     streaming_tts_model: Optional[str] = None
     streaming_tts_token: Optional[str] = None
     streaming_tts_timeout_seconds: float = 10.0
+    openai_realtime_api_key: Optional[str] = None
+    openai_realtime_base_url: str = "wss://api.openai.com/v1/realtime"
+    openai_realtime_model: str = "gpt-realtime-2"
+    openai_realtime_voice: str = "marin"
+    openai_realtime_transcription_model: str = "gpt-realtime-whisper"
+    openai_realtime_safety_identifier: Optional[str] = None
     local_stt_enabled: bool = True
     local_tts_enabled: bool = True
     auth_token: Optional[str] = None
@@ -79,6 +89,7 @@ def reference_sidecar_health_payload(
     streaming_stt_ready = _health_supports_streaming_stt(streaming_stt_health)
     streaming_tts_configured = bool(runtime.streaming_tts_base_url)
     streaming_tts_ready = _health_supports_tts(streaming_tts_health)
+    openai_realtime_configured = bool(runtime.openai_realtime_api_key)
     input_languages = _sanitize_metadata_list(runtime.input_languages)
     configured_output_languages = _sanitize_metadata_list(runtime.output_languages)
     bridge_output_languages = _streaming_tts_health_output_languages(streaming_tts_health)
@@ -95,14 +106,22 @@ def reference_sidecar_health_payload(
         "ok": True,
         "kind": "reference",
         "frontend": {
-            "provider": "streaming_stt" if streaming_stt_ready else "vllm" if vllm_enabled else "local",
-            "model": (runtime.streaming_stt_model or "") if streaming_stt_ready else runtime.vllm_model or "",
+            "provider": (
+                "openai_realtime"
+                if openai_realtime_configured
+                else "streaming_stt" if streaming_stt_ready else "vllm" if vllm_enabled else "local"
+            ),
+            "model": (
+                runtime.openai_realtime_model
+                if openai_realtime_configured
+                else (runtime.streaming_stt_model or "") if streaming_stt_ready else runtime.vllm_model or ""
+            ),
         },
         "capabilities": {
             "utterance_stt": streaming_stt_ready or vllm_enabled or runtime.local_stt_enabled,
-            "streaming_stt": streaming_stt_ready,
-            "tts": streaming_tts_ready or runtime.local_tts_enabled,
-            "native_s2s": False,
+            "streaming_stt": streaming_stt_ready or openai_realtime_configured,
+            "tts": streaming_tts_ready or runtime.local_tts_enabled or openai_realtime_configured,
+            "native_s2s": openai_realtime_configured,
             "vllm_audio_frontend": vllm_enabled,
         },
         "local": {
@@ -125,6 +144,16 @@ def reference_sidecar_health_payload(
         }
     if tts_model_languages:
         payload["frontend"]["tts_model_languages"] = tts_model_languages
+    if openai_realtime_configured:
+        payload["capabilities"]["openai_realtime"] = True
+        payload["capabilities"]["response_cancel"] = True
+        payload["capabilities"]["server_vad"] = False
+        payload["frontend"]["openai_realtime"] = {
+            "configured": True,
+            "model": runtime.openai_realtime_model,
+            "voice": runtime.openai_realtime_voice,
+            "transcription_model": runtime.openai_realtime_transcription_model,
+        }
     if frontend_languages:
         payload["frontend"]["languages"] = frontend_languages
     if scripts:
@@ -168,18 +197,31 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._streaming_stt_task: Optional[asyncio.Task[None]] = None
         self._streaming_tts: Optional[RealtimeVoiceSidecarClient] = None
         self._streaming_tts_task: Optional[asyncio.Task[None]] = None
+        self._openai_realtime: Any = None
+        self._openai_realtime_task: Optional[asyncio.Task[None]] = None
+        self._cached_acknowledgement_audio: Optional[dict[str, Any]] = None
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
         self.config = config
-        if self.runtime.streaming_stt_base_url:
+        requested_provider = str(config.frontend_provider or "").strip().lower()
+        if requested_provider in {"openai_realtime", "openai"}:
+            await self._start_openai_realtime(config)
+        if self._openai_realtime is None and self.runtime.streaming_stt_base_url:
             await self._start_streaming_stt(config)
-        if self.runtime.streaming_tts_base_url:
+        if self._openai_realtime is None and self.runtime.streaming_tts_base_url:
             await self._start_streaming_tts(config)
+        await self._prepare_acknowledgement_audio(config)
         await self._emit(
             VoiceEventType.FRONTEND_STATE,
             {
                 "status": "ready",
-                "provider": "streaming_stt" if self._streaming_stt is not None else config.frontend_provider or "local",
+                "provider": (
+                    "openai_realtime"
+                    if self._openai_realtime is not None
+                    else "streaming_stt" if self._streaming_stt is not None
+                    else config.frontend_provider if requested_provider not in {"openai_realtime", "openai"} and config.frontend_provider
+                    else "local"
+                ),
                 "model": self.runtime.streaming_stt_model or config.frontend_model or "",
                 "streaming_stt": self._streaming_stt is not None,
                 "streaming_tts": self._streaming_tts is not None,
@@ -223,11 +265,24 @@ class ReferenceRealtimeVoiceSidecarSession:
                         payload=payload,
                     )
                 )
+            if self._openai_realtime is not None:
+                await self._send_openai_realtime_event(
+                    VoiceEvent(
+                        type=VoiceEventType.BARGE_IN,
+                        session_id=event.session_id,
+                        sequence=event.sequence,
+                        timestamp_ms=event.timestamp_ms,
+                        payload=payload,
+                    )
+                )
             await self._drain_cancelled_tasks(cancelled_tasks)
             return
         if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("speak") is True:
             text = str(event.payload.get("text") or "").strip()
             if text:
+                if self._openai_realtime is not None:
+                    await self._send_openai_realtime_event(event)
+                    return
                 self._track_task(
                     asyncio.create_task(
                         self._speak(
@@ -265,6 +320,9 @@ class ReferenceRealtimeVoiceSidecarSession:
             if self._audio_input_generation is not None and input_generation != self._audio_input_generation:
                 self._clear_audio_buffer()
             self._audio_input_generation = input_generation
+        if self._openai_realtime is not None:
+            await self._send_openai_realtime_event(event)
+            return
         if self._streaming_stt is not None:
             if await self._send_streaming_stt_event(event):
                 return
@@ -297,20 +355,58 @@ class ReferenceRealtimeVoiceSidecarSession:
             self._streaming_stt_task.cancel()
         if self._streaming_tts_task and not self._streaming_tts_task.done():
             self._streaming_tts_task.cancel()
+        if self._openai_realtime_task and not self._openai_realtime_task.done():
+            self._openai_realtime_task.cancel()
         if self._streaming_stt is not None:
             with contextlib.suppress(Exception):
                 await self._streaming_stt.close()
         if self._streaming_tts is not None:
             with contextlib.suppress(Exception):
                 await self._streaming_tts.close()
+        if self._openai_realtime is not None:
+            with contextlib.suppress(Exception):
+                await self._openai_realtime.close()
         if self._streaming_stt_task:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._streaming_stt_task
         if self._streaming_tts_task:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._streaming_tts_task
+        if self._openai_realtime_task:
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._openai_realtime_task
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
         await put_realtime_voice_event(self._events, None)
+
+    async def _start_openai_realtime(self, config: RealtimeVoiceSessionConfig) -> None:
+        from agent.realtime_voice_openai import OpenAIRealtimeFrontendConfig, OpenAIRealtimeFrontendSession
+
+        provider = OpenAIRealtimeFrontendSession(
+            OpenAIRealtimeFrontendConfig(
+                api_key=self.runtime.openai_realtime_api_key,
+                base_url=self.runtime.openai_realtime_base_url,
+                model=self.runtime.openai_realtime_model,
+                voice=self.runtime.openai_realtime_voice,
+                transcription_model=self.runtime.openai_realtime_transcription_model,
+                connect_timeout_seconds=config.sidecar_connect_timeout_seconds,
+                safety_identifier=self.runtime.openai_realtime_safety_identifier,
+            )
+        )
+        try:
+            await provider.start(config)
+        except Exception as exc:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "openai_realtime_unavailable",
+                    "error": sanitize_realtime_voice_error(exc),
+                    "openai_realtime": False,
+                },
+            )
+            return
+        self._openai_realtime = provider
+        self._openai_realtime_task = asyncio.create_task(self._consume_openai_realtime_events())
 
     async def _start_streaming_stt(self, config: RealtimeVoiceSessionConfig) -> None:
         client = RealtimeVoiceSidecarClient(path="/v1/streaming-stt/session")
@@ -402,6 +498,16 @@ class ReferenceRealtimeVoiceSidecarSession:
             await self._disable_streaming_tts("streaming_tts_send_failed", exc)
             return False
 
+    async def _send_openai_realtime_event(self, event: VoiceEvent) -> bool:
+        if self._openai_realtime is None:
+            return False
+        try:
+            await self._openai_realtime.receive_event(event)
+            return True
+        except Exception as exc:
+            await self._disable_openai_realtime("openai_realtime_send_failed", exc)
+            return False
+
     async def _consume_streaming_stt_events(self) -> None:
         if self._streaming_stt is None:
             return
@@ -452,6 +558,32 @@ class ReferenceRealtimeVoiceSidecarSession:
         except Exception as exc:
             await self._disable_streaming_tts("streaming_tts_event_stream_failed", exc)
 
+    async def _consume_openai_realtime_events(self) -> None:
+        if self._openai_realtime is None:
+            return
+        try:
+            async for event in self._openai_realtime.events():
+                if event.type in {
+                    VoiceEventType.TRANSCRIPT_PARTIAL,
+                    VoiceEventType.TRANSCRIPT_FINAL,
+                    VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                    VoiceEventType.FRONTEND_STATE,
+                    VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                    VoiceEventType.ASSISTANT_COMMIT,
+                    VoiceEventType.BARGE_IN,
+                }:
+                    await self._emit(event.type, dict(event.payload))
+                elif event.type == VoiceEventType.SESSION_ERROR:
+                    await self._disable_openai_realtime(
+                        "openai_realtime_session_error",
+                        event.payload.get("error") or "",
+                    )
+                    return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._disable_openai_realtime("openai_realtime_event_stream_failed", exc)
+
     async def _disable_streaming_stt(self, reason: str, error: Any) -> None:
         client = self._streaming_stt
         self._streaming_stt = None
@@ -481,6 +613,22 @@ class ReferenceRealtimeVoiceSidecarSession:
                 "reason": reason,
                 "error": sanitize_realtime_voice_error(error),
                 "streaming_tts": False,
+            },
+        )
+
+    async def _disable_openai_realtime(self, reason: str, error: Any) -> None:
+        provider = self._openai_realtime
+        self._openai_realtime = None
+        if provider is not None:
+            with contextlib.suppress(Exception):
+                await provider.close()
+        await self._emit(
+            VoiceEventType.FRONTEND_STATE,
+            {
+                "status": "degraded",
+                "reason": reason,
+                "error": sanitize_realtime_voice_error(error),
+                "openai_realtime": False,
             },
         )
 
@@ -629,8 +777,12 @@ class ReferenceRealtimeVoiceSidecarSession:
                 return
         if not self.runtime.local_tts_enabled:
             return
+        if await self._emit_cached_acknowledgement_audio(text, playback_generation, clean_metadata):
+            return
         try:
+            tts_started_at = time.perf_counter()
             file_path = await asyncio.to_thread(self._speak_sync, text, clean_metadata)
+            tts_synthesis_ms = int(round((time.perf_counter() - tts_started_at) * 1000))
             if not file_path:
                 return
             try:
@@ -642,6 +794,10 @@ class ReferenceRealtimeVoiceSidecarSession:
                     if playback_generation is not None:
                         payload["playback_generation"] = playback_generation
                     payload.update(clean_metadata)
+                    existing_metrics = payload.get("metrics")
+                    metrics = dict(existing_metrics) if isinstance(existing_metrics, dict) else {}
+                    metrics["tts_synthesis_ms"] = tts_synthesis_ms
+                    payload["metrics"] = metrics
                     await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
             finally:
                 _unlink(file_path)
@@ -652,6 +808,55 @@ class ReferenceRealtimeVoiceSidecarSession:
                 VoiceEventType.SESSION_ERROR,
                 {"error": f"tts failed: {sanitize_realtime_voice_error(exc)}"},
             )
+
+    async def _prepare_acknowledgement_audio(self, config: RealtimeVoiceSessionConfig) -> None:
+        if self._streaming_tts is not None or not self.runtime.local_tts_enabled:
+            return
+        text = _turn_acknowledgement_text(config)
+        if not text:
+            return
+        try:
+            tts_started_at = time.perf_counter()
+            file_path = await asyncio.to_thread(self._speak_sync, text, {})
+            tts_synthesis_ms = int(round((time.perf_counter() - tts_started_at) * 1000))
+            if not file_path:
+                return
+            try:
+                with open(file_path, "rb") as fh:
+                    data = fh.read()
+            finally:
+                _unlink(file_path)
+            if not data:
+                return
+            self._cached_acknowledgement_audio = {
+                "text": text,
+                "data": data,
+                "mime_type": _mime_type_for_path(file_path),
+                "metrics": {"tts_synthesis_ms": tts_synthesis_ms, "tts_cache": "prewarmed"},
+            }
+        except Exception as exc:
+            logger.debug("Reference realtime voice acknowledgement prewarm failed: %s", exc)
+
+    async def _emit_cached_acknowledgement_audio(
+        self,
+        text: str,
+        playback_generation: Optional[int],
+        metadata: Mapping[str, str],
+    ) -> bool:
+        cached = self._cached_acknowledgement_audio
+        if not cached or str(cached.get("text") or "") != text:
+            return False
+        data = cached.get("data")
+        if not isinstance(data, bytes) or not data:
+            return False
+        payload = AudioChunk(codec=VoiceAudioCodec.OPUS, data=data).to_payload()
+        payload["mime_type"] = str(cached.get("mime_type") or "audio/mpeg")
+        if playback_generation is not None:
+            payload["playback_generation"] = playback_generation
+        payload.update(dict(metadata))
+        payload["metrics"] = dict(cached.get("metrics") or {})
+        await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
+        return True
 
     def _speak_sync(self, text: str, metadata: Optional[Mapping[str, str]] = None) -> str:
         synthesize = self._synthesize_func
@@ -779,6 +984,17 @@ def runtime_config_from_env() -> ReferenceSidecarRuntimeConfig:
         streaming_tts_model=os.environ.get("HERMES_VOICE_STREAMING_TTS_MODEL") or None,
         streaming_tts_token=os.environ.get("HERMES_VOICE_STREAMING_TTS_TOKEN") or None,
         streaming_tts_timeout_seconds=float(os.environ.get("HERMES_VOICE_STREAMING_TTS_TIMEOUT_SECONDS") or 10),
+        openai_realtime_api_key=os.environ.get("HERMES_OPENAI_REALTIME_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or None,
+        openai_realtime_base_url=os.environ.get("HERMES_OPENAI_REALTIME_BASE_URL")
+        or "wss://api.openai.com/v1/realtime",
+        openai_realtime_model=os.environ.get("HERMES_OPENAI_REALTIME_MODEL") or "gpt-realtime-2",
+        openai_realtime_voice=os.environ.get("HERMES_OPENAI_REALTIME_VOICE") or "marin",
+        openai_realtime_transcription_model=os.environ.get("HERMES_OPENAI_REALTIME_TRANSCRIPTION_MODEL")
+        or "gpt-realtime-whisper",
+        openai_realtime_safety_identifier=os.environ.get("HERMES_OPENAI_REALTIME_SAFETY_IDENTIFIER")
+        or None,
         local_stt_enabled=_env_bool("HERMES_VOICE_LOCAL_STT_ENABLED", True),
         local_tts_enabled=_env_bool("HERMES_VOICE_LOCAL_TTS_ENABLED", True),
         auth_token=os.environ.get("HERMES_VOICE_SIDECAR_TOKEN")
@@ -961,6 +1177,29 @@ def _payload_generation(payload: Mapping[str, Any]) -> Optional[int]:
 def _payload_input_generation(payload: Mapping[str, Any]) -> Optional[int]:
     value = payload.get("input_generation")
     return _payload_int(value)
+
+
+def _turn_acknowledgement_text(config: RealtimeVoiceSessionConfig) -> str:
+    metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
+    acknowledgement = metadata.get("turn_acknowledgement")
+    if not isinstance(acknowledgement, Mapping):
+        return ""
+    if not _metadata_bool(acknowledgement.get("enabled"), default=False):
+        return ""
+    text = str(acknowledgement.get("text") or "One moment.").strip()
+    if not text:
+        return ""
+    return text[:120]
+
+
+def _metadata_bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() not in {"", "0", "false", "no", "off"}
 
 
 def _payload_int(value: Any) -> Optional[int]:

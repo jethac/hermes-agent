@@ -102,6 +102,41 @@ $env:HERMES_VOICE_OUTPUT_LANGUAGES = "en,ja"
 python -m hermes_cli.realtime_voice_sidecar
 ```
 
+## macOS LaunchAgent Services
+
+For persistent local testing on macOS, generate reviewable LaunchAgent plists
+for the ElevenLabs bridge and Hermes reference sidecar:
+
+```powershell
+python -m hermes_cli.realtime_voice_launchd --output-dir artifacts/realtime-voice-launchd --repo-dir .
+```
+
+The generator writes:
+
+- `artifacts/realtime-voice-launchd/ai.hermes.realtime-voice.elevenlabs-bridge.plist`
+- `artifacts/realtime-voice-launchd/ai.hermes.realtime-voice.sidecar.plist`
+
+The services load `~/.hermes/.env`, run from the selected repo checkout, write
+logs under `~/.hermes/logs`, and point the sidecar at the local ElevenLabs
+bridge on `127.0.0.1:8767`. The sidecar maps
+`HERMES_STREAMING_STT_BRIDGE_TOKEN` into its streaming STT/TTS token variables,
+matching the profile preset and evidence runner defaults.
+
+Install after reviewing the generated plists:
+
+```powershell
+cp artifacts/realtime-voice-launchd/*.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.hermes.realtime-voice.elevenlabs-bridge.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.hermes.realtime-voice.sidecar.plist
+```
+
+Inspect logs with:
+
+```powershell
+tail -f ~/.hermes/logs/realtime-voice-elevenlabs-bridge.log
+tail -f ~/.hermes/logs/realtime-voice-sidecar.log
+```
+
 ## Live Provider Validation
 
 The bridge `--check` command verifies local configuration, the websocket Python
@@ -136,6 +171,76 @@ Validate saved reports with:
 ```powershell
 python -m hermes_cli.realtime_voice_report evidence/realtime-voice/elevenlabs/*.json --alpha --min-runs 3
 ```
+
+After validation succeeds, point Hermes at the accepted evidence bundle:
+
+```powershell
+python -m hermes_cli.realtime_voice_report evidence/realtime-voice/elevenlabs/*.json --alpha --min-runs 3 --apply-production-evidence
+```
+
+This writes `voice.realtime.production_evidence_report` to the shared parent
+directory of the validated reports. It refuses loopback-marked evidence and
+does not rerun provider calls.
+
+## Discord Live Validation
+
+Local Discord bridge smoke validates PCM conversion, mixer playback, sidecar
+events, and barge-in without using Discord credentials:
+
+```powershell
+python -m hermes_cli.discord_realtime_voice_smoke --report artifacts/realtime-voice-discord-bridge.json
+```
+
+For a real Discord gateway/channel check, use doctor so the probe is captured in
+the normal realtime voice report format:
+
+```powershell
+hermes doctor --discord-voice-live-probe --discord-voice-live-probe-wait-seconds 5 --realtime-voice-report artifacts/realtime-voice-discord-live.json
+```
+
+Validate the saved probe report with:
+
+```powershell
+python -m hermes_cli.realtime_voice_report artifacts/realtime-voice-discord-live.json --discord-live-probe
+```
+
+That joins the configured voice channel, installs `VoiceReceiver`, plays mixer
+audio, and leaves cleanly. To prove inbound receiver callbacks with live speech,
+rerun while a human or controlled second Discord client is speaking:
+
+```powershell
+hermes doctor --discord-voice-live-probe --discord-voice-live-probe-require-inbound --discord-voice-live-probe-wait-seconds 15 --realtime-voice-report artifacts/realtime-voice-discord-live-inbound.json
+```
+
+Validate the inbound proof with:
+
+```powershell
+python -m hermes_cli.realtime_voice_report artifacts/realtime-voice-discord-live-inbound.json --discord-live-probe --require-inbound
+```
+
+If the channel is empty, the inbound-required form fails with
+`inbound_required_but_no_other_members`; that proves the bot reached the channel
+and receiver path but does not prove inbound speech frames.
+
+For the final upstream evidence bundle, run the strict collector after setting
+Discord and OpenAI Realtime credentials:
+
+```powershell
+$env:DISCORD_BOT_TOKEN = "<bot token>"
+$env:DISCORD_GUILD_ID = "<guild id>"
+$env:DISCORD_VOICE_CHANNEL_ID = "<voice channel id>"
+$env:OPENAI_API_KEY = "<OpenAI Realtime API key>"
+python -m hermes_cli.realtime_voice_live_evidence `
+  --output-dir artifacts/realtime-voice-evidence/live-openai-discord `
+  --require-live-discord `
+  --require-openai-realtime `
+  --require-inbound `
+  --wait-seconds 15
+```
+
+The collector writes `manifest.json`, `discord-loopback.json`, and
+`discord-live-probe.json`. Reports include the exact git commit and redacted
+env/config readiness, but never write secret values.
 
 ## Evidence Checklist
 

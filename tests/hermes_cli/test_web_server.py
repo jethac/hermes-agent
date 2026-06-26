@@ -2993,8 +2993,32 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.production_evidence_max_age_days"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.production_review_report"]["type"] == "string"
         assert "launch-review" in CONFIG_SCHEMA["voice.realtime.production_review_report"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.turn_acknowledgement.enabled"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.turn_acknowledgement.text"]["type"] == "string"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.final_transcript_to_first_audio_ms"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.sidecar_close_timeout_seconds"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.openai_realtime_api_key_env"]["type"] == "string"
+        assert "secrets stay outside config" in CONFIG_SCHEMA["voice.realtime.openai_realtime_api_key_env"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.openai_realtime_base_url"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.openai_realtime_voice"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.openai_realtime_transcription_model"]["type"] == "string"
+
+    def test_discord_realtime_voice_config_fields_are_exposed(self):
+        from hermes_cli.web_server import CONFIG_SCHEMA
+
+        assert CONFIG_SCHEMA["discord.realtime_voice.enabled"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.enabled"]["category"] == "discord"
+        assert "voice-channel realtime sidecar" in CONFIG_SCHEMA["discord.realtime_voice.enabled"]["description"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.sidecar_base_url"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.frontend_provider"]["type"] == "string"
+        assert "Low-latency realtime voice frontend provider" in CONFIG_SCHEMA["discord.realtime_voice.frontend_provider"]["description"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.frontend_model"]["type"] == "string"
+        assert "Low-latency realtime interface model" in CONFIG_SCHEMA["discord.realtime_voice.frontend_model"]["description"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_model"]["type"] == "string"
+        assert "Hermes backend oracle model" in CONFIG_SCHEMA["discord.realtime_voice.oracle_model"]["description"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.sidecar_connect_timeout_seconds"]["type"] == "number"
+        assert CONFIG_SCHEMA["discord.realtime_voice.sidecar_close_timeout_seconds"]["type"] == "number"
 
     def test_empty_prefix_produces_correct_keys(self):
         from hermes_cli.web_server import _build_schema_from_config
@@ -6472,6 +6496,7 @@ class TestRealtimeVoiceWebSocket:
                         "engine": "text_oracle_tts",
                         "frontend_provider": "gemma",
                         "frontend_model": "gemma-4-e4b",
+                        "oracle_model": "deep-hermes",
                         "sidecar_base_url": "http://voice.local:8080",
                         "sidecar_token_env": "HERMES_VOICE_SIDECAR_TOKEN",
                         "sidecar_connect_timeout_seconds": 2.5,
@@ -6489,12 +6514,19 @@ class TestRealtimeVoiceWebSocket:
         assert config.session_id == "voice-123"
         assert config.frontend_provider == "gemma"
         assert config.frontend_model == "gemma-4-e4b"
+        assert config.oracle_model == "deep-hermes"
         assert config.sidecar_base_url == "http://voice.local:8080"
         assert config.sidecar_token == "secret-token"
         assert config.sidecar_connect_timeout_seconds == 2.5
         assert config.input_buffer_limit_bytes == 4096
         assert config.spark_base_url == "http://voice.local:8080"
         assert config.spark_token == "secret-token"
+        assert config.metadata["voice_architecture"] == "kame_frontend_oracle"
+        assert config.metadata["frontend_role"] == "low_latency_voice_interface"
+        assert config.metadata["oracle_role"] == "hermes_backend_oracle"
+        assert config.metadata["frontend_provider"] == "gemma"
+        assert config.metadata["frontend_model"] == "gemma-4-e4b"
+        assert config.metadata["oracle_model"] == "deep-hermes"
         assert config.metadata["language_support"] == {
             "production_languages": ["en", "ja"],
             "production_scripts": ["Latn", "Jpan"],
@@ -6506,6 +6538,10 @@ class TestRealtimeVoiceWebSocket:
             "final_transcript_to_first_text_ms": 500,
             "final_transcript_to_first_audio_ms": 900,
             "barge_in_ack_ms": 150,
+        }
+        assert config.metadata["turn_acknowledgement"] == {
+            "enabled": False,
+            "text": "One moment.",
         }
         assert config.metadata["conversation_quality"] == {
             "mode": "unverified_sidecar",
@@ -6607,6 +6643,7 @@ class TestRealtimeVoiceWebSocket:
                         "engine": "text_oracle_tts",
                         "frontend_provider": "gemma4",
                         "frontend_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                        "oracle_model": "deep-hermes",
                         "sidecar_host": "127.0.0.1",
                         "sidecar_port": 8765,
                     }
@@ -6788,6 +6825,7 @@ class TestRealtimeVoiceWebSocket:
                         "engine": "text_oracle_tts",
                         "frontend_provider": "gemma4",
                         "frontend_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                        "oracle_model": "deep-hermes",
                         "sidecar_host": "127.0.0.1",
                         "sidecar_port": 8765,
                         "sidecar_autostart": True,
@@ -6807,7 +6845,12 @@ class TestRealtimeVoiceWebSocket:
         body = response.json()
         assert body["enabled"] is True
         assert body["available"] is True
+        assert body["voice_architecture"] == "kame_frontend_oracle"
+        assert body["frontend_role"] == "low_latency_voice_interface"
+        assert body["oracle_role"] == "hermes_backend_oracle"
         assert body["frontend_provider"] == "gemma4"
+        assert body["frontend_model"] == "google/gemma-4-E4B-it-qat-w4a16-ct"
+        assert body["oracle_model"] == "deep-hermes"
         assert body["input_buffer_limit_bytes"] == 4096
         assert body["input_frame_ms"] == 80
         assert body["silence_timeout_ms"] == 700
@@ -7188,6 +7231,69 @@ class TestRealtimeVoiceWebSocket:
             },
             "issues": [],
         }
+
+    def test_status_rejects_loopback_realtime_voice_production_evidence(self, monkeypatch, tmp_path):
+        evidence_path = tmp_path / "evidence"
+        evidence_path.mkdir()
+        for index in range(3):
+            report = _valid_realtime_voice_alpha_report()
+            for entry in report:
+                entry["evidence_provider"] = "loopback"
+                entry["loopback_validation"] = True
+            (evidence_path / f"realtime-voice-alpha-{index}.json").write_text(
+                json.dumps(report, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": True,
+                            "tts": True,
+                            "native_s2s": False,
+                            "output_languages": ["en", "ja"],
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "text_oracle_tts",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                        "production_evidence_report": str(evidence_path),
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        body = self.client.get("/api/voice/realtime/status").json()
+
+        readiness = body["production_readiness"]
+        assert readiness["ready"] is False
+        assert readiness["evidence_ready"] is False
+        assert readiness["level"] == "live_like"
+        assert any(
+            "loopback validation cannot satisfy production evidence" in issue
+            for issue in readiness["issues"]
+        )
 
     def test_status_rejects_stale_realtime_voice_production_evidence(self, monkeypatch, tmp_path):
         evidence_path = tmp_path / "evidence"
@@ -8125,6 +8231,30 @@ class TestRealtimeVoiceWebSocket:
         assert "STREAMING_STT_TOKEN" not in command
         assert "STREAMING_TTS_TOKEN" not in command
 
+    def test_sidecar_command_includes_openai_realtime_args_without_api_key(self):
+        command = self.ws_module._realtime_voice_sidecar_command(
+            {
+                "sidecar_host": "127.0.0.1",
+                "sidecar_port": 8765,
+                "frontend_provider": "openai_realtime",
+                "frontend_model": "gpt-realtime-2",
+                "openai_realtime_api_key_env": "OPENAI_API_KEY",
+                "openai_realtime_base_url": "wss://api.openai.com/v1/realtime",
+                "openai_realtime_voice": "marin",
+                "openai_realtime_transcription_model": "gpt-realtime-whisper",
+            }
+        )
+
+        assert "--openai-realtime-base-url" in command
+        assert "wss://api.openai.com/v1/realtime" in command
+        assert "--openai-realtime-model" in command
+        assert "gpt-realtime-2" in command
+        assert "--openai-realtime-voice" in command
+        assert "marin" in command
+        assert "--openai-realtime-transcription-model" in command
+        assert "gpt-realtime-whisper" in command
+        assert "OPENAI_API_KEY" not in command
+
     def test_sidecar_command_inherits_production_language_policy_by_default(self):
         command = self.ws_module._realtime_voice_sidecar_command(
             {
@@ -8449,6 +8579,7 @@ class TestRealtimeVoiceWebSocket:
                 "CUSTOM_VOICE_TOKEN": "secret-token",
                 "STREAMING_STT_TOKEN": "stream-secret-token",
                 "STREAMING_TTS_TOKEN": "stream-tts-secret-token",
+                "OPENAI_API_KEY": "openai-secret-token",
                 "HERMES_TEST_ENV": "1",
             },
         )
@@ -8469,6 +8600,11 @@ class TestRealtimeVoiceWebSocket:
                 "streaming_tts_base_url": "http://streaming-tts.local:9001",
                 "streaming_tts_model": "portable-streaming-voice",
                 "streaming_tts_token_env": "STREAMING_TTS_TOKEN",
+                "frontend_model": "gpt-realtime-2",
+                "openai_realtime_api_key_env": "OPENAI_API_KEY",
+                "openai_realtime_base_url": "wss://api.openai.com/v1/realtime",
+                "openai_realtime_voice": "marin",
+                "openai_realtime_transcription_model": "gpt-realtime-whisper",
                 "languages": ["ja", "en", "https://voice.local/secret"],
                 "scripts": ["Jpan", "Latn", "bad/script"],
             }
@@ -8487,6 +8623,11 @@ class TestRealtimeVoiceWebSocket:
         assert kwargs["env"]["HERMES_VOICE_STREAMING_TTS_BASE_URL"] == "http://streaming-tts.local:9001"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_TTS_MODEL"] == "portable-streaming-voice"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_TTS_TOKEN"] == "stream-tts-secret-token"
+        assert kwargs["env"]["HERMES_OPENAI_REALTIME_API_KEY"] == "openai-secret-token"
+        assert kwargs["env"]["HERMES_OPENAI_REALTIME_BASE_URL"] == "wss://api.openai.com/v1/realtime"
+        assert kwargs["env"]["HERMES_OPENAI_REALTIME_MODEL"] == "gpt-realtime-2"
+        assert kwargs["env"]["HERMES_OPENAI_REALTIME_VOICE"] == "marin"
+        assert kwargs["env"]["HERMES_OPENAI_REALTIME_TRANSCRIPTION_MODEL"] == "gpt-realtime-whisper"
         assert kwargs["env"]["HERMES_VOICE_INPUT_LANGUAGES"] == "ja,en"
         assert kwargs["env"]["HERMES_VOICE_OUTPUT_LANGUAGES"] == "ja,en"
         assert kwargs["env"]["HERMES_VOICE_SCRIPTS"] == "Jpan,Latn"

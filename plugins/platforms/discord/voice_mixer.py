@@ -51,6 +51,13 @@ if TYPE_CHECKING:  # numpy is an optional ("voice" extra) dep — never import a
 
 logger = logging.getLogger(__name__)
 
+try:  # ``VoiceClient.play`` requires an actual discord.AudioSource instance.
+    import discord as _discord
+    _candidate_audio_source = getattr(_discord, "AudioSource", object)
+    _AudioSourceBase = _candidate_audio_source if isinstance(_candidate_audio_source, type) else object
+except Exception:  # pragma: no cover - exercised on installs without discord.py
+    _AudioSourceBase = object
+
 
 def _require_numpy():
     """Import numpy lazily.
@@ -147,7 +154,86 @@ class MixerChild:
         return samples
 
 
-class VoiceMixer:
+class StreamingSpeechChild:
+    """Queue-backed realtime speech stream feeding :class:`VoiceMixer`.
+
+    Unlike ``MixerChild``, this child can stay alive while no audio is queued,
+    returning silence until the provider supplies the next frame or the stream
+    is explicitly finished.
+    """
+
+    __slots__ = (
+        "name", "gain", "is_speech", "_frames", "_partial",
+        "_finishing", "_finished", "max_frames", "dropped_frames",
+    )
+
+    def __init__(self, *, gain: float = 1.0, max_frames: int = 250):
+        self.name = "speech_stream"
+        self.gain = float(gain)
+        self.is_speech = True
+        self._frames: List[bytes] = []
+        self._partial = bytearray()
+        self._finishing = False
+        self._finished = False
+        self.max_frames = max(1, int(max_frames))
+        self.dropped_frames = 0
+
+    @property
+    def finished(self) -> bool:
+        return self._finished
+
+    @property
+    def queue_depth(self) -> int:
+        return len(self._frames)
+
+    def push(self, pcm: bytes) -> None:
+        if self._finished or not pcm:
+            return
+        self._partial.extend(pcm)
+        while len(self._partial) >= FRAME_SIZE:
+            frame = bytes(self._partial[:FRAME_SIZE])
+            del self._partial[:FRAME_SIZE]
+            self._append_frame(frame)
+
+    def finish(self) -> None:
+        if self._partial:
+            self._append_frame(bytes(self._partial) + b"\x00" * (FRAME_SIZE - len(self._partial)))
+            self._partial.clear()
+        self._finishing = True
+
+    def clear(self) -> None:
+        self._frames.clear()
+        self._partial.clear()
+        self._finishing = True
+        self._finished = True
+
+    def _append_frame(self, frame: bytes) -> None:
+        if len(self._frames) >= self.max_frames:
+            # Prefer low latency over completeness when a provider outruns
+            # Discord playback. Dropping oldest audio keeps speech current.
+            self._frames.pop(0)
+            self.dropped_frames += 1
+        self._frames.append(frame)
+
+    def read_frame(self) -> "Optional[np.ndarray]":
+        if self._finished:
+            return None
+        if not self._frames:
+            if self._finishing:
+                self._finished = True
+                return None
+            np = _require_numpy()
+            return np.frombuffer(SILENCE_FRAME, dtype=np.int16).astype(np.float32)
+
+        np = _require_numpy()
+        chunk = self._frames.pop(0)
+        samples = np.frombuffer(chunk, dtype=np.int16).astype(np.float32)
+        if self.gain != 1.0:
+            samples = samples * self.gain
+        return samples
+
+
+class VoiceMixer(_AudioSourceBase):
     """A continuous ``discord.AudioSource`` that mixes N child streams.
 
     Use :meth:`set_ambient` to install/replace the looping idle bed and
@@ -167,13 +253,16 @@ class VoiceMixer:
         duck_gain: float = 0.06,
         speech_gain: float = 1.0,
         duck_release_ms: int = 400,
+        streaming_speech_max_frames: int = 250,
     ):
         self._lock = threading.Lock()
         self._ambient: Optional[MixerChild] = None
         self._speech: List[MixerChild] = []
+        self._streaming_speech: Optional[StreamingSpeechChild] = None
         self._ambient_gain = float(ambient_gain)
         self._duck_gain = float(duck_gain)
         self._speech_gain = float(speech_gain)
+        self._streaming_speech_max_frames = max(1, int(streaming_speech_max_frames))
         # When speech ends, ramp the ambient back up over this many frames
         # instead of jumping, so the bed swells back smoothly.
         self._duck_release_frames = max(1, duck_release_ms // FRAME_LENGTH_MS)
@@ -228,11 +317,41 @@ class VoiceMixer:
                              fade_in_ms: int = 0) -> None:
         """Enqueue realtime speech PCM, usually one Discord-sized frame.
 
-        Realtime providers deliver audio incrementally. This mirrors
-        :meth:`play_speech` but exposes intent at the call site and defaults to
-        no fade so frame-by-frame TTS does not repeatedly ramp every 20 ms.
+        Realtime providers deliver audio incrementally. Keep one streaming
+        child alive across chunks so a realtime response does not create one
+        mixer child per 20 ms frame.
         """
-        self.play_speech(pcm, gain=gain, fade_in_ms=fade_in_ms)
+        if not pcm:
+            return
+        with self._lock:
+            if self._streaming_speech is None or self._streaming_speech.finished:
+                self._streaming_speech = StreamingSpeechChild(
+                    gain=self._speech_gain if gain is None else float(gain),
+                    max_frames=self._streaming_speech_max_frames,
+                )
+            self._streaming_speech.push(pcm)
+            self._speech_active = True
+            self._duck_release_left = 0
+            if self._ambient is not None:
+                self._ambient.gain = self._duck_gain
+
+    def finish_speech_stream(self) -> None:
+        """Mark the realtime speech stream complete after queued frames drain."""
+        with self._lock:
+            if self._streaming_speech is not None:
+                self._streaming_speech.finish()
+
+    def streaming_speech_stats(self) -> dict:
+        """Return current realtime speech queue diagnostics."""
+        with self._lock:
+            stream = self._streaming_speech
+            if stream is None:
+                return {"queue_depth": 0, "dropped_frames": 0, "active": False}
+            return {
+                "queue_depth": stream.queue_depth,
+                "dropped_frames": stream.dropped_frames,
+                "active": not stream.finished,
+            }
 
     @property
     def speech_active(self) -> bool:
@@ -243,6 +362,9 @@ class VoiceMixer:
         """Drop any in-flight speech immediately and release the duck."""
         with self._lock:
             self._speech.clear()
+            if self._streaming_speech is not None:
+                self._streaming_speech.clear()
+                self._streaming_speech = None
             self._begin_duck_release_locked()
 
     def _begin_duck_release_locked(self) -> None:
@@ -267,6 +389,17 @@ class VoiceMixer:
             np = _require_numpy()
             acc: "Optional[np.ndarray]" = None
 
+            # Realtime streaming speech child. It returns silence while waiting
+            # for more frames, then finishes only after an explicit finish signal.
+            if self._streaming_speech is not None:
+                frame = self._streaming_speech.read_frame()
+                if frame is None:
+                    self._streaming_speech = None
+                    if not self._speech and self._speech_active:
+                        self._begin_duck_release_locked()
+                else:
+                    acc = frame if acc is None else acc + frame
+
             # Speech children (drop exhausted ones; release duck when last ends)
             if self._speech:
                 still_live: List[MixerChild] = []
@@ -278,7 +411,7 @@ class VoiceMixer:
                     if not child.finished:
                         still_live.append(child)
                 self._speech = still_live
-                if not self._speech and self._speech_active:
+                if not self._speech and self._streaming_speech is None and self._speech_active:
                     self._begin_duck_release_locked()
 
             # Ambient bed — ramp gain back up during duck-release.
@@ -307,6 +440,9 @@ class VoiceMixer:
             self._closed = True
             self._ambient = None
             self._speech.clear()
+            if self._streaming_speech is not None:
+                self._streaming_speech.clear()
+                self._streaming_speech = None
 
 
 # ----------------------------------------------------------------------

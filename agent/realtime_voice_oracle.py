@@ -96,7 +96,9 @@ class HermesRealtimeOracle:
             platform="desktop_voice",
             session_id=self.config.session_id,
         )
-        prompt = _voice_oracle_prompt(transcript, metadata or {})
+        prompt_metadata = dict(self.config.metadata or {})
+        prompt_metadata.update(metadata or {})
+        prompt = _voice_oracle_prompt(transcript, prompt_metadata)
         with self._active_lock:
             self._active_agent = agent
         try:
@@ -114,11 +116,17 @@ class HermesRealtimeOracle:
 
 def _voice_oracle_prompt(transcript: str, metadata: Mapping[str, object]) -> str:
     language_context = _voice_language_context(metadata)
+    transport_context = _voice_transport_context(metadata)
+    architecture_context = _voice_architecture_context(metadata)
     prompt = (
         "The user is speaking to Hermes in a realtime voice session. "
         "Answer naturally and concisely. Avoid exposing hidden reasoning, "
         "raw tool traces, JSON envelopes, or transcript metadata."
     )
+    if transport_context:
+        prompt += f"\n{transport_context}"
+    if architecture_context:
+        prompt += f"\n{architecture_context}"
     if language_context:
         prompt += (
             "\nPreserve the user's spoken language and script unless the user explicitly asks "
@@ -137,6 +145,43 @@ def _voice_language_context(metadata: Mapping[str, object]) -> str:
         if TRANSCRIPT_METADATA_VALUE_RE.fullmatch(token):
             parts.append(f"{key}={token}")
     return ", ".join(parts)
+
+
+def _voice_architecture_context(metadata: Mapping[str, object]) -> str:
+    if metadata.get("voice_architecture") != "kame_frontend_oracle":
+        return ""
+    frontend_bits = []
+    for key in ("frontend_provider", "frontend_model"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            frontend_bits.append(value.strip())
+    oracle_model = metadata.get("oracle_model")
+    oracle_label = oracle_model.strip() if isinstance(oracle_model, str) and oracle_model.strip() else "the configured Hermes model"
+    frontend_label = f" ({' '.join(frontend_bits)})" if frontend_bits else ""
+    return (
+        "Voice architecture: a low-latency realtime frontend model handles live speech, "
+        f"turn-taking, and spoken audio{frontend_label}. You are the Hermes backend oracle "
+        f"for deeper reasoning, tools, memory, and durable agent work ({oracle_label}). "
+        "Do not describe the frontend as a separate user-visible bot; answer as Hermes "
+        "through the voice interface."
+    )
+
+
+def _voice_transport_context(metadata: Mapping[str, object]) -> str:
+    transport = metadata.get("transport")
+    if transport == "discord_voice":
+        return (
+            "You are in a live Discord voice channel. The user's speech has already been "
+            "captured from that channel, and your spoken reply will be sent back to the "
+            "same voice channel. Do not claim that you cannot hear, join, or speak in "
+            "Discord voice unless the provided session state explicitly says voice is "
+            "unavailable or degraded."
+        )
+    return (
+        "The user's speech has already been captured from the live voice transport, "
+        "and your reply may be spoken back through that transport. Do not deny live "
+        "voice capability unless the session state explicitly says voice is unavailable."
+    )
 
 
 class NullRealtimeOracle:
