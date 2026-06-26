@@ -21,6 +21,9 @@ DEFAULT_DEEPGRAM_TTS_MODEL = "aura-2-thalia-en"
 DEFAULT_ELEVENLABS_BRIDGE_BASE_URL = "http://127.0.0.1:8767"
 DEFAULT_ELEVENLABS_STT_MODEL = "scribe_v2_realtime"
 DEFAULT_ELEVENLABS_TTS_MODEL = "eleven_flash_v2_5"
+DEFAULT_CARTESIA_BRIDGE_BASE_URL = "http://127.0.0.1:8768"
+DEFAULT_CARTESIA_STT_MODEL = "ink-2"
+DEFAULT_CARTESIA_TTS_MODEL = "sonic-3.5"
 DEFAULT_OPENAI_REALTIME_MODEL = "gpt-realtime-2"
 DEFAULT_OPENAI_REALTIME_VOICE = "marin"
 DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL = "gpt-realtime-whisper"
@@ -34,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--preset",
-        choices=("generic", "deepgram", "elevenlabs", "openai", "gemini"),
+        choices=("generic", "deepgram", "elevenlabs", "cartesia", "openai", "gemini"),
         default="generic",
         help="Provider preset for common portable realtime voice stacks",
     )
@@ -201,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             if args.preset == "deepgram":
                 ensure_deepgram_bridge_token_env(bridge_token_env)
+            if args.preset == "cartesia":
+                ensure_cartesia_bridge_token_env(bridge_token_env)
             if token_result == "created":
                 print(f"Generated realtime voice bridge token in {bridge_token_env}")
             elif token_result == "existing":
@@ -224,6 +229,15 @@ def main(argv: list[str] | None = None) -> int:
                 "--host 127.0.0.1 --port 8767 --production-en-ja"
             )
             print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --provider elevenlabs --start-bridge")
+        elif args.preset == "cartesia":
+            if not args.generate_bridge_token:
+                print("  python -m hermes_cli.realtime_voice_cartesia_bridge --generate-token")
+            print("  python -m hermes_cli.realtime_voice_cartesia_bridge --check --strict --production-en-ja")
+            print(
+                "  python -m hermes_cli.realtime_voice_cartesia_bridge "
+                "--host 127.0.0.1 --port 8768 --production-en-ja"
+            )
+            print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --provider cartesia --start-bridge")
         elif args.preset == "openai":
             print("  export OPENAI_API_KEY=...")
             print("  export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=...")
@@ -269,6 +283,16 @@ def ensure_deepgram_bridge_token_env(token_env: str) -> None:
     from hermes_cli.config import save_env_value
 
     save_env_value("HERMES_DEEPGRAM_BRIDGE_TOKEN_ENV", env_name)
+
+
+def ensure_cartesia_bridge_token_env(token_env: str) -> None:
+    env_name = _clean_env_name(token_env)
+    if not env_name or env_name == "HERMES_STREAMING_STT_BRIDGE_TOKEN":
+        return
+
+    from hermes_cli.config import save_env_value
+
+    save_env_value("HERMES_CARTESIA_BRIDGE_TOKEN_ENV", env_name)
 
 
 def _profile_preset_values(args: argparse.Namespace) -> dict[str, str]:
@@ -319,6 +343,23 @@ def _profile_preset_values(args: argparse.Namespace) -> dict[str, str]:
             ),
             "streaming_tts_model": (
                 DEFAULT_ELEVENLABS_TTS_MODEL
+                if streaming_tts_model == DEFAULT_STREAMING_TTS_MODEL
+                else streaming_tts_model
+            ),
+        }
+
+    if args.preset == "cartesia":
+        bridge_base_url = _clean_url(str(args.bridge_base_url or DEFAULT_CARTESIA_BRIDGE_BASE_URL))
+        return {
+            "streaming_stt_base_url": streaming_stt_base_url or bridge_base_url,
+            "streaming_tts_base_url": streaming_tts_base_url or streaming_stt_base_url or bridge_base_url,
+            "streaming_stt_model": (
+                DEFAULT_CARTESIA_STT_MODEL
+                if streaming_stt_model == DEFAULT_STREAMING_STT_MODEL
+                else streaming_stt_model
+            ),
+            "streaming_tts_model": (
+                DEFAULT_CARTESIA_TTS_MODEL
                 if streaming_tts_model == DEFAULT_STREAMING_TTS_MODEL
                 else streaming_tts_model
             ),

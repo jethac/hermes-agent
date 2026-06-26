@@ -47,6 +47,8 @@ export interface RealtimeVoiceProviderSetup {
   provider?: string
   status?: string
   voice?: string
+  voice_id_env?: string
+  voice_id_present?: boolean
 }
 
 export interface RealtimeVoiceSetupResponse {

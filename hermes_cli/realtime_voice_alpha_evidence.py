@@ -69,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider",
-        choices=("deepgram", "elevenlabs", "loopback"),
+        choices=("deepgram", "elevenlabs", "cartesia", "loopback"),
         default="deepgram",
         help="Streaming voice bridge provider to start when --start-bridge is set",
     )
@@ -261,7 +261,7 @@ def _annotate_realtime_voice_alpha_report_for_provider(
     provider: str,
 ) -> None:
     """Add provider-specific evidence metadata before alpha validation."""
-    if provider not in {"elevenlabs", "loopback"}:
+    if provider not in {"elevenlabs", "cartesia", "loopback"}:
         return
     path = Path(report_path).expanduser()
     try:
@@ -385,14 +385,16 @@ def _evidence_bridge_provider(args: argparse.Namespace) -> str:
     if getattr(args, "start_deepgram_bridge", False):
         return "deepgram"
     provider = str(getattr(args, "provider", "deepgram") or "deepgram").strip().lower()
-    if provider not in {"deepgram", "elevenlabs", "loopback"}:
-        raise RuntimeError("--provider must be deepgram, elevenlabs, or loopback")
+    if provider not in {"deepgram", "elevenlabs", "cartesia", "loopback"}:
+        raise RuntimeError("--provider must be deepgram, elevenlabs, cartesia, or loopback")
     return provider
 
 
 def _bridge_provider_label(provider: str) -> str:
     if provider == "elevenlabs":
         return "ElevenLabs"
+    if provider == "cartesia":
+        return "Cartesia"
     if provider == "loopback":
         return "Loopback"
     return "Deepgram"
@@ -400,6 +402,8 @@ def _bridge_provider_label(provider: str) -> str:
 
 def _bridge_default_port(provider: str) -> int:
     if provider == "loopback":
+        return 8768
+    if provider == "cartesia":
         return 8768
     return 8767 if provider == "elevenlabs" else 8766
 
@@ -493,6 +497,8 @@ def _spawn_streaming_bridge_for_evidence(
     module = (
         "hermes_cli.realtime_voice_elevenlabs_bridge"
         if provider == "elevenlabs"
+        else "hermes_cli.realtime_voice_cartesia_bridge"
+        if provider == "cartesia"
         else "hermes_cli.realtime_voice_loopback_bridge"
         if provider == "loopback"
         else "hermes_cli.realtime_voice_deepgram_bridge"
@@ -571,6 +577,8 @@ def _streaming_bridge_prerequisite_issues_for_evidence(
         return []
     if provider == "elevenlabs":
         return _elevenlabs_bridge_prerequisite_issues_for_evidence(env_on_disk)
+    if provider == "cartesia":
+        return _cartesia_bridge_prerequisite_issues_for_evidence(env_on_disk)
     return _deepgram_bridge_prerequisite_issues_for_evidence(env_on_disk)
 
 
@@ -602,6 +610,31 @@ def _elevenlabs_bridge_prerequisite_issues_for_evidence(env_on_disk: dict[str, s
         )
 
 
+def _cartesia_bridge_prerequisite_issues_for_evidence(env_on_disk: dict[str, str]) -> list[str]:
+    from agent.realtime_voice_cartesia_bridge import (
+        cartesia_bridge_config_from_env,
+        cartesia_bridge_prerequisite_issues,
+    )
+    from hermes_cli.realtime_voice_cartesia_bridge import DEFAULT_PRODUCTION_EN_JA_OUTPUT_LANGUAGES
+
+    merged_env = {
+        **os.environ,
+        **env_on_disk,
+    }
+    if not str(merged_env.get("HERMES_CARTESIA_OUTPUT_LANGUAGES") or "").strip():
+        merged_env["HERMES_CARTESIA_OUTPUT_LANGUAGES"] = DEFAULT_PRODUCTION_EN_JA_OUTPUT_LANGUAGES
+    if not str(merged_env.get("HERMES_CARTESIA_REQUIRE_OUTPUT_LANGUAGES") or "").strip():
+        merged_env["HERMES_CARTESIA_REQUIRE_OUTPUT_LANGUAGES"] = DEFAULT_PRODUCTION_EN_JA_OUTPUT_LANGUAGES
+
+    with _temporary_environ(merged_env):
+        runtime = cartesia_bridge_config_from_env()
+        return cartesia_bridge_prerequisite_issues(
+            runtime,
+            require_auth_token=True,
+            required_output_languages=("en", "ja"),
+        )
+
+
 @contextmanager
 def _temporary_environ(values: dict[str, str]) -> Iterator[None]:
     previous = {key: os.environ.get(key) for key in values}
@@ -617,7 +650,7 @@ def _temporary_environ(values: dict[str, str]) -> Iterator[None]:
 
 
 def _streaming_bridge_log_path(provider: str) -> Path:
-    provider_name = provider if provider in {"deepgram", "elevenlabs", "loopback"} else "deepgram"
+    provider_name = provider if provider in {"deepgram", "elevenlabs", "cartesia", "loopback"} else "deepgram"
     try:
         from hermes_cli import web_server
 

@@ -6569,7 +6569,9 @@ class TestRealtimeVoiceWebSocket:
         gemini = next(provider for provider in payload["providers"] if provider["id"] == "gemini")
         cartesia = next(provider for provider in payload["providers"] if provider["id"] == "cartesia")
         assert gemini["api_key_present"] is True
-        assert cartesia["implemented"] is False
+        assert cartesia["implemented"] is True
+        assert cartesia["bridge_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+        assert cartesia["voice_id_env"] == "CARTESIA_VOICE_ID"
         assert payload["discord"]["enabled"] is True
         assert payload["discord"]["bot_token_present"] is True
         assert payload["discord"]["sidecar_base_url"] == "http://127.0.0.1:8765"
@@ -6594,6 +6596,26 @@ class TestRealtimeVoiceWebSocket:
         assert discord["enabled"] is True
         assert discord["sidecar_base_url"] == "http://127.0.0.1:8765"
         assert discord["frontend_provider"] == "gemini_live"
+
+    def test_realtime_voice_apply_cartesia_profile_sets_bridge_models(self):
+        response = self.client.post(
+            "/api/voice/realtime/profile",
+            json={
+                "preset": "cartesia",
+                "streaming_stt_base_url": "http://127.0.0.1:8768",
+                "streaming_tts_base_url": "http://127.0.0.1:8768",
+                "streaming_stt_model": "ink-2",
+                "streaming_tts_model": "sonic-3.5",
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        realtime = payload["config"]["voice"]["realtime"]
+        assert realtime["frontend_provider"] == "reference"
+        assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8768"
+        assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8768"
+        assert realtime["streaming_stt_model"] == "ink-2"
+        assert realtime["streaming_tts_model"] == "sonic-3.5"
 
     def test_realtime_voice_smoke_route_runs_evidence_collector(self, monkeypatch, tmp_path):
         from hermes_cli.config import load_config, save_config
