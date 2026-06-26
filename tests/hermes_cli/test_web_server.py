@@ -3185,6 +3185,12 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.openai_realtime_base_url"]["type"] == "string"
         assert CONFIG_SCHEMA["voice.realtime.openai_realtime_voice"]["type"] == "string"
         assert CONFIG_SCHEMA["voice.realtime.openai_realtime_transcription_model"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.gemini_live_api_key_env"]["type"] == "string"
+        assert "secrets stay outside config" in CONFIG_SCHEMA["voice.realtime.gemini_live_api_key_env"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.gemini_live_base_url"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.gemini_live_voice"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.gemini_live_google_search"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.gemini_live_oracle_tool"]["type"] == "boolean"
 
     def test_discord_realtime_voice_config_fields_are_exposed(self):
         from hermes_cli.web_server import CONFIG_SCHEMA
@@ -8422,6 +8428,7 @@ class TestRealtimeVoiceWebSocket:
                 "frontend_model": "gpt-realtime-2",
                 "openai_realtime_api_key_env": "OPENAI_API_KEY",
                 "openai_realtime_base_url": "wss://api.openai.com/v1/realtime",
+                "openai_realtime_model": "gpt-realtime-2",
                 "openai_realtime_voice": "marin",
                 "openai_realtime_transcription_model": "gpt-realtime-whisper",
             }
@@ -8436,6 +8443,35 @@ class TestRealtimeVoiceWebSocket:
         assert "--openai-realtime-transcription-model" in command
         assert "gpt-realtime-whisper" in command
         assert "OPENAI_API_KEY" not in command
+
+    def test_sidecar_command_includes_gemini_live_args_without_api_key(self):
+        command = self.ws_module._realtime_voice_sidecar_command(
+            {
+                "sidecar_host": "127.0.0.1",
+                "sidecar_port": 8765,
+                "frontend_provider": "gemini_live",
+                "frontend_model": "gemini-3.1-flash-live-preview",
+                "gemini_live_api_key_env": "GEMINI_API_KEY",
+                "gemini_live_base_url": (
+                    "wss://generativelanguage.googleapis.com/ws/"
+                    "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+                ),
+                "gemini_live_model": "gemini-3.1-flash-live-preview",
+                "gemini_live_voice": "Puck",
+                "gemini_live_google_search": True,
+                "gemini_live_oracle_tool": False,
+            }
+        )
+
+        assert "--gemini-live-base-url" in command
+        assert "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent" in " ".join(command)
+        assert "--gemini-live-model" in command
+        assert "gemini-3.1-flash-live-preview" in command
+        assert "--gemini-live-voice" in command
+        assert "Puck" in command
+        assert "--gemini-live-google-search" in command
+        assert "--disable-gemini-live-oracle-tool" in command
+        assert "GEMINI_API_KEY" not in command
 
     def test_sidecar_command_inherits_production_language_policy_by_default(self):
         command = self.ws_module._realtime_voice_sidecar_command(
@@ -8762,6 +8798,7 @@ class TestRealtimeVoiceWebSocket:
                 "STREAMING_STT_TOKEN": "stream-secret-token",
                 "STREAMING_TTS_TOKEN": "stream-tts-secret-token",
                 "OPENAI_API_KEY": "openai-secret-token",
+                "GEMINI_API_KEY": "gemini-secret-token",
                 "HERMES_TEST_ENV": "1",
             },
         )
@@ -8785,8 +8822,18 @@ class TestRealtimeVoiceWebSocket:
                 "frontend_model": "gpt-realtime-2",
                 "openai_realtime_api_key_env": "OPENAI_API_KEY",
                 "openai_realtime_base_url": "wss://api.openai.com/v1/realtime",
+                "openai_realtime_model": "gpt-realtime-2",
                 "openai_realtime_voice": "marin",
                 "openai_realtime_transcription_model": "gpt-realtime-whisper",
+                "gemini_live_api_key_env": "GEMINI_API_KEY",
+                "gemini_live_base_url": (
+                    "wss://generativelanguage.googleapis.com/ws/"
+                    "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+                ),
+                "gemini_live_model": "gemini-3.1-flash-live-preview",
+                "gemini_live_voice": "Puck",
+                "gemini_live_google_search": True,
+                "gemini_live_oracle_tool": False,
                 "languages": ["ja", "en", "https://voice.local/secret"],
                 "scripts": ["Jpan", "Latn", "bad/script"],
             }
@@ -8810,6 +8857,12 @@ class TestRealtimeVoiceWebSocket:
         assert kwargs["env"]["HERMES_OPENAI_REALTIME_MODEL"] == "gpt-realtime-2"
         assert kwargs["env"]["HERMES_OPENAI_REALTIME_VOICE"] == "marin"
         assert kwargs["env"]["HERMES_OPENAI_REALTIME_TRANSCRIPTION_MODEL"] == "gpt-realtime-whisper"
+        assert kwargs["env"]["HERMES_GEMINI_LIVE_API_KEY"] == "gemini-secret-token"
+        assert kwargs["env"]["HERMES_GEMINI_LIVE_BASE_URL"].startswith("wss://generativelanguage.googleapis.com/ws/")
+        assert kwargs["env"]["HERMES_GEMINI_LIVE_MODEL"] == "gemini-3.1-flash-live-preview"
+        assert kwargs["env"]["HERMES_GEMINI_LIVE_VOICE"] == "Puck"
+        assert kwargs["env"]["HERMES_GEMINI_LIVE_GOOGLE_SEARCH"] == "true"
+        assert kwargs["env"]["HERMES_GEMINI_LIVE_ORACLE_TOOL"] == "false"
         assert kwargs["env"]["HERMES_VOICE_INPUT_LANGUAGES"] == "ja,en"
         assert kwargs["env"]["HERMES_VOICE_OUTPUT_LANGUAGES"] == "ja,en"
         assert kwargs["env"]["HERMES_VOICE_SCRIPTS"] == "Jpan,Latn"

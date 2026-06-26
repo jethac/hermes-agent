@@ -838,6 +838,31 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "OpenAI Realtime transcription model used for frontend speech-to-text events",
         "category": "voice",
     },
+    "voice.realtime.gemini_live_api_key_env": {
+        "type": "string",
+        "description": "Environment variable containing the Gemini Live API key; secrets stay outside config",
+        "category": "voice",
+    },
+    "voice.realtime.gemini_live_base_url": {
+        "type": "string",
+        "description": "Gemini Live WebSocket base URL for managed reference-sidecar sessions",
+        "category": "voice",
+    },
+    "voice.realtime.gemini_live_voice": {
+        "type": "string",
+        "description": "Gemini Live voice used by the low-latency frontend provider",
+        "category": "voice",
+    },
+    "voice.realtime.gemini_live_google_search": {
+        "type": "boolean",
+        "description": "Allow the Gemini Live frontend provider to use Google Search as a frontend context tool",
+        "category": "voice",
+    },
+    "voice.realtime.gemini_live_oracle_tool": {
+        "type": "boolean",
+        "description": "Expose only the KAME ask_hermes_oracle bridge tool to Gemini Live; Hermes still owns real tool execution",
+        "category": "voice",
+    },
     "voice.realtime.spark_base_url": {
         "type": "string",
         "description": "Deprecated alias for voice.realtime.sidecar_base_url",
@@ -13613,6 +13638,7 @@ def _realtime_voice_language_policy_has(languages: Sequence[Any], target: str) -
 def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
     sidecar_host = str(realtime.get("sidecar_host") or "127.0.0.1")
     sidecar_port = str(int(realtime.get("sidecar_port") or 8765))
+    provider = str(realtime.get("frontend_provider") or "").strip().lower()
     cmd = [
         sys.executable,
         "-m",
@@ -13642,7 +13668,11 @@ def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
     if streaming_tts_model:
         cmd.extend(["--streaming-tts-model", streaming_tts_model])
     openai_realtime_base_url = str(realtime.get("openai_realtime_base_url") or "").strip()
-    openai_realtime_model = str(realtime.get("frontend_model") or realtime.get("openai_realtime_model") or "").strip()
+    openai_realtime_model = str(
+        (realtime.get("frontend_model") if provider in {"openai_realtime", "openai"} else None)
+        or realtime.get("openai_realtime_model")
+        or ""
+    ).strip()
     openai_realtime_voice = str(realtime.get("openai_realtime_voice") or "").strip()
     openai_realtime_transcription_model = str(realtime.get("openai_realtime_transcription_model") or "").strip()
     if openai_realtime_base_url:
@@ -13653,6 +13683,23 @@ def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
         cmd.extend(["--openai-realtime-voice", openai_realtime_voice])
     if openai_realtime_transcription_model:
         cmd.extend(["--openai-realtime-transcription-model", openai_realtime_transcription_model])
+    gemini_live_base_url = str(realtime.get("gemini_live_base_url") or "").strip()
+    gemini_live_model = str(
+        (realtime.get("frontend_model") if provider in {"gemini_live", "gemini"} else None)
+        or realtime.get("gemini_live_model")
+        or ""
+    ).strip()
+    gemini_live_voice = str(realtime.get("gemini_live_voice") or "").strip()
+    if gemini_live_base_url:
+        cmd.extend(["--gemini-live-base-url", gemini_live_base_url])
+    if gemini_live_model:
+        cmd.extend(["--gemini-live-model", gemini_live_model])
+    if gemini_live_voice:
+        cmd.extend(["--gemini-live-voice", gemini_live_voice])
+    if _truthy_config(realtime.get("gemini_live_google_search"), default=False):
+        cmd.append("--gemini-live-google-search")
+    if _truthy_config(realtime.get("gemini_live_oracle_tool"), default=True) is False:
+        cmd.append("--disable-gemini-live-oracle-tool")
     input_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_input_languages(realtime))
     output_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_output_languages(realtime))
     scripts = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_scripts(realtime))
@@ -13703,6 +13750,7 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
         **env_on_disk,
         "HERMES_NONINTERACTIVE": "1",
     }
+    provider = str(realtime.get("frontend_provider") or "").strip().lower()
     sidecar_token = _realtime_voice_sidecar_token(realtime, env_on_disk)
     if sidecar_token:
         child_env["HERMES_VOICE_SIDECAR_TOKEN"] = sidecar_token
@@ -13739,7 +13787,11 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
         or ""
     )
     openai_realtime_base_url = str(realtime.get("openai_realtime_base_url") or "").strip()
-    openai_realtime_model = str(realtime.get("frontend_model") or realtime.get("openai_realtime_model") or "").strip()
+    openai_realtime_model = str(
+        (realtime.get("frontend_model") if provider in {"openai_realtime", "openai"} else None)
+        or realtime.get("openai_realtime_model")
+        or ""
+    ).strip()
     openai_realtime_voice = str(realtime.get("openai_realtime_voice") or "").strip()
     openai_realtime_transcription_model = str(realtime.get("openai_realtime_transcription_model") or "").strip()
     if openai_realtime_api_key:
@@ -13752,6 +13804,31 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
         child_env["HERMES_OPENAI_REALTIME_VOICE"] = openai_realtime_voice
     if openai_realtime_transcription_model:
         child_env["HERMES_OPENAI_REALTIME_TRANSCRIPTION_MODEL"] = openai_realtime_transcription_model
+    gemini_live_api_key_env = str(realtime.get("gemini_live_api_key_env") or "GEMINI_API_KEY")
+    gemini_live_api_key = str(
+        env_on_disk.get(gemini_live_api_key_env)
+        or os.environ.get(gemini_live_api_key_env)
+        or ""
+    )
+    gemini_live_base_url = str(realtime.get("gemini_live_base_url") or "").strip()
+    gemini_live_model = str(
+        (realtime.get("frontend_model") if provider in {"gemini_live", "gemini"} else None)
+        or realtime.get("gemini_live_model")
+        or ""
+    ).strip()
+    gemini_live_voice = str(realtime.get("gemini_live_voice") or "").strip()
+    if gemini_live_api_key:
+        child_env["HERMES_GEMINI_LIVE_API_KEY"] = gemini_live_api_key
+    if gemini_live_base_url:
+        child_env["HERMES_GEMINI_LIVE_BASE_URL"] = gemini_live_base_url
+    if gemini_live_model:
+        child_env["HERMES_GEMINI_LIVE_MODEL"] = gemini_live_model
+    if gemini_live_voice:
+        child_env["HERMES_GEMINI_LIVE_VOICE"] = gemini_live_voice
+    if _truthy_config(realtime.get("gemini_live_google_search"), default=False):
+        child_env["HERMES_GEMINI_LIVE_GOOGLE_SEARCH"] = "true"
+    if _truthy_config(realtime.get("gemini_live_oracle_tool"), default=True) is False:
+        child_env["HERMES_GEMINI_LIVE_ORACLE_TOOL"] = "false"
     input_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_input_languages(realtime))
     output_languages = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_output_languages(realtime))
     scripts = _realtime_voice_sidecar_metadata_arg(_realtime_voice_sidecar_scripts(realtime))

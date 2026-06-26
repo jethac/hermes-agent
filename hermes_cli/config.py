@@ -2052,6 +2052,14 @@ DEFAULT_CONFIG = {
             "openai_realtime_base_url": "wss://api.openai.com/v1/realtime",
             "openai_realtime_voice": "marin",
             "openai_realtime_transcription_model": "gpt-realtime-whisper",
+            "gemini_live_api_key_env": "GEMINI_API_KEY",
+            "gemini_live_base_url": (
+                "wss://generativelanguage.googleapis.com/ws/"
+                "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+            ),
+            "gemini_live_voice": "Puck",
+            "gemini_live_google_search": False,
+            "gemini_live_oracle_tool": True,
             "production_languages": ["en", "ja"],
             "production_scripts": ["Latn", "Jpan"],
             "best_effort_languages": True,
