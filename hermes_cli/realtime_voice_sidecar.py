@@ -54,6 +54,32 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("HERMES_OPENAI_REALTIME_TRANSCRIPTION_MODEL", ""),
         help="OpenAI Realtime transcription model",
     )
+    parser.add_argument(
+        "--gemini-live-base-url",
+        default=os.environ.get("HERMES_GEMINI_LIVE_BASE_URL", ""),
+        help="Gemini Live WebSocket base URL",
+    )
+    parser.add_argument(
+        "--gemini-live-model",
+        default=os.environ.get("HERMES_GEMINI_LIVE_MODEL", ""),
+        help="Gemini Live model name for diagnostics and connection setup",
+    )
+    parser.add_argument(
+        "--gemini-live-voice",
+        default=os.environ.get("HERMES_GEMINI_LIVE_VOICE", ""),
+        help="Gemini Live output voice",
+    )
+    parser.add_argument(
+        "--gemini-live-google-search",
+        action="store_true",
+        default=os.environ.get("HERMES_GEMINI_LIVE_GOOGLE_SEARCH", "").lower() in {"1", "true", "yes", "on"},
+        help="Enable Gemini Live Google Search tool in the frontend provider",
+    )
+    parser.add_argument(
+        "--disable-gemini-live-oracle-tool",
+        action="store_true",
+        help="Disable the Gemini Live ask_hermes_oracle bridge tool",
+    )
     parser.add_argument("--input-languages", default=os.environ.get("HERMES_VOICE_INPUT_LANGUAGES", ""))
     parser.add_argument("--output-languages", default=os.environ.get("HERMES_VOICE_OUTPUT_LANGUAGES", ""))
     parser.add_argument("--scripts", default=os.environ.get("HERMES_VOICE_SCRIPTS", ""))
@@ -82,6 +108,16 @@ def main(argv: list[str] | None = None) -> None:
         os.environ["HERMES_OPENAI_REALTIME_VOICE"] = args.openai_realtime_voice
     if args.openai_realtime_transcription_model:
         os.environ["HERMES_OPENAI_REALTIME_TRANSCRIPTION_MODEL"] = args.openai_realtime_transcription_model
+    if args.gemini_live_base_url:
+        os.environ["HERMES_GEMINI_LIVE_BASE_URL"] = args.gemini_live_base_url
+    if args.gemini_live_model:
+        os.environ["HERMES_GEMINI_LIVE_MODEL"] = args.gemini_live_model
+    if args.gemini_live_voice:
+        os.environ["HERMES_GEMINI_LIVE_VOICE"] = args.gemini_live_voice
+    if args.gemini_live_google_search:
+        os.environ["HERMES_GEMINI_LIVE_GOOGLE_SEARCH"] = "true"
+    if args.disable_gemini_live_oracle_tool:
+        os.environ["HERMES_GEMINI_LIVE_ORACLE_TOOL"] = "false"
     if args.input_languages:
         os.environ["HERMES_VOICE_INPUT_LANGUAGES"] = args.input_languages
     if args.output_languages:

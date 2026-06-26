@@ -101,6 +101,10 @@ class TestLoadConfigDefaults:
                 "enabled": True,
                 "text": "One moment.",
             }
+            assert config["voice"]["realtime"]["gemini_live_api_key_env"] == "GEMINI_API_KEY"
+            assert config["voice"]["realtime"]["gemini_live_voice"] == "Puck"
+            assert config["voice"]["realtime"]["gemini_live_google_search"] is False
+            assert config["voice"]["realtime"]["gemini_live_oracle_tool"] is True
 
     def test_legacy_root_level_max_turns_migrates_to_agent_config(self, tmp_path):
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):

@@ -70,6 +70,15 @@ class ReferenceSidecarRuntimeConfig:
     openai_realtime_voice: str = "marin"
     openai_realtime_transcription_model: str = "gpt-realtime-whisper"
     openai_realtime_safety_identifier: Optional[str] = None
+    gemini_live_api_key: Optional[str] = None
+    gemini_live_base_url: str = (
+        "wss://generativelanguage.googleapis.com/ws/"
+        "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+    )
+    gemini_live_model: str = "gemini-3.1-flash-live-preview"
+    gemini_live_voice: str = "Puck"
+    gemini_live_google_search: bool = False
+    gemini_live_oracle_tool: bool = True
     local_stt_enabled: bool = True
     local_tts_enabled: bool = True
     auth_token: Optional[str] = None
@@ -90,6 +99,7 @@ def reference_sidecar_health_payload(
     streaming_tts_configured = bool(runtime.streaming_tts_base_url)
     streaming_tts_ready = _health_supports_tts(streaming_tts_health)
     openai_realtime_configured = bool(runtime.openai_realtime_api_key)
+    gemini_live_configured = bool(runtime.gemini_live_api_key)
     input_languages = _sanitize_metadata_list(runtime.input_languages)
     configured_output_languages = _sanitize_metadata_list(runtime.output_languages)
     bridge_output_languages = _streaming_tts_health_output_languages(streaming_tts_health)
@@ -109,19 +119,23 @@ def reference_sidecar_health_payload(
             "provider": (
                 "openai_realtime"
                 if openai_realtime_configured
+                else "gemini_live"
+                if gemini_live_configured
                 else "streaming_stt" if streaming_stt_ready else "vllm" if vllm_enabled else "local"
             ),
             "model": (
                 runtime.openai_realtime_model
                 if openai_realtime_configured
+                else runtime.gemini_live_model
+                if gemini_live_configured
                 else (runtime.streaming_stt_model or "") if streaming_stt_ready else runtime.vllm_model or ""
             ),
         },
         "capabilities": {
             "utterance_stt": streaming_stt_ready or vllm_enabled or runtime.local_stt_enabled,
-            "streaming_stt": streaming_stt_ready or openai_realtime_configured,
-            "tts": streaming_tts_ready or runtime.local_tts_enabled or openai_realtime_configured,
-            "native_s2s": openai_realtime_configured,
+            "streaming_stt": streaming_stt_ready or openai_realtime_configured or gemini_live_configured,
+            "tts": streaming_tts_ready or runtime.local_tts_enabled or openai_realtime_configured or gemini_live_configured,
+            "native_s2s": openai_realtime_configured or gemini_live_configured,
             "vllm_audio_frontend": vllm_enabled,
         },
         "local": {
@@ -153,6 +167,19 @@ def reference_sidecar_health_payload(
             "model": runtime.openai_realtime_model,
             "voice": runtime.openai_realtime_voice,
             "transcription_model": runtime.openai_realtime_transcription_model,
+        }
+    if gemini_live_configured:
+        payload["capabilities"]["gemini_live"] = True
+        payload["capabilities"]["response_cancel"] = True
+        payload["capabilities"]["server_vad"] = True
+        payload["capabilities"]["tool_calls"] = runtime.gemini_live_oracle_tool
+        payload["capabilities"]["google_search"] = runtime.gemini_live_google_search
+        payload["frontend"]["gemini_live"] = {
+            "configured": True,
+            "model": runtime.gemini_live_model,
+            "voice": runtime.gemini_live_voice,
+            "oracle_tool": runtime.gemini_live_oracle_tool,
+            "google_search": runtime.gemini_live_google_search,
         }
     if frontend_languages:
         payload["frontend"]["languages"] = frontend_languages
@@ -199,6 +226,8 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._streaming_tts_task: Optional[asyncio.Task[None]] = None
         self._openai_realtime: Any = None
         self._openai_realtime_task: Optional[asyncio.Task[None]] = None
+        self._gemini_live: Any = None
+        self._gemini_live_task: Optional[asyncio.Task[None]] = None
         self._cached_acknowledgement_audio: Optional[dict[str, Any]] = None
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
@@ -206,9 +235,11 @@ class ReferenceRealtimeVoiceSidecarSession:
         requested_provider = str(config.frontend_provider or "").strip().lower()
         if requested_provider in {"openai_realtime", "openai"}:
             await self._start_openai_realtime(config)
-        if self._openai_realtime is None and self.runtime.streaming_stt_base_url:
+        if requested_provider in {"gemini_live", "gemini"}:
+            await self._start_gemini_live(config)
+        if self._openai_realtime is None and self._gemini_live is None and self.runtime.streaming_stt_base_url:
             await self._start_streaming_stt(config)
-        if self._openai_realtime is None and self.runtime.streaming_tts_base_url:
+        if self._openai_realtime is None and self._gemini_live is None and self.runtime.streaming_tts_base_url:
             await self._start_streaming_tts(config)
         await self._prepare_acknowledgement_audio(config)
         await self._emit(
@@ -218,8 +249,9 @@ class ReferenceRealtimeVoiceSidecarSession:
                 "provider": (
                     "openai_realtime"
                     if self._openai_realtime is not None
+                    else "gemini_live" if self._gemini_live is not None
                     else "streaming_stt" if self._streaming_stt is not None
-                    else config.frontend_provider if requested_provider not in {"openai_realtime", "openai"} and config.frontend_provider
+                    else config.frontend_provider if requested_provider not in {"openai_realtime", "openai", "gemini_live", "gemini"} and config.frontend_provider
                     else "local"
                 ),
                 "model": self.runtime.streaming_stt_model or config.frontend_model or "",
@@ -275,6 +307,16 @@ class ReferenceRealtimeVoiceSidecarSession:
                         payload=payload,
                     )
                 )
+            if self._gemini_live is not None:
+                await self._send_gemini_live_event(
+                    VoiceEvent(
+                        type=VoiceEventType.BARGE_IN,
+                        session_id=event.session_id,
+                        sequence=event.sequence,
+                        timestamp_ms=event.timestamp_ms,
+                        payload=payload,
+                    )
+                )
             await self._drain_cancelled_tasks(cancelled_tasks)
             return
         if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("speak") is True:
@@ -282,6 +324,9 @@ class ReferenceRealtimeVoiceSidecarSession:
             if text:
                 if self._openai_realtime is not None:
                     await self._send_openai_realtime_event(event)
+                    return
+                if self._gemini_live is not None:
+                    await self._send_gemini_live_event(event)
                     return
                 self._track_task(
                     asyncio.create_task(
@@ -323,6 +368,9 @@ class ReferenceRealtimeVoiceSidecarSession:
         if self._openai_realtime is not None:
             await self._send_openai_realtime_event(event)
             return
+        if self._gemini_live is not None:
+            await self._send_gemini_live_event(event)
+            return
         if self._streaming_stt is not None:
             if await self._send_streaming_stt_event(event):
                 return
@@ -357,6 +405,8 @@ class ReferenceRealtimeVoiceSidecarSession:
             self._streaming_tts_task.cancel()
         if self._openai_realtime_task and not self._openai_realtime_task.done():
             self._openai_realtime_task.cancel()
+        if self._gemini_live_task and not self._gemini_live_task.done():
+            self._gemini_live_task.cancel()
         if self._streaming_stt is not None:
             with contextlib.suppress(Exception):
                 await self._streaming_stt.close()
@@ -366,6 +416,9 @@ class ReferenceRealtimeVoiceSidecarSession:
         if self._openai_realtime is not None:
             with contextlib.suppress(Exception):
                 await self._openai_realtime.close()
+        if self._gemini_live is not None:
+            with contextlib.suppress(Exception):
+                await self._gemini_live.close()
         if self._streaming_stt_task:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._streaming_stt_task
@@ -375,6 +428,9 @@ class ReferenceRealtimeVoiceSidecarSession:
         if self._openai_realtime_task:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._openai_realtime_task
+        if self._gemini_live_task:
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._gemini_live_task
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
         await put_realtime_voice_event(self._events, None)
 
@@ -407,6 +463,36 @@ class ReferenceRealtimeVoiceSidecarSession:
             return
         self._openai_realtime = provider
         self._openai_realtime_task = asyncio.create_task(self._consume_openai_realtime_events())
+
+    async def _start_gemini_live(self, config: RealtimeVoiceSessionConfig) -> None:
+        from agent.realtime_voice_gemini import GeminiLiveFrontendConfig, GeminiLiveFrontendSession
+
+        provider = GeminiLiveFrontendSession(
+            GeminiLiveFrontendConfig(
+                api_key=self.runtime.gemini_live_api_key,
+                base_url=self.runtime.gemini_live_base_url,
+                model=self.runtime.gemini_live_model,
+                voice=self.runtime.gemini_live_voice,
+                connect_timeout_seconds=config.sidecar_connect_timeout_seconds,
+                enable_google_search=self.runtime.gemini_live_google_search,
+                enable_oracle_tool=self.runtime.gemini_live_oracle_tool,
+            )
+        )
+        try:
+            await provider.start(config)
+        except Exception as exc:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "gemini_live_unavailable",
+                    "error": sanitize_realtime_voice_error(exc),
+                    "gemini_live": False,
+                },
+            )
+            return
+        self._gemini_live = provider
+        self._gemini_live_task = asyncio.create_task(self._consume_gemini_live_events())
 
     async def _start_streaming_stt(self, config: RealtimeVoiceSessionConfig) -> None:
         client = RealtimeVoiceSidecarClient(path="/v1/streaming-stt/session")
@@ -508,6 +594,16 @@ class ReferenceRealtimeVoiceSidecarSession:
             await self._disable_openai_realtime("openai_realtime_send_failed", exc)
             return False
 
+    async def _send_gemini_live_event(self, event: VoiceEvent) -> bool:
+        if self._gemini_live is None:
+            return False
+        try:
+            await self._gemini_live.receive_event(event)
+            return True
+        except Exception as exc:
+            await self._disable_gemini_live("gemini_live_send_failed", exc)
+            return False
+
     async def _consume_streaming_stt_events(self) -> None:
         if self._streaming_stt is None:
             return
@@ -584,6 +680,35 @@ class ReferenceRealtimeVoiceSidecarSession:
         except Exception as exc:
             await self._disable_openai_realtime("openai_realtime_event_stream_failed", exc)
 
+    async def _consume_gemini_live_events(self) -> None:
+        if self._gemini_live is None:
+            return
+        try:
+            async for event in self._gemini_live.events():
+                if event.type in {
+                    VoiceEventType.TRANSCRIPT_PARTIAL,
+                    VoiceEventType.TRANSCRIPT_FINAL,
+                    VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                    VoiceEventType.FRONTEND_STATE,
+                    VoiceEventType.ORACLE_HINT,
+                    VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                    VoiceEventType.ASSISTANT_COMMIT,
+                    VoiceEventType.BARGE_IN,
+                    VoiceEventType.TOOL_PENDING,
+                    VoiceEventType.TOOL_RESULT,
+                }:
+                    await self._emit(event.type, dict(event.payload))
+                elif event.type == VoiceEventType.SESSION_ERROR:
+                    await self._disable_gemini_live(
+                        "gemini_live_session_error",
+                        event.payload.get("error") or "",
+                    )
+                    return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._disable_gemini_live("gemini_live_event_stream_failed", exc)
+
     async def _disable_streaming_stt(self, reason: str, error: Any) -> None:
         client = self._streaming_stt
         self._streaming_stt = None
@@ -629,6 +754,22 @@ class ReferenceRealtimeVoiceSidecarSession:
                 "reason": reason,
                 "error": sanitize_realtime_voice_error(error),
                 "openai_realtime": False,
+            },
+        )
+
+    async def _disable_gemini_live(self, reason: str, error: Any) -> None:
+        provider = self._gemini_live
+        self._gemini_live = None
+        if provider is not None:
+            with contextlib.suppress(Exception):
+                await provider.close()
+        await self._emit(
+            VoiceEventType.FRONTEND_STATE,
+            {
+                "status": "degraded",
+                "reason": reason,
+                "error": sanitize_realtime_voice_error(error),
+                "gemini_live": False,
             },
         )
 
@@ -995,6 +1136,19 @@ def runtime_config_from_env() -> ReferenceSidecarRuntimeConfig:
         or "gpt-realtime-whisper",
         openai_realtime_safety_identifier=os.environ.get("HERMES_OPENAI_REALTIME_SAFETY_IDENTIFIER")
         or None,
+        gemini_live_api_key=os.environ.get("HERMES_GEMINI_LIVE_API_KEY")
+        or os.environ.get("GEMINI_API_KEY")
+        or None,
+        gemini_live_base_url=os.environ.get("HERMES_GEMINI_LIVE_BASE_URL")
+        or (
+            "wss://generativelanguage.googleapis.com/ws/"
+            "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+        ),
+        gemini_live_model=os.environ.get("HERMES_GEMINI_LIVE_MODEL")
+        or "gemini-3.1-flash-live-preview",
+        gemini_live_voice=os.environ.get("HERMES_GEMINI_LIVE_VOICE") or "Puck",
+        gemini_live_google_search=_env_bool("HERMES_GEMINI_LIVE_GOOGLE_SEARCH", False),
+        gemini_live_oracle_tool=_env_bool("HERMES_GEMINI_LIVE_ORACLE_TOOL", True),
         local_stt_enabled=_env_bool("HERMES_VOICE_LOCAL_STT_ENABLED", True),
         local_tts_enabled=_env_bool("HERMES_VOICE_LOCAL_TTS_ENABLED", True),
         auth_token=os.environ.get("HERMES_VOICE_SIDECAR_TOKEN")

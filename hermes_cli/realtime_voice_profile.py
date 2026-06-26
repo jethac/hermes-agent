@@ -24,6 +24,8 @@ DEFAULT_ELEVENLABS_TTS_MODEL = "eleven_flash_v2_5"
 DEFAULT_OPENAI_REALTIME_MODEL = "gpt-realtime-2"
 DEFAULT_OPENAI_REALTIME_VOICE = "marin"
 DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL = "gpt-realtime-whisper"
+DEFAULT_GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview"
+DEFAULT_GEMINI_LIVE_VOICE = "Puck"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--preset",
-        choices=("generic", "deepgram", "elevenlabs", "openai"),
+        choices=("generic", "deepgram", "elevenlabs", "openai", "gemini"),
         default="generic",
         help="Provider preset for common portable realtime voice stacks",
     )
@@ -91,6 +93,31 @@ def build_parser() -> argparse.ArgumentParser:
         default="OPENAI_API_KEY",
         help="Environment variable containing the OpenAI Realtime API key",
     )
+    parser.add_argument(
+        "--gemini-live-model",
+        default=DEFAULT_GEMINI_LIVE_MODEL,
+        help="Gemini Live model for --preset gemini",
+    )
+    parser.add_argument(
+        "--gemini-live-voice",
+        default=DEFAULT_GEMINI_LIVE_VOICE,
+        help="Gemini Live voice for --preset gemini",
+    )
+    parser.add_argument(
+        "--gemini-live-api-key-env",
+        default="GEMINI_API_KEY",
+        help="Environment variable containing the Gemini Live API key",
+    )
+    parser.add_argument(
+        "--gemini-live-google-search",
+        action="store_true",
+        help="Allow Gemini Live to use Google Search as a frontend context tool",
+    )
+    parser.add_argument(
+        "--disable-gemini-live-oracle-tool",
+        action="store_true",
+        help="Disable Gemini Live's KAME ask_hermes_oracle bridge tool",
+    )
     parser.add_argument("--sidecar-host", default="127.0.0.1")
     parser.add_argument("--sidecar-port", type=int, default=8765)
     parser.add_argument(
@@ -131,6 +158,17 @@ def main(argv: list[str] | None = None) -> int:
                 voice=preset["openai_realtime_voice"],
                 transcription_model=preset["openai_realtime_transcription_model"],
                 api_key_env=args.openai_realtime_api_key_env,
+                sidecar_host=args.sidecar_host,
+                sidecar_port=args.sidecar_port,
+                production_evidence_report=args.production_evidence_report,
+            )
+        elif args.preset == "gemini":
+            profile = build_gemini_live_voice_profile(
+                model=preset["gemini_live_model"],
+                voice=preset["gemini_live_voice"],
+                api_key_env=args.gemini_live_api_key_env,
+                google_search=bool(args.gemini_live_google_search),
+                oracle_tool=not bool(args.disable_gemini_live_oracle_tool),
                 sidecar_host=args.sidecar_host,
                 sidecar_port=args.sidecar_port,
                 production_evidence_report=args.production_evidence_report,
@@ -191,11 +229,16 @@ def main(argv: list[str] | None = None) -> int:
             print("  export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=...")
             print("  python -m hermes_cli.realtime_voice_sidecar --host 127.0.0.1 --port 8765")
             print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply")
+        elif args.preset == "gemini":
+            print("  export GEMINI_API_KEY=...")
+            print("  export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=...")
+            print("  python -m hermes_cli.realtime_voice_sidecar --host 127.0.0.1 --port 8765")
         else:
             print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --start-bridge")
+        live_provider_flag = "--require-gemini-live" if args.preset == "gemini" else "--require-openai-realtime"
         print(
             "  python -m hermes_cli.realtime_voice_live_evidence "
-            "--require-live-discord --require-openai-realtime"
+            f"--require-live-discord {live_provider_flag}"
         )
         print("  python -m hermes_cli.realtime_voice_fixture_pack --output-dir ./fixtures/realtime-voice")
         return 0
@@ -253,6 +296,15 @@ def _profile_preset_values(args: argparse.Namespace) -> dict[str, str]:
             "openai_realtime_transcription_model": str(
                 args.openai_realtime_transcription_model or DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL
             ),
+        }
+    if args.preset == "gemini":
+        return {
+            "streaming_stt_base_url": streaming_stt_base_url,
+            "streaming_tts_base_url": streaming_tts_base_url,
+            "streaming_stt_model": streaming_stt_model,
+            "streaming_tts_model": streaming_tts_model,
+            "gemini_live_model": str(args.gemini_live_model or DEFAULT_GEMINI_LIVE_MODEL),
+            "gemini_live_voice": str(args.gemini_live_voice or DEFAULT_GEMINI_LIVE_VOICE),
         }
 
     if args.preset == "elevenlabs":
@@ -401,6 +453,66 @@ def build_openai_realtime_voice_profile(
         "openai_realtime_transcription_model": str(
             transcription_model or DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL
         ),
+        "production_languages": ["en", "ja"],
+        "production_scripts": ["Latn", "Jpan"],
+        "best_effort_languages": True,
+        "production_evidence_report": str(production_evidence_report or DEFAULT_EVIDENCE_REPORT),
+        "production_evidence_min_runs": 3,
+        "turn_acknowledgement": {
+            "enabled": True,
+            "text": "One moment.",
+        },
+        "quality_targets_ms": {
+            "audio_to_partial_transcript_ms": 300,
+            "final_transcript_to_first_text_ms": 500,
+            "final_transcript_to_first_audio_ms": 900,
+            "barge_in_ack_ms": 150,
+        },
+    }
+
+
+def build_gemini_live_voice_profile(
+    *,
+    model: str = DEFAULT_GEMINI_LIVE_MODEL,
+    voice: str = DEFAULT_GEMINI_LIVE_VOICE,
+    api_key_env: str = "GEMINI_API_KEY",
+    google_search: bool = False,
+    oracle_tool: bool = True,
+    sidecar_host: str = "127.0.0.1",
+    sidecar_port: int = 8765,
+    production_evidence_report: str = DEFAULT_EVIDENCE_REPORT,
+) -> dict[str, Any]:
+    port = int(sidecar_port or 8765)
+    if port <= 0 or port > 65535:
+        raise ValueError("--sidecar-port must be between 1 and 65535")
+    return {
+        "enabled": True,
+        "engine": "text_oracle_tts",
+        "input_codec": "webm_opus",
+        "output_codec": "opus",
+        "input_buffer_limit_bytes": 8 * 1024 * 1024,
+        "input_frame_ms": 100,
+        "silence_timeout_ms": 650,
+        "speech_level_threshold": 0.075,
+        "barge_in_min_speech_ms": 120,
+        "pre_roll_ms": 300,
+        "require_live_like": True,
+        "frontend_provider": "gemini_live",
+        "frontend_model": str(model or DEFAULT_GEMINI_LIVE_MODEL),
+        "sidecar_base_url": "",
+        "spark_base_url": "",
+        "sidecar_host": str(sidecar_host or "127.0.0.1"),
+        "sidecar_port": port,
+        "sidecar_autostart": True,
+        "sidecar_connect_timeout_seconds": 10.0,
+        "gemini_live_api_key_env": _clean_env_name(api_key_env) or "GEMINI_API_KEY",
+        "gemini_live_base_url": (
+            "wss://generativelanguage.googleapis.com/ws/"
+            "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+        ),
+        "gemini_live_voice": str(voice or DEFAULT_GEMINI_LIVE_VOICE),
+        "gemini_live_google_search": bool(google_search),
+        "gemini_live_oracle_tool": bool(oracle_tool),
         "production_languages": ["en", "ja"],
         "production_scripts": ["Latn", "Jpan"],
         "best_effort_languages": True,

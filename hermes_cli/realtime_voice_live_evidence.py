@@ -18,6 +18,7 @@ class RealtimeVoiceLiveEvidenceResult:
     output_dir: str
     require_live_discord: bool = False
     require_openai_realtime: bool = False
+    require_gemini_live: bool = False
     reports: dict[str, str] = field(default_factory=dict)
     issues: list[str] = field(default_factory=list)
     evidence_context: dict[str, Any] = field(default_factory=dict)
@@ -39,6 +40,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--require-openai-realtime",
         action="store_true",
         help="Fail unless an OpenAI Realtime API key env var is present",
+    )
+    parser.add_argument(
+        "--require-gemini-live",
+        action="store_true",
+        help="Fail unless a Gemini Live API key env var is present",
     )
     parser.add_argument("--guild-id", default=os.environ.get("DISCORD_GUILD_ID", ""))
     parser.add_argument("--text-channel-id", default=os.environ.get("DISCORD_HOME_CHANNEL", ""))
@@ -83,12 +89,15 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
 
     if args.require_openai_realtime and not _openai_realtime_key_present():
         issues.append("openai_realtime: OPENAI_API_KEY or HERMES_OPENAI_REALTIME_API_KEY is required")
+    if args.require_gemini_live and not _gemini_live_key_present():
+        issues.append("gemini_live: GEMINI_API_KEY or HERMES_GEMINI_LIVE_API_KEY is required")
 
     result = RealtimeVoiceLiveEvidenceResult(
         ok=not issues,
         output_dir=str(output_dir),
         require_live_discord=bool(args.require_live_discord),
         require_openai_realtime=bool(args.require_openai_realtime),
+        require_gemini_live=bool(args.require_gemini_live),
         reports=reports,
         issues=issues,
         evidence_context=context,
@@ -138,12 +147,18 @@ def _evidence_context(args: argparse.Namespace) -> dict[str, Any]:
             "DISCORD_VOICE_CHANNEL_NAME": bool(os.environ.get("DISCORD_VOICE_CHANNEL_NAME")),
             "OPENAI_API_KEY": bool(os.environ.get("OPENAI_API_KEY")),
             "HERMES_OPENAI_REALTIME_API_KEY": bool(os.environ.get("HERMES_OPENAI_REALTIME_API_KEY")),
+            "GEMINI_API_KEY": bool(os.environ.get("GEMINI_API_KEY")),
+            "HERMES_GEMINI_LIVE_API_KEY": bool(os.environ.get("HERMES_GEMINI_LIVE_API_KEY")),
         },
     }
 
 
 def _openai_realtime_key_present() -> bool:
     return bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("HERMES_OPENAI_REALTIME_API_KEY"))
+
+
+def _gemini_live_key_present() -> bool:
+    return bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("HERMES_GEMINI_LIVE_API_KEY"))
 
 
 def _configured(value: Any) -> bool:

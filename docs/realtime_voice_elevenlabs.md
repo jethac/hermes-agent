@@ -33,6 +33,8 @@ Provider bridges sit at the edge of that contract. The current matrix is:
 | --- | --- | --- |
 | Deepgram bridge | Existing | Streaming STT/TTS evidence baseline |
 | ElevenLabs bridge | Implemented | Streaming STT plus realtime TTS |
+| OpenAI Realtime | Implemented | Native speech-to-speech frontend provider behind the sidecar |
+| Gemini Live | Implemented | Native speech-to-speech frontend provider with KAME-scoped bridge tools |
 | Gemma/audio frontend | Future | Remote audio-capable frontend bridge |
 | Native speech-to-speech | Future | Another provider path, not required for first production readiness |
 
@@ -40,6 +42,8 @@ The design decisions are:
 
 - Keep provider code at the edge.
 - Keep the Hermes oracle in the middle.
+- Keep native-provider tool calls scoped to bridge tools such as
+  `ask_hermes_oracle`; provider frontends do not execute arbitrary Hermes tools.
 - Keep desktop/UI and speech inference split so the UI machine does not need to
   run the speech provider or model.
 - Avoid English-only protocol assumptions. Production evidence currently targets
@@ -241,6 +245,20 @@ python -m hermes_cli.realtime_voice_live_evidence `
 The collector writes `manifest.json`, `discord-loopback.json`, and
 `discord-live-probe.json`. Reports include the exact git commit and redacted
 env/config readiness, but never write secret values.
+
+For Gemini Live native speech-to-speech comparison evidence, use the Gemini
+preset and strict collector flag:
+
+```powershell
+$env:GEMINI_API_KEY = "<Gemini API key>"
+python -m hermes_cli.realtime_voice_profile --preset gemini --apply
+python -m hermes_cli.realtime_voice_live_evidence `
+  --output-dir artifacts/realtime-voice-evidence/live-gemini-discord `
+  --require-live-discord `
+  --require-gemini-live `
+  --require-inbound `
+  --wait-seconds 15
+```
 
 ## Evidence Checklist
 

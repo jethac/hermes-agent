@@ -168,6 +168,49 @@ def test_openai_preset_accepts_explicit_model_voice_and_key_env(capsys):
     assert realtime["openai_realtime_api_key_env"] == "HERMES_OPENAI_KEY"
 
 
+def test_gemini_preset_prints_managed_realtime_profile(capsys):
+    result = realtime_voice_profile.main(["--preset", "gemini"])
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["frontend_provider"] == "gemini_live"
+    assert realtime["frontend_model"] == "gemini-3.1-flash-live-preview"
+    assert realtime["gemini_live_api_key_env"] == "GEMINI_API_KEY"
+    assert realtime["gemini_live_voice"] == "Puck"
+    assert realtime["gemini_live_google_search"] is False
+    assert realtime["gemini_live_oracle_tool"] is True
+    assert realtime["sidecar_autostart"] is True
+    assert realtime["require_live_like"] is True
+    assert "streaming_stt_base_url" not in realtime
+
+
+def test_gemini_preset_accepts_explicit_model_voice_key_env_and_tools(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "gemini",
+            "--gemini-live-model",
+            "gemini-3.1-flash-live-preview",
+            "--gemini-live-voice",
+            "Kore",
+            "--gemini-live-api-key-env",
+            "HERMES_GEMINI_KEY",
+            "--gemini-live-google-search",
+            "--disable-gemini-live-oracle-tool",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["frontend_model"] == "gemini-3.1-flash-live-preview"
+    assert realtime["gemini_live_voice"] == "Kore"
+    assert realtime["gemini_live_api_key_env"] == "HERMES_GEMINI_KEY"
+    assert realtime["gemini_live_google_search"] is True
+    assert realtime["gemini_live_oracle_tool"] is False
+
+
 def test_merge_realtime_voice_profile_preserves_unrelated_config():
     existing = {
         "model": {"provider": "openrouter", "default": "gpt-5"},
@@ -357,3 +400,25 @@ def test_openai_preset_apply_prints_live_evidence_next_steps(monkeypatch, tmp_pa
     assert "export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=..." in output
     assert "realtime_voice_sidecar --host 127.0.0.1 --port 8765" in output
     assert "realtime_voice_live_evidence --require-live-discord --require-openai-realtime" in output
+
+
+def test_gemini_preset_apply_prints_live_evidence_next_steps(monkeypatch, tmp_path, capsys):
+    saved = {}
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {"model": {"provider": "openrouter"}},
+    )
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+
+    result = realtime_voice_profile.main(["--preset", "gemini", "--apply"])
+
+    assert result == 0
+    realtime = saved["config"]["voice"]["realtime"]
+    assert realtime["frontend_provider"] == "gemini_live"
+    output = capsys.readouterr().out
+    assert "export GEMINI_API_KEY=..." in output
+    assert "export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=..." in output
+    assert "realtime_voice_sidecar --host 127.0.0.1 --port 8765" in output
+    assert "realtime_voice_live_evidence --require-live-discord --require-gemini-live" in output
+    assert "realtime_voice_live_evidence --require-live-discord --require-openai-realtime" not in output
