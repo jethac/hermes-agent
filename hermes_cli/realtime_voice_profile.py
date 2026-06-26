@@ -21,7 +21,7 @@ DEFAULT_DEEPGRAM_TTS_MODEL = "aura-2-thalia-en"
 DEFAULT_ELEVENLABS_BRIDGE_BASE_URL = "http://127.0.0.1:8767"
 DEFAULT_ELEVENLABS_STT_MODEL = "scribe_v2_realtime"
 DEFAULT_ELEVENLABS_TTS_MODEL = "eleven_flash_v2_5"
-DEFAULT_CARTESIA_BRIDGE_BASE_URL = "http://127.0.0.1:8768"
+DEFAULT_CARTESIA_BRIDGE_BASE_URL = "http://127.0.0.1:8769"
 DEFAULT_CARTESIA_STT_MODEL = "ink-2"
 DEFAULT_CARTESIA_TTS_MODEL = "sonic-3.5"
 DEFAULT_OPENAI_REALTIME_MODEL = "gpt-realtime-2"
@@ -235,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
             print("  python -m hermes_cli.realtime_voice_cartesia_bridge --check --strict --production-en-ja")
             print(
                 "  python -m hermes_cli.realtime_voice_cartesia_bridge "
-                "--host 127.0.0.1 --port 8768 --production-en-ja"
+                "--host 127.0.0.1 --port 8769 --production-en-ja"
             )
             print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --provider cartesia --start-bridge")
         elif args.preset == "openai":

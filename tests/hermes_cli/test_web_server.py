@@ -6602,8 +6602,8 @@ class TestRealtimeVoiceWebSocket:
             "/api/voice/realtime/profile",
             json={
                 "preset": "cartesia",
-                "streaming_stt_base_url": "http://127.0.0.1:8768",
-                "streaming_tts_base_url": "http://127.0.0.1:8768",
+                "streaming_stt_base_url": "http://127.0.0.1:8769",
+                "streaming_tts_base_url": "http://127.0.0.1:8769",
                 "streaming_stt_model": "ink-2",
                 "streaming_tts_model": "sonic-3.5",
             },
@@ -6612,8 +6612,8 @@ class TestRealtimeVoiceWebSocket:
         payload = response.json()
         realtime = payload["config"]["voice"]["realtime"]
         assert realtime["frontend_provider"] == "reference"
-        assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8768"
-        assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8768"
+        assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8769"
+        assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8769"
         assert realtime["streaming_stt_model"] == "ink-2"
         assert realtime["streaming_tts_model"] == "sonic-3.5"
 

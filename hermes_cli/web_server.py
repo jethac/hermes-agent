@@ -14282,8 +14282,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
         )
     if preset == "cartesia":
         return build_realtime_voice_live_like_profile(
-            streaming_stt_base_url=body.streaming_stt_base_url or "http://127.0.0.1:8768",
-            streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8768",
+            streaming_stt_base_url=body.streaming_stt_base_url or "http://127.0.0.1:8769",
+            streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8769",
             streaming_stt_model=body.streaming_stt_model or DEFAULT_CARTESIA_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or body.model or DEFAULT_CARTESIA_TTS_MODEL,
         )

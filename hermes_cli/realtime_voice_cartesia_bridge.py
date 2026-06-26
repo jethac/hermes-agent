@@ -20,7 +20,7 @@ DEFAULT_PRODUCTION_EN_JA_TTS_VOICE_BY_LANGUAGE = ""
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a Hermes-compatible Cartesia realtime voice bridge")
     parser.add_argument("--host", default=os.environ.get("HERMES_CARTESIA_BRIDGE_HOST", "127.0.0.1"))
-    parser.add_argument("--port", default=int(os.environ.get("HERMES_CARTESIA_BRIDGE_PORT", "8768")), type=int)
+    parser.add_argument("--port", default=int(os.environ.get("HERMES_CARTESIA_BRIDGE_PORT", "8769")), type=int)
     parser.add_argument("--model", default=os.environ.get("HERMES_CARTESIA_STT_MODEL", "ink-2"))
     parser.add_argument("--tts-model", default=os.environ.get("HERMES_CARTESIA_TTS_MODEL", "sonic-3.5"))
     parser.add_argument(
