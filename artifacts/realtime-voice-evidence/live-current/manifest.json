@@ -9,7 +9,7 @@
   },
   "issues": [],
   "evidence_context": {
-    "git_commit": "646f9567d94aec011a9654b6bbaa8b3e3555905d",
+    "git_commit": "e04b7c37900eb69a9836d7fa304c5b0084e018f5",
     "git_branch": "wip/kame-style-realtime-voice",
     "config_snapshot": {
       "guild_id_configured": false,
