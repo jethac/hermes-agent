@@ -1,0 +1,317 @@
+---
+title: "DGX Spark Gemma 4 realtime voice evaluation plan"
+status: planned
+date: 2026-06-28
+type: plan
+target_repo: hermes-agent
+---
+
+# DGX Spark Gemma 4 Realtime Voice Evaluation Plan
+
+## Summary
+
+Evaluate the best local DGX Spark stack for Hermes realtime voice while keeping
+the KAME architecture intact:
+
+- Hermes's selected oracle model is the brain.
+- The realtime voice provider is only the low-latency interface layer.
+- The interface layer hears, segments turns, handles barge-in, speaks, and
+  delegates reasoning/actions to Hermes.
+
+The preferred brain target is Gemma 4 26B-A4B served locally on DGX Spark. The
+voice layer should be evaluated independently so a weak or experimental voice
+frontend cannot hide a strong local oracle, and a good voice frontend cannot
+hide a weak oracle.
+
+## Evidence Snapshot
+
+Recent DGX Spark reports suggest this ranking for Hermes:
+
+| Area | Best-supported path | Evidence summary | Risk |
+| --- | --- | --- | --- |
+| Local oracle | Gemma 4 26B-A4B via vLLM | Reported around 24-40 decode tok/s, with strong prefill and workable memory use on single Spark. | Serving image/version details matter. |
+| Cloud voice baseline | Cartesia bridge | We already have a Hermes STT/TTS bridge. Good for proving Gemma-as-brain before local speech work. | Cloud dependency; not a local-only answer. |
+| Local voice pipeline | Nemotron Speech or Riva-like ASR + Magpie/Riva TTS | Pipecat/Nemotron/Magpie is the only well-instrumented Spark voice pipeline found, around 1.2s server-side voice-to-voice in reported runs. | Need a Hermes-compatible bridge; full Riva setup reports include install pain. |
+| Full-duplex local S2S | Moshi/PersonaPlex | Spark reports mention choppy/unusable realtime audio. | Deprioritize until the pipeline baseline is solved. |
+| Direct speech LLM | Ultravox | No confirmed DGX Spark deployment numbers found. | Watchlist only. |
+| TensorRT-LLM | Model support exists, but less practical user evidence than vLLM/SGLang/llama.cpp. | Revisit after vLLM baseline. |
+
+The practical conclusion is to prove Gemma 4 26B-A4B as the oracle first, then
+compare voice frontends against that stable brain.
+
+## Headless Runner
+
+The repo-side unattended runner is:
+
+```bash
+scripts/dgx_spark_gemma4_voice_eval.sh
+```
+
+It writes artifacts under:
+
+```text
+artifacts/dgx-spark-gemma4-voice-eval/<timestamp>/
+```
+
+The runner never prompts. It uses environment variables and skips tracks whose
+external prerequisites are absent. It also uses temporary `HERMES_HOME`
+directories inside the artifact directory so it does not mutate the user's real
+Hermes config.
+
+Required repo-local validation always runs:
+
+```bash
+uv run python -m py_compile \
+  hermes_cli/realtime_voice_profile.py \
+  hermes_cli/realtime_voice_alpha_evidence.py \
+  hermes_cli/realtime_voice_cartesia_bridge.py \
+  hermes_cli/web_server.py \
+  agent/realtime_voice_cartesia_bridge.py
+
+uv run pytest \
+  tests/agent/test_realtime_voice_cartesia_bridge.py \
+  tests/hermes_cli/test_realtime_voice_profile.py \
+  tests/hermes_cli/test_realtime_voice_alpha_evidence.py \
+  tests/hermes_cli/test_web_server.py::TestRealtimeVoiceWebSocket \
+  -q
+```
+
+## Track A: Gemma 4 26B-A4B Oracle
+
+Goal: verify that Gemma 4 26B-A4B can serve as Hermes's local brain before any
+voice frontend evaluation.
+
+Expected external service:
+
+- OpenAI-compatible chat completions endpoint on the DGX Spark.
+- Suggested first serving path: vLLM with the Spark/Gemma 4 CUDA 13 image or
+  equivalent known-good recipe.
+- Keep the model warm for the full evaluation; do not unload/swap between voice
+  runs.
+
+Headless variables:
+
+```bash
+export DGX_SPARK_ORACLE_BASE_URL=http://<spark-host>:8000
+export DGX_SPARK_ORACLE_MODEL=gemma-4-26b-a4b-it
+export DGX_SPARK_ORACLE_API_KEY=optional
+export DGX_SPARK_ORACLE_TIMEOUT_SECONDS=120
+export DGX_SPARK_ORACLE_MAX_TOKENS=220
+```
+
+Runner behavior:
+
+- Calls `/v1/chat/completions`.
+- Writes `oracle-gemma4-probe.json`.
+- Records elapsed milliseconds, completion tokens, approximate tokens/sec, and
+  a response preview.
+
+Acceptance gates:
+
+| Metric | Target |
+| --- | --- |
+| Chat completion succeeds | Required |
+| First simple oracle response | Under 5s wall time for first warmed request |
+| Sustained decode | At least 20 tok/s for normal Hermes responses |
+| Tool/oracle behavior | Must not refuse local assistant/tool context |
+| Operational mode | Model remains warm through all Track B/C voice tests |
+
+Manual DGX-side setup is intentionally outside the repo runner. The setup should
+be captured as a separate Spark host playbook once the first known-good server
+command is confirmed.
+
+## Track B: Cartesia Cloud Voice Baseline
+
+Goal: determine whether Hermes + local Gemma 4 feels good when the voice layer
+is a high-quality cloud STT/TTS bridge. This isolates brain quality from local
+audio stack issues.
+
+Headless variables:
+
+```bash
+export CARTESIA_API_KEY=...
+export CARTESIA_VOICE_ID=...
+export DGX_SPARK_EVAL_RUNS=3
+export DGX_SPARK_BRIDGE_TIMEOUT_SECONDS=30
+```
+
+Runner behavior when Cartesia variables exist:
+
+```bash
+HERMES_HOME=<artifact-home> \
+  uv run python -m hermes_cli.realtime_voice_profile \
+  --preset cartesia \
+  --apply \
+  --generate-bridge-token \
+  --force-bridge-token
+
+HERMES_HOME=<artifact-home> \
+  uv run python -m hermes_cli.realtime_voice_cartesia_bridge \
+  --check \
+  --strict \
+  --production-en-ja
+
+HERMES_HOME=<artifact-home> \
+  uv run python -m hermes_cli.realtime_voice_alpha_evidence \
+  --runs 3 \
+  --provider cartesia \
+  --start-bridge \
+  --output-dir <artifacts>/cartesia-alpha \
+  --prefix cartesia \
+  --overwrite
+```
+
+Runner behavior without Cartesia variables:
+
+- Runs a loopback bridge protocol check and focused loopback bridge tests.
+- Marks it explicitly as protocol-only smoke, not provider quality evidence.
+- This fallback is meant to prove the local Hermes bridge contract is intact
+  when no external credentials are available. It is not a substitute for Track B
+  or Track C latency/quality evidence.
+
+Acceptance gates:
+
+| Metric | Target |
+| --- | --- |
+| Bridge prerequisite check | Passes strict mode |
+| Alpha evidence runs | 3/3 pass |
+| Audio-to-partial transcript | Under 300ms target where provider evidence exposes it |
+| Final transcript to first audio | Under 1500ms end-to-end target |
+| Barge-in | Stop/cancel under 150ms target |
+| Model-facing context | Hermes never claims it cannot hear/speak while in voice mode |
+
+Track B is the fastest path to answering: "Is Gemma 4 26B-A4B good enough as
+the Hermes brain in a voice session?"
+
+## Track C: Local DGX Speech Bridge
+
+Goal: replace the cloud voice bridge with a local Spark speech pipeline while
+keeping the same Hermes oracle contract.
+
+Expected external service:
+
+- A Hermes-compatible streaming STT/TTS bridge already running on the DGX Spark,
+  or reachable from this machine.
+- First implementation candidates:
+  - Nemotron Speech streaming ASR + Magpie/Riva-like TTS.
+  - Riva/NVIDIA speech stack if installation is stable enough.
+  - Pipecat as a reference latency harness, not as the Hermes brain.
+
+Headless variables:
+
+```bash
+export DGX_SPARK_LOCAL_VOICE_BRIDGE_URL=http://<spark-host>:8770
+export DGX_SPARK_LOCAL_TTS_BRIDGE_URL=http://<spark-host>:8770
+export DGX_SPARK_LOCAL_VOICE_STT_MODEL=nemotron-speech-streaming
+export DGX_SPARK_LOCAL_VOICE_TTS_MODEL=magpie-or-riva-tts
+export DGX_SPARK_EVAL_RUNS=3
+```
+
+Runner behavior:
+
+```bash
+HERMES_HOME=<artifact-home> \
+  uv run python -m hermes_cli.realtime_voice_profile \
+  --preset generic \
+  --streaming-stt-base-url "$DGX_SPARK_LOCAL_VOICE_BRIDGE_URL" \
+  --streaming-tts-base-url "$DGX_SPARK_LOCAL_TTS_BRIDGE_URL" \
+  --streaming-stt-model "$DGX_SPARK_LOCAL_VOICE_STT_MODEL" \
+  --streaming-tts-model "$DGX_SPARK_LOCAL_VOICE_TTS_MODEL" \
+  --apply \
+  --generate-bridge-token \
+  --force-bridge-token
+
+HERMES_HOME=<artifact-home> \
+  uv run python -m hermes_cli.realtime_voice_alpha_evidence \
+  --runs 3 \
+  --output-dir <artifacts>/local-speech-alpha \
+  --prefix local-speech \
+  --overwrite
+```
+
+Acceptance gates:
+
+| Metric | Target |
+| --- | --- |
+| Local bridge health | Reports streaming STT and streaming TTS |
+| Alpha evidence runs | 3/3 pass |
+| Local ASR partial latency | Under 300ms |
+| Final transcript latency | Under 700ms after speech end |
+| Local TTS first audio | Under 900ms from first assistant text |
+| End-to-end spoken turn | Under 1500ms with Gemma warm |
+| Barge-in | Under 150ms stop/cancel |
+| Resource contention | Gemma decode does not collapse while speech bridge is active |
+
+Track C only becomes the preferred path if it beats or gets close to Track B
+while preserving reliability and local-only operation.
+
+## Evaluation Matrix
+
+| Track | Brain | Voice frontend | Must run headless? | Purpose |
+| --- | --- | --- | --- | --- |
+| A | Gemma 4 26B-A4B via vLLM | none | Yes | Prove local oracle viability. |
+| B | Gemma 4 26B-A4B via vLLM | Cartesia bridge | Yes | Establish high-quality voice baseline. |
+| C | Gemma 4 26B-A4B via vLLM | Local DGX speech bridge | Yes | Test local-only target. |
+
+## Decision Rules
+
+1. If Track A fails, do not evaluate local speech yet. Fix Gemma serving first.
+2. If Track A passes and Track B feels good, Gemma 4 is a plausible Hermes
+   brain and local speech becomes an optimization.
+3. If Track B passes but Track C fails, ship/keep Cartesia as the baseline and
+   continue local speech bridge development separately.
+4. If Track C passes within 25% of Track B latency, prefer Track C for local DGX
+   operation.
+5. Do not invest in Moshi/PersonaPlex or Ultravox until Track C has a stable
+   pipeline baseline, because current Spark reports are either negative or
+   unproven.
+
+## Follow-up Implementation Work
+
+After the first headless run:
+
+1. Add a dedicated OpenAI-compatible local oracle benchmark command to Hermes
+   instead of keeping the Track A probe inside the shell runner.
+2. Add a first-class `riva` or `nvidia_speech` realtime voice profile preset
+   once the local bridge endpoint shape is known.
+3. Add an evidence report comparator that reads Track A/B/C artifacts and emits
+   a single ranked recommendation.
+4. If Track C is promising, add a managed local speech bridge launcher and tests
+   equivalent to the Cartesia/ElevenLabs/Deepgram bridge tests.
+5. Keep Moshi/Ultravox as explicit watchlist items until a confirmed Spark
+   deployment shows stable realtime audio.
+
+## One-command Headless Run
+
+With only repo-local validation and loopback fallback:
+
+```bash
+scripts/dgx_spark_gemma4_voice_eval.sh
+```
+
+Optional track failures are recorded in `summary.md` without aborting the whole
+run. Set `DGX_SPARK_EVAL_STRICT=1` when a nonzero exit is desired for any
+optional track failure.
+
+With Gemma and Cartesia:
+
+```bash
+export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8000
+export DGX_SPARK_ORACLE_MODEL=gemma-4-26b-a4b-it
+export CARTESIA_API_KEY=...
+export CARTESIA_VOICE_ID=...
+scripts/dgx_spark_gemma4_voice_eval.sh
+```
+
+With Gemma, Cartesia, and local DGX speech:
+
+```bash
+export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8000
+export DGX_SPARK_ORACLE_MODEL=gemma-4-26b-a4b-it
+export CARTESIA_API_KEY=...
+export CARTESIA_VOICE_ID=...
+export DGX_SPARK_LOCAL_VOICE_BRIDGE_URL=http://spark.local:8770
+export DGX_SPARK_LOCAL_VOICE_STT_MODEL=nemotron-speech-streaming
+export DGX_SPARK_LOCAL_VOICE_TTS_MODEL=magpie-or-riva-tts
+scripts/dgx_spark_gemma4_voice_eval.sh
+```
