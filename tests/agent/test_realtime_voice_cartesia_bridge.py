@@ -91,6 +91,7 @@ def test_cartesia_stt_message_to_transcript_payload_maps_partial_and_final():
 
 def test_cartesia_runtime_reads_env(monkeypatch):
     monkeypatch.setenv("CARTESIA_API_KEY", "cartesia-secret")
+    monkeypatch.delenv("CARTESIA_VOICE_ID", raising=False)
     monkeypatch.setenv("HERMES_STREAMING_STT_BRIDGE_TOKEN", "bridge-token")
     monkeypatch.setenv("HERMES_CARTESIA_STT_URL", "wss://cartesia.example.test/stt")
     monkeypatch.setenv("HERMES_CARTESIA_TTS_URL", "wss://cartesia.example.test/tts")
