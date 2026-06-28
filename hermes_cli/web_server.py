@@ -1456,6 +1456,7 @@ class RealtimeVoiceProfileApply(BaseModel):
     model: str = ""
     voice: str = ""
     api_key_env: str = ""
+    interface_base_url: str = ""
     interface_audio_input: str = "auto"
     interface_max_audio_seconds: float = 30.0
     asr_mode: str = "on_escalation"
@@ -15205,6 +15206,7 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
     if preset in {"kame", "kame_interface_oracle"}:
         return build_kame_realtime_voice_profile(
             reflex_model=body.model or DEFAULT_KAME_REFLEX_MODEL,
+            interface_base_url=body.interface_base_url,
             interface_audio_input=body.interface_audio_input or "auto",
             interface_max_audio_seconds=body.interface_max_audio_seconds,
             asr_mode=body.asr_mode or "on_escalation",

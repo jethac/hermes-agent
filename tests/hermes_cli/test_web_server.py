@@ -6769,6 +6769,7 @@ class TestRealtimeVoiceWebSocket:
             json={
                 "preset": "kame",
                 "model": "gemma-4-E2B-it",
+                "interface_base_url": "http://spark.local:8000/v1",
                 "interface_audio_input": "native_audio",
                 "asr_mode": "on_escalation",
                 "allow_local_greetings": False,
@@ -6796,11 +6797,14 @@ class TestRealtimeVoiceWebSocket:
         }
         assert realtime["engine"] == "kame_interface_oracle"
         assert realtime["frontend_provider"] == "gemma4"
+        assert realtime["interface_base_url"] == "http://spark.local:8000/v1"
+        assert realtime["vllm_base_url"] == "http://spark.local:8000/v1"
         assert realtime["tts_model"] == "magpie-local-streaming-tts"
         assert realtime["tts_voice"] == "spark-voice-1"
         assert realtime["streaming_tts_voice"] == "spark-voice-1"
         assert realtime["routing"] == expected_routing
         assert discord["enabled"] is True
+        assert discord["interface_base_url"] == "http://spark.local:8000/v1"
         assert discord["tts_voice"] == "spark-voice-1"
         assert discord["routing"] == expected_routing
 

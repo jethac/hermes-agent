@@ -141,6 +141,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="How the KAME reflex receives user input",
     )
     parser.add_argument(
+        "--kame-interface-base-url",
+        default="",
+        help="OpenAI-compatible base URL for the KAME reflex/interface model",
+    )
+    parser.add_argument(
         "--kame-interface-max-audio-seconds",
         type=float,
         default=30.0,
@@ -234,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.preset == "kame":
             profile = build_kame_realtime_voice_profile(
                 reflex_model=str(args.kame_reflex_model or DEFAULT_KAME_REFLEX_MODEL),
+                interface_base_url=str(args.kame_interface_base_url or ""),
                 interface_audio_input=str(args.kame_interface_audio_input or "auto"),
                 interface_max_audio_seconds=float(args.kame_interface_max_audio_seconds or 30.0),
                 asr_mode=str(args.kame_asr_mode or "on_escalation"),
@@ -725,6 +731,7 @@ def build_gemini_live_voice_profile(
 def build_kame_realtime_voice_profile(
     *,
     reflex_model: str = DEFAULT_KAME_REFLEX_MODEL,
+    interface_base_url: str = "",
     interface_audio_input: str = "auto",
     interface_max_audio_seconds: float = 30.0,
     asr_mode: str = "on_escalation",
@@ -774,6 +781,7 @@ def build_kame_realtime_voice_profile(
     if confidence_threshold < 0.0 or confidence_threshold > 1.0:
         raise ValueError("--kame-local-confidence-threshold must be between 0 and 1")
 
+    interface_url = _clean_url(interface_base_url)
     oracle_url = _clean_url(oracle_base_url)
     oracle_model = str(preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL)
     profile = {
@@ -792,6 +800,8 @@ def build_kame_realtime_voice_profile(
         "require_live_like": True,
         "frontend_provider": "gemma4",
         "frontend_model": str(reflex_model or DEFAULT_KAME_REFLEX_MODEL),
+        "interface_base_url": interface_url,
+        "vllm_base_url": interface_url,
         "interface_temperature": 0.2,
         "interface_max_output_tokens": 160,
         "interface_timeout_seconds": 0.8,
@@ -914,6 +924,7 @@ def merge_realtime_voice_profile(
             "sidecar_token_env": str(profile.get("sidecar_token_env") or "HERMES_VOICE_SIDECAR_TOKEN"),
             "frontend_provider": profile.get("frontend_provider"),
             "frontend_model": profile.get("frontend_model"),
+            "interface_base_url": profile.get("interface_base_url") or profile.get("vllm_base_url"),
             "interface_temperature": profile.get("interface_temperature", 0.2),
             "interface_max_output_tokens": profile.get("interface_max_output_tokens", 160),
             "interface_timeout_seconds": profile.get("interface_timeout_seconds", 0.8),

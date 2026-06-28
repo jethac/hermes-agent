@@ -329,6 +329,23 @@ def test_kame_preset_can_override_interface_max_audio_seconds(capsys):
     assert data["voice"]["realtime"]["interface_max_audio_seconds"] == 12.0
 
 
+def test_kame_preset_can_set_interface_base_url(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--kame-interface-base-url",
+            "http://spark.local:8000/v1/",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["interface_base_url"] == "http://spark.local:8000/v1"
+    assert realtime["vllm_base_url"] == "http://spark.local:8000/v1"
+
+
 def test_kame_preset_can_set_streaming_tts_voice(capsys):
     result = realtime_voice_profile.main(
         [
