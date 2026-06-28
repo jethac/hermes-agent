@@ -678,6 +678,13 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
         assert hints[-1].payload["text"] == "Looking now."
         assert hints[-1].payload["metrics"]["kame_oracle_called"] == 1
         assert hints[-1].payload["metrics"]["kame_oracle_bypassed"] == 0
+        assert hints[-1].payload["metrics"]["kame_interface_decision_to_oracle_accepted_ms"] >= 0
+        assert hints[-1].payload["metrics"]["kame_oracle_accepted_to_first_token_ms"] >= 0
+        assert hints[-1].payload["metrics"]["kame_oracle_first_token_to_first_spoken_text_ms"] >= 0
+        assert hints[-1].payload["metrics"]["kame_oracle_total_stream_ms"] >= 0
+        commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        assert commit.payload["metrics"]["kame_oracle_accepted_to_first_token_ms"] >= 0
+        assert commit.payload["metrics"]["kame_oracle_first_token_to_first_spoken_text_ms"] >= 0
         assert [event.payload for event in forwarded] == [event.payload for event in hints]
         assert spoken == ["Looking now."]
 
@@ -746,6 +753,54 @@ def test_kame_engine_caps_oracle_speech_to_configured_sentence_budget(monkeypatc
         assert commit.payload["text"] == "First sentence. Second sentence."
         assert commit.payload["max_spoken_sentences"] == 2
         assert commit.payload["metrics"]["kame_oracle_called"] == 1
+
+    asyncio.run(run())
+
+
+def test_kame_engine_sends_oracle_timing_metrics_to_tts_sidecar():
+    class TimedOracle:
+        async def stream_answer_for_request(self, request):
+            yield "Done."
+
+    async def run():
+        sidecar = FakeSidecar()
+        engine = KameInterfaceOracleEngine(oracle=TimedOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                sidecar_base_url="http://voice.local:8765",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "look this up",
+                    "intent": "Look this up.",
+                    "route": "oracle_direct",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        async for event in engine.events():
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        assert sidecar.spoken
+        metrics = sidecar.spoken[0].payload["metrics"]
+        assert metrics["kame_oracle_called"] == 1
+        assert metrics["kame_interface_decision_to_oracle_accepted_ms"] >= 0
+        assert metrics["kame_oracle_accepted_to_first_token_ms"] >= 0
+        assert metrics["kame_oracle_first_token_to_first_spoken_text_ms"] >= 0
 
     asyncio.run(run())
 

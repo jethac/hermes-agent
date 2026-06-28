@@ -547,6 +547,23 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         max_spoken_sentences = _max_spoken_sentences(self.config, oracle_request=oracle_request)
         spoken_answer = ""
         spoken_truncated = False
+        turn_started_at = time.perf_counter()
+        oracle_accepted_at: Optional[float] = None
+        oracle_first_token_at: Optional[float] = None
+        first_spoken_text_at: Optional[float] = None
+        kame_timing_metrics: dict[str, int] = {}
+
+        def sync_kame_timing_metrics() -> None:
+            if not kame_timing_metrics:
+                return
+            metrics = _kame_route_metrics(
+                assistant_metadata,
+                oracle_called=True,
+                extra_metrics=kame_timing_metrics,
+            )
+            if metrics:
+                assistant_metadata["metrics"] = metrics
+                self._assistant_metadata_by_generation[playback_generation] = assistant_metadata
 
         def queue_speak(text: str) -> None:
             nonlocal speak_chain, tts_error_reported
@@ -619,6 +636,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     metadata=assistant_metadata,
                     accepted=True,
                 )
+                oracle_accepted_at = time.perf_counter()
+                kame_timing_metrics["kame_interface_decision_to_oracle_accepted_ms"] = _elapsed_perf_ms(
+                    turn_started_at,
+                    oracle_accepted_at,
+                )
+                sync_kame_timing_metrics()
             async for delta in _stream_oracle_answer(
                 oracle,
                 transcript,
@@ -628,6 +651,15 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             ):
                 if playback_generation != self._playback_generation:
                     return
+                now = time.perf_counter()
+                if oracle_request is not None and oracle_first_token_at is None:
+                    oracle_first_token_at = now
+                    if oracle_accepted_at is not None:
+                        kame_timing_metrics["kame_oracle_accepted_to_first_token_ms"] = _elapsed_perf_ms(
+                            oracle_accepted_at,
+                            oracle_first_token_at,
+                        )
+                        sync_kame_timing_metrics()
                 answer += delta
                 buffer += delta
                 if oracle_request is not None:
@@ -653,6 +685,14 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                                 break
                             continue
                         spoken_answer = _join_spoken_text(spoken_answer, planned_chunk)
+                        if oracle_request is not None and first_spoken_text_at is None:
+                            first_spoken_text_at = time.perf_counter()
+                            if oracle_first_token_at is not None:
+                                kame_timing_metrics["kame_oracle_first_token_to_first_spoken_text_ms"] = _elapsed_perf_ms(
+                                    oracle_first_token_at,
+                                    first_spoken_text_at,
+                                )
+                            sync_kame_timing_metrics()
                         await self._emit(
                             VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                             {
@@ -663,7 +703,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                                     max_sentences=max_spoken_sentences,
                                     truncated=spoken_truncated,
                                 ),
-                                **_kame_route_metrics_payload(assistant_metadata, oracle_called=True),
+                                **_kame_route_metrics_payload(
+                                    assistant_metadata,
+                                    oracle_called=True,
+                                    extra_metrics=kame_timing_metrics,
+                                ),
                             },
                         )
                         queue_speak(planned_chunk)
@@ -681,6 +725,14 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     spoken_truncated = spoken_truncated or chunk_truncated
                 if planned_chunk:
                     spoken_answer = _join_spoken_text(spoken_answer, planned_chunk)
+                    if oracle_request is not None and first_spoken_text_at is None:
+                        first_spoken_text_at = time.perf_counter()
+                        if oracle_first_token_at is not None:
+                            kame_timing_metrics["kame_oracle_first_token_to_first_spoken_text_ms"] = _elapsed_perf_ms(
+                                oracle_first_token_at,
+                                first_spoken_text_at,
+                            )
+                        sync_kame_timing_metrics()
                     await self._emit(
                         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                         {
@@ -691,18 +743,29 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                                 max_sentences=max_spoken_sentences,
                                 truncated=spoken_truncated,
                             ),
-                            **_kame_route_metrics_payload(assistant_metadata, oracle_called=True),
+                            **_kame_route_metrics_payload(
+                                assistant_metadata,
+                                oracle_called=True,
+                                extra_metrics=kame_timing_metrics,
+                            ),
                         },
                     )
                     queue_speak(planned_chunk)
 
             if oracle_request is not None and answer:
+                if oracle_accepted_at is not None:
+                    kame_timing_metrics["kame_oracle_total_stream_ms"] = _elapsed_perf_ms(
+                        oracle_accepted_at,
+                        time.perf_counter(),
+                    )
+                    sync_kame_timing_metrics()
                 await self._emit_oracle_hint(
                     text=answer,
                     delta="",
                     final=True,
                     playback_generation=playback_generation,
                     metadata=assistant_metadata,
+                    metrics=kame_timing_metrics,
                 )
 
             commit_text = spoken_answer if max_spoken_sentences > 0 and spoken_answer else answer
@@ -724,7 +787,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                             max_sentences=max_spoken_sentences,
                             truncated=spoken_truncated,
                         ),
-                        **_kame_route_metrics_payload(assistant_metadata, oracle_called=True),
+                        **_kame_route_metrics_payload(
+                            assistant_metadata,
+                            oracle_called=True,
+                            extra_metrics=kame_timing_metrics,
+                        ),
                     },
                 )
         except asyncio.CancelledError:
@@ -893,6 +960,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         playback_generation: int,
         metadata: Mapping[str, Any],
         accepted: bool = False,
+        metrics: Optional[Mapping[str, int]] = None,
     ) -> None:
         if playback_generation != self._playback_generation:
             return
@@ -902,7 +970,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             "final": final,
             "source": "hermes",
             "playback_generation": playback_generation,
-            **_kame_route_metrics_payload(metadata, oracle_called=True),
+            **_kame_route_metrics_payload(metadata, oracle_called=True, extra_metrics=metrics),
         }
         if accepted:
             payload["accepted"] = True
@@ -976,20 +1044,51 @@ def _kame_local_reply(request: Optional[KameOracleRequest]) -> str:
     return request.local_reply.strip()
 
 
-def _kame_route_metrics_payload(metadata: Mapping[str, Any], *, oracle_called: bool) -> dict:
-    metrics = _kame_route_metrics(metadata, oracle_called=oracle_called)
+def _kame_route_metrics_payload(
+    metadata: Mapping[str, Any],
+    *,
+    oracle_called: bool,
+    extra_metrics: Optional[Mapping[str, int]] = None,
+) -> dict:
+    metrics = _kame_route_metrics(metadata, oracle_called=oracle_called, extra_metrics=extra_metrics)
     return {"metrics": metrics} if metrics else {}
 
 
-def _kame_route_metrics(metadata: Mapping[str, Any], *, oracle_called: bool) -> dict[str, int]:
+def _kame_route_metrics(
+    metadata: Mapping[str, Any],
+    *,
+    oracle_called: bool,
+    extra_metrics: Optional[Mapping[str, int]] = None,
+) -> dict[str, int]:
     route = str(metadata.get("kame_route") or "").strip()
     if not route:
         return {}
     oracle_called_int = 1 if oracle_called else 0
-    return {
+    metrics = {
         "kame_oracle_called": oracle_called_int,
         "kame_oracle_bypassed": 0 if oracle_called else 1,
     }
+    if extra_metrics:
+        metrics.update(_nonnegative_int_metrics(extra_metrics))
+    return metrics
+
+
+def _nonnegative_int_metrics(metrics: Mapping[str, Any]) -> dict[str, int]:
+    sanitized: dict[str, int] = {}
+    for key, value in metrics.items():
+        if isinstance(value, bool):
+            continue
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed >= 0:
+            sanitized[str(key)] = parsed
+    return sanitized
+
+
+def _elapsed_perf_ms(start: float, end: float) -> int:
+    return max(0, int(round((end - start) * 1000)))
 
 
 def _metadata_bool(value: Any, *, default: bool = False) -> bool:
