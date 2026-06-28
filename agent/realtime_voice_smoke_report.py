@@ -559,6 +559,11 @@ def _validate_kame_reflex_provenance(entries: Sequence[Mapping[str, Any]]) -> li
         if entry.get("interface_audio_input_fallback") is True
         or str(entry.get("interface_input_source") or "").strip().lower() in {"local_stt", "streaming_stt"}
     ]
+    malformed_entries = [
+        entry
+        for entry in routed_entries
+        if str(entry.get("reflex_validation_error") or "").strip()
+    ]
     issues: list[RealtimeVoiceSmokeReportIssue] = []
     if not native_audio_entries:
         issues.append(
@@ -584,7 +589,23 @@ def _validate_kame_reflex_provenance(entries: Sequence[Mapping[str, Any]]) -> li
                 "interface_audio_input_fallback",
             )
         )
+    if malformed_entries:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "kame_reflex_provenance",
+                "KAME route evidence includes malformed reflex output",
+                _kame_reflex_error_summary(malformed_entries),
+            )
+        )
     return issues
+
+
+def _kame_reflex_error_summary(entries: Sequence[Mapping[str, Any]]) -> str:
+    counts: dict[str, int] = {}
+    for entry in entries:
+        error = str(entry.get("reflex_validation_error") or "").strip() or "unknown"
+        counts[error] = counts.get(error, 0) + 1
+    return ", ".join(f"{error}={count}" for error, count in sorted(counts.items()))
 
 
 def _validate_kame_capability_honesty(entries: Sequence[Mapping[str, Any]]) -> list[RealtimeVoiceSmokeReportIssue]:
