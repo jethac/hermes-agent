@@ -1019,8 +1019,8 @@ def _validate_protocol_entry(entry: Mapping[str, Any]) -> list[RealtimeVoiceSmok
     events = _events(entry)
     if "frontend.state" not in events:
         issues.append(RealtimeVoiceSmokeReportIssue("protocol", "missing frontend.state event", identifier))
-    if "transcript.final" not in events:
-        issues.append(RealtimeVoiceSmokeReportIssue("protocol", "missing transcript.final event", identifier))
+    if not _has_final_user_turn_event(events):
+        issues.append(RealtimeVoiceSmokeReportIssue("protocol", "missing final user turn event", identifier))
     if _positive_int(entry.get("transcript_final_ms")) is None:
         issues.append(RealtimeVoiceSmokeReportIssue("protocol", "missing transcript_final_ms", identifier))
     return issues
@@ -1040,8 +1040,8 @@ def _validate_audio_fixture_entry(
     fast_final_satisfies_partial = _final_transcript_satisfies_partial_target(final_ms, target_ms)
     if "transcript.partial" not in events and not fast_final_satisfies_partial:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing transcript.partial event", identifier))
-    if "transcript.final" not in events:
-        issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing transcript.final event", identifier))
+    if not _has_final_user_turn_event(events):
+        issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing final user turn event", identifier))
     if _positive_int(entry.get("audio_bytes")) is None:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_fixture", "missing audio bytes", identifier))
     expected_text = ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS.get(identifier)
@@ -1158,8 +1158,8 @@ def _validate_session_turn_entry(
                     )
                 )
     events = _events(entry)
-    if "transcript.final" not in events:
-        issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing transcript.final event", identifier))
+    if not _has_final_user_turn_event(events):
+        issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing final user turn event", identifier))
     if "assistant.text.partial" not in events:
         issues.append(
             RealtimeVoiceSmokeReportIssue("session_turn", "missing assistant.text.partial event", identifier)
@@ -1240,8 +1240,8 @@ def _validate_audio_session_entry(
         ]
     if "transcript.partial" not in events and not partial_requirement_satisfied:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing transcript.partial event", identifier))
-    if "transcript.final" not in events:
-        issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing transcript.final event", identifier))
+    if not _has_final_user_turn_event(events):
+        issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing final user turn event", identifier))
     if "assistant.text.partial" not in events:
         issues.append(
             RealtimeVoiceSmokeReportIssue("audio_session", "missing assistant.text.partial event", identifier)
@@ -1425,6 +1425,10 @@ def _events(entry: Mapping[str, Any]) -> set[str]:
     if not isinstance(raw, list):
         return set()
     return {str(item) for item in raw if isinstance(item, str)}
+
+
+def _has_final_user_turn_event(events: set[str]) -> bool:
+    return bool({"transcript.final", "interface.intent.final"}.intersection(events))
 
 
 def _transcript_matches_expected(actual: str, expected: str) -> bool:

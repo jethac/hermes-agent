@@ -135,7 +135,7 @@ async def run_realtime_voice_sidecar_smoke(
                     transcript_partial_ms=transcript_partial_ms,
                     audio_bytes=len(audio or b""),
                     events=tuple(events),
-                    error=f"timed out after {timeout:g}s waiting for transcript.final",
+                    error=f"timed out after {timeout:g}s waiting for final user turn event",
                 )
             try:
                 event = await asyncio.wait_for(anext(stream), timeout=remaining)
@@ -146,7 +146,7 @@ async def run_realtime_voice_sidecar_smoke(
                     transcript_partial_ms=transcript_partial_ms,
                     audio_bytes=len(audio or b""),
                     events=tuple(events),
-                    error="sidecar event stream ended before transcript.final",
+                    error="sidecar event stream ended before final user turn event",
                 )
 
             elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
@@ -166,13 +166,13 @@ async def run_realtime_voice_sidecar_smoke(
                     events=tuple(events),
                     error=error,
                 )
-            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+            if _is_final_user_turn_event(event):
                 return RealtimeVoiceSidecarSmokeResult(
                     ok=True,
                     ready_ms=ready_ms,
                     transcript_partial_ms=transcript_partial_ms,
                     transcript_final_ms=elapsed_ms,
-                    final_text=str(event.payload.get("text") or ""),
+                    final_text=_final_user_turn_text(event),
                     audio_bytes=len(audio or b""),
                     events=tuple(events),
                 )
@@ -376,7 +376,7 @@ async def run_realtime_voice_session_turn_smoke(
                     **kame_evidence,
                     error=str(event.payload.get("error") or "session error"),
                 )
-            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+            if _is_final_user_turn_event(event):
                 transcript_final_elapsed_ms = elapsed_ms
                 transcript_final_ms = _metric_ms(
                     event.payload,
@@ -544,14 +544,15 @@ async def run_realtime_voice_session_audio_smoke(
                     "audio_to_partial_transcript_ms",
                     fallback=elapsed_ms,
                 )
-            elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
+            elif _is_final_user_turn_event(event):
                 transcript_final_elapsed_ms = elapsed_ms
                 transcript_final_ms = _metric_ms(
                     event.payload,
                     "audio_to_final_transcript_ms",
                     fallback=elapsed_ms,
                 )
-                final_text = str(event.payload.get("text") or final_text).strip()
+                if event.type == VoiceEventType.TRANSCRIPT_FINAL or not final_text:
+                    final_text = _final_user_turn_text(event) or final_text
             elif event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and first_text_ms is None:
                 first_text_ms = _metric_ms(
                     event.payload,
@@ -664,6 +665,22 @@ def _capture_kame_evidence(target: dict[str, str], payload: Mapping[str, Any]) -
     ).strip()
     if validation_error and not target.get("reflex_validation_error"):
         target["reflex_validation_error"] = validation_error
+
+
+def _is_final_user_turn_event(event: VoiceEvent) -> bool:
+    return event.type in {VoiceEventType.TRANSCRIPT_FINAL, VoiceEventType.INTERFACE_INTENT_FINAL}
+
+
+def _final_user_turn_text(event: VoiceEvent) -> str:
+    if event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
+        keys = ("kame_intent", "intent", "text", "transcript")
+    else:
+        keys = ("text", "transcript", "kame_intent", "intent")
+    for key in keys:
+        text = str(event.payload.get(key) or "").strip()
+        if text:
+            return text
+    return ""
 
 
 def _contains_japanese_script(text: str) -> bool:
