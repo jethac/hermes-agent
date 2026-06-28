@@ -340,6 +340,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     if generation is not None:
                         self._playback_generation = max(self._playback_generation, generation)
                     payload.setdefault("playback_generation", self._playback_generation)
+                    payload = self._kame_sidecar_audio_payload_with_metrics(payload)
                     self._frontend_output_active = True
                     await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
                 elif event.type == VoiceEventType.ASSISTANT_AUDIO_END:
@@ -1367,6 +1368,28 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     "kame_speech_end_to_first_audio_ms"
                 ]
         return metrics
+
+    def _kame_sidecar_audio_payload_with_metrics(self, payload: dict) -> dict:
+        generation = _payload_generation(payload)
+        if generation is None:
+            return payload
+        metadata = self._assistant_metadata_by_generation.get(generation)
+        if not isinstance(metadata, dict) or not _is_kame_metadata(metadata):
+            return payload
+        for key, value in metadata.items():
+            if key == "metrics" or key in payload:
+                continue
+            payload[key] = value
+        existing_metrics = payload.get("metrics")
+        metrics = _merge_metrics(metadata.get("metrics"), existing_metrics)
+        first_audio_metrics = self._kame_first_audio_metrics(generation, metadata)
+        if first_audio_metrics:
+            metrics.update(first_audio_metrics)
+        if metrics:
+            payload["metrics"] = metrics
+            metadata["metrics"] = _merge_metrics(metadata.get("metrics"), metrics)
+            self._assistant_metadata_by_generation[generation] = metadata
+        return payload
 
     def _interface_decision_metric_start(self, playback_generation: int, *, fallback: float) -> float:
         return self._interface_decision_at_by_generation.get(playback_generation, fallback)

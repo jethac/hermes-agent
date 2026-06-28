@@ -1505,6 +1505,60 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_adds_first_audio_metrics_to_sidecar_tts_chunks():
+    class HintOracle:
+        async def stream_answer_for_request(self, request):
+            yield "Looking now."
+
+    async def run():
+        sidecar = FakeSidecar()
+        engine = KameInterfaceOracleEngine(oracle=HintOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                sidecar_base_url="http://voice.local:8765",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "look this up",
+                    "text": "look this up",
+                    "intent": "Look this up.",
+                    "route": "oracle_direct",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                    "metrics": {"kame_speech_end_to_interface_decision_ms": 25},
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                await engine.close()
+                break
+
+        audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
+        assert audio.payload["voice_architecture"] == "kame_frontend_oracle"
+        assert audio.payload["kame_route"] == KameRoute.ORACLE_DIRECT.value
+        assert audio.payload["metrics"]["kame_speech_end_to_interface_decision_ms"] == 25
+        assert audio.payload["metrics"]["kame_interface_decision_to_first_audio_ms"] >= 0
+        assert audio.payload["metrics"]["kame_speech_end_to_first_audio_ms"] >= 25
+        assert audio.payload["metrics"]["kame_oracle_first_token_to_first_tts_audio_ms"] >= 0
+        assert sidecar.spoken[0].payload["voice_architecture"] == "kame_frontend_oracle"
+
+    asyncio.run(run())
+
+
 def test_kame_engine_streams_oracle_tool_events_to_sidecar(monkeypatch):
     class ToolEventOracle:
         async def stream_answer_for_request(self, request):
