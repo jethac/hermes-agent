@@ -4137,6 +4137,133 @@ def test_reference_sidecar_reports_kame_audio_reflex_fallback_without_vllm():
     assert event.payload["interface_audio_input"] == "native_audio"
 
 
+def test_reference_sidecar_auto_uses_local_stt_fallback_without_vllm():
+    def fake_transcribe(path):
+        assert path
+        return {"success": True, "transcript": "check deployment status"}
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(vllm_base_url=None, vllm_model=None),
+            transcribe_audio_func=fake_transcribe,
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                interface_audio_input="auto",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                    "input_generation": 11,
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                await sidecar.close()
+                break
+        return seen
+
+    seen = asyncio.run(run())
+    state = next(event for event in seen if event.type == VoiceEventType.FRONTEND_STATE)
+    final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+    assert state.payload["status"] == "fallback"
+    assert state.payload["reason"] == "kame_auto_text_fallback_selected"
+    assert state.payload["provider"] == "local_stt"
+    assert state.payload["fallback_provider"] == "local_stt"
+    assert state.payload["intent_source"] == "asr_fallback"
+    assert state.payload["transcript_source"] == "asr"
+    assert state.payload["interface_audio_input"] == "auto"
+    assert final.payload["text"] == "check deployment status"
+    assert final.payload["intent"] == "check deployment status"
+    assert final.payload["intent_source"] == "asr_fallback"
+    assert final.payload["route"] == "oracle_direct"
+    assert final.payload["transcript_source"] == "asr"
+    assert final.payload["fallback_reason"] == "kame_auto_text_fallback_selected"
+    assert final.payload["interface_audio_input_fallback"] is True
+
+
+def test_reference_sidecar_auto_starts_streaming_stt_fallback_without_vllm(monkeypatch):
+    created = []
+
+    class FakeBridge:
+        def __init__(self, *, path="/v1/realtime-text/session"):
+            self.path = path
+            self._events = asyncio.Queue()
+            created.append(self)
+
+        async def start(self, config):
+            self.config = config
+
+        async def events(self):
+            while True:
+                event = await self._events.get()
+                if event is None:
+                    return
+                yield event
+
+        async def close(self):
+            await self._events.put(None)
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_reference_sidecar.RealtimeVoiceSidecarClient",
+        FakeBridge,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                streaming_stt_base_url="http://streaming-stt.local:9000",
+                streaming_stt_model="nemotron-speech",
+                vllm_base_url=None,
+                vllm_model=None,
+            )
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                interface_audio_input="auto",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+
+        started = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+        state = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+        await sidecar.close()
+        return started, state
+
+    started, state = asyncio.run(run())
+    assert started.type == VoiceEventType.SESSION_STARTED
+    assert len(created) == 1
+    assert created[0].path == "/v1/streaming-stt/session"
+    assert created[0].config.sidecar_base_url == "http://streaming-stt.local:9000"
+    assert created[0].config.frontend_model == "nemotron-speech"
+    assert state.type == VoiceEventType.FRONTEND_STATE
+    assert state.payload["status"] == "fallback"
+    assert state.payload["reason"] == "kame_auto_text_fallback_selected"
+    assert state.payload["provider"] == "streaming_stt"
+    assert state.payload["fallback_provider"] == "streaming_stt"
+    assert state.payload["intent_source"] == "asr_fallback"
+    assert state.payload["transcript_source"] == "asr"
+    assert state.payload["streaming_stt"] is True
+    assert state.payload["interface_audio_input"] == "auto"
+
+
 def test_reference_sidecar_reports_explicit_kame_text_fallback_even_with_vllm():
     async def run():
         sidecar = ReferenceRealtimeVoiceSidecarSession(

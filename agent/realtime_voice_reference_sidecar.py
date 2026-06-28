@@ -332,6 +332,10 @@ class ReferenceRealtimeVoiceSidecarSession:
             and self.runtime.local_stt_enabled
             and self._kame_stt_reflex_fallback_allowed(config)
         )
+        kame_text_fallback_drives_reflex = bool(
+            config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
+            and (local_stt_drives_reflex or streaming_stt_drives_reflex)
+        )
         provider = (
             "openai_realtime"
             if self._openai_realtime is not None
@@ -344,7 +348,11 @@ class ReferenceRealtimeVoiceSidecarSession:
             else "local"
         )
         payload = {
-            "status": "fallback" if local_stt_drives_reflex else "degraded" if fallback_reason else "ready",
+            "status": (
+                "fallback"
+                if kame_text_fallback_drives_reflex
+                else "degraded" if fallback_reason else "ready"
+            ),
             "provider": provider,
             "model": _reported_frontend_model(
                 provider,
@@ -367,14 +375,14 @@ class ReferenceRealtimeVoiceSidecarSession:
                     "fallback_provider": provider,
                 }
             )
-            if local_stt_drives_reflex:
+            if kame_text_fallback_drives_reflex:
                 payload.update(
                     {
                         "intent_source": "asr_fallback",
                         "transcript_source": "asr",
                 }
             )
-        elif local_stt_drives_reflex:
+        elif kame_text_fallback_drives_reflex:
             payload.update(
                 {
                     "reason": "kame_text_fallback_requested",
@@ -976,15 +984,29 @@ class ReferenceRealtimeVoiceSidecarSession:
     def _should_start_streaming_stt(self, config: RealtimeVoiceSessionConfig) -> bool:
         if config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
             return True
-        return config.asr_mode.value in {"fallback", "debug", "speculative"} or (
-            _interface_audio_input(config) == "text_fallback"
+        interface_audio_input = _interface_audio_input(config)
+        return (
+            config.asr_mode.value in {"fallback", "debug", "speculative"}
+            or interface_audio_input == "text_fallback"
+            or (
+                interface_audio_input == "auto"
+                and not bool(self.runtime.vllm_base_url and self.runtime.vllm_model)
+            )
         )
 
     def _streaming_stt_drives_reflex(self) -> bool:
         config = self.config
         if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
             return True
-        return config.asr_mode.value == "fallback" or _interface_audio_input(config) == "text_fallback"
+        interface_audio_input = _interface_audio_input(config)
+        return (
+            config.asr_mode.value == "fallback"
+            or interface_audio_input == "text_fallback"
+            or (
+                interface_audio_input == "auto"
+                and not bool(self.runtime.vllm_base_url and self.runtime.vllm_model)
+            )
+        )
 
     def _suppress_streaming_stt_transcript_events(self) -> bool:
         config = self.config
@@ -1295,7 +1317,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
             return False
         interface_audio_input = _interface_audio_input(config)
-        return config.asr_mode.value == "fallback" or interface_audio_input == "text_fallback"
+        return config.asr_mode.value == "fallback" or interface_audio_input in {"auto", "text_fallback"}
 
     def _kame_audio_reflex_fallback_reason(self, config: RealtimeVoiceSessionConfig) -> str:
         if config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
@@ -1304,6 +1326,8 @@ class ReferenceRealtimeVoiceSidecarSession:
             return ""
         if _interface_audio_input(config) == "text_fallback":
             return ""
+        if _interface_audio_input(config) == "auto" and self._kame_stt_reflex_fallback_allowed(config):
+            return "kame_auto_text_fallback_selected"
         if self.runtime.vllm_base_url and self.runtime.vllm_model:
             return ""
         if self._streaming_stt is not None and self._kame_stt_reflex_fallback_allowed(config):
