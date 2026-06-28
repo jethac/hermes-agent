@@ -15,6 +15,7 @@ def _manifest(tmp_path: Path) -> dict:
         interface_candidate_models=None,
         interface_context_tokens=8192,
         interface_gpu_memory_utilization=0.18,
+        interface_max_audio_seconds=30.0,
         oracle_base_url="http://spark.local:8001/v1",
         oracle_model="gemma-4-26B-A4B-it",
         oracle_context_tokens=32768,
@@ -137,6 +138,7 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     assert manifest["roles"]["interface"]["candidate_models"][0]["priority"] == "default"
     assert manifest["roles"]["interface"]["candidate_models"][1]["priority"] == "comparison"
     assert manifest["roles"]["interface"]["limit_mm_per_prompt"] == {"audio": 1}
+    assert manifest["roles"]["interface"]["max_audio_seconds"] == 30.0
     assert manifest["roles"]["oracle"]["preferred_local_model"] == "gemma-4-26B-A4B-it"
     assert manifest["roles"]["asr"]["role"] == "oracle_verbatim_evidence"
     assert manifest["roles"]["asr"]["default_adapter"] == "loopback_smoke_bridge"
@@ -178,6 +180,54 @@ def test_rendered_compose_has_reflex_oracle_and_sidecar_without_secret_material(
     assert "sk_" not in compose
 
 
+def test_manifest_clamps_interface_max_audio_seconds(tmp_path):
+    high = realtime_voice_dgx_spark.build_dgx_spark_stack_manifest(
+        repo_dir=tmp_path / "repo",
+        hermes_home=tmp_path / "home",
+        interface_base_url="http://spark.local:8000/v1",
+        interface_model="gemma-4-E2B-it",
+        interface_candidate_models=None,
+        interface_context_tokens=8192,
+        interface_gpu_memory_utilization=0.18,
+        interface_max_audio_seconds=99.0,
+        oracle_base_url="http://spark.local:8001/v1",
+        oracle_model="gemma-4-26B-A4B-it",
+        oracle_context_tokens=32768,
+        oracle_gpu_memory_utilization=0.62,
+        sidecar_base_url="http://spark.local:8765",
+        asr_base_url="http://spark.local:8767",
+        tts_base_url="http://spark.local:8768",
+        asr_mode="on_escalation",
+        vllm_image="vllm/vllm-openai:gemma4-cu130",
+        hermes_image="ghcr.io/astral-sh/uv:python3.12-bookworm-slim",
+        model_cache_dir="/models",
+    )
+    low = realtime_voice_dgx_spark.build_dgx_spark_stack_manifest(
+        repo_dir=tmp_path / "repo",
+        hermes_home=tmp_path / "home",
+        interface_base_url="http://spark.local:8000/v1",
+        interface_model="gemma-4-E2B-it",
+        interface_candidate_models=None,
+        interface_context_tokens=8192,
+        interface_gpu_memory_utilization=0.18,
+        interface_max_audio_seconds=0.25,
+        oracle_base_url="http://spark.local:8001/v1",
+        oracle_model="gemma-4-26B-A4B-it",
+        oracle_context_tokens=32768,
+        oracle_gpu_memory_utilization=0.62,
+        sidecar_base_url="http://spark.local:8765",
+        asr_base_url="http://spark.local:8767",
+        tts_base_url="http://spark.local:8768",
+        asr_mode="on_escalation",
+        vllm_image="vllm/vllm-openai:gemma4-cu130",
+        hermes_image="ghcr.io/astral-sh/uv:python3.12-bookworm-slim",
+        model_cache_dir="/models",
+    )
+
+    assert high["roles"]["interface"]["max_audio_seconds"] == 30.0
+    assert low["roles"]["interface"]["max_audio_seconds"] == 1.0
+
+
 def test_writer_emits_headless_artifact_pack(tmp_path):
     output_dir = tmp_path / "out"
     written = realtime_voice_dgx_spark.write_dgx_spark_stack_artifacts(
@@ -208,17 +258,21 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert (output_dir / "validate-benchmark-evidence.sh").stat().st_mode & 0o111
 
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    env_example = (output_dir / ".env.example").read_text(encoding="utf-8")
     launch = (output_dir / "launch-local-stack.sh").read_text(encoding="utf-8")
     preflight = (output_dir / "preflight-local-stack.sh").read_text(encoding="utf-8")
     validate_benchmark = (output_dir / "validate-benchmark-evidence.sh").read_text(encoding="utf-8")
     matrix = json.loads((output_dir / "benchmark-matrix.json").read_text(encoding="utf-8"))
     evidence_template = json.loads((output_dir / "benchmark-evidence-template.json").read_text(encoding="utf-8"))
     assert manifest["roles"]["interface"]["audio_input"] == "native_audio"
+    assert manifest["roles"]["interface"]["max_audio_seconds"] == 30.0
     assert manifest["engine"]["max_spoken_sentences"] == 2
-    assert "HERMES_KAME_MAX_SPOKEN_SENTENCES=2" in (output_dir / ".env.example").read_text(encoding="utf-8")
+    assert "HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS=30.0" in env_example
+    assert "HERMES_KAME_MAX_SPOKEN_SENTENCES=2" in env_example
     assert "HERMES_DGX_SPARK_APPLY_PROFILE" in launch
     assert "hermes_cli.realtime_voice_profile --preset kame --apply" in launch
     assert "--kame-interface-audio-input native_audio" in launch
+    assert "--kame-interface-max-audio-seconds 30.0" in launch
     assert "--kame-asr-mode on_escalation" in launch
     assert "--kame-oracle-base-url http://spark.local:8001/v1" in launch
     assert '--kame-oracle-provider-name "KAME Local Oracle"' in launch
@@ -228,11 +282,13 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--check" in preflight
     assert "--output-dir \"$SCRIPT_DIR\"" in preflight
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in preflight
+    assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in preflight
     assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in preflight
     assert "--sidecar-base-url http://spark.local:8765" in preflight
     assert "usage: $0 /path/to/benchmark-evidence.json" in validate_benchmark
     assert "--benchmark-evidence \"$1\"" in validate_benchmark
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in validate_benchmark
+    assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in validate_benchmark
     assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in validate_benchmark
     assert [
         (candidate["model"], candidate["input"]) for candidate in matrix["candidates"]["interface"]

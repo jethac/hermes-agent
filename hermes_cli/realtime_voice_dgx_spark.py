@@ -17,6 +17,7 @@ DEFAULT_OUTPUT_DIR = "./artifacts/realtime-voice-dgx-spark"
 DEFAULT_INTERFACE_BASE_URL = "http://127.0.0.1:8000/v1"
 DEFAULT_INTERFACE_MODEL = "gemma-4-E2B-it"
 DEFAULT_INTERFACE_CANDIDATE_MODELS = ("gemma-4-E2B-it", "gemma-4-E4B-it")
+DEFAULT_INTERFACE_MAX_AUDIO_SECONDS = 30.0
 DEFAULT_ORACLE_BASE_URL = "http://127.0.0.1:8001/v1"
 DEFAULT_ORACLE_MODEL = "gemma-4-26B-A4B-it"
 DEFAULT_SIDECAR_BASE_URL = "http://127.0.0.1:8765"
@@ -71,6 +72,7 @@ def add_dgx_spark_arguments(parser: argparse.ArgumentParser) -> argparse.Argumen
     )
     parser.add_argument("--interface-context-tokens", type=int, default=8192)
     parser.add_argument("--interface-gpu-memory-utilization", type=float, default=0.18)
+    parser.add_argument("--interface-max-audio-seconds", type=float, default=DEFAULT_INTERFACE_MAX_AUDIO_SECONDS)
     parser.add_argument("--oracle-base-url", default=DEFAULT_ORACLE_BASE_URL)
     parser.add_argument("--oracle-model", default=DEFAULT_ORACLE_MODEL)
     parser.add_argument("--oracle-context-tokens", type=int, default=32768)
@@ -110,6 +112,7 @@ def run_from_args(args: argparse.Namespace) -> int:
         interface_candidate_models=args.interface_candidate_model,
         interface_context_tokens=int(args.interface_context_tokens),
         interface_gpu_memory_utilization=float(args.interface_gpu_memory_utilization),
+        interface_max_audio_seconds=float(args.interface_max_audio_seconds),
         oracle_base_url=str(args.oracle_base_url),
         oracle_model=str(args.oracle_model),
         oracle_context_tokens=int(args.oracle_context_tokens),
@@ -160,6 +163,7 @@ def build_dgx_spark_stack_manifest(
     interface_candidate_models: list[str] | tuple[str, ...] | None = None,
     interface_context_tokens: int,
     interface_gpu_memory_utilization: float,
+    interface_max_audio_seconds: float,
     oracle_base_url: str,
     oracle_model: str,
     oracle_context_tokens: int,
@@ -215,6 +219,7 @@ def build_dgx_spark_stack_manifest(
                 "models_url": interface_models_url,
                 "max_model_len": interface_context_tokens,
                 "gpu_memory_utilization": interface_gpu_memory_utilization,
+                "max_audio_seconds": _bounded_interface_max_audio_seconds(interface_max_audio_seconds),
                 "audio_input": "native_audio",
                 "limit_mm_per_prompt": {"audio": 1},
                 "routing": ["local", "defer", "oracle_direct", "reject_or_clarify"],
@@ -494,6 +499,7 @@ HERMES_HOME={manifest["hermes_home"]}
 HERMES_KAME_INTERFACE_MODEL={roles["interface"]["model"]}
 HERMES_KAME_INTERFACE_BASE_URL={roles["interface"]["base_url"]}
 HERMES_KAME_INTERFACE_AUDIO_INPUT=native_audio
+HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS={roles["interface"]["max_audio_seconds"]}
 HERMES_KAME_ASR_MODE={manifest["engine"]["asr_mode"]}
 HERMES_KAME_MAX_SPOKEN_SENTENCES={manifest["engine"]["max_spoken_sentences"]}
 
@@ -524,6 +530,7 @@ if [ "${{HERMES_DGX_SPARK_APPLY_PROFILE:-1}}" != "0" ]; then
     "$HERMES_PYTHON" -m hermes_cli.realtime_voice_profile --preset kame --apply \\
       --kame-reflex-model {manifest["roles"]["interface"]["model"]} \\
       --kame-interface-audio-input native_audio \\
+      --kame-interface-max-audio-seconds {manifest["roles"]["interface"]["max_audio_seconds"]} \\
       --kame-asr-mode {manifest["engine"]["asr_mode"]} \\
       --kame-preferred-local-oracle-model {manifest["roles"]["oracle"]["preferred_local_model"]} \\
       --kame-oracle-base-url {manifest["roles"]["oracle"]["base_url"]} \\
@@ -554,6 +561,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_PYTHON:=python}}"
 : "${{HERMES_KAME_INTERFACE_MODEL:={roles["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
+: "${{HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS:={roles["interface"]["max_audio_seconds"]}}}"
 : "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={roles["oracle"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={roles["asr"]["base_url"]}}}"
@@ -566,6 +574,7 @@ cd "$HERMES_REPO_DIR"
   --hermes-home "$HERMES_HOME" \\
   --interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL" \\
   --interface-model "$HERMES_KAME_INTERFACE_MODEL" \\
+  --interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS" \\
   --interface-context-tokens {roles["interface"]["max_model_len"]} \\
   --interface-gpu-memory-utilization {roles["interface"]["gpu_memory_utilization"]} \\
   --oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL" \\
@@ -599,6 +608,7 @@ fi
 : "${{HERMES_PYTHON:=python}}"
 : "${{HERMES_KAME_INTERFACE_MODEL:={roles["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
+: "${{HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS:={roles["interface"]["max_audio_seconds"]}}}"
 : "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={roles["oracle"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={roles["asr"]["base_url"]}}}"
@@ -611,6 +621,7 @@ cd "$HERMES_REPO_DIR"
   --hermes-home "$HERMES_HOME" \\
   --interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL" \\
   --interface-model "$HERMES_KAME_INTERFACE_MODEL" \\
+  --interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS" \\
   --interface-context-tokens {roles["interface"]["max_model_len"]} \\
   --interface-gpu-memory-utilization {roles["interface"]["gpu_memory_utilization"]} \\
   --oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL" \\
@@ -1283,6 +1294,20 @@ def _sidecar_expected_health_fields(roles: Mapping[str, Mapping[str, Any]]) -> d
         expected["capabilities.streaming_stt_bridge"] = True
         expected["frontend.streaming_stt_bridge.healthy"] = True
     return expected
+
+
+def _bounded_interface_max_audio_seconds(value: Any) -> float:
+    if isinstance(value, bool):
+        return DEFAULT_INTERFACE_MAX_AUDIO_SECONDS
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_INTERFACE_MAX_AUDIO_SECONDS
+    if parsed < 1.0:
+        return 1.0
+    if parsed > DEFAULT_INTERFACE_MAX_AUDIO_SECONDS:
+        return DEFAULT_INTERFACE_MAX_AUDIO_SECONDS
+    return parsed
 
 
 def _expected_field_misses(payload: Mapping[str, Any], expected_fields: Mapping[str, Any]) -> list[dict[str, Any]]:

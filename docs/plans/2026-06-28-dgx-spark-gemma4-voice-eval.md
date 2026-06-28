@@ -100,6 +100,7 @@ Useful variables:
 ```bash
 export DGX_SPARK_INTERFACE_BASE_URL=http://spark.local:8000/v1
 export DGX_SPARK_INTERFACE_MODEL=gemma-4-E2B-it
+export DGX_SPARK_INTERFACE_MAX_AUDIO_SECONDS=30
 export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8001/v1
 export DGX_SPARK_ORACLE_MODEL=gemma-4-26B-A4B-it
 export DGX_SPARK_SIDECAR_BASE_URL=http://spark.local:8765

@@ -136,6 +136,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="How the KAME reflex receives user input",
     )
     parser.add_argument(
+        "--kame-interface-max-audio-seconds",
+        type=float,
+        default=30.0,
+        help="Maximum native-audio segment seconds sent to the KAME reflex model",
+    )
+    parser.add_argument(
         "--kame-asr-mode",
         default="on_escalation",
         choices=("disabled", "on_escalation", "speculative", "debug", "fallback"),
@@ -224,6 +230,7 @@ def main(argv: list[str] | None = None) -> int:
             profile = build_kame_realtime_voice_profile(
                 reflex_model=str(args.kame_reflex_model or DEFAULT_KAME_REFLEX_MODEL),
                 interface_audio_input=str(args.kame_interface_audio_input or "auto"),
+                interface_max_audio_seconds=float(args.kame_interface_max_audio_seconds or 30.0),
                 asr_mode=str(args.kame_asr_mode or "on_escalation"),
                 preferred_local_oracle_model=str(
                     args.kame_preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL
@@ -710,6 +717,7 @@ def build_kame_realtime_voice_profile(
     *,
     reflex_model: str = DEFAULT_KAME_REFLEX_MODEL,
     interface_audio_input: str = "auto",
+    interface_max_audio_seconds: float = 30.0,
     asr_mode: str = "on_escalation",
     preferred_local_oracle_model: str = DEFAULT_KAME_ORACLE_MODEL,
     voice_response_policy: str = "sentence_cap",
@@ -737,6 +745,12 @@ def build_kame_realtime_voice_profile(
     response_policy = str(voice_response_policy or "sentence_cap").strip().lower().replace("-", "_")
     if response_policy not in {"sentence_cap", "brief_summary", "full"}:
         raise ValueError("--kame-voice-response-policy must be sentence_cap, brief_summary, or full")
+    try:
+        max_audio_seconds = float(interface_max_audio_seconds)
+    except (TypeError, ValueError):
+        raise ValueError("--kame-interface-max-audio-seconds must be a number")
+    if max_audio_seconds < 1.0 or max_audio_seconds > 30.0:
+        raise ValueError("--kame-interface-max-audio-seconds must be between 1 and 30")
 
     oracle_url = _clean_url(oracle_base_url)
     oracle_model = str(preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL)
@@ -759,7 +773,7 @@ def build_kame_realtime_voice_profile(
         "interface_temperature": 0.2,
         "interface_max_output_tokens": 160,
         "interface_timeout_seconds": 0.8,
-        "interface_max_audio_seconds": 30.0,
+        "interface_max_audio_seconds": max_audio_seconds,
         "interface_audio_input": audio_mode,
         "asr_mode": asr,
         "asr_provider": "streaming_stt",

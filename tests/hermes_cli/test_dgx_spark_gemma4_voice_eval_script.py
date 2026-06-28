@@ -13,6 +13,8 @@ def test_dgx_spark_eval_script_generates_full_kame_launch_pack():
     assert '--output-dir "$KAME_STACK_DIR"' in text
     assert 'DGX_SPARK_KAME_CHECK:-0' in text
     assert "--interface-base-url" in text
+    assert "--interface-max-audio-seconds" in text
+    assert "DGX_SPARK_INTERFACE_MAX_AUDIO_SECONDS" in text
     assert "--oracle-base-url" in text
     assert "--asr-base-url" in text
     assert "--tts-base-url" in text

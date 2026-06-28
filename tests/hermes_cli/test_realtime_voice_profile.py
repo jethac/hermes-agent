@@ -314,6 +314,35 @@ def test_kame_preset_can_print_local_oracle_provider_profile(capsys):
     assert realtime["oracle_api_mode"] == "chat_completions"
 
 
+def test_kame_preset_can_override_interface_max_audio_seconds(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--kame-interface-max-audio-seconds",
+            "12",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    assert data["voice"]["realtime"]["interface_max_audio_seconds"] == 12.0
+
+
+def test_kame_preset_rejects_invalid_interface_max_audio_seconds(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--kame-interface-max-audio-seconds",
+            "31",
+        ]
+    )
+
+    assert result == 1
+    assert "--kame-interface-max-audio-seconds must be between 1 and 30" in capsys.readouterr().err
+
+
 def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     profile = realtime_voice_profile.build_kame_realtime_voice_profile(
         reflex_model="gemma-4-E2B-it",
