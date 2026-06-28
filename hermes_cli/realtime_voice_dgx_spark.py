@@ -17,6 +17,7 @@ from agent.realtime_voice_kame import kame_reflex_instruction_text, kame_reflex_
 
 
 DEFAULT_OUTPUT_DIR = "./artifacts/realtime-voice-dgx-spark"
+DEFAULT_INTERFACE_PROVIDER = "gemma4"
 DEFAULT_INTERFACE_BASE_URL = "http://127.0.0.1:8000/v1"
 DEFAULT_INTERFACE_MODEL = "gemma-4-E2B-it"
 DEFAULT_INTERFACE_CANDIDATE_MODELS = ("gemma-4-E2B-it", "gemma-4-E4B-it")
@@ -27,6 +28,8 @@ DEFAULT_ORACLE_MODEL = "gemma-4-26B-A4B-it"
 DEFAULT_SIDECAR_BASE_URL = "http://127.0.0.1:8765"
 DEFAULT_ASR_BASE_URL = "http://127.0.0.1:8767"
 DEFAULT_TTS_BASE_URL = "http://127.0.0.1:8768"
+DEFAULT_ASR_PROVIDER = "streaming_stt"
+DEFAULT_TTS_PROVIDER = "streaming_tts"
 DEFAULT_ASR_MODULE = "hermes_cli.realtime_voice_loopback_bridge"
 DEFAULT_TTS_MODULE = "hermes_cli.realtime_voice_loopback_bridge"
 DEFAULT_ASR_MODEL = "oracle-verbatim-asr"
@@ -74,6 +77,11 @@ def add_dgx_spark_arguments(parser: argparse.ArgumentParser) -> argparse.Argumen
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--repo-dir", default=".")
     parser.add_argument("--hermes-home", default="~/.hermes")
+    parser.add_argument(
+        "--interface-provider",
+        default=DEFAULT_INTERFACE_PROVIDER,
+        help="Config/status provider label for the KAME interface/reflex model",
+    )
     parser.add_argument("--interface-base-url", default=DEFAULT_INTERFACE_BASE_URL)
     parser.add_argument("--interface-model", default=DEFAULT_INTERFACE_MODEL)
     parser.add_argument(
@@ -100,6 +108,16 @@ def add_dgx_spark_arguments(parser: argparse.ArgumentParser) -> argparse.Argumen
     parser.add_argument("--sidecar-base-url", default=DEFAULT_SIDECAR_BASE_URL)
     parser.add_argument("--asr-base-url", default=DEFAULT_ASR_BASE_URL)
     parser.add_argument("--tts-base-url", default=DEFAULT_TTS_BASE_URL)
+    parser.add_argument(
+        "--asr-provider",
+        default=DEFAULT_ASR_PROVIDER,
+        help="Config/status provider label for the oracle-verbatim ASR lane",
+    )
+    parser.add_argument(
+        "--tts-provider",
+        default=DEFAULT_TTS_PROVIDER,
+        help="Config/status provider label for the spoken-output TTS lane",
+    )
     parser.add_argument("--asr-module", default=DEFAULT_ASR_MODULE)
     parser.add_argument("--tts-module", default=DEFAULT_TTS_MODULE)
     parser.add_argument("--asr-model", default=DEFAULT_ASR_MODEL)
@@ -133,6 +151,7 @@ def run_from_args(args: argparse.Namespace) -> int:
     manifest = build_dgx_spark_stack_manifest(
         repo_dir=Path(args.repo_dir).expanduser().resolve(),
         hermes_home=Path(args.hermes_home).expanduser(),
+        interface_provider=str(args.interface_provider),
         interface_base_url=str(args.interface_base_url),
         interface_model=str(args.interface_model),
         interface_api_key_env=str(args.interface_api_key_env),
@@ -147,6 +166,8 @@ def run_from_args(args: argparse.Namespace) -> int:
         sidecar_base_url=str(args.sidecar_base_url),
         asr_base_url=str(args.asr_base_url),
         tts_base_url=str(args.tts_base_url),
+        asr_provider=str(args.asr_provider),
+        tts_provider=str(args.tts_provider),
         asr_module=str(args.asr_module),
         tts_module=str(args.tts_module),
         asr_model=str(args.asr_model),
@@ -191,8 +212,9 @@ def build_dgx_spark_stack_manifest(
     *,
     repo_dir: Path,
     hermes_home: Path,
-    interface_base_url: str,
-    interface_model: str,
+    interface_provider: str = DEFAULT_INTERFACE_PROVIDER,
+    interface_base_url: str = DEFAULT_INTERFACE_BASE_URL,
+    interface_model: str = DEFAULT_INTERFACE_MODEL,
     interface_api_key_env: str = DEFAULT_INTERFACE_API_KEY_ENV,
     interface_candidate_models: list[str] | tuple[str, ...] | None = None,
     interface_context_tokens: int = 8192,
@@ -205,6 +227,8 @@ def build_dgx_spark_stack_manifest(
     sidecar_base_url: str = DEFAULT_SIDECAR_BASE_URL,
     asr_base_url: str = DEFAULT_ASR_BASE_URL,
     tts_base_url: str = DEFAULT_TTS_BASE_URL,
+    asr_provider: str = DEFAULT_ASR_PROVIDER,
+    tts_provider: str = DEFAULT_TTS_PROVIDER,
     asr_module: str = DEFAULT_ASR_MODULE,
     tts_module: str = DEFAULT_TTS_MODULE,
     asr_model: str = DEFAULT_ASR_MODEL,
@@ -228,6 +252,9 @@ def build_dgx_spark_stack_manifest(
     tts_model_name = _clean_nonempty(tts_model, default=DEFAULT_TTS_MODEL)
     asr_adapter_name = _clean_nonempty(asr_adapter, default=DEFAULT_ASR_ADAPTER)
     tts_adapter_name = _clean_nonempty(tts_adapter, default=DEFAULT_TTS_ADAPTER)
+    interface_provider_name = _clean_nonempty(interface_provider, default=DEFAULT_INTERFACE_PROVIDER)
+    asr_provider_name = _clean_nonempty(asr_provider, default=DEFAULT_ASR_PROVIDER)
+    tts_provider_name = _clean_nonempty(tts_provider, default=DEFAULT_TTS_PROVIDER)
     return {
         "kind": "kame_dgx_spark_stack",
         "version": 1,
@@ -276,7 +303,8 @@ def build_dgx_spark_stack_manifest(
         },
         "roles": {
             "interface": {
-                "provider": "openai_compatible_vllm",
+                "provider": interface_provider_name,
+                "implementation": "openai_compatible_vllm",
                 "model": interface_model,
                 "candidate_models": [
                     {
@@ -317,6 +345,7 @@ def build_dgx_spark_stack_manifest(
             },
             "asr": {
                 "role": "oracle_verbatim_evidence",
+                "provider": asr_provider_name,
                 "mode": asr_mode,
                 "base_url": asr_base_url,
                 "health_url": asr_health_url,
@@ -329,6 +358,7 @@ def build_dgx_spark_stack_manifest(
             },
             "tts": {
                 "role": "spoken_output",
+                "provider": tts_provider_name,
                 "base_url": tts_base_url,
                 "health_url": tts_health_url,
                 "module": tts_module_name,
@@ -490,14 +520,17 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - ${{HERMES_HOME:-{manifest["hermes_home"]}}}:/root/.hermes
     environment:
       HERMES_HOME: /root/.hermes
+      HERMES_KAME_INTERFACE_PROVIDER: {interface["provider"]}
       HERMES_KAME_INTERFACE_BASE_URL: {interface_internal_url}
       HERMES_KAME_INTERFACE_API_KEY: ${{{interface["api_key_env"]}:-}}
       HERMES_VOICE_VLLM_BASE_URL: {interface_internal_url}
       HERMES_VOICE_VLLM_TOKEN: ${{{interface["api_key_env"]}:-}}
       HERMES_VOICE_VLLM_MODEL: ${{HERMES_KAME_INTERFACE_MODEL:-{interface["model"]}}}
       HERMES_VOICE_STREAMING_STT_BASE_URL: {asr_internal_url}
+      HERMES_DGX_SPARK_ASR_PROVIDER: {asr["provider"]}
       HERMES_VOICE_STREAMING_STT_MODEL: ${{HERMES_VOICE_STREAMING_STT_MODEL:-{asr["model"]}}}
       HERMES_VOICE_STREAMING_TTS_BASE_URL: {tts_internal_url}
+      HERMES_DGX_SPARK_TTS_PROVIDER: {tts["provider"]}
       HERMES_VOICE_STREAMING_TTS_MODEL: ${{HERMES_VOICE_STREAMING_TTS_MODEL:-{tts["model"]}}}
     command:
       - uv
@@ -536,6 +569,7 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - ${{HERMES_HOME:-{manifest["hermes_home"]}}}:/root/.hermes
     environment:
       HERMES_HOME: /root/.hermes
+      HERMES_DGX_SPARK_ASR_PROVIDER: {asr["provider"]}
       HERMES_DGX_SPARK_ASR_ADAPTER: {asr["adapter"]}
       HERMES_VOICE_STREAMING_STT_MODEL: {asr["model"]}
 {asr_bridge_env.rstrip()}
@@ -564,6 +598,7 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - ${{HERMES_HOME:-{manifest["hermes_home"]}}}:/root/.hermes
     environment:
       HERMES_HOME: /root/.hermes
+      HERMES_DGX_SPARK_TTS_PROVIDER: {tts["provider"]}
       HERMES_DGX_SPARK_TTS_ADAPTER: {tts["adapter"]}
       HERMES_VOICE_STREAMING_TTS_MODEL: {tts["model"]}
 {tts_bridge_env.rstrip()}
@@ -605,6 +640,7 @@ HERMES_REPO_DIR={manifest["repo_dir"]}
 HERMES_HOME={manifest["hermes_home"]}
 HERMES_PYTHON={DEFAULT_SCRIPT_PYTHON}
 
+HERMES_KAME_INTERFACE_PROVIDER={roles["interface"]["provider"]}
 HERMES_KAME_INTERFACE_MODEL={roles["interface"]["model"]}
 HERMES_KAME_INTERFACE_BASE_URL={roles["interface"]["base_url"]}
 HERMES_KAME_INTERFACE_API_KEY_ENV={roles["interface"]["api_key_env"]}
@@ -617,10 +653,12 @@ HERMES_KAME_MAX_SPOKEN_SENTENCES={manifest["engine"]["max_spoken_sentences"]}
 HERMES_KAME_ORACLE_MODEL={roles["oracle"]["preferred_local_model"]}
 HERMES_KAME_ORACLE_BASE_URL={roles["oracle"]["base_url"]}
 HERMES_VOICE_STREAMING_STT_BASE_URL={roles["asr"]["base_url"]}
+HERMES_DGX_SPARK_ASR_PROVIDER={roles["asr"]["provider"]}
 HERMES_VOICE_STREAMING_STT_MODEL={roles["asr"]["model"]}
 HERMES_DGX_SPARK_ASR_MODULE={roles["asr"]["module"]}
 HERMES_DGX_SPARK_ASR_ADAPTER={roles["asr"]["adapter"]}
 HERMES_VOICE_STREAMING_TTS_BASE_URL={roles["tts"]["base_url"]}
+HERMES_DGX_SPARK_TTS_PROVIDER={roles["tts"]["provider"]}
 HERMES_VOICE_STREAMING_TTS_MODEL={roles["tts"]["model"]}
 HERMES_DGX_SPARK_TTS_MODULE={roles["tts"]["module"]}
 HERMES_DGX_SPARK_TTS_ADAPTER={roles["tts"]["adapter"]}
@@ -687,6 +725,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_REPO_DIR:={manifest["repo_dir"]}}}"
 : "${{HERMES_HOME:={manifest["hermes_home"]}}}"
 : "${{HERMES_PYTHON:={DEFAULT_SCRIPT_PYTHON}}}"
+: "${{HERMES_KAME_INTERFACE_PROVIDER:={manifest["roles"]["interface"]["provider"]}}}"
 : "${{HERMES_KAME_INTERFACE_MODEL:={manifest["roles"]["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={manifest["roles"]["interface"]["base_url"]}}}"
 : "${{HERMES_KAME_INTERFACE_API_KEY_ENV:={manifest["roles"]["interface"]["api_key_env"]}}}"
@@ -694,7 +733,9 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_KAME_ASR_MODE:={manifest["engine"]["asr_mode"]}}}"
 : "${{HERMES_KAME_ORACLE_MODEL:={manifest["roles"]["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={manifest["roles"]["oracle"]["base_url"]}}}"
+: "${{HERMES_DGX_SPARK_ASR_PROVIDER:={manifest["roles"]["asr"]["provider"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_MODEL:={manifest["roles"]["asr"]["model"]}}}"
+: "${{HERMES_DGX_SPARK_TTS_PROVIDER:={manifest["roles"]["tts"]["provider"]}}}"
 : "${{HERMES_VOICE_STREAMING_TTS_MODEL:={manifest["roles"]["tts"]["model"]}}}"
 export HERMES_REPO_DIR HERMES_HOME
 
@@ -702,15 +743,18 @@ if [ "${{HERMES_DGX_SPARK_APPLY_PROFILE:-1}}" != "0" ]; then
   (
     cd "$HERMES_REPO_DIR"
     "$HERMES_PYTHON" -m hermes_cli.realtime_voice_profile --preset kame --apply \\
+      --kame-interface-provider "$HERMES_KAME_INTERFACE_PROVIDER" \\
       --kame-reflex-model "$HERMES_KAME_INTERFACE_MODEL" \\
       --kame-interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL" \\
       --kame-interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV" \\
       --kame-interface-audio-input native_audio \\
       --kame-interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS" \\
       --kame-asr-mode "$HERMES_KAME_ASR_MODE" \\
+      --kame-asr-provider "$HERMES_DGX_SPARK_ASR_PROVIDER" \\
       --kame-preferred-local-oracle-model "$HERMES_KAME_ORACLE_MODEL" \\
       --kame-oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL" \\
       --kame-oracle-provider-name "KAME Local Oracle" \\
+      --kame-tts-provider "$HERMES_DGX_SPARK_TTS_PROVIDER" \\
       --streaming-stt-base-url {manifest["roles"]["asr"]["base_url"]} \\
       --streaming-stt-model "$HERMES_VOICE_STREAMING_STT_MODEL" \\
       --streaming-tts-base-url {manifest["roles"]["tts"]["base_url"]} \\
@@ -737,6 +781,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_REPO_DIR:={manifest["repo_dir"]}}}"
 : "${{HERMES_HOME:={manifest["hermes_home"]}}}"
 : "${{HERMES_PYTHON:={DEFAULT_SCRIPT_PYTHON}}}"
+: "${{HERMES_KAME_INTERFACE_PROVIDER:={roles["interface"]["provider"]}}}"
 : "${{HERMES_KAME_INTERFACE_MODEL:={roles["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
 : "${{HERMES_KAME_INTERFACE_API_KEY_ENV:={roles["interface"]["api_key_env"]}}}"
@@ -745,10 +790,12 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={roles["oracle"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={roles["asr"]["base_url"]}}}"
+: "${{HERMES_DGX_SPARK_ASR_PROVIDER:={roles["asr"]["provider"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_MODEL:={roles["asr"]["model"]}}}"
 : "${{HERMES_DGX_SPARK_ASR_MODULE:={roles["asr"]["module"]}}}"
 : "${{HERMES_DGX_SPARK_ASR_ADAPTER:={roles["asr"]["adapter"]}}}"
 : "${{HERMES_VOICE_STREAMING_TTS_BASE_URL:={roles["tts"]["base_url"]}}}"
+: "${{HERMES_DGX_SPARK_TTS_PROVIDER:={roles["tts"]["provider"]}}}"
 : "${{HERMES_VOICE_STREAMING_TTS_MODEL:={roles["tts"]["model"]}}}"
 : "${{HERMES_DGX_SPARK_TTS_MODULE:={roles["tts"]["module"]}}}"
 : "${{HERMES_DGX_SPARK_TTS_ADAPTER:={roles["tts"]["adapter"]}}}"
@@ -758,6 +805,7 @@ cd "$HERMES_REPO_DIR"
   --output-dir "$SCRIPT_DIR" \\
   --repo-dir "$HERMES_REPO_DIR" \\
   --hermes-home "$HERMES_HOME" \\
+  --interface-provider "$HERMES_KAME_INTERFACE_PROVIDER" \\
   --interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL" \\
   --interface-model "$HERMES_KAME_INTERFACE_MODEL" \\
   --interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV" \\
@@ -770,10 +818,12 @@ cd "$HERMES_REPO_DIR"
   --oracle-gpu-memory-utilization {roles["oracle"]["gpu_memory_utilization"]} \\
   --sidecar-base-url {roles["sidecar"]["base_url"]} \\
   --asr-base-url "$HERMES_VOICE_STREAMING_STT_BASE_URL" \\
+  --asr-provider "$HERMES_DGX_SPARK_ASR_PROVIDER" \\
   --asr-model "$HERMES_VOICE_STREAMING_STT_MODEL" \\
   --asr-module "$HERMES_DGX_SPARK_ASR_MODULE" \\
   --asr-adapter "$HERMES_DGX_SPARK_ASR_ADAPTER" \\
   --tts-base-url "$HERMES_VOICE_STREAMING_TTS_BASE_URL" \\
+  --tts-provider "$HERMES_DGX_SPARK_TTS_PROVIDER" \\
   --tts-model "$HERMES_VOICE_STREAMING_TTS_MODEL" \\
   --tts-module "$HERMES_DGX_SPARK_TTS_MODULE" \\
   --tts-adapter "$HERMES_DGX_SPARK_TTS_ADAPTER" \\
@@ -799,6 +849,7 @@ fi
 : "${{HERMES_REPO_DIR:={manifest["repo_dir"]}}}"
 : "${{HERMES_HOME:={manifest["hermes_home"]}}}"
 : "${{HERMES_PYTHON:={DEFAULT_SCRIPT_PYTHON}}}"
+: "${{HERMES_KAME_INTERFACE_PROVIDER:={roles["interface"]["provider"]}}}"
 : "${{HERMES_KAME_INTERFACE_MODEL:={roles["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
 : "${{HERMES_KAME_INTERFACE_API_KEY_ENV:={roles["interface"]["api_key_env"]}}}"
@@ -807,10 +858,12 @@ fi
 : "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={roles["oracle"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={roles["asr"]["base_url"]}}}"
+: "${{HERMES_DGX_SPARK_ASR_PROVIDER:={roles["asr"]["provider"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_MODEL:={roles["asr"]["model"]}}}"
 : "${{HERMES_DGX_SPARK_ASR_MODULE:={roles["asr"]["module"]}}}"
 : "${{HERMES_DGX_SPARK_ASR_ADAPTER:={roles["asr"]["adapter"]}}}"
 : "${{HERMES_VOICE_STREAMING_TTS_BASE_URL:={roles["tts"]["base_url"]}}}"
+: "${{HERMES_DGX_SPARK_TTS_PROVIDER:={roles["tts"]["provider"]}}}"
 : "${{HERMES_VOICE_STREAMING_TTS_MODEL:={roles["tts"]["model"]}}}"
 : "${{HERMES_DGX_SPARK_TTS_MODULE:={roles["tts"]["module"]}}}"
 : "${{HERMES_DGX_SPARK_TTS_ADAPTER:={roles["tts"]["adapter"]}}}"
@@ -820,6 +873,7 @@ cd "$HERMES_REPO_DIR"
   --output-dir "$SCRIPT_DIR" \\
   --repo-dir "$HERMES_REPO_DIR" \\
   --hermes-home "$HERMES_HOME" \\
+  --interface-provider "$HERMES_KAME_INTERFACE_PROVIDER" \\
   --interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL" \\
   --interface-model "$HERMES_KAME_INTERFACE_MODEL" \\
   --interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV" \\
@@ -832,10 +886,12 @@ cd "$HERMES_REPO_DIR"
   --oracle-gpu-memory-utilization {roles["oracle"]["gpu_memory_utilization"]} \\
   --sidecar-base-url {roles["sidecar"]["base_url"]} \\
   --asr-base-url "$HERMES_VOICE_STREAMING_STT_BASE_URL" \\
+  --asr-provider "$HERMES_DGX_SPARK_ASR_PROVIDER" \\
   --asr-model "$HERMES_VOICE_STREAMING_STT_MODEL" \\
   --asr-module "$HERMES_DGX_SPARK_ASR_MODULE" \\
   --asr-adapter "$HERMES_DGX_SPARK_ASR_ADAPTER" \\
   --tts-base-url "$HERMES_VOICE_STREAMING_TTS_BASE_URL" \\
+  --tts-provider "$HERMES_DGX_SPARK_TTS_PROVIDER" \\
   --tts-model "$HERMES_VOICE_STREAMING_TTS_MODEL" \\
   --tts-module "$HERMES_DGX_SPARK_TTS_MODULE" \\
   --tts-adapter "$HERMES_DGX_SPARK_TTS_ADAPTER" \\
@@ -935,6 +991,7 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                 {
                     "role": "oracle_verbatim_asr",
                     "mode": roles["asr"]["mode"],
+                    "provider": roles["asr"]["provider"],
                     "model": roles["asr"]["model"],
                     "adapter": roles["asr"]["adapter"],
                     "module": roles["asr"]["module"],
@@ -949,6 +1006,7 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                 },
                 {
                     "role": "tts",
+                    "provider": roles["tts"]["provider"],
                     "model": roles["tts"]["model"],
                     "adapter": roles["tts"]["adapter"],
                     "module": roles["tts"]["module"],
@@ -1047,6 +1105,7 @@ def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> li
                 "category": "speech",
                 "role": candidate.get("role"),
                 "mode": candidate.get("mode"),
+                "provider": candidate.get("provider"),
                 "model": candidate.get("model"),
                 "adapter": candidate.get("adapter"),
                 "module": candidate.get("module"),

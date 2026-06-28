@@ -21,6 +21,8 @@ def _manifest(tmp_path: Path, *, production_speech: bool = False) -> dict:
             "tts_module": PRODUCTION_TTS_MODULE,
             "asr_model": PRODUCTION_ASR_MODEL,
             "tts_model": PRODUCTION_TTS_MODEL,
+            "asr_provider": "nvidia_speech",
+            "tts_provider": "nvidia_speech",
             "asr_adapter": PRODUCTION_ASR_ADAPTER,
             "tts_adapter": PRODUCTION_TTS_ADAPTER,
         }
@@ -291,6 +293,8 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     }
     assert manifest["model_assumptions"]["vllm_multimodal_audio_prompt_limit"]["limit_mm_per_prompt"] == {"audio": 1}
     assert manifest["model_assumptions"]["oracle_authority"]["model"] == "gemma-4-26B-A4B-it"
+    assert manifest["roles"]["interface"]["provider"] == "gemma4"
+    assert manifest["roles"]["interface"]["implementation"] == "openai_compatible_vllm"
     assert manifest["roles"]["interface"]["model"] == "gemma-4-E2B-it"
     assert [entry["model"] for entry in manifest["roles"]["interface"]["candidate_models"]] == [
         "gemma-4-E2B-it",
@@ -303,12 +307,14 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     assert manifest["roles"]["interface"]["api_key_env"] == "HERMES_KAME_INTERFACE_API_KEY"
     assert manifest["roles"]["oracle"]["preferred_local_model"] == "gemma-4-26B-A4B-it"
     assert manifest["roles"]["asr"]["role"] == "oracle_verbatim_evidence"
+    assert manifest["roles"]["asr"]["provider"] == "streaming_stt"
     assert manifest["roles"]["asr"]["adapter"] == "loopback_smoke_bridge"
     assert manifest["roles"]["asr"]["model"] == "oracle-verbatim-asr"
     assert manifest["roles"]["asr"]["module"] == "hermes_cli.realtime_voice_loopback_bridge"
     assert manifest["roles"]["asr"]["protocol_smoke_only"] is True
     assert manifest["roles"]["asr"]["production_replacement"] == "local_streaming_asr"
     assert manifest["roles"]["asr"]["feeds_reflex"] is False
+    assert manifest["roles"]["tts"]["provider"] == "streaming_tts"
     assert manifest["roles"]["tts"]["adapter"] == "loopback_smoke_bridge"
     assert manifest["roles"]["tts"]["model"] == "local-streaming-tts"
     assert manifest["roles"]["tts"]["module"] == "hermes_cli.realtime_voice_loopback_bridge"
@@ -335,6 +341,7 @@ def test_rendered_compose_has_reflex_oracle_and_sidecar_without_secret_material(
     assert '{"audio":1}' in compose
     assert "HERMES_VOICE_STREAMING_STT_BASE_URL" in compose
     assert "HERMES_KAME_INTERFACE_BASE_URL: http://kame-interface-vllm:8000/v1" in compose
+    assert "HERMES_KAME_INTERFACE_PROVIDER: gemma4" in compose
     assert "HERMES_KAME_INTERFACE_API_KEY: ${HERMES_KAME_INTERFACE_API_KEY:-}" in compose
     assert "HERMES_VOICE_VLLM_BASE_URL: http://kame-interface-vllm:8000/v1" in compose
     assert "HERMES_VOICE_VLLM_TOKEN: ${HERMES_KAME_INTERFACE_API_KEY:-}" in compose
@@ -350,7 +357,9 @@ def test_rendered_compose_has_reflex_oracle_and_sidecar_without_secret_material(
     assert "HERMES_VOICE_STREAMING_TTS_BASE_URL: http://spark.local:8768" not in compose
     assert "oracle-verbatim-asr" in compose
     assert "local-streaming-tts" in compose
+    assert "HERMES_DGX_SPARK_ASR_PROVIDER: streaming_stt" in compose
     assert "HERMES_DGX_SPARK_ASR_ADAPTER: loopback_smoke_bridge" in compose
+    assert "HERMES_DGX_SPARK_TTS_PROVIDER: streaming_tts" in compose
     assert "HERMES_DGX_SPARK_TTS_ADAPTER: loopback_smoke_bridge" in compose
     assert "hermes_cli.realtime_voice_loopback_bridge" in compose
     assert "interface-secret-token" not in compose
@@ -362,10 +371,14 @@ def test_rendered_compose_wires_production_speech_bridge_upstreams(tmp_path):
     compose = realtime_voice_dgx_spark.render_dgx_spark_compose(manifest)
     env_example = realtime_voice_dgx_spark.render_dgx_spark_env_example(manifest)
 
+    assert manifest["roles"]["asr"]["provider"] == "nvidia_speech"
+    assert manifest["roles"]["tts"]["provider"] == "nvidia_speech"
     assert PRODUCTION_ASR_MODULE in compose
     assert PRODUCTION_TTS_MODULE in compose
     assert "HERMES_VOICE_STREAMING_STT_MODEL: nemotron-speech-streaming-0.6b" in compose
     assert "HERMES_VOICE_STREAMING_TTS_MODEL: magpie-local-streaming-tts" in compose
+    assert "HERMES_DGX_SPARK_ASR_PROVIDER: nvidia_speech" in compose
+    assert "HERMES_DGX_SPARK_TTS_PROVIDER: nvidia_speech" in compose
     assert "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL: ${HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL:-}" in compose
     assert "HERMES_NEMOTRON_SPEECH_UPSTREAM_TOKEN: ${HERMES_NEMOTRON_SPEECH_UPSTREAM_TOKEN:-}" in compose
     assert "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL: ${HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL:-}" in compose
@@ -376,6 +389,8 @@ def test_rendered_compose_wires_production_speech_bridge_upstreams(tmp_path):
     assert "      - ${HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL:-}" in compose
     assert "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL=" in env_example
     assert "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL=" in env_example
+    assert "HERMES_DGX_SPARK_ASR_PROVIDER=nvidia_speech" in env_example
+    assert "HERMES_DGX_SPARK_TTS_PROVIDER=nvidia_speech" in env_example
     assert "sk_" not in compose
     assert "sk_" not in env_example
 
@@ -466,32 +481,40 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     matrix = json.loads((output_dir / "benchmark-matrix.json").read_text(encoding="utf-8"))
     evidence_template = json.loads((output_dir / "benchmark-evidence-template.json").read_text(encoding="utf-8"))
     assert manifest["roles"]["interface"]["audio_input"] == "native_audio"
+    assert manifest["roles"]["interface"]["provider"] == "gemma4"
     assert manifest["roles"]["interface"]["max_audio_seconds"] == 30.0
     assert manifest["engine"]["max_spoken_sentences"] == 2
+    assert "HERMES_KAME_INTERFACE_PROVIDER=gemma4" in env_example
     assert "HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS=30.0" in env_example
     assert "HERMES_KAME_INTERFACE_API_KEY_ENV=HERMES_KAME_INTERFACE_API_KEY" in env_example
     assert "HERMES_KAME_INTERFACE_API_KEY=" in env_example
     assert "HERMES_PYTHON=python3" in env_example
     assert "HERMES_KAME_MAX_SPOKEN_SENTENCES=2" in env_example
+    assert "HERMES_DGX_SPARK_ASR_PROVIDER=streaming_stt" in env_example
     assert "HERMES_DGX_SPARK_ASR_ADAPTER=loopback_smoke_bridge" in env_example
+    assert "HERMES_DGX_SPARK_TTS_PROVIDER=streaming_tts" in env_example
     assert "HERMES_DGX_SPARK_TTS_ADAPTER=loopback_smoke_bridge" in env_example
     assert "HERMES_VOICE_VLLM_MODEL: ${HERMES_KAME_INTERFACE_MODEL:-gemma-4-E2B-it}" in compose
     assert "- ${HERMES_KAME_INTERFACE_MODEL:-gemma-4-E2B-it}" in compose
     assert "HERMES_DGX_SPARK_APPLY_PROFILE" in launch
     assert "hermes_cli.realtime_voice_profile --preset kame --apply" in launch
     assert ': "${HERMES_PYTHON:=python3}"' in launch
+    assert ': "${HERMES_KAME_INTERFACE_PROVIDER:=gemma4}"' in launch
     assert ': "${HERMES_KAME_INTERFACE_MODEL:=gemma-4-E2B-it}"' in launch
     assert ': "${HERMES_KAME_INTERFACE_API_KEY_ENV:=HERMES_KAME_INTERFACE_API_KEY}"' in launch
     assert ': "${HERMES_KAME_ORACLE_MODEL:=gemma-4-26B-A4B-it}"' in launch
     assert '--kame-reflex-model "$HERMES_KAME_INTERFACE_MODEL"' in launch
+    assert '--kame-interface-provider "$HERMES_KAME_INTERFACE_PROVIDER"' in launch
     assert '--kame-interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV"' in launch
     assert "--kame-interface-audio-input native_audio" in launch
     assert '--kame-interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL"' in launch
     assert '--kame-interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS"' in launch
     assert '--kame-asr-mode "$HERMES_KAME_ASR_MODE"' in launch
+    assert '--kame-asr-provider "$HERMES_DGX_SPARK_ASR_PROVIDER"' in launch
     assert '--kame-preferred-local-oracle-model "$HERMES_KAME_ORACLE_MODEL"' in launch
     assert '--kame-oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL"' in launch
     assert '--kame-oracle-provider-name "KAME Local Oracle"' in launch
+    assert '--kame-tts-provider "$HERMES_DGX_SPARK_TTS_PROVIDER"' in launch
     assert '--streaming-stt-model "$HERMES_VOICE_STREAMING_STT_MODEL"' in launch
     assert '--streaming-tts-model "$HERMES_VOICE_STREAMING_TTS_MODEL"' in launch
     assert "--sidecar-host spark.local" in launch
@@ -500,27 +523,35 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--check" in preflight
     assert "--output-dir \"$SCRIPT_DIR\"" in preflight
     assert ': "${HERMES_PYTHON:=python3}"' in preflight
+    assert ': "${HERMES_KAME_INTERFACE_PROVIDER:=gemma4}"' in preflight
+    assert "--interface-provider \"$HERMES_KAME_INTERFACE_PROVIDER\"" in preflight
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in preflight
     assert "--interface-api-key-env \"$HERMES_KAME_INTERFACE_API_KEY_ENV\"" in preflight
     assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in preflight
     assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in preflight
     assert ': "${HERMES_KAME_ASR_MODE:=on_escalation}"' in preflight
     assert "--asr-mode \"$HERMES_KAME_ASR_MODE\"" in preflight
+    assert "--asr-provider \"$HERMES_DGX_SPARK_ASR_PROVIDER\"" in preflight
     assert "--asr-module \"$HERMES_DGX_SPARK_ASR_MODULE\"" in preflight
     assert "--asr-adapter \"$HERMES_DGX_SPARK_ASR_ADAPTER\"" in preflight
     assert "--tts-module \"$HERMES_DGX_SPARK_TTS_MODULE\"" in preflight
+    assert "--tts-provider \"$HERMES_DGX_SPARK_TTS_PROVIDER\"" in preflight
     assert "--tts-adapter \"$HERMES_DGX_SPARK_TTS_ADAPTER\"" in preflight
     assert "--sidecar-base-url http://spark.local:8765" in preflight
     assert "usage: $0 /path/to/benchmark-evidence.json" in validate_benchmark
     assert "--benchmark-evidence \"$1\"" in validate_benchmark
     assert ': "${HERMES_PYTHON:=python3}"' in validate_benchmark
+    assert ': "${HERMES_KAME_INTERFACE_PROVIDER:=gemma4}"' in validate_benchmark
+    assert "--interface-provider \"$HERMES_KAME_INTERFACE_PROVIDER\"" in validate_benchmark
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in validate_benchmark
     assert "--interface-api-key-env \"$HERMES_KAME_INTERFACE_API_KEY_ENV\"" in validate_benchmark
     assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in validate_benchmark
     assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in validate_benchmark
     assert ': "${HERMES_KAME_ASR_MODE:=on_escalation}"' in validate_benchmark
     assert "--asr-mode \"$HERMES_KAME_ASR_MODE\"" in validate_benchmark
+    assert "--asr-provider \"$HERMES_DGX_SPARK_ASR_PROVIDER\"" in validate_benchmark
     assert "--asr-model \"$HERMES_VOICE_STREAMING_STT_MODEL\"" in validate_benchmark
+    assert "--tts-provider \"$HERMES_DGX_SPARK_TTS_PROVIDER\"" in validate_benchmark
     assert "--tts-model \"$HERMES_VOICE_STREAMING_TTS_MODEL\"" in validate_benchmark
     assert [
         (candidate["model"], candidate["input"]) for candidate in matrix["candidates"]["interface"]
@@ -533,6 +564,13 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert matrix["model_assumptions"]["interface_audio_input_supported"]["validated_by"] == "interface_audio_probe"
     assert matrix["candidates"]["oracle_outcome"][0]["asr_hypothesis"] == "without_asr_hypothesis"
     assert matrix["candidates"]["oracle_outcome"][1]["asr_hypothesis"] == "with_asr_hypothesis"
+    assert [
+        (candidate["role"], candidate["provider"], candidate["model"])
+        for candidate in matrix["candidates"]["speech"]
+    ] == [
+        ("oracle_verbatim_asr", "streaming_stt", "oracle-verbatim-asr"),
+        ("tts", "streaming_tts", "local-streaming-tts"),
+    ]
     assert [entry["name"] for entry in matrix["candidates"]["comparison"]] == [
         "interface_direct_audio_vs_stt_fallback",
         "oracle_outcome_asr_hypothesis_delta",
@@ -623,12 +661,12 @@ def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation
         "oracle_outcome_asr_hypothesis_delta",
     ]
     assert {
-        (entry["role"], entry["model"], entry["adapter"], entry["protocol_smoke_only"])
+        (entry["role"], entry["provider"], entry["model"], entry["adapter"], entry["protocol_smoke_only"])
         for entry in template
         if entry.get("category") == "speech"
     } == {
-        ("oracle_verbatim_asr", "oracle-verbatim-asr", "loopback_smoke_bridge", True),
-        ("tts", "local-streaming-tts", "loopback_smoke_bridge", True),
+        ("oracle_verbatim_asr", "streaming_stt", "oracle-verbatim-asr", "loopback_smoke_bridge", True),
+        ("tts", "streaming_tts", "local-streaming-tts", "loopback_smoke_bridge", True),
     }
 
     result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, template)
@@ -1358,10 +1396,16 @@ def test_voice_subcommand_exposes_dgx_spark_launch_profile(tmp_path):
             str(tmp_path / "out"),
             "--interface-model",
             "gemma-4-E2B-it",
+            "--interface-provider",
+            "gemma4",
             "--interface-candidate-model",
             "gemma-4-E4B-it",
             "--oracle-model",
             "gemma-4-26B-A4B-it",
+            "--asr-provider",
+            "nvidia_speech",
+            "--tts-provider",
+            "cartesia",
             "--check",
         ]
     )
@@ -1371,7 +1415,10 @@ def test_voice_subcommand_exposes_dgx_spark_launch_profile(tmp_path):
     assert args.voice_command == "dgx-spark"
     assert args.output_dir == str(tmp_path / "out")
     assert args.interface_model == "gemma-4-E2B-it"
+    assert args.interface_provider == "gemma4"
     assert args.interface_candidate_model == ["gemma-4-E4B-it"]
     assert args.oracle_model == "gemma-4-26B-A4B-it"
+    assert args.asr_provider == "nvidia_speech"
+    assert args.tts_provider == "cartesia"
     assert args.check is True
     assert calls == [args]
