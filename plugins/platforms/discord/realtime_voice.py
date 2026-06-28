@@ -232,6 +232,22 @@ class DiscordRealtimeVoiceSession:
             },
         )
 
+    async def handle_speech_end(self, *, user_id: int | str) -> None:
+        if self._closed or not self._started:
+            return
+        await self._send_event(
+            VoiceEventType.AUDIO_INPUT_CHUNK,
+            {
+                "codec": VoiceAudioCodec.PCM16.value,
+                "sample_rate_hz": SIDECAR_SAMPLE_RATE,
+                "channels": SIDECAR_CHANNELS,
+                "data_b64": "",
+                "user_id": str(user_id),
+                "transport": "discord_voice",
+                "end_of_utterance": True,
+            },
+        )
+
     async def handle_pcm_frame(self, *, user_id: int | str, pcm48_stereo: bytes) -> None:
         if self._closed or not self._started or not pcm48_stereo:
             return
