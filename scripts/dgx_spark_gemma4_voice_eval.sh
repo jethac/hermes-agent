@@ -57,6 +57,7 @@ note "Local repo validation"
 run uv run python -m py_compile \
   hermes_cli/realtime_voice_profile.py \
   hermes_cli/realtime_voice_alpha_evidence.py \
+  hermes_cli/realtime_voice_dgx_spark.py \
   hermes_cli/realtime_voice_cartesia_bridge.py \
   hermes_cli/web_server.py \
   agent/realtime_voice_cartesia_bridge.py
@@ -90,7 +91,13 @@ if run uv run python -m hermes_cli.realtime_voice_dgx_spark \
   --oracle-gpu-memory-utilization "${DGX_SPARK_ORACLE_GPU_MEMORY_UTILIZATION:-0.62}" \
   --sidecar-base-url "${DGX_SPARK_SIDECAR_BASE_URL:-http://spark.local:8765}" \
   --asr-base-url "${DGX_SPARK_LOCAL_VOICE_BRIDGE_URL:-http://spark.local:8767}" \
+  --asr-model "${DGX_SPARK_LOCAL_VOICE_STT_MODEL:-oracle-verbatim-asr}" \
+  --asr-module "${DGX_SPARK_ASR_MODULE:-hermes_cli.realtime_voice_loopback_bridge}" \
+  --asr-adapter "${DGX_SPARK_ASR_ADAPTER:-loopback_smoke_bridge}" \
   --tts-base-url "${DGX_SPARK_LOCAL_TTS_BRIDGE_URL:-http://spark.local:8768}" \
+  --tts-model "${DGX_SPARK_LOCAL_VOICE_TTS_MODEL:-local-streaming-tts}" \
+  --tts-module "${DGX_SPARK_TTS_MODULE:-hermes_cli.realtime_voice_loopback_bridge}" \
+  --tts-adapter "${DGX_SPARK_TTS_ADAPTER:-loopback_smoke_bridge}" \
   --asr-mode "${DGX_SPARK_ASR_MODE:-on_escalation}" \
   --vllm-image "${DGX_SPARK_VLLM_IMAGE:-vllm/vllm-openai:gemma4-cu130}" \
   --hermes-image "${DGX_SPARK_HERMES_IMAGE:-ghcr.io/astral-sh/uv:python3.12-bookworm-slim}" \

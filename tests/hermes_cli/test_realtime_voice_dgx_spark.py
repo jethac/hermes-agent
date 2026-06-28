@@ -6,7 +6,27 @@ from hermes_cli import realtime_voice_dgx_spark
 from hermes_cli.subcommands.voice import build_voice_parser
 
 
-def _manifest(tmp_path: Path) -> dict:
+PRODUCTION_ASR_MODULE = "hermes_cli.realtime_voice_nemotron_speech_bridge"
+PRODUCTION_TTS_MODULE = "hermes_cli.realtime_voice_magpie_tts_bridge"
+PRODUCTION_ASR_MODEL = "nemotron-speech-streaming-0.6b"
+PRODUCTION_TTS_MODEL = "magpie-local-streaming-tts"
+PRODUCTION_ASR_ADAPTER = "nemotron_speech_streaming"
+PRODUCTION_TTS_ADAPTER = "magpie_streaming_tts"
+
+
+def _manifest(tmp_path: Path, *, production_speech: bool = False) -> dict:
+    speech_kwargs = (
+        {
+            "asr_module": PRODUCTION_ASR_MODULE,
+            "tts_module": PRODUCTION_TTS_MODULE,
+            "asr_model": PRODUCTION_ASR_MODEL,
+            "tts_model": PRODUCTION_TTS_MODEL,
+            "asr_adapter": PRODUCTION_ASR_ADAPTER,
+            "tts_adapter": PRODUCTION_TTS_ADAPTER,
+        }
+        if production_speech
+        else {}
+    )
     return realtime_voice_dgx_spark.build_dgx_spark_stack_manifest(
         repo_dir=tmp_path / "repo",
         hermes_home=tmp_path / "home",
@@ -27,6 +47,7 @@ def _manifest(tmp_path: Path) -> dict:
         vllm_image="vllm/vllm-openai:gemma4-cu130",
         hermes_image="ghcr.io/astral-sh/uv:python3.12-bookworm-slim",
         model_cache_dir="/models",
+        **speech_kwargs,
     )
 
 
@@ -100,6 +121,9 @@ def _passing_benchmark_evidence() -> list[dict]:
             "kind": "kame_benchmark_result",
             "category": "speech",
             "role": "oracle_verbatim_asr",
+            "model": PRODUCTION_ASR_MODEL,
+            "adapter": PRODUCTION_ASR_ADAPTER,
+            "protocol_smoke_only": False,
             "metrics": {
                 "speech_end_to_asr_final_ms": 110,
                 "literal_accuracy_names_numbers_code": 0.88,
@@ -109,6 +133,9 @@ def _passing_benchmark_evidence() -> list[dict]:
             "kind": "kame_benchmark_result",
             "category": "speech",
             "role": "tts",
+            "model": PRODUCTION_TTS_MODEL,
+            "adapter": PRODUCTION_TTS_ADAPTER,
+            "protocol_smoke_only": False,
             "metrics": {
                 "tts_request_to_first_audio_ms": 160,
                 "tts_request_to_audio_end_ms": 620,
@@ -141,10 +168,16 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     assert manifest["roles"]["interface"]["max_audio_seconds"] == 30.0
     assert manifest["roles"]["oracle"]["preferred_local_model"] == "gemma-4-26B-A4B-it"
     assert manifest["roles"]["asr"]["role"] == "oracle_verbatim_evidence"
-    assert manifest["roles"]["asr"]["default_adapter"] == "loopback_smoke_bridge"
+    assert manifest["roles"]["asr"]["adapter"] == "loopback_smoke_bridge"
+    assert manifest["roles"]["asr"]["model"] == "oracle-verbatim-asr"
+    assert manifest["roles"]["asr"]["module"] == "hermes_cli.realtime_voice_loopback_bridge"
+    assert manifest["roles"]["asr"]["protocol_smoke_only"] is True
     assert manifest["roles"]["asr"]["production_replacement"] == "local_streaming_asr"
     assert manifest["roles"]["asr"]["feeds_reflex"] is False
-    assert manifest["roles"]["tts"]["default_adapter"] == "loopback_smoke_bridge"
+    assert manifest["roles"]["tts"]["adapter"] == "loopback_smoke_bridge"
+    assert manifest["roles"]["tts"]["model"] == "local-streaming-tts"
+    assert manifest["roles"]["tts"]["module"] == "hermes_cli.realtime_voice_loopback_bridge"
+    assert manifest["roles"]["tts"]["protocol_smoke_only"] is True
     assert manifest["roles"]["tts"]["production_replacement"] == "local_streaming_tts"
     assert "all_local_smoke" in manifest["evidence_required"]
     assert "oracle_simple_first_audio_latency" in manifest["evidence_required"]
@@ -176,6 +209,9 @@ def test_rendered_compose_has_reflex_oracle_and_sidecar_without_secret_material(
     assert "HERMES_VOICE_STREAMING_STT_BASE_URL: http://spark.local:8767" not in compose
     assert "HERMES_VOICE_STREAMING_TTS_BASE_URL: http://spark.local:8768" not in compose
     assert "oracle-verbatim-asr" in compose
+    assert "local-streaming-tts" in compose
+    assert "HERMES_DGX_SPARK_ASR_ADAPTER: loopback_smoke_bridge" in compose
+    assert "HERMES_DGX_SPARK_TTS_ADAPTER: loopback_smoke_bridge" in compose
     assert "hermes_cli.realtime_voice_loopback_bridge" in compose
     assert "API_KEY" not in compose
     assert "sk_" not in compose
@@ -270,6 +306,8 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert manifest["engine"]["max_spoken_sentences"] == 2
     assert "HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS=30.0" in env_example
     assert "HERMES_KAME_MAX_SPOKEN_SENTENCES=2" in env_example
+    assert "HERMES_DGX_SPARK_ASR_ADAPTER=loopback_smoke_bridge" in env_example
+    assert "HERMES_DGX_SPARK_TTS_ADAPTER=loopback_smoke_bridge" in env_example
     assert "HERMES_DGX_SPARK_APPLY_PROFILE" in launch
     assert "hermes_cli.realtime_voice_profile --preset kame --apply" in launch
     assert "--kame-interface-audio-input native_audio" in launch
@@ -277,6 +315,8 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--kame-asr-mode on_escalation" in launch
     assert "--kame-oracle-base-url http://spark.local:8001/v1" in launch
     assert '--kame-oracle-provider-name "KAME Local Oracle"' in launch
+    assert '--streaming-stt-model "$HERMES_VOICE_STREAMING_STT_MODEL"' in launch
+    assert '--streaming-tts-model "$HERMES_VOICE_STREAMING_TTS_MODEL"' in launch
     assert "--sidecar-host spark.local" in launch
     assert "--sidecar-port 8765" in launch
     assert "docker compose --env-file .env.example -f compose.yaml up" in launch
@@ -285,12 +325,18 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in preflight
     assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in preflight
     assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in preflight
+    assert "--asr-module \"$HERMES_DGX_SPARK_ASR_MODULE\"" in preflight
+    assert "--asr-adapter \"$HERMES_DGX_SPARK_ASR_ADAPTER\"" in preflight
+    assert "--tts-module \"$HERMES_DGX_SPARK_TTS_MODULE\"" in preflight
+    assert "--tts-adapter \"$HERMES_DGX_SPARK_TTS_ADAPTER\"" in preflight
     assert "--sidecar-base-url http://spark.local:8765" in preflight
     assert "usage: $0 /path/to/benchmark-evidence.json" in validate_benchmark
     assert "--benchmark-evidence \"$1\"" in validate_benchmark
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in validate_benchmark
     assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in validate_benchmark
     assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in validate_benchmark
+    assert "--asr-model \"$HERMES_VOICE_STREAMING_STT_MODEL\"" in validate_benchmark
+    assert "--tts-model \"$HERMES_VOICE_STREAMING_TTS_MODEL\"" in validate_benchmark
     assert [
         (candidate["model"], candidate["input"]) for candidate in matrix["candidates"]["interface"]
     ] == [
@@ -336,6 +382,14 @@ def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation
         "oracle_verbatim_asr",
         "tts",
     }
+    assert {
+        (entry["role"], entry["model"], entry["adapter"], entry["protocol_smoke_only"])
+        for entry in template
+        if entry.get("category") == "speech"
+    } == {
+        ("oracle_verbatim_asr", "oracle-verbatim-asr", "loopback_smoke_bridge", True),
+        ("tts", "local-streaming-tts", "loopback_smoke_bridge", True),
+    }
 
     result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, template)
 
@@ -345,6 +399,10 @@ def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation
         "missing or invalid metric speech_end_to_interface_decision_ms"
     ) in result["issues"]
     assert "all_local_smoke: missing passing smoke result" in result["issues"]
+    assert (
+        "local_asr_tts_benchmark_matrix: "
+        "requires benchmark evidence for non-loopback local ASR and TTS adapters"
+    ) in result["issues"]
 
 
 def test_preflight_checks_openai_models_and_health_urls(monkeypatch, tmp_path):
@@ -566,7 +624,7 @@ def test_preflight_fails_when_interface_audio_probe_is_not_kame_json(monkeypatch
 
 
 def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_path):
-    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
 
     result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(
         matrix,
@@ -589,7 +647,7 @@ def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_pat
 
 
 def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):
-    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
     evidence = [
         entry
         for entry in _passing_benchmark_evidence()
@@ -613,7 +671,7 @@ def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):
 
 
 def test_benchmark_evidence_validator_enforces_direct_audio_latency_targets(tmp_path):
-    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
     evidence = _passing_benchmark_evidence()
     for entry in evidence:
         if entry.get("category") == "interface" and entry.get("input") == "direct_audio":
@@ -635,7 +693,7 @@ def test_benchmark_evidence_validator_enforces_direct_audio_latency_targets(tmp_
 
 
 def test_benchmark_evidence_validator_enforces_oracle_latency_target(tmp_path):
-    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
     evidence = _passing_benchmark_evidence()
     for entry in evidence:
         if entry.get("category") == "oracle":
@@ -655,7 +713,7 @@ def test_benchmark_evidence_validator_enforces_oracle_latency_target(tmp_path):
 
 
 def test_benchmark_evidence_validator_requires_capability_and_interruption_smokes(tmp_path):
-    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
     evidence = [
         entry
         for entry in _passing_benchmark_evidence()
@@ -672,7 +730,7 @@ def test_benchmark_evidence_validator_requires_capability_and_interruption_smoke
 
 
 def test_benchmark_evidence_validator_requires_every_interface_candidate(tmp_path):
-    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
     evidence = [
         entry
         for entry in _passing_benchmark_evidence()
@@ -688,7 +746,7 @@ def test_benchmark_evidence_validator_requires_every_interface_candidate(tmp_pat
 
 
 def test_benchmark_evidence_validator_requires_oracle_asr_outcome_comparison(tmp_path):
-    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
     evidence = [
         entry
         for entry in _passing_benchmark_evidence()
@@ -717,6 +775,18 @@ def test_main_validates_benchmark_evidence_file(tmp_path, capsys):
             str(tmp_path / "repo"),
             "--hermes-home",
             str(tmp_path / "home"),
+            "--asr-module",
+            PRODUCTION_ASR_MODULE,
+            "--asr-model",
+            PRODUCTION_ASR_MODEL,
+            "--asr-adapter",
+            PRODUCTION_ASR_ADAPTER,
+            "--tts-module",
+            PRODUCTION_TTS_MODULE,
+            "--tts-model",
+            PRODUCTION_TTS_MODEL,
+            "--tts-adapter",
+            PRODUCTION_TTS_ADAPTER,
             "--benchmark-evidence",
             str(evidence_path),
         ]

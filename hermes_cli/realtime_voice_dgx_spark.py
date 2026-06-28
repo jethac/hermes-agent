@@ -25,6 +25,12 @@ DEFAULT_ORACLE_MODEL = "gemma-4-26B-A4B-it"
 DEFAULT_SIDECAR_BASE_URL = "http://127.0.0.1:8765"
 DEFAULT_ASR_BASE_URL = "http://127.0.0.1:8767"
 DEFAULT_TTS_BASE_URL = "http://127.0.0.1:8768"
+DEFAULT_ASR_MODULE = "hermes_cli.realtime_voice_loopback_bridge"
+DEFAULT_TTS_MODULE = "hermes_cli.realtime_voice_loopback_bridge"
+DEFAULT_ASR_MODEL = "oracle-verbatim-asr"
+DEFAULT_TTS_MODEL = "local-streaming-tts"
+DEFAULT_ASR_ADAPTER = "loopback_smoke_bridge"
+DEFAULT_TTS_ADAPTER = "loopback_smoke_bridge"
 DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:latest"
 DEFAULT_HERMES_IMAGE = "ghcr.io/astral-sh/uv:python3.12-bookworm-slim"
 REQUIRED_DGX_SPARK_SMOKES: tuple[tuple[str, str], ...] = (
@@ -82,6 +88,12 @@ def add_dgx_spark_arguments(parser: argparse.ArgumentParser) -> argparse.Argumen
     parser.add_argument("--sidecar-base-url", default=DEFAULT_SIDECAR_BASE_URL)
     parser.add_argument("--asr-base-url", default=DEFAULT_ASR_BASE_URL)
     parser.add_argument("--tts-base-url", default=DEFAULT_TTS_BASE_URL)
+    parser.add_argument("--asr-module", default=DEFAULT_ASR_MODULE)
+    parser.add_argument("--tts-module", default=DEFAULT_TTS_MODULE)
+    parser.add_argument("--asr-model", default=DEFAULT_ASR_MODEL)
+    parser.add_argument("--tts-model", default=DEFAULT_TTS_MODEL)
+    parser.add_argument("--asr-adapter", default=DEFAULT_ASR_ADAPTER)
+    parser.add_argument("--tts-adapter", default=DEFAULT_TTS_ADAPTER)
     parser.add_argument(
         "--asr-mode",
         default="on_escalation",
@@ -122,6 +134,12 @@ def run_from_args(args: argparse.Namespace) -> int:
         sidecar_base_url=str(args.sidecar_base_url),
         asr_base_url=str(args.asr_base_url),
         tts_base_url=str(args.tts_base_url),
+        asr_module=str(args.asr_module),
+        tts_module=str(args.tts_module),
+        asr_model=str(args.asr_model),
+        tts_model=str(args.tts_model),
+        asr_adapter=str(args.asr_adapter),
+        tts_adapter=str(args.tts_adapter),
         asr_mode=str(args.asr_mode),
         vllm_image=str(args.vllm_image),
         hermes_image=str(args.hermes_image),
@@ -163,20 +181,26 @@ def build_dgx_spark_stack_manifest(
     interface_base_url: str,
     interface_model: str,
     interface_candidate_models: list[str] | tuple[str, ...] | None = None,
-    interface_context_tokens: int,
-    interface_gpu_memory_utilization: float,
-    interface_max_audio_seconds: float,
-    oracle_base_url: str,
-    oracle_model: str,
-    oracle_context_tokens: int,
-    oracle_gpu_memory_utilization: float,
-    sidecar_base_url: str,
-    asr_base_url: str,
-    tts_base_url: str,
-    asr_mode: str,
-    vllm_image: str,
-    hermes_image: str,
-    model_cache_dir: str,
+    interface_context_tokens: int = 8192,
+    interface_gpu_memory_utilization: float = 0.18,
+    interface_max_audio_seconds: float = DEFAULT_INTERFACE_MAX_AUDIO_SECONDS,
+    oracle_base_url: str = DEFAULT_ORACLE_BASE_URL,
+    oracle_model: str = DEFAULT_ORACLE_MODEL,
+    oracle_context_tokens: int = 32768,
+    oracle_gpu_memory_utilization: float = 0.62,
+    sidecar_base_url: str = DEFAULT_SIDECAR_BASE_URL,
+    asr_base_url: str = DEFAULT_ASR_BASE_URL,
+    tts_base_url: str = DEFAULT_TTS_BASE_URL,
+    asr_module: str = DEFAULT_ASR_MODULE,
+    tts_module: str = DEFAULT_TTS_MODULE,
+    asr_model: str = DEFAULT_ASR_MODEL,
+    tts_model: str = DEFAULT_TTS_MODEL,
+    asr_adapter: str = DEFAULT_ASR_ADAPTER,
+    tts_adapter: str = DEFAULT_TTS_ADAPTER,
+    asr_mode: str = "on_escalation",
+    vllm_image: str = DEFAULT_VLLM_IMAGE,
+    hermes_image: str = DEFAULT_HERMES_IMAGE,
+    model_cache_dir: str = "${HOME}/.cache/huggingface",
 ) -> dict[str, Any]:
     interface_models_url = _openai_models_url(interface_base_url)
     oracle_models_url = _openai_models_url(oracle_base_url)
@@ -184,6 +208,12 @@ def build_dgx_spark_stack_manifest(
     asr_health_url = _health_url(asr_base_url) if asr_base_url else ""
     tts_health_url = _health_url(tts_base_url) if tts_base_url else ""
     interface_candidates = _interface_candidate_models(interface_model, interface_candidate_models)
+    asr_module_name = _python_module_name(asr_module, default=DEFAULT_ASR_MODULE)
+    tts_module_name = _python_module_name(tts_module, default=DEFAULT_TTS_MODULE)
+    asr_model_name = _clean_nonempty(asr_model, default=DEFAULT_ASR_MODEL)
+    tts_model_name = _clean_nonempty(tts_model, default=DEFAULT_TTS_MODEL)
+    asr_adapter_name = _clean_nonempty(asr_adapter, default=DEFAULT_ASR_ADAPTER)
+    tts_adapter_name = _clean_nonempty(tts_adapter, default=DEFAULT_TTS_ADAPTER)
     return {
         "kind": "kame_dgx_spark_stack",
         "version": 1,
@@ -246,8 +276,10 @@ def build_dgx_spark_stack_manifest(
                 "mode": asr_mode,
                 "base_url": asr_base_url,
                 "health_url": asr_health_url,
-                "module": "hermes_cli.realtime_voice_loopback_bridge",
-                "default_adapter": "loopback_smoke_bridge",
+                "module": asr_module_name,
+                "model": asr_model_name,
+                "adapter": asr_adapter_name,
+                "protocol_smoke_only": asr_adapter_name == DEFAULT_ASR_ADAPTER,
                 "production_replacement": "local_streaming_asr",
                 "feeds_reflex": asr_mode == "fallback",
             },
@@ -255,8 +287,10 @@ def build_dgx_spark_stack_manifest(
                 "role": "spoken_output",
                 "base_url": tts_base_url,
                 "health_url": tts_health_url,
-                "module": "hermes_cli.realtime_voice_loopback_bridge",
-                "default_adapter": "loopback_smoke_bridge",
+                "module": tts_module_name,
+                "model": tts_model_name,
+                "adapter": tts_adapter_name,
+                "protocol_smoke_only": tts_adapter_name == DEFAULT_TTS_ADAPTER,
                 "production_replacement": "local_streaming_tts",
             },
         },
@@ -409,9 +443,9 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       HERMES_VOICE_VLLM_BASE_URL: {interface_internal_url}
       HERMES_VOICE_VLLM_MODEL: {interface["model"]}
       HERMES_VOICE_STREAMING_STT_BASE_URL: {asr_internal_url}
-      HERMES_VOICE_STREAMING_STT_MODEL: ${{HERMES_VOICE_STREAMING_STT_MODEL:-oracle-verbatim-asr}}
+      HERMES_VOICE_STREAMING_STT_MODEL: ${{HERMES_VOICE_STREAMING_STT_MODEL:-{asr["model"]}}}
       HERMES_VOICE_STREAMING_TTS_BASE_URL: {tts_internal_url}
-      HERMES_VOICE_STREAMING_TTS_MODEL: ${{HERMES_VOICE_STREAMING_TTS_MODEL:-local-streaming-tts}}
+      HERMES_VOICE_STREAMING_TTS_MODEL: ${{HERMES_VOICE_STREAMING_TTS_MODEL:-{tts["model"]}}}
     command:
       - uv
       - run
@@ -431,11 +465,11 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - --streaming-stt-base-url
       - {asr_internal_url}
       - --streaming-stt-model
-      - ${{HERMES_VOICE_STREAMING_STT_MODEL:-oracle-verbatim-asr}}
+      - ${{HERMES_VOICE_STREAMING_STT_MODEL:-{asr["model"]}}}
       - --streaming-tts-base-url
       - {tts_internal_url}
       - --streaming-tts-model
-      - ${{HERMES_VOICE_STREAMING_TTS_MODEL:-local-streaming-tts}}
+      - ${{HERMES_VOICE_STREAMING_TTS_MODEL:-{tts["model"]}}}
 
   kame-asr-bridge:
     image: ${{HERMES_DGX_SPARK_HERMES_IMAGE:-{images.get("hermes", DEFAULT_HERMES_IMAGE)}}}
@@ -447,6 +481,8 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - ${{HERMES_HOME:-{manifest["hermes_home"]}}}:/root/.hermes
     environment:
       HERMES_HOME: /root/.hermes
+      HERMES_DGX_SPARK_ASR_ADAPTER: {asr["adapter"]}
+      HERMES_VOICE_STREAMING_STT_MODEL: {asr["model"]}
     command:
       - uv
       - run
@@ -471,6 +507,8 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - ${{HERMES_HOME:-{manifest["hermes_home"]}}}:/root/.hermes
     environment:
       HERMES_HOME: /root/.hermes
+      HERMES_DGX_SPARK_TTS_ADAPTER: {tts["adapter"]}
+      HERMES_VOICE_STREAMING_TTS_MODEL: {tts["model"]}
     command:
       - uv
       - run
@@ -509,7 +547,13 @@ HERMES_KAME_MAX_SPOKEN_SENTENCES={manifest["engine"]["max_spoken_sentences"]}
 HERMES_KAME_ORACLE_MODEL={roles["oracle"]["preferred_local_model"]}
 HERMES_KAME_ORACLE_BASE_URL={roles["oracle"]["base_url"]}
 HERMES_VOICE_STREAMING_STT_BASE_URL={roles["asr"]["base_url"]}
+HERMES_VOICE_STREAMING_STT_MODEL={roles["asr"]["model"]}
+HERMES_DGX_SPARK_ASR_MODULE={roles["asr"]["module"]}
+HERMES_DGX_SPARK_ASR_ADAPTER={roles["asr"]["adapter"]}
 HERMES_VOICE_STREAMING_TTS_BASE_URL={roles["tts"]["base_url"]}
+HERMES_VOICE_STREAMING_TTS_MODEL={roles["tts"]["model"]}
+HERMES_DGX_SPARK_TTS_MODULE={roles["tts"]["module"]}
+HERMES_DGX_SPARK_TTS_ADAPTER={roles["tts"]["adapter"]}
 """
 
 
@@ -525,6 +569,8 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_REPO_DIR:={manifest["repo_dir"]}}}"
 : "${{HERMES_HOME:={manifest["hermes_home"]}}}"
 : "${{HERMES_PYTHON:=python}}"
+: "${{HERMES_VOICE_STREAMING_STT_MODEL:={manifest["roles"]["asr"]["model"]}}}"
+: "${{HERMES_VOICE_STREAMING_TTS_MODEL:={manifest["roles"]["tts"]["model"]}}}"
 export HERMES_REPO_DIR HERMES_HOME
 
 if [ "${{HERMES_DGX_SPARK_APPLY_PROFILE:-1}}" != "0" ]; then
@@ -539,7 +585,9 @@ if [ "${{HERMES_DGX_SPARK_APPLY_PROFILE:-1}}" != "0" ]; then
       --kame-oracle-base-url {manifest["roles"]["oracle"]["base_url"]} \\
       --kame-oracle-provider-name "KAME Local Oracle" \\
       --streaming-stt-base-url {manifest["roles"]["asr"]["base_url"]} \\
+      --streaming-stt-model "$HERMES_VOICE_STREAMING_STT_MODEL" \\
       --streaming-tts-base-url {manifest["roles"]["tts"]["base_url"]} \\
+      --streaming-tts-model "$HERMES_VOICE_STREAMING_TTS_MODEL" \\
       --sidecar-host {sidecar_host} \\
       --sidecar-port {sidecar_port}
   )
@@ -568,7 +616,13 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={roles["oracle"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={roles["asr"]["base_url"]}}}"
+: "${{HERMES_VOICE_STREAMING_STT_MODEL:={roles["asr"]["model"]}}}"
+: "${{HERMES_DGX_SPARK_ASR_MODULE:={roles["asr"]["module"]}}}"
+: "${{HERMES_DGX_SPARK_ASR_ADAPTER:={roles["asr"]["adapter"]}}}"
 : "${{HERMES_VOICE_STREAMING_TTS_BASE_URL:={roles["tts"]["base_url"]}}}"
+: "${{HERMES_VOICE_STREAMING_TTS_MODEL:={roles["tts"]["model"]}}}"
+: "${{HERMES_DGX_SPARK_TTS_MODULE:={roles["tts"]["module"]}}}"
+: "${{HERMES_DGX_SPARK_TTS_ADAPTER:={roles["tts"]["adapter"]}}}"
 
 cd "$HERMES_REPO_DIR"
 "$HERMES_PYTHON" -m hermes_cli.realtime_voice_dgx_spark \\
@@ -586,7 +640,13 @@ cd "$HERMES_REPO_DIR"
   --oracle-gpu-memory-utilization {roles["oracle"]["gpu_memory_utilization"]} \\
   --sidecar-base-url {roles["sidecar"]["base_url"]} \\
   --asr-base-url "$HERMES_VOICE_STREAMING_STT_BASE_URL" \\
+  --asr-model "$HERMES_VOICE_STREAMING_STT_MODEL" \\
+  --asr-module "$HERMES_DGX_SPARK_ASR_MODULE" \\
+  --asr-adapter "$HERMES_DGX_SPARK_ASR_ADAPTER" \\
   --tts-base-url "$HERMES_VOICE_STREAMING_TTS_BASE_URL" \\
+  --tts-model "$HERMES_VOICE_STREAMING_TTS_MODEL" \\
+  --tts-module "$HERMES_DGX_SPARK_TTS_MODULE" \\
+  --tts-adapter "$HERMES_DGX_SPARK_TTS_ADAPTER" \\
   --asr-mode {manifest["engine"]["asr_mode"]} \\
   --vllm-image {manifest["images"]["vllm"]} \\
   --hermes-image {manifest["images"]["hermes"]} \\
@@ -615,7 +675,13 @@ fi
 : "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={roles["oracle"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={roles["asr"]["base_url"]}}}"
+: "${{HERMES_VOICE_STREAMING_STT_MODEL:={roles["asr"]["model"]}}}"
+: "${{HERMES_DGX_SPARK_ASR_MODULE:={roles["asr"]["module"]}}}"
+: "${{HERMES_DGX_SPARK_ASR_ADAPTER:={roles["asr"]["adapter"]}}}"
 : "${{HERMES_VOICE_STREAMING_TTS_BASE_URL:={roles["tts"]["base_url"]}}}"
+: "${{HERMES_VOICE_STREAMING_TTS_MODEL:={roles["tts"]["model"]}}}"
+: "${{HERMES_DGX_SPARK_TTS_MODULE:={roles["tts"]["module"]}}}"
+: "${{HERMES_DGX_SPARK_TTS_ADAPTER:={roles["tts"]["adapter"]}}}"
 
 cd "$HERMES_REPO_DIR"
 "$HERMES_PYTHON" -m hermes_cli.realtime_voice_dgx_spark \\
@@ -633,7 +699,13 @@ cd "$HERMES_REPO_DIR"
   --oracle-gpu-memory-utilization {roles["oracle"]["gpu_memory_utilization"]} \\
   --sidecar-base-url {roles["sidecar"]["base_url"]} \\
   --asr-base-url "$HERMES_VOICE_STREAMING_STT_BASE_URL" \\
+  --asr-model "$HERMES_VOICE_STREAMING_STT_MODEL" \\
+  --asr-module "$HERMES_DGX_SPARK_ASR_MODULE" \\
+  --asr-adapter "$HERMES_DGX_SPARK_ASR_ADAPTER" \\
   --tts-base-url "$HERMES_VOICE_STREAMING_TTS_BASE_URL" \\
+  --tts-model "$HERMES_VOICE_STREAMING_TTS_MODEL" \\
+  --tts-module "$HERMES_DGX_SPARK_TTS_MODULE" \\
+  --tts-adapter "$HERMES_DGX_SPARK_TTS_ADAPTER" \\
   --asr-mode {manifest["engine"]["asr_mode"]} \\
   --vllm-image {manifest["images"]["vllm"]} \\
   --hermes-image {manifest["images"]["hermes"]} \\
@@ -714,6 +786,10 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                 {
                     "role": "oracle_verbatim_asr",
                     "mode": roles["asr"]["mode"],
+                    "model": roles["asr"]["model"],
+                    "adapter": roles["asr"]["adapter"],
+                    "module": roles["asr"]["module"],
+                    "protocol_smoke_only": roles["asr"].get("protocol_smoke_only") is True,
                     "required_metrics": [
                         "speech_end_to_asr_final_ms",
                         "literal_accuracy_names_numbers_code",
@@ -721,6 +797,10 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                 },
                 {
                     "role": "tts",
+                    "model": roles["tts"]["model"],
+                    "adapter": roles["tts"]["adapter"],
+                    "module": roles["tts"]["module"],
+                    "protocol_smoke_only": roles["tts"].get("protocol_smoke_only") is True,
                     "required_metrics": [
                         "tts_request_to_first_audio_ms",
                         "tts_request_to_audio_end_ms",
@@ -785,6 +865,10 @@ def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> li
                 "category": "speech",
                 "role": candidate.get("role"),
                 "mode": candidate.get("mode"),
+                "model": candidate.get("model"),
+                "adapter": candidate.get("adapter"),
+                "module": candidate.get("module"),
+                "protocol_smoke_only": candidate.get("protocol_smoke_only") is True,
                 "metrics": _null_metric_template(candidate.get("required_metrics")),
             }
         )
@@ -817,7 +901,8 @@ def validate_dgx_spark_benchmark_evidence(
 
     Expected evidence entries are intentionally simple JSON objects:
     - ``kind=kame_benchmark_result`` with ``category`` (interface/oracle/speech),
-      optional ``input``, ``role``, or ``asr_hypothesis``, and a ``metrics`` object.
+      optional ``input``, ``role``, ``model``, ``adapter``, or ``asr_hypothesis``,
+      and a ``metrics`` object.
     - ``kind=kame_smoke_result`` with one of ``REQUIRED_DGX_SPARK_SMOKES``
       as ``name`` and ``ok=true``.
     """
@@ -947,22 +1032,42 @@ def validate_dgx_spark_benchmark_evidence(
         )
 
     speech_candidates = candidates.get("speech") if isinstance(candidates.get("speech"), list) else []
+    speech_coverage_labels: list[str] = []
+    speech_production_labels: list[str] = []
     for candidate in speech_candidates:
         if not isinstance(candidate, Mapping):
             continue
         role = str(candidate.get("role") or "").strip()
-        label = f"speech:{role}"
-        match = _find_benchmark_entry(entries, category="speech", role=role)
+        model = str(candidate.get("model") or "").strip()
+        adapter = str(candidate.get("adapter") or "").strip()
+        label = _speech_candidate_label(role=role, model=model, adapter=adapter)
+        match = _find_benchmark_entry(entries, category="speech", role=role, model=model, adapter=adapter)
         coverage[label] = match is not None
+        speech_coverage_labels.append(label)
+        if candidate.get("protocol_smoke_only") is not True:
+            speech_production_labels.append(label)
         if match is None:
             issues.append(f"{label}: missing benchmark result")
             continue
         issues.extend(_missing_metric_issues(label, match, candidate.get("required_metrics")))
+        if match.get("protocol_smoke_only") is True:
+            issues.append(f"{label}: protocol smoke bridge cannot satisfy local speech benchmark evidence")
+            coverage[label] = False
 
-    coverage["oracle_verbatim_asr_latency_and_literal_accuracy"] = coverage.get("speech:oracle_verbatim_asr") is True
-    coverage["local_asr_tts_benchmark_matrix"] = (
-        coverage.get("speech:oracle_verbatim_asr") is True and coverage.get("speech:tts") is True
+    coverage["oracle_verbatim_asr_latency_and_literal_accuracy"] = any(
+        coverage.get(label) is True for label in speech_coverage_labels if label.startswith("speech:oracle_verbatim_asr:")
     )
+    coverage["local_asr_tts_benchmark_matrix"] = (
+        len(speech_production_labels) == len(speech_candidates)
+        and any(
+            coverage.get(label) is True for label in speech_production_labels if label.startswith("speech:oracle_verbatim_asr:")
+        )
+        and any(coverage.get(label) is True for label in speech_production_labels if label.startswith("speech:tts:"))
+    )
+    if not coverage["local_asr_tts_benchmark_matrix"]:
+        issues.append(
+            "local_asr_tts_benchmark_matrix: requires benchmark evidence for non-loopback local ASR and TTS adapters"
+        )
     for smoke_name, _notes in REQUIRED_DGX_SPARK_SMOKES:
         ok = _has_passing_smoke(entries, smoke_name)
         coverage[smoke_name] = ok
@@ -983,6 +1088,7 @@ def _find_benchmark_entry(
     model: str = "",
     input_mode: str = "",
     role: str = "",
+    adapter: str = "",
     asr_hypothesis: str = "",
 ) -> Mapping[str, Any] | None:
     for entry in entries:
@@ -995,6 +1101,8 @@ def _find_benchmark_entry(
         if input_mode and str(entry.get("input") or "") != input_mode:
             continue
         if role and str(entry.get("role") or "") != role:
+            continue
+        if adapter and str(entry.get("adapter") or "") != adapter:
             continue
         if asr_hypothesis and str(entry.get("asr_hypothesis") or "") != asr_hypothesis:
             continue
@@ -1034,6 +1142,27 @@ def _unique_nonempty(values: list[str] | tuple[str, ...]) -> list[str]:
         seen.add(normalized)
         unique.append(normalized)
     return unique
+
+
+def _clean_nonempty(value: Any, *, default: str) -> str:
+    normalized = str(value or "").strip()
+    return normalized or default
+
+
+def _python_module_name(value: Any, *, default: str) -> str:
+    normalized = _clean_nonempty(value, default=default)
+    if not all(part.isidentifier() for part in normalized.split(".")):
+        return default
+    return normalized
+
+
+def _speech_candidate_label(*, role: str, model: str, adapter: str) -> str:
+    parts = ["speech", role or "unknown"]
+    if model:
+        parts.append(model)
+    if adapter:
+        parts.append(adapter)
+    return ":".join(parts)
 
 
 def _missing_metric_issues(label: str, entry: Mapping[str, Any], required_metrics: Any) -> list[str]:

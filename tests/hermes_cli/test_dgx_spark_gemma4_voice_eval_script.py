@@ -19,7 +19,15 @@ def test_dgx_spark_eval_script_generates_full_kame_launch_pack():
     assert "DGX_SPARK_INTERFACE_MAX_AUDIO_SECONDS" in text
     assert "--oracle-base-url" in text
     assert "--asr-base-url" in text
+    assert "--asr-model" in text
+    assert "--asr-module" in text
+    assert "--asr-adapter" in text
     assert "--tts-base-url" in text
+    assert "--tts-model" in text
+    assert "--tts-module" in text
+    assert "--tts-adapter" in text
+    assert "DGX_SPARK_LOCAL_VOICE_STT_MODEL" in text
+    assert "DGX_SPARK_LOCAL_VOICE_TTS_MODEL" in text
     assert "Full KAME stack pack: $KAME_STACK_DIR" in text
     assert "CARTESIA_API_KEY" not in text.split("Track 0: full KAME DGX Spark launch pack", 1)[1].split(
         "Track A: Gemma 4 oracle probe",
