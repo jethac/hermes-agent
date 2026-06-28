@@ -410,6 +410,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                 )
             return
         if event.type in {VoiceEventType.SPEECH_START, VoiceEventType.SPEECH_ENERGY, VoiceEventType.SPEECH_END}:
+            await self._forward_speech_lifecycle_event(event)
             return
         if event.type != VoiceEventType.AUDIO_INPUT_CHUNK:
             return
@@ -702,6 +703,14 @@ class ReferenceRealtimeVoiceSidecarSession:
         except Exception as exc:
             await self._disable_gemini_live("gemini_live_send_failed", exc)
             return False
+
+    async def _forward_speech_lifecycle_event(self, event: VoiceEvent) -> None:
+        if self._streaming_stt is not None:
+            await self._send_streaming_stt_event(event)
+        if self._openai_realtime is not None:
+            await self._send_openai_realtime_event(event)
+        if self._gemini_live is not None:
+            await self._send_gemini_live_event(event)
 
     async def _consume_streaming_stt_events(self) -> None:
         if self._streaming_stt is None:

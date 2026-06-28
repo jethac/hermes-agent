@@ -4814,6 +4814,72 @@ def test_reference_sidecar_kame_debug_exposes_streaming_stt_partials(monkeypatch
     assert partial.payload["input_generation"] == 14
 
 
+def test_reference_sidecar_forwards_speech_lifecycle_to_active_frontends():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        sidecar.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            frontend_provider="gemma4",
+            interface_audio_input="native_audio",
+            asr_mode=RealtimeVoiceASRMode.SPECULATIVE,
+        )
+        sidecar._streaming_stt = object()
+        sidecar._openai_realtime = object()
+        sidecar._gemini_live = object()
+        forwarded = []
+
+        async def fake_send_streaming_stt_event(event):
+            forwarded.append(("stt", event.type, dict(event.payload)))
+            return True
+
+        async def fake_send_openai_realtime_event(event):
+            forwarded.append(("openai", event.type, dict(event.payload)))
+            return True
+
+        async def fake_send_gemini_live_event(event):
+            forwarded.append(("gemini", event.type, dict(event.payload)))
+            return True
+
+        sidecar._send_streaming_stt_event = fake_send_streaming_stt_event
+        sidecar._send_openai_realtime_event = fake_send_openai_realtime_event
+        sidecar._send_gemini_live_event = fake_send_gemini_live_event
+
+        for sequence, event_type, payload in [
+            (1, VoiceEventType.SPEECH_START, {"user_id": "42", "input_generation": 5}),
+            (2, VoiceEventType.SPEECH_ENERGY, {"rms": 512, "input_generation": 5}),
+            (3, VoiceEventType.SPEECH_END, {"user_id": "42", "input_generation": 5}),
+        ]:
+            await sidecar.receive_event(
+                VoiceEvent(
+                    type=event_type,
+                    session_id="voice-123",
+                    sequence=sequence,
+                    payload=payload,
+                )
+            )
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(anext(sidecar.events()), timeout=0.01)
+        return forwarded
+
+    forwarded = asyncio.run(run())
+
+    assert [(provider, event_type) for provider, event_type, _payload in forwarded] == [
+        ("stt", VoiceEventType.SPEECH_START),
+        ("openai", VoiceEventType.SPEECH_START),
+        ("gemini", VoiceEventType.SPEECH_START),
+        ("stt", VoiceEventType.SPEECH_ENERGY),
+        ("openai", VoiceEventType.SPEECH_ENERGY),
+        ("gemini", VoiceEventType.SPEECH_ENERGY),
+        ("stt", VoiceEventType.SPEECH_END),
+        ("openai", VoiceEventType.SPEECH_END),
+        ("gemini", VoiceEventType.SPEECH_END),
+    ]
+    assert forwarded[0][2] == {"user_id": "42", "input_generation": 5}
+    assert forwarded[3][2] == {"rms": 512, "input_generation": 5}
+
+
 def test_reference_sidecar_kame_on_escalation_attaches_one_shot_asr_evidence(monkeypatch):
     calls = []
     sent_events = []
