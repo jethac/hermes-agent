@@ -64,6 +64,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._interface_decision_at_by_generation: dict[int, float] = {}
         self._oracle_first_token_at_by_generation: dict[int, float] = {}
         self._first_audio_metric_generations: set[int] = set()
+        self._speech_energy_ms_by_user: dict[str, int] = {}
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -116,6 +117,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             return
         if event.type == VoiceEventType.SESSION_CLOSED:
             await self.close()
+            return
+        if event.type in {VoiceEventType.SPEECH_START, VoiceEventType.SPEECH_ENERGY, VoiceEventType.SPEECH_END}:
+            await self._handle_speech_lifecycle_event(event)
             return
         if event.type != VoiceEventType.AUDIO_INPUT_CHUNK:
             return
@@ -204,6 +208,34 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if not backend_active and not self._frontend_output_active:
             return
         await self._interrupt_active_turn(event, reason="user_speech")
+
+    async def _handle_speech_lifecycle_event(self, event: VoiceEvent) -> None:
+        if event.type == VoiceEventType.SPEECH_START:
+            self._speech_energy_ms_by_user[_speech_energy_user_key(event.payload)] = 0
+        elif event.type == VoiceEventType.SPEECH_END:
+            self._speech_energy_ms_by_user.pop(_speech_energy_user_key(event.payload), None)
+        elif event.type == VoiceEventType.SPEECH_ENERGY and self._speech_energy_confirms_barge_in(event.payload):
+            await self._auto_barge_in_for_speech(event)
+        if self._sidecar is not None:
+            await self._send_sidecar_event(event)
+
+    def _speech_energy_confirms_barge_in(self, payload: Mapping[str, Any]) -> bool:
+        if _payload_confirms_speech_for_barge_in(payload):
+            return True
+        rms = _payload_nonnegative_float(payload.get("rms"))
+        if rms is None:
+            return False
+        min_rms = _barge_in_min_rms(self.config)
+        key = _speech_energy_user_key(payload)
+        if rms < min_rms:
+            self._speech_energy_ms_by_user[key] = 0
+            return False
+        duration_ms = _speech_energy_duration_ms(payload)
+        if duration_ms <= 0:
+            duration_ms = 20
+        accumulated = self._speech_energy_ms_by_user.get(key, 0) + duration_ms
+        self._speech_energy_ms_by_user[key] = accumulated
+        return accumulated >= _barge_in_min_speech_ms(self.config)
 
     async def _interrupt_active_turn(self, event: VoiceEvent, *, reason: str) -> None:
         cancelled_generation = self._playback_generation
@@ -1831,6 +1863,55 @@ def _payload_confirms_speech_for_barge_in(payload: Mapping[str, Any]) -> bool:
         if key in payload:
             return _metadata_bool(payload.get(key), default=False)
     return False
+
+
+def _speech_energy_user_key(payload: Mapping[str, Any]) -> str:
+    user_id = str(payload.get("user_id") or payload.get("speaker_id") or "").strip()
+    return user_id or "default"
+
+
+def _speech_energy_duration_ms(payload: Mapping[str, Any]) -> int:
+    duration_ms = _payload_nonnegative_float(payload.get("duration_ms"))
+    if duration_ms is not None:
+        return int(round(duration_ms))
+    duration_seconds = _payload_nonnegative_float(payload.get("duration_seconds"))
+    if duration_seconds is not None:
+        return int(round(duration_seconds * 1000))
+    return 0
+
+
+def _payload_nonnegative_float(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed
+
+
+def _barge_in_min_rms(config: Optional[RealtimeVoiceSessionConfig]) -> float:
+    metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
+    barge_in = metadata.get("barge_in")
+    if isinstance(barge_in, Mapping):
+        value = _payload_nonnegative_float(barge_in.get("min_rms"))
+        if value is not None:
+            return value
+    value = _payload_nonnegative_float(metadata.get("barge_in_min_rms"))
+    return value if value is not None else 350.0
+
+
+def _barge_in_min_speech_ms(config: Optional[RealtimeVoiceSessionConfig]) -> int:
+    metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
+    barge_in = metadata.get("barge_in")
+    if isinstance(barge_in, Mapping):
+        value = _payload_nonnegative_float(barge_in.get("min_speech_ms"))
+        if value is not None:
+            return int(round(value))
+    value = _payload_nonnegative_float(metadata.get("barge_in_min_speech_ms"))
+    return int(round(value)) if value is not None else 120
 
 
 def _payload_input_generation(payload: dict) -> Optional[int]:

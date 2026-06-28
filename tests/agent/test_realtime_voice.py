@@ -3246,6 +3246,188 @@ def test_text_engine_raw_audio_without_confirmed_speech_does_not_barge_in(monkey
     asyncio.run(run())
 
 
+def test_text_engine_speech_energy_barge_in_requires_rms_and_duration(monkeypatch):
+    class SlowInterruptibleOracle:
+        def __init__(self):
+            self.interrupted = False
+            self.release = asyncio.Event()
+
+        async def stream_answer(self, transcript: str):
+            yield "First answer starts."
+            await self.release.wait()
+            yield " stale ending."
+
+        def interrupt(self, message: str = ""):
+            self.interrupted = True
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        oracle = SlowInterruptibleOracle()
+        engine = TextOracleTTSEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                metadata={"barge_in": {"min_rms": 350, "min_speech_ms": 120}},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "first turn"},
+            )
+        )
+
+        while True:
+            event = await anext(engine.events())
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                break
+
+        for sequence, payload in [
+            (2, {"user_id": "42", "rms": 120, "duration_ms": 200}),
+            (3, {"user_id": "42", "rms": 512, "duration_ms": 80}),
+        ]:
+            await engine.receive_event(
+                VoiceEvent(
+                    type=VoiceEventType.SPEECH_ENERGY,
+                    session_id="voice-123",
+                    sequence=sequence,
+                    payload=payload,
+                )
+            )
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(anext(engine.events()), timeout=0.01)
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.SPEECH_ENERGY,
+                session_id="voice-123",
+                sequence=4,
+                payload={"user_id": "42", "rms": 512, "duration_ms": 40},
+            )
+        )
+
+        barge_in = await anext(engine.events())
+        await engine.close()
+
+        assert barge_in.type == VoiceEventType.BARGE_IN
+        assert barge_in.payload["reason"] == "user_speech"
+        assert barge_in.payload["playback_generation"] == 2
+        assert barge_in.payload["backend_interrupt_requested"] is True
+        assert oracle.interrupted is True
+
+    asyncio.run(run())
+
+
+def test_text_engine_speech_end_resets_energy_barge_in_accumulator(monkeypatch):
+    class SlowInterruptibleOracle:
+        def __init__(self):
+            self.interrupted = False
+            self.release = asyncio.Event()
+
+        async def stream_answer(self, transcript: str):
+            yield "First answer starts."
+            await self.release.wait()
+            yield " stale ending."
+
+        def interrupt(self, message: str = ""):
+            self.interrupted = True
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        oracle = SlowInterruptibleOracle()
+        engine = TextOracleTTSEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                metadata={"barge_in": {"min_rms": 350, "min_speech_ms": 120}},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "first turn"},
+            )
+        )
+
+        while True:
+            event = await anext(engine.events())
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                break
+
+        for sequence, event_type, payload in [
+            (2, VoiceEventType.SPEECH_ENERGY, {"user_id": "42", "rms": 512, "duration_ms": 80}),
+            (3, VoiceEventType.SPEECH_END, {"user_id": "42"}),
+            (4, VoiceEventType.SPEECH_ENERGY, {"user_id": "42", "rms": 512, "duration_ms": 40}),
+        ]:
+            await engine.receive_event(
+                VoiceEvent(
+                    type=event_type,
+                    session_id="voice-123",
+                    sequence=sequence,
+                    payload=payload,
+                )
+            )
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(anext(engine.events()), timeout=0.01)
+
+        await engine.close()
+
+        assert oracle.interrupted is False
+        assert engine._playback_generation == 1
+
+    asyncio.run(run())
+
+
+def test_text_engine_forwards_speech_lifecycle_events_to_sidecar():
+    async def run():
+        sidecar = FakeSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                sidecar_base_url="http://voice.local",
+            )
+        )
+        assert (await anext(engine.events())).type == VoiceEventType.SESSION_STARTED
+
+        for sequence, event_type, payload in [
+            (1, VoiceEventType.SPEECH_START, {"user_id": "42"}),
+            (2, VoiceEventType.SPEECH_ENERGY, {"user_id": "42", "rms": 512, "duration_ms": 20}),
+            (3, VoiceEventType.SPEECH_END, {"user_id": "42"}),
+        ]:
+            await engine.receive_event(
+                VoiceEvent(
+                    type=event_type,
+                    session_id="voice-123",
+                    sequence=sequence,
+                    payload=payload,
+                )
+            )
+
+        await engine.close()
+
+        assert [event.type for event in sidecar.received] == [
+            VoiceEventType.SPEECH_START,
+            VoiceEventType.SPEECH_ENERGY,
+            VoiceEventType.SPEECH_END,
+        ]
+
+    asyncio.run(run())
+
+
 def test_text_engine_auto_barge_in_on_new_speech_while_frontend_output_active():
     class ManualSidecar(FakeSidecar):
         async def send_event(self, event):
