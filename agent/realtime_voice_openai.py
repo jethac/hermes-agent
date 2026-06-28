@@ -68,6 +68,8 @@ class OpenAIRealtimeFrontendSession:
         self._sequence = 0
         self._closed = False
         self._active_playback_generation: Optional[int] = None
+        self._playback_active = False
+        self._playback_started_generation: Optional[int] = None
         self._active_response_id: Optional[str] = None
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
@@ -148,6 +150,7 @@ class OpenAIRealtimeFrontendSession:
                 await self._send_openai({"type": "response.cancel"})
             with contextlib.suppress(Exception):
                 await self._send_openai({"type": "input_audio_buffer.clear"})
+        await self._emit_playback_stopped(self._playback_started_generation)
         self._closed = True
         if self._reader_task and not self._reader_task.done():
             self._reader_task.cancel()
@@ -219,6 +222,7 @@ class OpenAIRealtimeFrontendSession:
             await self._send_openai({"type": "input_audio_buffer.clear"})
         self._active_playback_generation = None
         self._active_response_id = None
+        await self._emit_playback_stopped(playback_generation)
         await self._emit(VoiceEventType.BARGE_IN, payload)
 
     async def _consume_openai_events(self) -> None:
@@ -277,6 +281,7 @@ class OpenAIRealtimeFrontendSession:
                 await self._emit_audio_delta(delta)
             return
         if event_type in {"response.done", "response.output_item.done"}:
+            await self._emit_playback_stopped(self._active_playback_generation)
             await self._emit(VoiceEventType.ASSISTANT_COMMIT, {"response_id": self._active_response_id})
             self._active_response_id = None
             return
@@ -307,7 +312,27 @@ class OpenAIRealtimeFrontendSession:
         if self._active_playback_generation is not None:
             payload["playback_generation"] = self._active_playback_generation
         payload["metrics"] = {"openai_realtime": True}
+        await self._emit_playback_started(self._active_playback_generation)
         await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
+
+    async def _emit_playback_started(self, generation: Optional[int]) -> None:
+        if self._playback_active and self._playback_started_generation == generation:
+            return
+        if self._playback_active:
+            await self._emit_playback_stopped(self._playback_started_generation)
+        self._playback_active = True
+        self._playback_started_generation = generation
+        payload = {"playback_generation": generation} if generation is not None else {}
+        await self._emit(VoiceEventType.PLAYBACK_STARTED, payload)
+
+    async def _emit_playback_stopped(self, generation: Optional[int]) -> None:
+        if not self._playback_active:
+            return
+        payload_generation = generation if generation is not None else self._playback_started_generation
+        payload = {"playback_generation": payload_generation} if payload_generation is not None else {}
+        self._playback_active = False
+        self._playback_started_generation = None
+        await self._emit(VoiceEventType.PLAYBACK_STOPPED, payload)
 
     async def _send_openai(self, payload: Mapping[str, Any]) -> None:
         if self._ws is None:

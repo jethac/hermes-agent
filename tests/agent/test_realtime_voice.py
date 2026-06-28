@@ -4107,6 +4107,76 @@ def test_session_marks_audio_only_output_as_speaking():
     asyncio.run(run())
 
 
+def test_session_marks_playback_lifecycle_and_drops_stale_events_after_barge_in():
+    class LifecycleEngine:
+        def __init__(self):
+            self.received = []
+            self._events = [
+                VoiceEvent(
+                    type=VoiceEventType.PLAYBACK_STARTED,
+                    session_id="voice-123",
+                    sequence=10,
+                    payload={"playback_generation": 1},
+                ),
+                VoiceEvent(
+                    type=VoiceEventType.PLAYBACK_STOPPED,
+                    session_id="voice-123",
+                    sequence=11,
+                    payload={"playback_generation": 1},
+                ),
+                VoiceEvent(
+                    type=VoiceEventType.PLAYBACK_STARTED,
+                    session_id="voice-123",
+                    sequence=12,
+                    payload={"playback_generation": 2},
+                ),
+            ]
+
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            self.received.append(event)
+
+        async def events(self):
+            for event in self._events:
+                yield event
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(RealtimeVoiceSessionConfig(session_id="voice-123"), engine=LifecycleEngine())
+        await session.start()
+        session._apply_server_event(
+            VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"text": "first", "playback_generation": 1},
+            )
+        )
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=1,
+                payload={"reason": "user_speech"},
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+
+        assert [event.type for event in seen] == [VoiceEventType.PLAYBACK_STARTED]
+        assert seen[0].payload["playback_generation"] == 2
+        assert seen[0].payload["session_state"] == RealtimeVoiceSessionState.SPEAKING.value
+        assert session.state == RealtimeVoiceSessionState.SPEAKING
+
+    asyncio.run(run())
+
+
 def test_session_adds_latency_metrics_to_realtime_events(monkeypatch):
     async def run():
         async def fake_speak(self, text, playback_generation):
@@ -4173,8 +4243,14 @@ def test_text_engine_file_tts_audio_chunk_includes_synthesis_metric(monkeypatch,
 
         assert event.type == VoiceEventType.SESSION_STARTED
         event = await asyncio.wait_for(engine._events.get(), timeout=1)
+        assert event.type == VoiceEventType.PLAYBACK_STARTED
+        assert event.payload["playback_generation"] == 1
+        event = await asyncio.wait_for(engine._events.get(), timeout=1)
         assert event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
         assert event.payload["metrics"]["tts_synthesis_ms"] >= 0
+        event = await asyncio.wait_for(engine._events.get(), timeout=1)
+        assert event.type == VoiceEventType.PLAYBACK_STOPPED
+        assert event.payload["playback_generation"] == 1
         await engine.close()
 
     asyncio.run(run())
@@ -4734,6 +4810,9 @@ def test_native_s2s_engine_accepts_binary_audio_output_frame():
         await engine._read_sidecar()
 
         event = await engine._events.get()
+        assert event.type == VoiceEventType.PLAYBACK_STARTED
+        assert event.payload["playback_generation"] == 6
+        event = await engine._events.get()
         assert event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
         assert event.session_id == "voice-123"
         assert event.payload["playback_generation"] == 6
@@ -4854,6 +4933,9 @@ def test_native_s2s_engine_tags_legacy_raw_audio_with_active_generation():
 
         await engine._read_sidecar()
 
+        event = await engine._events.get()
+        assert event.type == VoiceEventType.PLAYBACK_STARTED
+        assert event.payload["playback_generation"] == 3
         event = await engine._events.get()
         assert event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
         assert event.payload["playback_generation"] == 3

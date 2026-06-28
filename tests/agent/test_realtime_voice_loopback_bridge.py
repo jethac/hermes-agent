@@ -80,8 +80,14 @@ def test_loopback_bridge_streaming_stt_and_tts_sessions():
                 payload={"text": "One moment.", "speak": True, "playback_generation": 4},
             ).to_wire()
         )
+        started = ws.receive_json()
+        assert started["type"] == VoiceEventType.PLAYBACK_STARTED.value
+        assert started["payload"]["playback_generation"] == 4
         audio = event_from_binary_audio_frame(ws.receive_bytes(), expected_type=VoiceEventType.AUDIO_OUTPUT_CHUNK)
         assert audio.payload["playback_generation"] == 4
         assert audio.payload["sample_rate_hz"] == 16000
         assert audio.payload["channels"] == 1
         assert audio.payload["metrics"]["loopback"] is True
+        stopped = ws.receive_json()
+        assert stopped["type"] == VoiceEventType.PLAYBACK_STOPPED.value
+        assert stopped["payload"]["playback_generation"] == 4

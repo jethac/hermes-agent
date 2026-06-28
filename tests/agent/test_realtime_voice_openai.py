@@ -177,16 +177,22 @@ async def test_openai_realtime_server_events_map_to_hermes_events():
 
     partial = await asyncio.wait_for(events.__anext__(), timeout=1)
     final = await asyncio.wait_for(events.__anext__(), timeout=1)
+    playback_started = await asyncio.wait_for(events.__anext__(), timeout=1)
     audio = await asyncio.wait_for(events.__anext__(), timeout=1)
+    playback_stopped = await asyncio.wait_for(events.__anext__(), timeout=1)
     commit = await asyncio.wait_for(events.__anext__(), timeout=1)
 
     assert partial.type == VoiceEventType.TRANSCRIPT_PARTIAL
     assert partial.payload["text"] == "Hel"
     assert final.type == VoiceEventType.TRANSCRIPT_FINAL
     assert final.payload["text"] == "Hello from voice"
+    assert playback_started.type == VoiceEventType.PLAYBACK_STARTED
+    assert playback_started.payload["playback_generation"] == 7
     assert audio.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
     assert audio.payload["playback_generation"] == 7
     assert len(base64.b64decode(audio.payload["data_b64"])) == 640
+    assert playback_stopped.type == VoiceEventType.PLAYBACK_STOPPED
+    assert playback_stopped.payload["playback_generation"] == 7
     assert commit.type == VoiceEventType.ASSISTANT_COMMIT
 
     await session.close()

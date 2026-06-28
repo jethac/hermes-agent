@@ -252,6 +252,26 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     payload.setdefault("playback_generation", self._playback_generation)
                     self._frontend_output_active = True
                     await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
+                elif event.type == VoiceEventType.PLAYBACK_STARTED:
+                    payload = dict(event.payload)
+                    generation = _payload_generation(payload)
+                    if generation is not None and generation < self._playback_generation:
+                        continue
+                    if generation is not None:
+                        self._playback_generation = max(self._playback_generation, generation)
+                    payload.setdefault("playback_generation", self._playback_generation)
+                    self._frontend_output_active = True
+                    await self._emit(VoiceEventType.PLAYBACK_STARTED, payload)
+                elif event.type == VoiceEventType.PLAYBACK_STOPPED:
+                    payload = dict(event.payload)
+                    generation = _payload_generation(payload)
+                    if generation is not None and generation < self._playback_generation:
+                        continue
+                    if generation is not None:
+                        self._playback_generation = max(self._playback_generation, generation)
+                    payload.setdefault("playback_generation", self._playback_generation)
+                    self._frontend_output_active = False
+                    await self._emit(VoiceEventType.PLAYBACK_STOPPED, payload)
                 elif event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
                     payload = dict(event.payload)
                     generation = _payload_generation(payload)
@@ -924,6 +944,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             with open(file_path, "rb") as fh:
                 data = fh.read()
             if data:
+                await self._emit(
+                    VoiceEventType.PLAYBACK_STARTED,
+                    {"playback_generation": playback_generation, **metadata},
+                )
                 payload = AudioChunk(codec=VoiceAudioCodec.OPUS, data=data).to_payload()
                 payload["mime_type"] = _mime_type_for_path(file_path)
                 payload["playback_generation"] = playback_generation
@@ -935,6 +959,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 await self._emit(
                     VoiceEventType.AUDIO_OUTPUT_CHUNK,
                     payload,
+                )
+                await self._emit(
+                    VoiceEventType.PLAYBACK_STOPPED,
+                    {"playback_generation": playback_generation, **metadata},
                 )
         finally:
             try:

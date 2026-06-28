@@ -161,19 +161,23 @@ async def test_gemini_live_server_events_map_to_hermes_events():
         }
     )
 
-    seen = [await asyncio.wait_for(session.events().__anext__(), timeout=1) for _ in range(5)]
+    seen = [await asyncio.wait_for(session.events().__anext__(), timeout=1) for _ in range(7)]
     assert [event.type for event in seen] == [
         VoiceEventType.TRANSCRIPT_FINAL,
         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+        VoiceEventType.PLAYBACK_STARTED,
         VoiceEventType.AUDIO_OUTPUT_CHUNK,
         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+        VoiceEventType.PLAYBACK_STOPPED,
         VoiceEventType.ASSISTANT_COMMIT,
     ]
     assert seen[0].payload["text"] == "hello"
     assert seen[1].payload["text"] == "hi"
-    audio_payload = AudioChunk.from_payload(seen[2].payload)
+    assert "playback_generation" not in seen[2].payload
+    audio_payload = AudioChunk.from_payload(seen[3].payload)
     assert audio_payload.sample_rate_hz == 48000
-    assert seen[2].payload["metrics"] == {"gemini_live": True}
+    assert seen[3].payload["metrics"] == {"gemini_live": True}
+    assert "playback_generation" not in seen[5].payload
 
     await session.close()
 

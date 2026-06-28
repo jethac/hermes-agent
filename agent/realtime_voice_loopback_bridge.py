@@ -178,7 +178,15 @@ class LoopbackStreamingTTSBridgeSession:
         if "playback_generation" in event.payload:
             payload["playback_generation"] = event.payload["playback_generation"]
         payload["metrics"] = {"streaming_tts_ms": 0, "loopback": True}
+        await self._emit(
+            VoiceEventType.PLAYBACK_STARTED,
+            {"playback_generation": payload.get("playback_generation")} if "playback_generation" in payload else {},
+        )
         await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
+        await self._emit(
+            VoiceEventType.PLAYBACK_STOPPED,
+            {"playback_generation": payload.get("playback_generation")} if "playback_generation" in payload else {},
+        )
 
     async def events(self) -> AsyncIterator[VoiceEvent]:
         while True:

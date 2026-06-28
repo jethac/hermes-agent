@@ -44,6 +44,8 @@ class RealtimeVoiceTranscript:
 STALE_GENERATION_EVENT_TYPES = frozenset(
     {
         VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.PLAYBACK_STARTED,
+        VoiceEventType.PLAYBACK_STOPPED,
         VoiceEventType.ASSISTANT_COMMIT,
         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
         VoiceEventType.TRANSCRIPT_FINAL,
@@ -173,6 +175,18 @@ class RealtimeVoiceSession:
                     return
                 self.transcript.active_playback_generation = generation
             self.state = RealtimeVoiceSessionState.SPEAKING
+        elif event.type == VoiceEventType.PLAYBACK_STARTED:
+            generation = _payload_generation(event.payload)
+            if generation is not None:
+                if generation < self.transcript.active_playback_generation:
+                    return
+                self.transcript.active_playback_generation = generation
+            self.state = RealtimeVoiceSessionState.SPEAKING
+        elif event.type == VoiceEventType.PLAYBACK_STOPPED:
+            generation = _payload_generation(event.payload)
+            if generation is not None and generation < self.transcript.active_playback_generation:
+                return
+            self.state = RealtimeVoiceSessionState.LISTENING
         elif event.type == VoiceEventType.ASSISTANT_COMMIT:
             generation = _payload_generation(event.payload)
             if generation is not None and generation < self.transcript.active_playback_generation:
@@ -241,9 +255,17 @@ class RealtimeVoiceSession:
             return self.state
         if event.type == VoiceEventType.TRANSCRIPT_FINAL:
             return RealtimeVoiceSessionState.ASSISTANT_PENDING
-        if event.type in {VoiceEventType.ASSISTANT_TEXT_PARTIAL, VoiceEventType.AUDIO_OUTPUT_CHUNK}:
+        if event.type in {
+            VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+            VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            VoiceEventType.PLAYBACK_STARTED,
+        }:
             return RealtimeVoiceSessionState.SPEAKING
-        if event.type in {VoiceEventType.ASSISTANT_COMMIT, VoiceEventType.BARGE_IN}:
+        if event.type in {
+            VoiceEventType.ASSISTANT_COMMIT,
+            VoiceEventType.BARGE_IN,
+            VoiceEventType.PLAYBACK_STOPPED,
+        }:
             return RealtimeVoiceSessionState.LISTENING
         if event.type == VoiceEventType.SESSION_ERROR:
             return RealtimeVoiceSessionState.CLOSING

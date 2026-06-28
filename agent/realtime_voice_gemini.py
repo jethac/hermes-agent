@@ -73,6 +73,8 @@ class GeminiLiveFrontendSession:
         self._sequence = 0
         self._closed = False
         self._active_playback_generation: Optional[int] = None
+        self._playback_active = False
+        self._playback_started_generation: Optional[int] = None
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
         api_key = (self.runtime.api_key or "").strip()
@@ -130,6 +132,7 @@ class GeminiLiveFrontendSession:
     async def close(self) -> None:
         if self._closed:
             return
+        await self._emit_playback_stopped(self._playback_started_generation)
         self._closed = True
         if self._reader_task and not self._reader_task.done():
             self._reader_task.cancel()
@@ -192,6 +195,7 @@ class GeminiLiveFrontendSession:
         self._active_playback_generation = None
         with contextlib.suppress(Exception):
             await self._send_gemini({"realtimeInput": {"text": "[interrupt current response]"}})
+        await self._emit_playback_stopped(playback_generation)
         await self._emit(VoiceEventType.BARGE_IN, payload)
 
     async def _consume_gemini_events(self) -> None:
@@ -256,6 +260,7 @@ class GeminiLiveFrontendSession:
                 if text:
                     await self._emit(VoiceEventType.ASSISTANT_TEXT_PARTIAL, {"text": text})
         if server_content.get("generationComplete") is True or server_content.get("turnComplete") is True:
+            await self._emit_playback_stopped(self._active_playback_generation)
             await self._emit(VoiceEventType.ASSISTANT_COMMIT, {"provider": "gemini_live"})
 
     async def _handle_tool_call(self, tool_call: Mapping[str, Any]) -> None:
@@ -329,7 +334,27 @@ class GeminiLiveFrontendSession:
         if self._active_playback_generation is not None:
             payload["playback_generation"] = self._active_playback_generation
         payload["metrics"] = {"gemini_live": True}
+        await self._emit_playback_started(self._active_playback_generation)
         await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
+
+    async def _emit_playback_started(self, generation: Optional[int]) -> None:
+        if self._playback_active and self._playback_started_generation == generation:
+            return
+        if self._playback_active:
+            await self._emit_playback_stopped(self._playback_started_generation)
+        self._playback_active = True
+        self._playback_started_generation = generation
+        payload = {"playback_generation": generation} if generation is not None else {}
+        await self._emit(VoiceEventType.PLAYBACK_STARTED, payload)
+
+    async def _emit_playback_stopped(self, generation: Optional[int]) -> None:
+        if not self._playback_active:
+            return
+        payload_generation = generation if generation is not None else self._playback_started_generation
+        payload = {"playback_generation": payload_generation} if payload_generation is not None else {}
+        self._playback_active = False
+        self._playback_started_generation = None
+        await self._emit(VoiceEventType.PLAYBACK_STOPPED, payload)
 
     async def _send_gemini(self, payload: Mapping[str, Any]) -> None:
         if self._ws is None:

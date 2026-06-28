@@ -31,6 +31,8 @@ from agent.realtime_voice_oracle import HermesRealtimeOracle
 STALE_SIDECAR_GENERATION_EVENT_TYPES = frozenset(
     {
         VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.PLAYBACK_STARTED,
+        VoiceEventType.PLAYBACK_STOPPED,
         VoiceEventType.ASSISTANT_COMMIT,
         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
         VoiceEventType.TRANSCRIPT_FINAL,
@@ -51,6 +53,8 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         self._oracle: Optional[HermesRealtimeOracle] = None
         self._oracle_hint_task: Optional[asyncio.Task[None]] = None
         self._playback_generation = 0
+        self._playback_active = False
+        self._playback_started_generation: Optional[int] = None
         self._assistant_output_active = False
         self._auto_barge_in_input_active = False
 
@@ -101,6 +105,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
     async def close(self) -> None:
         if self._closed:
             return
+        await self._emit_playback_stopped(self._playback_started_generation)
         self._closed = True
         self._cancel_oracle_hint()
         if self._reader_task:
@@ -165,6 +170,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             timestamp_ms=event.timestamp_ms,
             payload=payload,
         )
+        await self._emit_playback_stopped(self._playback_generation)
         await self._emit(
             VoiceEventType.BARGE_IN,
             {
@@ -196,6 +202,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
                         payload = AudioChunk(codec=VoiceAudioCodec.OPUS, data=raw).to_payload()
                         if self._playback_generation:
                             payload["playback_generation"] = self._playback_generation
+                        await self._emit_playback_started(self._playback_generation or None)
                         await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
                         continue
                     if self._is_stale_sidecar_event(event):
@@ -269,15 +276,34 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         return event
 
     async def _queue_sidecar_event(self, event: VoiceEvent) -> None:
+        if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+            await self._emit_playback_started(_payload_generation(dict(event.payload)))
+        elif event.type == VoiceEventType.PLAYBACK_STARTED:
+            self._playback_active = True
+            self._playback_started_generation = _payload_generation(dict(event.payload))
+        elif event.type == VoiceEventType.PLAYBACK_STOPPED:
+            self._playback_active = False
+            self._playback_started_generation = None
+        elif event.type in {VoiceEventType.ASSISTANT_COMMIT, VoiceEventType.BARGE_IN, VoiceEventType.SESSION_ERROR}:
+            await self._emit_playback_stopped(_payload_generation(dict(event.payload)))
         self._track_sidecar_output_state(event)
         await self._emit(event.type, dict(event.payload))
 
     def _track_sidecar_output_state(self, event: VoiceEvent) -> None:
-        if event.type in {VoiceEventType.AUDIO_OUTPUT_CHUNK, VoiceEventType.ASSISTANT_TEXT_PARTIAL}:
+        if event.type in {
+            VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            VoiceEventType.PLAYBACK_STARTED,
+            VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+        }:
             self._assistant_output_active = True
         elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
             self._auto_barge_in_input_active = False
-        elif event.type in {VoiceEventType.ASSISTANT_COMMIT, VoiceEventType.BARGE_IN, VoiceEventType.SESSION_ERROR}:
+        elif event.type in {
+            VoiceEventType.ASSISTANT_COMMIT,
+            VoiceEventType.BARGE_IN,
+            VoiceEventType.SESSION_ERROR,
+            VoiceEventType.PLAYBACK_STOPPED,
+        }:
             self._assistant_output_active = False
 
     def _is_stale_sidecar_event(self, event: VoiceEvent) -> bool:
@@ -298,6 +324,8 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             self._playback_generation = max(self._playback_generation, generation)
         elif event.type in {
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            VoiceEventType.PLAYBACK_STARTED,
+            VoiceEventType.PLAYBACK_STOPPED,
             VoiceEventType.ASSISTANT_TEXT_PARTIAL,
             VoiceEventType.ASSISTANT_COMMIT,
         } and self._playback_generation:
@@ -313,6 +341,25 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             timestamp_ms=event.timestamp_ms,
             payload=payload,
         )
+
+    async def _emit_playback_started(self, generation: Optional[int]) -> None:
+        if self._playback_active and self._playback_started_generation == generation:
+            return
+        if self._playback_active:
+            await self._emit_playback_stopped(self._playback_started_generation)
+        self._playback_active = True
+        self._playback_started_generation = generation
+        payload = {"playback_generation": generation} if generation is not None else {}
+        await self._emit(VoiceEventType.PLAYBACK_STARTED, payload)
+
+    async def _emit_playback_stopped(self, generation: Optional[int]) -> None:
+        if not self._playback_active:
+            return
+        payload_generation = generation if generation is not None else self._playback_started_generation
+        payload = {"playback_generation": payload_generation} if payload_generation is not None else {}
+        self._playback_active = False
+        self._playback_started_generation = None
+        await self._emit(VoiceEventType.PLAYBACK_STOPPED, payload)
 
     def _start_oracle_hint(self, transcript: str, playback_generation: Optional[int]) -> None:
         self._cancel_oracle_hint("Realtime voice native S2S turn superseded")

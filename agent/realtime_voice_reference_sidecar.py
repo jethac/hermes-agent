@@ -669,6 +669,8 @@ class ReferenceRealtimeVoiceSidecarSession:
             async for event in self._streaming_tts.events():
                 if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
                     await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, dict(event.payload))
+                elif event.type in {VoiceEventType.PLAYBACK_STARTED, VoiceEventType.PLAYBACK_STOPPED}:
+                    await self._emit(event.type, dict(event.payload))
                 elif event.type == VoiceEventType.FRONTEND_STATE:
                     payload = dict(event.payload)
                     payload.setdefault("streaming_tts", True)
@@ -695,6 +697,8 @@ class ReferenceRealtimeVoiceSidecarSession:
                     VoiceEventType.TRANSCRIPT_PARTIAL,
                     VoiceEventType.TRANSCRIPT_FINAL,
                     VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                    VoiceEventType.PLAYBACK_STARTED,
+                    VoiceEventType.PLAYBACK_STOPPED,
                     VoiceEventType.FRONTEND_STATE,
                     VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                     VoiceEventType.ASSISTANT_COMMIT,
@@ -721,6 +725,8 @@ class ReferenceRealtimeVoiceSidecarSession:
                     VoiceEventType.TRANSCRIPT_PARTIAL,
                     VoiceEventType.TRANSCRIPT_FINAL,
                     VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                    VoiceEventType.PLAYBACK_STARTED,
+                    VoiceEventType.PLAYBACK_STOPPED,
                     VoiceEventType.FRONTEND_STATE,
                     VoiceEventType.ORACLE_HINT,
                     VoiceEventType.ASSISTANT_TEXT_PARTIAL,
@@ -1198,6 +1204,10 @@ class ReferenceRealtimeVoiceSidecarSession:
                 with open(file_path, "rb") as fh:
                     data = fh.read()
                 if data:
+                    await self._emit(
+                        VoiceEventType.PLAYBACK_STARTED,
+                        {"playback_generation": playback_generation} if playback_generation is not None else {},
+                    )
                     payload = AudioChunk(codec=VoiceAudioCodec.OPUS, data=data).to_payload()
                     payload["mime_type"] = _mime_type_for_path(file_path)
                     if playback_generation is not None:
@@ -1208,6 +1218,10 @@ class ReferenceRealtimeVoiceSidecarSession:
                     metrics["tts_synthesis_ms"] = tts_synthesis_ms
                     payload["metrics"] = metrics
                     await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
+                    await self._emit(
+                        VoiceEventType.PLAYBACK_STOPPED,
+                        {"playback_generation": playback_generation} if playback_generation is not None else {},
+                    )
             finally:
                 _unlink(file_path)
         except asyncio.CancelledError:
@@ -1264,7 +1278,15 @@ class ReferenceRealtimeVoiceSidecarSession:
             payload["playback_generation"] = playback_generation
         payload.update(dict(metadata))
         payload["metrics"] = dict(cached.get("metrics") or {})
+        await self._emit(
+            VoiceEventType.PLAYBACK_STARTED,
+            {"playback_generation": playback_generation} if playback_generation is not None else {},
+        )
         await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
+        await self._emit(
+            VoiceEventType.PLAYBACK_STOPPED,
+            {"playback_generation": playback_generation} if playback_generation is not None else {},
+        )
         return True
 
     def _speak_sync(self, text: str, metadata: Optional[Mapping[str, str]] = None) -> str:

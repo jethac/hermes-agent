@@ -1,6 +1,13 @@
-from agent.realtime_voice import AudioChunk, RealtimeVoiceSessionConfig, VoiceAudioCodec, VoiceEventType
+import asyncio
+import base64
+import json
+import sys
+import types
+
+from agent.realtime_voice import AudioChunk, RealtimeVoiceSessionConfig, VoiceAudioCodec, VoiceEvent, VoiceEventType
 from agent.realtime_voice_cartesia_bridge import (
     CartesiaRealtimeBridgeConfig,
+    CartesiaStreamingTTSBridgeSession,
     cartesia_bridge_config_from_env,
     cartesia_bridge_prerequisite_issues,
     cartesia_stt_audio_bytes,
@@ -177,6 +184,104 @@ def test_cartesia_bridge_health_advertises_streaming_stt_tts():
     assert body["capabilities"]["streaming_tts"] is True
     assert body["capabilities"]["input_languages"] == ["en"]
     assert body["capabilities"]["output_languages"] == ["en", "ja"]
+
+
+def test_cartesia_tts_session_streams_audio_lifecycle(monkeypatch):
+    captured = {}
+
+    class FakeCartesiaTTSWebSocket:
+        def __init__(self):
+            self.sent = []
+            self.closed = False
+            self._messages = asyncio.Queue()
+
+        async def send(self, payload):
+            self.sent.append(payload)
+            data = json.loads(payload)
+            if data.get("transcript") == "hello from Hermes":
+                await self._messages.put(
+                    json.dumps(
+                        {
+                            "type": "chunk",
+                            "data": base64.b64encode(b"pcm-audio").decode("ascii"),
+                        }
+                    )
+                )
+                await self._messages.put(json.dumps({"type": "done"}))
+
+        async def close(self):
+            self.closed = True
+            await self._messages.put(None)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            item = await self._messages.get()
+            if item is None:
+                raise StopAsyncIteration
+            return item
+
+    fake_ws = FakeCartesiaTTSWebSocket()
+
+    async def fake_connect(url, additional_headers=None, extra_headers=None):
+        captured["url"] = url
+        captured["headers"] = additional_headers or extra_headers
+        return fake_ws
+
+    monkeypatch.setitem(sys.modules, "websockets", types.SimpleNamespace(connect=fake_connect))
+
+    async def run():
+        session = CartesiaStreamingTTSBridgeSession(
+            CartesiaRealtimeBridgeConfig(
+                api_key="cartesia-secret",
+                voice_id="voice-123",
+                tts_model="sonic-3.5",
+                tts_sample_rate_hz=24000,
+                connect_timeout_seconds=1,
+            )
+        )
+        await session.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await session.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "text": "hello from Hermes",
+                    "speak": True,
+                    "playback_generation": 3,
+                },
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.PLAYBACK_STOPPED:
+                await session.close()
+                break
+
+        assert captured["headers"] == {"X-API-Key": "cartesia-secret"}
+        assert captured["url"] == "wss://api.cartesia.ai/tts/websocket?cartesia_version=2026-03-01"
+        sent = json.loads(fake_ws.sent[0])
+        assert sent["transcript"] == "hello from Hermes"
+        assert sent["context_id"] == "voice-123-tts-3"
+        assert [event.type for event in seen] == [
+            VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.PLAYBACK_STARTED,
+            VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            VoiceEventType.PLAYBACK_STOPPED,
+        ]
+        assert seen[1].payload["playback_generation"] == 3
+        audio = AudioChunk.from_payload(seen[2].payload)
+        assert audio.codec == VoiceAudioCodec.PCM16
+        assert audio.data == b"pcm-audio"
+        assert audio.sample_rate_hz == 24000
+        assert seen[2].payload["playback_generation"] == 3
+        assert seen[3].payload["playback_generation"] == 3
+
+    asyncio.run(run())
 
 
 def test_cartesia_stt_audio_bytes_passes_matching_pcm16_through():

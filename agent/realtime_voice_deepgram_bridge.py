@@ -202,6 +202,8 @@ class DeepgramStreamingTTSBridgeSession:
         self._sequence = 0
         self._closed = False
         self._playback_generation: Optional[int] = None
+        self._playback_active = False
+        self._playback_started_generation: Optional[int] = None
         self._current_tts_model = ""
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
@@ -235,6 +237,7 @@ class DeepgramStreamingTTSBridgeSession:
             payload = {"reason": event.payload.get("reason") or "client"}
             if generation is not None:
                 payload["playback_generation"] = generation
+            await self._emit_playback_stopped(generation)
             await self._emit(VoiceEventType.BARGE_IN, payload)
             return
         if event.type != VoiceEventType.ASSISTANT_TEXT_PARTIAL or event.payload.get("speak") is not True:
@@ -245,6 +248,8 @@ class DeepgramStreamingTTSBridgeSession:
         generation = _payload_int(event.payload.get("playback_generation"))
         if generation is not None:
             self._playback_generation = generation
+            if self._playback_started_generation not in (None, generation):
+                await self._emit_playback_stopped(self._playback_started_generation)
         tts_model = deepgram_tts_model_for_payload(self.runtime, event.payload)
         if tts_model != self._current_tts_model:
             await self._switch_deepgram_tts_model(tts_model)
@@ -318,6 +323,7 @@ class DeepgramStreamingTTSBridgeSession:
         try:
             async for raw in self._deepgram_ws:
                 if isinstance(raw, bytes):
+                    await self._emit_playback_started(self._playback_generation)
                     payload = AudioChunk(
                         codec=VoiceAudioCodec.PCM16,
                         data=raw,
@@ -328,6 +334,11 @@ class DeepgramStreamingTTSBridgeSession:
                     if self._playback_generation is not None:
                         payload["playback_generation"] = self._playback_generation
                     await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
+                elif isinstance(raw, str):
+                    with contextlib.suppress(Exception):
+                        data = json.loads(raw)
+                        if str(data.get("type") or "").lower() in {"flushed", "done", "complete", "finished"}:
+                            await self._emit_playback_stopped(self._playback_generation)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -335,6 +346,25 @@ class DeepgramStreamingTTSBridgeSession:
                 VoiceEventType.SESSION_ERROR,
                 {"error": f"deepgram tts stream failed: {sanitize_realtime_voice_error(exc)}"},
             )
+
+    async def _emit_playback_started(self, generation: Optional[int]) -> None:
+        if self._playback_active and self._playback_started_generation == generation:
+            return
+        if self._playback_active:
+            await self._emit_playback_stopped(self._playback_started_generation)
+        self._playback_active = True
+        self._playback_started_generation = generation
+        payload = {"playback_generation": generation} if generation is not None else {}
+        await self._emit(VoiceEventType.PLAYBACK_STARTED, payload)
+
+    async def _emit_playback_stopped(self, generation: Optional[int]) -> None:
+        if not self._playback_active:
+            return
+        payload_generation = generation if generation is not None else self._playback_started_generation
+        payload = {"playback_generation": payload_generation} if payload_generation is not None else {}
+        self._playback_active = False
+        self._playback_started_generation = None
+        await self._emit(VoiceEventType.PLAYBACK_STOPPED, payload)
 
     async def _emit(self, event_type: VoiceEventType, payload: Mapping[str, Any]) -> None:
         if self.config is None:

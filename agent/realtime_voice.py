@@ -55,6 +55,8 @@ class VoiceEventType(StrEnum):
     SESSION_ERROR = "session.error"
     AUDIO_INPUT_CHUNK = "audio.input.chunk"
     AUDIO_OUTPUT_CHUNK = "audio.output.chunk"
+    PLAYBACK_STARTED = "playback.started"
+    PLAYBACK_STOPPED = "playback.stopped"
     TRANSCRIPT_PARTIAL = "transcript.partial"
     TRANSCRIPT_FINAL = "transcript.final"
     FRONTEND_STATE = "frontend.state"
@@ -80,6 +82,8 @@ SERVER_EVENT_TYPES = frozenset(
         VoiceEventType.SESSION_CLOSED,
         VoiceEventType.SESSION_ERROR,
         VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.PLAYBACK_STARTED,
+        VoiceEventType.PLAYBACK_STOPPED,
         VoiceEventType.TRANSCRIPT_PARTIAL,
         VoiceEventType.TRANSCRIPT_FINAL,
         VoiceEventType.FRONTEND_STATE,

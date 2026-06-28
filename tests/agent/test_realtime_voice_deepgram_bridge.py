@@ -733,15 +733,19 @@ def test_deepgram_tts_session_streams_audio_and_barge_in(monkeypatch):
         assert json.loads(fake_ws.sent[2]) == {"type": "Clear"}
         assert [event.type for event in seen] == [
             VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.PLAYBACK_STARTED,
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            VoiceEventType.PLAYBACK_STOPPED,
             VoiceEventType.BARGE_IN,
         ]
-        audio = AudioChunk.from_payload(seen[1].payload)
+        assert seen[1].payload["playback_generation"] == 3
+        audio = AudioChunk.from_payload(seen[2].payload)
         assert audio.codec == VoiceAudioCodec.PCM16
         assert audio.data == b"pcm-audio"
         assert audio.sample_rate_hz == 24000
-        assert seen[1].payload["playback_generation"] == 3
-        assert seen[2].payload["playback_generation"] == 4
+        assert seen[2].payload["playback_generation"] == 3
+        assert seen[3].payload["playback_generation"] == 4
+        assert seen[4].payload["playback_generation"] == 4
 
     asyncio.run(run())
 
@@ -822,9 +826,11 @@ def test_deepgram_tts_session_switches_model_for_language(monkeypatch):
         assert [event.type for event in seen] == [
             VoiceEventType.FRONTEND_STATE,
             VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.PLAYBACK_STARTED,
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
         ]
         assert seen[1].payload["model"] == "aura-2-akiko-ja"
         assert seen[2].payload["playback_generation"] == 3
+        assert seen[3].payload["playback_generation"] == 3
 
     asyncio.run(run())

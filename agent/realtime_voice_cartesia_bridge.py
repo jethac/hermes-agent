@@ -217,6 +217,8 @@ class CartesiaStreamingTTSBridgeSession:
         self._sequence = 0
         self._closed = False
         self._playback_generation: Optional[int] = None
+        self._playback_active = False
+        self._playback_started_generation: Optional[int] = None
         self._context_id = ""
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
@@ -254,6 +256,7 @@ class CartesiaStreamingTTSBridgeSession:
             payload = {"reason": event.payload.get("reason") or "client"}
             if generation is not None:
                 payload["playback_generation"] = generation
+            await self._emit_playback_stopped(generation)
             await self._emit(VoiceEventType.BARGE_IN, payload)
             return
         if event.type != VoiceEventType.ASSISTANT_TEXT_PARTIAL or event.payload.get("speak") is not True:
@@ -263,6 +266,8 @@ class CartesiaStreamingTTSBridgeSession:
             return
         generation = _payload_int(event.payload.get("playback_generation"))
         if generation is not None and generation != self._playback_generation:
+            if self._playback_started_generation not in (None, generation):
+                await self._emit_playback_stopped(self._playback_started_generation)
             self._playback_generation = generation
             self._context_id = self._next_context_id()
         await self._cartesia_ws.send(
@@ -316,6 +321,9 @@ class CartesiaStreamingTTSBridgeSession:
                 if data.get("type") == "error":
                     await self._emit(VoiceEventType.SESSION_ERROR, {"error": cartesia_error_from_message(data)})
                     continue
+                if str(data.get("type") or "").lower() in {"done", "complete", "finished"}:
+                    await self._emit_playback_stopped(self._playback_generation)
+                    continue
                 audio = data.get("data")
                 if data.get("type") != "chunk" or not isinstance(audio, str) or not audio:
                     continue
@@ -323,6 +331,7 @@ class CartesiaStreamingTTSBridgeSession:
                     audio_bytes = base64.b64decode(audio)
                 except Exception:
                     continue
+                await self._emit_playback_started(self._playback_generation)
                 payload = AudioChunk(
                     codec=VoiceAudioCodec.PCM16,
                     data=audio_bytes,
@@ -340,6 +349,25 @@ class CartesiaStreamingTTSBridgeSession:
                 VoiceEventType.SESSION_ERROR,
                 {"error": f"cartesia tts stream failed: {sanitize_realtime_voice_error(exc)}"},
             )
+
+    async def _emit_playback_started(self, generation: Optional[int]) -> None:
+        if self._playback_active and self._playback_started_generation == generation:
+            return
+        if self._playback_active:
+            await self._emit_playback_stopped(self._playback_started_generation)
+        self._playback_active = True
+        self._playback_started_generation = generation
+        payload = {"playback_generation": generation} if generation is not None else {}
+        await self._emit(VoiceEventType.PLAYBACK_STARTED, payload)
+
+    async def _emit_playback_stopped(self, generation: Optional[int]) -> None:
+        if not self._playback_active:
+            return
+        payload_generation = generation if generation is not None else self._playback_started_generation
+        payload = {"playback_generation": payload_generation} if payload_generation is not None else {}
+        self._playback_active = False
+        self._playback_started_generation = None
+        await self._emit(VoiceEventType.PLAYBACK_STOPPED, payload)
 
     def _next_context_id(self) -> str:
         if self.config is None:

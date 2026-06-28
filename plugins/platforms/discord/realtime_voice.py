@@ -342,6 +342,13 @@ class DiscordRealtimeVoiceSession:
                     if self._drop_stale_playback_event(event):
                         continue
                     self._handle_audio_output(event)
+                elif event.type == VoiceEventType.PLAYBACK_STARTED:
+                    if self._drop_stale_playback_event(event):
+                        continue
+                elif event.type == VoiceEventType.PLAYBACK_STOPPED:
+                    if self._drop_stale_playback_event(event):
+                        continue
+                    self._flush_playback_buffer()
                 elif event.type == VoiceEventType.ASSISTANT_COMMIT:
                     if self._drop_stale_playback_event(event):
                         continue
