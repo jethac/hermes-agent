@@ -6289,6 +6289,43 @@ def test_session_persists_only_final_and_committed_messages(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_session_persists_reflex_intent_not_raw_transcript():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        ),
+        engine=KameInterfaceOracleEngine(oracle=FakeOracle()),
+    )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.TRANSCRIPT_PARTIAL,
+            session_id="voice-123",
+            sequence=1,
+            payload={"text": "find the node"},
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.TRANSCRIPT_FINAL,
+            session_id="voice-123",
+            sequence=2,
+            payload={
+                "text": "find the node from yesterday",
+                "voice_architecture": "kame_frontend_oracle",
+                "kame_intent": "Find the note from yesterday.",
+                "kame_transcript": "find the node from yesterday",
+                "kame_transcript_source": "reflex_audio",
+                "playback_generation": 1,
+            },
+        )
+    )
+
+    assert session.transcript.partial_user_text == ""
+    assert session.durable_messages() == [{"role": "user", "content": "Find the note from yesterday."}]
+
+
 def test_session_persists_only_durable_oracle_records():
     session = RealtimeVoiceSession(
         RealtimeVoiceSessionConfig(session_id="voice-123"),
@@ -6364,6 +6401,18 @@ def test_session_persists_only_durable_oracle_records():
             session_id="voice-123",
             sequence=7,
             payload={"error": "timeout", "playback_generation": 1},
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_ERROR,
+            session_id="voice-123",
+            sequence=8,
+            payload={
+                "reason": "oracle_cancelled",
+                "error": "oracle request cancelled by realtime voice interruption",
+                "playback_generation": 1,
+            },
         )
     )
 

@@ -189,7 +189,7 @@ class RealtimeVoiceSession:
         if event.type == VoiceEventType.TRANSCRIPT_PARTIAL:
             self.transcript.partial_user_text = str(event.payload.get("text") or "")
         elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
-            text = str(event.payload.get("text") or "").strip()
+            text = _durable_user_text_from_transcript_final(event.payload)
             generation = _payload_generation(event.payload)
             if generation is not None:
                 self.transcript.active_playback_generation = max(
@@ -274,6 +274,8 @@ class RealtimeVoiceSession:
         elif event.type in DURABLE_ORACLE_RECORD_EVENT_TYPES:
             generation = _payload_generation(event.payload)
             if generation is not None and generation < self.transcript.active_playback_generation:
+                return
+            if _oracle_record_is_ephemeral(event):
                 return
             self.transcript.committed_oracle_records.append(
                 {
@@ -421,6 +423,28 @@ def _payload_generation(payload: dict) -> Optional[int]:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+def _durable_user_text_from_transcript_final(payload: Mapping[str, Any]) -> str:
+    if _payload_is_kame(payload):
+        for key in ("kame_intent", "intent"):
+            text = str(payload.get(key) or "").strip()
+            if text:
+                return text
+    return str(payload.get("text") or "").strip()
+
+
+def _payload_is_kame(payload: Mapping[str, Any]) -> bool:
+    if payload.get("voice_architecture") == "kame_frontend_oracle":
+        return True
+    return any(str(payload.get(key) or "").strip() for key in ("kame_intent", "kame_route", "intent_source"))
+
+
+def _oracle_record_is_ephemeral(event: VoiceEvent) -> bool:
+    if event.type != VoiceEventType.ORACLE_ERROR:
+        return False
+    reason = str(event.payload.get("reason") or "").strip().lower()
+    return reason == "oracle_cancelled"
 
 
 def _positive_int(value: Any) -> Optional[int]:
