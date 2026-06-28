@@ -231,6 +231,35 @@ def build_dgx_spark_stack_manifest(
             "max_spoken_sentences": 2,
             "durability_policy": "commit final intents and oracle results only",
         },
+        "model_assumptions": {
+            "interface_audio_input_supported": {
+                "model": interface_model,
+                "required": True,
+                "validated_by": "interface_audio_probe",
+                "description": "Interface/reflex model accepts a bounded audio prompt segment and returns text JSON.",
+            },
+            "interface_audio_is_segment_buffered": {
+                "required": True,
+                "validated_by": "vad_endpoint_then_interface_audio_probe",
+                "description": "Realtime endpointer cuts audio before the interface model encodes it; the model is not treated as a streaming VAD.",
+            },
+            "interface_audio_limit_seconds": {
+                "seconds": _bounded_interface_max_audio_seconds(interface_max_audio_seconds),
+                "required": True,
+                "validated_by": "manifest_and_vllm_limit_mm_per_prompt",
+            },
+            "vllm_multimodal_audio_prompt_limit": {
+                "limit_mm_per_prompt": {"audio": 1},
+                "required": True,
+                "validated_by": "compose_vllm_args",
+            },
+            "oracle_authority": {
+                "model": oracle_model,
+                "required": True,
+                "validated_by": "oracle_models_probe",
+                "description": "Hermes active oracle or local oracle endpoint remains authoritative for tools, memory, files, and project context.",
+            },
+        },
         "roles": {
             "interface": {
                 "provider": "openai_compatible_vllm",
@@ -819,6 +848,7 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
     return {
         "kind": "kame_dgx_spark_benchmark_matrix",
         "version": 1,
+        "model_assumptions": dict(manifest.get("model_assumptions") or {}),
         "candidates": {
             "interface": interface_candidates,
             "oracle": [

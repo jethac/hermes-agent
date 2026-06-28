@@ -157,6 +157,22 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     assert manifest["engine"]["interface_audio_input"] == "native_audio"
     assert manifest["engine"]["asr_mode"] == "on_escalation"
     assert manifest["engine"]["max_spoken_sentences"] == 2
+    assert manifest["model_assumptions"]["interface_audio_input_supported"] == {
+        "model": "gemma-4-E2B-it",
+        "required": True,
+        "validated_by": "interface_audio_probe",
+        "description": "Interface/reflex model accepts a bounded audio prompt segment and returns text JSON.",
+    }
+    assert manifest["model_assumptions"]["interface_audio_is_segment_buffered"]["validated_by"] == (
+        "vad_endpoint_then_interface_audio_probe"
+    )
+    assert manifest["model_assumptions"]["interface_audio_limit_seconds"] == {
+        "seconds": 30.0,
+        "required": True,
+        "validated_by": "manifest_and_vllm_limit_mm_per_prompt",
+    }
+    assert manifest["model_assumptions"]["vllm_multimodal_audio_prompt_limit"]["limit_mm_per_prompt"] == {"audio": 1}
+    assert manifest["model_assumptions"]["oracle_authority"]["model"] == "gemma-4-26B-A4B-it"
     assert manifest["roles"]["interface"]["model"] == "gemma-4-E2B-it"
     assert [entry["model"] for entry in manifest["roles"]["interface"]["candidate_models"]] == [
         "gemma-4-E2B-it",
@@ -372,6 +388,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
         ("gemma-4-E4B-it", "direct_audio"),
         ("gemma-4-E4B-it", "stt_fallback"),
     ]
+    assert matrix["model_assumptions"]["interface_audio_input_supported"]["validated_by"] == "interface_audio_probe"
     assert matrix["candidates"]["oracle_outcome"][0]["asr_hypothesis"] == "without_asr_hypothesis"
     assert matrix["candidates"]["oracle_outcome"][1]["asr_hypothesis"] == "with_asr_hypothesis"
     assert evidence_template[0]["kind"] == "kame_benchmark_result"
