@@ -2600,6 +2600,90 @@ def test_text_engine_treats_sidecar_session_error_as_frontend_fallback():
     asyncio.run(run())
 
 
+def test_text_engine_fail_closed_policy_emits_session_error_on_sidecar_session_error():
+    class ErrorSidecar(FakeSidecar):
+        async def start(self, config):
+            await super().start(config)
+            await self._events.put(
+                VoiceEvent(
+                    type=VoiceEventType.SESSION_ERROR,
+                    session_id=config.session_id,
+                    sequence=1,
+                    payload={"error": "TTS failed Bearer secret-token at http://user:pass@voice.local/v1?token=abc"},
+                )
+            )
+
+    async def run():
+        sidecar = ErrorSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="sidecar",
+                sidecar_base_url="http://voice.local:8080",
+                fallback_policy="fail_closed",
+            )
+        )
+
+        events = [await anext(engine.events()), await anext(engine.events())]
+
+        assert [event.type for event in events] == [
+            VoiceEventType.SESSION_STARTED,
+            VoiceEventType.SESSION_ERROR,
+        ]
+        error = events[-1]
+        assert error.payload["reason"] == "sidecar_session_error"
+        assert error.payload["sidecar"] is False
+        assert "fallback_policy=fail_closed" in error.payload["error"]
+        assert "TTS failed" in error.payload["error"]
+        assert "secret-token" not in error.payload["error"]
+        assert "user:pass" not in error.payload["error"]
+        assert "token=abc" not in error.payload["error"]
+        assert engine._sidecar is None
+        assert sidecar.closed is True
+        await engine.close()
+
+    asyncio.run(run())
+
+
+def test_text_engine_fail_closed_policy_emits_session_error_on_sidecar_event_stream_failure():
+    class BrokenEventSidecar(FakeSidecar):
+        async def events(self):
+            raise RuntimeError("websocket died at http://user:pass@voice.local/v1?token=abc")
+            yield
+
+    async def run():
+        sidecar = BrokenEventSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="sidecar",
+                sidecar_base_url="http://voice.local:8080",
+                fallback_policy="fail_closed",
+            )
+        )
+
+        events = [await anext(engine.events()), await anext(engine.events())]
+
+        assert [event.type for event in events] == [
+            VoiceEventType.SESSION_STARTED,
+            VoiceEventType.SESSION_ERROR,
+        ]
+        error = events[-1]
+        assert error.payload["reason"] == "sidecar_event_stream_failed"
+        assert error.payload["sidecar"] is False
+        assert "fallback_policy=fail_closed" in error.payload["error"]
+        assert "websocket died" in error.payload["error"]
+        assert "user:pass" not in error.payload["error"]
+        assert "token=abc" not in error.payload["error"]
+        assert engine._sidecar is None
+        assert sidecar.closed is True
+        await engine.close()
+
+    asyncio.run(run())
+
+
 def test_text_engine_falls_back_to_local_stt_when_sidecar_send_fails(monkeypatch):
     class FailingSendSidecar(FakeSidecar):
         async def send_event(self, event):

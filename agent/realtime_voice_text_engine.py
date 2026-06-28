@@ -80,7 +80,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 self._sidecar_task = asyncio.create_task(self._consume_sidecar_events())
             except Exception as exc:
                 await self._disable_sidecar()
-                if str(config.fallback_policy or "").strip().lower() == "fail_closed":
+                if _realtime_voice_fail_closed(config):
                     raise RuntimeError(
                         "realtime voice sidecar unavailable and fallback_policy=fail_closed: "
                         f"{sanitize_realtime_voice_error(exc)}"
@@ -364,13 +364,27 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     await self._emit(VoiceEventType.FRONTEND_STATE, dict(event.payload))
                 elif event.type == VoiceEventType.SESSION_ERROR:
                     self._frontend_output_active = False
+                    error = sanitize_realtime_voice_error(event.payload.get("error") or "")
                     await self._disable_sidecar()
+                    if _realtime_voice_fail_closed(self.config):
+                        await self._emit(
+                            VoiceEventType.SESSION_ERROR,
+                            {
+                                "reason": "sidecar_session_error",
+                                "error": (
+                                    "realtime voice sidecar session error and "
+                                    f"fallback_policy=fail_closed: {error}"
+                                ),
+                                "sidecar": False,
+                            },
+                        )
+                        return
                     await self._emit(
                         VoiceEventType.FRONTEND_STATE,
                         {
                             "status": "fallback",
                             "reason": "sidecar_session_error",
-                            "error": sanitize_realtime_voice_error(event.payload.get("error") or ""),
+                            "error": error,
                             "sidecar": False,
                         },
                     )
@@ -379,12 +393,26 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             raise
         except Exception as exc:
             await self._disable_sidecar()
+            error = sanitize_realtime_voice_error(exc)
+            if _realtime_voice_fail_closed(self.config):
+                await self._emit(
+                    VoiceEventType.SESSION_ERROR,
+                    {
+                        "reason": "sidecar_event_stream_failed",
+                        "error": (
+                            "realtime voice sidecar event stream failed and "
+                            f"fallback_policy=fail_closed: {error}"
+                        ),
+                        "sidecar": False,
+                    },
+                )
+                return
             await self._emit(
                 VoiceEventType.FRONTEND_STATE,
                 {
                     "status": "degraded",
                     "reason": "sidecar_event_stream_failed",
-                    "error": sanitize_realtime_voice_error(exc),
+                    "error": error,
                     "sidecar": False,
                 },
             )
@@ -1495,6 +1523,10 @@ def _mime_type_for_path(path: str) -> str:
 def _payload_generation(payload: dict) -> Optional[int]:
     value = payload.get("playback_generation")
     return _payload_int(value)
+
+
+def _realtime_voice_fail_closed(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    return str(getattr(config, "fallback_policy", "") or "").strip().lower() == "fail_closed"
 
 
 def _kame_cancellation_token(config: Optional[RealtimeVoiceSessionConfig], playback_generation: int) -> str:
