@@ -72,9 +72,51 @@ uv run pytest \
   tests/agent/test_realtime_voice_cartesia_bridge.py \
   tests/hermes_cli/test_realtime_voice_profile.py \
   tests/hermes_cli/test_realtime_voice_alpha_evidence.py \
+  tests/hermes_cli/test_realtime_voice_dgx_spark.py \
   tests/hermes_cli/test_web_server.py::TestRealtimeVoiceWebSocket \
   -q
 ```
+
+## Track 0: Full KAME DGX Spark Launch Pack
+
+Goal: keep the actual one-DGX-Spark launch path generated and preflightable
+before evaluating individual oracle or speech components.
+
+Runner behavior:
+
+- Runs `python -m hermes_cli.realtime_voice_dgx_spark`.
+- Writes the KAME artifact pack under `kame-stack/` in the evaluation artifact
+  directory.
+- Generates `compose.yaml`, `.env.example`, `launch-local-stack.sh`,
+  `preflight-local-stack.sh`, `benchmark-matrix.json`, and benchmark evidence
+  templates.
+- Uses Gemma 4 E2B as the default native-audio reflex and Gemma 4 26B-A4B as
+  the preferred local oracle model unless environment variables override them.
+- Runs endpoint preflight only when `DGX_SPARK_KAME_CHECK=1` is set, so artifact
+  generation remains headless before services are online.
+
+Useful variables:
+
+```bash
+export DGX_SPARK_INTERFACE_BASE_URL=http://spark.local:8000/v1
+export DGX_SPARK_INTERFACE_MODEL=gemma-4-E2B-it
+export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8001/v1
+export DGX_SPARK_ORACLE_MODEL=gemma-4-26B-A4B-it
+export DGX_SPARK_SIDECAR_BASE_URL=http://spark.local:8765
+export DGX_SPARK_LOCAL_VOICE_BRIDGE_URL=http://spark.local:8767
+export DGX_SPARK_LOCAL_TTS_BRIDGE_URL=http://spark.local:8768
+export DGX_SPARK_KAME_CHECK=1
+```
+
+Acceptance gates:
+
+| Artifact/check | Target |
+| --- | --- |
+| KAME launch pack generation | Required |
+| Interface model | Defaults to Gemma 4 E2B native audio |
+| Oracle model | Defaults to Gemma 4 26B-A4B |
+| Preflight | Required only when `DGX_SPARK_KAME_CHECK=1` |
+| Benchmark matrix | Includes direct-audio vs STT-fallback reflex comparison |
 
 ## Track A: Gemma 4 26B-A4B Oracle
 

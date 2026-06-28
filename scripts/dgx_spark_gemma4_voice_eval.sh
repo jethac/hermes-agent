@@ -64,9 +64,46 @@ run uv run pytest \
   tests/agent/test_realtime_voice_cartesia_bridge.py \
   tests/hermes_cli/test_realtime_voice_profile.py \
   tests/hermes_cli/test_realtime_voice_alpha_evidence.py \
+  tests/hermes_cli/test_realtime_voice_dgx_spark.py \
   tests/hermes_cli/test_web_server.py::TestRealtimeVoiceWebSocket \
   -q
 record_pass "local repo validation"
+
+note "Track 0: full KAME DGX Spark launch pack"
+KAME_STACK_DIR="$ARTIFACT_DIR/kame-stack"
+KAME_CHECK_ARGS=()
+if [[ "${DGX_SPARK_KAME_CHECK:-0}" == "1" ]]; then
+  KAME_CHECK_ARGS+=(--check --timeout "${DGX_SPARK_KAME_CHECK_TIMEOUT_SECONDS:-2}")
+fi
+if run uv run python -m hermes_cli.realtime_voice_dgx_spark \
+  --output-dir "$KAME_STACK_DIR" \
+  --repo-dir "$ROOT" \
+  --hermes-home "${DGX_SPARK_HERMES_HOME:-$HOME/.hermes}" \
+  --interface-base-url "${DGX_SPARK_INTERFACE_BASE_URL:-http://spark.local:8000/v1}" \
+  --interface-model "${DGX_SPARK_INTERFACE_MODEL:-gemma-4-E2B-it}" \
+  --interface-context-tokens "${DGX_SPARK_INTERFACE_CONTEXT_TOKENS:-8192}" \
+  --interface-gpu-memory-utilization "${DGX_SPARK_INTERFACE_GPU_MEMORY_UTILIZATION:-0.18}" \
+  --oracle-base-url "${DGX_SPARK_ORACLE_BASE_URL:-http://spark.local:8001/v1}" \
+  --oracle-model "${DGX_SPARK_ORACLE_MODEL:-gemma-4-26B-A4B-it}" \
+  --oracle-context-tokens "${DGX_SPARK_ORACLE_CONTEXT_TOKENS:-32768}" \
+  --oracle-gpu-memory-utilization "${DGX_SPARK_ORACLE_GPU_MEMORY_UTILIZATION:-0.62}" \
+  --sidecar-base-url "${DGX_SPARK_SIDECAR_BASE_URL:-http://spark.local:8765}" \
+  --asr-base-url "${DGX_SPARK_LOCAL_VOICE_BRIDGE_URL:-http://spark.local:8767}" \
+  --tts-base-url "${DGX_SPARK_LOCAL_TTS_BRIDGE_URL:-http://spark.local:8768}" \
+  --asr-mode "${DGX_SPARK_ASR_MODE:-on_escalation}" \
+  --vllm-image "${DGX_SPARK_VLLM_IMAGE:-vllm/vllm-openai:gemma4-cu130}" \
+  --hermes-image "${DGX_SPARK_HERMES_IMAGE:-ghcr.io/astral-sh/uv:python3.12-bookworm-slim}" \
+  --model-cache-dir "${DGX_SPARK_MODEL_CACHE_DIR:-${HOME}/.cache/huggingface}" \
+  "${KAME_CHECK_ARGS[@]}"
+then
+  if [[ "${DGX_SPARK_KAME_CHECK:-0}" == "1" ]]; then
+    record_pass "track 0 full KAME DGX Spark launch pack and preflight"
+  else
+    record_pass "track 0 full KAME DGX Spark launch pack"
+  fi
+else
+  record_fail "track 0 full KAME DGX Spark launch pack" "KAME stack artifact generation or preflight failed"
+fi
 
 note "Track A: Gemma 4 oracle probe"
 if [[ -n "${DGX_SPARK_ORACLE_BASE_URL:-}" && -n "${DGX_SPARK_ORACLE_MODEL:-}" ]]; then
@@ -239,6 +276,7 @@ Finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 ## Key Artifact Paths
 
 - Log: $LOG
+- Full KAME stack pack: $KAME_STACK_DIR
 - Oracle probe: $ARTIFACT_DIR/oracle-gemma4-probe.json
 - Cartesia alpha: $ARTIFACT_DIR/cartesia-alpha
 - Loopback alpha: $ARTIFACT_DIR/loopback-alpha
