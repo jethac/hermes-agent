@@ -468,6 +468,46 @@ async def test_discord_realtime_session_reports_event_metrics_to_callback():
     assert observed[-1][1]["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
 
 
+def test_discord_realtime_event_records_kame_reflex_provenance():
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._voice_session_states = {}
+
+    adapter._handle_realtime_voice_event(
+        111,
+        "frontend.state",
+        {
+            "status": "ready",
+            "provider": "vllm",
+            "frontend_model": "gemma-4-E2B-it",
+            "interface_audio_input": "native_audio",
+            "vllm_audio_frontend": True,
+        },
+    )
+    adapter._handle_realtime_voice_event(
+        111,
+        "transcript.final",
+        {
+            "text": "hello",
+            "interface_input_source": "native_audio",
+            "reflex_provider": "vllm",
+        },
+    )
+
+    status = adapter.get_voice_session_status(111)
+
+    assert status["frontend_state"] == {
+        "status": "ready",
+        "provider": "vllm",
+        "frontend_model": "gemma-4-E2B-it",
+        "interface_audio_input": "native_audio",
+        "vllm_audio_frontend": True,
+        "interface_input_source": "native_audio",
+        "reflex_provider": "vllm",
+    }
+
+
 @pytest.mark.asyncio
 async def test_discord_realtime_session_barge_in_stops_mixer_and_notifies_sidecar():
     from agent.realtime_voice import VoiceEventType

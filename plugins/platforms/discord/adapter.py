@@ -161,6 +161,8 @@ def _discord_voice_frontend_state(value: Any) -> Dict[str, Any]:
         "interface_audio_input",
         "frontend_provider",
         "frontend_model",
+        "interface_input_source",
+        "reflex_provider",
     ):
         text = str(value.get(key) or "").strip()
         if text:
@@ -3499,10 +3501,11 @@ class DiscordAdapter(BasePlatformAdapter):
                 event_type,
                 misses,
             )
-        if event_type == "frontend.state":
-            frontend_state = _discord_voice_frontend_state(payload)
-            if frontend_state:
-                updates["frontend_state"] = frontend_state
+        frontend_state = _discord_voice_frontend_state(payload)
+        if frontend_state:
+            current_frontend_state = dict(self._voice_state(guild_id).frontend_state)
+            current_frontend_state.update(frontend_state)
+            updates["frontend_state"] = current_frontend_state
         if event_type != "audio.output.chunk":
             text = str(
                 payload.get("text")

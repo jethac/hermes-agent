@@ -1006,6 +1006,8 @@ class TestVoiceChannelCommands:
                     "provider": "vllm",
                     "frontend_model": "gemma-4-E2B-it",
                     "interface_audio_input": "native_audio",
+                    "interface_input_source": "native_audio",
+                    "reflex_provider": "vllm",
                     "vllm_audio_frontend": True,
                 },
                 "last_realtime_event": "audio.output.chunk",
@@ -1036,6 +1038,8 @@ class TestVoiceChannelCommands:
         assert "ASR: nemotron speech-0.6b (mode=on_escalation)" in result
         assert "TTS: cartesia sonic-2 (voice=5ee9feff-1265-424a-9d7f-8e4d431a12c7)" in result
         assert "Frontend state: ready; audio_reflex_tts; vllm gemma-4-E2B-it; audio=native_audio; audio_reflex=healthy" in result
+        assert "input_source=native_audio" in result
+        assert "reflex=vllm" in result
         assert "Fallback policy: legacy_voice" in result
         assert "Realtime audio queue: depth=3, dropped=2" in result
         assert "Realtime latency:" in result

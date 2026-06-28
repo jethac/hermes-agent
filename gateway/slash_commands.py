@@ -119,6 +119,8 @@ def _voice_status_frontend_state_line(value: Any) -> str:
     )
     model = str(value.get("frontend_model") or "").strip()
     input_mode = str(value.get("interface_audio_input") or "").strip()
+    input_source = str(value.get("interface_input_source") or "").strip()
+    reflex_provider = str(value.get("reflex_provider") or "").strip()
     parts = []
     if status:
         parts.append(status)
@@ -132,6 +134,10 @@ def _voice_status_frontend_state_line(value: Any) -> str:
         parts.append("audio_reflex=healthy")
     elif value.get("vllm_audio_frontend") is False:
         parts.append("audio_reflex=unhealthy")
+    if input_source:
+        parts.append(f"input_source={input_source}")
+    if reflex_provider:
+        parts.append(f"reflex={reflex_provider}")
     if value.get("interface_audio_input_fallback") is True:
         parts.append("fallback_input=yes")
     if not parts:
