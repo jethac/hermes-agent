@@ -956,6 +956,17 @@ class TestVoiceChannelCommands:
                 "mixer_installed": True,
                 "sidecar_running": True,
                 "playback_active": True,
+                "frontend_provider": "vllm",
+                "frontend_model": "gemma-4-E2B-it",
+                "interface_audio_input": "native_audio",
+                "oracle_model": "kimi-k2.6",
+                "asr_mode": "on_escalation",
+                "asr_provider": "nemotron",
+                "asr_model": "speech-0.6b",
+                "tts_provider": "cartesia",
+                "tts_model": "sonic-2",
+                "tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+                "fallback_policy": "legacy_voice",
                 "streaming_speech": {
                     "queue_depth": 3,
                     "dropped_frames": 2,
@@ -984,6 +995,11 @@ class TestVoiceChannelCommands:
         assert "Last realtime event: audio.output.chunk" in result
         assert "Lifecycle: ready" in result
         assert "Playback: active" in result
+        assert "Interface: vllm gemma-4-E2B-it (audio=native_audio)" in result
+        assert "Oracle: kimi-k2.6" in result
+        assert "ASR: nemotron speech-0.6b (mode=on_escalation)" in result
+        assert "TTS: cartesia sonic-2 (voice=5ee9feff-1265-424a-9d7f-8e4d431a12c7)" in result
+        assert "Fallback policy: legacy_voice" in result
         assert "Realtime audio queue: depth=3, dropped=2" in result
         assert "Realtime latency:" in result
         assert "barge_in_ack_ms=45ms" in result

@@ -84,6 +84,30 @@ def _model_switch_skew_guard() -> Optional[str]:
     )
 
 
+def _voice_status_extra(label: str, value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return f"{label}={text}"
+
+
+def _voice_status_provider_line(
+    label: str,
+    provider: Any,
+    model: Any,
+    *,
+    extra: str = "",
+) -> str:
+    provider_text = str(provider or "").strip()
+    model_text = str(model or "").strip()
+    details = " ".join(part for part in (provider_text, model_text) if part)
+    if extra:
+        details = f"{details} ({extra})" if details else f"({extra})"
+    if not details:
+        return ""
+    return f"{label}: {details}"
+
+
 class GatewaySlashCommandsMixin:
     """In-session slash-command handlers for GatewayRunner."""
 
@@ -2457,6 +2481,40 @@ class GatewaySlashCommandsMixin:
                         f"Realtime sidecar: {'on' if session.get('sidecar_running') else 'off'}",
                         f"Playback: {'active' if session.get('playback_active') else 'idle'}",
                     ]
+                    interface_line = _voice_status_provider_line(
+                        "Interface",
+                        session.get("frontend_provider"),
+                        session.get("frontend_model"),
+                        extra=_voice_status_extra("audio", session.get("interface_audio_input")),
+                    )
+                    if interface_line:
+                        lines.append(interface_line)
+                    oracle_line = _voice_status_provider_line(
+                        "Oracle",
+                        None,
+                        session.get("oracle_model") or session.get("preferred_local_oracle_model"),
+                    )
+                    if oracle_line:
+                        lines.append(oracle_line)
+                    asr_line = _voice_status_provider_line(
+                        "ASR",
+                        session.get("asr_provider"),
+                        session.get("asr_model"),
+                        extra=_voice_status_extra("mode", session.get("asr_mode")),
+                    )
+                    if asr_line:
+                        lines.append(asr_line)
+                    tts_extra = _voice_status_extra("voice", session.get("tts_voice"))
+                    tts_line = _voice_status_provider_line(
+                        "TTS",
+                        session.get("tts_provider"),
+                        session.get("tts_model"),
+                        extra=tts_extra,
+                    )
+                    if tts_line:
+                        lines.append(tts_line)
+                    if session.get("fallback_policy"):
+                        lines.append(f"Fallback policy: {session['fallback_policy']}")
                     if isinstance(streaming_speech, dict) and streaming_speech:
                         queue_depth = streaming_speech.get("queue_depth", 0)
                         dropped_frames = streaming_speech.get("dropped_frames", 0)
