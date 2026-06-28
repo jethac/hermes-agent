@@ -6878,6 +6878,39 @@ class TestRealtimeVoiceWebSocket:
         assert realtime["streaming_stt_token_env"] == "CARTESIA_STT_TOKEN"
         assert realtime["streaming_tts_token_env"] == "CARTESIA_TTS_TOKEN"
 
+    def test_realtime_voice_apply_nvidia_speech_profile_sets_local_bridge_models(self):
+        response = self.client.post(
+            "/api/voice/realtime/profile",
+            json={
+                "preset": "nvidia_speech",
+                "streaming_stt_base_url": "http://127.0.0.1:8767",
+                "streaming_tts_base_url": "http://127.0.0.1:8768",
+                "streaming_stt_model": "nemotron-speech-streaming-0.6b",
+                "streaming_tts_model": "magpie-local-streaming-tts",
+                "streaming_tts_voice": "spark-voice",
+                "streaming_stt_token_env": "NEMOTRON_BRIDGE_TOKEN",
+                "streaming_tts_token_env": "MAGPIE_BRIDGE_TOKEN",
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        realtime = payload["config"]["voice"]["realtime"]
+        setup = payload["setup"]
+        assert realtime["frontend_provider"] == "reference"
+        assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8767"
+        assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8768"
+        assert realtime["streaming_stt_model"] == "nemotron-speech-streaming-0.6b"
+        assert realtime["streaming_tts_model"] == "magpie-local-streaming-tts"
+        assert realtime["streaming_tts_voice"] == "spark-voice"
+        assert realtime["streaming_stt_token_env"] == "NEMOTRON_BRIDGE_TOKEN"
+        assert realtime["streaming_tts_token_env"] == "MAGPIE_BRIDGE_TOKEN"
+        assert setup["config"]["asr"]["local_provider"] == "nemotron_speech"
+        assert setup["config"]["tts"]["local_provider"] == "magpie_tts"
+        nemotron = next(provider for provider in setup["providers"] if provider["id"] == "nemotron_speech")
+        magpie = next(provider for provider in setup["providers"] if provider["id"] == "magpie_tts")
+        assert nemotron["model"] == "nemotron-speech-streaming-0.6b"
+        assert magpie["model"] == "magpie-local-streaming-tts"
+
     def test_realtime_voice_smoke_route_runs_evidence_collector(self, monkeypatch, tmp_path):
         from hermes_cli.config import load_config, save_config
 

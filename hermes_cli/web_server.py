@@ -15321,6 +15321,10 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
         DEFAULT_GEMINI_LIVE_VOICE,
         DEFAULT_KAME_ORACLE_MODEL,
         DEFAULT_KAME_REFLEX_MODEL,
+        DEFAULT_NVIDIA_SPEECH_STT_BRIDGE_BASE_URL,
+        DEFAULT_NVIDIA_SPEECH_STT_MODEL,
+        DEFAULT_NVIDIA_SPEECH_TTS_BRIDGE_BASE_URL,
+        DEFAULT_NVIDIA_SPEECH_TTS_MODEL,
         DEFAULT_OPENAI_REALTIME_MODEL,
         DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL,
         DEFAULT_OPENAI_REALTIME_VOICE,
@@ -15409,6 +15413,16 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8769",
             streaming_stt_model=body.streaming_stt_model or DEFAULT_CARTESIA_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or body.model or DEFAULT_CARTESIA_TTS_MODEL,
+            streaming_tts_voice=body.streaming_tts_voice or body.voice,
+            streaming_stt_token_env=body.streaming_stt_token_env or DEFAULT_STREAMING_STT_TOKEN_ENV,
+            streaming_tts_token_env=body.streaming_tts_token_env or DEFAULT_STREAMING_TTS_TOKEN_ENV,
+        )
+    if preset == "nvidia_speech":
+        return build_realtime_voice_live_like_profile(
+            streaming_stt_base_url=body.streaming_stt_base_url or DEFAULT_NVIDIA_SPEECH_STT_BRIDGE_BASE_URL,
+            streaming_tts_base_url=body.streaming_tts_base_url or DEFAULT_NVIDIA_SPEECH_TTS_BRIDGE_BASE_URL,
+            streaming_stt_model=body.streaming_stt_model or DEFAULT_NVIDIA_SPEECH_STT_MODEL,
+            streaming_tts_model=body.streaming_tts_model or body.model or DEFAULT_NVIDIA_SPEECH_TTS_MODEL,
             streaming_tts_voice=body.streaming_tts_voice or body.voice,
             streaming_stt_token_env=body.streaming_stt_token_env or DEFAULT_STREAMING_STT_TOKEN_ENV,
             streaming_tts_token_env=body.streaming_tts_token_env or DEFAULT_STREAMING_TTS_TOKEN_ENV,
