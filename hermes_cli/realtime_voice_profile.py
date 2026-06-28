@@ -501,6 +501,19 @@ def build_realtime_voice_live_like_profile(
             "enabled": True,
             "text": "One moment.",
         },
+        "routing": {
+            "allow_local_greetings": True,
+            "allow_local_clarifications": True,
+            "require_oracle_for_tools": True,
+            "require_oracle_for_memory": True,
+            "require_oracle_for_files": True,
+            "local_confidence_threshold": 0.75,
+        },
+        "metrics": {
+            "enabled": True,
+            "log_turn_spans": True,
+            "log_provider_spans": True,
+        },
         "quality_targets_ms": {
             "audio_to_partial_transcript_ms": 300,
             "final_transcript_to_first_text_ms": 500,
@@ -558,6 +571,19 @@ def build_openai_realtime_voice_profile(
         "turn_acknowledgement": {
             "enabled": True,
             "text": "One moment.",
+        },
+        "routing": {
+            "allow_local_greetings": True,
+            "allow_local_clarifications": True,
+            "require_oracle_for_tools": True,
+            "require_oracle_for_memory": True,
+            "require_oracle_for_files": True,
+            "local_confidence_threshold": 0.75,
+        },
+        "metrics": {
+            "enabled": True,
+            "log_turn_spans": True,
+            "log_provider_spans": True,
         },
         "quality_targets_ms": {
             "audio_to_partial_transcript_ms": 300,
@@ -619,6 +645,19 @@ def build_gemini_live_voice_profile(
         "turn_acknowledgement": {
             "enabled": True,
             "text": "One moment.",
+        },
+        "routing": {
+            "allow_local_greetings": True,
+            "allow_local_clarifications": True,
+            "require_oracle_for_tools": True,
+            "require_oracle_for_memory": True,
+            "require_oracle_for_files": True,
+            "local_confidence_threshold": 0.75,
+        },
+        "metrics": {
+            "enabled": True,
+            "log_turn_spans": True,
+            "log_provider_spans": True,
         },
         "quality_targets_ms": {
             "audio_to_partial_transcript_ms": 300,
@@ -694,6 +733,19 @@ def build_kame_realtime_voice_profile(
             "enabled": True,
             "text": "One moment.",
         },
+        "routing": {
+            "allow_local_greetings": True,
+            "allow_local_clarifications": True,
+            "require_oracle_for_tools": True,
+            "require_oracle_for_memory": True,
+            "require_oracle_for_files": True,
+            "local_confidence_threshold": 0.75,
+        },
+        "metrics": {
+            "enabled": True,
+            "log_turn_spans": True,
+            "log_provider_spans": True,
+        },
         "quality_targets_ms": {
             "audio_to_partial_transcript_ms": 300,
             "final_transcript_to_first_text_ms": 500,
@@ -754,6 +806,8 @@ def merge_realtime_voice_profile(
             "interface_audio_input": profile.get("interface_audio_input"),
             "asr_mode": profile.get("asr_mode"),
             "preferred_local_oracle_model": profile.get("preferred_local_oracle_model"),
+            "routing": copy.deepcopy(profile.get("routing") if isinstance(profile.get("routing"), dict) else {}),
+            "metrics": copy.deepcopy(profile.get("metrics") if isinstance(profile.get("metrics"), dict) else {}),
             "sidecar_connect_timeout_seconds": profile.get("sidecar_connect_timeout_seconds", 10.0),
             "sidecar_close_timeout_seconds": profile.get("sidecar_close_timeout_seconds", 2.0),
         }

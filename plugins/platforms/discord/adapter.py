@@ -2845,6 +2845,19 @@ class DiscordAdapter(BasePlatformAdapter):
                 "enabled": True,
                 "text": "One moment.",
             },
+            "routing": {
+                "allow_local_greetings": True,
+                "allow_local_clarifications": True,
+                "require_oracle_for_tools": True,
+                "require_oracle_for_memory": True,
+                "require_oracle_for_files": True,
+                "local_confidence_threshold": 0.75,
+            },
+            "metrics": {
+                "enabled": True,
+                "log_turn_spans": True,
+                "log_provider_spans": True,
+            },
         }
         try:
             from hermes_cli.config import read_raw_config
@@ -2854,11 +2867,17 @@ class DiscordAdapter(BasePlatformAdapter):
             if isinstance(shared, dict):
                 for key, value in shared.items():
                     if key != "enabled" and key in defaults and value is not None:
-                        defaults[key] = value
+                        if isinstance(defaults.get(key), dict) and isinstance(value, dict):
+                            defaults[key] = {**defaults[key], **value}
+                        else:
+                            defaults[key] = value
             if isinstance(discord_rt, dict):
                 for key, value in discord_rt.items():
                     if key in defaults and value is not None:
-                        defaults[key] = value
+                        if isinstance(defaults.get(key), dict) and isinstance(value, dict):
+                            defaults[key] = {**defaults[key], **value}
+                        else:
+                            defaults[key] = value
         except Exception as e:
             logger.debug("Could not load discord.realtime_voice config: %s", e)
         if not defaults.get("sidecar_base_url"):
@@ -3122,6 +3141,8 @@ class DiscordAdapter(BasePlatformAdapter):
             tts_provider=cfg.get("tts_provider"),
             sidecar_connect_timeout_seconds=float(cfg.get("sidecar_connect_timeout_seconds") or 10.0),
             turn_acknowledgement=cfg.get("turn_acknowledgement") if isinstance(cfg.get("turn_acknowledgement"), dict) else {},
+            routing_policy=cfg.get("routing") if isinstance(cfg.get("routing"), dict) else {},
+            metrics_policy=cfg.get("metrics") if isinstance(cfg.get("metrics"), dict) else {},
             mixer=getattr(self, "_voice_mixers", {}).get(guild_id),
             degraded_callback=lambda reason, error: self._handle_realtime_voice_degraded(
                 guild_id,

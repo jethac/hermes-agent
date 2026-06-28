@@ -770,6 +770,51 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Short spoken acknowledgement used for realtime voice turns before the final response is ready",
         "category": "voice",
     },
+    "voice.realtime.routing.allow_local_greetings": {
+        "type": "boolean",
+        "description": "Allow the KAME reflex to answer greetings and hear-me checks without the oracle",
+        "category": "voice",
+    },
+    "voice.realtime.routing.allow_local_clarifications": {
+        "type": "boolean",
+        "description": "Allow the KAME reflex to ask short clarification questions without the oracle",
+        "category": "voice",
+    },
+    "voice.realtime.routing.require_oracle_for_tools": {
+        "type": "boolean",
+        "description": "Require Hermes oracle authority for tool-using voice turns",
+        "category": "voice",
+    },
+    "voice.realtime.routing.require_oracle_for_memory": {
+        "type": "boolean",
+        "description": "Require Hermes oracle authority for memory-dependent voice turns",
+        "category": "voice",
+    },
+    "voice.realtime.routing.require_oracle_for_files": {
+        "type": "boolean",
+        "description": "Require Hermes oracle authority for file or project voice turns",
+        "category": "voice",
+    },
+    "voice.realtime.routing.local_confidence_threshold": {
+        "type": "number",
+        "description": "Minimum reflex confidence required for local KAME replies",
+        "category": "voice",
+    },
+    "voice.realtime.metrics.enabled": {
+        "type": "boolean",
+        "description": "Enable realtime voice turn and provider metrics",
+        "category": "voice",
+    },
+    "voice.realtime.metrics.log_turn_spans": {
+        "type": "boolean",
+        "description": "Log realtime voice turn latency spans",
+        "category": "voice",
+    },
+    "voice.realtime.metrics.log_provider_spans": {
+        "type": "boolean",
+        "description": "Log realtime voice provider latency spans",
+        "category": "voice",
+    },
     "voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms": {
         "type": "number",
         "description": "Target milliseconds from user audio to first partial transcript",
@@ -13194,6 +13239,36 @@ def _realtime_voice_turn_acknowledgement_payload(realtime: Dict[str, Any]) -> Di
     }
 
 
+def _realtime_voice_routing_policy_payload(realtime: Mapping[str, Any]) -> Dict[str, Any]:
+    raw = realtime.get("routing") if isinstance(realtime, Mapping) else {}
+    if not isinstance(raw, Mapping):
+        raw = {}
+    return {
+        "allow_local_greetings": _truthy_config(raw.get("allow_local_greetings"), default=True),
+        "allow_local_clarifications": _truthy_config(raw.get("allow_local_clarifications"), default=True),
+        "require_oracle_for_tools": _truthy_config(raw.get("require_oracle_for_tools"), default=True),
+        "require_oracle_for_memory": _truthy_config(raw.get("require_oracle_for_memory"), default=True),
+        "require_oracle_for_files": _truthy_config(raw.get("require_oracle_for_files"), default=True),
+        "local_confidence_threshold": _bounded_float_config(
+            raw.get("local_confidence_threshold"),
+            default=0.75,
+            minimum=0.0,
+            maximum=1.0,
+        ),
+    }
+
+
+def _realtime_voice_metrics_policy_payload(realtime: Mapping[str, Any]) -> Dict[str, Any]:
+    raw = realtime.get("metrics") if isinstance(realtime, Mapping) else {}
+    if not isinstance(raw, Mapping):
+        raw = {}
+    return {
+        "enabled": _truthy_config(raw.get("enabled"), default=True),
+        "log_turn_spans": _truthy_config(raw.get("log_turn_spans"), default=True),
+        "log_provider_spans": _truthy_config(raw.get("log_provider_spans"), default=True),
+    }
+
+
 def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str, Any]:
     frontend = payload.get("frontend") if isinstance(payload.get("frontend"), dict) else {}
     capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
@@ -13657,10 +13732,13 @@ def _realtime_voice_current_evidence_manifest(
     interface_audio_input: str = "",
     asr_mode: str = "",
     preferred_local_oracle_model: str = "",
-    sidecar_mode: str,
-    health_payload: Optional[Mapping[str, Any]],
-    conversation_quality: Mapping[str, Any],
+    routing_policy: Optional[Mapping[str, Any]] = None,
+    metrics_policy: Optional[Mapping[str, Any]] = None,
+    sidecar_mode: str = "",
+    health_payload: Optional[Mapping[str, Any]] = None,
+    conversation_quality: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
+    conversation_quality = conversation_quality if isinstance(conversation_quality, Mapping) else {}
     return {
         "kind": "manifest",
         "engine": str(engine or ""),
@@ -13669,6 +13747,8 @@ def _realtime_voice_current_evidence_manifest(
         "interface_audio_input": str(interface_audio_input or ""),
         "asr_mode": str(asr_mode or ""),
         "preferred_local_oracle_model": str(preferred_local_oracle_model or ""),
+        "routing": dict(routing_policy) if isinstance(routing_policy, Mapping) else {},
+        "metrics": dict(metrics_policy) if isinstance(metrics_policy, Mapping) else {},
         "conversation_quality": {
             "mode": str(conversation_quality.get("mode") or ""),
         },
@@ -13980,6 +14060,8 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     language_support = _realtime_voice_language_support_payload(realtime)
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
+    routing_policy = _realtime_voice_routing_policy_payload(realtime)
+    metrics_policy = _realtime_voice_metrics_policy_payload(realtime)
     base_url = _realtime_voice_sidecar_base_url(realtime)
     connect_timeout_seconds = _positive_float_config(
         realtime.get("sidecar_connect_timeout_seconds"),
@@ -14018,6 +14100,8 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         interface_audio_input=interface_audio_input,
         asr_mode=asr_mode,
         preferred_local_oracle_model=preferred_local_oracle_model,
+        routing_policy=routing_policy,
+        metrics_policy=metrics_policy,
         sidecar_mode=sidecar_mode,
         health_payload=health_payload,
         conversation_quality=conversation_quality,
@@ -14118,6 +14202,8 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "oracle_model": oracle_model or None,
         "language_support": language_support,
         "quality_targets_ms": quality_targets_ms,
+        "routing": routing_policy,
+        "metrics": metrics_policy,
         "conversation_quality": conversation_quality,
         "production_readiness": production_readiness,
         "require_live_like": require_live_like,
@@ -14143,6 +14229,8 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "asr_mode": asr_mode or None,
             "interface_audio_input": interface_audio_input or None,
             "preferred_local_oracle_model": preferred_local_oracle_model or None,
+            "routing": routing_policy,
+            "metrics": metrics_policy,
         },
     }
 
@@ -14383,6 +14471,11 @@ def _apply_realtime_voice_profile_body(body: RealtimeVoiceProfileApply, profile:
                 "sidecar_base_url": sidecar_base_url,
                 "frontend_provider": realtime.get("frontend_provider") or "",
                 "frontend_model": realtime.get("frontend_model") or "",
+                "interface_audio_input": realtime.get("interface_audio_input") or "",
+                "asr_mode": realtime.get("asr_mode") or "on_escalation",
+                "preferred_local_oracle_model": realtime.get("preferred_local_oracle_model") or "",
+                "routing": dict(realtime.get("routing") if isinstance(realtime.get("routing"), dict) else {}),
+                "metrics": dict(realtime.get("metrics") if isinstance(realtime.get("metrics"), dict) else {}),
             }
             updated["discord"] = discord
         save_config(updated)
@@ -14433,6 +14526,8 @@ def _realtime_voice_config_from_request(ws: WebSocket):
 
     language_support = _realtime_voice_language_support_payload(realtime)
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
+    routing_policy = _realtime_voice_routing_policy_payload(realtime)
+    metrics_policy = _realtime_voice_metrics_policy_payload(realtime)
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     evidence_configured = bool(
         str(
@@ -14459,6 +14554,8 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         interface_audio_input=str(realtime.get("interface_audio_input") or ""),
         asr_mode=str(realtime.get("asr_mode") or ""),
         preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or ""),
+        routing_policy=routing_policy,
+        metrics_policy=metrics_policy,
         sidecar_mode=_realtime_voice_sidecar_mode(realtime, sidecar_base_url),
         health_payload=health_payload,
         conversation_quality=conversation_quality,
@@ -14520,6 +14617,8 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "oracle_model": str(realtime.get("oracle_model") or "") or None,
             "language_support": language_support,
             "quality_targets_ms": quality_targets_ms,
+            "routing": routing_policy,
+            "metrics": metrics_policy,
             "turn_acknowledgement": _realtime_voice_turn_acknowledgement_payload(realtime),
             "conversation_quality": conversation_quality,
             "production_readiness": production_readiness,

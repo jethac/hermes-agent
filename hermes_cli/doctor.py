@@ -1072,7 +1072,9 @@ def _realtime_voice_smoke_config():
         _realtime_voice_config_dict,
         _realtime_voice_conversation_quality_payload,
         _realtime_voice_language_support_payload,
+        _realtime_voice_metrics_policy_payload,
         _realtime_voice_quality_targets_payload,
+        _realtime_voice_routing_policy_payload,
         _realtime_voice_sidecar_base_url,
         _realtime_voice_sidecar_token,
         _realtime_voice_turn_acknowledgement_payload,
@@ -1085,6 +1087,8 @@ def _realtime_voice_smoke_config():
         raise RuntimeError("realtime voice smoke requires voice.realtime.sidecar_base_url")
     engine = str(realtime.get("engine") or RealtimeVoiceEngineKind.TEXT_ORACLE_TTS.value)
     sidecar_token = _realtime_voice_sidecar_token(realtime)
+    routing_policy = _realtime_voice_routing_policy_payload(realtime)
+    metrics_policy = _realtime_voice_metrics_policy_payload(realtime)
     return RealtimeVoiceSessionConfig(
         session_id="voice-doctor-smoke",
         engine=RealtimeVoiceEngineKind(engine),
@@ -1121,6 +1125,8 @@ def _realtime_voice_smoke_config():
             "oracle_model": str(realtime.get("oracle_model") or "") or None,
             "language_support": _realtime_voice_language_support_payload(realtime),
             "quality_targets_ms": _realtime_voice_quality_targets_payload(realtime),
+            "routing": routing_policy,
+            "metrics": metrics_policy,
             "turn_acknowledgement": _realtime_voice_turn_acknowledgement_payload(realtime),
             "conversation_quality": _realtime_voice_conversation_quality_payload(
                 engine=engine,

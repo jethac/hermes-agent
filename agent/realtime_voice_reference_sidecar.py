@@ -970,6 +970,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         audio_b64 = base64.b64encode(audio).decode("ascii")
         config = self.config
         asr_mode = str(config.asr_mode.value if config is not None else "on_escalation")
+        routing_policy = _kame_routing_policy_text(config)
         payload = {
             "model": self.runtime.vllm_model,
             "messages": [
@@ -992,6 +993,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                                 "Only use local for greetings, repeats, can-you-hear-me checks, or low-risk "
                                 "conversational glue. Use oracle_direct for tools, files, memory, projects, "
                                 "or any nontrivial answer. "
+                                f"Configured routing policy: {routing_policy} "
                                 f"ASR evidence mode is {asr_mode}; do not rely on external tools. "
                                 "Do not add markdown or commentary."
                             ),
@@ -1526,6 +1528,21 @@ def _turn_acknowledgement_text(config: RealtimeVoiceSessionConfig) -> str:
     return text[:120]
 
 
+def _kame_routing_policy_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:
+    metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
+    routing = metadata.get("routing") if isinstance(metadata, Mapping) else {}
+    if not isinstance(routing, Mapping):
+        routing = {}
+    return (
+        f"allow_local_greetings={_metadata_bool(routing.get('allow_local_greetings'), default=True)}, "
+        f"allow_local_clarifications={_metadata_bool(routing.get('allow_local_clarifications'), default=True)}, "
+        f"require_oracle_for_tools={_metadata_bool(routing.get('require_oracle_for_tools'), default=True)}, "
+        f"require_oracle_for_memory={_metadata_bool(routing.get('require_oracle_for_memory'), default=True)}, "
+        f"require_oracle_for_files={_metadata_bool(routing.get('require_oracle_for_files'), default=True)}, "
+        f"local_confidence_threshold={_metadata_float(routing.get('local_confidence_threshold'), default=0.75):.2f}."
+    )
+
+
 def _metadata_bool(value: Any, *, default: bool = False) -> bool:
     if value is None:
         return default
@@ -1534,6 +1551,16 @@ def _metadata_bool(value: Any, *, default: bool = False) -> bool:
     if isinstance(value, (int, float)):
         return value != 0
     return str(value).strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def _metadata_float(value: Any, *, default: float) -> float:
+    if isinstance(value, bool) or value is None:
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, min(1.0, parsed))
 
 
 def _payload_int(value: Any) -> Optional[int]:

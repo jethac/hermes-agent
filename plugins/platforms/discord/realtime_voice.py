@@ -134,6 +134,8 @@ class DiscordRealtimeVoiceSession:
         tts_provider: Optional[str] = None,
         sidecar_connect_timeout_seconds: float = 10.0,
         turn_acknowledgement: Optional[dict] = None,
+        routing_policy: Optional[dict] = None,
+        metrics_policy: Optional[dict] = None,
         sidecar: Any = None,
         mixer: Any = None,
         degraded_callback: Optional[Callable[[str, str], Any]] = None,
@@ -154,6 +156,8 @@ class DiscordRealtimeVoiceSession:
         self.tts_provider = tts_provider
         self.sidecar_connect_timeout_seconds = sidecar_connect_timeout_seconds
         self.turn_acknowledgement = dict(turn_acknowledgement or {})
+        self.routing_policy = dict(routing_policy or {})
+        self.metrics_policy = dict(metrics_policy or {})
         self.sidecar = sidecar if sidecar is not None else RealtimeVoiceSidecarClient()
         self.mixer = mixer
         self.degraded_callback = degraded_callback
@@ -201,6 +205,8 @@ class DiscordRealtimeVoiceSession:
                 "voice_channel_id": str(self.voice_channel_id),
                 "text_channel_id": str(self.text_channel_id) if self.text_channel_id is not None else None,
                 "turn_acknowledgement": dict(self.turn_acknowledgement),
+                "routing": dict(self.routing_policy),
+                "metrics": dict(self.metrics_policy),
             },
         )
         await self.sidecar.start(config)

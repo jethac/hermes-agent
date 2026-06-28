@@ -3178,6 +3178,15 @@ class TestBuildSchemaFromConfig:
         assert "launch-review" in CONFIG_SCHEMA["voice.realtime.production_review_report"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.turn_acknowledgement.enabled"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.turn_acknowledgement.text"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.routing.allow_local_greetings"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.routing.allow_local_clarifications"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.routing.require_oracle_for_tools"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.routing.require_oracle_for_memory"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.routing.require_oracle_for_files"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.routing.local_confidence_threshold"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.metrics.enabled"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.metrics.log_turn_spans"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.metrics.log_provider_spans"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.final_transcript_to_first_audio_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.sidecar_close_timeout_seconds"]["type"] == "number"
@@ -7417,6 +7426,19 @@ class TestRealtimeVoiceWebSocket:
         assert body["conversation_quality"]["live_like"] is True
         assert body["conversation_quality"]["kame_reflex"] is True
         assert body["conversation_quality"]["streaming_stt"] is False
+        assert body["routing"] == {
+            "allow_local_greetings": True,
+            "allow_local_clarifications": True,
+            "require_oracle_for_tools": True,
+            "require_oracle_for_memory": True,
+            "require_oracle_for_files": True,
+            "local_confidence_threshold": 0.75,
+        }
+        assert body["metrics"] == {
+            "enabled": True,
+            "log_turn_spans": True,
+            "log_provider_spans": True,
+        }
         assert body["kame"] == {
             "enabled": True,
             "sidecar_required": True,
@@ -7424,6 +7446,8 @@ class TestRealtimeVoiceWebSocket:
             "asr_mode": "on_escalation",
             "interface_audio_input": "native_audio",
             "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
+            "routing": body["routing"],
+            "metrics": body["metrics"],
         }
         assert body["production_readiness"]["level"] == "live_like"
 

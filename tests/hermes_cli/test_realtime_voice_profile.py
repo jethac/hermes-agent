@@ -258,6 +258,19 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
     assert realtime["sidecar_autostart"] is True
     assert realtime["require_live_like"] is True
+    assert realtime["routing"] == {
+        "allow_local_greetings": True,
+        "allow_local_clarifications": True,
+        "require_oracle_for_tools": True,
+        "require_oracle_for_memory": True,
+        "require_oracle_for_files": True,
+        "local_confidence_threshold": 0.75,
+    }
+    assert realtime["metrics"] == {
+        "enabled": True,
+        "log_turn_spans": True,
+        "log_provider_spans": True,
+    }
 
 
 def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
@@ -277,6 +290,8 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["interface_audio_input"] == "native_audio"
     assert discord_rt["asr_mode"] == "speculative"
     assert discord_rt["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+    assert discord_rt["routing"]["require_oracle_for_tools"] is True
+    assert discord_rt["metrics"]["log_turn_spans"] is True
 
 
 def test_merge_realtime_voice_profile_preserves_unrelated_config():

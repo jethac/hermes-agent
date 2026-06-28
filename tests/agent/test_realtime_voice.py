@@ -2621,6 +2621,16 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
         engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
         interface_audio_input="native_audio",
         asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+        metadata={
+            "routing": {
+                "allow_local_greetings": False,
+                "allow_local_clarifications": True,
+                "require_oracle_for_tools": True,
+                "require_oracle_for_memory": True,
+                "require_oracle_for_files": True,
+                "local_confidence_threshold": 0.82,
+            }
+        },
     )
 
     payload = sidecar._understand_audio_sync(b"audio", VoiceAudioCodec.WEBM_OPUS)
@@ -2642,6 +2652,8 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     assert "KAME reflex" in prompt
     assert "Required keys: route, intent, text" in prompt
     assert "route must be one of local, defer, oracle_direct, or reject_or_clarify" in prompt
+    assert "allow_local_greetings=False" in prompt
+    assert "local_confidence_threshold=0.82" in prompt
     assert "ASR evidence mode is on_escalation" in prompt
 
 

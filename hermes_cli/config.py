@@ -2075,6 +2075,19 @@ DEFAULT_CONFIG = {
                 "enabled": True,
                 "text": "One moment.",
             },
+            "routing": {
+                "allow_local_greetings": True,
+                "allow_local_clarifications": True,
+                "require_oracle_for_tools": True,
+                "require_oracle_for_memory": True,
+                "require_oracle_for_files": True,
+                "local_confidence_threshold": 0.75,
+            },
+            "metrics": {
+                "enabled": True,
+                "log_turn_spans": True,
+                "log_provider_spans": True,
+            },
             "quality_targets_ms": {
                 "audio_to_partial_transcript_ms": 300,
                 "final_transcript_to_first_text_ms": 500,
@@ -2425,6 +2438,19 @@ DEFAULT_CONFIG = {
             "tts_provider": "",
             "sidecar_connect_timeout_seconds": 10.0,
             "sidecar_close_timeout_seconds": 2.0,
+            "routing": {
+                "allow_local_greetings": True,
+                "allow_local_clarifications": True,
+                "require_oracle_for_tools": True,
+                "require_oracle_for_memory": True,
+                "require_oracle_for_files": True,
+                "local_confidence_threshold": 0.75,
+            },
+            "metrics": {
+                "enabled": True,
+                "log_turn_spans": True,
+                "log_provider_spans": True,
+            },
         },
     },
 

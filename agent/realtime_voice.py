@@ -283,7 +283,7 @@ def realtime_voice_session_contract_payload(config: RealtimeVoiceSessionConfig) 
 
     metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
     payload: Dict[str, Any] = {}
-    for key in ("language_support", "quality_targets_ms", "conversation_quality"):
+    for key in ("language_support", "quality_targets_ms", "conversation_quality", "routing", "metrics"):
         value = metadata.get(key)
         if isinstance(value, Mapping):
             payload[key] = dict(value)

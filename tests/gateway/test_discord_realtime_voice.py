@@ -56,6 +56,15 @@ def test_discord_realtime_config_derives_reference_sidecar_and_env_token(monkeyp
                     "sidecar_port": 8877,
                     "sidecar_token_env": "CUSTOM_VOICE_TOKEN",
                     "frontend_provider": "reference",
+                    "routing": {
+                        "allow_local_greetings": False,
+                        "local_confidence_threshold": 0.9,
+                    },
+                    "metrics": {
+                        "enabled": True,
+                        "log_turn_spans": False,
+                        "log_provider_spans": True,
+                    },
                 },
             },
             "discord": {
@@ -74,6 +83,9 @@ def test_discord_realtime_config_derives_reference_sidecar_and_env_token(monkeyp
     assert cfg["sidecar_base_url"] == "http://127.0.0.1:8877"
     assert cfg["sidecar_token"] == "secret-token"
     assert cfg["frontend_provider"] == "reference"
+    assert cfg["routing"]["allow_local_greetings"] is False
+    assert cfg["routing"]["local_confidence_threshold"] == 0.9
+    assert cfg["metrics"]["log_turn_spans"] is False
 
 
 @pytest.mark.asyncio
@@ -95,6 +107,15 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         oracle_model="deep-hermes",
         sidecar_connect_timeout_seconds=0.5,
         turn_acknowledgement={"enabled": True, "text": "One moment."},
+        routing_policy={
+            "allow_local_greetings": True,
+            "allow_local_clarifications": False,
+            "require_oracle_for_tools": True,
+            "require_oracle_for_memory": True,
+            "require_oracle_for_files": True,
+            "local_confidence_threshold": 0.8,
+        },
+        metrics_policy={"enabled": True, "log_turn_spans": True, "log_provider_spans": False},
     )
 
     await session.start()
@@ -119,6 +140,19 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.metadata["turn_acknowledgement"] == {
         "enabled": True,
         "text": "One moment.",
+    }
+    assert sidecar.started_with.metadata["routing"] == {
+        "allow_local_greetings": True,
+        "allow_local_clarifications": False,
+        "require_oracle_for_tools": True,
+        "require_oracle_for_memory": True,
+        "require_oracle_for_files": True,
+        "local_confidence_threshold": 0.8,
+    }
+    assert sidecar.started_with.metadata["metrics"] == {
+        "enabled": True,
+        "log_turn_spans": True,
+        "log_provider_spans": False,
     }
     assert sidecar.sent[-1].type == VoiceEventType.AUDIO_INPUT_CHUNK
     assert sidecar.sent[-1].payload["sample_rate_hz"] == 16000
