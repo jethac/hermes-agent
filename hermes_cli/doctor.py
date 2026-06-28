@@ -808,6 +808,9 @@ def _realtime_voice_smoke_report_payload(result: Any, *, kind: str, **extra: Any
         "first_audio_ms": mapping.get("first_audio_ms", getattr(result, "first_audio_ms", None)),
         "barge_in_ack_ms": mapping.get("barge_in_ack_ms", getattr(result, "barge_in_ack_ms", None)),
         "final_text": str(mapping.get("final_text", getattr(result, "final_text", "")) or ""),
+        "assistant_final_text": str(
+            mapping.get("assistant_final_text", getattr(result, "assistant_final_text", "")) or ""
+        ) or None,
         "audio_bytes": int(mapping.get("audio_bytes", getattr(result, "audio_bytes", 0)) or 0),
         "output_audio_bytes": int(
             mapping.get("output_audio_bytes", getattr(result, "output_audio_bytes", 0)) or 0
@@ -822,6 +825,14 @@ def _realtime_voice_smoke_report_payload(result: Any, *, kind: str, **extra: Any
         "events": list(tuple(mapping.get("events", getattr(result, "events", ())) or ())),
         "first_audio_metrics": (
             dict(mapping.get("first_audio_metrics", getattr(result, "first_audio_metrics", None)) or {})
+            or None
+        ),
+        "metrics": (
+            dict(
+                mapping.get("metrics")
+                or mapping.get("first_audio_metrics", getattr(result, "first_audio_metrics", None))
+                or {}
+            )
             or None
         ),
         "route": str(mapping.get("route", getattr(result, "route", "")) or "") or None,
@@ -1888,20 +1899,31 @@ def _check_realtime_voice_session_audio_smoke(
         first_audio_target_ms=first_audio_target_ms,
         timeout_seconds=timeout_seconds,
     )
+    kame_native_audio_reflex = _realtime_voice_smoke_result_uses_kame_native_audio_reflex(result)
     if (
         result.ok
-        and result.transcript_partial_ms is not None
+        and (
+            result.transcript_partial_ms is not None
+            or kame_native_audio_reflex
+        )
         and result.first_text_ms is not None
         and result.first_audio_ms is not None
-        and result.transcript_partial_ms <= partial_target_ms
+        and (
+            result.transcript_partial_ms is None
+            or result.transcript_partial_ms <= partial_target_ms
+        )
         and result.first_text_ms <= first_text_target_ms
         and result.first_audio_ms <= first_audio_target_ms
     ):
+        partial_detail = (
+            "native_audio_reflex"
+            if result.transcript_partial_ms is None
+            else f"transcript.partial={result.transcript_partial_ms}ms <= {partial_target_ms}ms"
+        )
         check_ok(
             "Realtime voice audio session smoke",
             (
-                f"(bytes={result.audio_bytes}, transcript.partial={result.transcript_partial_ms}ms "
-                f"<= {partial_target_ms}ms, first_text={result.first_text_ms}ms "
+                f"(bytes={result.audio_bytes}, {partial_detail}, first_text={result.first_text_ms}ms "
                 f"<= {first_text_target_ms}ms, first_audio={result.first_audio_ms}ms "
                 f"<= {first_audio_target_ms}ms)"
             ),
@@ -1909,7 +1931,7 @@ def _check_realtime_voice_session_audio_smoke(
         return
 
     detail = getattr(result, "error", "") or "audio session smoke failed"
-    if result.ok and result.transcript_partial_ms is None:
+    if result.ok and result.transcript_partial_ms is None and not kame_native_audio_reflex:
         detail = "missing transcript.partial before transcript.final"
     elif result.ok and result.transcript_partial_ms is not None and result.transcript_partial_ms > partial_target_ms:
         detail = f"transcript.partial={result.transcript_partial_ms}ms exceeds target {partial_target_ms}ms"
@@ -1926,6 +1948,15 @@ def _check_realtime_voice_session_audio_smoke(
         f"Fix realtime voice audio session smoke failure: {detail}",
         issues,
     )
+
+
+def _realtime_voice_smoke_result_uses_kame_native_audio_reflex(result: Any) -> bool:
+    mapping = result if isinstance(result, Mapping) else {}
+    route = str(mapping.get("route", getattr(result, "route", "")) or "").strip().lower()
+    input_source = str(
+        mapping.get("interface_input_source", getattr(result, "interface_input_source", "")) or ""
+    ).strip().lower()
+    return route in {"local", "defer", "oracle_direct", "reject_or_clarify"} and input_source == "native_audio"
 
 
 def _quality_target_from_config(config, key: str, default: int) -> int:

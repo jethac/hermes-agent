@@ -38,6 +38,7 @@ class RealtimeVoiceSidecarSmokeResult:
     first_audio_ms: Optional[int] = None
     barge_in_ack_ms: Optional[int] = None
     final_text: str = ""
+    assistant_final_text: str = ""
     audio_bytes: int = 0
     output_audio_bytes: int = 0
     audio_after_barge_in_bytes: int = 0
@@ -67,11 +68,13 @@ def realtime_voice_smoke_result_payload(
         "first_audio_ms": result.first_audio_ms,
         "barge_in_ack_ms": result.barge_in_ack_ms,
         "final_text": result.final_text,
+        "assistant_final_text": result.assistant_final_text or None,
         "audio_bytes": result.audio_bytes,
         "output_audio_bytes": result.output_audio_bytes,
         "audio_after_barge_in_bytes": result.audio_after_barge_in_bytes,
         "events": list(result.events),
         "first_audio_metrics": dict(result.first_audio_metrics or {}) or None,
+        "metrics": dict(result.first_audio_metrics or {}) or None,
         "route": result.route or None,
         "interface_input_source": result.interface_input_source or None,
         "reflex_provider": result.reflex_provider or None,
@@ -304,6 +307,7 @@ async def run_realtime_voice_session_turn_smoke(
     first_audio_metrics: Optional[dict[str, Any]] = None
     output_audio_bytes = 0
     final_text = ""
+    assistant_final_text = ""
     assistant_committed = False
     events: list[str] = []
     kame_evidence: dict[str, str] = {}
@@ -453,6 +457,7 @@ async def run_realtime_voice_session_audio_smoke(
     first_audio_metrics: Optional[dict[str, Any]] = None
     output_audio_bytes = 0
     final_text = ""
+    assistant_final_text = ""
     assistant_committed = False
     events: list[str] = []
     kame_evidence: dict[str, str] = {}
@@ -489,6 +494,7 @@ async def run_realtime_voice_session_audio_smoke(
                     first_text_ms=first_text_ms,
                     first_audio_ms=first_audio_ms,
                     final_text=final_text,
+                    assistant_final_text=assistant_final_text,
                     audio_bytes=audio_bytes,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
@@ -505,6 +511,7 @@ async def run_realtime_voice_session_audio_smoke(
                     first_text_ms=first_text_ms,
                     first_audio_ms=first_audio_ms,
                     final_text=final_text,
+                    assistant_final_text=assistant_final_text,
                     audio_bytes=audio_bytes,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
@@ -524,6 +531,7 @@ async def run_realtime_voice_session_audio_smoke(
                     first_text_ms=first_text_ms,
                     first_audio_ms=first_audio_ms,
                     final_text=final_text,
+                    assistant_final_text=assistant_final_text,
                     audio_bytes=audio_bytes,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
@@ -562,7 +570,7 @@ async def run_realtime_voice_session_audio_smoke(
                 except Exception:
                     output_audio_bytes = 0
             elif event.type == VoiceEventType.ASSISTANT_COMMIT:
-                final_text = str(event.payload.get("text") or final_text)
+                assistant_final_text = str(event.payload.get("text") or assistant_final_text).strip()
                 assistant_committed = True
 
             partial_or_kame_ready = (
@@ -584,6 +592,7 @@ async def run_realtime_voice_session_audio_smoke(
                     first_text_ms=first_text_ms,
                     first_audio_ms=first_audio_ms,
                     final_text=final_text,
+                    assistant_final_text=assistant_final_text,
                     audio_bytes=audio_bytes,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
@@ -599,6 +608,7 @@ async def run_realtime_voice_session_audio_smoke(
             first_text_ms=first_text_ms,
             first_audio_ms=first_audio_ms,
             final_text=final_text,
+            assistant_final_text=assistant_final_text,
             audio_bytes=audio_bytes,
             output_audio_bytes=output_audio_bytes,
             events=tuple(events),

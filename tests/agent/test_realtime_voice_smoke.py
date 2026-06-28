@@ -270,10 +270,15 @@ def test_kame_audio_smoke_captures_reflex_route_without_partial_transcript(monke
     assert result.route == "local"
     assert result.interface_input_source == "native_audio"
     assert result.reflex_provider == "vllm"
-    assert result.final_text == "Yes, I can hear you."
+    assert result.final_text == "can you hear me"
+    assert result.assistant_final_text == "Yes, I can hear you."
     assert result.output_audio_bytes == len(b"kame-audio")
     assert "interface.intent.final" in result.events
-    assert realtime_voice_smoke_result_payload(result, kind="audio_session")["route"] == "local"
+    payload = realtime_voice_smoke_result_payload(result, kind="audio_session")
+    assert payload["route"] == "local"
+    assert payload["final_text"] == "can you hear me"
+    assert payload["assistant_final_text"] == "Yes, I can hear you."
+    assert payload["metrics"]["tts_synthesis_ms"] == 12
 
 
 def test_smoke_result_payload_preserves_kame_reflex_validation_error():
@@ -284,6 +289,7 @@ def test_smoke_result_payload_preserves_kame_reflex_validation_error():
             interface_input_source="native_audio",
             reflex_provider="vllm",
             reflex_validation_error="invalid_json",
+            first_audio_metrics={"kame_speech_end_to_first_audio_ms": 250},
         ),
         kind="audio_session",
     )
@@ -292,6 +298,7 @@ def test_smoke_result_payload_preserves_kame_reflex_validation_error():
     assert payload["interface_input_source"] == "native_audio"
     assert payload["reflex_provider"] == "vllm"
     assert payload["reflex_validation_error"] == "invalid_json"
+    assert payload["metrics"]["kame_speech_end_to_first_audio_ms"] == 250
 
 
 def test_barge_in_smoke_measures_ack_latency(monkeypatch):

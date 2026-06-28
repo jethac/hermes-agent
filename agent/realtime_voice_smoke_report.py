@@ -1190,12 +1190,14 @@ def _validate_audio_session_entry(
     partial_target_ms = _positive_int(entry.get("target_ms"))
     final_ms = _positive_int(entry.get("transcript_final_ms"))
     fast_final_satisfies_partial = _final_transcript_satisfies_partial_target(final_ms, partial_target_ms)
+    kame_native_audio_reflex = _entry_uses_kame_native_audio_reflex(entry)
+    partial_requirement_satisfied = fast_final_satisfies_partial or kame_native_audio_reflex
     if fast_final_satisfies_partial:
         issues = [
             issue for issue in issues
             if issue.message != "unknown realtime voice error"
         ]
-    if "transcript.partial" not in events and not fast_final_satisfies_partial:
+    if "transcript.partial" not in events and not partial_requirement_satisfied:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing transcript.partial event", identifier))
     if "transcript.final" not in events:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing transcript.final event", identifier))
@@ -1232,7 +1234,7 @@ def _validate_audio_session_entry(
                 )
             )
 
-    if partial_ms is None and not fast_final_satisfies_partial:
+    if partial_ms is None and not partial_requirement_satisfied:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing transcript_partial_ms", identifier))
     if partial_target_ms is None:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing target_ms", identifier))
@@ -1299,6 +1301,12 @@ def _validate_audio_session_entry(
             )
         )
     return issues
+
+
+def _entry_uses_kame_native_audio_reflex(entry: Mapping[str, Any]) -> bool:
+    route = str(entry.get("route") or "").strip().lower()
+    input_source = str(entry.get("interface_input_source") or "").strip().lower()
+    return route in KAME_ROUTE_LABELS and input_source == "native_audio"
 
 
 def _validate_barge_in_entry(
