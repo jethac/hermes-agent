@@ -311,6 +311,9 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         "kame_speech_end_to_interface_decision_ms": 321,
         "kame_speech_end_to_playback_start_ms": 2345,
     }
+    assert sidecar.started_with.barge_in_policy == {
+        "stop_playback_deadline_ms": 95,
+    }
     assert sidecar.started_with.metadata["voice_architecture"] == "kame_frontend_oracle"
     assert sidecar.started_with.metadata["frontend_role"] == "low_latency_voice_interface"
     assert sidecar.started_with.metadata["oracle_role"] == "hermes_backend_oracle"

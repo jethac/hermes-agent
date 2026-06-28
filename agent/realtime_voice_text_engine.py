@@ -2118,6 +2118,10 @@ def _payload_nonnegative_float(value: Any) -> Optional[float]:
 
 
 def _barge_in_min_rms(config: Optional[RealtimeVoiceSessionConfig]) -> float:
+    if config is not None and isinstance(config.barge_in_policy, Mapping) and config.barge_in_policy:
+        value = _payload_nonnegative_float(config.barge_in_policy.get("min_rms"))
+        if value is not None:
+            return value
     metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
     barge_in = metadata.get("barge_in")
     if isinstance(barge_in, Mapping):
@@ -2129,6 +2133,10 @@ def _barge_in_min_rms(config: Optional[RealtimeVoiceSessionConfig]) -> float:
 
 
 def _barge_in_min_speech_ms(config: Optional[RealtimeVoiceSessionConfig]) -> int:
+    if config is not None and isinstance(config.barge_in_policy, Mapping) and config.barge_in_policy:
+        value = _payload_nonnegative_float(config.barge_in_policy.get("min_speech_ms"))
+        if value is not None:
+            return int(round(value))
     metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
     barge_in = metadata.get("barge_in")
     if isinstance(barge_in, Mapping):

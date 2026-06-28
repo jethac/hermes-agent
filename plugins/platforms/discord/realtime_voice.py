@@ -254,6 +254,9 @@ class DiscordRealtimeVoiceSession:
             metrics_policy=dict(self.metrics_policy),
             output_events=dict(self.output_events),
             quality_targets_ms=dict(self.quality_targets_ms),
+            barge_in_policy={
+                "stop_playback_deadline_ms": self.barge_in_stop_playback_deadline_ms,
+            },
             metadata={
                 "transport": "discord_voice",
                 "voice_architecture": "kame_frontend_oracle",

@@ -195,6 +195,7 @@ class RealtimeVoiceSessionConfig:
     metrics_policy: Mapping[str, Any] = field(default_factory=dict)
     output_events: Mapping[str, Any] = field(default_factory=dict)
     quality_targets_ms: Mapping[str, Any] = field(default_factory=dict)
+    barge_in_policy: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     @property
@@ -248,6 +249,7 @@ class RealtimeVoiceSessionConfig:
             "metrics_policy": dict(self.metrics_policy),
             "output_events": dict(self.output_events),
             "quality_targets_ms": dict(self.quality_targets_ms),
+            "barge_in_policy": dict(self.barge_in_policy),
             "metadata": dict(self.metadata),
         }
 
@@ -321,6 +323,7 @@ class RealtimeVoiceSessionConfig:
             metrics_policy=_mapping(payload.get("metrics_policy")),
             output_events=_mapping(payload.get("output_events")),
             quality_targets_ms=_mapping(payload.get("quality_targets_ms")),
+            barge_in_policy=_mapping(payload.get("barge_in_policy")),
             metadata=_mapping(payload.get("metadata")),
         )
 
@@ -419,11 +422,12 @@ def realtime_voice_session_contract_payload(config: RealtimeVoiceSessionConfig) 
         ("quality_targets_ms", config.quality_targets_ms),
         ("routing", config.routing_policy),
         ("metrics", config.metrics_policy),
+        ("barge_in", config.barge_in_policy),
     )
     for key, value in first_class_mappings:
         if isinstance(value, Mapping) and value:
             payload[key] = dict(value)
-    for key in ("language_support", "quality_targets_ms", "conversation_quality", "routing", "metrics"):
+    for key in ("language_support", "quality_targets_ms", "conversation_quality", "routing", "metrics", "barge_in"):
         if key in payload:
             continue
         value = metadata.get(key)

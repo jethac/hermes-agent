@@ -213,6 +213,7 @@ def test_session_config_round_trips_kame_fields():
         metrics_policy={"enabled": True, "log_provider_spans": False},
         output_events={"caption_aliases": True},
         quality_targets_ms={"kame_speech_end_to_playback_start_ms": 2500},
+        barge_in_policy={"min_rms": 350, "min_speech_ms": 120},
     )
 
     restored = RealtimeVoiceSessionConfig.from_wire(config.to_wire())
@@ -242,6 +243,7 @@ def test_session_config_round_trips_kame_fields():
     assert restored.metrics_policy == {"enabled": True, "log_provider_spans": False}
     assert restored.output_events == {"caption_aliases": True}
     assert restored.quality_targets_ms == {"kame_speech_end_to_playback_start_ms": 2500}
+    assert restored.barge_in_policy == {"min_rms": 350, "min_speech_ms": 120}
 
 
 def test_session_config_normalizes_kame_interface_audio_input():
@@ -4089,7 +4091,7 @@ def test_text_engine_speech_energy_barge_in_requires_rms_and_duration(monkeypatc
         await engine.start(
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
-                metadata={"barge_in": {"min_rms": 350, "min_speech_ms": 120}},
+                barge_in_policy={"min_rms": 350, "min_speech_ms": 120},
             )
         )
         await engine.receive_event(
@@ -4167,7 +4169,7 @@ def test_text_engine_speech_end_resets_energy_barge_in_accumulator(monkeypatch):
         await engine.start(
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
-                metadata={"barge_in": {"min_rms": 350, "min_speech_ms": 120}},
+                barge_in_policy={"min_rms": 350, "min_speech_ms": 120},
             )
         )
         await engine.receive_event(
@@ -4875,6 +4877,7 @@ def test_reference_sidecar_session_started_matches_realtime_contract():
                 routing_policy={"local_confidence_threshold": 0.75},
                 metrics_policy={"enabled": True},
                 quality_targets_ms={"kame_speech_end_to_playback_start_ms": 2500},
+                barge_in_policy={"min_rms": 350, "min_speech_ms": 120},
             )
         )
         started = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
@@ -4893,6 +4896,7 @@ def test_reference_sidecar_session_started_matches_realtime_contract():
     assert started.payload["routing"] == {"local_confidence_threshold": 0.75}
     assert started.payload["metrics"] == {"enabled": True}
     assert started.payload["quality_targets_ms"] == {"kame_speech_end_to_playback_start_ms": 2500}
+    assert started.payload["barge_in"] == {"min_rms": 350, "min_speech_ms": 120}
     assert ready.type == VoiceEventType.FRONTEND_STATE
 
 
