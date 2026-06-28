@@ -348,6 +348,8 @@ class ReferenceRealtimeVoiceSidecarSession:
                     )
                 )
             return
+        if event.type in {VoiceEventType.SPEECH_START, VoiceEventType.SPEECH_ENERGY, VoiceEventType.SPEECH_END}:
+            return
         if event.type != VoiceEventType.AUDIO_INPUT_CHUNK:
             return
 

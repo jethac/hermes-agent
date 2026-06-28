@@ -54,6 +54,9 @@ class VoiceEventType(StrEnum):
     SESSION_CLOSED = "session.closed"
     SESSION_ERROR = "session.error"
     AUDIO_INPUT_CHUNK = "audio.input.chunk"
+    SPEECH_START = "speech.start"
+    SPEECH_ENERGY = "speech.energy"
+    SPEECH_END = "speech.end"
     AUDIO_OUTPUT_CHUNK = "audio.output.chunk"
     PLAYBACK_STARTED = "playback.started"
     PLAYBACK_STOPPED = "playback.stopped"
@@ -84,6 +87,9 @@ class VoiceEventType(StrEnum):
 CLIENT_EVENT_TYPES = frozenset(
     {
         VoiceEventType.AUDIO_INPUT_CHUNK,
+        VoiceEventType.SPEECH_START,
+        VoiceEventType.SPEECH_ENERGY,
+        VoiceEventType.SPEECH_END,
         VoiceEventType.BARGE_IN,
         VoiceEventType.SESSION_CLOSED,
     }

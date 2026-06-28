@@ -312,6 +312,9 @@ async def test_discord_realtime_session_sends_end_of_utterance_marker():
     await session.start()
     await session.handle_speech_end(user_id=42)
 
+    assert sidecar.sent[-2].type == VoiceEventType.SPEECH_END
+    assert sidecar.sent[-2].payload["user_id"] == "42"
+    assert sidecar.sent[-2].payload["transport"] == "discord_voice"
     assert sidecar.sent[-1].type == VoiceEventType.AUDIO_INPUT_CHUNK
     assert sidecar.sent[-1].payload["user_id"] == "42"
     assert sidecar.sent[-1].payload["end_of_utterance"] is True
@@ -413,6 +416,9 @@ async def test_discord_realtime_session_barge_in_stops_mixer_and_notifies_sideca
     await session.handle_speech_start(user_id=42)
 
     mixer.stop_speech.assert_called_once()
+    assert sidecar.sent[-2].type == VoiceEventType.SPEECH_START
+    assert sidecar.sent[-2].payload["user_id"] == "42"
+    assert sidecar.sent[-2].payload["transport"] == "discord_voice"
     assert sidecar.sent[-1].type == VoiceEventType.BARGE_IN
     assert sidecar.sent[-1].payload["user_id"] == "42"
     assert sidecar.sent[-1].payload["playback_active"] is True

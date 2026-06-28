@@ -288,6 +288,13 @@ class DiscordRealtimeVoiceSession:
     async def handle_speech_start(self, *, user_id: int | str) -> None:
         if self._closed or not self._started:
             return
+        await self._send_event(
+            VoiceEventType.SPEECH_START,
+            {
+                "user_id": str(user_id),
+                "transport": "discord_voice",
+            },
+        )
         stop_result = await self._stop_mixer_speech_for_barge_in(require_active=True)
         self._active_playback_generation += 1
         await self._send_event(
@@ -304,6 +311,13 @@ class DiscordRealtimeVoiceSession:
     async def handle_speech_end(self, *, user_id: int | str) -> None:
         if self._closed or not self._started:
             return
+        await self._send_event(
+            VoiceEventType.SPEECH_END,
+            {
+                "user_id": str(user_id),
+                "transport": "discord_voice",
+            },
+        )
         await self._send_event(
             VoiceEventType.AUDIO_INPUT_CHUNK,
             {

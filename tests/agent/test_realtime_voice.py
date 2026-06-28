@@ -332,26 +332,40 @@ def test_event_validation_separates_client_and_server_events():
         sequence=1,
         payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"abc").to_payload(),
     )
+    speech_start_event = VoiceEvent(
+        type=VoiceEventType.SPEECH_START,
+        session_id="voice-123",
+        sequence=2,
+        payload={"user_id": "42"},
+    )
+    speech_end_event = VoiceEvent(
+        type=VoiceEventType.SPEECH_END,
+        session_id="voice-123",
+        sequence=3,
+        payload={"user_id": "42"},
+    )
     transcript_event = VoiceEvent(
         type=VoiceEventType.TRANSCRIPT_PARTIAL,
         session_id="voice-123",
-        sequence=2,
+        sequence=4,
         payload={"text": "hello"},
     )
     interface_event = VoiceEvent(
         type=VoiceEventType.INTERFACE_INTENT_PARTIAL,
         session_id="voice-123",
-        sequence=3,
+        sequence=5,
         payload={"intent": "Greeting.", "intent_source": "reflex_audio"},
     )
     oracle_event = VoiceEvent(
         type=VoiceEventType.ORACLE_RESPONSE_PARTIAL,
         session_id="voice-123",
-        sequence=4,
+        sequence=6,
         payload={"delta": "Hello", "playback_generation": 1},
     )
 
     validate_client_event(audio_event)
+    validate_client_event(speech_start_event)
+    validate_client_event(speech_end_event)
     validate_server_event(transcript_event)
     validate_server_event(interface_event)
     validate_server_event(oracle_event)
@@ -4550,9 +4564,25 @@ def test_session_adds_latency_metrics_to_realtime_events(monkeypatch):
         await session.start()
         await session.receive_client_event(
             VoiceEvent(
-                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                type=VoiceEventType.SPEECH_START,
                 session_id="voice-123",
                 sequence=1,
+                payload={"user_id": "42"},
+            )
+        )
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.SPEECH_END,
+                session_id="voice-123",
+                sequence=2,
+                payload={"user_id": "42"},
+            )
+        )
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=3,
                 payload={"transcript": "hello metrics", "end_of_utterance": True},
             )
         )

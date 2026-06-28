@@ -103,6 +103,12 @@ class RealtimeVoiceSession:
             raise ValueError("client event sequence must increase monotonically")
         self._last_client_sequence = event.sequence
         now = time.monotonic()
+        if event.type == VoiceEventType.SPEECH_START:
+            if self._turn_audio_started_at is None:
+                self._turn_audio_started_at = now
+            self.state = RealtimeVoiceSessionState.LISTENING
+        elif event.type == VoiceEventType.SPEECH_END:
+            self._turn_eou_at = now
         if event.type == VoiceEventType.AUDIO_INPUT_CHUNK:
             if self._turn_audio_started_at is None:
                 self._turn_audio_started_at = now
