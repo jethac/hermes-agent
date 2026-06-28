@@ -112,6 +112,7 @@ class TestRealtimeVoiceReadiness:
                     "sidecar_base_url": "http://voice.local:8765",
                     "frontend_provider": "gemma4",
                     "frontend_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                    "interface_max_audio_seconds": 22,
                     "oracle_model": "deep-hermes",
                 }
             }
@@ -129,12 +130,14 @@ class TestRealtimeVoiceReadiness:
 
         assert smoke_config.frontend_provider == "gemma4"
         assert smoke_config.frontend_model == "google/gemma-4-E4B-it-qat-w4a16-ct"
+        assert smoke_config.interface_max_audio_seconds == 22
         assert smoke_config.oracle_model == "deep-hermes"
         assert smoke_config.metadata["voice_architecture"] == "kame_frontend_oracle"
         assert smoke_config.metadata["frontend_role"] == "low_latency_voice_interface"
         assert smoke_config.metadata["oracle_role"] == "hermes_backend_oracle"
         assert smoke_config.metadata["frontend_provider"] == "gemma4"
         assert smoke_config.metadata["frontend_model"] == "google/gemma-4-E4B-it-qat-w4a16-ct"
+        assert smoke_config.metadata["interface_max_audio_seconds"] == 22.0
         assert smoke_config.metadata["oracle_model"] == "deep-hermes"
 
     def test_realtime_voice_smoke_result_payload_is_json_safe(self):
@@ -1326,6 +1329,7 @@ class TestRealtimeVoiceReadiness:
                 "engine": "text_oracle_tts",
                 "frontend_provider": "reference",
                 "frontend_model": "portable-voice",
+                "interface_max_audio_seconds": 18.0,
                 "available": True,
                 "require_live_like": True,
                 "quality_targets_ms": {
@@ -1392,6 +1396,7 @@ class TestRealtimeVoiceReadiness:
         manifest = report[0]
         assert manifest["kind"] == "manifest"
         assert manifest["ok"] is True
+        assert manifest["interface_max_audio_seconds"] == 18.0
         assert manifest["conversation_quality"]["live_like"] is True
         assert manifest["sidecar"] == {
             "mode": "managed_loopback",
