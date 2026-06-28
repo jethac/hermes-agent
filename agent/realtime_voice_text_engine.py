@@ -363,6 +363,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     payload = dict(event.payload)
                     if self._is_stale_sidecar_input(payload):
                         continue
+                    if not _kame_transcript_final_can_start_turn(self.config, payload):
+                        continue
                     text = str(payload.get("text") or "").strip()
                     if text:
                         self._mark_sidecar_input_completed(payload)
@@ -1780,6 +1782,18 @@ def _allow_kame_transcript_events(config: Optional[RealtimeVoiceSessionConfig]) 
     if config.asr_mode.value in {"debug", "fallback"}:
         return True
     return str(config.interface_audio_input or "").strip().lower() == "text_fallback"
+
+
+def _kame_transcript_final_can_start_turn(
+    config: Optional[RealtimeVoiceSessionConfig],
+    payload: Mapping[str, Any],
+) -> bool:
+    if _allow_kame_transcript_events(config):
+        return True
+    source = str(payload.get("source") or "").strip().lower()
+    if source in {"gemini_live_tool", "openai_realtime_tool", "kame_interface_tool"}:
+        return True
+    return False
 
 
 def _turn_acknowledgement_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:

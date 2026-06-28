@@ -2020,6 +2020,150 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_ignores_raw_live_provider_transcript_final():
+    class RawTranscriptSidecar:
+        def __init__(self):
+            self._events = asyncio.Queue()
+            self.received = []
+
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            self.received.append(event)
+
+        async def speak(self, event):
+            self.received.append(event)
+
+        async def events(self):
+            while True:
+                event = await self._events.get()
+                if event is None:
+                    return
+                yield event
+
+        async def close(self):
+            await self._events.put(None)
+
+    class FailingOracle:
+        async def stream_answer_for_request(self, request):
+            raise AssertionError("raw live-provider transcript must not drive the KAME oracle")
+            yield ""
+
+    async def run():
+        sidecar = RawTranscriptSidecar()
+        engine = KameInterfaceOracleEngine(oracle=FailingOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemini_live",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+        events = engine.events()
+        started = await asyncio.wait_for(anext(events), timeout=1)
+        assert started.type == VoiceEventType.SESSION_STARTED
+
+        await sidecar._events.put(
+            VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"text": "raw provider transcript"},
+            )
+        )
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(anext(events), timeout=0.05)
+        await engine.close()
+
+    asyncio.run(run())
+
+
+def test_kame_engine_allows_live_provider_tool_transcript_final(monkeypatch):
+    class ToolTranscriptSidecar:
+        def __init__(self):
+            self._events = asyncio.Queue()
+            self.received = []
+
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            self.received.append(event)
+
+        async def speak(self, event):
+            self.received.append(event)
+
+        async def events(self):
+            while True:
+                event = await self._events.get()
+                if event is None:
+                    return
+                yield event
+
+        async def close(self):
+            await self._events.put(None)
+
+    class ToolOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "Tool answer."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        sidecar = ToolTranscriptSidecar()
+        oracle = ToolOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle, sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemini_live",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+        events = engine.events()
+        started = await asyncio.wait_for(anext(events), timeout=1)
+        assert started.type == VoiceEventType.SESSION_STARTED
+
+        await sidecar._events.put(
+            VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "text": "use memory and tools",
+                    "source": "gemini_live_tool",
+                    "tool_call_id": "call-1",
+                },
+            )
+        )
+
+        seen = []
+        async for event in events:
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+        await engine.close()
+        assert len(oracle.requests) == 1
+        assert oracle.requests[0].intent == "use memory and tools"
+        assert oracle.requests[0].source == "gemini_live_tool"
+        assert any(event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST for event in seen)
+
+    asyncio.run(run())
+
+
 def test_kame_engine_adds_first_audio_metrics_to_sidecar_tts_chunks():
     class HintOracle:
         async def stream_answer_for_request(self, request):
