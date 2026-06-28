@@ -619,7 +619,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if oracle_request is not None:
             interface_payload = _kame_interface_payload_with_metrics(oracle_request, generation, assistant_metadata)
             if oracle_request.route == KameRoute.DEFER:
-                await self._emit(VoiceEventType.INTERFACE_REPLY_DEFER, interface_payload)
+                await self._emit(
+                    VoiceEventType.INTERFACE_REPLY_DEFER,
+                    _kame_defer_reply_payload_with_metrics(oracle_request, generation, assistant_metadata),
+                )
             await self._emit(VoiceEventType.INTERFACE_ORACLE_REQUEST, interface_payload)
         self._active_task = asyncio.create_task(
             self._answer_and_speak(
@@ -1690,6 +1693,20 @@ def _kame_interface_payload_with_metrics(
         sanitized = _nonnegative_int_metrics(metrics)
         if sanitized:
             payload["metrics"] = sanitized
+    return payload
+
+
+def _kame_defer_reply_payload_with_metrics(
+    request: KameOracleRequest,
+    playback_generation: int,
+    metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    payload = _kame_interface_payload_with_metrics(request, playback_generation, metadata)
+    acknowledgement = request.interface_already_said.strip()
+    if acknowledgement:
+        payload["text"] = acknowledgement
+        payload["acknowledgement_text"] = acknowledgement
+        payload["oracle_text"] = request.oracle_text
     return payload
 
 
