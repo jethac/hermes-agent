@@ -360,6 +360,10 @@ class ReferenceRealtimeVoiceSidecarSession:
             if event.payload.get("end_of_utterance") is True:
                 await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
             else:
+                if self.config is not None and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+                    partial_intent_payload = _kame_interface_partial_payload_from_payload(event.payload)
+                    if partial_intent_payload:
+                        await self._emit(VoiceEventType.INTERFACE_INTENT_PARTIAL, partial_intent_payload)
                 payload["stability"] = 0.8
                 await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, payload)
             return
@@ -701,6 +705,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                     VoiceEventType.PLAYBACK_STARTED,
                     VoiceEventType.PLAYBACK_STOPPED,
                     VoiceEventType.FRONTEND_STATE,
+                    VoiceEventType.INTERFACE_INTENT_PARTIAL,
                     VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                     VoiceEventType.ASSISTANT_COMMIT,
                     VoiceEventType.BARGE_IN,
@@ -729,6 +734,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                     VoiceEventType.PLAYBACK_STARTED,
                     VoiceEventType.PLAYBACK_STOPPED,
                     VoiceEventType.FRONTEND_STATE,
+                    VoiceEventType.INTERFACE_INTENT_PARTIAL,
                     VoiceEventType.ORACLE_HINT,
                     VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                     VoiceEventType.ASSISTANT_COMMIT,
@@ -1613,6 +1619,32 @@ def _kame_reflex_payload_from_content(content: str) -> dict[str, Any]:
     if not isinstance(parsed, Mapping):
         return {"text": text, "intent": text, "intent_source": "reflex_audio", "transcript_source": "none"}
     return KameReflexDecision.from_payload(parsed, fallback_text=text).to_payload()
+
+
+def _kame_interface_partial_payload_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    intent = str(payload.get("intent") or "").strip()
+    if not intent:
+        return {}
+    partial: dict[str, Any] = {
+        "intent": intent,
+        "intent_source": str(payload.get("intent_source") or "reflex_audio").strip() or "reflex_audio",
+    }
+    text = str(payload.get("text") or payload.get("transcript") or "").strip()
+    if text:
+        partial["text"] = text
+    route = str(payload.get("route") or "").strip().lower()
+    if route:
+        partial["route"] = route
+    source = str(payload.get("source") or "").strip()
+    if source:
+        partial["source"] = source
+    user_id = str(payload.get("user_id") or "").strip()
+    if user_id:
+        partial["user_id"] = user_id
+    input_generation = _payload_input_generation(payload)
+    if input_generation is not None:
+        partial["input_generation"] = input_generation
+    return partial
 
 
 def _bounded_confidence(value: Any) -> Optional[float]:

@@ -60,6 +60,7 @@ class VoiceEventType(StrEnum):
     TRANSCRIPT_PARTIAL = "transcript.partial"
     TRANSCRIPT_FINAL = "transcript.final"
     FRONTEND_STATE = "frontend.state"
+    INTERFACE_INTENT_PARTIAL = "interface.intent.partial"
     INTERFACE_INTENT_FINAL = "interface.intent.final"
     INTERFACE_REPLY_LOCAL = "interface.reply.local"
     INTERFACE_REPLY_DEFER = "interface.reply.defer"
@@ -93,6 +94,7 @@ SERVER_EVENT_TYPES = frozenset(
         VoiceEventType.TRANSCRIPT_PARTIAL,
         VoiceEventType.TRANSCRIPT_FINAL,
         VoiceEventType.FRONTEND_STATE,
+        VoiceEventType.INTERFACE_INTENT_PARTIAL,
         VoiceEventType.INTERFACE_INTENT_FINAL,
         VoiceEventType.INTERFACE_REPLY_LOCAL,
         VoiceEventType.INTERFACE_REPLY_DEFER,

@@ -114,6 +114,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if transcript:
             await self._auto_barge_in_for_speech(event)
             if not _payload_marks_final_transcript(event.payload):
+                if self.config is not None and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+                    partial_intent_payload = _kame_interface_partial_payload_from_payload(event.payload)
+                    if partial_intent_payload:
+                        await self._emit(VoiceEventType.INTERFACE_INTENT_PARTIAL, partial_intent_payload)
                 await self._emit(
                     VoiceEventType.TRANSCRIPT_PARTIAL,
                     {
@@ -247,7 +251,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     payload = dict(event.payload)
                     if self._is_stale_sidecar_input(payload):
                         continue
+                    if self.config is not None and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+                        partial_intent_payload = _kame_interface_partial_payload_from_payload(payload)
+                        if partial_intent_payload:
+                            await self._emit(VoiceEventType.INTERFACE_INTENT_PARTIAL, partial_intent_payload)
                     await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, transcript_event_payload_from_payload(payload))
+                elif event.type == VoiceEventType.INTERFACE_INTENT_PARTIAL:
+                    payload = dict(event.payload)
+                    if self._is_stale_sidecar_input(payload):
+                        continue
+                    await self._emit(VoiceEventType.INTERFACE_INTENT_PARTIAL, payload)
                 elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
                     payload = dict(event.payload)
                     if self._is_stale_sidecar_input(payload):
@@ -1201,6 +1214,32 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
     if metadata.get("kame_cancellation_token"):
         payload["cancellation_token"] = str(metadata.get("kame_cancellation_token"))
     return {key: value for key, value in payload.items() if value != ""}
+
+
+def _kame_interface_partial_payload_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    intent = str(payload.get("intent") or "").strip()
+    if not intent:
+        return {}
+    partial: dict[str, Any] = {
+        "intent": intent,
+        "intent_source": str(payload.get("intent_source") or "reflex_audio").strip() or "reflex_audio",
+    }
+    text = str(payload.get("text") or payload.get("transcript") or "").strip()
+    if text:
+        partial["text"] = text
+    route = str(payload.get("route") or "").strip().lower()
+    if route:
+        partial["route"] = route
+    source = str(payload.get("source") or "").strip()
+    if source:
+        partial["source"] = source
+    user_id = str(payload.get("user_id") or "").strip()
+    if user_id:
+        partial["user_id"] = user_id
+    input_generation = _payload_input_generation(dict(payload))
+    if input_generation is not None:
+        partial["input_generation"] = input_generation
+    return partial
 
 
 def _is_kame_metadata(metadata: Mapping[str, Any]) -> bool:
