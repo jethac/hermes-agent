@@ -1528,9 +1528,11 @@ class RealtimeVoiceProfileApply(BaseModel):
     streaming_stt_base_url: str = ""
     streaming_tts_base_url: str = ""
     streaming_stt_model: str = ""
+    streaming_stt_token_env: str = ""
     tts_provider: str = "streaming_tts"
     streaming_tts_model: str = ""
     streaming_tts_voice: str = ""
+    streaming_tts_token_env: str = ""
     barge_in_min_rms: int = 350
     barge_in_min_speech_ms: int = 120
     barge_in_stop_playback_deadline_ms: int = 150
@@ -15309,6 +15311,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
         DEFAULT_OPENAI_REALTIME_MODEL,
         DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL,
         DEFAULT_OPENAI_REALTIME_VOICE,
+        DEFAULT_STREAMING_STT_TOKEN_ENV,
+        DEFAULT_STREAMING_TTS_TOKEN_ENV,
         build_kame_realtime_voice_profile,
         build_gemini_live_voice_profile,
         build_openai_realtime_voice_profile,
@@ -15351,6 +15355,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_stt_model=body.streaming_stt_model or "portable-streaming-asr",
             streaming_tts_model=body.streaming_tts_model or "portable-streaming-voice",
             streaming_tts_voice=body.streaming_tts_voice or body.voice,
+            streaming_stt_token_env=body.streaming_stt_token_env or DEFAULT_STREAMING_STT_TOKEN_ENV,
+            streaming_tts_token_env=body.streaming_tts_token_env or DEFAULT_STREAMING_TTS_TOKEN_ENV,
             allow_local_greetings=body.allow_local_greetings,
             allow_local_clarifications=body.allow_local_clarifications,
             require_oracle_for_tools=body.require_oracle_for_tools,
@@ -15368,6 +15374,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_stt_model=body.streaming_stt_model or DEFAULT_ELEVENLABS_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or DEFAULT_ELEVENLABS_TTS_MODEL,
             streaming_tts_voice=body.streaming_tts_voice or body.voice,
+            streaming_stt_token_env=body.streaming_stt_token_env or DEFAULT_STREAMING_STT_TOKEN_ENV,
+            streaming_tts_token_env=body.streaming_tts_token_env or DEFAULT_STREAMING_TTS_TOKEN_ENV,
         )
     if preset == "deepgram":
         return build_realtime_voice_live_like_profile(
@@ -15376,6 +15384,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_stt_model=body.streaming_stt_model or DEFAULT_DEEPGRAM_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or DEFAULT_DEEPGRAM_TTS_MODEL,
             streaming_tts_voice=body.streaming_tts_voice or body.voice,
+            streaming_stt_token_env=body.streaming_stt_token_env or DEFAULT_STREAMING_STT_TOKEN_ENV,
+            streaming_tts_token_env=body.streaming_tts_token_env or DEFAULT_STREAMING_TTS_TOKEN_ENV,
         )
     if preset == "cartesia":
         return build_realtime_voice_live_like_profile(
@@ -15384,6 +15394,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_stt_model=body.streaming_stt_model or DEFAULT_CARTESIA_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or body.model or DEFAULT_CARTESIA_TTS_MODEL,
             streaming_tts_voice=body.streaming_tts_voice or body.voice,
+            streaming_stt_token_env=body.streaming_stt_token_env or DEFAULT_STREAMING_STT_TOKEN_ENV,
+            streaming_tts_token_env=body.streaming_tts_token_env or DEFAULT_STREAMING_TTS_TOKEN_ENV,
         )
     if preset == "reference":
         return build_realtime_voice_live_like_profile(
@@ -15392,6 +15404,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_stt_model=body.streaming_stt_model or "portable-streaming-asr",
             streaming_tts_model=body.streaming_tts_model or "portable-streaming-voice",
             streaming_tts_voice=body.streaming_tts_voice or body.voice,
+            streaming_stt_token_env=body.streaming_stt_token_env or DEFAULT_STREAMING_STT_TOKEN_ENV,
+            streaming_tts_token_env=body.streaming_tts_token_env or DEFAULT_STREAMING_TTS_TOKEN_ENV,
         )
     raise HTTPException(status_code=400, detail=f"unknown realtime voice preset: {body.preset}")
 

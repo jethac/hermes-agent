@@ -6820,6 +6820,8 @@ class TestRealtimeVoiceWebSocket:
                 "local_confidence_threshold": 0.88,
                 "streaming_tts_model": "magpie-local-streaming-tts",
                 "streaming_tts_voice": "spark-voice-1",
+                "streaming_stt_token_env": "KAME_STT_TOKEN",
+                "streaming_tts_token_env": "KAME_TTS_TOKEN",
                 "enable_discord": True,
             },
         )
@@ -6842,6 +6844,8 @@ class TestRealtimeVoiceWebSocket:
         assert realtime["tts_model"] == "magpie-local-streaming-tts"
         assert realtime["tts_voice"] == "spark-voice-1"
         assert realtime["streaming_tts_voice"] == "spark-voice-1"
+        assert realtime["streaming_stt_token_env"] == "KAME_STT_TOKEN"
+        assert realtime["streaming_tts_token_env"] == "KAME_TTS_TOKEN"
         assert realtime["routing"] == expected_routing
         assert discord["enabled"] is True
         assert discord["interface_base_url"] == "http://spark.local:8000/v1"
@@ -6858,6 +6862,8 @@ class TestRealtimeVoiceWebSocket:
                 "streaming_stt_model": "ink-2",
                 "streaming_tts_model": "sonic-3.5",
                 "streaming_tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+                "streaming_stt_token_env": "CARTESIA_STT_TOKEN",
+                "streaming_tts_token_env": "CARTESIA_TTS_TOKEN",
             },
         )
         assert response.status_code == 200
@@ -6869,6 +6875,8 @@ class TestRealtimeVoiceWebSocket:
         assert realtime["streaming_stt_model"] == "ink-2"
         assert realtime["streaming_tts_model"] == "sonic-3.5"
         assert realtime["streaming_tts_voice"] == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
+        assert realtime["streaming_stt_token_env"] == "CARTESIA_STT_TOKEN"
+        assert realtime["streaming_tts_token_env"] == "CARTESIA_TTS_TOKEN"
 
     def test_realtime_voice_smoke_route_runs_evidence_collector(self, monkeypatch, tmp_path):
         from hermes_cli.config import load_config, save_config
@@ -7182,9 +7190,11 @@ class TestRealtimeVoiceWebSocket:
             voice_response_policy="brief_summary",
             fallback_policy="fail_closed",
             streaming_stt_base_url="http://spark.local:8767",
+            streaming_stt_token_env="SPARK_STT_TOKEN",
             streaming_tts_base_url="http://spark.local:8768",
             tts_provider="magpie_tts",
             streaming_tts_voice="spark-voice-1",
+            streaming_tts_token_env="SPARK_TTS_TOKEN",
             barge_in_min_rms=420,
             barge_in_min_speech_ms=160,
             barge_in_stop_playback_deadline_ms=140,
@@ -7209,7 +7219,9 @@ class TestRealtimeVoiceWebSocket:
         assert profile["fallback_policy"] == "fail_closed"
         assert profile["tts_provider"] == "magpie_tts"
         assert profile["streaming_stt_base_url"] == "http://spark.local:8767"
+        assert profile["streaming_stt_token_env"] == "SPARK_STT_TOKEN"
         assert profile["streaming_tts_base_url"] == "http://spark.local:8768"
+        assert profile["streaming_tts_token_env"] == "SPARK_TTS_TOKEN"
         assert profile["streaming_tts_voice"] == "spark-voice-1"
         assert profile["tts_voice"] == "spark-voice-1"
         assert profile["barge_in_min_rms"] == 420
