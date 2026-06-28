@@ -870,6 +870,7 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
             entry["reflex_provider"] = "vllm"
         if entry.get("kind") == "session_turn" and not metric_added:
             entry["metrics"] = {
+                "eou_to_final_transcript_ms": 18,
                 "kame_final_transcript_to_interface_decision_ms": 27,
                 "kame_interface_decision_to_oracle_accepted_ms": 35,
                 "kame_oracle_accepted_to_first_token_ms": 120,
@@ -882,6 +883,7 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     assert "Realtime voice smoke report OK" in output
     assert "audio_to_partial_transcript: p50=90ms p90=90ms p95=90ms max=90ms n=6" in output
     assert "final_transcript_to_first_text: p50=90ms p90=90ms p95=90ms max=90ms n=4" in output
+    assert "speech_boundary_to_final_transcript: p50=18ms p90=18ms p95=18ms max=18ms n=1" in output
     assert "final_transcript_to_interface_decision: p50=27ms p90=27ms p95=27ms max=27ms n=1" in output
     assert "interface_decision_to_oracle_accepted: p50=35ms p90=35ms p95=35ms max=35ms n=1" in output
     assert "oracle_accepted_to_first_token: p50=120ms p90=120ms p95=120ms max=120ms n=1" in output
@@ -1155,6 +1157,7 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
                 entry["transcript_partial_ms"] = partial_ms
             if entry.get("kind") == "audio_session":
                 entry["metrics"] = {
+                    "eou_to_final_transcript_ms": 18 + index,
                     "kame_speech_end_to_interface_decision_ms": 20 + index,
                     "oracle_verbatim_asr_ms": 35 + index,
                 }
@@ -1208,6 +1211,13 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         "p90": 22,
         "p95": 22,
         "max": 22,
+    }
+    assert summary["latency_ms"]["speech_boundary_to_final_transcript"] == {
+        "count": 6,
+        "p50": 19,
+        "p90": 20,
+        "p95": 20,
+        "max": 20,
     }
     assert summary["latency_ms"]["final_transcript_to_interface_decision"] == {
         "count": 6,

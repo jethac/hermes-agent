@@ -26,6 +26,7 @@ from hermes_constants import OPENROUTER_MODELS_URL
 from tools.tool_backend_helpers import managed_nous_tools_enabled
 
 REALTIME_VOICE_KAME_STATUS_LATENCIES = (
+    ("speech_boundary_to_final_transcript", "final_transcript"),
     ("final_transcript_to_interface_decision", "reflex"),
     ("interface_decision_to_local_first_audio", "local_audio"),
     ("interface_decision_to_first_audio", "kame_audio"),

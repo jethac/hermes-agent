@@ -51,6 +51,7 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
                             "final_transcript_to_first_text": {"count": 3, "p50": 140, "p90": 170, "p95": 180, "max": 200},
                             "final_transcript_to_first_audio": {"count": 12, "p50": 320, "p90": 400, "p95": 420, "max": 500},
                             "barge_in_ack": {"count": 3, "p50": 35, "p90": 50, "p95": 55, "max": 60},
+                            "speech_boundary_to_final_transcript": {"count": 3, "p50": 24, "p90": 32, "p95": 34, "max": 38},
                             "final_transcript_to_interface_decision": {"count": 3, "p50": 45, "p90": 60, "p95": 65, "max": 70},
                             "interface_decision_to_oracle_accepted": {"count": 3, "p50": 30, "p90": 45, "p95": 50, "max": 55},
                             "oracle_accepted_to_first_token": {"count": 3, "p50": 180, "p90": 220, "p95": 240, "max": 260},
@@ -147,6 +148,7 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
     assert "text p50=140ms p90=170ms p95=180ms max=200ms" in output
     assert "audio p50=320ms p90=400ms p95=420ms max=500ms" in output
     assert "barge p50=35ms p90=50ms p95=55ms max=60ms" in output
+    assert "final_transcript p50=24ms p90=32ms p95=34ms max=38ms" in output
     assert "reflex p50=45ms p90=60ms p95=65ms max=70ms" in output
     assert "oracle_accept p50=30ms p90=45ms p95=50ms max=55ms" in output
     assert "oracle_token p50=180ms p90=220ms p95=240ms max=260ms" in output
