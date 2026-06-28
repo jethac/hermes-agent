@@ -129,7 +129,8 @@ def _passing_benchmark_evidence() -> list[dict]:
             "metrics": {
                 "oracle_request_to_accepted_ms": 40,
                 "oracle_accepted_to_first_token_ms": 780,
-                "oracle_first_token_to_first_audio_ms": 220,
+                "oracle_first_token_to_first_tts_audio_ms": 180,
+                "first_tts_audio_to_playback_start_ms": 40,
             },
         },
         {
@@ -912,17 +913,19 @@ def test_benchmark_evidence_validator_enforces_oracle_latency_target(tmp_path):
     for entry in evidence:
         if entry.get("category") == "oracle":
             entry["metrics"]["oracle_accepted_to_first_token_ms"] = 2800
-            entry["metrics"]["oracle_first_token_to_first_audio_ms"] = 250
+            entry["metrics"]["oracle_first_token_to_first_tts_audio_ms"] = 250
+            entry["metrics"]["first_tts_audio_to_playback_start_ms"] = 40
 
     result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
 
     assert result["ok"] is False
     assert result["coverage"]["oracle_simple_first_audio_latency"] is False
-    assert "oracle:local: oracle first audio total 3090 exceeds target 3000" in result["issues"]
+    assert "oracle:local: oracle first audio total 3130 exceeds target 3000" in result["issues"]
     assert (
         "oracle_simple_first_audio_latency: "
         "requires oracle_request_to_accepted_ms, oracle_accepted_to_first_token_ms, "
-        "and oracle_first_token_to_first_audio_ms total within configured target"
+        "oracle_first_token_to_first_tts_audio_ms, and first_tts_audio_to_playback_start_ms "
+        "within configured targets"
     ) in result["issues"]
 
 

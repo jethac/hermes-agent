@@ -328,6 +328,8 @@ def build_dgx_spark_stack_manifest(
             "local_reply_first_audio": 1000,
             "oracle_ack": 500,
             "simple_oracle_first_audio": 3000,
+            "oracle_first_token_to_first_tts_audio": 1000,
+            "first_tts_audio_to_playback_start": 150,
             "tool_or_context_oracle_first_audio": 8000,
             "barge_in_stop": 150,
         },
@@ -857,7 +859,8 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                     "required_metrics": [
                         "oracle_request_to_accepted_ms",
                         "oracle_accepted_to_first_token_ms",
-                        "oracle_first_token_to_first_audio_ms",
+                        "oracle_first_token_to_first_tts_audio_ms",
+                        "first_tts_audio_to_playback_start_ms",
                     ],
                 }
             ],
@@ -1032,6 +1035,14 @@ def validate_dgx_spark_benchmark_evidence(
     interface_decision_target_ms = _positive_metric_target(quality_targets.get("local_ack_first_audio"), default=500.0)
     interface_first_audio_target_ms = _positive_metric_target(quality_targets.get("local_reply_first_audio"), default=1000.0)
     oracle_first_audio_target_ms = _positive_metric_target(quality_targets.get("simple_oracle_first_audio"), default=3000.0)
+    oracle_first_tts_target_ms = _positive_metric_target(
+        quality_targets.get("oracle_first_token_to_first_tts_audio"),
+        default=1000.0,
+    )
+    playback_start_target_ms = _positive_metric_target(
+        quality_targets.get("first_tts_audio_to_playback_start"),
+        default=150.0,
+    )
     direct_audio_latency_ok = True
     oracle_latency_ok = True
     interface_candidates = candidates.get("interface") if isinstance(candidates.get("interface"), list) else []
@@ -1110,6 +1121,8 @@ def validate_dgx_spark_benchmark_evidence(
             label,
             match,
             first_audio_target_ms=oracle_first_audio_target_ms,
+            first_tts_target_ms=oracle_first_tts_target_ms,
+            playback_start_target_ms=playback_start_target_ms,
         )
         if latency_issues:
             oracle_latency_ok = False
@@ -1119,7 +1132,8 @@ def validate_dgx_spark_benchmark_evidence(
         issues.append(
             "oracle_simple_first_audio_latency: "
             "requires oracle_request_to_accepted_ms, oracle_accepted_to_first_token_ms, "
-            "and oracle_first_token_to_first_audio_ms total within configured target"
+            "oracle_first_token_to_first_tts_audio_ms, and first_tts_audio_to_playback_start_ms "
+            "within configured targets"
         )
 
     oracle_outcome_candidates = (
@@ -1382,6 +1396,8 @@ def _oracle_first_audio_latency_issues(
     entry: Mapping[str, Any],
     *,
     first_audio_target_ms: float,
+    first_tts_target_ms: float,
+    playback_start_target_ms: float,
 ) -> list[str]:
     metrics = entry.get("metrics")
     if not isinstance(metrics, Mapping):
@@ -1389,18 +1405,33 @@ def _oracle_first_audio_latency_issues(
     metric_names = (
         "oracle_request_to_accepted_ms",
         "oracle_accepted_to_first_token_ms",
-        "oracle_first_token_to_first_audio_ms",
+        "oracle_first_token_to_first_tts_audio_ms",
+        "first_tts_audio_to_playback_start_ms",
     )
     total = 0.0
     issues: list[str] = []
+    parsed_metrics: dict[str, float] = {}
     for metric_name in metric_names:
         value = _metric_float(metrics.get(metric_name))
         if value is None:
             issues.append(f"{label}: missing valid {metric_name}")
         else:
+            parsed_metrics[metric_name] = value
             total += value
     if issues:
         return issues
+    first_tts_ms = parsed_metrics["oracle_first_token_to_first_tts_audio_ms"]
+    if first_tts_ms > first_tts_target_ms:
+        issues.append(
+            f"{label}: oracle_first_token_to_first_tts_audio_ms {first_tts_ms:g} "
+            f"exceeds target {first_tts_target_ms:g}"
+        )
+    playback_start_ms = parsed_metrics["first_tts_audio_to_playback_start_ms"]
+    if playback_start_ms > playback_start_target_ms:
+        issues.append(
+            f"{label}: first_tts_audio_to_playback_start_ms {playback_start_ms:g} "
+            f"exceeds target {playback_start_target_ms:g}"
+        )
     if total > first_audio_target_ms:
         issues.append(f"{label}: oracle first audio total {total:g} exceeds target {first_audio_target_ms:g}")
     return issues
