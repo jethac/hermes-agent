@@ -1062,10 +1062,6 @@ class ReferenceRealtimeVoiceSidecarSession:
         return (
             config.asr_mode.value in {"fallback", "debug", "speculative"}
             or interface_audio_input == "text_fallback"
-            or (
-                interface_audio_input == "auto"
-                and not bool(self.runtime.vllm_base_url and self.runtime.vllm_model)
-            )
         )
 
     def _streaming_stt_drives_reflex(self) -> bool:
@@ -1076,10 +1072,6 @@ class ReferenceRealtimeVoiceSidecarSession:
         return (
             config.asr_mode.value == "fallback"
             or interface_audio_input == "text_fallback"
-            or (
-                interface_audio_input == "auto"
-                and not bool(self.runtime.vllm_base_url and self.runtime.vllm_model)
-            )
         )
 
     def _suppress_streaming_stt_transcript_events(self) -> bool:
@@ -1423,7 +1415,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
             return False
         interface_audio_input = _interface_audio_input(config)
-        return config.asr_mode.value == "fallback" or interface_audio_input in {"auto", "text_fallback"}
+        return config.asr_mode.value == "fallback" or interface_audio_input == "text_fallback"
 
     def _kame_audio_reflex_fallback_reason(self, config: RealtimeVoiceSessionConfig) -> str:
         if config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:

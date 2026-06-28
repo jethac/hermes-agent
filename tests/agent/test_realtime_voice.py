@@ -4933,10 +4933,12 @@ def test_reference_sidecar_reports_kame_audio_reflex_fallback_without_vllm():
     assert event.payload["interface_audio_input"] == "native_audio"
 
 
-def test_reference_sidecar_auto_uses_local_stt_fallback_without_vllm():
+def test_reference_sidecar_auto_requires_native_audio_without_explicit_fallback():
+    transcribe_calls = []
+
     def fake_transcribe(path):
-        assert path
-        return {"success": True, "transcript": "check deployment status"}
+        transcribe_calls.append(path)
+        raise AssertionError("on_escalation ASR must not drive the KAME reflex")
 
     async def run():
         sidecar = ReferenceRealtimeVoiceSidecarSession(
@@ -4968,31 +4970,26 @@ def test_reference_sidecar_auto_uses_local_stt_fallback_without_vllm():
         seen = []
         async for event in sidecar.events():
             seen.append(event)
-            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+            if event.type == VoiceEventType.SESSION_ERROR:
                 await sidecar.close()
                 break
         return seen
 
     seen = asyncio.run(run())
     state = next(event for event in seen if event.type == VoiceEventType.FRONTEND_STATE)
-    final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
-    assert state.payload["status"] == "fallback"
-    assert state.payload["reason"] == "kame_auto_text_fallback_selected"
-    assert state.payload["provider"] == "local_stt"
-    assert state.payload["fallback_provider"] == "local_stt"
-    assert state.payload["intent_source"] == "asr_fallback"
-    assert state.payload["transcript_source"] == "asr"
+    error = next(event for event in seen if event.type == VoiceEventType.SESSION_ERROR)
+    assert state.payload["status"] == "degraded"
+    assert state.payload["reason"] == "kame_audio_reflex_unavailable"
+    assert state.payload["provider"] == "unavailable"
+    assert state.payload["fallback_provider"] == "unavailable"
+    assert "intent_source" not in state.payload
+    assert "transcript_source" not in state.payload
     assert state.payload["interface_audio_input"] == "auto"
-    assert final.payload["text"] == "check deployment status"
-    assert final.payload["intent"] == "check deployment status"
-    assert final.payload["intent_source"] == "asr_fallback"
-    assert final.payload["route"] == "oracle_direct"
-    assert final.payload["transcript_source"] == "asr"
-    assert final.payload["fallback_reason"] == "kame_auto_text_fallback_selected"
-    assert final.payload["interface_audio_input_fallback"] is True
+    assert "KAME audio reflex unavailable and ASR reflex fallback is disabled" in error.payload["error"]
+    assert transcribe_calls == []
 
 
-def test_reference_sidecar_auto_starts_streaming_stt_fallback_without_vllm(monkeypatch):
+def test_reference_sidecar_auto_starts_streaming_stt_with_explicit_fallback_mode(monkeypatch):
     created = []
 
     class FakeBridge:
@@ -5034,7 +5031,7 @@ def test_reference_sidecar_auto_starts_streaming_stt_fallback_without_vllm(monke
                 engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
                 frontend_provider="gemma4",
                 interface_audio_input="auto",
-                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+                asr_mode=RealtimeVoiceASRMode.FALLBACK,
             )
         )
 
