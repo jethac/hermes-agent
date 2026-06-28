@@ -14264,7 +14264,7 @@ def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
     ]
 
     interface_base_url = str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "").strip()
-    vllm_model = str(realtime.get("vllm_model") or "").strip()
+    vllm_model = _realtime_voice_kame_vllm_model(realtime)
     if interface_base_url:
         cmd.extend(["--interface-base-url", interface_base_url])
         cmd.extend(["--vllm-base-url", interface_base_url])
@@ -14370,7 +14370,7 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
     if sidecar_token:
         child_env["HERMES_VOICE_SIDECAR_TOKEN"] = sidecar_token
     interface_base_url = str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "").strip()
-    vllm_model = str(realtime.get("vllm_model") or "").strip()
+    vllm_model = _realtime_voice_kame_vllm_model(realtime)
     if interface_base_url:
         child_env["HERMES_KAME_INTERFACE_BASE_URL"] = interface_base_url
         child_env["HERMES_VOICE_VLLM_BASE_URL"] = interface_base_url
@@ -14479,6 +14479,16 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
         return subprocess.Popen(_realtime_voice_sidecar_command(realtime), **popen_kwargs)
     finally:
         log_file.close()
+
+
+def _realtime_voice_kame_vllm_model(realtime: Mapping[str, Any]) -> str:
+    explicit_model = str(realtime.get("vllm_model") or "").strip()
+    if explicit_model:
+        return explicit_model
+    provider = str(realtime.get("frontend_provider") or "").strip().lower()
+    if provider not in {"gemma4", "vllm", "openai_compatible", "openai-compatible"}:
+        return ""
+    return str(realtime.get("frontend_model") or "").strip()
 
 
 def _ensure_realtime_voice_sidecar(realtime: Dict[str, Any]) -> None:

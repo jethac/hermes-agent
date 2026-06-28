@@ -9516,6 +9516,20 @@ class TestRealtimeVoiceWebSocket:
         assert "--interface-base-url" in legacy_command
         assert "http://legacy-vllm.example.test:8000/v1" in legacy_command
 
+    def test_sidecar_command_uses_kame_frontend_model_as_vllm_model(self):
+        command = self.ws_module._realtime_voice_sidecar_command(
+            {
+                "sidecar_host": "127.0.0.1",
+                "sidecar_port": 8765,
+                "frontend_provider": "gemma4",
+                "frontend_model": "gemma-4-E2B-it",
+                "interface_base_url": "http://interface.example.test:8000/v1",
+            }
+        )
+
+        assert "--vllm-model" in command
+        assert command[command.index("--vllm-model") + 1] == "gemma-4-E2B-it"
+
     def test_sidecar_command_includes_streaming_stt_bridge_args_without_token(self):
         command = self.ws_module._realtime_voice_sidecar_command(
             {
@@ -9974,6 +9988,7 @@ class TestRealtimeVoiceWebSocket:
         assert kwargs["env"]["HERMES_VOICE_SIDECAR_TOKEN"] == "secret-token"
         assert kwargs["env"]["HERMES_KAME_INTERFACE_BASE_URL"] == "http://interface.example.test:8000/v1"
         assert kwargs["env"]["HERMES_VOICE_VLLM_BASE_URL"] == "http://interface.example.test:8000/v1"
+        assert kwargs["env"]["HERMES_VOICE_VLLM_MODEL"] == "google/gemma-4-E4B-it-qat-w4a16-ct"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_BASE_URL"] == "http://streaming-stt.local:9000"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_MODEL"] == "portable-streaming-asr"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_TOKEN"] == "stream-secret-token"

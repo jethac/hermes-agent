@@ -258,6 +258,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["frontend_provider"] == "gemma4"
     assert realtime["frontend_model"] == "gemma-4-E2B-it"
     assert realtime["interface_audio_input"] == "auto"
+    assert realtime["vllm_model"] == "gemma-4-E2B-it"
     assert realtime["interface_temperature"] == 0.2
     assert realtime["interface_max_output_tokens"] == 160
     assert realtime["interface_timeout_seconds"] == 0.8

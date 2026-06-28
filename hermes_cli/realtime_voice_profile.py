@@ -942,6 +942,7 @@ def build_kame_realtime_voice_profile(
         "frontend_model": str(reflex_model or DEFAULT_KAME_REFLEX_MODEL),
         "interface_base_url": interface_url,
         "vllm_base_url": interface_url,
+        "vllm_model": str(reflex_model or DEFAULT_KAME_REFLEX_MODEL),
         "interface_temperature": 0.2,
         "interface_max_output_tokens": 160,
         "interface_timeout_seconds": 0.8,
