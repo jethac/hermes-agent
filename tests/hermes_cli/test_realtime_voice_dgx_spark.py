@@ -59,6 +59,26 @@ def _passing_benchmark_evidence() -> list[dict]:
         },
         {
             "kind": "kame_benchmark_result",
+            "category": "oracle_outcome",
+            "asr_hypothesis": "without_asr_hypothesis",
+            "metrics": {
+                "task_success_rate": 0.78,
+                "literal_argument_accuracy": 0.72,
+                "tool_argument_error_rate": 0.21,
+            },
+        },
+        {
+            "kind": "kame_benchmark_result",
+            "category": "oracle_outcome",
+            "asr_hypothesis": "with_asr_hypothesis",
+            "metrics": {
+                "task_success_rate": 0.84,
+                "literal_argument_accuracy": 0.9,
+                "tool_argument_error_rate": 0.08,
+            },
+        },
+        {
+            "kind": "kame_benchmark_result",
             "category": "speech",
             "role": "oracle_verbatim_asr",
             "metrics": {
@@ -142,6 +162,8 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "HERMES_KAME_MAX_SPOKEN_SENTENCES=2" in (output_dir / ".env.example").read_text(encoding="utf-8")
     assert matrix["candidates"]["interface"][0]["input"] == "direct_audio"
     assert matrix["candidates"]["interface"][1]["input"] == "stt_fallback"
+    assert matrix["candidates"]["oracle_outcome"][0]["asr_hypothesis"] == "without_asr_hypothesis"
+    assert matrix["candidates"]["oracle_outcome"][1]["asr_hypothesis"] == "with_asr_hypothesis"
 
 
 def test_preflight_checks_openai_models_and_health_urls(monkeypatch, tmp_path):
@@ -197,6 +219,7 @@ def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_pat
     assert result["ok"] is True
     assert result["issues"] == []
     assert result["coverage"]["interface_direct_audio_vs_stt_fallback"] is True
+    assert result["coverage"]["oracle_outcomes_with_and_without_asr_hypotheses"] is True
     assert result["coverage"]["oracle_verbatim_asr_latency_and_literal_accuracy"] is True
     assert result["coverage"]["local_asr_tts_benchmark_matrix"] is True
     assert result["coverage"]["all_local_smoke"] is True
@@ -217,6 +240,24 @@ def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):
     assert "interface:stt_fallback: missing benchmark result" in result["issues"]
     assert "interface_direct_audio_vs_stt_fallback: requires direct_audio and stt_fallback results" in result["issues"]
     assert "cloud_fallback_smoke: missing passing smoke result" in result["issues"]
+
+
+def test_benchmark_evidence_validator_requires_oracle_asr_outcome_comparison(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    evidence = [
+        entry
+        for entry in _passing_benchmark_evidence()
+        if entry.get("asr_hypothesis") != "with_asr_hypothesis"
+    ]
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert "oracle_outcome:with_asr_hypothesis: missing benchmark result" in result["issues"]
+    assert (
+        "oracle_outcomes_with_and_without_asr_hypotheses: "
+        "requires with_asr_hypothesis and without_asr_hypothesis results"
+    ) in result["issues"]
 
 
 def test_main_validates_benchmark_evidence_file(tmp_path, capsys):

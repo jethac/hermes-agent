@@ -483,6 +483,26 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                     ],
                 }
             ],
+            "oracle_outcome": [
+                {
+                    "model": roles["oracle"]["preferred_local_model"],
+                    "asr_hypothesis": "without_asr_hypothesis",
+                    "required_metrics": [
+                        "task_success_rate",
+                        "literal_argument_accuracy",
+                        "tool_argument_error_rate",
+                    ],
+                },
+                {
+                    "model": roles["oracle"]["preferred_local_model"],
+                    "asr_hypothesis": "with_asr_hypothesis",
+                    "required_metrics": [
+                        "task_success_rate",
+                        "literal_argument_accuracy",
+                        "tool_argument_error_rate",
+                    ],
+                },
+            ],
             "speech": [
                 {
                     "role": "oracle_verbatim_asr",
@@ -526,7 +546,7 @@ def validate_dgx_spark_benchmark_evidence(
 
     Expected evidence entries are intentionally simple JSON objects:
     - ``kind=kame_benchmark_result`` with ``category`` (interface/oracle/speech),
-      optional ``input`` or ``role``, and a ``metrics`` object.
+      optional ``input``, ``role``, or ``asr_hypothesis``, and a ``metrics`` object.
     - ``kind=kame_smoke_result`` with ``name`` (all_local_smoke/cloud_fallback_smoke)
       and ``ok=true``.
     """
@@ -568,6 +588,30 @@ def validate_dgx_spark_benchmark_evidence(
             continue
         issues.extend(_missing_metric_issues(label, match, candidate.get("required_metrics")))
 
+    oracle_outcome_candidates = (
+        candidates.get("oracle_outcome") if isinstance(candidates.get("oracle_outcome"), list) else []
+    )
+    for candidate in oracle_outcome_candidates:
+        if not isinstance(candidate, Mapping):
+            continue
+        asr_hypothesis = str(candidate.get("asr_hypothesis") or "").strip()
+        label = f"oracle_outcome:{asr_hypothesis}"
+        match = _find_benchmark_entry(entries, category="oracle_outcome", asr_hypothesis=asr_hypothesis)
+        coverage[label] = match is not None
+        if match is None:
+            issues.append(f"{label}: missing benchmark result")
+            continue
+        issues.extend(_missing_metric_issues(label, match, candidate.get("required_metrics")))
+
+    has_oracle_without_asr = coverage.get("oracle_outcome:without_asr_hypothesis") is True
+    has_oracle_with_asr = coverage.get("oracle_outcome:with_asr_hypothesis") is True
+    coverage["oracle_outcomes_with_and_without_asr_hypotheses"] = has_oracle_without_asr and has_oracle_with_asr
+    if not has_oracle_without_asr or not has_oracle_with_asr:
+        issues.append(
+            "oracle_outcomes_with_and_without_asr_hypotheses: "
+            "requires with_asr_hypothesis and without_asr_hypothesis results"
+        )
+
     speech_candidates = candidates.get("speech") if isinstance(candidates.get("speech"), list) else []
     for candidate in speech_candidates:
         if not isinstance(candidate, Mapping):
@@ -604,6 +648,7 @@ def _find_benchmark_entry(
     category: str,
     input_mode: str = "",
     role: str = "",
+    asr_hypothesis: str = "",
 ) -> Mapping[str, Any] | None:
     for entry in entries:
         if str(entry.get("kind") or "") != "kame_benchmark_result":
@@ -613,6 +658,8 @@ def _find_benchmark_entry(
         if input_mode and str(entry.get("input") or "") != input_mode:
             continue
         if role and str(entry.get("role") or "") != role:
+            continue
+        if asr_hypothesis and str(entry.get("asr_hypothesis") or "") != asr_hypothesis:
             continue
         return entry
     return None
@@ -644,7 +691,7 @@ def _valid_metric_value(metric_name: str, value: Any) -> bool:
         return False
     if not parsed >= 0:
         return False
-    if "accuracy" in metric_name:
+    if "accuracy" in metric_name or metric_name.endswith("_rate"):
         return parsed <= 1.0
     return True
 
