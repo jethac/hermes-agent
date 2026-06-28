@@ -1051,6 +1051,46 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Low-latency realtime interface model override for Discord voice sessions",
         "category": "discord",
     },
+    "discord.realtime_voice.interface_temperature": {
+        "type": "number",
+        "description": "Sampling temperature for the Discord KAME interface model",
+        "category": "discord",
+    },
+    "discord.realtime_voice.interface_max_output_tokens": {
+        "type": "number",
+        "description": "Maximum output tokens for one Discord KAME interface routing decision",
+        "category": "discord",
+    },
+    "discord.realtime_voice.interface_timeout_seconds": {
+        "type": "number",
+        "description": "Seconds to wait for the Discord KAME interface model before treating it as unavailable",
+        "category": "discord",
+    },
+    "discord.realtime_voice.interface_audio_input": {
+        "type": "string",
+        "description": "How the Discord KAME reflex receives user input",
+        "category": "discord",
+    },
+    "discord.realtime_voice.asr_mode": {
+        "type": "string",
+        "description": "ASR role in Discord KAME realtime voice",
+        "category": "discord",
+    },
+    "discord.realtime_voice.asr_provider": {
+        "type": "string",
+        "description": "ASR provider override for Discord oracle-verbatim evidence",
+        "category": "discord",
+    },
+    "discord.realtime_voice.asr_model": {
+        "type": "string",
+        "description": "ASR model override for Discord oracle-verbatim evidence",
+        "category": "discord",
+    },
+    "discord.realtime_voice.preferred_local_oracle_model": {
+        "type": "string",
+        "description": "Preferred local Hermes oracle model label for Discord KAME realtime voice",
+        "category": "discord",
+    },
     "discord.realtime_voice.oracle_model": {
         "type": "string",
         "description": "Hermes backend oracle model override for Discord realtime voice sessions",
@@ -1069,6 +1109,36 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.tts_provider": {
         "type": "string",
         "description": "TTS provider override for Discord realtime voice fallback speech",
+        "category": "discord",
+    },
+    "discord.realtime_voice.tts_model": {
+        "type": "string",
+        "description": "TTS model override for Discord KAME spoken output",
+        "category": "discord",
+    },
+    "discord.realtime_voice.tts_voice": {
+        "type": "string",
+        "description": "TTS voice identifier override for Discord KAME spoken output",
+        "category": "discord",
+    },
+    "discord.realtime_voice.fallback_policy": {
+        "type": "string",
+        "description": "Fallback behavior when the Discord KAME realtime sidecar or local stack is unavailable",
+        "category": "discord",
+    },
+    "discord.realtime_voice.barge_in_min_speech_ms": {
+        "type": "number",
+        "description": "Minimum speech duration before Discord voice barge-in can interrupt playback",
+        "category": "discord",
+    },
+    "discord.realtime_voice.barge_in_min_rms": {
+        "type": "number",
+        "description": "Minimum Discord PCM RMS energy required before barge-in can interrupt playback",
+        "category": "discord",
+    },
+    "discord.realtime_voice.barge_in_stop_playback_deadline_ms": {
+        "type": "number",
+        "description": "Target maximum Discord playback stop latency after barge-in",
         "category": "discord",
     },
     "discord.realtime_voice.sidecar_connect_timeout_seconds": {
