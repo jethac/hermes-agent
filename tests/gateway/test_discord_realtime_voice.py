@@ -149,6 +149,10 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
                         "require_oracle_for_files": True,
                         "local_confidence_threshold": 0.75,
                     },
+                    "quality_targets_ms": {
+                        "kame_speech_end_to_interface_decision_ms": 321,
+                        "kame_speech_end_to_playback_start_ms": 2345,
+                    },
                 },
             },
             "discord": {
@@ -215,6 +219,8 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
         "require_oracle_for_files": True,
         "local_confidence_threshold": 0.88,
     }
+    assert cfg["quality_targets_ms"]["kame_speech_end_to_interface_decision_ms"] == 321
+    assert cfg["quality_targets_ms"]["kame_speech_end_to_playback_start_ms"] == 2345
 
 
 @pytest.mark.asyncio
@@ -257,6 +263,10 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         },
         metrics_policy={"enabled": True, "log_turn_spans": True, "log_provider_spans": False},
         output_events={"caption_aliases": True, "audio_aliases": True},
+        quality_targets_ms={
+            "kame_speech_end_to_interface_decision_ms": 321,
+            "kame_speech_end_to_playback_start_ms": 2345,
+        },
     )
 
     await session.start()
@@ -313,6 +323,10 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         "log_provider_spans": False,
     }
     assert sidecar.started_with.metadata["output_events"] == {"caption_aliases": True, "audio_aliases": True}
+    assert sidecar.started_with.metadata["quality_targets_ms"] == {
+        "kame_speech_end_to_interface_decision_ms": 321,
+        "kame_speech_end_to_playback_start_ms": 2345,
+    }
     assert sidecar.started_with.metadata["barge_in"] == {
         "stop_playback_deadline_ms": 95,
     }

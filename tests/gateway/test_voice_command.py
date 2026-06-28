@@ -1384,6 +1384,10 @@ class TestDiscordVoiceChannelMethods:
             "oracle_timeout_seconds": 19,
             "max_spoken_sentences": 3,
             "tts_base_url": "http://tts.local:8768",
+            "quality_targets_ms": {
+                "kame_speech_end_to_interface_decision_ms": 321,
+                "kame_speech_end_to_playback_start_ms": 2345,
+            },
             "routing": {
                 "allow_local_greetings": True,
                 "allow_local_clarifications": False,
@@ -1427,6 +1431,10 @@ class TestDiscordVoiceChannelMethods:
         assert session_cls.call_args.kwargs["oracle_timeout_seconds"] == 19.0
         assert session_cls.call_args.kwargs["max_spoken_sentences"] == 3
         assert session_cls.call_args.kwargs["tts_base_url"] == "http://tts.local:8768"
+        assert session_cls.call_args.kwargs["quality_targets_ms"] == {
+            "kame_speech_end_to_interface_decision_ms": 321,
+            "kame_speech_end_to_playback_start_ms": 2345,
+        }
         assert session_cls.call_args.kwargs["routing_policy"] == {
             "allow_local_greetings": True,
             "allow_local_clarifications": False,

@@ -3375,6 +3375,12 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.metrics.enabled"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.metrics.log_turn_spans"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.metrics.log_provider_spans"]["type"] == "boolean"
+        assert CONFIG_SCHEMA[
+            "discord.realtime_voice.quality_targets_ms.kame_speech_end_to_interface_decision_ms"
+        ]["type"] == "number"
+        assert CONFIG_SCHEMA[
+            "discord.realtime_voice.quality_targets_ms.kame_speech_end_to_playback_start_ms"
+        ]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.output_events.caption_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.output_events.audio_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.routing.allow_local_greetings"]["type"] == "boolean"
