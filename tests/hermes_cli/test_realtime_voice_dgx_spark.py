@@ -155,6 +155,7 @@ def test_rendered_compose_has_reflex_oracle_and_sidecar_without_secret_material(
     assert "kame-interface-vllm:" in compose
     assert "kame-oracle-vllm:" in compose
     assert "hermes-realtime-sidecar:" in compose
+    assert "      - kame-oracle-vllm" in compose
     assert "kame-asr-bridge:" in compose
     assert "kame-tts-bridge:" in compose
     assert "gemma-4-E2B-it" in compose

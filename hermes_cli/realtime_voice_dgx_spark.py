@@ -384,6 +384,7 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
     working_dir: /workspace/hermes-agent
     depends_on:
       - kame-interface-vllm
+      - kame-oracle-vllm
       - kame-asr-bridge
       - kame-tts-bridge
     ports:
