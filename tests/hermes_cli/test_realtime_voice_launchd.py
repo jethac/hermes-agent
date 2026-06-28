@@ -94,6 +94,81 @@ def test_launchd_sidecar_command_aliases_bridge_token_and_points_at_bridge(tmp_p
     assert "--extra voice" in command
 
 
+def test_launchd_kame_sidecar_command_points_at_vllm_without_stt_bridge(tmp_path):
+    plist = realtime_voice_launchd.build_kame_realtime_voice_sidecar_plist(
+        repo_dir=tmp_path / "repo",
+        hermes_home=tmp_path / "home",
+        uv_bin="uv",
+        vllm_base_url="http://spark.local:8000/v1",
+        vllm_model="gemma-4-E2B-it",
+        include_dev_extra=False,
+    )
+
+    command = plist["ProgramArguments"][2]
+
+    assert "hermes_cli.realtime_voice_sidecar" in command
+    assert "--vllm-base-url http://spark.local:8000/v1" in command
+    assert "--vllm-model gemma-4-E2B-it" in command
+    assert "--streaming-stt-base-url" not in command
+    assert "--streaming-tts-base-url" not in command
+    assert "--input-languages en,ja" in command
+    assert "--extra dev" not in command
+    assert "--extra voice" in command
+
+
+def test_launchd_kame_sidecar_can_include_streaming_tts_without_stt_bridge(tmp_path):
+    plist = realtime_voice_launchd.build_kame_realtime_voice_sidecar_plist(
+        repo_dir=tmp_path / "repo",
+        hermes_home=tmp_path / "home",
+        uv_bin="uv",
+        vllm_base_url="http://spark.local:8000/v1",
+        vllm_model="gemma-4-E2B-it",
+        streaming_tts_base_url="http://127.0.0.1:8768",
+        tts_model="cartesia-sonic",
+        include_dev_extra=False,
+    )
+
+    command = plist["ProgramArguments"][2]
+
+    assert "--vllm-base-url http://spark.local:8000/v1" in command
+    assert "--streaming-stt-base-url" not in command
+    assert "--streaming-tts-base-url http://127.0.0.1:8768" in command
+    assert "--streaming-tts-model cartesia-sonic" in command
+    assert "HERMES_VOICE_STREAMING_TTS_TOKEN" in command
+    assert "HERMES_STREAMING_STT_BRIDGE_TOKEN" in command
+
+
+def test_launchd_kame_profile_writes_only_sidecar_plist(tmp_path, capsys):
+    output_dir = tmp_path / "launchd"
+    repo_dir = tmp_path / "repo"
+    hermes_home = tmp_path / "hermes-home"
+    repo_dir.mkdir()
+
+    result = realtime_voice_launchd.main(
+        [
+            "--profile",
+            "kame",
+            "--output-dir",
+            str(output_dir),
+            "--repo-dir",
+            str(repo_dir),
+            "--hermes-home",
+            str(hermes_home),
+            "--vllm-base-url",
+            "http://spark.local:8000/v1",
+            "--vllm-model",
+            "gemma-4-E2B-it",
+        ]
+    )
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "ai.hermes.realtime-voice.sidecar.plist" in output
+    assert "ai.hermes.realtime-voice.elevenlabs-bridge.plist" not in output
+    assert (output_dir / "ai.hermes.realtime-voice.sidecar.plist").exists()
+    assert not (output_dir / "ai.hermes.realtime-voice.elevenlabs-bridge.plist").exists()
+
+
 def test_launchd_plist_uses_absolute_resolved_repo_dir(tmp_path):
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
