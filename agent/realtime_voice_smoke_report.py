@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from agent.realtime_voice_kame import kame_local_reply_denies_voice_capability
+
 
 ALPHA_REQUIRED_AUDIO_FIXTURES = (
     "./fixtures/realtime-voice/en/hello.webm",
@@ -400,6 +402,7 @@ def validate_realtime_voice_smoke_report(
     audio_session_entries = by_kind.get("audio_session", [])
     if require_alpha_targets and manifest_entries and _manifest_entry_is_kame_reflex(manifest_entries[0]):
         issues.extend(_validate_kame_route_evidence([*session_turn_entries, *audio_session_entries]))
+        issues.extend(_validate_kame_capability_honesty(entries))
 
     issues.extend(_validate_required_entries(
         entries=audio_entries,
@@ -524,6 +527,59 @@ def _validate_kame_route_evidence(entries: Sequence[Mapping[str, Any]]) -> list[
             )
         )
     return issues
+
+
+def _validate_kame_capability_honesty(entries: Sequence[Mapping[str, Any]]) -> list[RealtimeVoiceSmokeReportIssue]:
+    issues: list[RealtimeVoiceSmokeReportIssue] = []
+    for entry in entries:
+        for key, text in _assistant_output_texts(entry):
+            if not kame_local_reply_denies_voice_capability(text):
+                continue
+            identifier = str(entry.get("kind") or "entry")
+            if key:
+                identifier = f"{identifier}.{key}"
+            issues.append(
+                RealtimeVoiceSmokeReportIssue(
+                    "kame_capability_honesty",
+                    "assistant output denied live voice capability",
+                    identifier,
+                )
+            )
+    return issues
+
+
+_ASSISTANT_OUTPUT_TEXT_KEYS = (
+    "assistant_text",
+    "assistant_response",
+    "assistant_final_text",
+    "final_assistant_text",
+    "interface_reply",
+    "local_reply",
+    "oracle_hint",
+    "oracle_response",
+    "output_text",
+    "reply",
+    "response_text",
+    "spoken_text",
+)
+
+
+def _assistant_output_texts(entry: Mapping[str, Any]) -> list[tuple[str, str]]:
+    texts: list[tuple[str, str]] = []
+    for key in _ASSISTANT_OUTPUT_TEXT_KEYS:
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            texts.append((key, value.strip()))
+    kind = str(entry.get("kind") or "").strip()
+    if kind in {"session_turn", "barge_in"}:
+        value = entry.get("final_text")
+        if isinstance(value, str) and value.strip():
+            texts.append(("final_text", value.strip()))
+    if kind == "tts":
+        value = entry.get("text")
+        if isinstance(value, str) and value.strip():
+            texts.append(("text", value.strip()))
+    return texts
 
 
 def validate_realtime_voice_alpha_report(entries: Sequence[Mapping[str, Any]]) -> list[RealtimeVoiceSmokeReportIssue]:

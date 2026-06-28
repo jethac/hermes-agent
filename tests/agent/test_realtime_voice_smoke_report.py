@@ -373,6 +373,77 @@ def test_realtime_voice_alpha_report_requires_kame_oracle_avoidance_evidence():
     )
 
 
+def test_realtime_voice_alpha_report_rejects_kame_voice_capability_denial_output():
+    manifest = _valid_manifest()
+    manifest["engine"] = "kame_interface_oracle"
+    manifest["frontend_provider"] = "gemma4"
+    manifest["frontend_model"] = "gemma-4-E2B-it"
+    manifest["interface_audio_input"] = "native_audio"
+    manifest["asr_mode"] = "on_escalation"
+    manifest["conversation_quality"] = {
+        "live_like": True,
+        "mode": "kame_reflex",
+        "reason": "audio_reflex_tts",
+        "sidecar_verified": True,
+    }
+    manifest["sidecar"]["health"]["frontend"] = {
+        "provider": "vllm",
+        "model": "gemma-4-E2B-it",
+    }
+    manifest["sidecar"]["health"]["capabilities"] = {
+        "utterance_stt": True,
+        "streaming_stt": False,
+        "tts": True,
+        "native_s2s": False,
+        "vllm_audio_frontend": True,
+        "output_languages": ["en", "ja"],
+    }
+    report = _add_kame_route_evidence([manifest, *_valid_alpha_report()[1:]])
+    for entry in report:
+        if entry.get("kind") == "session_turn":
+            entry["final_text"] = "I cannot hear you or speak in Discord voice."
+            break
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any(
+        "assistant output denied live voice capability" in issue.format()
+        and "session_turn.final_text" in issue.format()
+        for issue in issues
+    )
+
+
+def test_realtime_voice_alpha_report_allows_kame_user_hear_me_text():
+    manifest = _valid_manifest()
+    manifest["engine"] = "kame_interface_oracle"
+    manifest["frontend_provider"] = "gemma4"
+    manifest["frontend_model"] = "gemma-4-E2B-it"
+    manifest["interface_audio_input"] = "native_audio"
+    manifest["asr_mode"] = "on_escalation"
+    manifest["conversation_quality"] = {
+        "live_like": True,
+        "mode": "kame_reflex",
+        "reason": "audio_reflex_tts",
+        "sidecar_verified": True,
+    }
+    manifest["sidecar"]["health"]["frontend"] = {
+        "provider": "vllm",
+        "model": "gemma-4-E2B-it",
+    }
+    manifest["sidecar"]["health"]["capabilities"] = {
+        "utterance_stt": True,
+        "streaming_stt": False,
+        "tts": True,
+        "native_s2s": False,
+        "vllm_audio_frontend": True,
+        "output_languages": ["en", "ja"],
+    }
+    report = _add_kame_route_evidence([manifest, *_valid_alpha_report()[1:]])
+    report.append({"kind": "debug_note", "ok": True, "text": "I cannot hear you clearly?"})
+
+    assert validate_realtime_voice_alpha_report(report) == []
+
+
 def test_realtime_voice_alpha_manifest_fingerprint_includes_kame_interface_base_url():
     manifest = _valid_manifest()
     manifest["engine"] = "kame_interface_oracle"
