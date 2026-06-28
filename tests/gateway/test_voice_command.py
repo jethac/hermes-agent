@@ -1304,6 +1304,7 @@ class TestDiscordVoiceChannelMethods:
             "frontend_model": "realtime-voice",
             "oracle_model": "deep-hermes",
             "oracle_timeout_seconds": 19,
+            "max_spoken_sentences": 3,
         }
         adapter._reset_voice_timeout = MagicMock()
         fake_session = AsyncMock()
@@ -1330,6 +1331,7 @@ class TestDiscordVoiceChannelMethods:
         assert session_cls.call_args.kwargs["frontend_model"] == "realtime-voice"
         assert session_cls.call_args.kwargs["oracle_model"] == "deep-hermes"
         assert session_cls.call_args.kwargs["oracle_timeout_seconds"] == 19.0
+        assert session_cls.call_args.kwargs["max_spoken_sentences"] == 3
         status = adapter.get_voice_session_status(111)
         assert status["session_state"] == "ready"
         assert status["voice_architecture"] == "kame_frontend_oracle"
@@ -1339,6 +1341,7 @@ class TestDiscordVoiceChannelMethods:
         assert status["frontend_model"] == "realtime-voice"
         assert status["oracle_model"] == "deep-hermes"
         assert status["oracle_timeout_seconds"] == 19.0
+        assert status["max_spoken_sentences"] == 3
 
     @pytest.mark.asyncio
     async def test_join_voice_channel_wires_realtime_frame_and_speech_start_callbacks(self):

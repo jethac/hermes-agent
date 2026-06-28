@@ -1108,6 +1108,10 @@ def _realtime_voice_smoke_config():
             realtime.get("oracle_timeout_seconds"),
             default=60.0,
         ),
+        max_spoken_sentences=_positive_int_config(
+            realtime.get("max_spoken_sentences"),
+            default=2,
+        ),
         tts_provider=str(realtime.get("tts_provider") or "") or None,
         sidecar_base_url=str(base_url or "") or None,
         sidecar_token=str(sidecar_token or "") or None,
@@ -1130,6 +1134,10 @@ def _realtime_voice_smoke_config():
             "oracle_timeout_seconds": _positive_float_config(
                 realtime.get("oracle_timeout_seconds"),
                 default=60.0,
+            ),
+            "max_spoken_sentences": _positive_int_config(
+                realtime.get("max_spoken_sentences"),
+                default=2,
             ),
             "language_support": _realtime_voice_language_support_payload(realtime),
             "quality_targets_ms": _realtime_voice_quality_targets_payload(realtime),

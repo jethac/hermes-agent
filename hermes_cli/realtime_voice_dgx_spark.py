@@ -133,6 +133,7 @@ def build_dgx_spark_stack_manifest(
             "name": "kame_interface_oracle",
             "interface_audio_input": "native_audio",
             "asr_mode": asr_mode,
+            "max_spoken_sentences": 2,
             "durability_policy": "commit final intents and oracle results only",
         },
         "roles": {
@@ -402,6 +403,7 @@ HERMES_KAME_INTERFACE_MODEL={roles["interface"]["model"]}
 HERMES_KAME_INTERFACE_BASE_URL={roles["interface"]["base_url"]}
 HERMES_KAME_INTERFACE_AUDIO_INPUT=native_audio
 HERMES_KAME_ASR_MODE={manifest["engine"]["asr_mode"]}
+HERMES_KAME_MAX_SPOKEN_SENTENCES={manifest["engine"]["max_spoken_sentences"]}
 
 HERMES_KAME_ORACLE_MODEL={roles["oracle"]["preferred_local_model"]}
 HERMES_KAME_ORACLE_BASE_URL={roles["oracle"]["base_url"]}

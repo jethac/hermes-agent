@@ -81,6 +81,7 @@ class KameOracleRequest:
         user_id: Optional[str],
         payload: Mapping[str, Any],
         fallback_text: str,
+        default_max_spoken_sentences: int = 2,
     ) -> "KameOracleRequest":
         """Build a KAME oracle request from a reflex/ASR event payload."""
 
@@ -111,7 +112,10 @@ class KameOracleRequest:
             urgency=_optional_text(payload.get("urgency")) or "interactive",
             interface_already_said=_optional_text(payload.get("interface_already_said")) or "",
             conversation_summary=_optional_text(payload.get("conversation_summary")) or "",
-            max_spoken_sentences=_positive_int(payload.get("max_spoken_sentences"), default=2),
+            max_spoken_sentences=_positive_int(
+                payload.get("max_spoken_sentences"),
+                default=default_max_spoken_sentences,
+            ),
             cancellation_token=_optional_text(payload.get("cancellation_token")) or "",
         )
 

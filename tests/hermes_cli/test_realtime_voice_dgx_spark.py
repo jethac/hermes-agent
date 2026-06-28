@@ -34,6 +34,7 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     assert manifest["engine"]["name"] == "kame_interface_oracle"
     assert manifest["engine"]["interface_audio_input"] == "native_audio"
     assert manifest["engine"]["asr_mode"] == "on_escalation"
+    assert manifest["engine"]["max_spoken_sentences"] == 2
     assert manifest["roles"]["interface"]["model"] == "gemma-4-E2B-it"
     assert manifest["roles"]["interface"]["limit_mm_per_prompt"] == {"audio": 1}
     assert manifest["roles"]["oracle"]["preferred_local_model"] == "gemma-4-26B-A4B-it"
@@ -83,6 +84,8 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
     matrix = json.loads((output_dir / "benchmark-matrix.json").read_text(encoding="utf-8"))
     assert manifest["roles"]["interface"]["audio_input"] == "native_audio"
+    assert manifest["engine"]["max_spoken_sentences"] == 2
+    assert "HERMES_KAME_MAX_SPOKEN_SENTENCES=2" in (output_dir / ".env.example").read_text(encoding="utf-8")
     assert matrix["candidates"]["interface"][0]["input"] == "direct_audio"
     assert matrix["candidates"]["interface"][1]["input"] == "stt_fallback"
 

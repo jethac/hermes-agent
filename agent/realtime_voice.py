@@ -120,6 +120,7 @@ class RealtimeVoiceSessionConfig:
     preferred_local_oracle_model: Optional[str] = None
     oracle_model: Optional[str] = None
     oracle_timeout_seconds: float = 60.0
+    max_spoken_sentences: int = 2
     tts_provider: Optional[str] = None
     sidecar_base_url: Optional[str] = None
     sidecar_token: Optional[str] = None
@@ -154,6 +155,7 @@ class RealtimeVoiceSessionConfig:
             "preferred_local_oracle_model": self.preferred_local_oracle_model,
             "oracle_model": self.oracle_model,
             "oracle_timeout_seconds": self.oracle_timeout_seconds,
+            "max_spoken_sentences": self.max_spoken_sentences,
             "tts_provider": self.tts_provider,
             "sidecar_base_url": sidecar_base_url,
             "sidecar_token": sidecar_token,
@@ -185,6 +187,10 @@ class RealtimeVoiceSessionConfig:
             oracle_timeout_seconds=_positive_float(
                 payload.get("oracle_timeout_seconds"),
                 default=60.0,
+            ),
+            max_spoken_sentences=_positive_int(
+                payload.get("max_spoken_sentences"),
+                default=2,
             ),
             tts_provider=_optional_str(payload.get("tts_provider")),
             sidecar_base_url=_optional_str(payload.get("sidecar_base_url")),

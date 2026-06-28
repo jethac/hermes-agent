@@ -466,6 +466,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             user_id=user_id,
             payload=payload,
             fallback_text=transcript,
+            default_max_spoken_sentences=_max_spoken_sentences(config),
         )
 
     async def _speak_kame_local_reply(
@@ -478,6 +479,19 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             planned_reply = self._planner.clean(reply)
             if not planned_reply:
                 return
+            planned_reply, truncated = _limit_spoken_text(
+                planned_reply,
+                max_sentences=_max_spoken_sentences(self.config),
+            )
+            if not planned_reply:
+                return
+            metadata = {
+                **metadata,
+                **_voice_response_policy_payload(
+                    max_sentences=_max_spoken_sentences(self.config),
+                    truncated=truncated,
+                ),
+            }
             await self._emit(
                 VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                 {
@@ -530,6 +544,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         speak_chain: Optional[asyncio.Task[None]] = None
         assistant_metadata = dict(metadata)
         tts_error_reported = False
+        max_spoken_sentences = _max_spoken_sentences(self.config, oracle_request=oracle_request)
+        spoken_answer = ""
+        spoken_truncated = False
 
         def queue_speak(text: str) -> None:
             nonlocal speak_chain, tts_error_reported
@@ -625,26 +642,55 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 if chunk:
                     planned_chunk = self._planner.clean(chunk)
                     if planned_chunk:
+                        planned_chunk, chunk_truncated = _limit_spoken_text(
+                            planned_chunk,
+                            max_sentences=max_spoken_sentences,
+                            already_spoken=spoken_answer,
+                        )
+                        spoken_truncated = spoken_truncated or chunk_truncated
+                        if not planned_chunk:
+                            if _spoken_sentence_count(spoken_answer) >= max_spoken_sentences > 0:
+                                break
+                            continue
+                        spoken_answer = _join_spoken_text(spoken_answer, planned_chunk)
                         await self._emit(
                             VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                             {
                                 "text": planned_chunk,
                                 "playback_generation": playback_generation,
                                 **assistant_metadata,
+                                **_voice_response_policy_payload(
+                                    max_sentences=max_spoken_sentences,
+                                    truncated=spoken_truncated,
+                                ),
                                 **_kame_route_metrics_payload(assistant_metadata, oracle_called=True),
                             },
                         )
                         queue_speak(planned_chunk)
+                        if _spoken_sentence_count(spoken_answer) >= max_spoken_sentences > 0:
+                            break
 
             if buffer.strip():
                 planned_chunk = self._planner.clean(buffer)
                 if planned_chunk:
+                    planned_chunk, chunk_truncated = _limit_spoken_text(
+                        planned_chunk,
+                        max_sentences=max_spoken_sentences,
+                        already_spoken=spoken_answer,
+                    )
+                    spoken_truncated = spoken_truncated or chunk_truncated
+                if planned_chunk:
+                    spoken_answer = _join_spoken_text(spoken_answer, planned_chunk)
                     await self._emit(
                         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                         {
                             "text": planned_chunk,
                             "playback_generation": playback_generation,
                             **assistant_metadata,
+                            **_voice_response_policy_payload(
+                                max_sentences=max_spoken_sentences,
+                                truncated=spoken_truncated,
+                            ),
                             **_kame_route_metrics_payload(assistant_metadata, oracle_called=True),
                         },
                     )
@@ -659,7 +705,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     metadata=assistant_metadata,
                 )
 
-            plan = self._planner.plan(answer)
+            commit_text = spoken_answer if max_spoken_sentences > 0 and spoken_answer else answer
+            if max_spoken_sentences > 0 and spoken_answer and answer and self._planner.clean(answer) != self._planner.clean(spoken_answer):
+                spoken_truncated = True
+            plan = self._planner.plan(commit_text)
             if speak_chain is not None:
                 await speak_chain
             if not plan.committed_text:
@@ -671,6 +720,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         "text": plan.committed_text,
                         "playback_generation": playback_generation,
                         **assistant_metadata,
+                        **_voice_response_policy_payload(
+                            max_sentences=max_spoken_sentences,
+                            truncated=spoken_truncated,
+                        ),
                         **_kame_route_metrics_payload(assistant_metadata, oracle_called=True),
                     },
                 )
@@ -997,6 +1050,92 @@ async def _with_next_timeout(stream: AsyncIterator[str], *, timeout_seconds: flo
             return
 
 
+def _max_spoken_sentences(
+    config: Optional[RealtimeVoiceSessionConfig],
+    *,
+    oracle_request: Optional[KameOracleRequest] = None,
+) -> int:
+    if oracle_request is not None:
+        value = oracle_request.max_spoken_sentences
+    elif config is not None and config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        value = config.max_spoken_sentences
+    else:
+        return 0
+    if isinstance(value, bool):
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0
+
+
+def _voice_response_policy_payload(*, max_sentences: int, truncated: bool) -> dict[str, Any]:
+    if max_sentences <= 0:
+        return {}
+    return {
+        "max_spoken_sentences": max_sentences,
+        "voice_response_truncated": bool(truncated),
+    }
+
+
+def _limit_spoken_text(
+    text: str,
+    *,
+    max_sentences: int,
+    already_spoken: str = "",
+) -> tuple[str, bool]:
+    cleaned = " ".join((text or "").split()).strip()
+    if not cleaned or max_sentences <= 0:
+        return cleaned, False
+
+    remaining = max_sentences - _spoken_sentence_count(already_spoken)
+    if remaining <= 0:
+        return "", True
+
+    sentence_count = 0
+    truncate_at: Optional[int] = None
+    for index, character in enumerate(cleaned):
+        if character not in _SENTENCE_BOUNDARY_CHARS:
+            continue
+        sentence_count += 1
+        if sentence_count >= remaining:
+            truncate_at = index + 1
+            break
+
+    if truncate_at is None:
+        return cleaned, False
+
+    limited = cleaned[:truncate_at].strip()
+    truncated = bool(cleaned[truncate_at:].strip())
+    return limited, truncated
+
+
+def _spoken_sentence_count(text: str) -> int:
+    return sum(1 for character in text or "" if character in _SENTENCE_BOUNDARY_CHARS)
+
+
+def _join_spoken_text(left: str, right: str) -> str:
+    left = (left or "").strip()
+    right = (right or "").strip()
+    if not left:
+        return right
+    if not right:
+        return left
+    separator = " " if _needs_spoken_separator(left[-1], right[0]) else ""
+    return f"{left}{separator}{right}"
+
+
+def _needs_spoken_separator(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    if left.isspace() or right.isspace():
+        return False
+    if ord(left) > 127 or ord(right) > 127:
+        return False
+    return True
+
+
 def _oracle_timeout_seconds(config: Optional[RealtimeVoiceSessionConfig]) -> float:
     if config is None:
         return 60.0
@@ -1074,7 +1213,7 @@ def _take_speakable_chunk(buffer: str) -> tuple[Optional[str], str]:
             suffix_start = split_at + 1 if normalized[split_at] in _PHRASE_BOUNDARY_CHARS else split_at
             return normalized[:suffix_start].strip(), normalized[suffix_start:].strip()
 
-    return None, normalized
+    return None, buffer if buffer.strip() else normalized
 
 
 def _find_delimiter(text: str, delimiters: frozenset[str], *, start: int, end: int) -> int:

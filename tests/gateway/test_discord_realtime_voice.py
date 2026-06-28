@@ -106,6 +106,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         frontend_model="realtime-voice",
         oracle_model="deep-hermes",
         oracle_timeout_seconds=17.5,
+        max_spoken_sentences=3,
         sidecar_connect_timeout_seconds=0.5,
         turn_acknowledgement={"enabled": True, "text": "One moment."},
         routing_policy={
@@ -133,6 +134,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.frontend_model == "realtime-voice"
     assert sidecar.started_with.oracle_model == "deep-hermes"
     assert sidecar.started_with.oracle_timeout_seconds == 17.5
+    assert sidecar.started_with.max_spoken_sentences == 3
     assert sidecar.started_with.metadata["voice_architecture"] == "kame_frontend_oracle"
     assert sidecar.started_with.metadata["frontend_role"] == "low_latency_voice_interface"
     assert sidecar.started_with.metadata["oracle_role"] == "hermes_backend_oracle"
@@ -140,6 +142,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.metadata["frontend_model"] == "realtime-voice"
     assert sidecar.started_with.metadata["oracle_model"] == "deep-hermes"
     assert sidecar.started_with.metadata["oracle_timeout_seconds"] == 17.5
+    assert sidecar.started_with.metadata["max_spoken_sentences"] == 3
     assert sidecar.started_with.metadata["turn_acknowledgement"] == {
         "enabled": True,
         "text": "One moment.",

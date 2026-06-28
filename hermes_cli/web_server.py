@@ -730,6 +730,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Seconds to wait for a Hermes oracle voice response before speaking a timeout status",
         "category": "voice",
     },
+    "voice.realtime.max_spoken_sentences": {
+        "type": "number",
+        "description": "Maximum spoken sentences for KAME oracle voice responses",
+        "category": "voice",
+    },
     "voice.realtime.production_evidence_report": {
         "type": "string",
         "description": "Path to a verified realtime voice smoke report required for production readiness",
@@ -968,6 +973,16 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.oracle_model": {
         "type": "string",
         "description": "Hermes backend oracle model override for Discord realtime voice sessions",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_timeout_seconds": {
+        "type": "number",
+        "description": "Seconds to wait for a Discord realtime voice oracle response before speaking a timeout status",
+        "category": "discord",
+    },
+    "discord.realtime_voice.max_spoken_sentences": {
+        "type": "number",
+        "description": "Maximum spoken sentences for Discord KAME oracle voice responses",
         "category": "discord",
     },
     "discord.realtime_voice.tts_provider": {
@@ -13737,6 +13752,7 @@ def _realtime_voice_current_evidence_manifest(
     interface_audio_input: str = "",
     asr_mode: str = "",
     preferred_local_oracle_model: str = "",
+    max_spoken_sentences: int = 2,
     routing_policy: Optional[Mapping[str, Any]] = None,
     metrics_policy: Optional[Mapping[str, Any]] = None,
     sidecar_mode: str = "",
@@ -13752,6 +13768,7 @@ def _realtime_voice_current_evidence_manifest(
         "interface_audio_input": str(interface_audio_input or ""),
         "asr_mode": str(asr_mode or ""),
         "preferred_local_oracle_model": str(preferred_local_oracle_model or ""),
+        "max_spoken_sentences": int(max_spoken_sentences or 2),
         "routing": dict(routing_policy) if isinstance(routing_policy, Mapping) else {},
         "metrics": dict(metrics_policy) if isinstance(metrics_policy, Mapping) else {},
         "conversation_quality": {
@@ -14066,6 +14083,10 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         realtime.get("oracle_timeout_seconds"),
         default=60.0,
     )
+    max_spoken_sentences = _positive_int_config(
+        realtime.get("max_spoken_sentences"),
+        default=2,
+    )
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     language_support = _realtime_voice_language_support_payload(realtime)
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
@@ -14109,6 +14130,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         interface_audio_input=interface_audio_input,
         asr_mode=asr_mode,
         preferred_local_oracle_model=preferred_local_oracle_model,
+        max_spoken_sentences=max_spoken_sentences,
         routing_policy=routing_policy,
         metrics_policy=metrics_policy,
         sidecar_mode=sidecar_mode,
@@ -14210,6 +14232,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "preferred_local_oracle_model": preferred_local_oracle_model or None,
         "oracle_model": oracle_model or None,
         "oracle_timeout_seconds": oracle_timeout_seconds,
+        "max_spoken_sentences": max_spoken_sentences,
         "language_support": language_support,
         "quality_targets_ms": quality_targets_ms,
         "routing": routing_policy,
@@ -14240,6 +14263,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "interface_audio_input": interface_audio_input or None,
             "preferred_local_oracle_model": preferred_local_oracle_model or None,
             "oracle_timeout_seconds": oracle_timeout_seconds,
+            "max_spoken_sentences": max_spoken_sentences,
             "routing": routing_policy,
             "metrics": metrics_policy,
         },
@@ -14489,6 +14513,10 @@ def _apply_realtime_voice_profile_body(body: RealtimeVoiceProfileApply, profile:
                     realtime.get("oracle_timeout_seconds"),
                     default=60.0,
                 ),
+                "max_spoken_sentences": _positive_int_config(
+                    realtime.get("max_spoken_sentences"),
+                    default=2,
+                ),
                 "routing": dict(realtime.get("routing") if isinstance(realtime.get("routing"), dict) else {}),
                 "metrics": dict(realtime.get("metrics") if isinstance(realtime.get("metrics"), dict) else {}),
             }
@@ -14569,6 +14597,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         interface_audio_input=str(realtime.get("interface_audio_input") or ""),
         asr_mode=str(realtime.get("asr_mode") or ""),
         preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or ""),
+        max_spoken_sentences=_positive_int_config(realtime.get("max_spoken_sentences"), default=2),
         routing_policy=routing_policy,
         metrics_policy=metrics_policy,
         sidecar_mode=_realtime_voice_sidecar_mode(realtime, sidecar_base_url),
@@ -14614,6 +14643,10 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             realtime.get("oracle_timeout_seconds"),
             default=60.0,
         ),
+        max_spoken_sentences=_positive_int_config(
+            realtime.get("max_spoken_sentences"),
+            default=2,
+        ),
         tts_provider=str(realtime.get("tts_provider") or "") or None,
         sidecar_base_url=str(sidecar_base_url or "") or None,
         sidecar_token=str(sidecar_token or "") or None,
@@ -14637,6 +14670,10 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "oracle_timeout_seconds": _positive_float_config(
                 realtime.get("oracle_timeout_seconds"),
                 default=60.0,
+            ),
+            "max_spoken_sentences": _positive_int_config(
+                realtime.get("max_spoken_sentences"),
+                default=2,
             ),
             "language_support": language_support,
             "quality_targets_ms": quality_targets_ms,

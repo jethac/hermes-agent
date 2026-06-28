@@ -146,6 +146,7 @@ def test_session_config_round_trips_wire_payload():
         sidecar_base_url="http://voice.local:8080",
         sidecar_token="secret-token",
         sidecar_connect_timeout_seconds=3.5,
+        max_spoken_sentences=3,
         metadata={"profile": "default"},
     )
 
@@ -157,6 +158,7 @@ def test_session_config_round_trips_wire_payload():
     assert restored.input_buffer_limit_bytes == 4096
     assert restored.sidecar_connect_timeout_seconds == 3.5
     assert restored.oracle_timeout_seconds == 12.5
+    assert restored.max_spoken_sentences == 3
 
 
 def test_session_config_round_trips_kame_fields():
@@ -168,6 +170,7 @@ def test_session_config_round_trips_kame_fields():
         interface_audio_input="native_audio",
         asr_mode=RealtimeVoiceASRMode.SPECULATIVE,
         preferred_local_oracle_model="gemma-4-26B-A4B-it",
+        max_spoken_sentences=4,
     )
 
     restored = RealtimeVoiceSessionConfig.from_wire(config.to_wire())
@@ -177,6 +180,7 @@ def test_session_config_round_trips_kame_fields():
     assert restored.interface_audio_input == "native_audio"
     assert restored.asr_mode == RealtimeVoiceASRMode.SPECULATIVE
     assert restored.preferred_local_oracle_model == "gemma-4-26B-A4B-it"
+    assert restored.max_spoken_sentences == 4
 
 
 def test_kame_engine_factory_uses_kame_interface_oracle_engine():
@@ -676,6 +680,72 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
         assert hints[-1].payload["metrics"]["kame_oracle_bypassed"] == 0
         assert [event.payload for event in forwarded] == [event.payload for event in hints]
         assert spoken == ["Looking now."]
+
+    asyncio.run(run())
+
+
+def test_kame_engine_caps_oracle_speech_to_configured_sentence_budget(monkeypatch):
+    class VerboseOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "First sentence. "
+            yield "Second sentence. "
+            yield "Third sentence."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = VerboseOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                max_spoken_sentences=2,
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "explain the plan",
+                    "intent": "Explain the plan.",
+                    "route": "oracle_direct",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        partials = [event.payload["text"] for event in seen if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL]
+        commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        assert oracle.requests[0].max_spoken_sentences == 2
+        assert partials == ["First sentence.", "Second sentence."]
+        assert spoken == ["First sentence.", "Second sentence."]
+        assert commit.payload["text"] == "First sentence. Second sentence."
+        assert commit.payload["max_spoken_sentences"] == 2
+        assert commit.payload["metrics"]["kame_oracle_called"] == 1
 
     asyncio.run(run())
 

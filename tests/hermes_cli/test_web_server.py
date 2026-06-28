@@ -3172,6 +3172,8 @@ class TestBuildSchemaFromConfig:
         assert "streaming STT/TTS" in CONFIG_SCHEMA["voice.realtime.require_live_like"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.oracle_timeout_seconds"]["type"] == "number"
         assert "oracle voice response" in CONFIG_SCHEMA["voice.realtime.oracle_timeout_seconds"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.max_spoken_sentences"]["type"] == "number"
+        assert "Maximum spoken sentences" in CONFIG_SCHEMA["voice.realtime.max_spoken_sentences"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["type"] == "string"
         assert "smoke report" in CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.production_evidence_min_runs"]["type"] == "number"
@@ -3218,6 +3220,7 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_model"]["type"] == "string"
         assert "Hermes backend oracle model" in CONFIG_SCHEMA["discord.realtime_voice.oracle_model"]["description"]
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_timeout_seconds"]["type"] == "number"
+        assert CONFIG_SCHEMA["discord.realtime_voice.max_spoken_sentences"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.sidecar_connect_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.sidecar_close_timeout_seconds"]["type"] == "number"
 
@@ -6819,6 +6822,7 @@ class TestRealtimeVoiceWebSocket:
                         "frontend_model": "gemma-4-e4b",
                         "oracle_model": "deep-hermes",
                         "oracle_timeout_seconds": 18,
+                        "max_spoken_sentences": 3,
                         "sidecar_base_url": "http://voice.local:8080",
                         "sidecar_token_env": "HERMES_VOICE_SIDECAR_TOKEN",
                         "sidecar_connect_timeout_seconds": 2.5,
@@ -6838,6 +6842,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.frontend_model == "gemma-4-e4b"
         assert config.oracle_model == "deep-hermes"
         assert config.oracle_timeout_seconds == 18.0
+        assert config.max_spoken_sentences == 3
         assert config.sidecar_base_url == "http://voice.local:8080"
         assert config.sidecar_token == "secret-token"
         assert config.sidecar_connect_timeout_seconds == 2.5
@@ -6851,6 +6856,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.metadata["frontend_model"] == "gemma-4-e4b"
         assert config.metadata["oracle_model"] == "deep-hermes"
         assert config.metadata["oracle_timeout_seconds"] == 18.0
+        assert config.metadata["max_spoken_sentences"] == 3
         assert config.metadata["language_support"] == {
             "production_languages": ["en", "ja"],
             "production_scripts": ["Latn", "Jpan"],
@@ -7413,6 +7419,7 @@ class TestRealtimeVoiceWebSocket:
                         "asr_mode": "on_escalation",
                         "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
                         "oracle_timeout_seconds": 42,
+                        "max_spoken_sentences": 4,
                         "require_live_like": True,
                         "sidecar_base_url": "http://voice.example.test:8765",
                     }
@@ -7429,6 +7436,7 @@ class TestRealtimeVoiceWebSocket:
         assert body["asr_mode"] == "on_escalation"
         assert body["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
         assert body["oracle_timeout_seconds"] == 42.0
+        assert body["max_spoken_sentences"] == 4
         assert body["conversation_quality"]["mode"] == "kame_reflex"
         assert body["conversation_quality"]["reason"] == "audio_reflex_tts"
         assert body["conversation_quality"]["live_like"] is True
@@ -7455,6 +7463,7 @@ class TestRealtimeVoiceWebSocket:
             "interface_audio_input": "native_audio",
             "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
             "oracle_timeout_seconds": 42.0,
+            "max_spoken_sentences": 4,
             "routing": body["routing"],
             "metrics": body["metrics"],
         }
