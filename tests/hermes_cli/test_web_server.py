@@ -3369,6 +3369,12 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.barge_in_stop_playback_deadline_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.sidecar_connect_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.sidecar_close_timeout_seconds"]["type"] == "number"
+        assert CONFIG_SCHEMA["discord.realtime_voice.turn_acknowledgement.enabled"]["type"] == "boolean"
+        assert "acknowledgement" in CONFIG_SCHEMA["discord.realtime_voice.turn_acknowledgement.enabled"]["description"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.turn_acknowledgement.text"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.metrics.enabled"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.metrics.log_turn_spans"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.metrics.log_provider_spans"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.output_events.caption_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.output_events.audio_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.routing.allow_local_greetings"]["type"] == "boolean"

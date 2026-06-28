@@ -2507,6 +2507,10 @@ DEFAULT_CONFIG = {
             "barge_in_min_speech_ms": 120,
             "barge_in_min_rms": 350,
             "barge_in_stop_playback_deadline_ms": 150,
+            "turn_acknowledgement": {
+                "enabled": True,
+                "text": "One moment.",
+            },
             "routing": {
                 "allow_local_greetings": True,
                 "allow_local_clarifications": True,

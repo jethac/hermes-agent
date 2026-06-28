@@ -1328,6 +1328,31 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Seconds to wait while closing a Discord realtime sidecar session",
         "category": "discord",
     },
+    "discord.realtime_voice.turn_acknowledgement.enabled": {
+        "type": "boolean",
+        "description": "Speak a short Discord KAME acknowledgement while the oracle response is generated",
+        "category": "discord",
+    },
+    "discord.realtime_voice.turn_acknowledgement.text": {
+        "type": "string",
+        "description": "Short spoken Discord KAME acknowledgement before the final response is ready",
+        "category": "discord",
+    },
+    "discord.realtime_voice.metrics.enabled": {
+        "type": "boolean",
+        "description": "Enable Discord KAME realtime voice turn and provider metrics",
+        "category": "discord",
+    },
+    "discord.realtime_voice.metrics.log_turn_spans": {
+        "type": "boolean",
+        "description": "Log Discord KAME realtime voice turn latency spans",
+        "category": "discord",
+    },
+    "discord.realtime_voice.metrics.log_provider_spans": {
+        "type": "boolean",
+        "description": "Log Discord KAME realtime voice provider latency spans",
+        "category": "discord",
+    },
     "discord.realtime_voice.output_events.caption_aliases": {
         "type": "boolean",
         "description": "Emit assistant.caption.partial/final aliases for Discord realtime voice sessions",
