@@ -1118,7 +1118,8 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
         monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
 
         oracle = StructuredOracle()
-        engine = KameInterfaceOracleEngine(oracle=oracle)
+        sidecar = FakeSidecar()
+        engine = KameInterfaceOracleEngine(oracle=oracle, sidecar=sidecar)
         await engine.start(
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
@@ -1126,6 +1127,7 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
                 frontend_provider="gemma4",
                 frontend_model="gemma-4-E2B-it",
                 interface_audio_input="native_audio",
+                sidecar_base_url="http://voice.local:8765",
                 metadata={
                     "transport": "discord_voice",
                     "turn_acknowledgement": {"enabled": True, "text": "One moment."},
@@ -1169,6 +1171,17 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
             if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("acknowledgement")
         )
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        forwarded_interface_events = [
+            event
+            for event in sidecar.received
+            if event.type
+            in {
+                VoiceEventType.INTERFACE_INTENT_FINAL,
+                VoiceEventType.INTERFACE_REPLY_DEFER,
+                VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                VoiceEventType.INTERFACE_COMMIT,
+            }
+        ]
         assert defer.payload["route"] == "defer"
         assert defer.payload["interface_already_said"] == "Checking that now."
         assert defer.payload["text"] == "Checking that now."
@@ -1185,6 +1198,15 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
         assert acknowledgement.payload["text"] == "Checking that now."
         assert acknowledgement.payload["kame_interface_already_said"] == "Checking that now."
         assert commit.payload["text"] == "The deployment is healthy."
+        assert [event.type for event in forwarded_interface_events] == [
+            VoiceEventType.INTERFACE_INTENT_FINAL,
+            VoiceEventType.INTERFACE_REPLY_DEFER,
+            VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            VoiceEventType.INTERFACE_COMMIT,
+        ]
+        assert forwarded_interface_events[1].payload == defer.payload
+        assert forwarded_interface_events[2].payload == oracle_request.payload
+        assert forwarded_interface_events[3].payload["text"] == "The deployment is healthy."
         assert spoken == ["Checking that now.", "The deployment is healthy."]
 
     asyncio.run(run())
