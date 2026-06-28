@@ -27,6 +27,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate a headless DGX Spark launch/preflight pack for KAME voice"
     )
+    add_dgx_spark_arguments(parser)
+    return parser
+
+
+def add_dgx_spark_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Attach DGX Spark KAME launch/preflight arguments to an argparse parser."""
+
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--repo-dir", default=".")
     parser.add_argument("--hermes-home", default="~/.hermes")
@@ -59,7 +66,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    return run_from_args(build_parser().parse_args(argv))
+
+
+def run_from_args(args: argparse.Namespace) -> int:
+    """Generate artifacts and optional checks from parsed CLI arguments."""
+
     manifest = build_dgx_spark_stack_manifest(
         repo_dir=Path(args.repo_dir).expanduser().resolve(),
         hermes_home=Path(args.hermes_home).expanduser(),

@@ -1,7 +1,9 @@
 import json
+import argparse
 from pathlib import Path
 
 from hermes_cli import realtime_voice_dgx_spark
+from hermes_cli.subcommands.voice import build_voice_parser
 
 
 def _manifest(tmp_path: Path) -> dict:
@@ -324,3 +326,37 @@ def test_main_writes_files_and_reports_json(tmp_path, capsys):
     assert result["ok"] is True
     assert Path(result["written"]["manifest"]).is_file()
     assert Path(result["written"]["compose"]).is_file()
+
+
+def test_voice_subcommand_exposes_dgx_spark_launch_profile(tmp_path):
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command")
+    calls = []
+
+    def cmd_voice(args):
+        calls.append(args)
+
+    build_voice_parser(subparsers, cmd_voice=cmd_voice)
+
+    args = parser.parse_args(
+        [
+            "voice",
+            "dgx-spark",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--interface-model",
+            "gemma-4-E2B-it",
+            "--oracle-model",
+            "gemma-4-26B-A4B-it",
+            "--check",
+        ]
+    )
+    args.func(args)
+
+    assert args.command == "voice"
+    assert args.voice_command == "dgx-spark"
+    assert args.output_dir == str(tmp_path / "out")
+    assert args.interface_model == "gemma-4-E2B-it"
+    assert args.oracle_model == "gemma-4-26B-A4B-it"
+    assert args.check is True
+    assert calls == [args]

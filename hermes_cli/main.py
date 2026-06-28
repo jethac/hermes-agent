@@ -294,6 +294,7 @@ from hermes_cli.subcommands.dashboard import build_dashboard_parser
 from hermes_cli.subcommands.gui import build_gui_parser
 from hermes_cli.subcommands.logs import build_logs_parser
 from hermes_cli.subcommands.prompt_size import build_prompt_size_parser
+from hermes_cli.subcommands.voice import build_voice_parser
 from hermes_cli.subcommands.memory import build_memory_parser
 from hermes_cli.subcommands.acp import build_acp_parser
 from hermes_cli.subcommands.tools import build_tools_parser
@@ -11896,6 +11897,17 @@ def cmd_logs(args):
     )
 
 
+def cmd_voice(args):
+    """Realtime voice operational commands."""
+    subcommand = getattr(args, "voice_command", None)
+    if subcommand == "dgx-spark":
+        from hermes_cli.realtime_voice_dgx_spark import run_from_args
+
+        sys.exit(run_from_args(args))
+    print("unknown voice subcommand", file=sys.stderr)
+    sys.exit(2)
+
+
 def _build_provider_choices() -> list[str]:
     """Build the --provider choices list from CANONICAL_PROVIDERS + 'auto'."""
     try:
@@ -11934,6 +11946,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "prompt-size",
         "send", "sessions", "setup",
         "skills", "slack", "status", "tools", "uninstall", "update",
+        "voice",
         "version", "webhook", "whatsapp", "whatsapp-cloud", "chat", "secrets", "security",
         # Help-ish invocations — plugin commands not being listed in
         # top-level --help is an acceptable trade-off for skipping an
@@ -13518,6 +13531,11 @@ def main():
     # logs command  (parser built in hermes_cli/subcommands/logs.py)
     # =========================================================================
     build_logs_parser(subparsers, cmd_logs=cmd_logs)
+
+    # =========================================================================
+    # voice command  (parser built in hermes_cli/subcommands/voice.py)
+    # =========================================================================
+    build_voice_parser(subparsers, cmd_voice=cmd_voice)
 
     # =========================================================================
     # prompt-size command  (parser built in hermes_cli/subcommands/prompt_size.py)
