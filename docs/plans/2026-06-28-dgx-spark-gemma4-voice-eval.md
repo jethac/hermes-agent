@@ -96,6 +96,9 @@ Runner behavior:
   generation remains headless before services are online.
 - Validates filled benchmark evidence with the generated stack-pack validator
   when `DGX_SPARK_KAME_BENCHMARK_EVIDENCE` points at a JSON evidence file.
+- Writes `recommendation.json` and `recommendation.md` after Track A/B/C
+  artifacts are collected, ranking Cartesia versus local speech evidence only
+  after the oracle probe passes.
 
 Useful variables:
 
@@ -122,6 +125,7 @@ Acceptance gates:
 | Preflight | Required only when `DGX_SPARK_KAME_CHECK=1` |
 | Benchmark matrix | Includes direct-audio vs STT-fallback reflex comparison |
 | Evidence validation | Required when `DGX_SPARK_KAME_BENCHMARK_EVIDENCE` is set |
+| Recommendation report | Emits Track A/B/C decision and missing-evidence reasons |
 
 ## Track A: Gemma 4 26B-A4B Oracle
 
@@ -320,11 +324,9 @@ After the first headless run:
 
 1. Add a first-class `riva` or `nvidia_speech` realtime voice profile preset
    once the local bridge endpoint shape is known.
-2. Add an evidence report comparator that reads Track A/B/C artifacts and emits
-   a single ranked recommendation.
-3. If Track C is promising, add a managed local speech bridge launcher and tests
+2. If Track C is promising, add a managed local speech bridge launcher and tests
    equivalent to the Cartesia/ElevenLabs/Deepgram bridge tests.
-4. Keep Moshi/Ultravox as explicit watchlist items until a confirmed Spark
+3. Keep Moshi/Ultravox as explicit watchlist items until a confirmed Spark
    deployment shows stable realtime audio.
 
 ## One-command Headless Run
