@@ -1281,6 +1281,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             with open(file_path, "rb") as fh:
                 data = fh.read()
             if data:
+                first_tts_audio_at = time.perf_counter()
+                playback_started_at = time.perf_counter()
+                playback_start_metrics: dict[str, int] = {}
+                if _is_kame_metadata(metadata):
+                    playback_start_metrics["kame_first_tts_audio_to_playback_start_ms"] = _elapsed_perf_ms(
+                        first_tts_audio_at,
+                        playback_started_at,
+                    )
+                    metadata["metrics"] = _merge_metrics(metadata.get("metrics"), playback_start_metrics)
+                    self._assistant_metadata_by_generation[playback_generation] = metadata
                 await self._emit(
                     VoiceEventType.PLAYBACK_STARTED,
                     {"playback_generation": playback_generation, **metadata},
@@ -1292,6 +1302,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 existing_metrics = payload.get("metrics")
                 metrics = dict(existing_metrics) if isinstance(existing_metrics, dict) else {}
                 metrics["tts_synthesis_ms"] = tts_synthesis_ms
+                if playback_start_metrics:
+                    metrics.update(playback_start_metrics)
                 first_audio_metrics = self._kame_first_audio_metrics(playback_generation, metadata)
                 if first_audio_metrics:
                     metrics.update(first_audio_metrics)

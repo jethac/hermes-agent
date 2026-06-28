@@ -473,7 +473,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                         self._speak(
                             text,
                             _payload_generation(event.payload),
-                            transcript_metadata_from_payload(event.payload),
+                            _assistant_speak_metadata_from_payload(event.payload),
                         )
                     )
                 )
@@ -1465,7 +1465,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self,
         text: str,
         playback_generation: Optional[int] = None,
-        metadata: Optional[Mapping[str, str]] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
     ) -> None:
         clean_metadata = dict(metadata or {})
         if self._streaming_tts is not None and self.config is not None:
@@ -1498,9 +1498,20 @@ class ReferenceRealtimeVoiceSidecarSession:
                 with open(file_path, "rb") as fh:
                     data = fh.read()
                 if data:
+                    first_tts_audio_at = time.perf_counter()
+                    playback_started_at = time.perf_counter()
+                    playback_start_metrics = _kame_playback_start_metrics(
+                        clean_metadata,
+                        first_tts_audio_at,
+                        playback_started_at,
+                    )
                     await self._emit(
                         VoiceEventType.PLAYBACK_STARTED,
-                        {"playback_generation": playback_generation} if playback_generation is not None else {},
+                        _playback_lifecycle_payload(
+                            playback_generation,
+                            clean_metadata,
+                            playback_start_metrics,
+                        ),
                     )
                     payload = AudioChunk(codec=VoiceAudioCodec.OPUS, data=data).to_payload()
                     payload["mime_type"] = _mime_type_for_path(file_path)
@@ -1510,6 +1521,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                     existing_metrics = payload.get("metrics")
                     metrics = dict(existing_metrics) if isinstance(existing_metrics, dict) else {}
                     metrics["tts_synthesis_ms"] = tts_synthesis_ms
+                    metrics.update(playback_start_metrics)
                     payload["metrics"] = metrics
                     await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
                     await self._emit(
@@ -1562,7 +1574,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self,
         text: str,
         playback_generation: Optional[int],
-        metadata: Mapping[str, str],
+        metadata: Mapping[str, Any],
     ) -> bool:
         cached = self._cached_acknowledgement_audio
         if not cached or str(cached.get("text") or "") != text:
@@ -1575,10 +1587,19 @@ class ReferenceRealtimeVoiceSidecarSession:
         if playback_generation is not None:
             payload["playback_generation"] = playback_generation
         payload.update(dict(metadata))
-        payload["metrics"] = dict(cached.get("metrics") or {})
+        first_tts_audio_at = time.perf_counter()
+        playback_started_at = time.perf_counter()
+        playback_start_metrics = _kame_playback_start_metrics(
+            metadata,
+            first_tts_audio_at,
+            playback_started_at,
+        )
+        cached_metrics = dict(cached.get("metrics") or {})
+        cached_metrics.update(playback_start_metrics)
+        payload["metrics"] = cached_metrics
         await self._emit(
             VoiceEventType.PLAYBACK_STARTED,
-            {"playback_generation": playback_generation} if playback_generation is not None else {},
+            _playback_lifecycle_payload(playback_generation, metadata, playback_start_metrics),
         )
         await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
         await self._emit(
@@ -1591,12 +1612,12 @@ class ReferenceRealtimeVoiceSidecarSession:
         )
         return True
 
-    def _speak_sync(self, text: str, metadata: Optional[Mapping[str, str]] = None) -> str:
+    def _speak_sync(self, text: str, metadata: Optional[Mapping[str, Any]] = None) -> str:
         synthesize = self._synthesize_func
         if synthesize is None:
             from tools.tts_tool import text_to_speech_tool as synthesize
 
-        raw = _call_synthesize(synthesize, text, metadata or {})
+        raw = _call_synthesize(synthesize, text, _tts_synthesis_metadata(metadata or {}))
         result = json.loads(raw) if isinstance(raw, str) else raw
         if not result.get("success"):
             raise RuntimeError(str(result.get("error") or "speech synthesis failed"))
@@ -2061,7 +2082,48 @@ def _allow_kame_transcript_events(config: Optional[RealtimeVoiceSessionConfig]) 
     return str(config.interface_audio_input or "").strip().lower() == "text_fallback"
 
 
-def _call_synthesize(synthesize: SynthesizeFn, text: str, metadata: Mapping[str, str]) -> Any:
+def _assistant_speak_metadata_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    metadata: dict[str, Any] = dict(transcript_metadata_from_payload(payload))
+    for key in (
+        "voice_architecture",
+        "kame_route",
+        "kame_interface_already_said",
+        "intent_source",
+        "transcript_source",
+    ):
+        value = payload.get(key)
+        if not isinstance(value, str):
+            continue
+        token = value.strip()
+        if token:
+            metadata[key] = token
+    metrics = payload.get("metrics")
+    if isinstance(metrics, Mapping):
+        clean_metrics: dict[str, int] = {}
+        for key, value in metrics.items():
+            if isinstance(value, bool):
+                continue
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                continue
+            if parsed >= 0:
+                clean_metrics[str(key)] = parsed
+        if clean_metrics:
+            metadata["metrics"] = clean_metrics
+    return metadata
+
+
+def _tts_synthesis_metadata(metadata: Mapping[str, Any]) -> dict[str, str]:
+    clean: dict[str, str] = {}
+    for key in ("language", "locale", "script"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value:
+            clean[key] = value
+    return clean
+
+
+def _call_synthesize(synthesize: SynthesizeFn, text: str, metadata: Mapping[str, Any]) -> Any:
     if metadata and _synthesize_accepts_metadata(synthesize):
         return synthesize(text, metadata=metadata)
     return synthesize(text)
@@ -2081,6 +2143,38 @@ def _synthesize_accepts_metadata(synthesize: SynthesizeFn) -> bool:
 def _payload_generation(payload: Mapping[str, Any]) -> Optional[int]:
     value = payload.get("playback_generation")
     return _payload_int(value)
+
+
+def _kame_playback_start_metrics(
+    metadata: Mapping[str, Any],
+    first_tts_audio_at: float,
+    playback_started_at: float,
+) -> dict[str, int]:
+    if str(metadata.get("voice_architecture") or "") != "kame_frontend_oracle":
+        return {}
+    return {
+        "kame_first_tts_audio_to_playback_start_ms": max(
+            0,
+            int(round((playback_started_at - first_tts_audio_at) * 1000)),
+        )
+    }
+
+
+def _playback_lifecycle_payload(
+    playback_generation: Optional[int],
+    metadata: Mapping[str, Any],
+    metrics: Mapping[str, int],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if playback_generation is not None:
+        payload["playback_generation"] = playback_generation
+    if not metrics:
+        return payload
+    metadata_metrics = metadata.get("metrics")
+    merged_metrics = dict(metadata_metrics) if isinstance(metadata_metrics, Mapping) else {}
+    merged_metrics.update(metrics)
+    payload["metrics"] = merged_metrics
+    return payload
 
 
 def _payload_input_generation(payload: Mapping[str, Any]) -> Optional[int]:

@@ -4965,6 +4965,106 @@ def test_reference_sidecar_uses_prewarmed_acknowledgement_audio(tmp_path):
     asyncio.run(run())
 
 
+def test_reference_sidecar_kame_local_tts_reports_playback_start_metric(tmp_path):
+    def fake_synthesize(text):
+        audio = tmp_path / "speech.ogg"
+        audio.write_bytes(b"audio")
+        return {"success": True, "file_path": str(audio)}
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(vllm_base_url=None, vllm_model=None),
+            synthesize_func=fake_synthesize,
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="local",
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "text": "One moment.",
+                    "speak": True,
+                    "playback_generation": 7,
+                    "voice_architecture": "kame_frontend_oracle",
+                    "kame_route": KameRoute.DEFER.value,
+                    "metrics": {"kame_speech_end_to_interface_decision_ms": 25},
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                await sidecar.close()
+                break
+
+        playback = next(event for event in seen if event.type == VoiceEventType.PLAYBACK_STARTED)
+        audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
+        assert playback.payload["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
+        assert audio.payload["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
+        assert audio.payload["metrics"]["tts_synthesis_ms"] >= 0
+
+    asyncio.run(run())
+
+
+def test_reference_sidecar_cached_kame_ack_reports_playback_start_metric(tmp_path):
+    def fake_synthesize(text):
+        audio = tmp_path / "speech.ogg"
+        audio.write_bytes(b"audio")
+        return {"success": True, "file_path": str(audio)}
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(vllm_base_url=None, vllm_model=None),
+            synthesize_func=fake_synthesize,
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="local",
+                metadata={"turn_acknowledgement": {"enabled": True, "text": "One moment."}},
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "text": "One moment.",
+                    "speak": True,
+                    "playback_generation": 7,
+                    "voice_architecture": "kame_frontend_oracle",
+                    "kame_route": KameRoute.DEFER.value,
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                await sidecar.close()
+                break
+
+        playback = next(event for event in seen if event.type == VoiceEventType.PLAYBACK_STARTED)
+        audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
+        assert playback.payload["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
+        assert audio.payload["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
+        assert audio.payload["metrics"]["tts_cache"] == "prewarmed"
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_bounds_utterance_audio_buffer():
     transcribe_called = False
 
@@ -7778,9 +7878,14 @@ def test_kame_file_tts_audio_chunk_includes_first_token_to_tts_metric(monkeypatc
         assert event.payload["metrics"]["kame_interface_decision_to_first_audio_ms"] >= 0
         assert event.payload["metrics"]["kame_speech_end_to_first_audio_ms"] >= 25
         assert event.payload["metrics"]["kame_oracle_first_token_to_first_tts_audio_ms"] >= 0
+        assert event.payload["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
         assert (
             engine._assistant_metadata_by_generation[7]["metrics"]["kame_oracle_first_token_to_first_tts_audio_ms"]
             == event.payload["metrics"]["kame_oracle_first_token_to_first_tts_audio_ms"]
+        )
+        assert (
+            engine._assistant_metadata_by_generation[7]["metrics"]["kame_first_tts_audio_to_playback_start_ms"]
+            == event.payload["metrics"]["kame_first_tts_audio_to_playback_start_ms"]
         )
         await engine.close()
 

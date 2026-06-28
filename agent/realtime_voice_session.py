@@ -93,6 +93,8 @@ QUALITY_TARGET_METRIC_KEYS = frozenset(
         "kame_interface_decision_to_defer_first_audio_ms",
         "kame_speech_end_to_defer_first_audio_ms",
         "kame_interface_decision_to_oracle_accepted_ms",
+        "kame_oracle_first_token_to_first_tts_audio_ms",
+        "kame_first_tts_audio_to_playback_start_ms",
         "kame_speech_end_to_first_audio_ms",
     }
 )
