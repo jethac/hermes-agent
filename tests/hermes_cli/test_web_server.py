@@ -7198,6 +7198,9 @@ class TestRealtimeVoiceWebSocket:
             barge_in_min_rms=420,
             barge_in_min_speech_ms=160,
             barge_in_stop_playback_deadline_ms=140,
+            metrics_enabled=True,
+            metrics_log_turn_spans=False,
+            metrics_log_provider_spans=False,
         )
 
         profile = self.ws_module._realtime_voice_profile_for_request(body)
@@ -7227,6 +7230,11 @@ class TestRealtimeVoiceWebSocket:
         assert profile["barge_in_min_rms"] == 420
         assert profile["barge_in_min_speech_ms"] == 160
         assert profile["barge_in_stop_playback_deadline_ms"] == 140
+        assert profile["metrics"] == {
+            "enabled": True,
+            "log_turn_spans": False,
+            "log_provider_spans": False,
+        }
 
     def test_config_accepts_documented_nested_kame_shape(self, monkeypatch):
         class FakeWebSocket:

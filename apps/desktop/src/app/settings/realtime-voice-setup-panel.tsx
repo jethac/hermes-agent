@@ -245,7 +245,9 @@ function KameControls({
 
   return (
     <div className="mt-2 grid gap-1 border-t border-border/60 pt-2">
-      <div className="py-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">KAME Reflex / Oracle</div>
+      <div className="py-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">
+        KAME Reflex / Oracle
+      </div>
       <ListRow
         action={textInput('voice.realtime.interface_base_url', 'http://127.0.0.1:8000/v1')}
         description="OpenAI-compatible URL for the reflex/interface model."
@@ -370,6 +372,21 @@ function KameControls({
         action={numberInput('voice.realtime.barge_in_stop_playback_deadline_ms', 150, 1, undefined, 10)}
         description="Target stop time after confirmed barge-in."
         title="Stop deadline"
+      />
+      <ListRow
+        action={toggle('voice.realtime.metrics.enabled')}
+        description="Emit realtime KAME latency and route metrics."
+        title="Metrics enabled"
+      />
+      <ListRow
+        action={toggle('voice.realtime.metrics.log_turn_spans')}
+        description="Log per-turn spans from speech boundary through playback."
+        title="Turn span logs"
+      />
+      <ListRow
+        action={toggle('voice.realtime.metrics.log_provider_spans')}
+        description="Log provider spans for reflex, oracle, ASR, and TTS stages."
+        title="Provider span logs"
       />
     </div>
   )
@@ -562,12 +579,23 @@ export function RealtimeVoiceSetupPanel({
         local_confidence_threshold: selectedIsKame
           ? Number(getNested(config, 'voice.realtime.routing.local_confidence_threshold') ?? 0.75)
           : undefined,
-        barge_in_min_rms: selectedIsKame ? Number(getNested(config, 'voice.realtime.barge_in_min_rms') ?? 350) : undefined,
+        barge_in_min_rms: selectedIsKame
+          ? Number(getNested(config, 'voice.realtime.barge_in_min_rms') ?? 350)
+          : undefined,
         barge_in_min_speech_ms: selectedIsKame
           ? Number(getNested(config, 'voice.realtime.barge_in_min_speech_ms') ?? 120)
           : undefined,
         barge_in_stop_playback_deadline_ms: selectedIsKame
           ? Number(getNested(config, 'voice.realtime.barge_in_stop_playback_deadline_ms') ?? 150)
+          : undefined,
+        metrics_enabled: selectedIsKame
+          ? Boolean(getNested(config, 'voice.realtime.metrics.enabled') ?? true)
+          : undefined,
+        metrics_log_turn_spans: selectedIsKame
+          ? Boolean(getNested(config, 'voice.realtime.metrics.log_turn_spans') ?? true)
+          : undefined,
+        metrics_log_provider_spans: selectedIsKame
+          ? Boolean(getNested(config, 'voice.realtime.metrics.log_provider_spans') ?? true)
           : undefined,
         enable_discord: Boolean(getNested(config, 'discord.realtime_voice.enabled')),
         google_search: Boolean(getNested(config, 'voice.realtime.gemini_live_google_search')),

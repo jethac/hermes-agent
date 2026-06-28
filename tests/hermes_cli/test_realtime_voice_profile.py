@@ -421,6 +421,26 @@ def test_kame_preset_can_set_fallback_policy(capsys):
     assert data["voice"]["realtime"]["fallback_policy"] == "fail_closed"
 
 
+def test_kame_preset_can_disable_metrics(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--disable-kame-metrics",
+            "--disable-kame-turn-span-logs",
+            "--disable-kame-provider-span-logs",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    assert data["voice"]["realtime"]["metrics"] == {
+        "enabled": False,
+        "log_turn_spans": False,
+        "log_provider_spans": False,
+    }
+
+
 def test_kame_preset_can_set_provider_labels(capsys):
     result = realtime_voice_profile.main(
         [

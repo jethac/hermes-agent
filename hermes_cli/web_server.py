@@ -1542,6 +1542,9 @@ class RealtimeVoiceProfileApply(BaseModel):
     require_oracle_for_memory: bool = True
     require_oracle_for_files: bool = True
     local_confidence_threshold: float = 0.75
+    metrics_enabled: bool = True
+    metrics_log_turn_spans: bool = True
+    metrics_log_provider_spans: bool = True
     google_search: bool = False
     oracle_tool: bool = True
     enable_discord: bool = False
@@ -15366,6 +15369,9 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             barge_in_min_rms=body.barge_in_min_rms,
             barge_in_min_speech_ms=body.barge_in_min_speech_ms,
             barge_in_stop_playback_deadline_ms=body.barge_in_stop_playback_deadline_ms,
+            metrics_enabled=body.metrics_enabled,
+            metrics_log_turn_spans=body.metrics_log_turn_spans,
+            metrics_log_provider_spans=body.metrics_log_provider_spans,
         )
     if preset == "elevenlabs":
         return build_realtime_voice_live_like_profile(

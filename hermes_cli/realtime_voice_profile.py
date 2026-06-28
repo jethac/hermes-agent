@@ -227,6 +227,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target milliseconds to stop playback after confirmed KAME barge-in",
     )
     parser.add_argument(
+        "--disable-kame-metrics",
+        action="store_true",
+        help="Disable KAME realtime turn/provider span metrics in the generated profile",
+    )
+    parser.add_argument(
+        "--disable-kame-turn-span-logs",
+        action="store_true",
+        help="Disable KAME per-turn latency span logging in the generated profile",
+    )
+    parser.add_argument(
+        "--disable-kame-provider-span-logs",
+        action="store_true",
+        help="Disable KAME provider latency span logging in the generated profile",
+    )
+    parser.add_argument(
         "--kame-oracle-base-url",
         default="",
         help=(
@@ -325,6 +340,9 @@ def main(argv: list[str] | None = None) -> int:
                 barge_in_stop_playback_deadline_ms=int(
                     args.kame_barge_in_stop_playback_deadline_ms or 150
                 ),
+                metrics_enabled=not bool(args.disable_kame_metrics),
+                metrics_log_turn_spans=not bool(args.disable_kame_turn_span_logs),
+                metrics_log_provider_spans=not bool(args.disable_kame_provider_span_logs),
                 sidecar_host=args.sidecar_host,
                 sidecar_port=args.sidecar_port,
                 production_evidence_report=args.production_evidence_report,
@@ -853,6 +871,9 @@ def build_kame_realtime_voice_profile(
     barge_in_min_rms: int = 350,
     barge_in_min_speech_ms: int = 120,
     barge_in_stop_playback_deadline_ms: int = 150,
+    metrics_enabled: bool = True,
+    metrics_log_turn_spans: bool = True,
+    metrics_log_provider_spans: bool = True,
 ) -> dict[str, Any]:
     port = int(sidecar_port or 8765)
     if port <= 0 or port > 65535:
@@ -968,9 +989,9 @@ def build_kame_realtime_voice_profile(
             "local_confidence_threshold": confidence_threshold,
         },
         "metrics": {
-            "enabled": True,
-            "log_turn_spans": True,
-            "log_provider_spans": True,
+            "enabled": bool(metrics_enabled),
+            "log_turn_spans": bool(metrics_log_turn_spans),
+            "log_provider_spans": bool(metrics_log_provider_spans),
         },
         "quality_targets_ms": dict(KAME_QUALITY_TARGETS_MS),
     }

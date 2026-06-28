@@ -106,6 +106,9 @@ export interface RealtimeVoiceProfileRequest {
   interface_provider?: string
   interface_max_audio_seconds?: number
   local_confidence_threshold?: number
+  metrics_enabled?: boolean
+  metrics_log_provider_spans?: boolean
+  metrics_log_turn_spans?: boolean
   model?: string
   oracle_base_url?: string
   oracle_model?: string

@@ -82,6 +82,11 @@ const config: HermesConfigRecord = {
       interface_base_url: 'http://spark.local:8000/v1',
       interface_audio_input: 'native_audio',
       interface_max_audio_seconds: 24,
+      metrics: {
+        enabled: true,
+        log_provider_spans: false,
+        log_turn_spans: true
+      },
       oracle_base_url: 'http://spark.local:8000/v1',
       oracle_model: 'gemma-4-26B-A4B-it',
       routing: {
@@ -137,6 +142,9 @@ describe('RealtimeVoiceSetupPanel', () => {
     expect(screen.getByText('TTS provider')).toBeTruthy()
     expect(screen.getByText('Barge-in RMS')).toBeTruthy()
     expect(screen.getByText('Local confidence')).toBeTruthy()
+    expect(screen.getByText('Metrics enabled')).toBeTruthy()
+    expect(screen.getByText('Turn span logs')).toBeTruthy()
+    expect(screen.getByText('Provider span logs')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: /apply provider/i }))
 
@@ -156,6 +164,9 @@ describe('RealtimeVoiceSetupPanel', () => {
         interface_audio_input: 'native_audio',
         interface_max_audio_seconds: 24,
         local_confidence_threshold: 0.88,
+        metrics_enabled: true,
+        metrics_log_provider_spans: false,
+        metrics_log_turn_spans: true,
         oracle_base_url: 'http://spark.local:8000/v1',
         oracle_model: 'gemma-4-26B-A4B-it',
         preset: 'kame',
