@@ -548,38 +548,54 @@ class ReferenceRealtimeVoiceSidecarSession:
             return
         self._closed = True
         await self._drain_cancelled_tasks(self._cancel_active_tasks())
-        if self._streaming_stt_task and not self._streaming_stt_task.done():
-            self._streaming_stt_task.cancel()
-        if self._streaming_tts_task and not self._streaming_tts_task.done():
-            self._streaming_tts_task.cancel()
-        if self._openai_realtime_task and not self._openai_realtime_task.done():
-            self._openai_realtime_task.cancel()
-        if self._gemini_live_task and not self._gemini_live_task.done():
-            self._gemini_live_task.cancel()
-        if self._streaming_stt is not None:
+        streaming_stt_task = self._streaming_stt_task
+        streaming_tts_task = self._streaming_tts_task
+        openai_realtime_task = self._openai_realtime_task
+        gemini_live_task = self._gemini_live_task
+        self._streaming_stt_task = None
+        self._streaming_tts_task = None
+        self._openai_realtime_task = None
+        self._gemini_live_task = None
+        for task in (streaming_stt_task, streaming_tts_task, openai_realtime_task, gemini_live_task):
+            if task is not None and not task.done():
+                task.cancel()
+
+        streaming_stt = self._streaming_stt
+        streaming_tts = self._streaming_tts
+        openai_realtime = self._openai_realtime
+        gemini_live = self._gemini_live
+        self._streaming_stt = None
+        self._streaming_tts = None
+        self._openai_realtime = None
+        self._gemini_live = None
+        self._asr_hypotheses_by_generation.clear()
+        self._cached_acknowledgement_audio = None
+        self._clear_audio_buffer()
+
+        if streaming_stt is not None:
             with contextlib.suppress(Exception):
-                await self._streaming_stt.close()
-        if self._streaming_tts is not None:
+                await streaming_stt.close()
+        if streaming_tts is not None:
             with contextlib.suppress(Exception):
-                await self._streaming_tts.close()
-        if self._openai_realtime is not None:
+                await streaming_tts.close()
+        if openai_realtime is not None:
             with contextlib.suppress(Exception):
-                await self._openai_realtime.close()
-        if self._gemini_live is not None:
+                await openai_realtime.close()
+        if gemini_live is not None:
             with contextlib.suppress(Exception):
-                await self._gemini_live.close()
-        if self._streaming_stt_task:
+                await gemini_live.close()
+        if streaming_stt_task:
             with contextlib.suppress(asyncio.CancelledError):
-                await self._streaming_stt_task
-        if self._streaming_tts_task:
+                await streaming_stt_task
+        if streaming_tts_task:
             with contextlib.suppress(asyncio.CancelledError):
-                await self._streaming_tts_task
-        if self._openai_realtime_task:
+                await streaming_tts_task
+        if openai_realtime_task:
             with contextlib.suppress(asyncio.CancelledError):
-                await self._openai_realtime_task
-        if self._gemini_live_task:
+                await openai_realtime_task
+        if gemini_live_task:
             with contextlib.suppress(asyncio.CancelledError):
-                await self._gemini_live_task
+                await gemini_live_task
         await self._emit_shutdown_playback_finalizers()
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
         await put_realtime_voice_event(self._events, None)

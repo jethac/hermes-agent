@@ -5021,6 +5021,85 @@ def test_reference_sidecar_close_does_not_wait_forever_for_stubborn_workers(monk
     asyncio.run(run())
 
 
+def test_reference_sidecar_close_clears_provider_and_session_state():
+    class DummyProvider:
+        def __init__(self):
+            self.closed = False
+
+        async def close(self):
+            self.closed = True
+
+    async def sleeper():
+        await asyncio.Event().wait()
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+
+        streaming_stt = DummyProvider()
+        streaming_tts = DummyProvider()
+        openai_realtime = DummyProvider()
+        gemini_live = DummyProvider()
+        streaming_stt_task = asyncio.create_task(sleeper())
+        streaming_tts_task = asyncio.create_task(sleeper())
+        openai_realtime_task = asyncio.create_task(sleeper())
+        gemini_live_task = asyncio.create_task(sleeper())
+        sidecar._streaming_stt = streaming_stt
+        sidecar._streaming_tts = streaming_tts
+        sidecar._openai_realtime = openai_realtime
+        sidecar._gemini_live = gemini_live
+        sidecar._streaming_stt_task = streaming_stt_task
+        sidecar._streaming_tts_task = streaming_tts_task
+        sidecar._openai_realtime_task = openai_realtime_task
+        sidecar._gemini_live_task = gemini_live_task
+        sidecar._audio.append(b"stale-audio")
+        sidecar._audio_bytes = len(b"stale-audio")
+        sidecar._audio_input_generation = 3
+        sidecar._asr_hypotheses_by_generation[3] = {"asr_transcript": "stale hypothesis"}
+        sidecar._cached_acknowledgement_audio = {"text": "One moment.", "data": b"audio"}
+        sidecar._active_playback_generations.add(9)
+
+        await sidecar.close()
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+
+        assert streaming_stt.closed is True
+        assert streaming_tts.closed is True
+        assert openai_realtime.closed is True
+        assert gemini_live.closed is True
+        assert streaming_stt_task.cancelled()
+        assert streaming_tts_task.cancelled()
+        assert openai_realtime_task.cancelled()
+        assert gemini_live_task.cancelled()
+        assert sidecar._streaming_stt is None
+        assert sidecar._streaming_tts is None
+        assert sidecar._openai_realtime is None
+        assert sidecar._gemini_live is None
+        assert sidecar._streaming_stt_task is None
+        assert sidecar._streaming_tts_task is None
+        assert sidecar._openai_realtime_task is None
+        assert sidecar._gemini_live_task is None
+        assert sidecar._audio == []
+        assert sidecar._audio_bytes == 0
+        assert sidecar._audio_input_generation is None
+        assert sidecar._asr_hypotheses_by_generation == {}
+        assert sidecar._cached_acknowledgement_audio is None
+        assert sidecar._active_playback_generations == set()
+        assert [event.type for event in seen] == [
+            VoiceEventType.SESSION_STARTED,
+            VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.PLAYBACK_STOPPED,
+            VoiceEventType.ASSISTANT_AUDIO_END,
+            VoiceEventType.SESSION_CLOSED,
+        ]
+        assert seen[2].payload == {"reason": "session_closed", "playback_generation": 9}
+        assert seen[3].payload == {"reason": "session_closed", "playback_generation": 9}
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_sanitizes_provider_errors():
     def failing_transcribe(path):
         raise RuntimeError("STT failed at http://user:pass@voice.local/v1?token=abc")
