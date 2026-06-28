@@ -2678,6 +2678,10 @@ def _audio_duration_seconds(
 def _kame_provider_metrics_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
     if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
         return False
+    if isinstance(config.metrics_policy, Mapping) and config.metrics_policy:
+        if not _metadata_bool(config.metrics_policy.get("enabled"), default=True):
+            return False
+        return _metadata_bool(config.metrics_policy.get("log_provider_spans"), default=True)
     metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
     metrics = metadata.get("metrics") if isinstance(metadata, Mapping) else {}
     if not isinstance(metrics, Mapping):

@@ -716,7 +716,7 @@ def test_text_engine_emits_opt_in_caption_alias_events(monkeypatch):
         await engine.start(
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
-                metadata={"output_events": {"caption_aliases": True}},
+                output_events={"caption_aliases": True},
             )
         )
         await engine.receive_event(
@@ -767,7 +767,7 @@ def test_text_engine_emits_opt_in_audio_alias_events(monkeypatch):
         await engine.start(
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
-                metadata={"output_events": {"audio_aliases": True}},
+                output_events={"audio_aliases": True},
             )
         )
         await engine.receive_event(
@@ -2552,7 +2552,7 @@ def test_kame_engine_respects_metrics_policy_disabled(monkeypatch):
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
                 engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
-                metadata={"metrics": {"enabled": False}},
+                metrics_policy={"enabled": False},
             )
         )
         await engine.receive_event(
@@ -2599,7 +2599,7 @@ def test_kame_engine_respects_turn_span_metrics_policy(monkeypatch):
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
                 engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
-                metadata={"metrics": {"enabled": True, "log_turn_spans": False}},
+                metrics_policy={"enabled": True, "log_turn_spans": False},
             )
         )
         await engine.receive_event(
@@ -2646,7 +2646,7 @@ def test_kame_engine_respects_provider_span_metrics_policy():
                 frontend_model="gemma-4-E2B-it",
                 interface_audio_input="native_audio",
                 sidecar_base_url="http://voice.local:8765",
-                metadata={"metrics": {"enabled": True, "log_provider_spans": False}},
+                metrics_policy={"enabled": True, "log_provider_spans": False},
             )
         )
         await engine.receive_event(
@@ -6610,7 +6610,7 @@ def test_reference_sidecar_vllm_kame_audio_reflex_respects_provider_metrics_poli
         session_id="voice-123",
         engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
         interface_audio_input="native_audio",
-        metadata={"metrics": {"enabled": True, "log_provider_spans": False}},
+        metrics_policy={"enabled": True, "log_provider_spans": False},
     )
 
     payload = sidecar._understand_audio_sync(b"audio", VoiceAudioCodec.WEBM_OPUS)
@@ -9625,10 +9625,8 @@ def test_session_marks_latency_quality_target_misses(monkeypatch):
         session = RealtimeVoiceSession(
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
-                metadata={
-                    "quality_targets_ms": {
-                        "audio_to_partial_transcript_ms": 300,
-                    },
+                quality_targets_ms={
+                    "audio_to_partial_transcript_ms": 300,
                 },
             ),
             engine=PartialTranscriptEngine(),
@@ -9699,14 +9697,12 @@ def test_session_marks_kame_quality_target_misses(monkeypatch):
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
                 engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
-                metadata={
-                    "quality_targets_ms": {
-                        "kame_speech_end_to_interface_decision_ms": 500,
-                        "kame_final_transcript_to_interface_decision_ms": 500,
-                        "kame_speech_end_to_first_audio_ms": 3000,
-                        "kame_speech_end_to_playback_start_ms": 3000,
-                        "barge_in_confirmed_to_playback_stopped_ms": 150,
-                    },
+                quality_targets_ms={
+                    "kame_speech_end_to_interface_decision_ms": 500,
+                    "kame_final_transcript_to_interface_decision_ms": 500,
+                    "kame_speech_end_to_first_audio_ms": 3000,
+                    "kame_speech_end_to_playback_start_ms": 3000,
+                    "barge_in_confirmed_to_playback_stopped_ms": 150,
                 },
             ),
             engine=KameMetricsEngine(),

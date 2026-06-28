@@ -2036,6 +2036,9 @@ def _kame_metrics_policy_provider_spans_enabled(config: Optional[RealtimeVoiceSe
 
 
 def _caption_alias_events_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    if config is not None and isinstance(config.output_events, Mapping) and config.output_events:
+        if _metadata_bool(config.output_events.get("caption_aliases"), default=False):
+            return True
     metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
     output_events = metadata.get("output_events") if isinstance(metadata, Mapping) else {}
     if isinstance(output_events, Mapping) and _metadata_bool(output_events.get("caption_aliases"), default=False):
@@ -2045,6 +2048,8 @@ def _caption_alias_events_enabled(config: Optional[RealtimeVoiceSessionConfig]) 
 
 
 def _audio_alias_events_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    if config is not None and isinstance(config.output_events, Mapping) and config.output_events:
+        return _metadata_bool(config.output_events.get("audio_aliases"), default=False)
     metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
     output_events = metadata.get("output_events") if isinstance(metadata, Mapping) else {}
     return isinstance(output_events, Mapping) and _metadata_bool(output_events.get("audio_aliases"), default=False)

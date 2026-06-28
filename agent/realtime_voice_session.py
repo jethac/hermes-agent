@@ -404,7 +404,9 @@ class RealtimeVoiceSession:
         return metrics
 
     def _quality_target_misses(self, metrics: Mapping[str, Any]) -> List[dict]:
-        targets = self.config.metadata.get("quality_targets_ms") if isinstance(self.config.metadata, Mapping) else {}
+        targets: Any = self.config.quality_targets_ms
+        if not targets:
+            targets = self.config.metadata.get("quality_targets_ms") if isinstance(self.config.metadata, Mapping) else {}
         if not isinstance(targets, Mapping):
             return []
 
