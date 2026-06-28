@@ -7900,6 +7900,77 @@ def test_reference_sidecar_kame_speculative_asr_does_not_drive_reflex(monkeypatc
     asyncio.run(run())
 
 
+def test_reference_sidecar_kame_speculative_asr_attaches_to_oracle_turn(monkeypatch):
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                streaming_stt_base_url="http://streaming-stt.local:9000",
+                vllm_base_url="http://vllm.local:8000/v1",
+                vllm_model="google/gemma-4-E2B-it",
+            )
+        )
+        sidecar.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            interface_audio_input="native_audio",
+            asr_mode=RealtimeVoiceASRMode.SPECULATIVE,
+        )
+        sidecar._streaming_stt = object()
+        sidecar._asr_hypotheses_by_generation[1] = {
+            "asr_transcript": "open the exact file config dot yaml",
+            "asr_transcript_source": "asr",
+            "asr_transcript_confidence": 0.88,
+        }
+        sent_to_asr = []
+
+        async def fake_send_streaming_stt_event(event):
+            sent_to_asr.append(event)
+            return True
+
+        def fake_understand_audio(audio, codec):
+            return {
+                "text": "open config.yaml",
+                "intent": "Open the requested config file.",
+                "intent_source": "reflex_audio",
+                "route": "oracle_direct",
+                "transcript_source": "none",
+            }
+
+        sidecar._send_streaming_stt_event = fake_send_streaming_stt_event
+        monkeypatch.setattr(sidecar, "_understand_audio_sync", fake_understand_audio)
+
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                    "input_generation": 1,
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
+                break
+
+        assert sent_to_asr
+        final = seen[-1]
+        assert final.type == VoiceEventType.INTERFACE_INTENT_FINAL
+        assert final.payload["text"] == "open config.yaml"
+        assert final.payload["intent"] == "Open the requested config file."
+        assert final.payload["route"] == "oracle_direct"
+        assert final.payload["asr_transcript"] == "open the exact file config dot yaml"
+        assert final.payload["asr_transcript_source"] == "asr"
+        assert final.payload["asr_transcript_confidence"] == 0.88
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_health_marks_streaming_stt_only_after_bridge_health():
     runtime = ReferenceSidecarRuntimeConfig(
         streaming_stt_base_url="http://streaming-stt.local:9000",
