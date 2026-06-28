@@ -867,6 +867,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.asr_transcript_source == "asr"
         assert request.asr_transcript_confidence == 0.68
         assert request.oracle_text == "find the node from yesterday's meeting"
+        assert request.oracle_text_source == "asr"
         assert request.source == "discord_voice"
         assert request.user_id == "42"
         assert request.requested_response_style == {
@@ -887,6 +888,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert final.payload["kame_route_confidence"] == 0.81
         assert final.payload["kame_transcript"] == "find the note from yesterday's meeting"
         assert final.payload["kame_asr_transcript"] == "find the node from yesterday's meeting"
+        assert final.payload["kame_oracle_text_source"] == "asr"
         assert final.payload["kame_cancellation_token"] == "voice-123:1:cancel"
         assert intent.payload["route"] == "oracle_direct"
         assert intent.payload["route_confidence"] == 0.81
@@ -897,6 +899,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert oracle_request.payload["turn_id"] == "voice-123:1"
         assert oracle_request.payload["route_confidence"] == 0.81
         assert oracle_request.payload["text"] == "find the node from yesterday's meeting"
+        assert oracle_request.payload["oracle_text_source"] == "asr"
         assert oracle_request.payload["transcript"] == "find the note from yesterday's meeting"
         assert oracle_request.payload["asr_transcript"] == "find the node from yesterday's meeting"
         assert oracle_request.payload["requested_response_style"] == {
@@ -981,6 +984,7 @@ def test_kame_engine_drops_asr_evidence_when_asr_mode_disabled(monkeypatch):
         assert request.asr_transcript_source == ""
         assert request.asr_transcript_confidence is None
         assert request.oracle_text == "reflex wording"
+        assert request.oracle_text_source == "reflex_audio"
         final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
         intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
         oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
@@ -988,6 +992,7 @@ def test_kame_engine_drops_asr_evidence_when_asr_mode_disabled(monkeypatch):
         assert "asr_transcript" not in intent.payload
         assert "asr_transcript" not in oracle_request.payload
         assert oracle_request.payload["text"] == "reflex wording"
+        assert oracle_request.payload["oracle_text_source"] == "reflex_audio"
 
     asyncio.run(run())
 
@@ -1066,11 +1071,13 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
         assert defer.payload["text"] == "Checking that now."
         assert defer.payload["acknowledgement_text"] == "Checking that now."
         assert defer.payload["oracle_text"] == "check the deployment status"
+        assert defer.payload["oracle_text_source"] == "asr"
         assert oracle_request.payload["route"] == "defer"
         assert oracle_request.payload["turn_id"] == "voice-123:1"
         assert oracle_request.payload["interface_already_said"] == "Checking that now."
         assert oracle_request.payload["intent"] == "Check the deployment status."
         assert oracle_request.payload["text"] == "check the deployment status"
+        assert oracle_request.payload["oracle_text_source"] == "asr"
         assert "acknowledgement_text" not in oracle_request.payload
         assert acknowledgement.payload["text"] == "Checking that now."
         assert acknowledgement.payload["kame_interface_already_said"] == "Checking that now."

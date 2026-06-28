@@ -1754,6 +1754,7 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         "intent": request.intent,
         "intent_source": request.intent_source,
         "text": request.oracle_text,
+        "oracle_text_source": request.oracle_text_source,
         "playback_generation": playback_generation,
         "source": request.source,
         "transcript_source": request.transcript_source,
@@ -1810,6 +1811,7 @@ def _kame_defer_reply_payload_with_metrics(
         payload["text"] = acknowledgement
         payload["acknowledgement_text"] = acknowledgement
         payload["oracle_text"] = request.oracle_text
+        payload["oracle_text_source"] = request.oracle_text_source
     return payload
 
 

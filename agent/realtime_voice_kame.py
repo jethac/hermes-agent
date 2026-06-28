@@ -326,6 +326,16 @@ class KameOracleRequest:
 
         return (self.asr_transcript or self.transcript or self.intent).strip()
 
+    @property
+    def oracle_text_source(self) -> str:
+        """Return the source label for ``oracle_text`` so ASR evidence is explicit."""
+
+        if self.asr_transcript:
+            return self.asr_transcript_source or "asr"
+        if self.transcript:
+            return self.transcript_source or "reflex_audio"
+        return self.intent_source or "reflex_audio"
+
     def to_metadata(self) -> dict[str, Any]:
         response_style = _response_style(
             self.requested_response_style,
@@ -343,6 +353,7 @@ class KameOracleRequest:
             "kame_transcript_source": self.transcript_source,
             "kame_mode": self.mode,
             "kame_urgency": self.urgency,
+            "kame_oracle_text_source": self.oracle_text_source,
             "max_spoken_sentences": self.max_spoken_sentences,
             "voice_response_policy": response_style.get("policy") or "sentence_cap",
             "kame_requested_response_style": response_style,
