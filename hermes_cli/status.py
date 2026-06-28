@@ -25,6 +25,19 @@ from hermes_cli.runtime_provider import resolve_requested_provider
 from hermes_constants import OPENROUTER_MODELS_URL
 from tools.tool_backend_helpers import managed_nous_tools_enabled
 
+REALTIME_VOICE_KAME_STATUS_LATENCIES = (
+    ("final_transcript_to_interface_decision", "reflex"),
+    ("interface_decision_to_local_first_audio", "local_audio"),
+    ("interface_decision_to_first_audio", "kame_audio"),
+    ("interface_decision_to_oracle_accepted", "oracle_accept"),
+    ("oracle_accepted_to_first_token", "oracle_token"),
+    ("oracle_first_token_to_first_spoken_text", "oracle_speech"),
+    ("oracle_first_token_to_first_tts_audio", "oracle_tts"),
+    ("first_tts_audio_to_playback_start", "playback"),
+    ("oracle_verbatim_asr", "asr_record"),
+    ("barge_in_confirmed_to_playback_stopped", "barge_stop"),
+)
+
 def check_mark(ok: bool) -> str:
     if ok:
         return color("✓", Colors.GREEN)
@@ -169,6 +182,10 @@ def _realtime_voice_evidence_line(production: Mapping[str, Any]) -> str:
             _realtime_voice_latency_summary_part(latency, "final_transcript_to_first_text", "text"),
             _realtime_voice_latency_summary_part(latency, "final_transcript_to_first_audio", "audio"),
             _realtime_voice_latency_summary_part(latency, "barge_in_ack", "barge"),
+            *(
+                _realtime_voice_latency_summary_part(latency, key, label)
+                for key, label in REALTIME_VOICE_KAME_STATUS_LATENCIES
+            ),
         ]
         parts.extend(part for part in metric_parts if part)
     parts.extend(_realtime_voice_stack_latency_summary_parts(summary))
@@ -218,9 +235,21 @@ def _realtime_voice_stack_latency_summary_parts(summary: Any) -> list[str]:
             continue
         audio = _realtime_voice_latency_summary_part(
             stack_latency,
-            "final_transcript_to_first_audio",
-            "audio",
+            "interface_decision_to_first_audio",
+            "kame_audio",
         )
+        if not audio:
+            audio = _realtime_voice_latency_summary_part(
+                stack_latency,
+                "interface_decision_to_local_first_audio",
+                "local_audio",
+            )
+        if not audio:
+            audio = _realtime_voice_latency_summary_part(
+                stack_latency,
+                "final_transcript_to_first_audio",
+                "audio",
+            )
         if not audio:
             audio = _realtime_voice_latency_summary_part(
                 stack_latency,

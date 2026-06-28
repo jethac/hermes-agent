@@ -40,6 +40,36 @@ ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS = {
     ),
 }
 
+KAME_LATENCY_METRICS = (
+    ("speech_end_to_interface_decision", "kame_speech_end_to_interface_decision_ms"),
+    ("final_transcript_to_interface_decision", "kame_final_transcript_to_interface_decision_ms"),
+    ("interface_decision_to_local_first_audio", "kame_interface_decision_to_local_first_audio_ms"),
+    ("interface_decision_to_first_audio", "kame_interface_decision_to_first_audio_ms"),
+    ("interface_decision_to_oracle_accepted", "kame_interface_decision_to_oracle_accepted_ms"),
+    ("oracle_accepted_to_first_token", "kame_oracle_accepted_to_first_token_ms"),
+    ("oracle_first_token_to_first_spoken_text", "kame_oracle_first_token_to_first_spoken_text_ms"),
+    ("oracle_first_token_to_first_tts_audio", "kame_oracle_first_token_to_first_tts_audio_ms"),
+    ("first_tts_audio_to_playback_start", "kame_first_tts_audio_to_playback_start_ms"),
+    ("oracle_total_stream", "kame_oracle_total_stream_ms"),
+    ("oracle_verbatim_asr", "oracle_verbatim_asr_ms"),
+    ("barge_in_confirmed_to_playback_stopped", "barge_in_confirmed_to_playback_stopped_ms"),
+)
+
+KAME_LATENCY_REPORT_LABELS = (
+    "speech_end_to_interface_decision",
+    "final_transcript_to_interface_decision",
+    "interface_decision_to_local_first_audio",
+    "interface_decision_to_first_audio",
+    "interface_decision_to_oracle_accepted",
+    "oracle_accepted_to_first_token",
+    "oracle_first_token_to_first_spoken_text",
+    "oracle_first_token_to_first_tts_audio",
+    "first_tts_audio_to_playback_start",
+    "oracle_total_stream",
+    "oracle_verbatim_asr",
+    "barge_in_confirmed_to_playback_stopped",
+)
+
 ALPHA_REQUIRED_TTS_TEXTS = (
     "Hello from Hermes.",
     "Can you hear me clearly?",
@@ -233,7 +263,7 @@ def summarize_realtime_voice_smoke_report_runs(
 
 def _latency_summary_for_entries(entries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     by_kind = _entries_by_kind(entries)
-    return {
+    latency = {
         "audio_to_partial_transcript": _latency_summary(
             entry.get("transcript_partial_ms")
             for entry in [*by_kind.get("audio_fixture", []), *by_kind.get("audio_session", [])]
@@ -255,6 +285,11 @@ def _latency_summary_for_entries(entries: Sequence[Mapping[str, Any]]) -> dict[s
             for entry in by_kind.get("barge_in", [])
         ),
     }
+    for label, metric_key in KAME_LATENCY_METRICS:
+        metric = _latency_summary(_entry_metric_values(entries, metric_key))
+        if metric.get("count"):
+            latency[label] = metric
+    return latency
 
 
 def _latency_summary_by_stack(
@@ -1142,6 +1177,14 @@ def _nonnegative_int(value: Any) -> int | None:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+def _entry_metric_values(entries: Sequence[Mapping[str, Any]], key: str) -> Iterable[Any]:
+    for entry in entries:
+        metrics = entry.get("metrics")
+        if isinstance(metrics, Mapping):
+            yield metrics.get(key)
+        yield entry.get(key)
 
 
 def _latency_summary(values: Iterable[Any]) -> dict[str, Any]:

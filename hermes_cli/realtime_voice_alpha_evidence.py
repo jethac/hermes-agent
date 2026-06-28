@@ -18,6 +18,7 @@ from urllib.request import Request, urlopen
 
 from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_AUDIO_FIXTURES,
+    KAME_LATENCY_REPORT_LABELS,
     load_realtime_voice_smoke_report,
     summarize_realtime_voice_smoke_report_runs,
     validate_realtime_voice_alpha_report_runs,
@@ -851,6 +852,7 @@ def _print_summary(runs: list[tuple[str, list[dict[str, Any]]]]) -> None:
         "final_transcript_to_first_text",
         "final_transcript_to_first_audio",
         "barge_in_ack",
+        *KAME_LATENCY_REPORT_LABELS,
     ):
         metric = latency.get(label)
         if not isinstance(metric, dict) or not metric.get("count"):

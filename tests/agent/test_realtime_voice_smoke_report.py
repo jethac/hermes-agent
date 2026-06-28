@@ -574,13 +574,25 @@ def test_load_realtime_voice_smoke_report_round_trips_unicode(tmp_path):
 
 def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     path = tmp_path / "voice-smoke.json"
-    path.write_text(json.dumps(_valid_alpha_report(), ensure_ascii=False), encoding="utf-8")
+    report = _valid_alpha_report()
+    for entry in report:
+        if entry.get("kind") == "session_turn":
+            entry["metrics"] = {
+                "kame_final_transcript_to_interface_decision_ms": 27,
+                "kame_interface_decision_to_oracle_accepted_ms": 35,
+                "kame_oracle_accepted_to_first_token_ms": 120,
+            }
+            break
+    path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
 
     assert realtime_voice_report_main([str(path), "--alpha"]) == 0
     output = capsys.readouterr().out
     assert "Realtime voice smoke report OK" in output
     assert "audio_to_partial_transcript: p50=90ms p90=90ms p95=90ms max=90ms n=6" in output
     assert "final_transcript_to_first_text: p50=90ms p90=90ms p95=90ms max=90ms n=4" in output
+    assert "final_transcript_to_interface_decision: p50=27ms p90=27ms p95=27ms max=27ms n=1" in output
+    assert "interface_decision_to_oracle_accepted: p50=35ms p90=35ms p95=35ms max=35ms n=1" in output
+    assert "oracle_accepted_to_first_token: p50=120ms p90=120ms p95=120ms max=120ms n=1" in output
     assert "barge_in_ack: p50=45ms p90=45ms p95=45ms max=45ms n=1" in output
     assert "stack unknown_engine|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model" in output
 
@@ -833,6 +845,27 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         for entry in report:
             if entry.get("kind") == "audio_fixture":
                 entry["transcript_partial_ms"] = partial_ms
+            if entry.get("kind") == "audio_session":
+                entry["metrics"] = {
+                    "kame_speech_end_to_interface_decision_ms": 20 + index,
+                    "oracle_verbatim_asr_ms": 35 + index,
+                }
+            if entry.get("kind") == "session_turn":
+                entry["metrics"] = {
+                    "kame_final_transcript_to_interface_decision_ms": 25 + index,
+                    "kame_interface_decision_to_local_first_audio_ms": 70 + index,
+                    "kame_interface_decision_to_first_audio_ms": 140 + index,
+                    "kame_interface_decision_to_oracle_accepted_ms": 30 + index,
+                    "kame_oracle_accepted_to_first_token_ms": 120 + index,
+                    "kame_oracle_first_token_to_first_spoken_text_ms": 40 + index,
+                    "kame_oracle_first_token_to_first_tts_audio_ms": 115 + index,
+                    "kame_first_tts_audio_to_playback_start_ms": 12 + index,
+                    "kame_oracle_total_stream_ms": 300 + index,
+                }
+            if entry.get("kind") == "barge_in":
+                entry["metrics"] = {
+                    "barge_in_confirmed_to_playback_stopped_ms": 18 + index,
+                }
         path = tmp_path / f"voice-smoke-{index}.json"
         path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
         runs.append((str(path), load_realtime_voice_smoke_report(path)))
@@ -858,6 +891,36 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         "p95": 90,
         "max": 90,
     }
+    assert summary["latency_ms"]["speech_end_to_interface_decision"] == {
+        "count": 6,
+        "p50": 21,
+        "p90": 22,
+        "p95": 22,
+        "max": 22,
+    }
+    assert summary["latency_ms"]["final_transcript_to_interface_decision"] == {
+        "count": 6,
+        "p50": 26,
+        "p90": 27,
+        "p95": 27,
+        "max": 27,
+    }
+    assert summary["latency_ms"]["interface_decision_to_local_first_audio"]["p90"] == 72
+    assert summary["latency_ms"]["interface_decision_to_first_audio"]["p90"] == 142
+    assert summary["latency_ms"]["interface_decision_to_oracle_accepted"]["p90"] == 32
+    assert summary["latency_ms"]["oracle_accepted_to_first_token"]["p90"] == 122
+    assert summary["latency_ms"]["oracle_first_token_to_first_spoken_text"]["p90"] == 42
+    assert summary["latency_ms"]["oracle_first_token_to_first_tts_audio"]["p90"] == 117
+    assert summary["latency_ms"]["first_tts_audio_to_playback_start"]["p90"] == 14
+    assert summary["latency_ms"]["oracle_total_stream"]["p90"] == 302
+    assert summary["latency_ms"]["oracle_verbatim_asr"]["p90"] == 37
+    assert summary["latency_ms"]["barge_in_confirmed_to_playback_stopped"] == {
+        "count": 3,
+        "p50": 19,
+        "p90": 20,
+        "p95": 20,
+        "max": 20,
+    }
     stack_summary = summary["latency_by_stack"][
         "unknown_engine|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model"
     ]
@@ -878,6 +941,8 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         "tts_voice": "",
     }
     assert stack_summary["latency_ms"]["audio_to_partial_transcript"]["p90"] == 120
+    assert stack_summary["latency_ms"]["oracle_accepted_to_first_token"]["p90"] == 122
+    assert stack_summary["latency_ms"]["barge_in_confirmed_to_playback_stopped"]["p90"] == 20
 
 
 def test_realtime_voice_report_cli_returns_nonzero_for_failed_report(tmp_path, capsys):

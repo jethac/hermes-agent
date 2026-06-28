@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from agent.realtime_voice_smoke_report import (
+    KAME_LATENCY_REPORT_LABELS,
     load_realtime_voice_smoke_report,
     summarize_realtime_voice_smoke_report_runs,
     validate_realtime_voice_alpha_report_runs,
@@ -120,6 +121,7 @@ def main(argv: list[str] | None = None) -> int:
             "final_transcript_to_first_text",
             "final_transcript_to_first_audio",
             "barge_in_ack",
+            *KAME_LATENCY_REPORT_LABELS,
         ):
             metric = latency.get(label) if isinstance(latency, dict) else None
             if not isinstance(metric, dict) or not metric.get("count"):
