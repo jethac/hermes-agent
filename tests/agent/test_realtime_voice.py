@@ -1559,6 +1559,14 @@ def test_kame_engine_sends_oracle_timing_metrics_to_tts_sidecar():
     asyncio.run(run())
 
 
+def test_kame_engine_measures_oracle_acceptance_from_interface_decision():
+    engine = KameInterfaceOracleEngine(oracle=FakeOracle())
+    engine._interface_decision_at_by_generation[7] = 10.0
+
+    assert engine._interface_decision_metric_start(7, fallback=10.2) == 10.0
+    assert engine._interface_decision_metric_start(8, fallback=10.2) == 10.2
+
+
 def test_kame_engine_local_route_speaks_without_oracle(monkeypatch):
     class UnexpectedOracle:
         async def stream_answer_for_request(self, request):

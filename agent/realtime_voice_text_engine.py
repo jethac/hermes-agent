@@ -797,7 +797,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 )
                 oracle_accepted_at = time.perf_counter()
                 kame_timing_metrics["kame_interface_decision_to_oracle_accepted_ms"] = _elapsed_perf_ms(
-                    turn_started_at,
+                    self._interface_decision_metric_start(playback_generation, fallback=turn_started_at),
                     oracle_accepted_at,
                 )
                 sync_kame_timing_metrics()
@@ -1219,6 +1219,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if route in {KameRoute.LOCAL.value, KameRoute.REJECT_OR_CLARIFY.value}:
             metrics["kame_interface_decision_to_local_first_audio_ms"] = elapsed
         return metrics
+
+    def _interface_decision_metric_start(self, playback_generation: int, *, fallback: float) -> float:
+        return self._interface_decision_at_by_generation.get(playback_generation, fallback)
 
     def _tts_sync(self, text: str) -> str:
         from tools.tts_tool import text_to_speech_tool
