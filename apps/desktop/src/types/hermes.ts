@@ -103,6 +103,7 @@ export interface RealtimeVoiceProfileRequest {
   google_search?: boolean
   interface_base_url?: string
   interface_audio_input?: string
+  interface_provider?: string
   interface_max_audio_seconds?: number
   local_confidence_threshold?: number
   model?: string
@@ -117,9 +118,11 @@ export interface RealtimeVoiceProfileRequest {
   asr_mode?: string
   streaming_stt_base_url?: string
   streaming_stt_model?: string
+  asr_provider?: string
   streaming_tts_base_url?: string
   streaming_tts_model?: string
   streaming_tts_voice?: string
+  tts_provider?: string
   voice_response_policy?: string
   voice?: string
 }

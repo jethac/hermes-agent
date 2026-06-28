@@ -135,6 +135,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reflex/interface model for --preset kame",
     )
     parser.add_argument(
+        "--kame-interface-provider",
+        default="gemma4",
+        help="Interface/reflex provider label for --preset kame",
+    )
+    parser.add_argument(
         "--kame-interface-audio-input",
         default="auto",
         choices=("auto", "native_audio", "text_fallback"),
@@ -158,6 +163,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="ASR role for --preset kame",
     )
     parser.add_argument(
+        "--kame-asr-provider",
+        default="streaming_stt",
+        help="ASR provider label for --preset kame oracle-verbatim evidence",
+    )
+    parser.add_argument(
         "--kame-preferred-local-oracle-model",
         default=DEFAULT_KAME_ORACLE_MODEL,
         help="Preferred local Hermes oracle model label for --preset kame",
@@ -167,6 +177,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="sentence_cap",
         choices=("sentence_cap", "brief_summary", "full"),
         help="How KAME should shape spoken oracle responses",
+    )
+    parser.add_argument(
+        "--kame-tts-provider",
+        default="streaming_tts",
+        help="TTS provider label for --preset kame spoken output",
     )
     parser.add_argument(
         "--kame-fallback-policy",
@@ -262,15 +277,18 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.preset == "kame":
             profile = build_kame_realtime_voice_profile(
+                reflex_provider=str(args.kame_interface_provider or "gemma4"),
                 reflex_model=str(args.kame_reflex_model or DEFAULT_KAME_REFLEX_MODEL),
                 interface_base_url=str(args.kame_interface_base_url or ""),
                 interface_audio_input=str(args.kame_interface_audio_input or "auto"),
                 interface_max_audio_seconds=float(args.kame_interface_max_audio_seconds or 30.0),
                 asr_mode=str(args.kame_asr_mode or "on_escalation"),
+                asr_provider=str(args.kame_asr_provider or "streaming_stt"),
                 preferred_local_oracle_model=str(
                     args.kame_preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL
                 ),
                 voice_response_policy=str(args.kame_voice_response_policy or "sentence_cap"),
+                tts_provider=str(args.kame_tts_provider or "streaming_tts"),
                 fallback_policy=str(args.kame_fallback_policy or "legacy_voice"),
                 oracle_base_url=str(args.kame_oracle_base_url or ""),
                 oracle_provider_name=str(
@@ -760,13 +778,16 @@ def build_gemini_live_voice_profile(
 
 def build_kame_realtime_voice_profile(
     *,
+    reflex_provider: str = "gemma4",
     reflex_model: str = DEFAULT_KAME_REFLEX_MODEL,
     interface_base_url: str = "",
     interface_audio_input: str = "auto",
     interface_max_audio_seconds: float = 30.0,
     asr_mode: str = "on_escalation",
+    asr_provider: str = "streaming_stt",
     preferred_local_oracle_model: str = DEFAULT_KAME_ORACLE_MODEL,
     voice_response_policy: str = "sentence_cap",
+    tts_provider: str = "streaming_tts",
     fallback_policy: str = "legacy_voice",
     oracle_base_url: str = "",
     oracle_provider_name: str = DEFAULT_KAME_ORACLE_PROVIDER_NAME,
@@ -853,7 +874,7 @@ def build_kame_realtime_voice_profile(
         "barge_in_stop_playback_deadline_ms": stop_deadline_ms,
         "pre_roll_ms": 300,
         "require_live_like": True,
-        "frontend_provider": "gemma4",
+        "frontend_provider": str(reflex_provider or "gemma4"),
         "frontend_model": str(reflex_model or DEFAULT_KAME_REFLEX_MODEL),
         "interface_base_url": interface_url,
         "vllm_base_url": interface_url,
@@ -863,13 +884,13 @@ def build_kame_realtime_voice_profile(
         "interface_max_audio_seconds": max_audio_seconds,
         "interface_audio_input": audio_mode,
         "asr_mode": asr,
-        "asr_provider": "streaming_stt",
+        "asr_provider": str(asr_provider or "streaming_stt"),
         "asr_model": str(streaming_stt_model or DEFAULT_STREAMING_STT_MODEL),
         "preferred_local_oracle_model": oracle_model,
         "oracle_timeout_seconds": 60.0,
         "max_spoken_sentences": 2,
         "voice_response_policy": response_policy,
-        "tts_provider": "streaming_tts",
+        "tts_provider": str(tts_provider or "streaming_tts"),
         "tts_model": str(streaming_tts_model or DEFAULT_STREAMING_TTS_MODEL),
         "tts_voice": str(streaming_tts_voice or ""),
         "fallback_policy": fallback,

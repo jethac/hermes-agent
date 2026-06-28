@@ -1456,10 +1456,12 @@ class RealtimeVoiceProfileApply(BaseModel):
     model: str = ""
     voice: str = ""
     api_key_env: str = ""
+    interface_provider: str = "gemma4"
     interface_base_url: str = ""
     interface_audio_input: str = "auto"
     interface_max_audio_seconds: float = 30.0
     asr_mode: str = "on_escalation"
+    asr_provider: str = "streaming_stt"
     oracle_model: str = ""
     oracle_base_url: str = ""
     oracle_provider_name: str = ""
@@ -1468,6 +1470,7 @@ class RealtimeVoiceProfileApply(BaseModel):
     streaming_stt_base_url: str = ""
     streaming_tts_base_url: str = ""
     streaming_stt_model: str = ""
+    tts_provider: str = "streaming_tts"
     streaming_tts_model: str = ""
     streaming_tts_voice: str = ""
     barge_in_min_rms: int = 350
@@ -15214,13 +15217,16 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
         )
     if preset in {"kame", "kame_interface_oracle"}:
         return build_kame_realtime_voice_profile(
+            reflex_provider=body.interface_provider or "gemma4",
             reflex_model=body.model or DEFAULT_KAME_REFLEX_MODEL,
             interface_base_url=body.interface_base_url,
             interface_audio_input=body.interface_audio_input or "auto",
             interface_max_audio_seconds=body.interface_max_audio_seconds,
             asr_mode=body.asr_mode or "on_escalation",
+            asr_provider=body.asr_provider or "streaming_stt",
             preferred_local_oracle_model=body.oracle_model or DEFAULT_KAME_ORACLE_MODEL,
             voice_response_policy=body.voice_response_policy or "sentence_cap",
+            tts_provider=body.tts_provider or "streaming_tts",
             fallback_policy=body.fallback_policy or "legacy_voice",
             oracle_base_url=body.oracle_base_url,
             oracle_provider_name=body.oracle_provider_name,

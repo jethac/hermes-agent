@@ -252,6 +252,11 @@ function KameControls({
         title="Interface base URL"
       />
       <ListRow
+        action={textInput('voice.realtime.frontend_provider', 'gemma4')}
+        description="Provider label for the reflex/interface model."
+        title="Interface provider"
+      />
+      <ListRow
         action={select('voice.realtime.interface_audio_input', 'native_audio', KAME_AUDIO_INPUT_OPTIONS)}
         description="How the reflex receives user turns."
         title="Interface audio input"
@@ -272,6 +277,11 @@ function KameControls({
         title="ASR bridge URL"
       />
       <ListRow
+        action={textInput('voice.realtime.asr_provider', 'streaming_stt')}
+        description="Provider label for oracle-verbatim ASR evidence."
+        title="ASR provider"
+      />
+      <ListRow
         action={textInput('voice.realtime.streaming_stt_model', 'portable-streaming-asr')}
         description="ASR model name sent to the bridge."
         title="ASR model"
@@ -280,6 +290,11 @@ function KameControls({
         action={textInput('voice.realtime.streaming_tts_base_url', 'http://127.0.0.1:8769')}
         description="TTS bridge used for spoken reflex and oracle responses."
         title="TTS bridge URL"
+      />
+      <ListRow
+        action={textInput('voice.realtime.tts_provider', 'streaming_tts')}
+        description="Provider label for spoken output."
+        title="TTS provider"
       />
       <ListRow
         action={textInput('voice.realtime.streaming_tts_model', 'portable-streaming-voice')}
@@ -494,6 +509,9 @@ export function RealtimeVoiceSetupPanel({
                 ''
             )
           : undefined,
+        interface_provider: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.frontend_provider') ?? 'gemma4') || 'gemma4'
+          : undefined,
         interface_audio_input: selectedIsKame
           ? String(getNested(config, 'voice.realtime.interface_audio_input') ?? 'native_audio') || 'native_audio'
           : undefined,
@@ -502,6 +520,9 @@ export function RealtimeVoiceSetupPanel({
           : undefined,
         asr_mode: selectedIsKame
           ? String(getNested(config, 'voice.realtime.asr_mode') ?? 'on_escalation') || 'on_escalation'
+          : undefined,
+        asr_provider: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.asr_provider') ?? 'streaming_stt') || 'streaming_stt'
           : undefined,
         oracle_model: selectedIsKame
           ? String(
@@ -519,6 +540,9 @@ export function RealtimeVoiceSetupPanel({
           : undefined,
         fallback_policy: selectedIsKame
           ? String(getNested(config, 'voice.realtime.fallback_policy') ?? 'legacy_voice') || 'legacy_voice'
+          : undefined,
+        tts_provider: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.tts_provider') ?? 'streaming_tts') || 'streaming_tts'
           : undefined,
         allow_local_greetings: selectedIsKame
           ? Boolean(getNested(config, 'voice.realtime.routing.allow_local_greetings') ?? true)

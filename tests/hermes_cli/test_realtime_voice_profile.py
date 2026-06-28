@@ -404,6 +404,28 @@ def test_kame_preset_can_set_fallback_policy(capsys):
     assert data["voice"]["realtime"]["fallback_policy"] == "fail_closed"
 
 
+def test_kame_preset_can_set_provider_labels(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--kame-interface-provider",
+            "openai_compatible",
+            "--kame-asr-provider",
+            "nemotron_speech",
+            "--kame-tts-provider",
+            "magpie_tts",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["frontend_provider"] == "openai_compatible"
+    assert realtime["asr_provider"] == "nemotron_speech"
+    assert realtime["tts_provider"] == "magpie_tts"
+
+
 def test_kame_preset_rejects_invalid_interface_max_audio_seconds(capsys):
     result = realtime_voice_profile.main(
         [

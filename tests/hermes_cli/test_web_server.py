@@ -7130,10 +7130,12 @@ class TestRealtimeVoiceWebSocket:
         body = self.ws_module.RealtimeVoiceProfileApply(
             preset="kame",
             model="gemma-4-E2B-it",
+            interface_provider="openai_compatible",
             interface_base_url="http://spark.local:8000/v1",
             interface_audio_input="native_audio",
             interface_max_audio_seconds=18.0,
             asr_mode="on_escalation",
+            asr_provider="nemotron_speech",
             oracle_model="gemma-4-26B-A4B-it",
             oracle_base_url="http://spark.local:8001/v1",
             oracle_provider_name="Spark Oracle",
@@ -7141,6 +7143,7 @@ class TestRealtimeVoiceWebSocket:
             fallback_policy="fail_closed",
             streaming_stt_base_url="http://spark.local:8767",
             streaming_tts_base_url="http://spark.local:8768",
+            tts_provider="magpie_tts",
             streaming_tts_voice="spark-voice-1",
             barge_in_min_rms=420,
             barge_in_min_speech_ms=160,
@@ -7150,18 +7153,21 @@ class TestRealtimeVoiceWebSocket:
         profile = self.ws_module._realtime_voice_profile_for_request(body)
 
         assert profile["engine"] == "kame_interface_oracle"
+        assert profile["frontend_provider"] == "openai_compatible"
         assert profile["frontend_model"] == "gemma-4-E2B-it"
         assert profile["interface_base_url"] == "http://spark.local:8000/v1"
         assert profile["vllm_base_url"] == "http://spark.local:8000/v1"
         assert profile["interface_audio_input"] == "native_audio"
         assert profile["interface_max_audio_seconds"] == 18.0
         assert profile["asr_mode"] == "on_escalation"
+        assert profile["asr_provider"] == "nemotron_speech"
         assert profile["oracle_provider"] == "custom"
         assert profile["oracle_provider_name"] == "Spark Oracle"
         assert profile["oracle_model"] == "gemma-4-26B-A4B-it"
         assert profile["oracle_base_url"] == "http://spark.local:8001/v1"
         assert profile["voice_response_policy"] == "brief_summary"
         assert profile["fallback_policy"] == "fail_closed"
+        assert profile["tts_provider"] == "magpie_tts"
         assert profile["streaming_stt_base_url"] == "http://spark.local:8767"
         assert profile["streaming_tts_base_url"] == "http://spark.local:8768"
         assert profile["streaming_tts_voice"] == "spark-voice-1"

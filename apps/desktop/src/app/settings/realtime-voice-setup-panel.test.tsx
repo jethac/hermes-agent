@@ -70,6 +70,7 @@ const config: HermesConfigRecord = {
   voice: {
     realtime: {
       asr_mode: 'on_escalation',
+      asr_provider: 'nemotron_speech',
       barge_in_min_rms: 420,
       barge_in_min_speech_ms: 160,
       barge_in_stop_playback_deadline_ms: 140,
@@ -96,6 +97,7 @@ const config: HermesConfigRecord = {
       streaming_tts_base_url: 'http://127.0.0.1:8769',
       streaming_tts_model: 'sonic-3.5',
       streaming_tts_voice: '5ee9feff-1265-424a-9d7f-8e4d431a12c7',
+      tts_provider: 'cartesia',
       voice_response_policy: 'brief_summary'
     }
   }
@@ -126,10 +128,13 @@ describe('RealtimeVoiceSetupPanel', () => {
 
     expect(await screen.findByText('KAME Reflex / Oracle')).toBeTruthy()
     expect(screen.getByText('Interface base URL')).toBeTruthy()
+    expect(screen.getByText('Interface provider')).toBeTruthy()
     expect(screen.getByText('Interface audio input')).toBeTruthy()
     expect(screen.getByText('ASR mode')).toBeTruthy()
+    expect(screen.getByText('ASR provider')).toBeTruthy()
     expect(screen.getByText('Fallback policy')).toBeTruthy()
     expect(screen.getByText('TTS voice')).toBeTruthy()
+    expect(screen.getByText('TTS provider')).toBeTruthy()
     expect(screen.getByText('Barge-in RMS')).toBeTruthy()
     expect(screen.getByText('Local confidence')).toBeTruthy()
 
@@ -141,11 +146,13 @@ describe('RealtimeVoiceSetupPanel', () => {
         allow_local_clarifications: false,
         allow_local_greetings: false,
         asr_mode: 'on_escalation',
+        asr_provider: 'nemotron_speech',
         barge_in_min_rms: 420,
         barge_in_min_speech_ms: 160,
         barge_in_stop_playback_deadline_ms: 140,
         fallback_policy: 'fail_closed',
         interface_base_url: 'http://spark.local:8000/v1',
+        interface_provider: 'gemma4',
         interface_audio_input: 'native_audio',
         interface_max_audio_seconds: 24,
         local_confidence_threshold: 0.88,
@@ -160,6 +167,7 @@ describe('RealtimeVoiceSetupPanel', () => {
         streaming_tts_base_url: 'http://127.0.0.1:8769',
         streaming_tts_model: 'sonic-3.5',
         streaming_tts_voice: '5ee9feff-1265-424a-9d7f-8e4d431a12c7',
+        tts_provider: 'cartesia',
         voice_response_policy: 'brief_summary'
       })
     )
