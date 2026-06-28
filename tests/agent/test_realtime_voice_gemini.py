@@ -82,9 +82,34 @@ async def test_gemini_live_start_sends_setup_and_ready_state():
     assert setup["outputAudioTranscription"] == {}
     assert setup["speechConfig"]["voiceConfig"]["prebuiltVoiceConfig"]["voiceName"] == "Puck"
     assert setup["tools"][0]["functionDeclarations"][0]["name"] == "ask_hermes_oracle"
+    instruction = setup["systemInstruction"]["parts"][0]["text"]
+    assert "already connected" in instruction
+    assert "never claim Hermes cannot hear" in instruction
     assert event.type == VoiceEventType.FRONTEND_STATE
     assert event.payload["provider"] == "gemini_live"
     assert event.payload["tool_calls"] is True
+
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_gemini_live_appends_capability_honesty_to_custom_instructions():
+    fake_ws = FakeGeminiWebSocket()
+
+    async def connector(_url, _timeout):
+        return fake_ws
+
+    session = GeminiLiveFrontendSession(
+        GeminiLiveFrontendConfig(api_key="gemini-secret", instructions="Use terse answers."),
+        connector=connector,
+    )
+
+    await session.start(RealtimeVoiceSessionConfig(session_id="voice-1"))
+
+    instruction = fake_ws.sent[0]["setup"]["systemInstruction"]["parts"][0]["text"]
+    assert instruction.startswith("Use terse answers.")
+    assert "already connected" in instruction
+    assert "never claim Hermes cannot hear" in instruction
 
     await session.close()
 

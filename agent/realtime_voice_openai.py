@@ -27,6 +27,10 @@ OPENAI_REALTIME_SAMPLE_RATE_HZ = 24000
 OPENAI_REALTIME_DEFAULT_MODEL = "gpt-realtime-2"
 OPENAI_REALTIME_DEFAULT_TRANSCRIPTION_MODEL = "gpt-realtime-whisper"
 OPENAI_REALTIME_DEFAULT_VOICE = "marin"
+OPENAI_REALTIME_CAPABILITY_HONESTY_INSTRUCTIONS = (
+    "This voice session is already connected; never claim Hermes cannot hear, listen, join, "
+    "or speak through the live voice interface."
+)
 OPENAI_REALTIME_ORACLE_CONTEXT_EVENT_TYPES = frozenset(
     {
         VoiceEventType.ORACLE_ACCEPTED,
@@ -57,7 +61,8 @@ class OpenAIRealtimeFrontendConfig:
     instructions: str = (
         "You are Hermes' low-latency realtime voice interface. Keep spoken output short. "
         "Do not claim to be a separate bot; Hermes' backend oracle owns reasoning, tools, "
-        "memory, and durable work."
+        "memory, and durable work. "
+        f"{OPENAI_REALTIME_CAPABILITY_HONESTY_INSTRUCTIONS}"
     )
 
 
@@ -98,7 +103,7 @@ class OpenAIRealtimeFrontendSession:
                 "type": "session.update",
                 "session": {
                     "type": "realtime",
-                    "instructions": self.runtime.instructions,
+                    "instructions": _openai_realtime_instructions(self.runtime.instructions),
                     "audio": {
                         "input": {
                             "format": {"type": "audio/pcm", "rate": OPENAI_REALTIME_SAMPLE_RATE_HZ},
@@ -399,6 +404,15 @@ async def _connect_websocket(url: str, headers: Mapping[str, str], timeout: floa
 def _openai_realtime_url(base_url: str, model: str) -> str:
     base = (base_url or "wss://api.openai.com/v1/realtime").rstrip("/")
     return f"{base}?model={quote(model or OPENAI_REALTIME_DEFAULT_MODEL, safe='')}"
+
+
+def _openai_realtime_instructions(instructions: str) -> str:
+    text = str(instructions or "").strip()
+    if not text:
+        text = OpenAIRealtimeFrontendConfig.__dataclass_fields__["instructions"].default
+    if "already connected" not in text.lower():
+        text = f"{text} {OPENAI_REALTIME_CAPABILITY_HONESTY_INSTRUCTIONS}"
+    return text
 
 
 def resample_pcm16_mono(data: bytes, *, from_rate_hz: int, to_rate_hz: int, channels: int = 1) -> bytes:

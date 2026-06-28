@@ -77,6 +77,9 @@ async def test_openai_realtime_start_sends_session_update_and_ready_state():
     ]
     assert fake_ws.sent[0]["type"] == "session.update"
     assert "tools" not in fake_ws.sent[0]["session"]
+    instructions = fake_ws.sent[0]["session"]["instructions"]
+    assert "already connected" in instructions
+    assert "never claim Hermes cannot hear" in instructions
     assert fake_ws.sent[0]["session"]["audio"]["input"]["format"] == {
         "type": "audio/pcm",
         "rate": OPENAI_REALTIME_SAMPLE_RATE_HZ,
@@ -85,6 +88,28 @@ async def test_openai_realtime_start_sends_session_update_and_ready_state():
     assert event.type == VoiceEventType.FRONTEND_STATE
     assert event.payload["provider"] == "openai_realtime"
     assert event.payload["response_cancel"] is True
+
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_openai_realtime_appends_capability_honesty_to_custom_instructions():
+    fake_ws = FakeOpenAIWebSocket()
+
+    async def connector(_url, _headers, _timeout):
+        return fake_ws
+
+    session = OpenAIRealtimeFrontendSession(
+        OpenAIRealtimeFrontendConfig(api_key="sk-test", instructions="Use terse answers."),
+        connector=connector,
+    )
+
+    await session.start(RealtimeVoiceSessionConfig(session_id="voice-1"))
+
+    instructions = fake_ws.sent[0]["session"]["instructions"]
+    assert instructions.startswith("Use terse answers.")
+    assert "already connected" in instructions
+    assert "never claim Hermes cannot hear" in instructions
 
     await session.close()
 

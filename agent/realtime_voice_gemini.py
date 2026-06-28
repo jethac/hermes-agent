@@ -37,6 +37,10 @@ GEMINI_LIVE_BASE_INSTRUCTIONS = (
     "Do not claim to be a separate bot. Hermes' backend oracle owns durable reasoning, "
     "tools, memory, and final task execution."
 )
+GEMINI_LIVE_CAPABILITY_HONESTY_INSTRUCTIONS = (
+    "This voice session is already connected; never claim Hermes cannot hear, listen, join, "
+    "or speak through the live voice interface."
+)
 GEMINI_LIVE_ORACLE_TOOL_INSTRUCTIONS = (
     "Use ask_hermes_oracle when a request needs the backend Hermes agent."
 )
@@ -452,6 +456,8 @@ def _gemini_live_system_instruction(runtime: GeminiLiveFrontendConfig) -> str:
     instruction = str(runtime.instructions or GEMINI_LIVE_BASE_INSTRUCTIONS).strip()
     if not instruction:
         instruction = GEMINI_LIVE_BASE_INSTRUCTIONS
+    if "already connected" not in instruction.lower():
+        instruction = f"{instruction} {GEMINI_LIVE_CAPABILITY_HONESTY_INSTRUCTIONS}"
     if runtime.enable_oracle_tool and "ask_hermes_oracle" not in instruction:
         instruction = f"{instruction} {GEMINI_LIVE_ORACLE_TOOL_INSTRUCTIONS}"
     return instruction
