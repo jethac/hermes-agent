@@ -888,6 +888,23 @@ class ReferenceRealtimeVoiceSidecarSession:
                         payload.setdefault("transcript_source", asr_hypothesis.get("transcript_source"))
                         if "transcript_confidence" in asr_hypothesis:
                             payload.setdefault("transcript_confidence", asr_hypothesis["transcript_confidence"])
+                if self._should_run_oracle_verbatim_asr(payload):
+                    started_at = time.perf_counter()
+                    asr_hypothesis = await self._run_oracle_verbatim_asr_once(
+                        audio,
+                        codec,
+                        input_generation,
+                    )
+                    if asr_hypothesis:
+                        payload["transcript"] = asr_hypothesis["transcript"]
+                        payload["transcript_source"] = asr_hypothesis["transcript_source"]
+                        if "transcript_confidence" in asr_hypothesis:
+                            payload["transcript_confidence"] = asr_hypothesis["transcript_confidence"]
+                        existing_metrics = payload.get("metrics")
+                        metrics = dict(existing_metrics) if isinstance(existing_metrics, Mapping) else {}
+                        metrics["oracle_verbatim_asr_ms"] = int(round((time.perf_counter() - started_at) * 1000))
+                        payload["metrics"] = metrics
+                if input_generation is not None:
                     payload["input_generation"] = input_generation
                 await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
         except asyncio.CancelledError:
@@ -897,6 +914,109 @@ class ReferenceRealtimeVoiceSidecarSession:
                 VoiceEventType.SESSION_ERROR,
                 {"error": f"transcription failed: {sanitize_realtime_voice_error(exc)}"},
             )
+
+    def _should_run_oracle_verbatim_asr(self, payload: Mapping[str, Any]) -> bool:
+        config = self.config
+        if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+            return False
+        if config.asr_mode.value != "on_escalation":
+            return False
+        if not self.runtime.streaming_stt_base_url:
+            return False
+        route = str(payload.get("route") or "oracle_direct").strip().lower() or "oracle_direct"
+        return route in {"defer", "oracle_direct"}
+
+    async def _run_oracle_verbatim_asr_once(
+        self,
+        audio: bytes,
+        codec: VoiceAudioCodec,
+        input_generation: Optional[int],
+    ) -> dict[str, Any]:
+        config = self.config
+        if config is None or not audio:
+            return {}
+        client = RealtimeVoiceSidecarClient(path="/v1/streaming-stt/session")
+        downstream_config = RealtimeVoiceSessionConfig(
+            session_id=config.session_id,
+            engine=config.engine,
+            input_codec=config.input_codec,
+            output_codec=config.output_codec,
+            sample_rate_hz=config.sample_rate_hz,
+            channels=config.channels,
+            input_buffer_limit_bytes=config.input_buffer_limit_bytes,
+            frontend_provider="streaming_stt",
+            frontend_model=self.runtime.streaming_stt_model or config.frontend_model,
+            interface_audio_input=config.interface_audio_input,
+            asr_mode=config.asr_mode,
+            preferred_local_oracle_model=config.preferred_local_oracle_model,
+            oracle_model=config.oracle_model,
+            tts_provider=config.tts_provider,
+            sidecar_base_url=self.runtime.streaming_stt_base_url,
+            sidecar_token=self.runtime.streaming_stt_token,
+            sidecar_connect_timeout_seconds=self.runtime.streaming_stt_timeout_seconds,
+            metadata=config.metadata,
+        )
+        try:
+            await client.start(downstream_config)
+            payload = AudioChunk(codec=codec, data=audio).to_payload()
+            payload["end_of_utterance"] = True
+            if input_generation is not None:
+                payload["input_generation"] = input_generation
+            await client.send_event(
+                VoiceEvent(
+                    type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                    session_id=config.session_id,
+                    sequence=self._sequence + 1,
+                    payload=payload,
+                )
+            )
+            event_stream = client.events()
+            while True:
+                event = await asyncio.wait_for(
+                    event_stream.__anext__(),
+                    timeout=max(0.1, float(self.runtime.streaming_stt_timeout_seconds)),
+                )
+                if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                    text = str(event.payload.get("text") or "").strip()
+                    if not text:
+                        return {}
+                    hypothesis: dict[str, Any] = {
+                        "transcript": text,
+                        "transcript_source": "asr",
+                    }
+                    confidence = _bounded_confidence(event.payload.get("confidence"))
+                    if confidence is not None:
+                        hypothesis["transcript_confidence"] = confidence
+                    return hypothesis
+                if event.type == VoiceEventType.SESSION_ERROR:
+                    await self._emit(
+                        VoiceEventType.FRONTEND_STATE,
+                        {
+                            "status": "degraded",
+                            "reason": "oracle_verbatim_asr_failed",
+                            "error": sanitize_realtime_voice_error(event.payload.get("error") or ""),
+                            "streaming_stt": False,
+                        },
+                    )
+                    return {}
+        except StopAsyncIteration:
+            return {}
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "oracle_verbatim_asr_failed",
+                    "error": sanitize_realtime_voice_error(exc),
+                    "streaming_stt": False,
+                },
+            )
+        finally:
+            with contextlib.suppress(Exception):
+                await client.close()
+        return {}
 
     def _transcribe_sync(self, audio: bytes, codec: VoiceAudioCodec) -> str:
         return str(self._understand_audio_sync(audio, codec).get("text") or "").strip()

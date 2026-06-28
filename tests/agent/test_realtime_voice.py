@@ -2765,6 +2765,182 @@ def test_reference_sidecar_kame_on_escalation_does_not_start_streaming_stt(monke
     assert created == []
 
 
+def test_reference_sidecar_kame_on_escalation_attaches_one_shot_asr_evidence(monkeypatch):
+    calls = []
+    sent_events = []
+
+    class FakeBridge:
+        def __init__(self, *, path="/v1/realtime-text/session"):
+            calls.append(("init", path))
+            self.config = None
+
+        async def start(self, config):
+            self.config = config
+            calls.append(("start", config.frontend_provider, config.sidecar_base_url))
+
+        async def send_event(self, event):
+            sent_events.append(event)
+            calls.append(("send", event.type.value, event.payload.get("input_generation")))
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "text": "literal ASR note 123",
+                    "confidence": 0.84,
+                    "input_generation": 7,
+                },
+            )
+
+        async def close(self):
+            calls.append(("close",))
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_reference_sidecar.RealtimeVoiceSidecarClient",
+        FakeBridge,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                streaming_stt_base_url="http://streaming-stt.local:9000",
+                streaming_stt_model="nemotron-speech",
+                streaming_stt_timeout_seconds=1,
+                vllm_base_url="http://vllm.local:8000/v1",
+                vllm_model="google/gemma-4-E2B-it",
+            )
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+
+        def fake_understand_audio(audio, codec):
+            calls.append(("reflex", audio, codec.value))
+            return {
+                "text": "reflex wording",
+                "intent": "Reflex intent.",
+                "intent_source": "reflex_audio",
+                "route": "oracle_direct",
+                "transcript_source": "none",
+            }
+
+        monkeypatch.setattr(sidecar, "_understand_audio_sync", fake_understand_audio)
+
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                    "input_generation": 7,
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                break
+
+        await sidecar.close()
+        return seen
+
+    seen = asyncio.run(run())
+    final = seen[-1]
+    assert final.type == VoiceEventType.TRANSCRIPT_FINAL
+    assert final.payload["text"] == "reflex wording"
+    assert final.payload["intent"] == "Reflex intent."
+    assert final.payload["route"] == "oracle_direct"
+    assert final.payload["transcript"] == "literal ASR note 123"
+    assert final.payload["transcript_source"] == "asr"
+    assert final.payload["transcript_confidence"] == 0.84
+    assert final.payload["metrics"]["oracle_verbatim_asr_ms"] >= 0
+    assert sent_events[0].type == VoiceEventType.AUDIO_INPUT_CHUNK
+    assert sent_events[0].payload["end_of_utterance"] is True
+    assert sent_events[0].payload["input_generation"] == 7
+    assert calls[0] == ("reflex", b"audio", "webm_opus")
+    assert ("start", "streaming_stt", "http://streaming-stt.local:9000") in calls
+    assert ("close",) in calls
+
+
+def test_reference_sidecar_kame_local_route_skips_on_escalation_asr(monkeypatch):
+    created = []
+
+    class FakeBridge:
+        def __init__(self, *, path="/v1/realtime-text/session"):
+            created.append(path)
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_reference_sidecar.RealtimeVoiceSidecarClient",
+        FakeBridge,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                streaming_stt_base_url="http://streaming-stt.local:9000",
+                vllm_base_url="http://vllm.local:8000/v1",
+                vllm_model="google/gemma-4-E2B-it",
+            )
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+
+        def fake_understand_audio(audio, codec):
+            return {
+                "text": "hello",
+                "intent": "Greeting.",
+                "intent_source": "reflex_audio",
+                "route": "local",
+                "local_reply": "Hi.",
+                "transcript_source": "none",
+            }
+
+        monkeypatch.setattr(sidecar, "_understand_audio_sync", fake_understand_audio)
+
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                    "input_generation": 3,
+                },
+            )
+        )
+
+        async for event in sidecar.events():
+            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                await sidecar.close()
+                return event
+        raise AssertionError("missing transcript final")
+
+    final = asyncio.run(run())
+    assert final.payload["route"] == "local"
+    assert "transcript" not in final.payload
+    assert created == []
+
+
 def test_reference_sidecar_kame_speculative_asr_does_not_drive_reflex(monkeypatch):
     async def run():
         sidecar = ReferenceRealtimeVoiceSidecarSession(
