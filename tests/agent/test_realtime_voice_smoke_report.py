@@ -853,6 +853,8 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
             if entry.get("kind") == "session_turn":
                 entry["metrics"] = {
                     "kame_final_transcript_to_interface_decision_ms": 25 + index,
+                    "kame_speech_end_to_local_first_audio_ms": 90 + index,
+                    "kame_speech_end_to_first_audio_ms": 160 + index,
                     "kame_interface_decision_to_local_first_audio_ms": 70 + index,
                     "kame_interface_decision_to_first_audio_ms": 140 + index,
                     "kame_interface_decision_to_oracle_accepted_ms": 30 + index,
@@ -905,6 +907,8 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         "p95": 27,
         "max": 27,
     }
+    assert summary["latency_ms"]["speech_end_to_local_first_audio"]["p90"] == 92
+    assert summary["latency_ms"]["speech_end_to_first_audio"]["p90"] == 162
     assert summary["latency_ms"]["interface_decision_to_local_first_audio"]["p90"] == 72
     assert summary["latency_ms"]["interface_decision_to_first_audio"]["p90"] == 142
     assert summary["latency_ms"]["interface_decision_to_oracle_accepted"]["p90"] == 32

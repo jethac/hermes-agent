@@ -1251,6 +1251,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         elapsed = _elapsed_perf_ms(decision_at, first_audio_at)
         self._first_audio_metric_generations.add(playback_generation)
         metrics = {"kame_interface_decision_to_first_audio_ms": elapsed}
+        existing_metrics = metadata.get("metrics")
+        if isinstance(existing_metrics, Mapping):
+            speech_end_to_decision = _nonnegative_int_metrics(existing_metrics).get(
+                "kame_speech_end_to_interface_decision_ms"
+            )
+            if speech_end_to_decision is not None:
+                metrics["kame_speech_end_to_first_audio_ms"] = speech_end_to_decision + elapsed
         oracle_first_token_at = self._oracle_first_token_at_by_generation.get(playback_generation)
         if oracle_first_token_at is not None:
             metrics["kame_oracle_first_token_to_first_tts_audio_ms"] = _elapsed_perf_ms(
@@ -1260,6 +1267,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         route = str(metadata.get("kame_route") or "")
         if route in {KameRoute.LOCAL.value, KameRoute.REJECT_OR_CLARIFY.value}:
             metrics["kame_interface_decision_to_local_first_audio_ms"] = elapsed
+            if "kame_speech_end_to_first_audio_ms" in metrics:
+                metrics["kame_speech_end_to_local_first_audio_ms"] = metrics[
+                    "kame_speech_end_to_first_audio_ms"
+                ]
         return metrics
 
     def _interface_decision_metric_start(self, playback_generation: int, *, fallback: float) -> float:

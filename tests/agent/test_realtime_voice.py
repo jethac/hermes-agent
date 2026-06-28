@@ -1745,6 +1745,7 @@ def test_kame_engine_local_route_speaks_without_oracle(monkeypatch):
                     "local_reply": "Yes, I can hear you.",
                     "intent_source": "reflex_audio",
                     "end_of_utterance": True,
+                    "metrics": {"kame_speech_end_to_interface_decision_ms": 37},
                 },
             )
         )
@@ -1821,6 +1822,7 @@ def test_kame_engine_local_route_reports_first_audio_metric(monkeypatch, tmp_pat
                     "local_reply": "Yes, I can hear you.",
                     "intent_source": "reflex_audio",
                     "end_of_utterance": True,
+                    "metrics": {"kame_speech_end_to_interface_decision_ms": 37},
                 },
             )
         )
@@ -1838,8 +1840,12 @@ def test_kame_engine_local_route_reports_first_audio_metric(monkeypatch, tmp_pat
         assert AudioChunk.from_payload(audio.payload).data == b"local-audio"
         assert audio.payload["metrics"]["kame_interface_decision_to_first_audio_ms"] >= 0
         assert audio.payload["metrics"]["kame_interface_decision_to_local_first_audio_ms"] >= 0
+        assert audio.payload["metrics"]["kame_speech_end_to_first_audio_ms"] >= 37
+        assert audio.payload["metrics"]["kame_speech_end_to_local_first_audio_ms"] >= 37
         assert session_metrics.payload["metrics"]["kame_interface_decision_to_first_audio_ms"] >= 0
         assert session_metrics.payload["metrics"]["kame_interface_decision_to_local_first_audio_ms"] >= 0
+        assert session_metrics.payload["metrics"]["kame_speech_end_to_first_audio_ms"] >= 37
+        assert session_metrics.payload["metrics"]["kame_speech_end_to_local_first_audio_ms"] >= 37
 
     asyncio.run(run())
 
@@ -6986,6 +6992,7 @@ def test_kame_file_tts_audio_chunk_includes_first_token_to_tts_metric(monkeypatc
         engine._assistant_metadata_by_generation[7] = {
             "voice_architecture": "kame_frontend_oracle",
             "kame_route": KameRoute.ORACLE_DIRECT.value,
+            "metrics": {"kame_speech_end_to_interface_decision_ms": 25},
         }
         engine._interface_decision_at_by_generation[7] = time.perf_counter() - 0.1
         engine._oracle_first_token_at_by_generation[7] = time.perf_counter() - 0.05
@@ -6998,6 +7005,7 @@ def test_kame_file_tts_audio_chunk_includes_first_token_to_tts_metric(monkeypatc
         event = await asyncio.wait_for(engine._events.get(), timeout=1)
         assert event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
         assert event.payload["metrics"]["kame_interface_decision_to_first_audio_ms"] >= 0
+        assert event.payload["metrics"]["kame_speech_end_to_first_audio_ms"] >= 25
         assert event.payload["metrics"]["kame_oracle_first_token_to_first_tts_audio_ms"] >= 0
         assert (
             engine._assistant_metadata_by_generation[7]["metrics"]["kame_oracle_first_token_to_first_tts_audio_ms"]
