@@ -8,6 +8,7 @@ import json
 import os
 import tempfile
 import time
+from dataclasses import replace
 from typing import Any, AsyncIterator, List, Mapping, Optional
 
 from agent.realtime_voice import (
@@ -535,7 +536,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             payload.update(dict(oracle_payload))
         if cancellation_token:
             payload.setdefault("cancellation_token", cancellation_token)
-        return KameOracleRequest.from_turn(
+        request = KameOracleRequest.from_turn(
             session_id=config.session_id,
             turn_id=f"{config.session_id}:{playback_generation}",
             source=source,
@@ -544,6 +545,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             fallback_text=transcript,
             default_max_spoken_sentences=_max_spoken_sentences(config),
         )
+        if request.route == KameRoute.DEFER and not request.interface_already_said:
+            acknowledgement = _turn_acknowledgement_text(config)
+            if acknowledgement:
+                request = replace(request, interface_already_said=acknowledgement)
+        return request
 
     async def _speak_kame_local_reply(
         self,
@@ -1244,6 +1250,8 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         payload["transcript"] = request.transcript
     if request.transcript_confidence is not None:
         payload["transcript_confidence"] = request.transcript_confidence
+    if request.interface_already_said:
+        payload["interface_already_said"] = request.interface_already_said
     if request.cancellation_token:
         payload["cancellation_token"] = request.cancellation_token
     return payload
@@ -1267,6 +1275,8 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
         payload["transcript"] = str(metadata.get("kame_transcript"))
     if metadata.get("kame_transcript_confidence") is not None:
         payload["transcript_confidence"] = metadata.get("kame_transcript_confidence")
+    if metadata.get("kame_interface_already_said"):
+        payload["interface_already_said"] = str(metadata.get("kame_interface_already_said"))
     if metadata.get("kame_cancellation_token"):
         payload["cancellation_token"] = str(metadata.get("kame_cancellation_token"))
     if isinstance(metadata.get("kame_requested_response_style"), Mapping):

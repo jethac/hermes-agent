@@ -706,6 +706,83 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
+    class StructuredOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "The deployment is healthy."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = StructuredOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                metadata={
+                    "transport": "discord_voice",
+                    "turn_acknowledgement": {"enabled": True, "text": "One moment."},
+                },
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "check the deployment status",
+                    "intent": "Check the deployment status.",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "transcript_source": "asr",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+        assert len(oracle.requests) == 1
+        request = oracle.requests[0]
+        assert request.route == KameRoute.DEFER
+        assert request.interface_already_said == "One moment."
+
+        defer = next(event for event in seen if event.type == VoiceEventType.INTERFACE_REPLY_DEFER)
+        acknowledgement = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("acknowledgement")
+        )
+        commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        assert defer.payload["route"] == "defer"
+        assert defer.payload["interface_already_said"] == "One moment."
+        assert acknowledgement.payload["text"] == "One moment."
+        assert acknowledgement.payload["kame_interface_already_said"] == "One moment."
+        assert commit.payload["text"] == "The deployment is healthy."
+        assert spoken == ["One moment.", "The deployment is healthy."]
+
+    asyncio.run(run())
+
+
 def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
     class SlowOracle:
         def __init__(self):
