@@ -5047,6 +5047,100 @@ def test_reference_sidecar_forwards_provider_kame_oracle_events():
     asyncio.run(run())
 
 
+def test_reference_sidecar_records_inbound_kame_feedback_events():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+        assert (await anext(sidecar.events())).type == VoiceEventType.SESSION_STARTED
+        assert (await anext(sidecar.events())).type == VoiceEventType.FRONTEND_STATE
+
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                session_id="voice-123",
+                sequence=1,
+                payload={"turn_id": "voice-123:1", "route": "defer", "playback_generation": 3},
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_RESPONSE_FINAL,
+                session_id="voice-123",
+                sequence=2,
+                payload={"turn_id": "voice-123:1", "text": "Done.", "playback_generation": 3},
+            )
+        )
+
+        assert [record["type"] for record in sidecar._kame_feedback_events] == [
+            VoiceEventType.INTERFACE_ORACLE_REQUEST.value,
+            VoiceEventType.ORACLE_RESPONSE_FINAL.value,
+        ]
+        assert [record["type"] for record in sidecar._kame_feedback_events_by_generation[3]] == [
+            VoiceEventType.INTERFACE_ORACLE_REQUEST.value,
+            VoiceEventType.ORACLE_RESPONSE_FINAL.value,
+        ]
+        assert sidecar._kame_last_interface_event == {
+            "type": VoiceEventType.INTERFACE_ORACLE_REQUEST.value,
+            "payload": {"turn_id": "voice-123:1", "route": "defer", "playback_generation": 3},
+        }
+        assert sidecar._kame_last_oracle_event == {
+            "type": VoiceEventType.ORACLE_RESPONSE_FINAL.value,
+            "payload": {"turn_id": "voice-123:1", "text": "Done.", "playback_generation": 3},
+        }
+
+        await sidecar.close()
+
+    asyncio.run(run())
+
+
+def test_reference_sidecar_clears_kame_feedback_on_barge_in_and_close():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+        assert (await anext(sidecar.events())).type == VoiceEventType.SESSION_STARTED
+        assert (await anext(sidecar.events())).type == VoiceEventType.FRONTEND_STATE
+
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_RESPONSE_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"turn_id": "voice-123:1", "text": "Done.", "playback_generation": 3},
+            )
+        )
+        assert sidecar._kame_feedback_events
+
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=2,
+                payload={"reason": "user_speech", "playback_generation": 4},
+            )
+        )
+        assert sidecar._kame_feedback_events == []
+        assert sidecar._kame_feedback_events_by_generation == {}
+        assert sidecar._kame_last_interface_event is None
+        assert sidecar._kame_last_oracle_event is None
+
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_COMMIT,
+                session_id="voice-123",
+                sequence=3,
+                payload={"turn_id": "voice-123:2", "text": "Fresh.", "playback_generation": 5},
+            )
+        )
+        assert sidecar._kame_feedback_events
+        await sidecar.close()
+        assert sidecar._kame_feedback_events == []
+        assert sidecar._kame_feedback_events_by_generation == {}
+        assert sidecar._kame_last_interface_event is None
+        assert sidecar._kame_last_oracle_event is None
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_barge_in_ack_is_not_blocked_by_slow_streaming_bridge(
     monkeypatch,
 ):

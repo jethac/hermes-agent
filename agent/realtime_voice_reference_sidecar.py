@@ -97,6 +97,25 @@ PROVIDER_FORWARDED_EVENT_TYPES = frozenset(
     }
 )
 
+KAME_FEEDBACK_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.INTERFACE_INTENT_FINAL,
+        VoiceEventType.INTERFACE_REPLY_LOCAL,
+        VoiceEventType.INTERFACE_REPLY_DEFER,
+        VoiceEventType.INTERFACE_ORACLE_REQUEST,
+        VoiceEventType.INTERFACE_ORACLE_CANCEL,
+        VoiceEventType.INTERFACE_COMMIT,
+        VoiceEventType.ORACLE_ACCEPTED,
+        VoiceEventType.ORACLE_HINT,
+        VoiceEventType.ORACLE_TOOL_CALL,
+        VoiceEventType.ORACLE_TOOL_RESULT,
+        VoiceEventType.ORACLE_RESPONSE_PARTIAL,
+        VoiceEventType.ORACLE_RESPONSE_FINAL,
+        VoiceEventType.ORACLE_ERROR,
+        VoiceEventType.SESSION_METRICS,
+    }
+)
+
 
 @dataclass(frozen=True)
 class ReferenceSidecarRuntimeConfig:
@@ -302,6 +321,10 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._gemini_live_task: Optional[asyncio.Task[None]] = None
         self._cached_acknowledgement_audio: Optional[dict[str, Any]] = None
         self._active_playback_generations: set[Optional[int]] = set()
+        self._kame_feedback_events: list[dict[str, Any]] = []
+        self._kame_feedback_events_by_generation: dict[int, list[dict[str, Any]]] = {}
+        self._kame_last_interface_event: Optional[dict[str, Any]] = None
+        self._kame_last_oracle_event: Optional[dict[str, Any]] = None
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
         self.config = config
@@ -420,6 +443,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             await self.close()
             return
         if event.type == VoiceEventType.BARGE_IN:
+            self._clear_kame_feedback_state()
             self._clear_audio_buffer()
             cancelled_tasks = self._cancel_active_tasks()
             payload = {"reason": event.payload.get("reason") or "client"}
@@ -469,6 +493,9 @@ class ReferenceRealtimeVoiceSidecarSession:
                     )
                 )
             await self._drain_cancelled_tasks(cancelled_tasks)
+            return
+        if event.type in KAME_FEEDBACK_EVENT_TYPES:
+            self._record_kame_feedback_event(event)
             return
         if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("speak") is True:
             text = str(event.payload.get("text") or "").strip()
@@ -593,6 +620,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._openai_realtime = None
         self._gemini_live = None
         self._asr_hypotheses_by_generation.clear()
+        self._clear_kame_feedback_state()
         self._cached_acknowledgement_audio = None
         self._clear_audio_buffer()
 
@@ -1706,6 +1734,46 @@ class ReferenceRealtimeVoiceSidecarSession:
                 payload=dict(payload),
             )
         )
+
+    def _record_kame_feedback_event(self, event: VoiceEvent) -> None:
+        record = {
+            "type": event.type.value,
+            "payload": dict(event.payload),
+        }
+        self._kame_feedback_events.append(record)
+        if len(self._kame_feedback_events) > 64:
+            self._kame_feedback_events = self._kame_feedback_events[-64:]
+        generation = _payload_generation(event.payload)
+        if generation is not None:
+            generation_records = self._kame_feedback_events_by_generation.setdefault(generation, [])
+            generation_records.append(record)
+            if len(generation_records) > 32:
+                self._kame_feedback_events_by_generation[generation] = generation_records[-32:]
+        if event.type in {
+            VoiceEventType.INTERFACE_INTENT_FINAL,
+            VoiceEventType.INTERFACE_REPLY_LOCAL,
+            VoiceEventType.INTERFACE_REPLY_DEFER,
+            VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            VoiceEventType.INTERFACE_ORACLE_CANCEL,
+            VoiceEventType.INTERFACE_COMMIT,
+        }:
+            self._kame_last_interface_event = record
+        elif event.type in {
+            VoiceEventType.ORACLE_ACCEPTED,
+            VoiceEventType.ORACLE_HINT,
+            VoiceEventType.ORACLE_TOOL_CALL,
+            VoiceEventType.ORACLE_TOOL_RESULT,
+            VoiceEventType.ORACLE_RESPONSE_PARTIAL,
+            VoiceEventType.ORACLE_RESPONSE_FINAL,
+            VoiceEventType.ORACLE_ERROR,
+        }:
+            self._kame_last_oracle_event = record
+
+    def _clear_kame_feedback_state(self) -> None:
+        self._kame_feedback_events.clear()
+        self._kame_feedback_events_by_generation.clear()
+        self._kame_last_interface_event = None
+        self._kame_last_oracle_event = None
 
     def _track_playback_lifecycle_event(self, event_type: VoiceEventType, payload: Mapping[str, Any]) -> None:
         generation = _payload_generation(payload)
