@@ -9935,6 +9935,103 @@ def test_session_adds_turn_state_to_realtime_events(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_session_treats_interface_intent_final_as_turn_boundary():
+    class KameEventEngine:
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            return None
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.INTERFACE_INTENT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "turn_id": "voice-123:1",
+                    "intent": "Check deployment status.",
+                    "text": "check deployment status",
+                    "route": "oracle_direct",
+                    "playback_generation": 1,
+                },
+            )
+            yield VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=2,
+                payload={"text": "Checking.", "playback_generation": 1},
+            )
+            yield VoiceEvent(
+                type=VoiceEventType.ASSISTANT_COMMIT,
+                session_id="voice-123",
+                sequence=3,
+                payload={"text": "Checking.", "playback_generation": 1},
+            )
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            ),
+            engine=KameEventEngine(),
+        )
+        await session.start()
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        states = {event.type: event.payload.get("session_state") for event in seen}
+        assert states[VoiceEventType.INTERFACE_INTENT_FINAL] == RealtimeVoiceSessionState.ASSISTANT_PENDING.value
+        assert states[VoiceEventType.ASSISTANT_TEXT_PARTIAL] == RealtimeVoiceSessionState.SPEAKING.value
+        assert states[VoiceEventType.ASSISTANT_COMMIT] == RealtimeVoiceSessionState.LISTENING.value
+        assert session.state == RealtimeVoiceSessionState.LISTENING
+        assert session.durable_messages() == [
+            {"role": "user", "content": "Check deployment status."},
+            {"role": "assistant", "content": "Checking."},
+        ]
+        await session.close()
+
+    asyncio.run(run())
+
+
+def test_kame_session_deduplicates_transcript_and_interface_final_for_same_turn():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        ),
+        engine=KameInterfaceOracleEngine(oracle=FakeOracle()),
+    )
+
+    for event_type in (VoiceEventType.TRANSCRIPT_FINAL, VoiceEventType.INTERFACE_INTENT_FINAL):
+        session._apply_server_event(
+            VoiceEvent(
+                type=event_type,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "turn_id": "voice-123:1",
+                    "kame_turn_id": "voice-123:1",
+                    "text": "check deployment status",
+                    "intent": "Check deployment status.",
+                    "kame_intent": "Check deployment status.",
+                    "voice_architecture": "kame_frontend_oracle",
+                    "playback_generation": 1,
+                },
+            )
+        )
+
+    assert session.durable_messages() == [{"role": "user", "content": "Check deployment status."}]
+
+
 def test_session_treats_caption_events_as_ephemeral_state():
     class CaptionEngine:
         async def start(self, config):

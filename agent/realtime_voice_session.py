@@ -127,6 +127,7 @@ class RealtimeVoiceSession:
         self._turn_first_audio_output = False
         self._quality_target_miss_count = 0
         self._last_quality_target_miss: Optional[dict] = None
+        self._committed_final_user_turn_keys: set[str] = set()
 
     async def start(self) -> None:
         self._started_at_monotonic = time.monotonic()
@@ -201,8 +202,8 @@ class RealtimeVoiceSession:
     def _apply_server_event(self, event: VoiceEvent) -> None:
         if event.type == VoiceEventType.TRANSCRIPT_PARTIAL:
             self.transcript.partial_user_text = str(event.payload.get("text") or "")
-        elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
-            text = _durable_user_text_from_transcript_final(event.payload)
+        elif event.type in {VoiceEventType.TRANSCRIPT_FINAL, VoiceEventType.INTERFACE_INTENT_FINAL}:
+            text = _durable_user_text_from_final_user_event(event.payload)
             generation = _payload_generation(event.payload)
             if generation is not None:
                 self.transcript.active_playback_generation = max(
@@ -210,8 +211,11 @@ class RealtimeVoiceSession:
                     generation,
                 )
             self.transcript.partial_user_text = ""
-            if text:
+            turn_key = _final_user_turn_key(event.payload)
+            if text and (not turn_key or turn_key not in self._committed_final_user_turn_keys):
                 self.transcript.final_user_segments.append(text)
+                if turn_key:
+                    self._committed_final_user_turn_keys.add(turn_key)
             self.state = RealtimeVoiceSessionState.ASSISTANT_PENDING
         elif event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
             generation = _payload_generation(event.payload)
@@ -340,7 +344,7 @@ class RealtimeVoiceSession:
             return RealtimeVoiceSessionState.LISTENING
         if event.type == VoiceEventType.TRANSCRIPT_PARTIAL:
             return self.state
-        if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+        if event.type in {VoiceEventType.TRANSCRIPT_FINAL, VoiceEventType.INTERFACE_INTENT_FINAL}:
             return RealtimeVoiceSessionState.ASSISTANT_PENDING
         if event.type in {
             VoiceEventType.ASSISTANT_CAPTION_PARTIAL,
@@ -371,7 +375,7 @@ class RealtimeVoiceSession:
 
         if event.type == VoiceEventType.TRANSCRIPT_PARTIAL and self._turn_audio_started_at is not None:
             metrics["audio_to_partial_transcript_ms"] = _elapsed_ms(self._turn_audio_started_at, now)
-        elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
+        elif event.type in {VoiceEventType.TRANSCRIPT_FINAL, VoiceEventType.INTERFACE_INTENT_FINAL}:
             if self._turn_audio_started_at is not None:
                 metrics["audio_to_final_transcript_ms"] = _elapsed_ms(self._turn_audio_started_at, now)
             if self._turn_eou_at is not None:
@@ -443,7 +447,7 @@ def _payload_generation(payload: dict) -> Optional[int]:
     return None
 
 
-def _durable_user_text_from_transcript_final(payload: Mapping[str, Any]) -> str:
+def _durable_user_text_from_final_user_event(payload: Mapping[str, Any]) -> str:
     if _payload_is_kame(payload):
         for key in ("kame_intent", "intent"):
             text = str(payload.get(key) or "").strip()
@@ -452,8 +456,21 @@ def _durable_user_text_from_transcript_final(payload: Mapping[str, Any]) -> str:
     return str(payload.get("text") or "").strip()
 
 
+def _final_user_turn_key(payload: Mapping[str, Any]) -> str:
+    for key in ("kame_turn_id", "turn_id"):
+        text = str(payload.get(key) or "").strip()
+        if text:
+            return text
+    generation = _payload_generation(dict(payload))
+    if generation is not None:
+        return f"playback_generation:{generation}"
+    return ""
+
+
 def _payload_is_kame(payload: Mapping[str, Any]) -> bool:
     if payload.get("voice_architecture") == "kame_frontend_oracle":
+        return True
+    if str(payload.get("intent") or "").strip() and str(payload.get("route") or "").strip():
         return True
     return any(str(payload.get(key) or "").strip() for key in ("kame_intent", "kame_route", "intent_source"))
 
