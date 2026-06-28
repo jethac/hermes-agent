@@ -6714,6 +6714,41 @@ class TestRealtimeVoiceWebSocket:
         assert discord["sidecar_base_url"] == "http://127.0.0.1:8765"
         assert discord["frontend_provider"] == "gemini_live"
 
+    def test_realtime_voice_apply_kame_profile_preserves_routing_controls(self):
+        response = self.client.post(
+            "/api/voice/realtime/profile",
+            json={
+                "preset": "kame",
+                "model": "gemma-4-E2B-it",
+                "interface_audio_input": "native_audio",
+                "asr_mode": "on_escalation",
+                "allow_local_greetings": False,
+                "allow_local_clarifications": False,
+                "require_oracle_for_tools": True,
+                "require_oracle_for_memory": True,
+                "require_oracle_for_files": True,
+                "local_confidence_threshold": 0.88,
+                "enable_discord": True,
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        realtime = payload["config"]["voice"]["realtime"]
+        discord = payload["config"]["discord"]["realtime_voice"]
+        expected_routing = {
+            "allow_local_greetings": False,
+            "allow_local_clarifications": False,
+            "require_oracle_for_tools": True,
+            "require_oracle_for_memory": True,
+            "require_oracle_for_files": True,
+            "local_confidence_threshold": 0.88,
+        }
+        assert realtime["engine"] == "kame_interface_oracle"
+        assert realtime["frontend_provider"] == "gemma4"
+        assert realtime["routing"] == expected_routing
+        assert discord["enabled"] is True
+        assert discord["routing"] == expected_routing
+
     def test_realtime_voice_apply_cartesia_profile_sets_bridge_models(self):
         response = self.client.post(
             "/api/voice/realtime/profile",

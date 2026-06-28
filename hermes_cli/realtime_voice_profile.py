@@ -732,6 +732,12 @@ def build_kame_realtime_voice_profile(
     sidecar_host: str = "127.0.0.1",
     sidecar_port: int = 8765,
     production_evidence_report: str = DEFAULT_EVIDENCE_REPORT,
+    allow_local_greetings: bool = True,
+    allow_local_clarifications: bool = True,
+    require_oracle_for_tools: bool = True,
+    require_oracle_for_memory: bool = True,
+    require_oracle_for_files: bool = True,
+    local_confidence_threshold: float = 0.75,
 ) -> dict[str, Any]:
     port = int(sidecar_port or 8765)
     if port <= 0 or port > 65535:
@@ -751,6 +757,12 @@ def build_kame_realtime_voice_profile(
         raise ValueError("--kame-interface-max-audio-seconds must be a number")
     if max_audio_seconds < 1.0 or max_audio_seconds > 30.0:
         raise ValueError("--kame-interface-max-audio-seconds must be between 1 and 30")
+    try:
+        confidence_threshold = float(local_confidence_threshold)
+    except (TypeError, ValueError):
+        raise ValueError("--kame-local-confidence-threshold must be a number")
+    if confidence_threshold < 0.0 or confidence_threshold > 1.0:
+        raise ValueError("--kame-local-confidence-threshold must be between 0 and 1")
 
     oracle_url = _clean_url(oracle_base_url)
     oracle_model = str(preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL)
@@ -808,12 +820,12 @@ def build_kame_realtime_voice_profile(
             "text": "One moment.",
         },
         "routing": {
-            "allow_local_greetings": True,
-            "allow_local_clarifications": True,
-            "require_oracle_for_tools": True,
-            "require_oracle_for_memory": True,
-            "require_oracle_for_files": True,
-            "local_confidence_threshold": 0.75,
+            "allow_local_greetings": bool(allow_local_greetings),
+            "allow_local_clarifications": bool(allow_local_clarifications),
+            "require_oracle_for_tools": bool(require_oracle_for_tools),
+            "require_oracle_for_memory": bool(require_oracle_for_memory),
+            "require_oracle_for_files": bool(require_oracle_for_files),
+            "local_confidence_threshold": confidence_threshold,
         },
         "metrics": {
             "enabled": True,

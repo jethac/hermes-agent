@@ -93,16 +93,22 @@ export interface RealtimeVoiceSetupResponse {
 
 export interface RealtimeVoiceProfileRequest {
   api_key_env?: string
+  allow_local_clarifications?: boolean
+  allow_local_greetings?: boolean
   enable_discord?: boolean
   google_search?: boolean
   interface_audio_input?: string
   interface_max_audio_seconds?: number
+  local_confidence_threshold?: number
   model?: string
   oracle_base_url?: string
   oracle_model?: string
   oracle_provider_name?: string
   oracle_tool?: boolean
   preset: string
+  require_oracle_for_files?: boolean
+  require_oracle_for_memory?: boolean
+  require_oracle_for_tools?: boolean
   asr_mode?: string
   streaming_stt_base_url?: string
   streaming_stt_model?: string

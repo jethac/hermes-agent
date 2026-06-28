@@ -1462,6 +1462,12 @@ class RealtimeVoiceProfileApply(BaseModel):
     streaming_tts_base_url: str = ""
     streaming_stt_model: str = ""
     streaming_tts_model: str = ""
+    allow_local_greetings: bool = True
+    allow_local_clarifications: bool = True
+    require_oracle_for_tools: bool = True
+    require_oracle_for_memory: bool = True
+    require_oracle_for_files: bool = True
+    local_confidence_threshold: float = 0.75
     google_search: bool = False
     oracle_tool: bool = True
     enable_discord: bool = False
@@ -15080,6 +15086,12 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_tts_base_url=body.streaming_tts_base_url,
             streaming_stt_model=body.streaming_stt_model or "portable-streaming-asr",
             streaming_tts_model=body.streaming_tts_model or "portable-streaming-voice",
+            allow_local_greetings=body.allow_local_greetings,
+            allow_local_clarifications=body.allow_local_clarifications,
+            require_oracle_for_tools=body.require_oracle_for_tools,
+            require_oracle_for_memory=body.require_oracle_for_memory,
+            require_oracle_for_files=body.require_oracle_for_files,
+            local_confidence_threshold=body.local_confidence_threshold,
         )
     if preset == "elevenlabs":
         return build_realtime_voice_live_like_profile(

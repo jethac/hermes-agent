@@ -59,6 +59,10 @@ const PROVIDER_VOICES: Record<string, string[]> = {
   cartesia: ['']
 }
 
+const KAME_AUDIO_INPUT_OPTIONS = ['auto', 'native_audio', 'text_fallback']
+const KAME_ASR_MODE_OPTIONS = ['disabled', 'on_escalation', 'speculative', 'debug', 'fallback']
+const KAME_RESPONSE_POLICY_OPTIONS = ['sentence_cap', 'brief_summary', 'full']
+
 function statusTone(ok?: boolean | null) {
   return ok ? 'primary' : 'muted'
 }
@@ -155,6 +159,148 @@ function StatusGrid({ setup }: { setup: RealtimeVoiceSetupResponse | null }) {
           <Pill tone={statusTone(Boolean(quality.barge_in))}>Barge-in</Pill>
         </div>
       </div>
+    </div>
+  )
+}
+
+function KameControls({
+  config,
+  patchConfig
+}: {
+  config: HermesConfigRecord
+  patchConfig: (key: string, value: unknown) => void
+}) {
+  const selectValue = (key: string, fallback: string) => String(getNested(config, key) ?? fallback) || fallback
+  const textValue = (key: string) => String(getNested(config, key) ?? '')
+  const boolValue = (key: string, fallback = true) => Boolean(getNested(config, key) ?? fallback)
+  const numberValue = (key: string, fallback: number) => Number(getNested(config, key) ?? fallback)
+
+  const select = (key: string, fallback: string, options: string[]) => (
+    <Select onValueChange={value => patchConfig(key, value)} value={selectValue(key, fallback)}>
+      <SelectTrigger className={CONTROL_TEXT}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map(option => (
+          <SelectItem key={option} value={option}>
+            {option}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+
+  const textInput = (key: string, placeholder = '') => (
+    <Input
+      className={CONTROL_TEXT}
+      onChange={event => patchConfig(key, event.target.value)}
+      placeholder={placeholder}
+      value={textValue(key)}
+    />
+  )
+
+  const numberInput = (key: string, fallback: number, min?: number, max?: number, step?: number) => (
+    <Input
+      className={CONTROL_TEXT}
+      max={max}
+      min={min}
+      onChange={event => {
+        const next = event.target.value === '' ? fallback : Number(event.target.value)
+        if (!Number.isNaN(next)) patchConfig(key, next)
+      }}
+      step={step}
+      type="number"
+      value={String(numberValue(key, fallback))}
+    />
+  )
+
+  const toggle = (key: string, fallback = true) => (
+    <Switch checked={boolValue(key, fallback)} onCheckedChange={checked => patchConfig(key, checked)} />
+  )
+
+  return (
+    <div className="mt-2 grid gap-1 border-t border-border/60 pt-2">
+      <div className="py-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">KAME Reflex / Oracle</div>
+      <ListRow
+        action={select('voice.realtime.interface_audio_input', 'native_audio', KAME_AUDIO_INPUT_OPTIONS)}
+        description="How the reflex receives user turns."
+        title="Interface audio input"
+      />
+      <ListRow
+        action={numberInput('voice.realtime.interface_max_audio_seconds', 30, 1, 30, 1)}
+        description="Maximum buffered audio segment sent to the reflex."
+        title="Max audio seconds"
+      />
+      <ListRow
+        action={select('voice.realtime.asr_mode', 'on_escalation', KAME_ASR_MODE_OPTIONS)}
+        description="When ASR runs as oracle-verbatim evidence."
+        title="ASR mode"
+      />
+      <ListRow
+        action={textInput('voice.realtime.streaming_stt_base_url', 'http://127.0.0.1:8766')}
+        description="Optional STT bridge used for oracle evidence or fallback."
+        title="ASR bridge URL"
+      />
+      <ListRow
+        action={textInput('voice.realtime.streaming_stt_model', 'portable-streaming-asr')}
+        description="ASR model name sent to the bridge."
+        title="ASR model"
+      />
+      <ListRow
+        action={textInput('voice.realtime.streaming_tts_base_url', 'http://127.0.0.1:8769')}
+        description="TTS bridge used for spoken reflex and oracle responses."
+        title="TTS bridge URL"
+      />
+      <ListRow
+        action={textInput('voice.realtime.streaming_tts_model', 'portable-streaming-voice')}
+        description="TTS model name sent to the bridge."
+        title="TTS model"
+      />
+      <ListRow
+        action={textInput('voice.realtime.oracle_model', 'gemma-4-26B-A4B-it')}
+        description="Optional oracle model override; empty uses the active Hermes oracle."
+        title="Oracle model"
+      />
+      <ListRow
+        action={textInput('voice.realtime.oracle_base_url', 'http://spark.local:8000/v1')}
+        description="OpenAI-compatible URL for a local oracle override."
+        title="Oracle base URL"
+      />
+      <ListRow
+        action={select('voice.realtime.voice_response_policy', 'sentence_cap', KAME_RESPONSE_POLICY_OPTIONS)}
+        description="How long oracle answers are shaped for speech."
+        title="Voice response"
+      />
+      <ListRow
+        action={toggle('voice.realtime.routing.allow_local_greetings')}
+        description="Let the reflex answer greetings and hear-me checks locally."
+        title="Local greetings"
+      />
+      <ListRow
+        action={toggle('voice.realtime.routing.allow_local_clarifications')}
+        description="Let the reflex ask brief clarifying questions locally."
+        title="Local clarifications"
+      />
+      <ListRow
+        action={toggle('voice.realtime.routing.require_oracle_for_tools')}
+        description="Route tool-using turns to the Hermes oracle."
+        title="Tools require oracle"
+      />
+      <ListRow
+        action={toggle('voice.realtime.routing.require_oracle_for_memory')}
+        description="Route memory-dependent turns to the Hermes oracle."
+        title="Memory requires oracle"
+      />
+      <ListRow
+        action={toggle('voice.realtime.routing.require_oracle_for_files')}
+        description="Route file and project turns to the Hermes oracle."
+        title="Files require oracle"
+      />
+      <ListRow
+        action={numberInput('voice.realtime.routing.local_confidence_threshold', 0.75, 0, 1, 0.01)}
+        description="Minimum reflex confidence for a local answer."
+        title="Local confidence"
+      />
     </div>
   )
 }
@@ -292,6 +438,24 @@ export function RealtimeVoiceSetupPanel({
         voice_response_policy: selectedIsKame
           ? String(getNested(config, 'voice.realtime.voice_response_policy') ?? 'sentence_cap') || 'sentence_cap'
           : undefined,
+        allow_local_greetings: selectedIsKame
+          ? Boolean(getNested(config, 'voice.realtime.routing.allow_local_greetings') ?? true)
+          : undefined,
+        allow_local_clarifications: selectedIsKame
+          ? Boolean(getNested(config, 'voice.realtime.routing.allow_local_clarifications') ?? true)
+          : undefined,
+        require_oracle_for_tools: selectedIsKame
+          ? Boolean(getNested(config, 'voice.realtime.routing.require_oracle_for_tools') ?? true)
+          : undefined,
+        require_oracle_for_memory: selectedIsKame
+          ? Boolean(getNested(config, 'voice.realtime.routing.require_oracle_for_memory') ?? true)
+          : undefined,
+        require_oracle_for_files: selectedIsKame
+          ? Boolean(getNested(config, 'voice.realtime.routing.require_oracle_for_files') ?? true)
+          : undefined,
+        local_confidence_threshold: selectedIsKame
+          ? Number(getNested(config, 'voice.realtime.routing.local_confidence_threshold') ?? 0.75)
+          : undefined,
         enable_discord: Boolean(getNested(config, 'discord.realtime_voice.enabled')),
         google_search: Boolean(getNested(config, 'voice.realtime.gemini_live_google_search')),
         oracle_tool: Boolean(getNested(config, 'voice.realtime.gemini_live_oracle_tool') ?? true)
@@ -382,6 +546,7 @@ export function RealtimeVoiceSetupPanel({
           }
           title={selectedIsKame || selectedSetup?.kind === 'native_s2s' ? 'Model' : 'TTS model'}
         />
+        {selectedIsKame ? <KameControls config={config} patchConfig={patchConfig} /> : null}
         {selectedIsBridge ? (
           <>
             <ListRow
