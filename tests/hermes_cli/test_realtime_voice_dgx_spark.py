@@ -26,6 +26,60 @@ def _manifest(tmp_path: Path) -> dict:
     )
 
 
+def _passing_benchmark_evidence() -> list[dict]:
+    return [
+        {
+            "kind": "kame_benchmark_result",
+            "category": "interface",
+            "input": "direct_audio",
+            "metrics": {
+                "speech_end_to_interface_decision_ms": 320,
+                "speech_end_to_local_first_audio_ms": 480,
+                "routing_accuracy": 0.94,
+            },
+        },
+        {
+            "kind": "kame_benchmark_result",
+            "category": "interface",
+            "input": "stt_fallback",
+            "metrics": {
+                "speech_end_to_transcript_ms": 190,
+                "transcript_to_interface_decision_ms": 280,
+                "routing_accuracy": 0.91,
+            },
+        },
+        {
+            "kind": "kame_benchmark_result",
+            "category": "oracle",
+            "metrics": {
+                "oracle_request_to_accepted_ms": 40,
+                "oracle_accepted_to_first_token_ms": 780,
+                "oracle_first_token_to_first_audio_ms": 220,
+            },
+        },
+        {
+            "kind": "kame_benchmark_result",
+            "category": "speech",
+            "role": "oracle_verbatim_asr",
+            "metrics": {
+                "speech_end_to_asr_final_ms": 110,
+                "literal_accuracy_names_numbers_code": 0.88,
+            },
+        },
+        {
+            "kind": "kame_benchmark_result",
+            "category": "speech",
+            "role": "tts",
+            "metrics": {
+                "tts_request_to_first_audio_ms": 160,
+                "tts_request_to_audio_end_ms": 620,
+            },
+        },
+        {"kind": "kame_smoke_result", "name": "all_local_smoke", "ok": True},
+        {"kind": "kame_smoke_result", "name": "cloud_fallback_smoke", "ok": True},
+    ]
+
+
 def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     manifest = _manifest(tmp_path)
 
@@ -130,6 +184,86 @@ def test_preflight_checks_openai_models_and_health_urls(monkeypatch, tmp_path):
     assert "http://spark.local:8765/health" in seen_urls
     assert "http://spark.local:8767/health" in seen_urls
     assert "http://spark.local:8768/health" in seen_urls
+
+
+def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(
+        matrix,
+        _passing_benchmark_evidence(),
+    )
+
+    assert result["ok"] is True
+    assert result["issues"] == []
+    assert result["coverage"]["interface_direct_audio_vs_stt_fallback"] is True
+    assert result["coverage"]["oracle_verbatim_asr_latency_and_literal_accuracy"] is True
+    assert result["coverage"]["local_asr_tts_benchmark_matrix"] is True
+    assert result["coverage"]["all_local_smoke"] is True
+    assert result["coverage"]["cloud_fallback_smoke"] is True
+
+
+def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    evidence = [
+        entry
+        for entry in _passing_benchmark_evidence()
+        if entry.get("input") != "stt_fallback" and entry.get("name") != "cloud_fallback_smoke"
+    ]
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert "interface:stt_fallback: missing benchmark result" in result["issues"]
+    assert "interface_direct_audio_vs_stt_fallback: requires direct_audio and stt_fallback results" in result["issues"]
+    assert "cloud_fallback_smoke: missing passing smoke result" in result["issues"]
+
+
+def test_main_validates_benchmark_evidence_file(tmp_path, capsys):
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(json.dumps(_passing_benchmark_evidence()), encoding="utf-8")
+
+    exit_code = realtime_voice_dgx_spark.main(
+        [
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--repo-dir",
+            str(tmp_path / "repo"),
+            "--hermes-home",
+            str(tmp_path / "home"),
+            "--benchmark-evidence",
+            str(evidence_path),
+        ]
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert result["ok"] is True
+    assert result["benchmark_evidence"]["ok"] is True
+
+
+def test_main_fails_on_incomplete_benchmark_evidence_file(tmp_path, capsys):
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(json.dumps([]), encoding="utf-8")
+
+    exit_code = realtime_voice_dgx_spark.main(
+        [
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--repo-dir",
+            str(tmp_path / "repo"),
+            "--hermes-home",
+            str(tmp_path / "home"),
+            "--benchmark-evidence",
+            str(evidence_path),
+        ]
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert result["ok"] is False
+    assert result["benchmark_evidence"]["ok"] is False
+    assert result["benchmark_evidence"]["issues"]
 
 
 def test_main_writes_files_and_reports_json(tmp_path, capsys):

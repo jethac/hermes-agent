@@ -51,6 +51,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-cache-dir", default="${HOME}/.cache/huggingface")
     parser.add_argument("--check", action="store_true", help="Probe generated endpoint URLs")
     parser.add_argument("--timeout", type=float, default=2.0, help="Endpoint probe timeout seconds")
+    parser.add_argument(
+        "--benchmark-evidence",
+        help="Validate a JSON array of DGX Spark KAME benchmark/evidence results against the generated matrix",
+    )
     return parser
 
 
@@ -84,12 +88,22 @@ def main(argv: list[str] | None = None) -> int:
         preflight_path = output_dir / "preflight.json"
         preflight_path.write_text(_json(preflight), encoding="utf-8")
         written["preflight"] = str(preflight_path)
+    evidence_validation: dict[str, Any] | None = None
+    if args.benchmark_evidence:
+        evidence_entries = load_dgx_spark_benchmark_evidence(args.benchmark_evidence)
+        evidence_validation = validate_dgx_spark_benchmark_evidence(
+            build_dgx_spark_benchmark_matrix(manifest),
+            evidence_entries,
+        )
 
     result = {
-        "ok": preflight is None or bool(preflight.get("ok")),
+        "ok": (preflight is None or bool(preflight.get("ok")))
+        and (evidence_validation is None or bool(evidence_validation.get("ok"))),
         "output_dir": str(output_dir),
         "written": written,
     }
+    if evidence_validation is not None:
+        result["benchmark_evidence"] = evidence_validation
     print(_json(result))
     return 0 if result["ok"] else 1
 
@@ -489,6 +503,159 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
         },
         "acceptance_targets_ms": manifest["quality_targets_ms"],
     }
+
+
+def load_dgx_spark_benchmark_evidence(path: str | Path) -> list[dict[str, Any]]:
+    evidence_path = Path(path).expanduser()
+    data = json.loads(evidence_path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise ValueError("DGX Spark KAME benchmark evidence must be a JSON array")
+    entries: list[dict[str, Any]] = []
+    for index, entry in enumerate(data):
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"DGX Spark KAME benchmark evidence entry {index} must be an object")
+        entries.append(dict(entry))
+    return entries
+
+
+def validate_dgx_spark_benchmark_evidence(
+    matrix: Mapping[str, Any],
+    entries: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Validate headless DGX Spark KAME benchmark/evidence results.
+
+    Expected evidence entries are intentionally simple JSON objects:
+    - ``kind=kame_benchmark_result`` with ``category`` (interface/oracle/speech),
+      optional ``input`` or ``role``, and a ``metrics`` object.
+    - ``kind=kame_smoke_result`` with ``name`` (all_local_smoke/cloud_fallback_smoke)
+      and ``ok=true``.
+    """
+
+    issues: list[str] = []
+    candidates = matrix.get("candidates") if isinstance(matrix.get("candidates"), Mapping) else {}
+    if not isinstance(candidates, Mapping):
+        return {"ok": False, "issues": ["matrix: missing candidates mapping"], "coverage": {}}
+
+    coverage: dict[str, bool] = {}
+    interface_candidates = candidates.get("interface") if isinstance(candidates.get("interface"), list) else []
+    for candidate in interface_candidates:
+        if not isinstance(candidate, Mapping):
+            continue
+        input_mode = str(candidate.get("input") or "").strip()
+        label = f"interface:{input_mode}"
+        match = _find_benchmark_entry(entries, category="interface", input_mode=input_mode)
+        coverage[label] = match is not None
+        if match is None:
+            issues.append(f"{label}: missing benchmark result")
+            continue
+        issues.extend(_missing_metric_issues(label, match, candidate.get("required_metrics")))
+
+    has_direct = coverage.get("interface:direct_audio") is True
+    has_fallback = coverage.get("interface:stt_fallback") is True
+    coverage["interface_direct_audio_vs_stt_fallback"] = has_direct and has_fallback
+    if not has_direct or not has_fallback:
+        issues.append("interface_direct_audio_vs_stt_fallback: requires direct_audio and stt_fallback results")
+
+    oracle_candidates = candidates.get("oracle") if isinstance(candidates.get("oracle"), list) else []
+    for candidate in oracle_candidates:
+        if not isinstance(candidate, Mapping):
+            continue
+        label = "oracle:local"
+        match = _find_benchmark_entry(entries, category="oracle")
+        coverage[label] = match is not None
+        if match is None:
+            issues.append(f"{label}: missing benchmark result")
+            continue
+        issues.extend(_missing_metric_issues(label, match, candidate.get("required_metrics")))
+
+    speech_candidates = candidates.get("speech") if isinstance(candidates.get("speech"), list) else []
+    for candidate in speech_candidates:
+        if not isinstance(candidate, Mapping):
+            continue
+        role = str(candidate.get("role") or "").strip()
+        label = f"speech:{role}"
+        match = _find_benchmark_entry(entries, category="speech", role=role)
+        coverage[label] = match is not None
+        if match is None:
+            issues.append(f"{label}: missing benchmark result")
+            continue
+        issues.extend(_missing_metric_issues(label, match, candidate.get("required_metrics")))
+
+    coverage["oracle_verbatim_asr_latency_and_literal_accuracy"] = coverage.get("speech:oracle_verbatim_asr") is True
+    coverage["local_asr_tts_benchmark_matrix"] = (
+        coverage.get("speech:oracle_verbatim_asr") is True and coverage.get("speech:tts") is True
+    )
+    for smoke_name in ("all_local_smoke", "cloud_fallback_smoke"):
+        ok = _has_passing_smoke(entries, smoke_name)
+        coverage[smoke_name] = ok
+        if not ok:
+            issues.append(f"{smoke_name}: missing passing smoke result")
+
+    return {
+        "ok": not issues,
+        "issues": issues,
+        "coverage": coverage,
+    }
+
+
+def _find_benchmark_entry(
+    entries: list[Mapping[str, Any]],
+    *,
+    category: str,
+    input_mode: str = "",
+    role: str = "",
+) -> Mapping[str, Any] | None:
+    for entry in entries:
+        if str(entry.get("kind") or "") != "kame_benchmark_result":
+            continue
+        if str(entry.get("category") or "") != category:
+            continue
+        if input_mode and str(entry.get("input") or "") != input_mode:
+            continue
+        if role and str(entry.get("role") or "") != role:
+            continue
+        return entry
+    return None
+
+
+def _missing_metric_issues(label: str, entry: Mapping[str, Any], required_metrics: Any) -> list[str]:
+    if not isinstance(required_metrics, list):
+        return [f"{label}: matrix candidate has no required_metrics list"]
+    metrics = entry.get("metrics")
+    if not isinstance(metrics, Mapping):
+        return [f"{label}: missing metrics object"]
+    issues: list[str] = []
+    for metric in required_metrics:
+        metric_name = str(metric or "").strip()
+        if not metric_name:
+            continue
+        value = metrics.get(metric_name)
+        if not _valid_metric_value(metric_name, value):
+            issues.append(f"{label}: missing or invalid metric {metric_name}")
+    return issues
+
+
+def _valid_metric_value(metric_name: str, value: Any) -> bool:
+    if isinstance(value, bool) or value is None:
+        return False
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return False
+    if not parsed >= 0:
+        return False
+    if "accuracy" in metric_name:
+        return parsed <= 1.0
+    return True
+
+
+def _has_passing_smoke(entries: list[Mapping[str, Any]], name: str) -> bool:
+    for entry in entries:
+        if str(entry.get("kind") or "") != "kame_smoke_result":
+            continue
+        if str(entry.get("name") or "") == name and entry.get("ok") is True:
+            return True
+    return False
 
 
 def preflight_dgx_spark_stack(
