@@ -825,6 +825,147 @@ def test_alpha_evidence_runner_can_start_loopback_bridge_with_provider_flag(monk
     assert all(entry.get("loopback_validation") is True for entry in report if isinstance(entry, dict))
 
 
+def test_alpha_evidence_runner_can_start_local_speech_bridge_pair(monkeypatch, tmp_path):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(
+            realtime_config={
+                "frontend_provider": "gemma4",
+                "streaming_stt_base_url": "http://127.0.0.1:8767",
+                "streaming_tts_base_url": "http://127.0.0.1:8768",
+                "streaming_stt_token_env": "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+            },
+            env_on_disk={
+                "HERMES_STREAMING_STT_BRIDGE_TOKEN": "secret-token",
+                "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL": "http://127.0.0.1:9101",
+                "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL": "http://127.0.0.1:9102",
+            },
+        ),
+    )
+    proc_by_provider = {
+        "nemotron_speech": _FakeSidecarProcess(),
+        "magpie_tts": _FakeSidecarProcess(),
+    }
+    health_counts = {}
+    spawned = []
+
+    def fake_health(url, *, token=""):
+        health_counts[url] = health_counts.get(url, 0) + 1
+        return health_counts[url] >= 2
+
+    def fake_spawn(provider, host, port, env_on_disk):
+        spawned.append((provider, host, port, dict(env_on_disk)))
+        return proc_by_provider[provider]
+
+    monkeypatch.setattr(realtime_voice_alpha_evidence, "_streaming_bridge_healthy", fake_health)
+    monkeypatch.setattr(realtime_voice_alpha_evidence, "_spawn_streaming_bridge_for_evidence", fake_spawn)
+
+    def fake_run_doctor(args):
+        with open(args.realtime_voice_report, "w", encoding="utf-8") as handle:
+            json.dump(_valid_alpha_report(), handle, ensure_ascii=False)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(fake_run_doctor),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+            "--provider",
+            "local_speech",
+            "--start-bridge",
+        ]
+    )
+
+    assert result == 0
+    assert spawned == [
+        (
+            "nemotron_speech",
+            "127.0.0.1",
+            8767,
+            {
+                "HERMES_STREAMING_STT_BRIDGE_TOKEN": "secret-token",
+                "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL": "http://127.0.0.1:9101",
+                "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL": "http://127.0.0.1:9102",
+            },
+        ),
+        (
+            "magpie_tts",
+            "127.0.0.1",
+            8768,
+            {
+                "HERMES_STREAMING_STT_BRIDGE_TOKEN": "secret-token",
+                "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL": "http://127.0.0.1:9101",
+                "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL": "http://127.0.0.1:9102",
+            },
+        ),
+    ]
+    assert health_counts == {
+        "http://127.0.0.1:8767": 2,
+        "http://127.0.0.1:8768": 2,
+    }
+    assert proc_by_provider["nemotron_speech"].terminated is True
+    assert proc_by_provider["magpie_tts"].terminated is True
+
+
+def test_alpha_evidence_runner_rejects_local_speech_single_bridge_port(monkeypatch, tmp_path, capsys):
+    _write_required_audio_fixtures(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _install_fake_web_server(
+        monkeypatch,
+        _fake_web_server_module(
+            realtime_config={
+                "frontend_provider": "gemma4",
+                "streaming_stt_base_url": "http://127.0.0.1:8767",
+                "streaming_tts_base_url": "http://127.0.0.1:8768",
+            },
+            env_on_disk={
+                "HERMES_STREAMING_STT_BRIDGE_TOKEN": "secret-token",
+                "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL": "http://127.0.0.1:9101",
+                "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL": "http://127.0.0.1:9102",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        realtime_voice_alpha_evidence,
+        "_spawn_streaming_bridge_for_evidence",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not spawn")),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.doctor",
+        _fake_doctor_module(lambda _args: None),
+    )
+
+    result = realtime_voice_alpha_evidence.main(
+        [
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--runs",
+            "1",
+            "--prefix",
+            "alpha",
+            "--provider",
+            "local_speech",
+            "--start-bridge",
+            "--bridge-port",
+            "8767",
+        ]
+    )
+
+    assert result == 1
+    assert "--provider local_speech uses separate ASR/TTS bridge URLs" in capsys.readouterr().err
+
+
 def test_alpha_evidence_runner_can_start_deepgram_bridge(monkeypatch, tmp_path):
     _write_required_audio_fixtures(tmp_path)
     monkeypatch.chdir(tmp_path)

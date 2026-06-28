@@ -70,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider",
-        choices=("deepgram", "elevenlabs", "cartesia", "loopback"),
+        choices=("deepgram", "elevenlabs", "cartesia", "loopback", "local_speech"),
         default="deepgram",
         help="Streaming voice bridge provider to start when --start-bridge is set",
     )
@@ -313,6 +313,10 @@ def managed_streaming_bridge_for_evidence(args: argparse.Namespace) -> Iterator[
 
         realtime = web_server._realtime_voice_config_dict()
         env_on_disk = web_server.load_env()
+        if provider == "local_speech":
+            with managed_local_speech_bridges_for_evidence(args, realtime, env_on_disk):
+                yield
+            return
         bridge_url = _configured_streaming_bridge_url(realtime)
         if not bridge_url:
             raise RuntimeError("voice.realtime.streaming_stt_base_url is required")
@@ -382,12 +386,78 @@ def managed_deepgram_bridge_for_evidence(args: argparse.Namespace) -> Iterator[N
         yield
 
 
+@contextmanager
+def managed_local_speech_bridges_for_evidence(
+    args: argparse.Namespace,
+    realtime: dict[str, Any],
+    env_on_disk: dict[str, str],
+) -> Iterator[None]:
+    """Start separate local ASR and TTS proxy bridges for DGX-style evidence."""
+
+    asr_url = str(realtime.get("streaming_stt_base_url") or "").strip().rstrip("/")
+    tts_url = str(realtime.get("streaming_tts_base_url") or "").strip().rstrip("/")
+    if not asr_url:
+        raise RuntimeError("voice.realtime.streaming_stt_base_url is required for local_speech")
+    if not tts_url:
+        raise RuntimeError("voice.realtime.streaming_tts_base_url is required for local_speech")
+    if int(getattr(args, "bridge_port", 0) or getattr(args, "deepgram_bridge_port", 0) or 0) > 0:
+        raise RuntimeError(
+            "--provider local_speech uses separate ASR/TTS bridge URLs; configure "
+            "voice.realtime.streaming_stt_base_url and streaming_tts_base_url instead of --bridge-port"
+        )
+    prerequisite_issues = _local_speech_bridge_prerequisite_issues_for_evidence(env_on_disk)
+    if prerequisite_issues:
+        raise RuntimeError(
+            "Local speech bridge prerequisite check failed: "
+            + "; ".join(prerequisite_issues)
+        )
+    token = _streaming_bridge_token_for_evidence(realtime, env_on_disk)
+    procs: list[subprocess.Popen] = []
+    try:
+        if not _streaming_bridge_healthy(asr_url, token=token):
+            asr_host, asr_port = _local_speech_bridge_bind(args, asr_url, provider="nemotron_speech")
+            asr_proc = _spawn_streaming_bridge_for_evidence(
+                "nemotron_speech",
+                asr_host,
+                asr_port,
+                env_on_disk,
+            )
+            procs.append(asr_proc)
+            _wait_for_streaming_bridge_health(
+                asr_url,
+                token=token,
+                proc=asr_proc,
+                provider="nemotron_speech",
+                timeout_seconds=max(0.1, float(_bridge_timeout_seconds(args) or 15.0)),
+            )
+        if not _streaming_bridge_healthy(tts_url, token=token):
+            tts_host, tts_port = _local_speech_bridge_bind(args, tts_url, provider="magpie_tts")
+            tts_proc = _spawn_streaming_bridge_for_evidence(
+                "magpie_tts",
+                tts_host,
+                tts_port,
+                env_on_disk,
+            )
+            procs.append(tts_proc)
+            _wait_for_streaming_bridge_health(
+                tts_url,
+                token=token,
+                proc=tts_proc,
+                provider="magpie_tts",
+                timeout_seconds=max(0.1, float(_bridge_timeout_seconds(args) or 15.0)),
+            )
+        yield
+    finally:
+        for proc in reversed(procs):
+            _terminate_process(proc)
+
+
 def _evidence_bridge_provider(args: argparse.Namespace) -> str:
     if getattr(args, "start_deepgram_bridge", False):
         return "deepgram"
     provider = str(getattr(args, "provider", "deepgram") or "deepgram").strip().lower()
-    if provider not in {"deepgram", "elevenlabs", "cartesia", "loopback"}:
-        raise RuntimeError("--provider must be deepgram, elevenlabs, cartesia, or loopback")
+    if provider not in {"deepgram", "elevenlabs", "cartesia", "loopback", "local_speech"}:
+        raise RuntimeError("--provider must be deepgram, elevenlabs, cartesia, loopback, or local_speech")
     return provider
 
 
@@ -398,6 +468,12 @@ def _bridge_provider_label(provider: str) -> str:
         return "Cartesia"
     if provider == "loopback":
         return "Loopback"
+    if provider == "local_speech":
+        return "Local speech"
+    if provider == "nemotron_speech":
+        return "Nemotron Speech"
+    if provider == "magpie_tts":
+        return "Magpie TTS"
     return "Deepgram"
 
 
@@ -406,6 +482,10 @@ def _bridge_default_port(provider: str) -> int:
         return 8768
     if provider == "cartesia":
         return 8769
+    if provider == "nemotron_speech":
+        return 8767
+    if provider == "magpie_tts":
+        return 8768
     return 8767 if provider == "elevenlabs" else 8766
 
 
@@ -421,6 +501,37 @@ def _configured_streaming_bridge_url(realtime: dict[str, Any]) -> str:
         or realtime.get("streaming_tts_base_url")
         or ""
     ).strip().rstrip("/")
+
+
+def _local_speech_bridge_bind(
+    args: argparse.Namespace,
+    bridge_url: str,
+    *,
+    provider: str,
+) -> tuple[str, int]:
+    parsed = urlparse(bridge_url)
+    legacy_host = str(getattr(args, "deepgram_bridge_host", "") or "").strip()
+    host = str(getattr(args, "bridge_host", "") or legacy_host or "").strip()
+    if not host:
+        host = parsed.hostname or "127.0.0.1"
+    try:
+        port = int(parsed.port or _bridge_default_port(provider))
+    except ValueError:
+        port = _bridge_default_port(provider)
+    if port <= 0 or port > 65535:
+        raise RuntimeError(f"{_bridge_provider_label(provider)} bridge port must be between 1 and 65535")
+    configured_host = parsed.hostname or ""
+    explicit_host = str(getattr(args, "bridge_host", "") or legacy_host or "").strip()
+    if (
+        configured_host
+        and configured_host not in {"127.0.0.1", "localhost", "::1"}
+        and not explicit_host
+    ):
+        raise RuntimeError(
+            f"configured {_bridge_provider_label(provider)} bridge URL is not loopback; "
+            "start that bridge on its host or pass --bridge-host for an explicit local bind"
+        )
+    return host, port
 
 
 def _configured_deepgram_bridge_url(realtime: dict[str, Any]) -> str:
@@ -500,6 +611,10 @@ def _spawn_streaming_bridge_for_evidence(
         if provider == "elevenlabs"
         else "hermes_cli.realtime_voice_cartesia_bridge"
         if provider == "cartesia"
+        else "hermes_cli.realtime_voice_nemotron_speech_bridge"
+        if provider == "nemotron_speech"
+        else "hermes_cli.realtime_voice_magpie_tts_bridge"
+        if provider == "magpie_tts"
         else "hermes_cli.realtime_voice_loopback_bridge"
         if provider == "loopback"
         else "hermes_cli.realtime_voice_deepgram_bridge"
@@ -580,7 +695,54 @@ def _streaming_bridge_prerequisite_issues_for_evidence(
         return _elevenlabs_bridge_prerequisite_issues_for_evidence(env_on_disk)
     if provider == "cartesia":
         return _cartesia_bridge_prerequisite_issues_for_evidence(env_on_disk)
+    if provider == "local_speech":
+        return _local_speech_bridge_prerequisite_issues_for_evidence(env_on_disk)
     return _deepgram_bridge_prerequisite_issues_for_evidence(env_on_disk)
+
+
+def _local_speech_bridge_prerequisite_issues_for_evidence(env_on_disk: dict[str, str]) -> list[str]:
+    from agent.realtime_voice_local_speech_bridge import (
+        local_speech_proxy_config_from_env,
+        local_speech_proxy_prerequisite_issues,
+    )
+    from hermes_cli.realtime_voice_magpie_tts_bridge import DEFAULT_MODEL as DEFAULT_MAGPIE_TTS_MODEL
+    from hermes_cli.realtime_voice_nemotron_speech_bridge import DEFAULT_MODEL as DEFAULT_NEMOTRON_SPEECH_MODEL
+
+    merged_env = {
+        **os.environ,
+        **env_on_disk,
+    }
+    with _temporary_environ(merged_env):
+        asr_runtime = local_speech_proxy_config_from_env(
+            provider="nemotron_speech",
+            role="stt",
+            default_model=DEFAULT_NEMOTRON_SPEECH_MODEL,
+            env_prefix="HERMES_NEMOTRON_SPEECH",
+            default_input_languages=("en", "ja"),
+        )
+        tts_runtime = local_speech_proxy_config_from_env(
+            provider="magpie_tts",
+            role="tts",
+            default_model=DEFAULT_MAGPIE_TTS_MODEL,
+            env_prefix="HERMES_MAGPIE_TTS",
+            default_output_languages=("en", "ja"),
+        )
+        return [
+            *(
+                f"nemotron_speech: {issue}"
+                for issue in local_speech_proxy_prerequisite_issues(
+                    asr_runtime,
+                    require_auth_token=True,
+                )
+            ),
+            *(
+                f"magpie_tts: {issue}"
+                for issue in local_speech_proxy_prerequisite_issues(
+                    tts_runtime,
+                    require_auth_token=True,
+                )
+            ),
+        ]
 
 
 def _elevenlabs_bridge_prerequisite_issues_for_evidence(env_on_disk: dict[str, str]) -> list[str]:
@@ -651,7 +813,11 @@ def _temporary_environ(values: dict[str, str]) -> Iterator[None]:
 
 
 def _streaming_bridge_log_path(provider: str) -> Path:
-    provider_name = provider if provider in {"deepgram", "elevenlabs", "cartesia", "loopback"} else "deepgram"
+    provider_name = (
+        provider
+        if provider in {"deepgram", "elevenlabs", "cartesia", "loopback", "nemotron_speech", "magpie_tts"}
+        else "deepgram"
+    )
     try:
         from hermes_cli import web_server
 
