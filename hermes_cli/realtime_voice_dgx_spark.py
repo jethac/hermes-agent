@@ -246,6 +246,8 @@ def build_dgx_spark_stack_manifest(
             "compose": "compose.yaml",
             "env_example": ".env.example",
             "launch": "launch-local-stack.sh",
+            "preflight_script": "preflight-local-stack.sh",
+            "benchmark_validation": "validate-benchmark-evidence.sh",
             "benchmark_matrix": "benchmark-matrix.json",
             "benchmark_evidence_template": "benchmark-evidence-template.json",
             "preflight": "preflight.json",
@@ -276,6 +278,8 @@ def write_dgx_spark_stack_artifacts(output_dir: Path, manifest: Mapping[str, Any
         "compose": output_dir / "compose.yaml",
         "env_example": output_dir / ".env.example",
         "launch": output_dir / "launch-local-stack.sh",
+        "preflight_script": output_dir / "preflight-local-stack.sh",
+        "benchmark_validation": output_dir / "validate-benchmark-evidence.sh",
         "benchmark_matrix": output_dir / "benchmark-matrix.json",
         "benchmark_evidence_template": output_dir / "benchmark-evidence-template.json",
     }
@@ -284,6 +288,10 @@ def write_dgx_spark_stack_artifacts(output_dir: Path, manifest: Mapping[str, Any
     files["env_example"].write_text(render_dgx_spark_env_example(manifest), encoding="utf-8")
     files["launch"].write_text(render_dgx_spark_launch_script(manifest), encoding="utf-8")
     files["launch"].chmod(0o755)
+    files["preflight_script"].write_text(render_dgx_spark_preflight_script(manifest), encoding="utf-8")
+    files["preflight_script"].chmod(0o755)
+    files["benchmark_validation"].write_text(render_dgx_spark_benchmark_validation_script(manifest), encoding="utf-8")
+    files["benchmark_validation"].chmod(0o755)
     files["benchmark_matrix"].write_text(
         _json(build_dgx_spark_benchmark_matrix(manifest)),
         encoding="utf-8",
@@ -504,7 +512,92 @@ cd "$SCRIPT_DIR"
 docker compose --env-file .env.example -f compose.yaml up --remove-orphans "$@"
 
 # Readiness check once services are up:
-#   python -m hermes_cli.realtime_voice_dgx_spark --output-dir "$SCRIPT_DIR" --check
+#   ./preflight-local-stack.sh
+"""
+
+
+def render_dgx_spark_preflight_script(manifest: Mapping[str, Any]) -> str:
+    roles = _roles(manifest)
+    return f"""#!/usr/bin/env sh
+set -eu
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+: "${{HERMES_REPO_DIR:={manifest["repo_dir"]}}}"
+: "${{HERMES_HOME:={manifest["hermes_home"]}}}"
+: "${{HERMES_PYTHON:=python}}"
+: "${{HERMES_KAME_INTERFACE_MODEL:={roles["interface"]["model"]}}}"
+: "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
+: "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
+: "${{HERMES_KAME_ORACLE_BASE_URL:={roles["oracle"]["base_url"]}}}"
+: "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={roles["asr"]["base_url"]}}}"
+: "${{HERMES_VOICE_STREAMING_TTS_BASE_URL:={roles["tts"]["base_url"]}}}"
+
+cd "$HERMES_REPO_DIR"
+"$HERMES_PYTHON" -m hermes_cli.realtime_voice_dgx_spark \\
+  --output-dir "$SCRIPT_DIR" \\
+  --repo-dir "$HERMES_REPO_DIR" \\
+  --hermes-home "$HERMES_HOME" \\
+  --interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL" \\
+  --interface-model "$HERMES_KAME_INTERFACE_MODEL" \\
+  --interface-context-tokens {roles["interface"]["max_model_len"]} \\
+  --interface-gpu-memory-utilization {roles["interface"]["gpu_memory_utilization"]} \\
+  --oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL" \\
+  --oracle-model "$HERMES_KAME_ORACLE_MODEL" \\
+  --oracle-context-tokens {roles["oracle"]["max_model_len"]} \\
+  --oracle-gpu-memory-utilization {roles["oracle"]["gpu_memory_utilization"]} \\
+  --sidecar-base-url {roles["sidecar"]["base_url"]} \\
+  --asr-base-url "$HERMES_VOICE_STREAMING_STT_BASE_URL" \\
+  --tts-base-url "$HERMES_VOICE_STREAMING_TTS_BASE_URL" \\
+  --asr-mode {manifest["engine"]["asr_mode"]} \\
+  --vllm-image {manifest["images"]["vllm"]} \\
+  --hermes-image {manifest["images"]["hermes"]} \\
+  --model-cache-dir {manifest["volumes"]["model_cache_dir"]} \\
+  --check "$@"
+"""
+
+
+def render_dgx_spark_benchmark_validation_script(manifest: Mapping[str, Any]) -> str:
+    roles = _roles(manifest)
+    return f"""#!/usr/bin/env sh
+set -eu
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+if [ "$#" -ne 1 ]; then
+  echo "usage: $0 /path/to/benchmark-evidence.json" >&2
+  exit 2
+fi
+
+: "${{HERMES_REPO_DIR:={manifest["repo_dir"]}}}"
+: "${{HERMES_HOME:={manifest["hermes_home"]}}}"
+: "${{HERMES_PYTHON:=python}}"
+: "${{HERMES_KAME_INTERFACE_MODEL:={roles["interface"]["model"]}}}"
+: "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
+: "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
+: "${{HERMES_KAME_ORACLE_BASE_URL:={roles["oracle"]["base_url"]}}}"
+: "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={roles["asr"]["base_url"]}}}"
+: "${{HERMES_VOICE_STREAMING_TTS_BASE_URL:={roles["tts"]["base_url"]}}}"
+
+cd "$HERMES_REPO_DIR"
+"$HERMES_PYTHON" -m hermes_cli.realtime_voice_dgx_spark \\
+  --output-dir "$SCRIPT_DIR" \\
+  --repo-dir "$HERMES_REPO_DIR" \\
+  --hermes-home "$HERMES_HOME" \\
+  --interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL" \\
+  --interface-model "$HERMES_KAME_INTERFACE_MODEL" \\
+  --interface-context-tokens {roles["interface"]["max_model_len"]} \\
+  --interface-gpu-memory-utilization {roles["interface"]["gpu_memory_utilization"]} \\
+  --oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL" \\
+  --oracle-model "$HERMES_KAME_ORACLE_MODEL" \\
+  --oracle-context-tokens {roles["oracle"]["max_model_len"]} \\
+  --oracle-gpu-memory-utilization {roles["oracle"]["gpu_memory_utilization"]} \\
+  --sidecar-base-url {roles["sidecar"]["base_url"]} \\
+  --asr-base-url "$HERMES_VOICE_STREAMING_STT_BASE_URL" \\
+  --tts-base-url "$HERMES_VOICE_STREAMING_TTS_BASE_URL" \\
+  --asr-mode {manifest["engine"]["asr_mode"]} \\
+  --vllm-image {manifest["images"]["vllm"]} \\
+  --hermes-image {manifest["images"]["hermes"]} \\
+  --model-cache-dir {manifest["volumes"]["model_cache_dir"]} \\
+  --benchmark-evidence "$1"
 """
 
 

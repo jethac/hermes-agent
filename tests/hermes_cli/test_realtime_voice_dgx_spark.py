@@ -176,6 +176,8 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
         "compose",
         "env_example",
         "launch",
+        "preflight_script",
+        "benchmark_validation",
         "benchmark_matrix",
         "benchmark_evidence_template",
     }
@@ -183,12 +185,18 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert (output_dir / "compose.yaml").is_file()
     assert (output_dir / ".env.example").is_file()
     assert (output_dir / "launch-local-stack.sh").is_file()
+    assert (output_dir / "preflight-local-stack.sh").is_file()
+    assert (output_dir / "validate-benchmark-evidence.sh").is_file()
     assert (output_dir / "benchmark-matrix.json").is_file()
     assert (output_dir / "benchmark-evidence-template.json").is_file()
     assert (output_dir / "launch-local-stack.sh").stat().st_mode & 0o111
+    assert (output_dir / "preflight-local-stack.sh").stat().st_mode & 0o111
+    assert (output_dir / "validate-benchmark-evidence.sh").stat().st_mode & 0o111
 
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
     launch = (output_dir / "launch-local-stack.sh").read_text(encoding="utf-8")
+    preflight = (output_dir / "preflight-local-stack.sh").read_text(encoding="utf-8")
+    validate_benchmark = (output_dir / "validate-benchmark-evidence.sh").read_text(encoding="utf-8")
     matrix = json.loads((output_dir / "benchmark-matrix.json").read_text(encoding="utf-8"))
     evidence_template = json.loads((output_dir / "benchmark-evidence-template.json").read_text(encoding="utf-8"))
     assert manifest["roles"]["interface"]["audio_input"] == "native_audio"
@@ -201,6 +209,15 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--sidecar-host spark.local" in launch
     assert "--sidecar-port 8765" in launch
     assert "docker compose --env-file .env.example -f compose.yaml up" in launch
+    assert "--check" in preflight
+    assert "--output-dir \"$SCRIPT_DIR\"" in preflight
+    assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in preflight
+    assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in preflight
+    assert "--sidecar-base-url http://spark.local:8765" in preflight
+    assert "usage: $0 /path/to/benchmark-evidence.json" in validate_benchmark
+    assert "--benchmark-evidence \"$1\"" in validate_benchmark
+    assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in validate_benchmark
+    assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in validate_benchmark
     assert [
         (candidate["model"], candidate["input"]) for candidate in matrix["candidates"]["interface"]
     ] == [
