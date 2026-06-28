@@ -808,6 +808,83 @@ def test_text_engine_emits_opt_in_audio_alias_events(monkeypatch):
     asyncio.run(run())
 
 
+def test_reference_sidecar_emits_opt_in_caption_alias_events():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                output_events={"caption_aliases": True},
+            )
+        )
+        await sidecar._emit(
+            VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+            {"text": "Partial caption.", "playback_generation": 4},
+        )
+        await sidecar._emit(
+            VoiceEventType.ASSISTANT_COMMIT,
+            {"text": "Final caption.", "playback_generation": 4},
+        )
+
+        seen = []
+        for _ in range(8):
+            event = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_CAPTION_FINAL:
+                break
+        await sidecar.close()
+        return seen
+
+    seen = asyncio.run(run())
+
+    partial = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL)
+    caption_partial = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_CAPTION_PARTIAL)
+    commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+    caption_final = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_CAPTION_FINAL)
+    assert caption_partial.payload["text"] == partial.payload["text"]
+    assert caption_partial.payload["caption_alias_for"] == VoiceEventType.ASSISTANT_TEXT_PARTIAL.value
+    assert caption_partial.payload["playback_generation"] == partial.payload["playback_generation"]
+    assert caption_final.payload["text"] == commit.payload["text"]
+    assert caption_final.payload["caption_alias_for"] == VoiceEventType.ASSISTANT_COMMIT.value
+    assert caption_final.payload["playback_generation"] == commit.payload["playback_generation"]
+
+
+def test_reference_sidecar_emits_opt_in_audio_alias_events():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                output_events={"audio_aliases": True},
+            )
+        )
+        await sidecar._emit(
+            VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            {
+                **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+                "playback_generation": 4,
+            },
+        )
+
+        seen = []
+        for _ in range(6):
+            event = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_AUDIO_CHUNK:
+                break
+        await sidecar.close()
+        return seen
+
+    seen = asyncio.run(run())
+
+    audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
+    alias = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_AUDIO_CHUNK)
+    assert alias.payload["audio_alias_for"] == VoiceEventType.AUDIO_OUTPUT_CHUNK.value
+    assert alias.payload["playback_generation"] == audio.payload["playback_generation"]
+    assert alias.payload["data_b64"] == audio.payload["data_b64"]
+    assert alias.payload["codec"] == audio.payload["codec"]
+
+
 def test_realtime_oracle_prompt_preserves_sanitized_speech_language_metadata():
     prompt = _voice_oracle_prompt(
         "こんにちは",

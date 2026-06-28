@@ -1879,6 +1879,54 @@ class ReferenceRealtimeVoiceSidecarSession:
                 payload=dict(payload),
             )
         )
+        await self._emit_caption_alias_if_needed(event_type, payload)
+        await self._emit_audio_alias_if_needed(event_type, payload)
+
+    async def _emit_caption_alias_if_needed(self, event_type: VoiceEventType, payload: Mapping[str, Any]) -> None:
+        if not _caption_alias_events_enabled(self.config):
+            return
+        if event_type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+            alias_type = VoiceEventType.ASSISTANT_CAPTION_PARTIAL
+        elif event_type == VoiceEventType.ASSISTANT_COMMIT and payload.get("interrupted") is not True:
+            alias_type = VoiceEventType.ASSISTANT_CAPTION_FINAL
+        else:
+            return
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return
+        self._sequence += 1
+        await put_realtime_voice_event(
+            self._events,
+            VoiceEvent(
+                type=alias_type,
+                session_id=self.config.session_id,
+                sequence=self._sequence,
+                payload={
+                    "text": text,
+                    "caption_alias_for": event_type.value,
+                    **({"playback_generation": payload["playback_generation"]} if "playback_generation" in payload else {}),
+                },
+            ),
+        )
+
+    async def _emit_audio_alias_if_needed(self, event_type: VoiceEventType, payload: Mapping[str, Any]) -> None:
+        if event_type != VoiceEventType.AUDIO_OUTPUT_CHUNK:
+            return
+        if not _audio_alias_events_enabled(self.config):
+            return
+        self._sequence += 1
+        await put_realtime_voice_event(
+            self._events,
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_AUDIO_CHUNK,
+                session_id=self.config.session_id,
+                sequence=self._sequence,
+                payload={
+                    **dict(payload),
+                    "audio_alias_for": event_type.value,
+                },
+            ),
+        )
 
     def _record_kame_feedback_event(self, event: VoiceEvent) -> None:
         record = {
@@ -2566,6 +2614,26 @@ def _allow_kame_transcript_events(config: Optional[RealtimeVoiceSessionConfig]) 
     if config.asr_mode.value in {"debug", "fallback"}:
         return True
     return str(config.interface_audio_input or "").strip().lower() == "text_fallback"
+
+
+def _caption_alias_events_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    if config is None:
+        return False
+    if isinstance(config.output_events, Mapping) and _metadata_bool(config.output_events.get("caption_aliases"), default=False):
+        return True
+    metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
+    output_events = metadata.get("output_events") if isinstance(metadata, Mapping) else {}
+    return isinstance(output_events, Mapping) and _metadata_bool(output_events.get("caption_aliases"), default=False)
+
+
+def _audio_alias_events_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    if config is None:
+        return False
+    if isinstance(config.output_events, Mapping):
+        return _metadata_bool(config.output_events.get("audio_aliases"), default=False)
+    metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
+    output_events = metadata.get("output_events") if isinstance(metadata, Mapping) else {}
+    return isinstance(output_events, Mapping) and _metadata_bool(output_events.get("audio_aliases"), default=False)
 
 
 def _assistant_speak_metadata_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
