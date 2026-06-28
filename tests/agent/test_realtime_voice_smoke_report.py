@@ -771,6 +771,19 @@ def test_realtime_voice_alpha_report_accepts_normalized_audio_fixture_text():
     assert validate_realtime_voice_alpha_report(report) == []
 
 
+def test_realtime_voice_alpha_report_accepts_native_assistant_audio_chunks():
+    report = _valid_alpha_report()
+    for entry in report:
+        events = entry.get("events")
+        if isinstance(events, list):
+            entry["events"] = [
+                "assistant.audio.chunk" if event == "audio.output.chunk" else event
+                for event in events
+            ]
+
+    assert validate_realtime_voice_alpha_report(report) == []
+
+
 def test_realtime_voice_alpha_report_accepts_japanese_hermes_phonetic_variants():
     report = _valid_alpha_report()
     replacements = {
@@ -801,7 +814,7 @@ def test_realtime_voice_alpha_report_rejects_audio_after_barge_in():
     issues = validate_realtime_voice_alpha_report(report)
 
     assert any(
-        "audio.output.chunk arrived after barge_in.detected (128 byte(s))" in issue.format()
+        "output audio event arrived after barge_in.detected (128 byte(s))" in issue.format()
         for issue in issues
     )
 

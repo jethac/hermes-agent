@@ -18,6 +18,8 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from agent.realtime_voice_kame import kame_local_reply_denies_voice_capability
 
+OUTPUT_AUDIO_EVENT_NAMES = frozenset({"audio.output.chunk", "assistant.audio.chunk"})
+
 
 ALPHA_REQUIRED_AUDIO_FIXTURES = (
     "./fixtures/realtime-voice/en/hello.webm",
@@ -1108,8 +1110,8 @@ def _validate_tts_entry(
                     )
                 )
     events = _events(entry)
-    if "audio.output.chunk" not in events:
-        issues.append(RealtimeVoiceSmokeReportIssue("tts", "missing audio.output.chunk event", identifier))
+    if not _has_output_audio_event(events):
+        issues.append(RealtimeVoiceSmokeReportIssue("tts", "missing output audio event", identifier))
     if _positive_int(entry.get("output_audio_bytes")) is None:
         issues.append(RealtimeVoiceSmokeReportIssue("tts", "missing output audio bytes", identifier))
     first_audio_ms = _positive_int(entry.get("first_audio_ms"))
@@ -1164,8 +1166,8 @@ def _validate_session_turn_entry(
         issues.append(
             RealtimeVoiceSmokeReportIssue("session_turn", "missing assistant.text.partial event", identifier)
         )
-    if "audio.output.chunk" not in events:
-        issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing audio.output.chunk event", identifier))
+    if not _has_output_audio_event(events):
+        issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing output audio event", identifier))
     if _positive_int(entry.get("output_audio_bytes")) is None:
         issues.append(RealtimeVoiceSmokeReportIssue("session_turn", "missing output audio bytes", identifier))
 
@@ -1246,8 +1248,8 @@ def _validate_audio_session_entry(
         issues.append(
             RealtimeVoiceSmokeReportIssue("audio_session", "missing assistant.text.partial event", identifier)
         )
-    if "audio.output.chunk" not in events:
-        issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing audio.output.chunk event", identifier))
+    if not _has_output_audio_event(events):
+        issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing output audio event", identifier))
     if _positive_int(entry.get("audio_bytes")) is None:
         issues.append(RealtimeVoiceSmokeReportIssue("audio_session", "missing audio bytes", identifier))
     if _positive_int(entry.get("output_audio_bytes")) is None:
@@ -1379,7 +1381,7 @@ def _validate_barge_in_entry(
         issues.append(
             RealtimeVoiceSmokeReportIssue(
                 "barge_in",
-                f"audio.output.chunk arrived after barge_in.detected ({audio_after_barge_in_bytes} byte(s))",
+                f"output audio event arrived after barge_in.detected ({audio_after_barge_in_bytes} byte(s))",
                 identifier,
             )
         )
@@ -1425,6 +1427,10 @@ def _events(entry: Mapping[str, Any]) -> set[str]:
     if not isinstance(raw, list):
         return set()
     return {str(item) for item in raw if isinstance(item, str)}
+
+
+def _has_output_audio_event(events: set[str]) -> bool:
+    return bool(OUTPUT_AUDIO_EVENT_NAMES.intersection(events))
 
 
 def _has_final_user_turn_event(events: set[str]) -> bool:

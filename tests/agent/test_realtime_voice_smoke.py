@@ -71,6 +71,56 @@ def test_tts_smoke_sends_language_metadata(monkeypatch):
     assert sent[0].payload["script"] == "Jpan"
 
 
+def test_tts_smoke_accepts_native_assistant_audio_chunk(monkeypatch):
+    sent = []
+
+    class FakeSidecarClient:
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            sent.append(event)
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.FRONTEND_STATE,
+                session_id=self.config.session_id,
+                sequence=1,
+                payload={"status": "ready"},
+            )
+            while not sent:
+                await asyncio.sleep(0)
+            yield VoiceEvent(
+                type=VoiceEventType.ASSISTANT_AUDIO_CHUNK,
+                session_id=self.config.session_id,
+                sequence=2,
+                payload=AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+            )
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_smoke.RealtimeVoiceSidecarClient",
+        FakeSidecarClient,
+    )
+
+    result = asyncio.run(
+        run_realtime_voice_sidecar_tts_smoke(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-smoke",
+                sidecar_base_url="http://voice.example.test:8765",
+            ),
+            text="Hello from Hermes.",
+            timeout_seconds=1,
+        )
+    )
+
+    assert result.ok is True
+    assert result.output_audio_bytes == len(b"audio")
+    assert result.events == ("frontend.state", "assistant.audio.chunk")
+
+
 def test_session_turn_smoke_measures_first_text_and_audio(monkeypatch):
     async def fake_speak_chunk(self, text, playback_generation):
         await self._emit(
@@ -470,5 +520,5 @@ def test_barge_in_smoke_rejects_audio_after_barge_in_ack(monkeypatch):
 
     assert result.ok is False
     assert result.audio_after_barge_in_bytes == len(b"stale")
-    assert "audio.output.chunk arrived after barge_in" in result.error
+    assert "output audio chunk arrived after barge_in" in result.error
     assert result.events == ("frontend.state", "barge_in.detected", "audio.output.chunk")

@@ -142,6 +142,21 @@ SERVER_EVENT_TYPES = frozenset(
     }
 )
 
+OUTPUT_AUDIO_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.ASSISTANT_AUDIO_CHUNK,
+    }
+)
+
+
+def is_output_audio_event_type(value: Any) -> bool:
+    try:
+        event_type = value if isinstance(value, VoiceEventType) else VoiceEventType(str(value))
+    except (TypeError, ValueError):
+        return False
+    return event_type in OUTPUT_AUDIO_EVENT_TYPES
+
 BINARY_AUDIO_FRAME_HEADER_BYTES = 4
 BINARY_AUDIO_FRAME_HEADER_LIMIT = 64 * 1024
 REALTIME_VOICE_EVENT_QUEUE_LIMIT = 256
@@ -515,7 +530,7 @@ async def put_realtime_voice_event(queue: asyncio.Queue[VoiceEvent | None], even
         except asyncio.QueueFull:
             pass
 
-    if isinstance(event, VoiceEvent) and event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+    if isinstance(event, VoiceEvent) and is_output_audio_event_type(event.type):
         return False
 
     _drop_oldest_queued_event(queue)
@@ -534,7 +549,7 @@ def _drop_one_queued_audio_event(queue: asyncio.Queue[VoiceEvent | None]) -> boo
             item = queue.get_nowait()
         except asyncio.QueueEmpty:
             break
-        if not dropped and isinstance(item, VoiceEvent) and item.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+        if not dropped and isinstance(item, VoiceEvent) and is_output_audio_event_type(item.type):
             dropped = True
             continue
         kept.append(item)

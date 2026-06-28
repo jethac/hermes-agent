@@ -21,6 +21,7 @@ from agent.realtime_voice import (
     VoiceAudioCodec,
     VoiceEvent,
     VoiceEventType,
+    is_output_audio_event_type,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_session import RealtimeVoiceSession
@@ -229,7 +230,7 @@ async def run_realtime_voice_sidecar_tts_smoke(
                     ok=False,
                     ready_ms=ready_ms,
                     events=tuple(events),
-                    error=f"timed out after {timeout:g}s waiting for audio.output.chunk",
+                    error=f"timed out after {timeout:g}s waiting for output audio chunk",
                 )
             try:
                 event = await asyncio.wait_for(anext(stream), timeout=remaining)
@@ -238,7 +239,7 @@ async def run_realtime_voice_sidecar_tts_smoke(
                     ok=False,
                     ready_ms=ready_ms,
                     events=tuple(events),
-                    error="sidecar event stream ended before audio.output.chunk",
+                    error="sidecar event stream ended before output audio chunk",
                 )
 
             elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
@@ -254,7 +255,7 @@ async def run_realtime_voice_sidecar_tts_smoke(
                     events=tuple(events),
                     error=error,
                 )
-            if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+            if is_output_audio_event_type(event.type):
                 first_audio_metrics = _safe_metrics(event.payload)
                 try:
                     output_audio_bytes = len(AudioChunk.from_payload(event.payload).data)
@@ -267,7 +268,7 @@ async def run_realtime_voice_sidecar_tts_smoke(
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
                     first_audio_metrics=first_audio_metrics,
-                    error="" if output_audio_bytes > 0 else "audio.output.chunk contained no audio bytes",
+                    error="" if output_audio_bytes > 0 else f"{event.type.value} contained no audio bytes",
                 )
     except Exception as exc:
         return RealtimeVoiceSidecarSmokeResult(
@@ -390,7 +391,7 @@ async def run_realtime_voice_session_turn_smoke(
                     fallback=_elapsed_from(transcript_final_elapsed_ms, elapsed_ms),
                 )
                 final_text = _assistant_text_from_payload(event.payload) or final_text
-            elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK and first_audio_ms is None:
+            elif is_output_audio_event_type(event.type) and first_audio_ms is None:
                 first_audio_metrics = _safe_metrics(event.payload)
                 first_audio_ms = _metric_ms(
                     event.payload,
@@ -416,7 +417,7 @@ async def run_realtime_voice_session_turn_smoke(
                     events=tuple(events),
                     first_audio_metrics=first_audio_metrics,
                     **kame_evidence,
-                    error="" if output_audio_bytes > 0 else "audio.output.chunk contained no audio bytes",
+                    error="" if output_audio_bytes > 0 else f"{event.type.value} contained no audio bytes",
                 )
     except Exception as exc:
         return RealtimeVoiceSidecarSmokeResult(
@@ -559,7 +560,7 @@ async def run_realtime_voice_session_audio_smoke(
                     "final_transcript_to_first_text_ms",
                     fallback=_elapsed_from(transcript_final_elapsed_ms, elapsed_ms),
                 )
-            elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK and first_audio_ms is None:
+            elif is_output_audio_event_type(event.type) and first_audio_ms is None:
                 first_audio_metrics = _safe_metrics(event.payload)
                 first_audio_ms = _metric_ms(
                     event.payload,
@@ -599,7 +600,7 @@ async def run_realtime_voice_session_audio_smoke(
                     events=tuple(events),
                     first_audio_metrics=first_audio_metrics,
                     **kame_evidence,
-                    error="" if output_audio_bytes > 0 else "audio.output.chunk contained no audio bytes",
+                    error="" if output_audio_bytes > 0 else f"{event.type.value} contained no audio bytes",
                 )
     except Exception as exc:
         return RealtimeVoiceSidecarSmokeResult(
@@ -878,7 +879,7 @@ async def run_realtime_voice_sidecar_barge_in_smoke(
                         audio_after_barge_in_bytes=quiet.audio_after_barge_in_bytes,
                         events=tuple(events),
                         error=(
-                            "audio.output.chunk arrived after barge_in "
+                            "output audio chunk arrived after barge_in "
                             f"({quiet.audio_after_barge_in_bytes} byte(s))"
                         ),
                     )
@@ -948,7 +949,7 @@ async def _drain_post_barge_in_audio(
             return _PostBargeInQuietResult(
                 error=str(event.payload.get("error") or "sidecar session error after barge_in")
             )
-        if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+        if is_output_audio_event_type(event.type):
             try:
                 audio_bytes = len(AudioChunk.from_payload(event.payload).data)
             except Exception:
