@@ -161,6 +161,26 @@ def _voice_status_frontend_state_line(value: Any) -> str:
     return f"Frontend state: {'; '.join(parts)}"
 
 
+def _voice_status_metric_lines(value: Any) -> list[str]:
+    if not isinstance(value, dict) or not value:
+        return []
+    latency_parts: list[str] = []
+    counter_parts: list[str] = []
+    for key, raw in sorted(value.items()):
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            continue
+        if key.endswith("_ms"):
+            latency_parts.append(f"{key}={raw}ms")
+        else:
+            counter_parts.append(f"{key}={raw}")
+    lines: list[str] = []
+    if latency_parts:
+        lines.append(f"Realtime latency: {', '.join(latency_parts)}")
+    if counter_parts:
+        lines.append(f"Realtime counters: {', '.join(counter_parts)}")
+    return lines
+
+
 class GatewaySlashCommandsMixin:
     """In-session slash-command handlers for GatewayRunner."""
 
@@ -2580,14 +2600,7 @@ class GatewaySlashCommandsMixin:
                     if session.get("last_realtime_event"):
                         lines.append(f"Last realtime event: {session['last_realtime_event']}")
                     latency_metrics = session.get("latency_metrics_ms")
-                    if isinstance(latency_metrics, dict) and latency_metrics:
-                        metric_parts = [
-                            f"{key}={value}ms"
-                            for key, value in sorted(latency_metrics.items())
-                            if isinstance(value, int)
-                        ]
-                        if metric_parts:
-                            lines.append(f"Realtime latency: {', '.join(metric_parts)}")
+                    lines.extend(_voice_status_metric_lines(latency_metrics))
                     quality_misses = session.get("quality_target_misses")
                     if isinstance(quality_misses, list) and quality_misses:
                         lines.append(f"Quality target misses: {len(quality_misses)}")

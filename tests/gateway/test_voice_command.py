@@ -1018,6 +1018,8 @@ class TestVoiceChannelCommands:
                 "latency_metrics_ms": {
                     "final_transcript_to_first_audio_ms": 812,
                     "barge_in_ack_ms": 45,
+                    "kame_oracle_bypassed": 1,
+                    "kame_oracle_called": 0,
                 },
                 "quality_target_misses": [
                     {
@@ -1053,6 +1055,10 @@ class TestVoiceChannelCommands:
         assert "Realtime latency:" in result
         assert "barge_in_ack_ms=45ms" in result
         assert "final_transcript_to_first_audio_ms=812ms" in result
+        assert "Realtime counters:" in result
+        assert "kame_oracle_bypassed=1" in result
+        assert "kame_oracle_called=0" in result
+        assert "kame_oracle_bypassed=1ms" not in result
         assert "Quality target misses: 1" in result
 
     # -- _handle_voice_channel_leave --
