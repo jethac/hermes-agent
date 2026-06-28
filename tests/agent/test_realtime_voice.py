@@ -3936,7 +3936,7 @@ def test_reference_sidecar_reports_kame_audio_reflex_fallback_without_vllm():
                 engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
                 frontend_provider="gemma4",
                 interface_audio_input="native_audio",
-                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+                asr_mode=RealtimeVoiceASRMode.FALLBACK,
             )
         )
 
@@ -3958,6 +3958,40 @@ def test_reference_sidecar_reports_kame_audio_reflex_fallback_without_vllm():
     assert event.payload["interface_audio_input"] == "native_audio"
 
 
+def test_reference_sidecar_kame_on_escalation_reports_degraded_without_audio_reflex():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(vllm_base_url=None, vllm_model=None)
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+
+        started = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+        event = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+        await sidecar.close()
+        return started, event
+
+    started, event = asyncio.run(run())
+    assert started.type == VoiceEventType.SESSION_STARTED
+    assert event.type == VoiceEventType.FRONTEND_STATE
+    assert event.payload["status"] == "degraded"
+    assert event.payload["reason"] == "kame_audio_reflex_unavailable"
+    assert event.payload["requested_provider"] == "gemma4"
+    assert event.payload["provider"] == "unavailable"
+    assert event.payload["fallback_provider"] == "unavailable"
+    assert "intent_source" not in event.payload
+    assert "transcript_source" not in event.payload
+    assert event.payload["interface_audio_input"] == "native_audio"
+    assert event.payload["asr_mode"] == "on_escalation"
+
+
 def test_reference_sidecar_labels_kame_local_stt_fallback_as_asr_evidence():
     def fake_transcribe(path):
         assert path
@@ -3974,7 +4008,7 @@ def test_reference_sidecar_labels_kame_local_stt_fallback_as_asr_evidence():
                 engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
                 frontend_provider="gemma4",
                 interface_audio_input="native_audio",
-                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+                asr_mode=RealtimeVoiceASRMode.FALLBACK,
             )
         )
         await sidecar.receive_event(
@@ -4035,7 +4069,7 @@ def test_reference_sidecar_falls_back_to_local_stt_when_kame_vllm_reflex_fails(m
                 frontend_provider="gemma4",
                 frontend_model="google/gemma-4-E2B-it",
                 interface_audio_input="native_audio",
-                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+                asr_mode=RealtimeVoiceASRMode.FALLBACK,
             )
         )
         await sidecar.receive_event(
@@ -4085,6 +4119,64 @@ def test_reference_sidecar_falls_back_to_local_stt_when_kame_vllm_reflex_fails(m
     assert final.payload["fallback_reason"] == "kame_audio_reflex_failed"
     assert "vLLM connection refused" in final.payload["fallback_error"]
     assert final.payload["input_generation"] == 12
+
+
+def test_reference_sidecar_kame_vllm_failure_respects_nonfallback_asr_mode(monkeypatch):
+    transcribe_calls = []
+
+    def failing_urlopen(req, timeout):
+        raise OSError("vLLM connection refused")
+
+    def fake_transcribe(path):
+        transcribe_calls.append(path)
+        raise AssertionError("local STT must not drive the reflex in on_escalation mode")
+
+    monkeypatch.setattr("agent.realtime_voice_reference_sidecar.urllib.request.urlopen", failing_urlopen)
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                vllm_base_url="http://vllm.local:8000/v1",
+                vllm_model="google/gemma-4-E2B-it",
+            ),
+            transcribe_audio_func=fake_transcribe,
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="google/gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                    "input_generation": 12,
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.SESSION_ERROR:
+                await sidecar.close()
+                break
+        return seen
+
+    seen = asyncio.run(run())
+    error = next(event for event in seen if event.type == VoiceEventType.SESSION_ERROR)
+    assert "ASR reflex fallback is disabled" in error.payload["error"]
+    assert "vLLM connection refused" in error.payload["error"]
+    assert transcribe_calls == []
 
 
 def test_reference_sidecar_passes_language_metadata_to_tts_callback(tmp_path):

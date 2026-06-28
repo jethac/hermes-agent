@@ -310,18 +310,22 @@ class ReferenceRealtimeVoiceSidecarSession:
             await self._start_streaming_tts(config)
         await self._prepare_acknowledgement_audio(config)
         fallback_reason = self._kame_audio_reflex_fallback_reason(config)
+        streaming_stt_drives_reflex = self._streaming_stt is not None and self._streaming_stt_drives_reflex()
+        local_stt_drives_reflex = bool(
+            fallback_reason and self.runtime.local_stt_enabled and self._kame_stt_reflex_fallback_allowed(config)
+        )
         provider = (
             "openai_realtime"
             if self._openai_realtime is not None
             else "gemini_live" if self._gemini_live is not None
-            else "streaming_stt" if self._streaming_stt is not None
-            else "local_stt" if fallback_reason and self.runtime.local_stt_enabled
+            else "streaming_stt" if streaming_stt_drives_reflex
+            else "local_stt" if local_stt_drives_reflex
             else "unavailable" if fallback_reason
             else config.frontend_provider if requested_provider not in {"openai_realtime", "openai", "gemini_live", "gemini"} and config.frontend_provider
             else "local"
         )
         payload = {
-            "status": "fallback" if fallback_reason and self.runtime.local_stt_enabled else "degraded" if fallback_reason else "ready",
+            "status": "fallback" if local_stt_drives_reflex else "degraded" if fallback_reason else "ready",
             "provider": provider,
             "model": self.runtime.streaming_stt_model or config.frontend_model or "",
             "streaming_stt": self._streaming_stt is not None,
@@ -338,10 +342,15 @@ class ReferenceRealtimeVoiceSidecarSession:
                     "reason": fallback_reason,
                     "requested_provider": config.frontend_provider or "",
                     "fallback_provider": provider,
-                    "intent_source": "asr_fallback",
-                    "transcript_source": "asr",
                 }
             )
+            if local_stt_drives_reflex:
+                payload.update(
+                    {
+                        "intent_source": "asr_fallback",
+                        "transcript_source": "asr",
+                    }
+                )
         await self._emit(
             VoiceEventType.FRONTEND_STATE,
             payload,
@@ -1156,8 +1165,11 @@ class ReferenceRealtimeVoiceSidecarSession:
             try:
                 return self._understand_kame_with_vllm(audio, codec)
             except Exception as exc:
-                if not self.runtime.local_stt_enabled:
-                    raise
+                if not (self.runtime.local_stt_enabled and self._kame_stt_reflex_fallback_allowed()):
+                    raise RuntimeError(
+                        "KAME audio reflex failed and ASR reflex fallback is disabled: "
+                        f"{sanitize_realtime_voice_error(exc)}"
+                    ) from exc
                 logger.warning("KAME audio reflex failed; falling back to local STT: %s", sanitize_realtime_voice_error(exc))
                 return self._understand_with_local_stt(
                     audio,
@@ -1166,6 +1178,14 @@ class ReferenceRealtimeVoiceSidecarSession:
                     fallback_reason="kame_audio_reflex_failed",
                     fallback_error=sanitize_realtime_voice_error(exc),
                 )
+        if self.config is not None and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+            if self.runtime.vllm_base_url and self.runtime.vllm_model:
+                return {"text": self._transcribe_with_vllm(audio, codec)}
+            if not self._kame_stt_reflex_fallback_allowed():
+                raise RuntimeError("KAME audio reflex unavailable and ASR reflex fallback is disabled")
+            if not self.runtime.local_stt_enabled:
+                raise RuntimeError("local STT is disabled and no KAME audio reflex is configured")
+            return self._understand_with_local_stt(audio, codec)
         if self.runtime.vllm_base_url and self.runtime.vllm_model:
             return {"text": self._transcribe_with_vllm(audio, codec)}
         if not self.runtime.local_stt_enabled:
@@ -1229,21 +1249,27 @@ class ReferenceRealtimeVoiceSidecarSession:
         return (
             config is not None
             and config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
-            and self._streaming_stt is None
             and self._openai_realtime is None
             and self._gemini_live is None
             and not bool(self.runtime.vllm_base_url and self.runtime.vllm_model)
+            and self._kame_stt_reflex_fallback_allowed(config)
         )
+
+    def _kame_stt_reflex_fallback_allowed(self, config: Optional[RealtimeVoiceSessionConfig] = None) -> bool:
+        config = config or self.config
+        if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+            return False
+        interface_audio_input = str(config.interface_audio_input or "").strip().lower()
+        return config.asr_mode.value == "fallback" or interface_audio_input == "text_fallback"
 
     def _kame_audio_reflex_fallback_reason(self, config: RealtimeVoiceSessionConfig) -> str:
         if config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
             return ""
-        if self._openai_realtime is not None or self._gemini_live is not None or self._streaming_stt is not None:
+        if self._openai_realtime is not None or self._gemini_live is not None:
             return ""
         if self.runtime.vllm_base_url and self.runtime.vllm_model:
             return ""
-        interface_audio_input = str(config.interface_audio_input or "auto").strip().lower() or "auto"
-        if interface_audio_input == "text_fallback":
+        if self._streaming_stt is not None and self._kame_stt_reflex_fallback_allowed(config):
             return ""
         return "kame_audio_reflex_unavailable"
 
