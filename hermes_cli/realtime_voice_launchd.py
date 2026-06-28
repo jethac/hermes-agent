@@ -198,7 +198,7 @@ def build_realtime_voice_sidecar_plist(
     command = _shell_prelude(repo_dir=repo_dir, hermes_home=hermes_home)
     command += (
         'export HERMES_VOICE_STREAMING_STT_TOKEN="${HERMES_VOICE_STREAMING_STT_TOKEN:-$HERMES_STREAMING_STT_BRIDGE_TOKEN}"; '
-        'export HERMES_VOICE_STREAMING_TTS_TOKEN="${HERMES_VOICE_STREAMING_TTS_TOKEN:-$HERMES_STREAMING_STT_BRIDGE_TOKEN}"; '
+        'export HERMES_VOICE_STREAMING_TTS_TOKEN="${HERMES_VOICE_STREAMING_TTS_TOKEN:-${HERMES_STREAMING_TTS_BRIDGE_TOKEN:-$HERMES_STREAMING_STT_BRIDGE_TOKEN}}"; '
     )
     command += "exec " + _uv_python_module_command(
         uv_bin,
@@ -278,7 +278,7 @@ def build_kame_realtime_voice_sidecar_plist(
     ]
     if streaming_tts_base_url:
         command += (
-            'export HERMES_VOICE_STREAMING_TTS_TOKEN="${HERMES_VOICE_STREAMING_TTS_TOKEN:-$HERMES_STREAMING_STT_BRIDGE_TOKEN}"; '
+            'export HERMES_VOICE_STREAMING_TTS_TOKEN="${HERMES_VOICE_STREAMING_TTS_TOKEN:-${HERMES_STREAMING_TTS_BRIDGE_TOKEN:-$HERMES_STREAMING_STT_BRIDGE_TOKEN}}"; '
         )
         args.extend(
             [

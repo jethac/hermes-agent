@@ -14383,8 +14383,13 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
         child_env["HERMES_VOICE_STREAMING_STT_TOKEN"] = streaming_stt_token
     streaming_tts_base_url = str(realtime.get("streaming_tts_base_url") or "").strip()
     streaming_tts_model = str(realtime.get("streaming_tts_model") or "").strip()
-    streaming_tts_token_env = str(realtime.get("streaming_tts_token_env") or "HERMES_VOICE_STREAMING_TTS_TOKEN")
-    streaming_tts_token = str(env_on_disk.get(streaming_tts_token_env) or os.environ.get(streaming_tts_token_env) or "")
+    streaming_tts_token_env = str(realtime.get("streaming_tts_token_env") or "HERMES_STREAMING_TTS_BRIDGE_TOKEN")
+    streaming_tts_token = _realtime_voice_env_value(
+        env_on_disk,
+        streaming_tts_token_env,
+        "HERMES_VOICE_STREAMING_TTS_TOKEN",
+        "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+    )
     if streaming_tts_base_url:
         child_env["HERMES_VOICE_STREAMING_TTS_BASE_URL"] = streaming_tts_base_url
     if streaming_tts_model:
@@ -15016,11 +15021,30 @@ def _realtime_voice_env_present(env_on_disk: Mapping[str, Any], key: str) -> boo
     return bool(str(env_on_disk.get(key) or os.environ.get(key) or "").strip())
 
 
+def _realtime_voice_env_value(
+    env_on_disk: Mapping[str, Any],
+    key: str,
+    *fallback_keys: str,
+) -> str:
+    for candidate in (key, *fallback_keys):
+        env_name = str(candidate or "").strip()
+        if not env_name:
+            continue
+        value = str(env_on_disk.get(env_name) or os.environ.get(env_name) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _realtime_voice_env_present_any(env_on_disk: Mapping[str, Any], key: str, *fallback_keys: str) -> bool:
+    return bool(_realtime_voice_env_value(env_on_disk, key, *fallback_keys))
+
+
 def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk: Mapping[str, Any]) -> List[Dict[str, Any]]:
     openai_key_env = str(realtime.get("openai_realtime_api_key_env") or "OPENAI_API_KEY")
     gemini_key_env = str(realtime.get("gemini_live_api_key_env") or "GEMINI_API_KEY")
     stt_token_env = str(realtime.get("streaming_stt_token_env") or "HERMES_STREAMING_STT_BRIDGE_TOKEN")
-    tts_token_env = str(realtime.get("streaming_tts_token_env") or stt_token_env)
+    tts_token_env = str(realtime.get("streaming_tts_token_env") or "HERMES_STREAMING_TTS_BRIDGE_TOKEN")
     nemotron_upstream_env = "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL"
     magpie_upstream_env = "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL"
     kame_model = (
@@ -15074,7 +15098,11 @@ def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk
             "api_key_env": "ELEVENLABS_API_KEY",
             "api_key_present": _realtime_voice_env_present(env_on_disk, "ELEVENLABS_API_KEY"),
             "bridge_token_env": tts_token_env,
-            "bridge_token_present": _realtime_voice_env_present(env_on_disk, tts_token_env),
+            "bridge_token_present": _realtime_voice_env_present_any(
+                env_on_disk,
+                tts_token_env,
+                "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+            ),
             "implemented": True,
         },
         {
@@ -15118,7 +15146,11 @@ def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk
             "upstream_token_env": "HERMES_MAGPIE_TTS_UPSTREAM_TOKEN",
             "upstream_token_present": _realtime_voice_env_present(env_on_disk, "HERMES_MAGPIE_TTS_UPSTREAM_TOKEN"),
             "bridge_token_env": tts_token_env,
-            "bridge_token_present": _realtime_voice_env_present(env_on_disk, tts_token_env),
+            "bridge_token_present": _realtime_voice_env_present_any(
+                env_on_disk,
+                tts_token_env,
+                "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+            ),
             "implemented": True,
         },
         {
@@ -15133,7 +15165,11 @@ def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk
             "voice_id_env": "CARTESIA_VOICE_ID",
             "voice_id_present": _realtime_voice_env_present(env_on_disk, "CARTESIA_VOICE_ID"),
             "bridge_token_env": tts_token_env,
-            "bridge_token_present": _realtime_voice_env_present(env_on_disk, tts_token_env),
+            "bridge_token_present": _realtime_voice_env_present_any(
+                env_on_disk,
+                tts_token_env,
+                "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+            ),
             "implemented": True,
         },
     ]
@@ -15170,7 +15206,7 @@ def _realtime_voice_setup_config_payload(
     status: Mapping[str, Any],
 ) -> Dict[str, Any]:
     stt_token_env = str(realtime.get("streaming_stt_token_env") or "HERMES_STREAMING_STT_BRIDGE_TOKEN")
-    tts_token_env = str(realtime.get("streaming_tts_token_env") or stt_token_env)
+    tts_token_env = str(realtime.get("streaming_tts_token_env") or "HERMES_STREAMING_TTS_BRIDGE_TOKEN")
     nemotron_upstream_env = "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL"
     magpie_upstream_env = "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL"
     return {

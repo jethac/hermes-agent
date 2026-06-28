@@ -19,7 +19,7 @@ def test_live_like_profile_contains_portable_streaming_bridge_config():
     assert profile["streaming_stt_base_url"] == "http://streaming-stt.local:9000"
     assert profile["streaming_tts_base_url"] == "http://streaming-tts.local:9001"
     assert profile["streaming_stt_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
-    assert profile["streaming_tts_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    assert profile["streaming_tts_token_env"] == "HERMES_STREAMING_TTS_BRIDGE_TOKEN"
     assert profile["production_languages"] == ["en", "ja"]
     assert profile["production_scripts"] == ["Latn", "Jpan"]
     assert profile["best_effort_languages"] is True
@@ -59,7 +59,7 @@ def test_deepgram_preset_prints_applyable_portable_profile(capsys):
     assert realtime["streaming_stt_model"] == "nova-3"
     assert realtime["streaming_tts_model"] == "aura-2-thalia-en"
     assert realtime["streaming_stt_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
-    assert realtime["streaming_tts_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    assert realtime["streaming_tts_token_env"] == "HERMES_STREAMING_TTS_BRIDGE_TOKEN"
     assert realtime["require_live_like"] is True
 
 
@@ -110,7 +110,7 @@ def test_elevenlabs_preset_prints_applyable_portable_profile(capsys):
     assert realtime["streaming_stt_model"] == "scribe_v2_realtime"
     assert realtime["streaming_tts_model"] == "eleven_flash_v2_5"
     assert realtime["streaming_stt_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
-    assert realtime["streaming_tts_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    assert realtime["streaming_tts_token_env"] == "HERMES_STREAMING_TTS_BRIDGE_TOKEN"
     assert realtime["require_live_like"] is True
 
 
@@ -142,7 +142,7 @@ def test_cartesia_preset_prints_applyable_portable_profile(capsys):
     assert realtime["streaming_stt_model"] == "ink-2"
     assert realtime["streaming_tts_model"] == "sonic-3.5"
     assert realtime["streaming_stt_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
-    assert realtime["streaming_tts_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    assert realtime["streaming_tts_token_env"] == "HERMES_STREAMING_TTS_BRIDGE_TOKEN"
     assert realtime["require_live_like"] is True
 
 
@@ -647,9 +647,14 @@ def test_deepgram_preset_apply_can_generate_bridge_token(monkeypatch, tmp_path, 
 
     assert result == 0
     assert "HERMES_STREAMING_STT_BRIDGE_TOKEN" in env
+    assert "HERMES_STREAMING_TTS_BRIDGE_TOKEN" in env
     assert len(env["HERMES_STREAMING_STT_BRIDGE_TOKEN"]) >= 32
+    assert env["HERMES_STREAMING_TTS_BRIDGE_TOKEN"] == env["HERMES_STREAMING_STT_BRIDGE_TOKEN"]
     output = capsys.readouterr().out
-    assert "Generated realtime voice bridge token in HERMES_STREAMING_STT_BRIDGE_TOKEN" in output
+    assert (
+        "Generated realtime voice bridge token in "
+        "HERMES_STREAMING_STT_BRIDGE_TOKEN, HERMES_STREAMING_TTS_BRIDGE_TOKEN"
+    ) in output
     assert "realtime_voice_deepgram_bridge --generate-token" not in output
     assert env["HERMES_STREAMING_STT_BRIDGE_TOKEN"] not in output
 
@@ -704,8 +709,11 @@ def test_deepgram_preset_apply_does_not_overwrite_existing_bridge_token(monkeypa
     result = realtime_voice_profile.main(["--preset", "deepgram", "--apply", "--generate-bridge-token"])
 
     assert result == 0
-    assert writes == []
-    assert "already configured in HERMES_STREAMING_STT_BRIDGE_TOKEN" in capsys.readouterr().out
+    assert writes == [("HERMES_STREAMING_TTS_BRIDGE_TOKEN", "existing-token")]
+    assert (
+        "Generated realtime voice bridge token in "
+        "HERMES_STREAMING_STT_BRIDGE_TOKEN, HERMES_STREAMING_TTS_BRIDGE_TOKEN"
+    ) in capsys.readouterr().out
 
 
 def test_elevenlabs_preset_apply_prints_bridge_next_steps(monkeypatch, tmp_path, capsys):

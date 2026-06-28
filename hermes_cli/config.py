@@ -2078,7 +2078,7 @@ DEFAULT_CONFIG = {
             "streaming_tts_base_url": "",
             "streaming_tts_model": "",
             "streaming_tts_voice": "",
-            "streaming_tts_token_env": "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+            "streaming_tts_token_env": "HERMES_STREAMING_TTS_BRIDGE_TOKEN",
             "openai_realtime_api_key_env": "OPENAI_API_KEY",
             "openai_realtime_base_url": "wss://api.openai.com/v1/realtime",
             "openai_realtime_voice": "marin",

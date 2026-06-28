@@ -731,11 +731,11 @@ def create_elevenlabs_realtime_bridge_app(runtime: Optional[ElevenLabsRealtimeBr
 
 
 def elevenlabs_bridge_config_from_env() -> ElevenLabsRealtimeBridgeConfig:
-    auth_token_env = os.environ.get("HERMES_ELEVENLABS_BRIDGE_TOKEN_ENV") or "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    auth_token_env = os.environ.get("HERMES_ELEVENLABS_BRIDGE_TOKEN_ENV") or ""
     output_format = os.environ.get("HERMES_ELEVENLABS_OUTPUT_FORMAT") or "pcm_24000"
     return ElevenLabsRealtimeBridgeConfig(
         api_key=os.environ.get("ELEVENLABS_API_KEY") or os.environ.get("HERMES_ELEVENLABS_API_KEY") or None,
-        auth_token=os.environ.get(auth_token_env) or None,
+        auth_token=_bridge_auth_token_from_env(auth_token_env),
         stt_url=os.environ.get("HERMES_ELEVENLABS_STT_URL")
         or "wss://api.elevenlabs.io/v1/speech-to-text/realtime",
         tts_url=os.environ.get("HERMES_ELEVENLABS_TTS_URL") or "wss://api.elevenlabs.io/v1/text-to-speech",
@@ -777,7 +777,7 @@ def elevenlabs_bridge_prerequisite_issues(
             "install with `python -m pip install 'hermes-agent[voice]'`"
         )
     if require_auth_token and not runtime.auth_token:
-        issues.append("HERMES_STREAMING_STT_BRIDGE_TOKEN is required in strict mode")
+        issues.append("HERMES_STREAMING_STT_BRIDGE_TOKEN or HERMES_STREAMING_TTS_BRIDGE_TOKEN is required in strict mode")
     configured_input_languages = set(elevenlabs_input_languages(runtime))
     missing_input_languages = [
         language
@@ -827,6 +827,18 @@ def elevenlabs_tts_output_languages(runtime: ElevenLabsRealtimeBridgeConfig) -> 
 
 def _module_available(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
+
+
+def _bridge_auth_token_from_env(auth_token_env: str = "") -> Optional[str]:
+    env_names = [auth_token_env] if auth_token_env else [
+        "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+        "HERMES_STREAMING_TTS_BRIDGE_TOKEN",
+    ]
+    for env_name in env_names:
+        value = os.environ.get(env_name)
+        if value:
+            return value
+    return None
 
 
 def _authorized(headers: Mapping[str, str], token: Optional[str]) -> bool:

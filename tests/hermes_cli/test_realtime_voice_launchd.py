@@ -83,6 +83,7 @@ def test_launchd_sidecar_command_aliases_bridge_token_and_points_at_bridge(tmp_p
     assert "HERMES_VOICE_STREAMING_STT_TOKEN" in command
     assert "HERMES_STREAMING_STT_BRIDGE_TOKEN" in command
     assert "HERMES_VOICE_STREAMING_TTS_TOKEN" in command
+    assert "HERMES_STREAMING_TTS_BRIDGE_TOKEN" in command
     assert "hermes_cli.realtime_voice_sidecar" in command
     assert "--streaming-stt-base-url http://127.0.0.1:8767" in command
     assert "--streaming-tts-base-url http://127.0.0.1:8767" in command
@@ -140,6 +141,7 @@ def test_launchd_kame_sidecar_can_include_streaming_tts_without_stt_bridge(tmp_p
     assert "--streaming-tts-base-url http://127.0.0.1:8768" in command
     assert "--streaming-tts-model cartesia-sonic" in command
     assert "HERMES_VOICE_STREAMING_TTS_TOKEN" in command
+    assert "HERMES_STREAMING_TTS_BRIDGE_TOKEN" in command
     assert "HERMES_STREAMING_STT_BRIDGE_TOKEN" in command
 
 

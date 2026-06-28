@@ -15,6 +15,8 @@ import yaml
 DEFAULT_EVIDENCE_REPORT = "./artifacts/realtime-voice-evidence"
 DEFAULT_STREAMING_STT_MODEL = "portable-streaming-asr"
 DEFAULT_STREAMING_TTS_MODEL = "portable-streaming-voice"
+DEFAULT_STREAMING_STT_TOKEN_ENV = "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+DEFAULT_STREAMING_TTS_TOKEN_ENV = "HERMES_STREAMING_TTS_BRIDGE_TOKEN"
 DEFAULT_DEEPGRAM_BRIDGE_BASE_URL = "http://127.0.0.1:8766"
 DEFAULT_DEEPGRAM_STT_MODEL = "nova-3"
 DEFAULT_DEEPGRAM_TTS_MODEL = "aura-2-thalia-en"
@@ -93,12 +95,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--streaming-stt-token-env",
-        default="HERMES_STREAMING_STT_BRIDGE_TOKEN",
+        default=DEFAULT_STREAMING_STT_TOKEN_ENV,
         help="Environment variable containing the streaming STT bridge bearer token",
     )
     parser.add_argument(
         "--streaming-tts-token-env",
-        default="HERMES_STREAMING_STT_BRIDGE_TOKEN",
+        default=DEFAULT_STREAMING_TTS_TOKEN_ENV,
         help="Environment variable containing the streaming TTS bridge bearer token",
     )
     parser.add_argument(
@@ -348,20 +350,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.apply:
         config_path = apply_realtime_voice_profile(profile)
         print(f"Updated realtime voice profile in {config_path}")
-        bridge_token_env = str(profile.get("streaming_stt_token_env") or "").strip()
         if args.generate_bridge_token:
-            token_result = ensure_realtime_voice_bridge_token(
-                bridge_token_env,
+            bridge_token_envs = _realtime_voice_bridge_token_envs(profile)
+            primary_bridge_token_env = bridge_token_envs[0] if bridge_token_envs else ""
+            token_result = ensure_realtime_voice_bridge_tokens(
+                bridge_token_envs,
                 force=bool(args.force_bridge_token),
             )
             if args.preset == "deepgram":
-                ensure_deepgram_bridge_token_env(bridge_token_env)
+                ensure_deepgram_bridge_token_env(primary_bridge_token_env)
             if args.preset == "cartesia":
-                ensure_cartesia_bridge_token_env(bridge_token_env)
+                ensure_cartesia_bridge_token_env(primary_bridge_token_env)
             if token_result == "created":
-                print(f"Generated realtime voice bridge token in {bridge_token_env}")
+                print(f"Generated realtime voice bridge token in {_format_env_list(bridge_token_envs)}")
             elif token_result == "existing":
-                print(f"Realtime voice bridge token already configured in {bridge_token_env}")
+                print(f"Realtime voice bridge token already configured in {_format_env_list(bridge_token_envs)}")
         print("Next:")
         if args.preset == "deepgram":
             if not args.generate_bridge_token:
@@ -417,23 +420,46 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def ensure_realtime_voice_bridge_token(token_env: str, *, force: bool = False) -> str:
-    env_name = _clean_env_name(token_env)
-    if not env_name:
+def _realtime_voice_bridge_token_envs(profile: Mapping[str, Any]) -> list[str]:
+    envs: list[str] = []
+    for key in ("streaming_stt_token_env", "streaming_tts_token_env"):
+        env_name = _clean_env_name(str(profile.get(key) or ""))
+        if env_name and env_name not in envs:
+            envs.append(env_name)
+    if not envs:
         raise ValueError("streaming bridge token env is required")
+    return envs
 
+
+def _format_env_list(env_names: list[str]) -> str:
+    return ", ".join(env_names)
+
+
+def ensure_realtime_voice_bridge_tokens(token_envs: list[str], *, force: bool = False) -> str:
+    env_names = [_clean_env_name(token_env) for token_env in token_envs]
+    env_names = [env_name for env_name in dict.fromkeys(env_names) if env_name]
+    if not env_names:
+        raise ValueError("streaming bridge token env is required")
     from hermes_cli.config import load_env, save_env_value
 
-    existing = str(load_env().get(env_name) or "")
-    if existing and not force:
+    env = load_env()
+    existing = [str(env.get(env_name) or "") for env_name in env_names]
+    if all(existing) and not force:
         return "existing"
-    save_env_value(env_name, secrets.token_urlsafe(32))
+    token = next((value for value in existing if value and not force), "") or secrets.token_urlsafe(32)
+    for env_name in env_names:
+        if force or not str(env.get(env_name) or ""):
+            save_env_value(env_name, token)
     return "created"
+
+
+def ensure_realtime_voice_bridge_token(token_env: str, *, force: bool = False) -> str:
+    return ensure_realtime_voice_bridge_tokens([token_env], force=force)
 
 
 def ensure_deepgram_bridge_token_env(token_env: str) -> None:
     env_name = _clean_env_name(token_env)
-    if not env_name or env_name == "HERMES_STREAMING_STT_BRIDGE_TOKEN":
+    if not env_name or env_name == DEFAULT_STREAMING_STT_TOKEN_ENV:
         return
 
     from hermes_cli.config import save_env_value
@@ -443,7 +469,7 @@ def ensure_deepgram_bridge_token_env(token_env: str) -> None:
 
 def ensure_cartesia_bridge_token_env(token_env: str) -> None:
     env_name = _clean_env_name(token_env)
-    if not env_name or env_name == "HERMES_STREAMING_STT_BRIDGE_TOKEN":
+    if not env_name or env_name in {DEFAULT_STREAMING_STT_TOKEN_ENV, DEFAULT_STREAMING_TTS_TOKEN_ENV}:
         return
 
     from hermes_cli.config import save_env_value
@@ -553,8 +579,8 @@ def build_realtime_voice_live_like_profile(
     streaming_stt_model: str = DEFAULT_STREAMING_STT_MODEL,
     streaming_tts_model: str = DEFAULT_STREAMING_TTS_MODEL,
     streaming_tts_voice: str = "",
-    streaming_stt_token_env: str = "HERMES_STREAMING_STT_BRIDGE_TOKEN",
-    streaming_tts_token_env: str = "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+    streaming_stt_token_env: str = DEFAULT_STREAMING_STT_TOKEN_ENV,
+    streaming_tts_token_env: str = DEFAULT_STREAMING_TTS_TOKEN_ENV,
     sidecar_host: str = "127.0.0.1",
     sidecar_port: int = 8765,
     production_evidence_report: str = DEFAULT_EVIDENCE_REPORT,
@@ -813,8 +839,8 @@ def build_kame_realtime_voice_profile(
     streaming_stt_model: str = DEFAULT_STREAMING_STT_MODEL,
     streaming_tts_model: str = DEFAULT_STREAMING_TTS_MODEL,
     streaming_tts_voice: str = "",
-    streaming_stt_token_env: str = "HERMES_STREAMING_STT_BRIDGE_TOKEN",
-    streaming_tts_token_env: str = "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+    streaming_stt_token_env: str = DEFAULT_STREAMING_STT_TOKEN_ENV,
+    streaming_tts_token_env: str = DEFAULT_STREAMING_TTS_TOKEN_ENV,
     sidecar_host: str = "127.0.0.1",
     sidecar_port: int = 8765,
     production_evidence_report: str = DEFAULT_EVIDENCE_REPORT,

@@ -6730,6 +6730,7 @@ class TestRealtimeVoiceWebSocket:
         save_env_value("HERMES_NEMOTRON_SPEECH_UPSTREAM_TOKEN", "secret-nemotron-token")
         save_env_value("HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL", "http://magpie.local:9102")
         save_env_value("HERMES_MAGPIE_TTS_UPSTREAM_TOKEN", "secret-magpie-token")
+        save_env_value("HERMES_STREAMING_STT_BRIDGE_TOKEN", "legacy-shared-bridge-token")
         save_env_value("DISCORD_BOT_TOKEN", "test-discord-token")
 
         monkeypatch.setattr(self.ws_module, "_realtime_voice_sidecar_health_probe", lambda *_args, **_kwargs: (False, None))
@@ -6761,7 +6762,8 @@ class TestRealtimeVoiceWebSocket:
         assert magpie["upstream_base_url_present"] is True
         assert magpie["upstream_token_present"] is True
         assert cartesia["implemented"] is True
-        assert cartesia["bridge_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+        assert cartesia["bridge_token_env"] == "HERMES_STREAMING_TTS_BRIDGE_TOKEN"
+        assert cartesia["bridge_token_present"] is True
         assert cartesia["voice_id_env"] == "CARTESIA_VOICE_ID"
         assert payload["config"]["engine"] == "kame_interface_oracle"
         assert payload["config"]["interface"]["provider"] == "gemma4"

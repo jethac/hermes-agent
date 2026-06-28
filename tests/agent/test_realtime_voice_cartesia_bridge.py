@@ -141,7 +141,7 @@ def test_cartesia_bridge_prerequisite_check_reports_missing_requirements():
     assert "CARTESIA_API_KEY or HERMES_CARTESIA_API_KEY is required" in issues
     assert "CARTESIA_VOICE_ID or HERMES_CARTESIA_VOICE_ID is required for streaming TTS" in issues
     assert any("websockets==15.0.1" in issue for issue in issues)
-    assert "HERMES_STREAMING_STT_BRIDGE_TOKEN is required in strict mode" in issues
+    assert "HERMES_STREAMING_STT_BRIDGE_TOKEN or HERMES_STREAMING_TTS_BRIDGE_TOKEN is required in strict mode" in issues
 
 
 def test_cartesia_bridge_prerequisite_check_accepts_en_ja_tts_routing():
@@ -342,6 +342,25 @@ def test_cartesia_bridge_cli_check_loads_hermes_env(monkeypatch, capsys):
     assert "cartesia-secret" not in output
     assert "bridge-token" not in output
     assert "voice-123" not in output
+
+
+def test_cartesia_bridge_config_accepts_scoped_tts_bridge_token(monkeypatch):
+    monkeypatch.delenv("HERMES_CARTESIA_BRIDGE_TOKEN_ENV", raising=False)
+    monkeypatch.delenv("HERMES_STREAMING_STT_BRIDGE_TOKEN", raising=False)
+    monkeypatch.setenv("HERMES_STREAMING_TTS_BRIDGE_TOKEN", "tts-bridge-token")
+
+    runtime = cartesia_bridge_config_from_env()
+
+    assert runtime.auth_token == "tts-bridge-token"
+    assert cartesia_bridge_prerequisite_issues(
+        CartesiaRealtimeBridgeConfig(
+            api_key="cartesia-secret",
+            auth_token=runtime.auth_token,
+            voice_id="voice-123",
+        ),
+        require_auth_token=True,
+        module_available=lambda _name: True,
+    ) == []
 
 
 def test_cartesia_bridge_cli_generates_bridge_token(monkeypatch, capsys):
