@@ -79,6 +79,7 @@ const config: HermesConfigRecord = {
       fallback_policy: 'fail_closed',
       frontend_model: 'gemma-4-E2B-it',
       frontend_provider: 'gemma4',
+      interface_api_key_env: 'CUSTOM_KAME_INTERFACE_TOKEN',
       interface_base_url: 'http://spark.local:8000/v1',
       interface_audio_input: 'native_audio',
       interface_max_audio_seconds: 24,
@@ -145,6 +146,7 @@ describe('RealtimeVoiceSetupPanel', () => {
     expect(await screen.findByText('KAME Reflex / Oracle')).toBeTruthy()
     expect(screen.getByText('Interface base URL')).toBeTruthy()
     expect(screen.getByText('Interface provider')).toBeTruthy()
+    expect(screen.getByText('Interface key env')).toBeTruthy()
     expect(screen.getByText('Served reflex model')).toBeTruthy()
     expect(screen.getByText('Interface temperature')).toBeTruthy()
     expect(screen.getByText('Interface token limit')).toBeTruthy()
@@ -182,6 +184,7 @@ describe('RealtimeVoiceSetupPanel', () => {
         fallback_policy: 'fail_closed',
         interface_base_url: 'http://spark.local:8000/v1',
         interface_provider: 'gemma4',
+        interface_api_key_env: 'CUSTOM_KAME_INTERFACE_TOKEN',
         interface_audio_input: 'native_audio',
         interface_max_audio_seconds: 24,
         interface_max_output_tokens: 96,

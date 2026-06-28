@@ -265,6 +265,11 @@ function KameControls({
         title="Interface provider"
       />
       <ListRow
+        action={textInput('voice.realtime.interface_api_key_env', 'HERMES_KAME_INTERFACE_API_KEY')}
+        description="Environment variable name for the reflex endpoint bearer token."
+        title="Interface key env"
+      />
+      <ListRow
         action={numberInput('voice.realtime.interface_temperature', 0.2, 0, 2, 0.1)}
         description="Sampling temperature for reflex routing decisions."
         title="Interface temperature"
@@ -587,6 +592,10 @@ export function RealtimeVoiceSetupPanel({
           : undefined,
         interface_provider: selectedIsKame
           ? String(getNested(config, 'voice.realtime.frontend_provider') ?? 'gemma4') || 'gemma4'
+          : undefined,
+        interface_api_key_env: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.interface_api_key_env') ?? 'HERMES_KAME_INTERFACE_API_KEY') ||
+            'HERMES_KAME_INTERFACE_API_KEY'
           : undefined,
         interface_temperature: selectedIsKame
           ? Number(getNested(config, 'voice.realtime.interface_temperature') ?? 0.2)

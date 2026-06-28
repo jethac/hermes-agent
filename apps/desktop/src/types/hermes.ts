@@ -102,6 +102,7 @@ export interface RealtimeVoiceProfileRequest {
   fallback_policy?: string
   google_search?: boolean
   interface_base_url?: string
+  interface_api_key_env?: string
   interface_audio_input?: string
   interface_max_output_tokens?: number
   interface_provider?: string
