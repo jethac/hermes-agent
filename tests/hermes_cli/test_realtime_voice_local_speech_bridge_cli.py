@@ -40,10 +40,31 @@ def test_nemotron_speech_bridge_check_accepts_ready_upstream(monkeypatch, capsys
     assert "bridge-token" not in output
 
 
+def test_nemotron_speech_bridge_check_accepts_generic_stt_bridge_token(monkeypatch, capsys):
+    monkeypatch.delenv("HERMES_NEMOTRON_SPEECH_BRIDGE_TOKEN", raising=False)
+    monkeypatch.delenv("HERMES_STREAMING_TTS_BRIDGE_TOKEN", raising=False)
+    monkeypatch.setenv("HERMES_STREAMING_STT_BRIDGE_TOKEN", "generic-stt-token")
+    monkeypatch.setattr(
+        realtime_voice_nemotron_speech_bridge,
+        "probe_local_speech_upstream_health",
+        lambda _runtime: {"ok": True, "capabilities": {"streaming_stt": True}},
+    )
+
+    result = realtime_voice_nemotron_speech_bridge.main(
+        ["--check", "--strict", "--upstream-base-url", "http://127.0.0.1:9101"]
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert "Nemotron Speech bridge check OK" in output
+    assert "generic-stt-token" not in output
+
+
 def test_magpie_tts_bridge_check_requires_upstream(monkeypatch, capsys):
     monkeypatch.delenv("HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL", raising=False)
     monkeypatch.delenv("HERMES_MAGPIE_TTS_BRIDGE_TOKEN", raising=False)
     monkeypatch.delenv("HERMES_STREAMING_STT_BRIDGE_TOKEN", raising=False)
+    monkeypatch.delenv("HERMES_STREAMING_TTS_BRIDGE_TOKEN", raising=False)
 
     result = realtime_voice_magpie_tts_bridge.main(["--check", "--strict"])
 
@@ -77,3 +98,23 @@ def test_magpie_tts_bridge_check_accepts_ready_upstream(monkeypatch, capsys):
     assert "Magpie TTS bridge check OK" in output
     assert "output_languages: en,ja" in output
     assert "bridge-token" not in output
+
+
+def test_magpie_tts_bridge_check_accepts_generic_tts_bridge_token(monkeypatch, capsys):
+    monkeypatch.delenv("HERMES_MAGPIE_TTS_BRIDGE_TOKEN", raising=False)
+    monkeypatch.delenv("HERMES_STREAMING_STT_BRIDGE_TOKEN", raising=False)
+    monkeypatch.setenv("HERMES_STREAMING_TTS_BRIDGE_TOKEN", "generic-tts-token")
+    monkeypatch.setattr(
+        realtime_voice_magpie_tts_bridge,
+        "probe_local_speech_upstream_health",
+        lambda _runtime: {"ok": True, "capabilities": {"streaming_tts": True}},
+    )
+
+    result = realtime_voice_magpie_tts_bridge.main(
+        ["--check", "--strict", "--upstream-base-url", "http://127.0.0.1:9102"]
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert "Magpie TTS bridge check OK" in output
+    assert "generic-tts-token" not in output

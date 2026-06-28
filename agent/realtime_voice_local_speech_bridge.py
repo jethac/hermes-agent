@@ -190,6 +190,11 @@ def local_speech_proxy_config_from_env(
     default_input_languages: tuple[str, ...] = (),
     default_output_languages: tuple[str, ...] = (),
 ) -> LocalSpeechProxyBridgeConfig:
+    generic_token_env = (
+        "HERMES_STREAMING_TTS_BRIDGE_TOKEN"
+        if role == "tts"
+        else "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    )
     return LocalSpeechProxyBridgeConfig(
         provider=provider,
         role=role,
@@ -197,7 +202,7 @@ def local_speech_proxy_config_from_env(
         upstream_base_url=os.environ.get(f"{env_prefix}_UPSTREAM_BASE_URL") or None,
         upstream_token=os.environ.get(f"{env_prefix}_UPSTREAM_TOKEN") or None,
         auth_token=os.environ.get(f"{env_prefix}_BRIDGE_TOKEN")
-        or os.environ.get("HERMES_STREAMING_STT_BRIDGE_TOKEN")
+        or os.environ.get(generic_token_env)
         or None,
         connect_timeout_seconds=float(os.environ.get(f"{env_prefix}_CONNECT_TIMEOUT_SECONDS") or 10.0),
         health_timeout_seconds=float(os.environ.get(f"{env_prefix}_HEALTH_TIMEOUT_SECONDS") or 0.5),
