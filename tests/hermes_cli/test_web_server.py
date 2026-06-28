@@ -7030,6 +7030,7 @@ class TestRealtimeVoiceWebSocket:
             preset="kame",
             model="gemma-4-E2B-it",
             interface_audio_input="native_audio",
+            interface_max_audio_seconds=18.0,
             asr_mode="on_escalation",
             oracle_model="gemma-4-26B-A4B-it",
             oracle_base_url="http://spark.local:8001/v1",
@@ -7044,6 +7045,7 @@ class TestRealtimeVoiceWebSocket:
         assert profile["engine"] == "kame_interface_oracle"
         assert profile["frontend_model"] == "gemma-4-E2B-it"
         assert profile["interface_audio_input"] == "native_audio"
+        assert profile["interface_max_audio_seconds"] == 18.0
         assert profile["asr_mode"] == "on_escalation"
         assert profile["oracle_provider"] == "custom"
         assert profile["oracle_provider_name"] == "Spark Oracle"
