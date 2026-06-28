@@ -2927,6 +2927,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "sidecar_close_timeout_seconds": 2.0,
             "barge_in_min_speech_ms": 120,
             "barge_in_min_rms": 350,
+            "barge_in_stop_playback_deadline_ms": 150,
             "turn_acknowledgement": {
                 "enabled": True,
                 "text": "One moment.",
@@ -3256,6 +3257,7 @@ class DiscordAdapter(BasePlatformAdapter):
             turn_acknowledgement=cfg.get("turn_acknowledgement") if isinstance(cfg.get("turn_acknowledgement"), dict) else {},
             routing_policy=cfg.get("routing") if isinstance(cfg.get("routing"), dict) else {},
             metrics_policy=cfg.get("metrics") if isinstance(cfg.get("metrics"), dict) else {},
+            barge_in_stop_playback_deadline_ms=int(cfg.get("barge_in_stop_playback_deadline_ms") or 150),
             mixer=getattr(self, "_voice_mixers", {}).get(guild_id),
             degraded_callback=lambda reason, error: self._handle_realtime_voice_degraded(
                 guild_id,

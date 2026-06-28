@@ -37,6 +37,7 @@ SIDECAR_SAMPLE_RATE = 16000
 SIDECAR_CHANNELS = 1
 SIDECAR_FRAME_SAMPLES = SIDECAR_SAMPLE_RATE * DISCORD_FRAME_MS // 1000
 SIDECAR_FRAME_BYTES = SIDECAR_FRAME_SAMPLES * SIDECAR_CHANNELS * 2
+DEFAULT_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS = 150
 
 
 def _int16_array(pcm: bytes) -> array:
@@ -143,6 +144,7 @@ class DiscordRealtimeVoiceSession:
         turn_acknowledgement: Optional[dict] = None,
         routing_policy: Optional[dict] = None,
         metrics_policy: Optional[dict] = None,
+        barge_in_stop_playback_deadline_ms: int = DEFAULT_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS,
         sidecar: Any = None,
         mixer: Any = None,
         degraded_callback: Optional[Callable[[str, str], Any]] = None,
@@ -172,6 +174,10 @@ class DiscordRealtimeVoiceSession:
         self.turn_acknowledgement = dict(turn_acknowledgement or {})
         self.routing_policy = dict(routing_policy or {})
         self.metrics_policy = dict(metrics_policy or {})
+        try:
+            self.barge_in_stop_playback_deadline_ms = max(0, int(barge_in_stop_playback_deadline_ms))
+        except (TypeError, ValueError):
+            self.barge_in_stop_playback_deadline_ms = DEFAULT_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS
         self.sidecar = sidecar if sidecar is not None else RealtimeVoiceSidecarClient()
         self.mixer = mixer
         self.degraded_callback = degraded_callback
@@ -236,6 +242,10 @@ class DiscordRealtimeVoiceSession:
                 "turn_acknowledgement": dict(self.turn_acknowledgement),
                 "routing": dict(self.routing_policy),
                 "metrics": dict(self.metrics_policy),
+                "barge_in": {
+                    "stop_playback_deadline_ms": self.barge_in_stop_playback_deadline_ms,
+                },
+                "barge_in_stop_playback_deadline_ms": self.barge_in_stop_playback_deadline_ms,
             },
         )
         await self.sidecar.start(config)
@@ -266,21 +276,16 @@ class DiscordRealtimeVoiceSession:
     async def handle_speech_start(self, *, user_id: int | str) -> None:
         if self._closed or not self._started:
             return
-        playback_active = False
-        if self.mixer is not None and getattr(self.mixer, "speech_active", False):
-            playback_active = True
-            stop = getattr(self.mixer, "stop_speech", None)
-            if callable(stop):
-                stop()
-            self._playback_pcm48_stereo_buffer.clear()
+        stop_result = await self._stop_mixer_speech_for_barge_in(require_active=True)
         self._active_playback_generation += 1
         await self._send_event(
             VoiceEventType.BARGE_IN,
             {
                 "user_id": str(user_id),
                 "transport": "discord_voice",
-                "playback_active": playback_active,
+                "playback_active": stop_result["playback_active"],
                 "playback_generation": self._active_playback_generation,
+                **stop_result,
             },
         )
 
@@ -357,11 +362,9 @@ class DiscordRealtimeVoiceSession:
                     self._flush_playback_buffer()
                 elif event.type == VoiceEventType.BARGE_IN:
                     self._advance_playback_generation(event)
-                    self._playback_pcm48_stereo_buffer.clear()
-                    if self.mixer is not None:
-                        stop = getattr(self.mixer, "stop_speech", None)
-                        if callable(stop):
-                            stop()
+                    event.payload.update(
+                        await self._stop_mixer_speech_for_barge_in(require_active=False)
+                    )
                 elif event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
                     self._advance_playback_generation(event)
                 elif event.type == VoiceEventType.SESSION_ERROR:
@@ -404,6 +407,51 @@ class DiscordRealtimeVoiceSession:
                 await result
         except Exception as exc:  # pragma: no cover - defensive callback isolation
             logger.debug("Discord realtime event callback failed: %s", exc)
+
+    async def _stop_mixer_speech_for_barge_in(self, *, require_active: bool) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "playback_active": False,
+            "playback_stop_attempted": False,
+            "playback_stop_timed_out": False,
+            "playback_stop_deadline_ms": self.barge_in_stop_playback_deadline_ms,
+        }
+        self._playback_pcm48_stereo_buffer.clear()
+        mixer = self.mixer
+        if mixer is None:
+            return result
+        try:
+            result["playback_active"] = bool(getattr(mixer, "speech_active", False))
+        except Exception:
+            result["playback_active"] = False
+        if require_active and not result["playback_active"]:
+            return result
+        stop = getattr(mixer, "stop_speech", None)
+        if not callable(stop):
+            return result
+
+        result["playback_stop_attempted"] = True
+        timeout_seconds = max(self.barge_in_stop_playback_deadline_ms / 1000.0, 0.001)
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        try:
+            await asyncio.wait_for(self._call_mixer_stop(stop), timeout=timeout_seconds)
+        except asyncio.TimeoutError:
+            result["playback_stop_timed_out"] = True
+            logger.warning(
+                "Discord realtime mixer stop exceeded barge-in deadline: deadline_ms=%d",
+                self.barge_in_stop_playback_deadline_ms,
+            )
+        finally:
+            result["playback_stop_ms"] = int(round((loop.time() - started) * 1000))
+        return result
+
+    async def _call_mixer_stop(self, stop: Callable[[], Any]) -> None:
+        if inspect.iscoroutinefunction(stop):
+            await stop()
+            return
+        value = await asyncio.to_thread(stop)
+        if inspect.isawaitable(value):
+            await value
 
     def _drop_stale_playback_event(self, event: VoiceEvent) -> bool:
         generation = _payload_generation(event.payload)

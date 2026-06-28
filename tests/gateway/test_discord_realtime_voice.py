@@ -122,7 +122,11 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
                         "model": "sonic-3.5",
                         "voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
                     },
-                    "barge_in": {"min_rms": 410, "min_speech_ms": 130},
+                    "barge_in": {
+                        "min_rms": 410,
+                        "min_speech_ms": 130,
+                        "stop_playback_deadline_ms": 95,
+                    },
                 },
             },
             "discord": {
@@ -160,6 +164,7 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["tts_voice"] == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
     assert cfg["barge_in_min_rms"] == 410
     assert cfg["barge_in_min_speech_ms"] == 130
+    assert cfg["barge_in_stop_playback_deadline_ms"] == 95
 
 
 @pytest.mark.asyncio
@@ -181,6 +186,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         oracle_model="deep-hermes",
         oracle_timeout_seconds=17.5,
         max_spoken_sentences=3,
+        barge_in_stop_playback_deadline_ms=95,
         sidecar_connect_timeout_seconds=0.5,
         turn_acknowledgement={"enabled": True, "text": "One moment."},
         routing_policy={
@@ -234,6 +240,10 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         "log_turn_spans": True,
         "log_provider_spans": False,
     }
+    assert sidecar.started_with.metadata["barge_in"] == {
+        "stop_playback_deadline_ms": 95,
+    }
+    assert sidecar.started_with.metadata["barge_in_stop_playback_deadline_ms"] == 95
     assert sidecar.sent[-1].type == VoiceEventType.AUDIO_INPUT_CHUNK
     assert sidecar.sent[-1].payload["sample_rate_hz"] == 16000
     assert sidecar.sent[-1].payload["channels"] == 1
@@ -391,6 +401,44 @@ async def test_discord_realtime_session_barge_in_stops_mixer_and_notifies_sideca
     assert sidecar.sent[-1].type == VoiceEventType.BARGE_IN
     assert sidecar.sent[-1].payload["user_id"] == "42"
     assert sidecar.sent[-1].payload["playback_active"] is True
+    assert sidecar.sent[-1].payload["playback_stop_attempted"] is True
+    assert sidecar.sent[-1].payload["playback_stop_deadline_ms"] == 150
+
+
+@pytest.mark.asyncio
+async def test_discord_realtime_session_barge_in_bounds_slow_mixer_stop():
+    from agent.realtime_voice import VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    stop_started = asyncio.Event()
+
+    async def slow_stop():
+        stop_started.set()
+        await asyncio.sleep(1)
+
+    sidecar = FakeSidecar()
+    mixer = SimpleNamespace(speech_active=True, stop_speech=slow_stop)
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        mixer=mixer,
+        sidecar_base_url="http://127.0.0.1:8766",
+        barge_in_stop_playback_deadline_ms=25,
+    )
+
+    await session.start()
+    started = asyncio.get_running_loop().time()
+    await session.handle_speech_start(user_id=42)
+    elapsed_ms = (asyncio.get_running_loop().time() - started) * 1000
+
+    assert stop_started.is_set()
+    assert elapsed_ms < 200
+    assert sidecar.sent[-1].type == VoiceEventType.BARGE_IN
+    assert sidecar.sent[-1].payload["playback_stop_attempted"] is True
+    assert sidecar.sent[-1].payload["playback_stop_timed_out"] is True
+    assert sidecar.sent[-1].payload["playback_stop_deadline_ms"] == 25
 
 
 @pytest.mark.asyncio
