@@ -2362,6 +2362,8 @@ def _apply_kame_routing_policy(
 
 
 def _kame_routing_policy(config: Optional[RealtimeVoiceSessionConfig]) -> Mapping[str, Any]:
+    if config is not None and isinstance(config.routing_policy, Mapping) and config.routing_policy:
+        return config.routing_policy
     metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
     routing = metadata.get("routing") if isinstance(metadata, Mapping) else {}
     return routing if isinstance(routing, Mapping) else {}
@@ -2545,8 +2547,10 @@ def _reported_frontend_model(
 
 
 def _turn_acknowledgement_text(config: RealtimeVoiceSessionConfig) -> str:
-    metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
-    acknowledgement = metadata.get("turn_acknowledgement")
+    acknowledgement: Any = config.turn_acknowledgement
+    if not acknowledgement:
+        metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
+        acknowledgement = metadata.get("turn_acknowledgement")
     if not isinstance(acknowledgement, Mapping):
         return ""
     if not _metadata_bool(acknowledgement.get("enabled"), default=False):
@@ -2558,8 +2562,10 @@ def _turn_acknowledgement_text(config: RealtimeVoiceSessionConfig) -> str:
 
 
 def _kame_routing_policy_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:
-    metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
-    routing = metadata.get("routing") if isinstance(metadata, Mapping) else {}
+    routing: Any = config.routing_policy if config is not None else {}
+    if not routing:
+        metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
+        routing = metadata.get("routing") if isinstance(metadata, Mapping) else {}
     if not isinstance(routing, Mapping):
         routing = {}
     return (

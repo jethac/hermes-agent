@@ -1747,9 +1747,12 @@ def _allow_kame_transcript_events(config: Optional[RealtimeVoiceSessionConfig]) 
 
 
 def _turn_acknowledgement_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:
-    if config is None or not isinstance(config.metadata, Mapping):
+    if config is None:
         return ""
-    acknowledgement = config.metadata.get("turn_acknowledgement")
+    acknowledgement: Any = config.turn_acknowledgement
+    if not acknowledgement:
+        metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
+        acknowledgement = metadata.get("turn_acknowledgement")
     if not isinstance(acknowledgement, Mapping):
         return ""
     if not _metadata_bool(acknowledgement.get("enabled"), default=False):
@@ -1918,6 +1921,8 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
 
 
 def _kame_routing_policy(config: Optional[RealtimeVoiceSessionConfig]) -> Mapping[str, Any]:
+    if config is not None and isinstance(config.routing_policy, Mapping) and config.routing_policy:
+        return config.routing_policy
     metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
     routing = metadata.get("routing") if isinstance(metadata, Mapping) else {}
     return routing if isinstance(routing, Mapping) else {}
@@ -1997,6 +2002,8 @@ def _kame_route_metrics(
 def _kame_metrics_policy_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
     if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
         return False
+    if isinstance(config.metrics_policy, Mapping) and config.metrics_policy:
+        return _metadata_bool(config.metrics_policy.get("enabled"), default=True)
     metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
     metrics = metadata.get("metrics") if isinstance(metadata, Mapping) else {}
     if not isinstance(metrics, Mapping):
@@ -2007,6 +2014,8 @@ def _kame_metrics_policy_enabled(config: Optional[RealtimeVoiceSessionConfig]) -
 def _kame_metrics_policy_turn_spans_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
     if not _kame_metrics_policy_enabled(config):
         return False
+    if config is not None and isinstance(config.metrics_policy, Mapping) and config.metrics_policy:
+        return _metadata_bool(config.metrics_policy.get("log_turn_spans"), default=True)
     metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
     metrics = metadata.get("metrics") if isinstance(metadata, Mapping) else {}
     if not isinstance(metrics, Mapping):
@@ -2017,6 +2026,8 @@ def _kame_metrics_policy_turn_spans_enabled(config: Optional[RealtimeVoiceSessio
 def _kame_metrics_policy_provider_spans_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
     if not _kame_metrics_policy_enabled(config):
         return False
+    if config is not None and isinstance(config.metrics_policy, Mapping) and config.metrics_policy:
+        return _metadata_bool(config.metrics_policy.get("log_provider_spans"), default=True)
     metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
     metrics = metadata.get("metrics") if isinstance(metadata, Mapping) else {}
     if not isinstance(metrics, Mapping):

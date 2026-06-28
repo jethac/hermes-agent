@@ -208,6 +208,11 @@ def test_session_config_round_trips_kame_fields():
         tts_voice="voice-123",
         tts_base_url="http://tts.local:8768",
         fallback_policy="fail_closed",
+        turn_acknowledgement={"enabled": True, "text": "One moment."},
+        routing_policy={"local_confidence_threshold": 0.82},
+        metrics_policy={"enabled": True, "log_provider_spans": False},
+        output_events={"caption_aliases": True},
+        quality_targets_ms={"kame_speech_end_to_playback_start_ms": 2500},
     )
 
     restored = RealtimeVoiceSessionConfig.from_wire(config.to_wire())
@@ -232,6 +237,11 @@ def test_session_config_round_trips_kame_fields():
     assert restored.tts_voice == "voice-123"
     assert restored.tts_base_url == "http://tts.local:8768"
     assert restored.fallback_policy == "fail_closed"
+    assert restored.turn_acknowledgement == {"enabled": True, "text": "One moment."}
+    assert restored.routing_policy == {"local_confidence_threshold": 0.82}
+    assert restored.metrics_policy == {"enabled": True, "log_provider_spans": False}
+    assert restored.output_events == {"caption_aliases": True}
+    assert restored.quality_targets_ms == {"kame_speech_end_to_playback_start_ms": 2500}
 
 
 def test_session_config_normalizes_kame_interface_audio_input():
@@ -2736,7 +2746,7 @@ def test_text_engine_speaks_configured_acknowledgement_before_slow_oracle(monkey
         await engine.start(
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
-                metadata={"turn_acknowledgement": {"enabled": True, "text": "One moment."}},
+                turn_acknowledgement={"enabled": True, "text": "One moment."},
             )
         )
         await engine.receive_event(
@@ -4862,10 +4872,9 @@ def test_reference_sidecar_session_started_matches_realtime_contract():
                 output_codec=VoiceAudioCodec.OPUS,
                 frontend_provider="gemma4",
                 frontend_model="gemma-4-E2B-it",
-                metadata={
-                    "routing": {"local_confidence_threshold": 0.75},
-                    "metrics": {"enabled": True},
-                },
+                routing_policy={"local_confidence_threshold": 0.75},
+                metrics_policy={"enabled": True},
+                quality_targets_ms={"kame_speech_end_to_playback_start_ms": 2500},
             )
         )
         started = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
@@ -4883,6 +4892,7 @@ def test_reference_sidecar_session_started_matches_realtime_contract():
     assert started.payload["sidecar"] is True
     assert started.payload["routing"] == {"local_confidence_threshold": 0.75}
     assert started.payload["metrics"] == {"enabled": True}
+    assert started.payload["quality_targets_ms"] == {"kame_speech_end_to_playback_start_ms": 2500}
     assert ready.type == VoiceEventType.FRONTEND_STATE
 
 

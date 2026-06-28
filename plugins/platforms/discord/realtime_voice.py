@@ -249,6 +249,11 @@ class DiscordRealtimeVoiceSession:
             sidecar_base_url=self.sidecar_base_url,
             sidecar_token=self.sidecar_token,
             sidecar_connect_timeout_seconds=self.sidecar_connect_timeout_seconds,
+            turn_acknowledgement=dict(self.turn_acknowledgement),
+            routing_policy=dict(self.routing_policy),
+            metrics_policy=dict(self.metrics_policy),
+            output_events=dict(self.output_events),
+            quality_targets_ms=dict(self.quality_targets_ms),
             metadata={
                 "transport": "discord_voice",
                 "voice_architecture": "kame_frontend_oracle",

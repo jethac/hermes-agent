@@ -190,6 +190,11 @@ class RealtimeVoiceSessionConfig:
     sidecar_connect_timeout_seconds: float = 10.0
     spark_base_url: Optional[str] = None
     spark_token: Optional[str] = None
+    turn_acknowledgement: Mapping[str, Any] = field(default_factory=dict)
+    routing_policy: Mapping[str, Any] = field(default_factory=dict)
+    metrics_policy: Mapping[str, Any] = field(default_factory=dict)
+    output_events: Mapping[str, Any] = field(default_factory=dict)
+    quality_targets_ms: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     @property
@@ -238,6 +243,11 @@ class RealtimeVoiceSessionConfig:
             "sidecar_connect_timeout_seconds": self.sidecar_connect_timeout_seconds,
             "spark_base_url": sidecar_base_url,
             "spark_token": sidecar_token,
+            "turn_acknowledgement": dict(self.turn_acknowledgement),
+            "routing_policy": dict(self.routing_policy),
+            "metrics_policy": dict(self.metrics_policy),
+            "output_events": dict(self.output_events),
+            "quality_targets_ms": dict(self.quality_targets_ms),
             "metadata": dict(self.metadata),
         }
 
@@ -306,6 +316,11 @@ class RealtimeVoiceSessionConfig:
             ),
             spark_base_url=_optional_str(payload.get("spark_base_url")),
             spark_token=_optional_str(payload.get("spark_token")),
+            turn_acknowledgement=_mapping(payload.get("turn_acknowledgement")),
+            routing_policy=_mapping(payload.get("routing_policy")),
+            metrics_policy=_mapping(payload.get("metrics_policy")),
+            output_events=_mapping(payload.get("output_events")),
+            quality_targets_ms=_mapping(payload.get("quality_targets_ms")),
             metadata=_mapping(payload.get("metadata")),
         )
 
@@ -400,7 +415,17 @@ def realtime_voice_session_contract_payload(config: RealtimeVoiceSessionConfig) 
 
     metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
     payload: Dict[str, Any] = {}
+    first_class_mappings: tuple[tuple[str, Mapping[str, Any]], ...] = (
+        ("quality_targets_ms", config.quality_targets_ms),
+        ("routing", config.routing_policy),
+        ("metrics", config.metrics_policy),
+    )
+    for key, value in first_class_mappings:
+        if isinstance(value, Mapping) and value:
+            payload[key] = dict(value)
     for key in ("language_support", "quality_targets_ms", "conversation_quality", "routing", "metrics"):
+        if key in payload:
+            continue
         value = metadata.get(key)
         if isinstance(value, Mapping):
             payload[key] = dict(value)

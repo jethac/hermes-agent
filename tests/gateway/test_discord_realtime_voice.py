@@ -292,6 +292,25 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.max_spoken_sentences == 3
     assert sidecar.started_with.voice_response_policy == "brief_summary"
     assert sidecar.started_with.tts_base_url == "http://tts.local:8768"
+    assert sidecar.started_with.turn_acknowledgement == {"enabled": True, "text": "One moment."}
+    assert sidecar.started_with.routing_policy == {
+        "allow_local_greetings": True,
+        "allow_local_clarifications": False,
+        "require_oracle_for_tools": True,
+        "require_oracle_for_memory": True,
+        "require_oracle_for_files": True,
+        "local_confidence_threshold": 0.8,
+    }
+    assert sidecar.started_with.metrics_policy == {
+        "enabled": True,
+        "log_turn_spans": True,
+        "log_provider_spans": False,
+    }
+    assert sidecar.started_with.output_events == {"caption_aliases": True, "audio_aliases": True}
+    assert sidecar.started_with.quality_targets_ms == {
+        "kame_speech_end_to_interface_decision_ms": 321,
+        "kame_speech_end_to_playback_start_ms": 2345,
+    }
     assert sidecar.started_with.metadata["voice_architecture"] == "kame_frontend_oracle"
     assert sidecar.started_with.metadata["frontend_role"] == "low_latency_voice_interface"
     assert sidecar.started_with.metadata["oracle_role"] == "hermes_backend_oracle"
