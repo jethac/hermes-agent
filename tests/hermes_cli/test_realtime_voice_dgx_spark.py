@@ -12,6 +12,7 @@ def _manifest(tmp_path: Path) -> dict:
         hermes_home=tmp_path / "home",
         interface_base_url="http://spark.local:8000/v1",
         interface_model="gemma-4-E2B-it",
+        interface_candidate_models=None,
         interface_context_tokens=8192,
         interface_gpu_memory_utilization=0.18,
         oracle_base_url="http://spark.local:8001/v1",
@@ -29,27 +30,42 @@ def _manifest(tmp_path: Path) -> dict:
 
 
 def _passing_benchmark_evidence() -> list[dict]:
+    interface_entries = []
+    for model in ("gemma-4-E2B-it", "gemma-4-E4B-it"):
+        interface_entries.extend(
+            [
+                {
+                    "kind": "kame_benchmark_result",
+                    "category": "interface",
+                    "model": model,
+                    "input": "direct_audio",
+                    "metrics": {
+                        "speech_end_to_interface_decision_ms": 320,
+                        "speech_end_to_local_first_audio_ms": 480,
+                        "routing_accuracy": 0.94,
+                        "capability_honesty_rate": 0.99,
+                        "local_route_precision": 0.93,
+                        "oracle_route_recall": 0.96,
+                    },
+                },
+                {
+                    "kind": "kame_benchmark_result",
+                    "category": "interface",
+                    "model": model,
+                    "input": "stt_fallback",
+                    "metrics": {
+                        "speech_end_to_transcript_ms": 190,
+                        "transcript_to_interface_decision_ms": 280,
+                        "routing_accuracy": 0.91,
+                        "capability_honesty_rate": 0.98,
+                        "local_route_precision": 0.9,
+                        "oracle_route_recall": 0.94,
+                    },
+                },
+            ]
+        )
     return [
-        {
-            "kind": "kame_benchmark_result",
-            "category": "interface",
-            "input": "direct_audio",
-            "metrics": {
-                "speech_end_to_interface_decision_ms": 320,
-                "speech_end_to_local_first_audio_ms": 480,
-                "routing_accuracy": 0.94,
-            },
-        },
-        {
-            "kind": "kame_benchmark_result",
-            "category": "interface",
-            "input": "stt_fallback",
-            "metrics": {
-                "speech_end_to_transcript_ms": 190,
-                "transcript_to_interface_decision_ms": 280,
-                "routing_accuracy": 0.91,
-            },
-        },
+        *interface_entries,
         {
             "kind": "kame_benchmark_result",
             "category": "oracle",
@@ -112,6 +128,12 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     assert manifest["engine"]["asr_mode"] == "on_escalation"
     assert manifest["engine"]["max_spoken_sentences"] == 2
     assert manifest["roles"]["interface"]["model"] == "gemma-4-E2B-it"
+    assert [entry["model"] for entry in manifest["roles"]["interface"]["candidate_models"]] == [
+        "gemma-4-E2B-it",
+        "gemma-4-E4B-it",
+    ]
+    assert manifest["roles"]["interface"]["candidate_models"][0]["priority"] == "default"
+    assert manifest["roles"]["interface"]["candidate_models"][1]["priority"] == "comparison"
     assert manifest["roles"]["interface"]["limit_mm_per_prompt"] == {"audio": 1}
     assert manifest["roles"]["oracle"]["preferred_local_model"] == "gemma-4-26B-A4B-it"
     assert manifest["roles"]["asr"]["role"] == "oracle_verbatim_evidence"
@@ -179,12 +201,19 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--sidecar-host spark.local" in launch
     assert "--sidecar-port 8765" in launch
     assert "docker compose --env-file .env.example -f compose.yaml up" in launch
-    assert matrix["candidates"]["interface"][0]["input"] == "direct_audio"
-    assert matrix["candidates"]["interface"][1]["input"] == "stt_fallback"
+    assert [
+        (candidate["model"], candidate["input"]) for candidate in matrix["candidates"]["interface"]
+    ] == [
+        ("gemma-4-E2B-it", "direct_audio"),
+        ("gemma-4-E2B-it", "stt_fallback"),
+        ("gemma-4-E4B-it", "direct_audio"),
+        ("gemma-4-E4B-it", "stt_fallback"),
+    ]
     assert matrix["candidates"]["oracle_outcome"][0]["asr_hypothesis"] == "without_asr_hypothesis"
     assert matrix["candidates"]["oracle_outcome"][1]["asr_hypothesis"] == "with_asr_hypothesis"
     assert evidence_template[0]["kind"] == "kame_benchmark_result"
     assert evidence_template[0]["category"] == "interface"
+    assert evidence_template[0]["model"] == "gemma-4-E2B-it"
     assert evidence_template[0]["input"] == "direct_audio"
     assert evidence_template[0]["metrics"]["speech_end_to_interface_decision_ms"] is None
     assert evidence_template[-2]["name"] == "all_local_smoke"
@@ -195,9 +224,13 @@ def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation
     matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
     template = realtime_voice_dgx_spark.build_dgx_spark_benchmark_evidence_template(matrix)
 
-    assert [entry["input"] for entry in template if entry.get("category") == "interface"] == [
-        "direct_audio",
-        "stt_fallback",
+    assert [
+        (entry["model"], entry["input"]) for entry in template if entry.get("category") == "interface"
+    ] == [
+        ("gemma-4-E2B-it", "direct_audio"),
+        ("gemma-4-E2B-it", "stt_fallback"),
+        ("gemma-4-E4B-it", "direct_audio"),
+        ("gemma-4-E4B-it", "stt_fallback"),
     ]
     assert [entry["asr_hypothesis"] for entry in template if entry.get("category") == "oracle_outcome"] == [
         "without_asr_hypothesis",
@@ -211,7 +244,10 @@ def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation
     result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, template)
 
     assert result["ok"] is False
-    assert "interface:direct_audio: missing or invalid metric speech_end_to_interface_decision_ms" in result["issues"]
+    assert (
+        "interface:gemma-4-E2B-it:direct_audio: "
+        "missing or invalid metric speech_end_to_interface_decision_ms"
+    ) in result["issues"]
     assert "all_local_smoke: missing passing smoke result" in result["issues"]
 
 
@@ -341,6 +377,7 @@ def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_pat
 
     assert result["ok"] is True
     assert result["issues"] == []
+    assert result["coverage"]["interface_candidate_model_matrix"] is True
     assert result["coverage"]["interface_direct_audio_vs_stt_fallback"] is True
     assert result["coverage"]["oracle_outcomes_with_and_without_asr_hypotheses"] is True
     assert result["coverage"]["oracle_verbatim_asr_latency_and_literal_accuracy"] is True
@@ -360,9 +397,33 @@ def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):
     result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
 
     assert result["ok"] is False
-    assert "interface:stt_fallback: missing benchmark result" in result["issues"]
-    assert "interface_direct_audio_vs_stt_fallback: requires direct_audio and stt_fallback results" in result["issues"]
+    assert "interface:gemma-4-E2B-it:stt_fallback: missing benchmark result" in result["issues"]
+    assert "interface:gemma-4-E4B-it:stt_fallback: missing benchmark result" in result["issues"]
+    assert (
+        "interface_candidate_model_matrix: requires benchmark results for every interface model/input"
+        in result["issues"]
+    )
+    assert (
+        "interface_direct_audio_vs_stt_fallback: "
+        "requires direct_audio and stt_fallback results for every interface model"
+    ) in result["issues"]
     assert "cloud_fallback_smoke: missing passing smoke result" in result["issues"]
+
+
+def test_benchmark_evidence_validator_requires_every_interface_candidate(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    evidence = [
+        entry
+        for entry in _passing_benchmark_evidence()
+        if entry.get("model") != "gemma-4-E4B-it"
+    ]
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["interface_candidate_model_matrix"] is False
+    assert "interface:gemma-4-E4B-it:direct_audio: missing benchmark result" in result["issues"]
+    assert "interface:gemma-4-E4B-it:stt_fallback: missing benchmark result" in result["issues"]
 
 
 def test_benchmark_evidence_validator_requires_oracle_asr_outcome_comparison(tmp_path):
@@ -467,6 +528,8 @@ def test_voice_subcommand_exposes_dgx_spark_launch_profile(tmp_path):
             str(tmp_path / "out"),
             "--interface-model",
             "gemma-4-E2B-it",
+            "--interface-candidate-model",
+            "gemma-4-E4B-it",
             "--oracle-model",
             "gemma-4-26B-A4B-it",
             "--check",
@@ -478,6 +541,7 @@ def test_voice_subcommand_exposes_dgx_spark_launch_profile(tmp_path):
     assert args.voice_command == "dgx-spark"
     assert args.output_dir == str(tmp_path / "out")
     assert args.interface_model == "gemma-4-E2B-it"
+    assert args.interface_candidate_model == ["gemma-4-E4B-it"]
     assert args.oracle_model == "gemma-4-26B-A4B-it"
     assert args.check is True
     assert calls == [args]

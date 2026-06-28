@@ -15,6 +15,7 @@ from typing import Any, Mapping
 DEFAULT_OUTPUT_DIR = "./artifacts/realtime-voice-dgx-spark"
 DEFAULT_INTERFACE_BASE_URL = "http://127.0.0.1:8000/v1"
 DEFAULT_INTERFACE_MODEL = "gemma-4-E2B-it"
+DEFAULT_INTERFACE_CANDIDATE_MODELS = ("gemma-4-E2B-it", "gemma-4-E4B-it")
 DEFAULT_ORACLE_BASE_URL = "http://127.0.0.1:8001/v1"
 DEFAULT_ORACLE_MODEL = "gemma-4-26B-A4B-it"
 DEFAULT_SIDECAR_BASE_URL = "http://127.0.0.1:8765"
@@ -40,6 +41,15 @@ def add_dgx_spark_arguments(parser: argparse.ArgumentParser) -> argparse.Argumen
     parser.add_argument("--hermes-home", default="~/.hermes")
     parser.add_argument("--interface-base-url", default=DEFAULT_INTERFACE_BASE_URL)
     parser.add_argument("--interface-model", default=DEFAULT_INTERFACE_MODEL)
+    parser.add_argument(
+        "--interface-candidate-model",
+        action="append",
+        default=None,
+        help=(
+            "Interface/reflex model to include in the local benchmark matrix. "
+            "Repeat to add candidates; defaults to Gemma 4 E2B plus E4B comparison."
+        ),
+    )
     parser.add_argument("--interface-context-tokens", type=int, default=8192)
     parser.add_argument("--interface-gpu-memory-utilization", type=float, default=0.18)
     parser.add_argument("--oracle-base-url", default=DEFAULT_ORACLE_BASE_URL)
@@ -78,6 +88,7 @@ def run_from_args(args: argparse.Namespace) -> int:
         hermes_home=Path(args.hermes_home).expanduser(),
         interface_base_url=str(args.interface_base_url),
         interface_model=str(args.interface_model),
+        interface_candidate_models=args.interface_candidate_model,
         interface_context_tokens=int(args.interface_context_tokens),
         interface_gpu_memory_utilization=float(args.interface_gpu_memory_utilization),
         oracle_base_url=str(args.oracle_base_url),
@@ -127,6 +138,7 @@ def build_dgx_spark_stack_manifest(
     hermes_home: Path,
     interface_base_url: str,
     interface_model: str,
+    interface_candidate_models: list[str] | tuple[str, ...] | None = None,
     interface_context_tokens: int,
     interface_gpu_memory_utilization: float,
     oracle_base_url: str,
@@ -146,6 +158,7 @@ def build_dgx_spark_stack_manifest(
     sidecar_health_url = _health_url(sidecar_base_url)
     asr_health_url = _health_url(asr_base_url) if asr_base_url else ""
     tts_health_url = _health_url(tts_base_url) if tts_base_url else ""
+    interface_candidates = _interface_candidate_models(interface_model, interface_candidate_models)
     return {
         "kind": "kame_dgx_spark_stack",
         "version": 1,
@@ -167,6 +180,18 @@ def build_dgx_spark_stack_manifest(
             "interface": {
                 "provider": "openai_compatible_vllm",
                 "model": interface_model,
+                "candidate_models": [
+                    {
+                        "model": candidate_model,
+                        "priority": "default" if candidate_model == interface_model else "comparison",
+                        "reason": (
+                            "preferred_audio_reflex"
+                            if candidate_model == DEFAULT_INTERFACE_MODEL
+                            else "validate_only_if_default_fails_latency_routing_or_capability_honesty"
+                        ),
+                    }
+                    for candidate_model in interface_candidates
+                ],
                 "base_url": interface_base_url,
                 "models_url": interface_models_url,
                 "max_model_len": interface_context_tokens,
@@ -234,6 +259,7 @@ def build_dgx_spark_stack_manifest(
         },
         "evidence_required": [
             "interface_direct_audio_latency",
+            "interface_candidate_model_matrix",
             "interface_direct_audio_vs_stt_fallback",
             "oracle_verbatim_asr_latency_and_literal_accuracy",
             "local_asr_tts_benchmark_matrix",
@@ -484,30 +510,42 @@ docker compose --env-file .env.example -f compose.yaml up --remove-orphans "$@"
 
 def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, Any]:
     roles = _roles(manifest)
-    return {
-        "kind": "kame_dgx_spark_benchmark_matrix",
-        "version": 1,
-        "candidates": {
-            "interface": [
+    interface_models = _interface_candidate_model_names(roles["interface"])
+    interface_candidates = []
+    for model in interface_models:
+        interface_candidates.extend(
+            [
                 {
-                    "model": roles["interface"]["model"],
+                    "model": model,
                     "input": "direct_audio",
                     "required_metrics": [
                         "speech_end_to_interface_decision_ms",
                         "speech_end_to_local_first_audio_ms",
                         "routing_accuracy",
+                        "capability_honesty_rate",
+                        "local_route_precision",
+                        "oracle_route_recall",
                     ],
                 },
                 {
-                    "model": roles["interface"]["model"],
+                    "model": model,
                     "input": "stt_fallback",
                     "required_metrics": [
                         "speech_end_to_transcript_ms",
                         "transcript_to_interface_decision_ms",
                         "routing_accuracy",
+                        "capability_honesty_rate",
+                        "local_route_precision",
+                        "oracle_route_recall",
                     ],
                 },
-            ],
+            ]
+        )
+    return {
+        "kind": "kame_dgx_spark_benchmark_matrix",
+        "version": 1,
+        "candidates": {
+            "interface": interface_candidates,
             "oracle": [
                 {
                     "model": roles["oracle"]["preferred_local_model"],
@@ -669,23 +707,45 @@ def validate_dgx_spark_benchmark_evidence(
 
     coverage: dict[str, bool] = {}
     interface_candidates = candidates.get("interface") if isinstance(candidates.get("interface"), list) else []
+    interface_models: set[str] = set()
     for candidate in interface_candidates:
         if not isinstance(candidate, Mapping):
             continue
+        model = str(candidate.get("model") or "").strip()
         input_mode = str(candidate.get("input") or "").strip()
-        label = f"interface:{input_mode}"
-        match = _find_benchmark_entry(entries, category="interface", input_mode=input_mode)
+        if model:
+            interface_models.add(model)
+        label = f"interface:{model}:{input_mode}" if model else f"interface:{input_mode}"
+        match = _find_benchmark_entry(entries, category="interface", model=model, input_mode=input_mode)
         coverage[label] = match is not None
         if match is None:
             issues.append(f"{label}: missing benchmark result")
             continue
         issues.extend(_missing_metric_issues(label, match, candidate.get("required_metrics")))
 
-    has_direct = coverage.get("interface:direct_audio") is True
-    has_fallback = coverage.get("interface:stt_fallback") is True
+    coverage["interface_candidate_model_matrix"] = bool(interface_candidates) and all(
+        coverage.get(
+            f"interface:{str(candidate.get('model') or '').strip()}:{str(candidate.get('input') or '').strip()}"
+        )
+        is True
+        for candidate in interface_candidates
+        if isinstance(candidate, Mapping)
+    )
+    if not coverage["interface_candidate_model_matrix"]:
+        issues.append("interface_candidate_model_matrix: requires benchmark results for every interface model/input")
+
+    has_direct = bool(interface_models) and all(
+        coverage.get(f"interface:{model}:direct_audio") is True for model in interface_models
+    )
+    has_fallback = bool(interface_models) and all(
+        coverage.get(f"interface:{model}:stt_fallback") is True for model in interface_models
+    )
     coverage["interface_direct_audio_vs_stt_fallback"] = has_direct and has_fallback
     if not has_direct or not has_fallback:
-        issues.append("interface_direct_audio_vs_stt_fallback: requires direct_audio and stt_fallback results")
+        issues.append(
+            "interface_direct_audio_vs_stt_fallback: "
+            "requires direct_audio and stt_fallback results for every interface model"
+        )
 
     oracle_candidates = candidates.get("oracle") if isinstance(candidates.get("oracle"), list) else []
     for candidate in oracle_candidates:
@@ -757,6 +817,7 @@ def _find_benchmark_entry(
     entries: list[Mapping[str, Any]],
     *,
     category: str,
+    model: str = "",
     input_mode: str = "",
     role: str = "",
     asr_hypothesis: str = "",
@@ -766,6 +827,8 @@ def _find_benchmark_entry(
             continue
         if str(entry.get("category") or "") != category:
             continue
+        if model and str(entry.get("model") or "") != model:
+            continue
         if input_mode and str(entry.get("input") or "") != input_mode:
             continue
         if role and str(entry.get("role") or "") != role:
@@ -774,6 +837,40 @@ def _find_benchmark_entry(
             continue
         return entry
     return None
+
+
+def _interface_candidate_models(
+    interface_model: str,
+    requested_candidates: list[str] | tuple[str, ...] | None,
+) -> list[str]:
+    candidates = [interface_model]
+    candidates.extend(requested_candidates or DEFAULT_INTERFACE_CANDIDATE_MODELS)
+    return _unique_nonempty(candidates)
+
+
+def _interface_candidate_model_names(interface_role: Mapping[str, Any]) -> list[str]:
+    candidates = interface_role.get("candidate_models")
+    names: list[str] = []
+    if isinstance(candidates, list):
+        for candidate in candidates:
+            if isinstance(candidate, Mapping):
+                names.append(str(candidate.get("model") or ""))
+            else:
+                names.append(str(candidate or ""))
+    names.append(str(interface_role.get("model") or ""))
+    return _unique_nonempty(names)
+
+
+def _unique_nonempty(values: list[str] | tuple[str, ...]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        normalized = str(value or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
+    return unique
 
 
 def _missing_metric_issues(label: str, entry: Mapping[str, Any], required_metrics: Any) -> list[str]:
