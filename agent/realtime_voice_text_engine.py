@@ -60,6 +60,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._frontend_output_active = False
         self._assistant_metadata_by_generation: dict[int, dict] = {}
         self._cancellation_token_by_generation: dict[int, str] = {}
+        self._interface_decision_at_by_generation: dict[int, float] = {}
+        self._first_audio_metric_generations: set[int] = set()
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -509,6 +511,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             )
             if oracle_request.cancellation_token:
                 self._cancellation_token_by_generation[generation] = oracle_request.cancellation_token
+            self._interface_decision_at_by_generation[generation] = interface_decision_at
         payload = {"text": transcript, "playback_generation": generation}
         if input_generation is not None:
             payload["input_generation"] = input_generation
@@ -615,6 +618,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     truncated=truncated,
                 ),
             }
+            self._assistant_metadata_by_generation[playback_generation] = metadata
             await self._emit(
                 VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                 {
@@ -668,6 +672,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         finally:
             self._assistant_metadata_by_generation.pop(playback_generation, None)
             self._cancellation_token_by_generation.pop(playback_generation, None)
+            self._interface_decision_at_by_generation.pop(playback_generation, None)
+            self._first_audio_metric_generations.discard(playback_generation)
 
     async def _answer_and_speak(
         self,
@@ -995,6 +1001,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         finally:
             self._assistant_metadata_by_generation.pop(playback_generation, None)
             self._cancellation_token_by_generation.pop(playback_generation, None)
+            self._interface_decision_at_by_generation.pop(playback_generation, None)
+            self._first_audio_metric_generations.discard(playback_generation)
 
     async def _speak_oracle_timeout_status(
         self,
@@ -1143,6 +1151,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 existing_metrics = payload.get("metrics")
                 metrics = dict(existing_metrics) if isinstance(existing_metrics, dict) else {}
                 metrics["tts_synthesis_ms"] = tts_synthesis_ms
+                first_audio_metrics = self._kame_first_audio_metrics(playback_generation, metadata)
+                if first_audio_metrics:
+                    metrics.update(first_audio_metrics)
+                    metadata["metrics"] = _merge_metrics(metadata.get("metrics"), metrics)
+                    self._assistant_metadata_by_generation[playback_generation] = metadata
                 payload["metrics"] = metrics
                 await self._emit(
                     VoiceEventType.AUDIO_OUTPUT_CHUNK,
@@ -1157,6 +1170,22 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 os.unlink(file_path)
             except OSError:
                 pass
+
+    def _kame_first_audio_metrics(self, playback_generation: int, metadata: dict) -> dict[str, int]:
+        if playback_generation in self._first_audio_metric_generations:
+            return {}
+        if not _is_kame_metadata(metadata):
+            return {}
+        decision_at = self._interface_decision_at_by_generation.get(playback_generation)
+        if decision_at is None:
+            return {}
+        elapsed = _elapsed_perf_ms(decision_at, time.perf_counter())
+        self._first_audio_metric_generations.add(playback_generation)
+        metrics = {"kame_interface_decision_to_first_audio_ms": elapsed}
+        route = str(metadata.get("kame_route") or "")
+        if route in {KameRoute.LOCAL.value, KameRoute.REJECT_OR_CLARIFY.value}:
+            metrics["kame_interface_decision_to_local_first_audio_ms"] = elapsed
+        return metrics
 
     def _tts_sync(self, text: str) -> str:
         from tools.tts_tool import text_to_speech_tool

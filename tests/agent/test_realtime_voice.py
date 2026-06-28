@@ -1293,6 +1293,64 @@ def test_kame_engine_local_route_speaks_without_oracle(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_local_route_reports_first_audio_metric(monkeypatch, tmp_path):
+    class UnexpectedOracle:
+        async def stream_answer_for_request(self, request):
+            raise AssertionError("local KAME route must not call oracle")
+
+        async def stream_answer_with_metadata(self, transcript, metadata):
+            raise AssertionError("local KAME route must not call oracle")
+
+    async def run():
+        audio_path = tmp_path / "local.ogg"
+        audio_path.write_bytes(b"local-audio")
+
+        engine = KameInterfaceOracleEngine(oracle=UnexpectedOracle())
+        monkeypatch.setattr(engine, "_tts_sync", lambda text: str(audio_path))
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "can you hear me",
+                    "intent": "The user is checking whether Hermes can hear them.",
+                    "route": "local",
+                    "local_reply": "Yes, I can hear you.",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
+        session_metrics = next(event for event in seen if event.type == VoiceEventType.SESSION_METRICS)
+        assert AudioChunk.from_payload(audio.payload).data == b"local-audio"
+        assert audio.payload["metrics"]["kame_interface_decision_to_first_audio_ms"] >= 0
+        assert audio.payload["metrics"]["kame_interface_decision_to_local_first_audio_ms"] >= 0
+        assert session_metrics.payload["metrics"]["kame_interface_decision_to_first_audio_ms"] >= 0
+        assert session_metrics.payload["metrics"]["kame_interface_decision_to_local_first_audio_ms"] >= 0
+
+    asyncio.run(run())
+
+
 def test_kame_engine_respects_metrics_policy_disabled(monkeypatch):
     class UnexpectedOracle:
         async def stream_answer_for_request(self, request):
