@@ -112,6 +112,9 @@ class TestRealtimeVoiceReadiness:
                     "sidecar_base_url": "http://voice.local:8765",
                     "frontend_provider": "gemma4",
                     "frontend_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                    "interface_temperature": 0.35,
+                    "interface_max_output_tokens": 96,
+                    "interface_timeout_seconds": 0.7,
                     "interface_max_audio_seconds": 22,
                     "oracle_model": "deep-hermes",
                 }
@@ -130,6 +133,9 @@ class TestRealtimeVoiceReadiness:
 
         assert smoke_config.frontend_provider == "gemma4"
         assert smoke_config.frontend_model == "google/gemma-4-E4B-it-qat-w4a16-ct"
+        assert smoke_config.interface_temperature == 0.35
+        assert smoke_config.interface_max_output_tokens == 96
+        assert smoke_config.interface_timeout_seconds == 0.7
         assert smoke_config.interface_max_audio_seconds == 22
         assert smoke_config.oracle_model == "deep-hermes"
         assert smoke_config.metadata["voice_architecture"] == "kame_frontend_oracle"
@@ -137,6 +143,9 @@ class TestRealtimeVoiceReadiness:
         assert smoke_config.metadata["oracle_role"] == "hermes_backend_oracle"
         assert smoke_config.metadata["frontend_provider"] == "gemma4"
         assert smoke_config.metadata["frontend_model"] == "google/gemma-4-E4B-it-qat-w4a16-ct"
+        assert smoke_config.metadata["interface_temperature"] == 0.35
+        assert smoke_config.metadata["interface_max_output_tokens"] == 96
+        assert smoke_config.metadata["interface_timeout_seconds"] == 0.7
         assert smoke_config.metadata["interface_max_audio_seconds"] == 22.0
         assert smoke_config.metadata["oracle_model"] == "deep-hermes"
 
@@ -1329,6 +1338,9 @@ class TestRealtimeVoiceReadiness:
                 "engine": "text_oracle_tts",
                 "frontend_provider": "reference",
                 "frontend_model": "portable-voice",
+                "interface_temperature": 0.25,
+                "interface_max_output_tokens": 128,
+                "interface_timeout_seconds": 0.9,
                 "interface_max_audio_seconds": 18.0,
                 "available": True,
                 "require_live_like": True,
@@ -1396,6 +1408,9 @@ class TestRealtimeVoiceReadiness:
         manifest = report[0]
         assert manifest["kind"] == "manifest"
         assert manifest["ok"] is True
+        assert manifest["interface_temperature"] == 0.25
+        assert manifest["interface_max_output_tokens"] == 128
+        assert manifest["interface_timeout_seconds"] == 0.9
         assert manifest["interface_max_audio_seconds"] == 18.0
         assert manifest["conversation_quality"]["live_like"] is True
         assert manifest["sidecar"] == {

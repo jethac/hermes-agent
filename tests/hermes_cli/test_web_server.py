@@ -8420,6 +8420,106 @@ class TestRealtimeVoiceWebSocket:
             for issue in body["production_readiness"]["issues"]
         )
 
+    def test_status_rejects_kame_production_evidence_from_different_interface_tuning(self, monkeypatch, tmp_path):
+        evidence_path = tmp_path / "evidence"
+        evidence_path.mkdir()
+        for index in range(3):
+            report = _valid_realtime_voice_alpha_report()
+            manifest = report[0]
+            manifest["engine"] = "kame_interface_oracle"
+            manifest["frontend_provider"] = "gemma4"
+            manifest["frontend_model"] = "gemma-4-E2B-it"
+            manifest["interface_audio_input"] = "native_audio"
+            manifest["interface_temperature"] = 0.2
+            manifest["interface_max_output_tokens"] = 160
+            manifest["interface_timeout_seconds"] = 1.2
+            manifest["interface_max_audio_seconds"] = 30.0
+            manifest["asr_mode"] = "on_escalation"
+            manifest["conversation_quality"] = {
+                "live_like": True,
+                "mode": "kame_reflex",
+                "reason": "audio_reflex_tts",
+                "sidecar_verified": True,
+            }
+            manifest["sidecar"]["health"]["frontend"] = {
+                "provider": "vllm",
+                "model": "gemma-4-E2B-it",
+            }
+            manifest["sidecar"]["health"]["capabilities"] = {
+                "utterance_stt": True,
+                "streaming_stt": False,
+                "tts": True,
+                "native_s2s": False,
+                "vllm_audio_frontend": True,
+                "output_languages": ["en", "ja"],
+            }
+            (evidence_path / f"realtime-voice-alpha-{index}.json").write_text(
+                json.dumps(report, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "frontend": {
+                            "provider": "vllm",
+                            "model": "gemma-4-E2B-it",
+                        },
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": False,
+                            "tts": True,
+                            "native_s2s": False,
+                            "vllm_audio_frontend": True,
+                            "output_languages": ["en", "ja"],
+                        },
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "kame_interface_oracle",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                        "frontend_provider": "gemma4",
+                        "frontend_model": "gemma-4-E2B-it",
+                        "interface_audio_input": "native_audio",
+                        "interface_temperature": 0.2,
+                        "interface_max_output_tokens": 160,
+                        "interface_timeout_seconds": 0.8,
+                        "interface_max_audio_seconds": 30.0,
+                        "asr_mode": "on_escalation",
+                        "production_evidence_report": str(evidence_path),
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        body = self.client.get("/api/voice/realtime/status").json()
+
+        assert body["conversation_quality"]["mode"] == "kame_reflex"
+        assert body["production_readiness"]["ready"] is False
+        assert body["production_readiness"]["level"] == "live_like"
+        assert any(
+            "current realtime stack does not match evidence manifest" in issue
+            for issue in body["production_readiness"]["issues"]
+        )
+
     def test_status_require_live_like_keeps_turn_based_sidecar_unavailable(self, monkeypatch):
         class FakeResponse:
             status = 200

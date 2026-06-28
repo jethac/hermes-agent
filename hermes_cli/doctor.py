@@ -935,6 +935,9 @@ def _realtime_voice_evidence_manifest_payload() -> dict[str, Any]:
         "engine": str(status.get("engine") or ""),
         "frontend_provider": str(status.get("frontend_provider") or ""),
         "frontend_model": str(status.get("frontend_model") or ""),
+        "interface_temperature": status.get("interface_temperature"),
+        "interface_max_output_tokens": status.get("interface_max_output_tokens"),
+        "interface_timeout_seconds": status.get("interface_timeout_seconds"),
         "interface_audio_input": str(status.get("interface_audio_input") or ""),
         "interface_max_audio_seconds": status.get("interface_max_audio_seconds"),
         "asr_mode": str(status.get("asr_mode") or ""),
@@ -1101,6 +1104,18 @@ def _realtime_voice_smoke_config():
         ),
         frontend_provider=str(realtime.get("frontend_provider") or "") or None,
         frontend_model=str(realtime.get("frontend_model") or "") or None,
+        interface_temperature=_positive_float_config(
+            realtime.get("interface_temperature"),
+            default=0.2,
+        ),
+        interface_max_output_tokens=_positive_int_config(
+            realtime.get("interface_max_output_tokens"),
+            default=160,
+        ),
+        interface_timeout_seconds=_positive_float_config(
+            realtime.get("interface_timeout_seconds"),
+            default=0.8,
+        ),
         interface_max_audio_seconds=_positive_float_config(
             realtime.get("interface_max_audio_seconds"),
             default=30.0,
@@ -1132,6 +1147,18 @@ def _realtime_voice_smoke_config():
             "oracle_role": "hermes_backend_oracle",
             "frontend_provider": str(realtime.get("frontend_provider") or "") or None,
             "frontend_model": str(realtime.get("frontend_model") or "") or None,
+            "interface_temperature": _positive_float_config(
+                realtime.get("interface_temperature"),
+                default=0.2,
+            ),
+            "interface_max_output_tokens": _positive_int_config(
+                realtime.get("interface_max_output_tokens"),
+                default=160,
+            ),
+            "interface_timeout_seconds": _positive_float_config(
+                realtime.get("interface_timeout_seconds"),
+                default=0.8,
+            ),
             "interface_max_audio_seconds": _positive_float_config(
                 realtime.get("interface_max_audio_seconds"),
                 default=30.0,

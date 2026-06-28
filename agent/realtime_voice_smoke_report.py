@@ -667,6 +667,7 @@ def realtime_voice_alpha_manifest_fingerprint(entry: Mapping[str, Any]) -> tuple
         str(entry.get("frontend_provider") or ""),
         str(entry.get("frontend_model") or ""),
         str(entry.get("interface_audio_input") or ""),
+        *_kame_interface_config_fingerprint(entry),
         str(entry.get("asr_mode") or ""),
         str(entry.get("preferred_local_oracle_model") or ""),
         str(conversation_quality.get("mode") or ""),
@@ -678,6 +679,36 @@ def realtime_voice_alpha_manifest_fingerprint(entry: Mapping[str, Any]) -> tuple
         tuple(sorted(_primary_language_set(capabilities.get("output_languages", [])))),
         tuple(sorted(_primary_language_set(frontend.get("tts_model_languages", [])))),
     )
+
+
+def _kame_interface_config_fingerprint(entry: Mapping[str, Any]) -> tuple[str, str, str, str]:
+    conversation_quality = (
+        entry.get("conversation_quality")
+        if isinstance(entry.get("conversation_quality"), Mapping)
+        else {}
+    )
+    is_kame = (
+        str(entry.get("engine") or "") == "kame_interface_oracle"
+        or str(conversation_quality.get("mode") or "") == "kame_reflex"
+    )
+    if not is_kame:
+        return ("", "", "", "")
+    return (
+        _fingerprint_number(entry.get("interface_temperature")),
+        _fingerprint_number(entry.get("interface_max_output_tokens")),
+        _fingerprint_number(entry.get("interface_timeout_seconds")),
+        _fingerprint_number(entry.get("interface_max_audio_seconds")),
+    )
+
+
+def _fingerprint_number(value: Any) -> str:
+    if isinstance(value, bool) or value is None:
+        return ""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return f"{parsed:g}"
 
 
 def _manifest_stack_summary(entry: Mapping[str, Any]) -> dict[str, str]:
