@@ -866,6 +866,8 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     for entry in report:
         if entry.get("kind") in route_by_kind:
             entry["route"] = next(route_by_kind[entry["kind"]])
+            entry["interface_input_source"] = "native_audio"
+            entry["reflex_provider"] = "vllm"
         if entry.get("kind") == "session_turn" and not metric_added:
             entry["metrics"] = {
                 "kame_final_transcript_to_interface_decision_ms": 27,
@@ -886,6 +888,7 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     assert "barge_in_ack: p50=45ms p90=45ms p95=45ms max=45ms n=1" in output
     assert "kame_routes: total=4 oracle_avoided=2 oracle_required=2 avoidance=50.0%" in output
     assert "local=1 defer=1 oracle_direct=1 reject_or_clarify=1" in output
+    assert "kame_reflex: total=4 native_audio=4 vllm=4 fallback=0 sources native_audio=4 providers vllm=4" in output
     assert "stack unknown_engine|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model" in output
 
 
@@ -1141,6 +1144,13 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         for entry in report:
             if entry.get("kind") in route_by_kind:
                 entry["route"] = next(route_by_kind[entry["kind"]])
+                if entry["route"] == "reject_or_clarify":
+                    entry["interface_input_source"] = "streaming_stt"
+                    entry["reflex_provider"] = "streaming_stt"
+                    entry["interface_audio_input_fallback"] = True
+                else:
+                    entry["interface_input_source"] = "native_audio"
+                    entry["reflex_provider"] = "vllm"
             if entry.get("kind") == "audio_fixture":
                 entry["transcript_partial_ms"] = partial_ms
             if entry.get("kind") == "audio_session":
@@ -1237,6 +1247,15 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         "oracle_required": 6,
         "oracle_avoidance_rate": 0.5,
     }
+    assert summary["kame_reflex_provenance"] == {
+        "total": 12,
+        "input_sources": {"native_audio": 9, "streaming_stt": 3},
+        "reflex_providers": {"streaming_stt": 3, "vllm": 9},
+        "native_audio": 9,
+        "vllm": 9,
+        "fallback": 3,
+        "fallback_only": False,
+    }
     stack_summary = summary["latency_by_stack"][
         "unknown_engine|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model"
     ]
@@ -1261,6 +1280,8 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
     assert stack_summary["latency_ms"]["barge_in_confirmed_to_playback_stopped"]["p90"] == 20
     assert stack_summary["kame_routes"]["oracle_avoided"] == 6
     assert stack_summary["kame_routes"]["oracle_required"] == 6
+    assert stack_summary["kame_reflex_provenance"]["native_audio"] == 9
+    assert stack_summary["kame_reflex_provenance"]["fallback"] == 3
 
 
 def test_realtime_voice_report_cli_returns_nonzero_for_failed_report(tmp_path, capsys):

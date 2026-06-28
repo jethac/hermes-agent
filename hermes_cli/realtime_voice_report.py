@@ -134,6 +134,9 @@ def main(argv: list[str] | None = None) -> int:
         route_summary = _format_kame_route_summary(summary.get("kame_routes"))
         if route_summary:
             print(f"  kame_routes: {route_summary}")
+        provenance_summary = _format_kame_reflex_provenance(summary.get("kame_reflex_provenance"))
+        if provenance_summary:
+            print(f"  kame_reflex: {provenance_summary}")
         latency_by_stack = summary.get("latency_by_stack")
         if isinstance(latency_by_stack, dict):
             for stack_key, stack_summary in sorted(latency_by_stack.items()):
@@ -159,6 +162,9 @@ def main(argv: list[str] | None = None) -> int:
                 route_summary = _format_kame_route_summary(stack_summary.get("kame_routes"))
                 if route_summary:
                     print(f"    kame_routes: {route_summary}")
+                provenance_summary = _format_kame_reflex_provenance(stack_summary.get("kame_reflex_provenance"))
+                if provenance_summary:
+                    print(f"    kame_reflex: {provenance_summary}")
         if args.apply_production_evidence:
             from hermes_cli.realtime_voice_alpha_evidence import (
                 apply_realtime_voice_production_evidence_report,
@@ -209,6 +215,39 @@ def _format_kame_route_summary(value: object) -> str:
         f"oracle_required={oracle_required} avoidance={rate_text} "
         + " ".join(route_parts)
     ).strip()
+
+
+def _format_kame_reflex_provenance(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    total = _positive_int(value.get("total"))
+    if total <= 0:
+        return ""
+    input_sources = value.get("input_sources") if isinstance(value.get("input_sources"), dict) else {}
+    reflex_providers = value.get("reflex_providers") if isinstance(value.get("reflex_providers"), dict) else {}
+    source_parts = [
+        f"{source}={_positive_int(count)}"
+        for source, count in sorted(input_sources.items())
+        if _positive_int(count) > 0
+    ]
+    provider_parts = [
+        f"{provider}={_positive_int(count)}"
+        for provider, count in sorted(reflex_providers.items())
+        if _positive_int(count) > 0
+    ]
+    fallback = _positive_int(value.get("fallback"))
+    fallback_label = "fallback_only" if value.get("fallback_only") is True else f"fallback={fallback}"
+    parts = [
+        f"total={total}",
+        f"native_audio={_positive_int(value.get('native_audio'))}",
+        f"vllm={_positive_int(value.get('vllm'))}",
+        fallback_label,
+    ]
+    if source_parts:
+        parts.append("sources " + " ".join(source_parts))
+    if provider_parts:
+        parts.append("providers " + " ".join(provider_parts))
+    return " ".join(parts)
 
 
 def validate_discord_live_probe_report(

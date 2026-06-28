@@ -192,6 +192,11 @@ def _realtime_voice_evidence_line(production: Mapping[str, Any]) -> str:
     route_line = _realtime_voice_kame_route_summary_part(summary.get("kame_routes") if isinstance(summary, Mapping) else None)
     if route_line:
         parts.append(route_line)
+    provenance_line = _realtime_voice_kame_reflex_provenance_part(
+        summary.get("kame_reflex_provenance") if isinstance(summary, Mapping) else None
+    )
+    if provenance_line:
+        parts.append(provenance_line)
     parts.extend(_realtime_voice_stack_latency_summary_parts(summary))
     return "; ".join(parts)
 
@@ -271,7 +276,12 @@ def _realtime_voice_stack_latency_summary_parts(summary: Any) -> list[str]:
         )
         tts = _stack_label(stack, "tts_provider", "tts_model", default="unknown_tts")
         stack_id = str(stack_key or "unknown_stack")
-        parts.append(f"stack {stack_id} {audio} frontend={frontend} oracle={oracle or 'unknown'} tts={tts}")
+        provenance = _realtime_voice_kame_reflex_provenance_part(stack_summary.get("kame_reflex_provenance"))
+        provenance_suffix = f" {provenance}" if provenance else ""
+        parts.append(
+            f"stack {stack_id} {audio} frontend={frontend} "
+            f"oracle={oracle or 'unknown'} tts={tts}{provenance_suffix}"
+        )
     return parts
 
 
@@ -299,6 +309,39 @@ def _realtime_voice_kame_route_summary_part(value: Any) -> str:
         f"oracle_required={oracle_required} avoidance={rate_text} "
         + " ".join(route_parts)
     ).strip()
+
+
+def _realtime_voice_kame_reflex_provenance_part(value: Any) -> str:
+    if not isinstance(value, Mapping):
+        return ""
+    total = _positive_int(value.get("total"))
+    if total <= 0:
+        return ""
+    input_sources = value.get("input_sources") if isinstance(value.get("input_sources"), Mapping) else {}
+    reflex_providers = value.get("reflex_providers") if isinstance(value.get("reflex_providers"), Mapping) else {}
+    source_parts = [
+        f"{source}={_positive_int(count)}"
+        for source, count in sorted(input_sources.items())
+        if _positive_int(count) > 0
+    ]
+    provider_parts = [
+        f"{provider}={_positive_int(count)}"
+        for provider, count in sorted(reflex_providers.items())
+        if _positive_int(count) > 0
+    ]
+    fallback = _positive_int(value.get("fallback"))
+    fallback_label = "fallback_only" if value.get("fallback_only") is True else f"fallback={fallback}"
+    parts = [
+        f"kame_reflex total={total}",
+        f"native_audio={_positive_int(value.get('native_audio'))}",
+        f"vllm={_positive_int(value.get('vllm'))}",
+        fallback_label,
+    ]
+    if source_parts:
+        parts.append("sources " + " ".join(source_parts))
+    if provider_parts:
+        parts.append("providers " + " ".join(provider_parts))
+    return " ".join(parts)
 
 
 def _stack_label(stack: Mapping[str, Any], provider_key: str, model_key: str, *, default: str) -> str:

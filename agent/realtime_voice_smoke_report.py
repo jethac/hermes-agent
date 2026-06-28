@@ -273,6 +273,7 @@ def summarize_realtime_voice_smoke_report_runs(
         },
         "latency_ms": _latency_summary_for_entries(entries),
         "kame_routes": _kame_route_summary(entries),
+        "kame_reflex_provenance": _kame_reflex_provenance_summary(entries),
         "latency_by_stack": _latency_summary_by_stack(runs),
     }
 
@@ -339,6 +340,7 @@ def _latency_summary_by_stack(
             "report_labels": bucket["report_labels"],
             "latency_ms": _latency_summary_for_entries(bucket["entries"]),
             "kame_routes": _kame_route_summary(bucket["entries"]),
+            "kame_reflex_provenance": _kame_reflex_provenance_summary(bucket["entries"]),
         }
         for key, bucket in sorted(grouped.items())
     }
@@ -361,6 +363,41 @@ def _kame_route_summary(entries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "oracle_avoided": oracle_avoided,
         "oracle_required": oracle_required,
         "oracle_avoidance_rate": round(oracle_avoided / total, 4) if total else None,
+    }
+
+
+def _kame_reflex_provenance_summary(entries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    routed_entries = [
+        entry
+        for entry in entries
+        if str(entry.get("route") or "").strip().lower()
+    ]
+    input_sources: dict[str, int] = {}
+    reflex_providers: dict[str, int] = {}
+    fallback_count = 0
+    for entry in routed_entries:
+        input_source = str(entry.get("interface_input_source") or "").strip().lower()
+        reflex_provider = str(entry.get("reflex_provider") or "").strip().lower()
+        if input_source:
+            input_sources[input_source] = input_sources.get(input_source, 0) + 1
+        if reflex_provider:
+            reflex_providers[reflex_provider] = reflex_providers.get(reflex_provider, 0) + 1
+        if (
+            entry.get("interface_audio_input_fallback") is True
+            or input_source in {"local_stt", "streaming_stt"}
+        ):
+            fallback_count += 1
+    total = len(routed_entries)
+    native_audio_count = input_sources.get("native_audio", 0)
+    vllm_count = reflex_providers.get("vllm", 0)
+    return {
+        "total": total,
+        "input_sources": dict(sorted(input_sources.items())),
+        "reflex_providers": dict(sorted(reflex_providers.items())),
+        "native_audio": native_audio_count,
+        "vllm": vllm_count,
+        "fallback": fallback_count,
+        "fallback_only": bool(total and fallback_count == total),
     }
 
 
