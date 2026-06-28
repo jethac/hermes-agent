@@ -625,14 +625,100 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.transcript_confidence == 0.73
         assert request.source == "discord_voice"
         assert request.user_id == "42"
+        assert request.cancellation_token == "voice-123:1:cancel"
         final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         assert final.payload["kame_intent"] == "Find the note from yesterday's meeting."
         assert final.payload["kame_route"] == "oracle_direct"
         assert final.payload["kame_transcript"] == "find the node from yesterday's meeting"
+        assert final.payload["kame_cancellation_token"] == "voice-123:1:cancel"
+        assert commit.payload["kame_cancellation_token"] == "voice-123:1:cancel"
         assert commit.payload["metrics"]["kame_oracle_called"] == 1
         assert commit.payload["metrics"]["kame_oracle_bypassed"] == 0
         assert spoken == ["Done."]
+
+    asyncio.run(run())
+
+
+def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
+    class SlowOracle:
+        def __init__(self):
+            self.release = asyncio.Event()
+            self.interrupted = False
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "First answer starts."
+            await self.release.wait()
+            yield " stale ending."
+
+        def interrupt(self, message: str = ""):
+            self.interrupted = True
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = SlowOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "look this up",
+                    "text": "look this up",
+                    "intent": "Look this up.",
+                    "route": "oracle_direct",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        while True:
+            event = await anext(engine.events())
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                break
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"new-speech").to_payload(),
+            )
+        )
+
+        barge_in = await anext(engine.events())
+        await engine.close()
+
+        assert oracle.requests[0].cancellation_token == "voice-123:1:cancel"
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        assert final.payload["kame_cancellation_token"] == "voice-123:1:cancel"
+        assert barge_in.type == VoiceEventType.BARGE_IN
+        assert barge_in.payload["reason"] == "user_speech"
+        assert barge_in.payload["playback_generation"] == 2
+        assert barge_in.payload["cancelled_playback_generation"] == 1
+        assert barge_in.payload["cancellation_token"] == "voice-123:1:cancel"
+        assert barge_in.payload["backend_interrupt_requested"] is True
+        assert oracle.interrupted is True
+        assert engine._cancellation_token_by_generation == {}
 
     asyncio.run(run())
 

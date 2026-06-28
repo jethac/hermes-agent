@@ -58,6 +58,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._input_generation_active = False
         self._frontend_output_active = False
         self._assistant_metadata_by_generation: dict[int, dict] = {}
+        self._cancellation_token_by_generation: dict[int, str] = {}
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -189,6 +190,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         await self._interrupt_active_turn(event, reason="user_speech")
 
     async def _interrupt_active_turn(self, event: VoiceEvent, *, reason: str) -> None:
+        cancelled_generation = self._playback_generation
+        cancellation_token = self._cancellation_token_by_generation.pop(cancelled_generation, "")
         self._playback_generation += 1
         self._pending_turn_generation = self._playback_generation
         self._input_generation += 1
@@ -199,9 +202,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         payload = {
             "reason": reason or "client",
             "playback_generation": self._playback_generation,
+            "cancelled_playback_generation": cancelled_generation,
             "frontend_cancel_requested": frontend_cancel_requested,
             "backend_interrupt_requested": backend_interrupt_requested,
         }
+        if cancellation_token:
+            payload["cancellation_token"] = cancellation_token
         if backend_interrupt_requested and self._active_task is not None:
             self._active_task.cancel()
         oracle = self._oracle
@@ -431,14 +437,18 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._playback_generation += 1
             generation = self._playback_generation
         assistant_metadata = dict(metadata or {})
+        cancellation_token = _kame_cancellation_token(self.config, generation)
         oracle_request = self._kame_oracle_request(
             transcript,
             generation,
             oracle_payload=oracle_payload,
             metadata=assistant_metadata,
+            cancellation_token=cancellation_token,
         )
         if oracle_request is not None:
             assistant_metadata.update(oracle_request.to_metadata())
+            if oracle_request.cancellation_token:
+                self._cancellation_token_by_generation[generation] = oracle_request.cancellation_token
         payload = {"text": transcript, "playback_generation": generation}
         if input_generation is not None:
             payload["input_generation"] = input_generation
@@ -468,6 +478,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         *,
         oracle_payload: Optional[Mapping[str, Any]],
         metadata: Mapping[str, Any],
+        cancellation_token: str,
     ) -> Optional[KameOracleRequest]:
         config = self.config
         if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
@@ -479,6 +490,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         payload.update(metadata)
         if oracle_payload is not None:
             payload.update(dict(oracle_payload))
+        if cancellation_token:
+            payload.setdefault("cancellation_token", cancellation_token)
         return KameOracleRequest.from_turn(
             session_id=config.session_id,
             turn_id=f"{config.session_id}:{playback_generation}",
@@ -551,6 +564,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             )
         finally:
             self._assistant_metadata_by_generation.pop(playback_generation, None)
+            self._cancellation_token_by_generation.pop(playback_generation, None)
 
     async def _answer_and_speak(
         self,
@@ -834,6 +848,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             )
         finally:
             self._assistant_metadata_by_generation.pop(playback_generation, None)
+            self._cancellation_token_by_generation.pop(playback_generation, None)
 
     async def _speak_oracle_timeout_status(
         self,
@@ -1048,6 +1063,13 @@ def _mime_type_for_path(path: str) -> str:
 def _payload_generation(payload: dict) -> Optional[int]:
     value = payload.get("playback_generation")
     return _payload_int(value)
+
+
+def _kame_cancellation_token(config: Optional[RealtimeVoiceSessionConfig], playback_generation: int) -> str:
+    if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        return ""
+    session_id = str(config.session_id or "voice").strip() or "voice"
+    return f"{session_id}:{playback_generation}:cancel"
 
 
 def _turn_acknowledgement_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:
