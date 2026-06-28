@@ -278,6 +278,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._audio: list[bytes] = []
         self._audio_bytes = 0
         self._audio_input_generation: Optional[int] = None
+        self._audio_started_at: Optional[float] = None
         self._sequence = 0
         self._closed = False
         self._active_tasks: set[asyncio.Task[None]] = set()
@@ -528,13 +529,25 @@ class ReferenceRealtimeVoiceSidecarSession:
         if event.payload.get("end_of_utterance") is True:
             audio = b"".join(self._audio)
             audio_input_generation = self._audio_input_generation
+            audio_started_at = self._audio_started_at
+            speech_boundary_at = time.perf_counter()
             self._clear_audio_buffer()
             if audio:
                 payload = {"text": "", "stability": 0.1}
                 if audio_input_generation is not None:
                     payload["input_generation"] = audio_input_generation
                 await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, payload)
-                self._track_task(asyncio.create_task(self._transcribe(audio, chunk.codec, audio_input_generation)))
+                self._track_task(
+                    asyncio.create_task(
+                        self._transcribe(
+                            audio,
+                            chunk.codec,
+                            audio_input_generation,
+                            audio_started_at=audio_started_at,
+                            speech_boundary_at=speech_boundary_at,
+                        )
+                    )
+                )
 
     async def events(self) -> AsyncIterator[VoiceEvent]:
         while True:
@@ -996,12 +1009,15 @@ class ReferenceRealtimeVoiceSidecarSession:
             return False
         self._audio.append(data)
         self._audio_bytes += len(data)
+        if data and self._audio_started_at is None:
+            self._audio_started_at = time.perf_counter()
         return True
 
     def _clear_audio_buffer(self) -> None:
         self._audio.clear()
         self._audio_bytes = 0
         self._audio_input_generation = None
+        self._audio_started_at = None
 
     def _should_start_streaming_stt(self, config: RealtimeVoiceSessionConfig) -> bool:
         if config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
@@ -1059,15 +1075,27 @@ class ReferenceRealtimeVoiceSidecarSession:
         audio: bytes,
         codec: VoiceAudioCodec,
         input_generation: Optional[int] = None,
+        *,
+        audio_started_at: Optional[float] = None,
+        speech_boundary_at: Optional[float] = None,
     ) -> None:
         try:
             understand_started_at = time.perf_counter()
             payload = await asyncio.to_thread(self._understand_audio_sync, audio, codec)
             if self.config is not None and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+                interface_decision_at = time.perf_counter()
                 metrics = dict(payload.get("metrics") or {}) if isinstance(payload.get("metrics"), Mapping) else {}
                 metrics["kame_speech_end_to_interface_decision_ms"] = int(
-                    round((time.perf_counter() - understand_started_at) * 1000)
+                    round((interface_decision_at - (speech_boundary_at or understand_started_at)) * 1000)
                 )
+                if audio_started_at is not None:
+                    metrics["kame_first_audio_to_interface_decision_ms"] = int(
+                        round((interface_decision_at - audio_started_at) * 1000)
+                    )
+                if speech_boundary_at is not None:
+                    metrics["kame_speech_boundary_to_final_intent_ms"] = int(
+                        round((interface_decision_at - speech_boundary_at) * 1000)
+                    )
                 payload["metrics"] = metrics
             fallback_reason = str(payload.get("fallback_reason") or "").strip()
             if fallback_reason:

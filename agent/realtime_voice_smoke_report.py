@@ -43,6 +43,8 @@ ALPHA_REQUIRED_AUDIO_FIXTURE_TEXTS = {
 }
 
 KAME_LATENCY_METRICS = (
+    ("first_audio_to_interface_decision", "kame_first_audio_to_interface_decision_ms"),
+    ("speech_boundary_to_final_intent", "kame_speech_boundary_to_final_intent_ms"),
     ("speech_end_to_interface_decision", "kame_speech_end_to_interface_decision_ms"),
     ("final_transcript_to_interface_decision", "kame_final_transcript_to_interface_decision_ms"),
     ("speech_end_to_local_first_audio", "kame_speech_end_to_local_first_audio_ms"),
@@ -60,6 +62,8 @@ KAME_LATENCY_METRICS = (
 )
 
 KAME_LATENCY_REPORT_LABELS = (
+    "first_audio_to_interface_decision",
+    "speech_boundary_to_final_intent",
     "speech_end_to_interface_decision",
     "final_transcript_to_interface_decision",
     "speech_end_to_local_first_audio",

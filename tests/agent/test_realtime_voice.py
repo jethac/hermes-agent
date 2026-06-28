@@ -6405,6 +6405,8 @@ def test_reference_sidecar_kame_on_escalation_attaches_one_shot_asr_evidence(mon
     assert final.payload["asr_transcript_source"] == "asr"
     assert final.payload["asr_transcript_confidence"] == 0.84
     assert final.payload["metrics"]["kame_speech_end_to_interface_decision_ms"] >= 0
+    assert final.payload["metrics"]["kame_first_audio_to_interface_decision_ms"] >= 0
+    assert final.payload["metrics"]["kame_speech_boundary_to_final_intent_ms"] >= 0
     assert final.payload["metrics"]["oracle_verbatim_asr_ms"] >= 0
     assert sent_events[0].type == VoiceEventType.AUDIO_INPUT_CHUNK
     assert sent_events[0].payload["end_of_utterance"] is True
