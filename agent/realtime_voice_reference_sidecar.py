@@ -2153,9 +2153,18 @@ def _kame_reflex_payload_from_content(
             "intent": text,
             "intent_source": "reflex_audio",
             "transcript_source": "none",
+            "route": KameRoute.ORACLE_DIRECT.value,
+            "reflex_validation_error": "invalid_json",
         }
     if not isinstance(parsed, Mapping):
-        return {"text": text, "intent": text, "intent_source": "reflex_audio", "transcript_source": "none"}
+        return {
+            "text": text,
+            "intent": text,
+            "intent_source": "reflex_audio",
+            "transcript_source": "none",
+            "route": KameRoute.ORACLE_DIRECT.value,
+            "reflex_validation_error": "invalid_json_shape",
+        }
     payload = KameReflexDecision.from_payload(parsed, fallback_text=text).to_payload()
     return _apply_kame_routing_policy(payload, config)
 

@@ -6176,6 +6176,32 @@ def test_reference_sidecar_kame_reflex_validation_rejects_invalid_route():
     assert payload["reflex_validation_error"] == "invalid_route"
 
 
+def test_reference_sidecar_kame_reflex_marks_malformed_model_output():
+    non_json = reference_sidecar_module._kame_reflex_payload_from_content(
+        "I think the user wants me to check the repository."
+    )
+    wrong_shape = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(["oracle_direct", "check the repository"])
+    )
+
+    assert non_json == {
+        "text": "I think the user wants me to check the repository.",
+        "intent": "I think the user wants me to check the repository.",
+        "intent_source": "reflex_audio",
+        "transcript_source": "none",
+        "route": "oracle_direct",
+        "reflex_validation_error": "invalid_json",
+    }
+    assert wrong_shape == {
+        "text": '["oracle_direct", "check the repository"]',
+        "intent": '["oracle_direct", "check the repository"]',
+        "intent_source": "reflex_audio",
+        "transcript_source": "none",
+        "route": "oracle_direct",
+        "reflex_validation_error": "invalid_json_shape",
+    }
+
+
 def test_gemini_live_setup_omits_oracle_tool_instruction_when_tool_disabled():
     payload = _setup_payload(
         "gemini-live-test",
