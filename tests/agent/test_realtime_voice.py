@@ -5667,6 +5667,157 @@ def test_session_persists_only_final_and_committed_messages(monkeypatch):
     asyncio.run(run())
 
 
+def test_session_persists_only_durable_oracle_records():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-123"),
+        engine=TextOracleTTSEngine(oracle=FakeOracle()),
+    )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            session_id="voice-123",
+            sequence=1,
+            payload={
+                "turn_id": "voice-123:1",
+                "intent": "Check deployment status.",
+                "transcript": "check the deployment status",
+                "asr_transcript": "check deployment status",
+                "playback_generation": 1,
+            },
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_TOOL_CALL,
+            session_id="voice-123",
+            sequence=2,
+            payload={
+                "tool_name": "read_file",
+                "tool_call_id": "call-1",
+                "playback_generation": 1,
+            },
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_RESPONSE_PARTIAL,
+            session_id="voice-123",
+            sequence=3,
+            payload={"text": "Checking", "playback_generation": 1},
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_TOOL_RESULT,
+            session_id="voice-123",
+            sequence=4,
+            payload={
+                "tool_name": "read_file",
+                "tool_call_id": "call-1",
+                "result": "ok",
+                "playback_generation": 1,
+            },
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_HINT,
+            session_id="voice-123",
+            sequence=5,
+            payload={"text": "Use the deployment docs."},
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_RESPONSE_FINAL,
+            session_id="voice-123",
+            sequence=6,
+            payload={"text": "Deployment is healthy.", "playback_generation": 1},
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_ERROR,
+            session_id="voice-123",
+            sequence=7,
+            payload={"error": "timeout", "playback_generation": 1},
+        )
+    )
+
+    assert session.durable_oracle_records() == [
+        {
+            "type": VoiceEventType.INTERFACE_ORACLE_REQUEST.value,
+            "payload": {
+                "turn_id": "voice-123:1",
+                "intent": "Check deployment status.",
+                "transcript": "check the deployment status",
+                "asr_transcript": "check deployment status",
+                "playback_generation": 1,
+            },
+        },
+        {
+            "type": VoiceEventType.ORACLE_TOOL_RESULT.value,
+            "payload": {
+                "tool_name": "read_file",
+                "tool_call_id": "call-1",
+                "result": "ok",
+                "playback_generation": 1,
+            },
+        },
+        {
+            "type": VoiceEventType.ORACLE_RESPONSE_FINAL.value,
+            "payload": {"text": "Deployment is healthy.", "playback_generation": 1},
+        },
+        {
+            "type": VoiceEventType.ORACLE_ERROR.value,
+            "payload": {"error": "timeout", "playback_generation": 1},
+        },
+    ]
+
+
+def test_session_drops_stale_durable_oracle_records_after_barge_in():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-123"),
+        engine=TextOracleTTSEngine(oracle=FakeOracle()),
+    )
+    session.transcript.active_playback_generation = 2
+
+    for sequence, event_type in enumerate(
+        [
+            VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            VoiceEventType.ORACLE_TOOL_RESULT,
+            VoiceEventType.ORACLE_RESPONSE_FINAL,
+            VoiceEventType.ORACLE_ERROR,
+        ],
+        start=1,
+    ):
+        session._apply_server_event(
+            VoiceEvent(
+                type=event_type,
+                session_id="voice-123",
+                sequence=sequence,
+                payload={"text": "stale", "playback_generation": 1},
+            )
+        )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_RESPONSE_FINAL,
+            session_id="voice-123",
+            sequence=10,
+            payload={"text": "fresh", "playback_generation": 2},
+        )
+    )
+
+    assert session.durable_oracle_records() == [
+        {
+            "type": VoiceEventType.ORACLE_RESPONSE_FINAL.value,
+            "payload": {"text": "fresh", "playback_generation": 2},
+        }
+    ]
+
+
 def test_session_ignores_stale_interrupted_commit_from_prior_generation():
     async def run():
         session = RealtimeVoiceSession(

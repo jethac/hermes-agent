@@ -37,6 +37,7 @@ class RealtimeVoiceTranscript:
     final_user_segments: List[str] = field(default_factory=list)
     assistant_draft: str = ""
     active_playback_generation: int = 0
+    committed_oracle_records: List[dict] = field(default_factory=list)
     committed_assistant_segments: List[str] = field(default_factory=list)
     interrupted_assistant_segments: List[str] = field(default_factory=list)
 
@@ -66,6 +67,15 @@ STALE_GENERATION_EVENT_TYPES = frozenset(
         VoiceEventType.ASSISTANT_CAPTION_PARTIAL,
         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
         VoiceEventType.TRANSCRIPT_FINAL,
+    }
+)
+
+DURABLE_ORACLE_RECORD_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.INTERFACE_ORACLE_REQUEST,
+        VoiceEventType.ORACLE_TOOL_RESULT,
+        VoiceEventType.ORACLE_RESPONSE_FINAL,
+        VoiceEventType.ORACLE_ERROR,
     }
 )
 
@@ -166,6 +176,15 @@ class RealtimeVoiceSession:
                 messages.append({"role": "assistant", "content": text.strip()})
         return messages
 
+    def durable_oracle_records(self) -> List[dict]:
+        return [
+            {
+                "type": str(record.get("type") or ""),
+                "payload": dict(record.get("payload") or {}),
+            }
+            for record in self.transcript.committed_oracle_records
+        ]
+
     def _apply_server_event(self, event: VoiceEvent) -> None:
         if event.type == VoiceEventType.TRANSCRIPT_PARTIAL:
             self.transcript.partial_user_text = str(event.payload.get("text") or "")
@@ -252,6 +271,16 @@ class RealtimeVoiceSession:
                     generation,
                 )
             self.state = RealtimeVoiceSessionState.LISTENING
+        elif event.type in DURABLE_ORACLE_RECORD_EVENT_TYPES:
+            generation = _payload_generation(event.payload)
+            if generation is not None and generation < self.transcript.active_playback_generation:
+                return
+            self.transcript.committed_oracle_records.append(
+                {
+                    "type": event.type.value,
+                    "payload": dict(event.payload),
+                }
+            )
         elif event.type == VoiceEventType.SESSION_ERROR:
             self.state = RealtimeVoiceSessionState.CLOSING
         elif event.type == VoiceEventType.SESSION_CLOSED:
