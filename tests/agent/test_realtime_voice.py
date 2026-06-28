@@ -5139,6 +5139,7 @@ def test_session_adds_latency_metrics_to_realtime_events(monkeypatch):
         assert final.payload["metrics"]["eou_to_final_transcript_ms"] >= 0
         assert text.payload["metrics"]["final_transcript_to_first_text_ms"] >= 0
         assert audio.payload["metrics"]["final_transcript_to_first_audio_ms"] >= 0
+        assert audio.payload["metrics"]["speech_boundary_to_first_audio_ms"] >= 0
         await session.close()
 
     asyncio.run(run())

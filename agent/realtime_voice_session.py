@@ -85,6 +85,7 @@ class RealtimeVoiceSession:
         self._started_at_monotonic: Optional[float] = None
         self._turn_audio_started_at: Optional[float] = None
         self._turn_eou_at: Optional[float] = None
+        self._response_speech_boundary_at: Optional[float] = None
         self._last_transcript_final_at: Optional[float] = None
         self._last_barge_in_at: Optional[float] = None
         self._turn_first_assistant_text = False
@@ -297,6 +298,7 @@ class RealtimeVoiceSession:
                 metrics["audio_to_final_transcript_ms"] = _elapsed_ms(self._turn_audio_started_at, now)
             if self._turn_eou_at is not None:
                 metrics["eou_to_final_transcript_ms"] = _elapsed_ms(self._turn_eou_at, now)
+            self._response_speech_boundary_at = self._turn_eou_at
             self._last_transcript_final_at = now
             self._turn_audio_started_at = None
             self._turn_eou_at = None
@@ -309,6 +311,12 @@ class RealtimeVoiceSession:
         elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
             if self._last_transcript_final_at is not None and not self._turn_first_audio_output:
                 metrics["final_transcript_to_first_audio_ms"] = _elapsed_ms(self._last_transcript_final_at, now)
+                if self._response_speech_boundary_at is not None:
+                    metrics["speech_boundary_to_first_audio_ms"] = _elapsed_ms(
+                        self._response_speech_boundary_at,
+                        now,
+                    )
+                    self._response_speech_boundary_at = None
                 self._turn_first_audio_output = True
         elif event.type == VoiceEventType.BARGE_IN and self._last_barge_in_at is not None:
             metrics["barge_in_ack_ms"] = _elapsed_ms(self._last_barge_in_at, now)
