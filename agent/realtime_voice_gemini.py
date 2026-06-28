@@ -355,6 +355,7 @@ class GeminiLiveFrontendSession:
         self._playback_active = False
         self._playback_started_generation = None
         await self._emit(VoiceEventType.PLAYBACK_STOPPED, payload)
+        await self._emit(VoiceEventType.ASSISTANT_AUDIO_END, payload)
 
     async def _send_gemini(self, payload: Mapping[str, Any]) -> None:
         if self._ws is None:

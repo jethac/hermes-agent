@@ -736,6 +736,7 @@ def test_deepgram_tts_session_streams_audio_and_barge_in(monkeypatch):
             VoiceEventType.PLAYBACK_STARTED,
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
             VoiceEventType.PLAYBACK_STOPPED,
+            VoiceEventType.ASSISTANT_AUDIO_END,
             VoiceEventType.BARGE_IN,
         ]
         assert seen[1].payload["playback_generation"] == 3

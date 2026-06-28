@@ -161,7 +161,7 @@ async def test_gemini_live_server_events_map_to_hermes_events():
         }
     )
 
-    seen = [await asyncio.wait_for(session.events().__anext__(), timeout=1) for _ in range(7)]
+    seen = [await asyncio.wait_for(session.events().__anext__(), timeout=1) for _ in range(8)]
     assert [event.type for event in seen] == [
         VoiceEventType.TRANSCRIPT_FINAL,
         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
@@ -169,6 +169,7 @@ async def test_gemini_live_server_events_map_to_hermes_events():
         VoiceEventType.AUDIO_OUTPUT_CHUNK,
         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
         VoiceEventType.PLAYBACK_STOPPED,
+        VoiceEventType.ASSISTANT_AUDIO_END,
         VoiceEventType.ASSISTANT_COMMIT,
     ]
     assert seen[0].payload["text"] == "hello"

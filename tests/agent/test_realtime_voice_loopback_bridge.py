@@ -91,3 +91,6 @@ def test_loopback_bridge_streaming_stt_and_tts_sessions():
         stopped = ws.receive_json()
         assert stopped["type"] == VoiceEventType.PLAYBACK_STOPPED.value
         assert stopped["payload"]["playback_generation"] == 4
+        audio_end = ws.receive_json()
+        assert audio_end["type"] == VoiceEventType.ASSISTANT_AUDIO_END.value
+        assert audio_end["payload"]["playback_generation"] == 4

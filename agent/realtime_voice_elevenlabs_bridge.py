@@ -398,6 +398,7 @@ class ElevenLabsStreamingTTSBridgeSession:
         self._playback_active = False
         self._playback_started_generation = None
         await self._emit(VoiceEventType.PLAYBACK_STOPPED, payload)
+        await self._emit(VoiceEventType.ASSISTANT_AUDIO_END, payload)
 
     async def _emit(self, event_type: VoiceEventType, payload: Mapping[str, Any]) -> None:
         if self.config is None:

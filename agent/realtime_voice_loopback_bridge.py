@@ -187,6 +187,10 @@ class LoopbackStreamingTTSBridgeSession:
             VoiceEventType.PLAYBACK_STOPPED,
             {"playback_generation": payload.get("playback_generation")} if "playback_generation" in payload else {},
         )
+        await self._emit(
+            VoiceEventType.ASSISTANT_AUDIO_END,
+            {"playback_generation": payload.get("playback_generation")} if "playback_generation" in payload else {},
+        )
 
     async def events(self) -> AsyncIterator[VoiceEvent]:
         while True:
