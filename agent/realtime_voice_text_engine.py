@@ -284,7 +284,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             and cancelled_metadata.get("kame_route") in {KameRoute.DEFER.value, KameRoute.ORACLE_DIRECT.value}
         )
         if cancelled_kame_oracle:
-            await self._emit(
+            cancel_event = await self._emit(
                 VoiceEventType.INTERFACE_ORACLE_CANCEL,
                 {
                     "reason": payload["reason"],
@@ -294,6 +294,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     **_kame_interface_payload_from_metadata(cancelled_metadata),
                 },
             )
+            if cancel_event is not None and self._sidecar is not None:
+                await self._send_sidecar_event(cancel_event)
         await self._emit(VoiceEventType.BARGE_IN, payload)
         if self._sidecar is not None:
             await self._send_sidecar_event(

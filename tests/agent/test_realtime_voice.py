@@ -1501,6 +1501,10 @@ def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
         assert oracle_error.payload["cancellation_token"] == "voice-123:1:cancel"
         assert oracle_error.payload["turn_id"] == "voice-123:1"
         assert oracle.interrupted is True
+        forwarded_cancel = next(
+            event for event in sidecar.received if event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL
+        )
+        assert forwarded_cancel.payload == cancel.payload
         forwarded_oracle_error = next(event for event in sidecar.received if event.type == VoiceEventType.ORACLE_ERROR)
         assert forwarded_oracle_error.payload == oracle_error.payload
         assert engine._cancellation_token_by_generation == {}
