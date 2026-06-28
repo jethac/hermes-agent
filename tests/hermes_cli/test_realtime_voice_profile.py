@@ -256,6 +256,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["interface_audio_input"] == "auto"
     assert realtime["asr_mode"] == "on_escalation"
     assert realtime["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+    assert realtime["oracle_timeout_seconds"] == 60.0
     assert realtime["sidecar_autostart"] is True
     assert realtime["require_live_like"] is True
     assert realtime["routing"] == {
@@ -290,6 +291,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["interface_audio_input"] == "native_audio"
     assert discord_rt["asr_mode"] == "speculative"
     assert discord_rt["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+    assert discord_rt["oracle_timeout_seconds"] == 60.0
     assert discord_rt["routing"]["require_oracle_for_tools"] is True
     assert discord_rt["metrics"]["log_turn_spans"] is True
 

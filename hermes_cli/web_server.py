@@ -725,6 +725,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Preferred local Hermes oracle model label for KAME realtime voice",
         "category": "voice",
     },
+    "voice.realtime.oracle_timeout_seconds": {
+        "type": "number",
+        "description": "Seconds to wait for a Hermes oracle voice response before speaking a timeout status",
+        "category": "voice",
+    },
     "voice.realtime.production_evidence_report": {
         "type": "string",
         "description": "Path to a verified realtime voice smoke report required for production readiness",
@@ -14057,6 +14062,10 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     asr_mode = str(realtime.get("asr_mode") or "")
     preferred_local_oracle_model = str(realtime.get("preferred_local_oracle_model") or "")
     oracle_model = str(realtime.get("oracle_model") or "")
+    oracle_timeout_seconds = _positive_float_config(
+        realtime.get("oracle_timeout_seconds"),
+        default=60.0,
+    )
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     language_support = _realtime_voice_language_support_payload(realtime)
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
@@ -14200,6 +14209,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "asr_mode": asr_mode or None,
         "preferred_local_oracle_model": preferred_local_oracle_model or None,
         "oracle_model": oracle_model or None,
+        "oracle_timeout_seconds": oracle_timeout_seconds,
         "language_support": language_support,
         "quality_targets_ms": quality_targets_ms,
         "routing": routing_policy,
@@ -14229,6 +14239,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "asr_mode": asr_mode or None,
             "interface_audio_input": interface_audio_input or None,
             "preferred_local_oracle_model": preferred_local_oracle_model or None,
+            "oracle_timeout_seconds": oracle_timeout_seconds,
             "routing": routing_policy,
             "metrics": metrics_policy,
         },
@@ -14474,6 +14485,10 @@ def _apply_realtime_voice_profile_body(body: RealtimeVoiceProfileApply, profile:
                 "interface_audio_input": realtime.get("interface_audio_input") or "",
                 "asr_mode": realtime.get("asr_mode") or "on_escalation",
                 "preferred_local_oracle_model": realtime.get("preferred_local_oracle_model") or "",
+                "oracle_timeout_seconds": _positive_float_config(
+                    realtime.get("oracle_timeout_seconds"),
+                    default=60.0,
+                ),
                 "routing": dict(realtime.get("routing") if isinstance(realtime.get("routing"), dict) else {}),
                 "metrics": dict(realtime.get("metrics") if isinstance(realtime.get("metrics"), dict) else {}),
             }
@@ -14595,6 +14610,10 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         asr_mode=RealtimeVoiceASRMode(str(realtime.get("asr_mode") or RealtimeVoiceASRMode.ON_ESCALATION.value)),
         preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or "") or None,
         oracle_model=str(realtime.get("oracle_model") or "") or None,
+        oracle_timeout_seconds=_positive_float_config(
+            realtime.get("oracle_timeout_seconds"),
+            default=60.0,
+        ),
         tts_provider=str(realtime.get("tts_provider") or "") or None,
         sidecar_base_url=str(sidecar_base_url or "") or None,
         sidecar_token=str(sidecar_token or "") or None,
@@ -14615,6 +14634,10 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "asr_mode": str(realtime.get("asr_mode") or "") or None,
             "preferred_local_oracle_model": str(realtime.get("preferred_local_oracle_model") or "") or None,
             "oracle_model": str(realtime.get("oracle_model") or "") or None,
+            "oracle_timeout_seconds": _positive_float_config(
+                realtime.get("oracle_timeout_seconds"),
+                default=60.0,
+            ),
             "language_support": language_support,
             "quality_targets_ms": quality_targets_ms,
             "routing": routing_policy,

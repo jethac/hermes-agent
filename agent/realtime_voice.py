@@ -119,6 +119,7 @@ class RealtimeVoiceSessionConfig:
     asr_mode: RealtimeVoiceASRMode = RealtimeVoiceASRMode.ON_ESCALATION
     preferred_local_oracle_model: Optional[str] = None
     oracle_model: Optional[str] = None
+    oracle_timeout_seconds: float = 60.0
     tts_provider: Optional[str] = None
     sidecar_base_url: Optional[str] = None
     sidecar_token: Optional[str] = None
@@ -152,6 +153,7 @@ class RealtimeVoiceSessionConfig:
             "asr_mode": self.asr_mode.value,
             "preferred_local_oracle_model": self.preferred_local_oracle_model,
             "oracle_model": self.oracle_model,
+            "oracle_timeout_seconds": self.oracle_timeout_seconds,
             "tts_provider": self.tts_provider,
             "sidecar_base_url": sidecar_base_url,
             "sidecar_token": sidecar_token,
@@ -180,6 +182,10 @@ class RealtimeVoiceSessionConfig:
             asr_mode=_asr_mode(payload.get("asr_mode")),
             preferred_local_oracle_model=_optional_str(payload.get("preferred_local_oracle_model")),
             oracle_model=_optional_str(payload.get("oracle_model")),
+            oracle_timeout_seconds=_positive_float(
+                payload.get("oracle_timeout_seconds"),
+                default=60.0,
+            ),
             tts_provider=_optional_str(payload.get("tts_provider")),
             sidecar_base_url=_optional_str(payload.get("sidecar_base_url")),
             sidecar_token=_optional_str(payload.get("sidecar_token")),

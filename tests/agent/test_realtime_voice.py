@@ -141,6 +141,7 @@ def test_session_config_round_trips_wire_payload():
         frontend_provider="gemma",
         frontend_model="gemma-4-e4b",
         oracle_model="configured-hermes-model",
+        oracle_timeout_seconds=12.5,
         tts_provider="edge",
         sidecar_base_url="http://voice.local:8080",
         sidecar_token="secret-token",
@@ -155,6 +156,7 @@ def test_session_config_round_trips_wire_payload():
     assert restored.effective_sidecar_token == "secret-token"
     assert restored.input_buffer_limit_bytes == 4096
     assert restored.sidecar_connect_timeout_seconds == 3.5
+    assert restored.oracle_timeout_seconds == 12.5
 
 
 def test_session_config_round_trips_kame_fields():
@@ -1080,6 +1082,112 @@ def test_text_engine_cancels_queued_tts_when_oracle_fails(monkeypatch):
         ]
         assert seen[-1].payload["error"] == "oracle/tts failed: oracle failed"
         assert spoken == ["First sentence."]
+
+    asyncio.run(run())
+
+
+def test_text_engine_speaks_status_when_oracle_times_out(monkeypatch):
+    class HangingOracle:
+        async def stream_answer(self, transcript: str):
+            await asyncio.Event().wait()
+            yield "unreachable"
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        engine = TextOracleTTSEngine(oracle=HangingOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                oracle_timeout_seconds=0.01,
+                metadata={"oracle_timeout_status_text": "Hermes is still thinking."},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello", "end_of_utterance": True},
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                await engine.close()
+                break
+
+        degraded = next(event for event in seen if event.type == VoiceEventType.FRONTEND_STATE)
+        partial = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL)
+        commit = seen[-1]
+        assert degraded.payload["reason"] == "oracle_timeout"
+        assert degraded.payload["oracle_timeout_seconds"] == 0.01
+        assert partial.payload == {
+            "text": "Hermes is still thinking.",
+            "playback_generation": 1,
+            "oracle_timeout": True,
+        }
+        assert commit.payload == partial.payload
+        assert spoken == ["Hermes is still thinking."]
+
+    asyncio.run(run())
+
+
+def test_kame_engine_timeout_status_keeps_oracle_metrics(monkeypatch):
+    class HangingStructuredOracle:
+        async def stream_answer_for_request(self, request):
+            await asyncio.Event().wait()
+            yield "unreachable"
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        engine = KameInterfaceOracleEngine(oracle=HangingStructuredOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_timeout_seconds=0.01,
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "find the note",
+                    "intent": "Find the note.",
+                    "route": "oracle_direct",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                await engine.close()
+                break
+
+        commit = seen[-1]
+        assert commit.payload["oracle_timeout"] is True
+        assert commit.payload["metrics"]["kame_oracle_called"] == 1
+        assert commit.payload["metrics"]["kame_oracle_bypassed"] == 0
+        assert spoken == ["Hermes is taking too long to answer. Please try that again in a moment."]
 
     asyncio.run(run())
 

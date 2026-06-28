@@ -607,6 +607,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 transcript,
                 assistant_metadata,
                 oracle_request=oracle_request,
+                timeout_seconds=_oracle_timeout_seconds(self.config),
             ):
                 if playback_generation != self._playback_generation:
                     return
@@ -681,6 +682,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     {"interrupted": True, "text": "", "playback_generation": playback_generation},
                 )
             raise
+        except asyncio.TimeoutError:
+            await cancel_speak_tasks()
+            if playback_generation == self._playback_generation:
+                await self._speak_oracle_timeout_status(playback_generation, assistant_metadata)
         except Exception as exc:
             await cancel_speak_tasks()
             await self._emit(
@@ -689,6 +694,46 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             )
         finally:
             self._assistant_metadata_by_generation.pop(playback_generation, None)
+
+    async def _speak_oracle_timeout_status(
+        self,
+        playback_generation: int,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        status_text = self._planner.clean(_oracle_timeout_status_text(self.config))
+        if not status_text:
+            return
+        payload = {
+            "text": status_text,
+            "playback_generation": playback_generation,
+            "oracle_timeout": True,
+            **metadata,
+            **_kame_route_metrics_payload(metadata, oracle_called=True),
+        }
+        await self._emit(
+            VoiceEventType.FRONTEND_STATE,
+            {
+                "status": "degraded",
+                "reason": "oracle_timeout",
+                "oracle_timeout_seconds": _oracle_timeout_seconds(self.config),
+                "sidecar": self._sidecar is not None,
+            },
+        )
+        await self._emit(VoiceEventType.ASSISTANT_TEXT_PARTIAL, payload)
+        try:
+            await self._speak_chunk(status_text, playback_generation)
+        except Exception as exc:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "tts_failed",
+                    "error": sanitize_realtime_voice_error(exc),
+                    "sidecar": False,
+                },
+            )
+        if playback_generation == self._playback_generation:
+            await self._emit(VoiceEventType.ASSISTANT_COMMIT, payload)
 
     def _transcribe_sync(self, audio: bytes, codec: VoiceAudioCodec) -> str:
         from tools.transcription_tools import transcribe_audio
@@ -915,21 +960,64 @@ async def _stream_oracle_answer(
     metadata: dict,
     *,
     oracle_request: Optional[KameOracleRequest] = None,
+    timeout_seconds: float = 60.0,
 ) -> AsyncIterator[str]:
     request_stream = getattr(oracle, "stream_answer_for_request", None)
     if oracle_request is not None and callable(request_stream):
-        async for delta in request_stream(oracle_request):  # type: ignore[misc]
+        async for delta in _with_next_timeout(
+            request_stream(oracle_request),  # type: ignore[misc]
+            timeout_seconds=timeout_seconds,
+        ):
             yield delta
         return
 
     metadata_stream = getattr(oracle, "stream_answer_with_metadata", None)
     if callable(metadata_stream):
-        async for delta in metadata_stream(transcript, metadata):  # type: ignore[misc]
+        async for delta in _with_next_timeout(
+            metadata_stream(transcript, metadata),  # type: ignore[misc]
+            timeout_seconds=timeout_seconds,
+        ):
             yield delta
         return
 
-    async for delta in oracle.stream_answer(transcript):  # type: ignore[attr-defined]
+    async for delta in _with_next_timeout(
+        oracle.stream_answer(transcript),  # type: ignore[attr-defined]
+        timeout_seconds=timeout_seconds,
+    ):
         yield delta
+
+
+async def _with_next_timeout(stream: AsyncIterator[str], *, timeout_seconds: float) -> AsyncIterator[str]:
+    timeout = max(0.001, float(timeout_seconds or 60.0))
+    iterator = stream.__aiter__()
+    while True:
+        try:
+            yield await asyncio.wait_for(iterator.__anext__(), timeout=timeout)
+        except StopAsyncIteration:
+            return
+
+
+def _oracle_timeout_seconds(config: Optional[RealtimeVoiceSessionConfig]) -> float:
+    if config is None:
+        return 60.0
+    timeout = config.oracle_timeout_seconds
+    if isinstance(timeout, bool):
+        return 60.0
+    try:
+        parsed = float(timeout)
+    except (TypeError, ValueError):
+        return 60.0
+    if parsed <= 0:
+        return 60.0
+    return parsed
+
+
+def _oracle_timeout_status_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:
+    if config is not None and isinstance(config.metadata, Mapping):
+        text = str(config.metadata.get("oracle_timeout_status_text") or "").strip()
+        if text:
+            return text[:160]
+    return "Hermes is taking too long to answer. Please try that again in a moment."
 
 
 def _payload_int(value: object) -> Optional[int]:

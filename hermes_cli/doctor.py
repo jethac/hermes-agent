@@ -1104,6 +1104,10 @@ def _realtime_voice_smoke_config():
         asr_mode=RealtimeVoiceASRMode(str(realtime.get("asr_mode") or RealtimeVoiceASRMode.ON_ESCALATION.value)),
         preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or "") or None,
         oracle_model=str(realtime.get("oracle_model") or "") or None,
+        oracle_timeout_seconds=_positive_float_config(
+            realtime.get("oracle_timeout_seconds"),
+            default=60.0,
+        ),
         tts_provider=str(realtime.get("tts_provider") or "") or None,
         sidecar_base_url=str(base_url or "") or None,
         sidecar_token=str(sidecar_token or "") or None,
@@ -1123,6 +1127,10 @@ def _realtime_voice_smoke_config():
             "asr_mode": str(realtime.get("asr_mode") or "") or None,
             "preferred_local_oracle_model": str(realtime.get("preferred_local_oracle_model") or "") or None,
             "oracle_model": str(realtime.get("oracle_model") or "") or None,
+            "oracle_timeout_seconds": _positive_float_config(
+                realtime.get("oracle_timeout_seconds"),
+                default=60.0,
+            ),
             "language_support": _realtime_voice_language_support_payload(realtime),
             "quality_targets_ms": _realtime_voice_quality_targets_payload(realtime),
             "routing": routing_policy,

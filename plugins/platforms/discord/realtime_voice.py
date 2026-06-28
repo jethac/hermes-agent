@@ -131,6 +131,7 @@ class DiscordRealtimeVoiceSession:
         asr_mode: str = RealtimeVoiceASRMode.ON_ESCALATION.value,
         preferred_local_oracle_model: Optional[str] = None,
         oracle_model: Optional[str] = None,
+        oracle_timeout_seconds: float = 60.0,
         tts_provider: Optional[str] = None,
         sidecar_connect_timeout_seconds: float = 10.0,
         turn_acknowledgement: Optional[dict] = None,
@@ -153,6 +154,7 @@ class DiscordRealtimeVoiceSession:
         self.asr_mode = asr_mode
         self.preferred_local_oracle_model = preferred_local_oracle_model
         self.oracle_model = oracle_model
+        self.oracle_timeout_seconds = oracle_timeout_seconds
         self.tts_provider = tts_provider
         self.sidecar_connect_timeout_seconds = sidecar_connect_timeout_seconds
         self.turn_acknowledgement = dict(turn_acknowledgement or {})
@@ -186,6 +188,7 @@ class DiscordRealtimeVoiceSession:
             asr_mode=RealtimeVoiceASRMode(str(self.asr_mode or RealtimeVoiceASRMode.ON_ESCALATION.value)),
             preferred_local_oracle_model=self.preferred_local_oracle_model,
             oracle_model=self.oracle_model,
+            oracle_timeout_seconds=self.oracle_timeout_seconds,
             tts_provider=self.tts_provider,
             sidecar_base_url=self.sidecar_base_url,
             sidecar_token=self.sidecar_token,
@@ -201,6 +204,7 @@ class DiscordRealtimeVoiceSession:
                 "asr_mode": self.asr_mode,
                 "preferred_local_oracle_model": self.preferred_local_oracle_model,
                 "oracle_model": self.oracle_model,
+                "oracle_timeout_seconds": self.oracle_timeout_seconds,
                 "guild_id": str(self.guild_id),
                 "voice_channel_id": str(self.voice_channel_id),
                 "text_channel_id": str(self.text_channel_id) if self.text_channel_id is not None else None,

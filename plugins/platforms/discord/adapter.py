@@ -63,6 +63,7 @@ class DiscordVoiceSessionState:
     frontend_provider: Optional[str] = None
     frontend_model: Optional[str] = None
     oracle_model: Optional[str] = None
+    oracle_timeout_seconds: float = 60.0
     latency_metrics_ms: Dict[str, int] = field(default_factory=dict)
     quality_target_misses: List[Dict[str, Any]] = field(default_factory=list)
     updated_at: float = field(default_factory=time.monotonic)
@@ -2836,6 +2837,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "asr_mode": "on_escalation",
             "preferred_local_oracle_model": None,
             "oracle_model": None,
+            "oracle_timeout_seconds": 60.0,
             "tts_provider": None,
             "sidecar_connect_timeout_seconds": 10.0,
             "sidecar_close_timeout_seconds": 2.0,
@@ -3049,6 +3051,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "asr_mode": str(cfg.get("asr_mode") or "") or None,
             "preferred_local_oracle_model": str(cfg.get("preferred_local_oracle_model") or "") or None,
             "oracle_model": str(cfg.get("oracle_model") or "") or None,
+            "oracle_timeout_seconds": float(cfg.get("oracle_timeout_seconds") or 60.0),
         }
 
     def _voice_playback_status(self, guild_id: int) -> Dict[str, Any]:
@@ -3107,6 +3110,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "frontend_provider": state.frontend_provider or architecture["frontend_provider"],
             "frontend_model": state.frontend_model or architecture["frontend_model"],
             "oracle_model": state.oracle_model or architecture["oracle_model"],
+            "oracle_timeout_seconds": state.oracle_timeout_seconds or architecture["oracle_timeout_seconds"],
             "latency_metrics_ms": dict(state.latency_metrics_ms),
             "quality_target_misses": [dict(item) for item in state.quality_target_misses],
             **playback,
@@ -3138,6 +3142,7 @@ class DiscordAdapter(BasePlatformAdapter):
             asr_mode=str(cfg.get("asr_mode") or "on_escalation"),
             preferred_local_oracle_model=str(cfg.get("preferred_local_oracle_model") or "") or None,
             oracle_model=cfg.get("oracle_model"),
+            oracle_timeout_seconds=float(cfg.get("oracle_timeout_seconds") or 60.0),
             tts_provider=cfg.get("tts_provider"),
             sidecar_connect_timeout_seconds=float(cfg.get("sidecar_connect_timeout_seconds") or 10.0),
             turn_acknowledgement=cfg.get("turn_acknowledgement") if isinstance(cfg.get("turn_acknowledgement"), dict) else {},
