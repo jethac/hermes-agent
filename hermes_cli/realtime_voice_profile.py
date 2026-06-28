@@ -31,6 +31,7 @@ DEFAULT_GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview"
 DEFAULT_GEMINI_LIVE_VOICE = "Puck"
 DEFAULT_KAME_REFLEX_MODEL = "gemma-4-E2B-it"
 DEFAULT_KAME_ORACLE_MODEL = "gemma-4-26B-A4B-it"
+DEFAULT_KAME_ORACLE_PROVIDER_NAME = "KAME Local Oracle"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -145,6 +146,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_KAME_ORACLE_MODEL,
         help="Preferred local Hermes oracle model label for --preset kame",
     )
+    parser.add_argument(
+        "--kame-oracle-base-url",
+        default="",
+        help=(
+            "OpenAI-compatible base URL for the local Hermes oracle model. "
+            "When set with --preset kame --apply, Hermes' main model provider is pointed at this endpoint."
+        ),
+    )
+    parser.add_argument(
+        "--kame-oracle-provider-name",
+        default=DEFAULT_KAME_ORACLE_PROVIDER_NAME,
+        help="Display name to register for the local KAME oracle custom provider",
+    )
     parser.add_argument("--sidecar-host", default="127.0.0.1")
     parser.add_argument("--sidecar-port", type=int, default=8765)
     parser.add_argument(
@@ -207,6 +221,10 @@ def main(argv: list[str] | None = None) -> int:
                 asr_mode=str(args.kame_asr_mode or "on_escalation"),
                 preferred_local_oracle_model=str(
                     args.kame_preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL
+                ),
+                oracle_base_url=str(args.kame_oracle_base_url or ""),
+                oracle_provider_name=str(
+                    args.kame_oracle_provider_name or DEFAULT_KAME_ORACLE_PROVIDER_NAME
                 ),
                 streaming_stt_base_url=preset["streaming_stt_base_url"],
                 streaming_tts_base_url=preset["streaming_tts_base_url"],
@@ -686,6 +704,8 @@ def build_kame_realtime_voice_profile(
     interface_audio_input: str = "auto",
     asr_mode: str = "on_escalation",
     preferred_local_oracle_model: str = DEFAULT_KAME_ORACLE_MODEL,
+    oracle_base_url: str = "",
+    oracle_provider_name: str = DEFAULT_KAME_ORACLE_PROVIDER_NAME,
     streaming_stt_base_url: str = "",
     streaming_tts_base_url: str = "",
     streaming_stt_model: str = DEFAULT_STREAMING_STT_MODEL,
@@ -706,7 +726,9 @@ def build_kame_realtime_voice_profile(
     if asr not in {"disabled", "on_escalation", "speculative", "debug", "fallback"}:
         raise ValueError("--kame-asr-mode must be disabled, on_escalation, speculative, debug, or fallback")
 
-    return {
+    oracle_url = _clean_url(oracle_base_url)
+    oracle_model = str(preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL)
+    profile = {
         "enabled": True,
         "engine": "kame_interface_oracle",
         "input_codec": "webm_opus",
@@ -729,7 +751,7 @@ def build_kame_realtime_voice_profile(
         "asr_mode": asr,
         "asr_provider": "streaming_stt",
         "asr_model": str(streaming_stt_model or DEFAULT_STREAMING_STT_MODEL),
-        "preferred_local_oracle_model": str(preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL),
+        "preferred_local_oracle_model": oracle_model,
         "oracle_timeout_seconds": 60.0,
         "max_spoken_sentences": 2,
         "tts_provider": "streaming_tts",
@@ -777,6 +799,20 @@ def build_kame_realtime_voice_profile(
             "barge_in_ack_ms": 150,
         },
     }
+    if oracle_url:
+        profile.update(
+            {
+                "oracle_provider": "custom",
+                "oracle_provider_name": str(
+                    oracle_provider_name or DEFAULT_KAME_ORACLE_PROVIDER_NAME
+                ).strip()
+                or DEFAULT_KAME_ORACLE_PROVIDER_NAME,
+                "oracle_model": oracle_model,
+                "oracle_base_url": oracle_url,
+                "oracle_api_mode": "chat_completions",
+            }
+        )
+    return profile
 
 
 def apply_realtime_voice_profile(profile: Mapping[str, Any]) -> Path:
@@ -850,7 +886,78 @@ def merge_realtime_voice_profile(
     )
     discord["realtime_voice"] = discord_rt
     updated["discord"] = discord
+    _merge_kame_oracle_model_config(updated, profile)
     return updated
+
+
+def _merge_kame_oracle_model_config(updated: dict[str, Any], profile: Mapping[str, Any]) -> None:
+    """Point Hermes' oracle at the local KAME endpoint only when explicitly requested."""
+
+    if str(profile.get("engine") or "") != "kame_interface_oracle":
+        return
+    oracle_base_url = _clean_url(str(profile.get("oracle_base_url") or ""))
+    if not oracle_base_url:
+        return
+    oracle_model = str(
+        profile.get("oracle_model")
+        or profile.get("preferred_local_oracle_model")
+        or DEFAULT_KAME_ORACLE_MODEL
+    ).strip()
+    if not oracle_model:
+        oracle_model = DEFAULT_KAME_ORACLE_MODEL
+    oracle_api_mode = (
+        str(profile.get("oracle_api_mode") or "chat_completions").strip()
+        or "chat_completions"
+    )
+
+    model_cfg = updated.get("model")
+    if not isinstance(model_cfg, dict):
+        model_cfg = {"default": str(model_cfg)} if model_cfg else {}
+    else:
+        model_cfg = copy.deepcopy(model_cfg)
+    model_cfg.update(
+        {
+            "provider": str(profile.get("oracle_provider") or "custom").strip() or "custom",
+            "default": oracle_model,
+            "name": oracle_model,
+            "base_url": oracle_base_url,
+            "api_mode": oracle_api_mode,
+        }
+    )
+    updated["model"] = model_cfg
+
+    provider_name = str(
+        profile.get("oracle_provider_name") or DEFAULT_KAME_ORACLE_PROVIDER_NAME
+    ).strip() or DEFAULT_KAME_ORACLE_PROVIDER_NAME
+    custom_entry = {
+        "name": provider_name,
+        "base_url": oracle_base_url,
+        "model": oracle_model,
+        "api_mode": oracle_api_mode,
+    }
+    raw_custom_providers = updated.get("custom_providers")
+    custom_providers = (
+        copy.deepcopy(raw_custom_providers)
+        if isinstance(raw_custom_providers, list)
+        else []
+    )
+    provider_name_key = provider_name.lower()
+    oracle_base_key = oracle_base_url.rstrip("/")
+    replaced = False
+    for index, entry in enumerate(custom_providers):
+        if not isinstance(entry, dict):
+            continue
+        entry_name = str(entry.get("name") or "").strip().lower()
+        entry_base = str(entry.get("base_url") or "").strip().rstrip("/")
+        if entry_name == provider_name_key or entry_base == oracle_base_key:
+            merged_entry = copy.deepcopy(entry)
+            merged_entry.update(custom_entry)
+            custom_providers[index] = merged_entry
+            replaced = True
+            break
+    if not replaced:
+        custom_providers.append(custom_entry)
+    updated["custom_providers"] = custom_providers
 
 
 def _reference_sidecar_base_url(profile: Mapping[str, Any]) -> str:

@@ -220,6 +220,8 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "hermes_cli.realtime_voice_profile --preset kame --apply" in launch
     assert "--kame-interface-audio-input native_audio" in launch
     assert "--kame-asr-mode on_escalation" in launch
+    assert "--kame-oracle-base-url http://spark.local:8001/v1" in launch
+    assert '--kame-oracle-provider-name "KAME Local Oracle"' in launch
     assert "--sidecar-host spark.local" in launch
     assert "--sidecar-port 8765" in launch
     assert "docker compose --env-file .env.example -f compose.yaml up" in launch

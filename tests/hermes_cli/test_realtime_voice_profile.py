@@ -287,6 +287,29 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
         "log_turn_spans": True,
         "log_provider_spans": True,
     }
+    assert "oracle_base_url" not in realtime
+
+
+def test_kame_preset_can_print_local_oracle_provider_profile(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--kame-oracle-base-url",
+            "http://spark.local:8001/v1/",
+            "--kame-oracle-provider-name",
+            "Spark Oracle",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["oracle_provider"] == "custom"
+    assert realtime["oracle_provider_name"] == "Spark Oracle"
+    assert realtime["oracle_model"] == "gemma-4-26B-A4B-it"
+    assert realtime["oracle_base_url"] == "http://spark.local:8001/v1"
+    assert realtime["oracle_api_mode"] == "chat_completions"
 
 
 def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
@@ -320,6 +343,47 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["fallback_policy"] == "legacy_voice"
     assert discord_rt["routing"]["require_oracle_for_tools"] is True
     assert discord_rt["metrics"]["log_turn_spans"] is True
+
+
+def test_kame_profile_merge_can_point_hermes_oracle_at_local_vllm():
+    existing = {
+        "model": {"provider": "openrouter", "default": "gpt-5"},
+        "custom_providers": [
+            {
+                "name": "Unrelated",
+                "base_url": "https://unrelated.example.test/v1",
+                "model": "unrelated-model",
+            }
+        ],
+    }
+    profile = realtime_voice_profile.build_kame_realtime_voice_profile(
+        preferred_local_oracle_model="gemma-4-26B-A4B-it",
+        oracle_base_url="http://spark.local:8001/v1/",
+        oracle_provider_name="Spark Oracle",
+    )
+
+    merged = realtime_voice_profile.merge_realtime_voice_profile(existing, profile)
+
+    assert merged["model"] == {
+        "provider": "custom",
+        "default": "gemma-4-26B-A4B-it",
+        "name": "gemma-4-26B-A4B-it",
+        "base_url": "http://spark.local:8001/v1",
+        "api_mode": "chat_completions",
+    }
+    assert merged["custom_providers"] == [
+        {
+            "name": "Unrelated",
+            "base_url": "https://unrelated.example.test/v1",
+            "model": "unrelated-model",
+        },
+        {
+            "name": "Spark Oracle",
+            "base_url": "http://spark.local:8001/v1",
+            "model": "gemma-4-26B-A4B-it",
+            "api_mode": "chat_completions",
+        },
+    ]
 
 
 def test_merge_realtime_voice_profile_preserves_unrelated_config():

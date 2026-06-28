@@ -525,6 +525,8 @@ if [ "${{HERMES_DGX_SPARK_APPLY_PROFILE:-1}}" != "0" ]; then
       --kame-interface-audio-input native_audio \\
       --kame-asr-mode {manifest["engine"]["asr_mode"]} \\
       --kame-preferred-local-oracle-model {manifest["roles"]["oracle"]["preferred_local_model"]} \\
+      --kame-oracle-base-url {manifest["roles"]["oracle"]["base_url"]} \\
+      --kame-oracle-provider-name "KAME Local Oracle" \\
       --streaming-stt-base-url {manifest["roles"]["asr"]["base_url"]} \\
       --streaming-tts-base-url {manifest["roles"]["tts"]["base_url"]} \\
       --sidecar-host {sidecar_host} \\
