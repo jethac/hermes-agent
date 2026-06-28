@@ -3495,6 +3495,48 @@ def test_reference_sidecar_forwards_provider_kame_oracle_events():
                 sequence=4,
                 payload={"turn_id": "turn-1", "text": "Done.", "playback_generation": 3},
             ),
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_INTENT_FINAL,
+                session_id="voice-123",
+                sequence=5,
+                payload={"turn_id": "turn-2", "intent": "Say hello.", "route": "local"},
+            ),
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_REPLY_LOCAL,
+                session_id="voice-123",
+                sequence=6,
+                payload={"turn_id": "turn-2", "text": "Hello.", "playback_generation": 4},
+            ),
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                session_id="voice-123",
+                sequence=7,
+                payload={"turn_id": "turn-3", "intent": "Check the file.", "playback_generation": 5},
+            ),
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_COMMIT,
+                session_id="voice-123",
+                sequence=8,
+                payload={"turn_id": "turn-2", "text": "Hello.", "local_reply": True},
+            ),
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_CAPTION_FINAL,
+                session_id="voice-123",
+                sequence=9,
+                payload={"text": "Hello.", "playback_generation": 4},
+            ),
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_AUDIO_CHUNK,
+                session_id="voice-123",
+                sequence=10,
+                payload={"codec": "opus", "data_b64": "", "playback_generation": 4},
+            ),
+            VoiceEvent(
+                type=VoiceEventType.SESSION_METRICS,
+                session_id="voice-123",
+                sequence=11,
+                payload={"metrics": {"kame_oracle_called": 1}},
+            ),
         ]
         setattr(sidecar, provider_attr, Provider(source_events))
 
