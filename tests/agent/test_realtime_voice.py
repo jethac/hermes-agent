@@ -818,6 +818,26 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     assert "Requested response style: spoken=true; policy=sentence_cap; avoid automatic follow-up offers." in prompt
 
 
+def test_kame_oracle_request_accepts_transport_and_speaker_aliases():
+    request = KameOracleRequest.from_turn(
+        session_id="voice-123",
+        turn_id="turn-1",
+        source="voice",
+        user_id="session-user",
+        payload={
+            "transport": "discord_voice",
+            "speaker_id": "turn-speaker",
+            "intent": "Check the repository status.",
+            "text": "check the repository status",
+            "route": "oracle_direct",
+        },
+        fallback_text="check status",
+    )
+
+    assert request.source == "discord_voice"
+    assert request.user_id == "turn-speaker"
+
+
 def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
     class StructuredOracle:
         def __init__(self):
@@ -1019,6 +1039,39 @@ def test_kame_engine_drops_asr_evidence_when_asr_mode_disabled(monkeypatch):
         assert "asr_transcript" not in oracle_request.payload
         assert oracle_request.payload["text"] == "reflex wording"
         assert oracle_request.payload["oracle_text_source"] == "reflex_audio"
+
+    asyncio.run(run())
+
+
+def test_kame_engine_uses_session_source_when_transport_is_absent():
+    async def run():
+        engine = KameInterfaceOracleEngine(oracle=FakeOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+                metadata={"source": "desktop", "user_id": "session-user"},
+            )
+        )
+        request = engine._kame_oracle_request(
+            "open the workspace status",
+            1,
+            oracle_payload={
+                "text": "open the workspace status",
+                "intent": "Open the workspace status.",
+                "intent_source": "reflex_audio",
+                "route": "oracle_direct",
+            },
+            metadata={},
+            cancellation_token="voice-123:1:cancel",
+        )
+        await engine.close()
+
+        assert request is not None
+        assert request.source == "desktop"
+        assert request.user_id == "session-user"
 
     asyncio.run(run())
 

@@ -442,8 +442,8 @@ class KameOracleRequest:
         return cls(
             session_id=session_id,
             turn_id=_optional_text(payload.get("turn_id")) or turn_id,
-            source=_optional_text(payload.get("source")) or source,
-            user_id=_optional_text(payload.get("user_id")) or user_id,
+            source=_optional_text(payload.get("source")) or _optional_text(payload.get("transport")) or source,
+            user_id=_optional_text(payload.get("user_id")) or _optional_text(payload.get("speaker_id")) or user_id,
             intent=intent.strip(),
             intent_source=_optional_text(payload.get("intent_source")) or "reflex_audio",
             route=_route(payload.get("route")),

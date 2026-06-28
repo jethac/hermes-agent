@@ -664,7 +664,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
             return None
         config_metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
-        source = str(config_metadata.get("transport") or "voice").strip() or "voice"
+        source = str(config_metadata.get("transport") or config_metadata.get("source") or "voice").strip() or "voice"
         user_id = str(config_metadata.get("user_id") or "").strip() or None
         payload: dict[str, Any] = {}
         payload.update(metadata)
