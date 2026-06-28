@@ -334,6 +334,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "HERMES_DGX_SPARK_APPLY_PROFILE" in launch
     assert "hermes_cli.realtime_voice_profile --preset kame --apply" in launch
     assert "--kame-interface-audio-input native_audio" in launch
+    assert '--kame-interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL"' in launch
     assert "--kame-interface-max-audio-seconds 30.0" in launch
     assert "--kame-asr-mode on_escalation" in launch
     assert "--kame-oracle-base-url http://spark.local:8001/v1" in launch

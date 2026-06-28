@@ -633,6 +633,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_REPO_DIR:={manifest["repo_dir"]}}}"
 : "${{HERMES_HOME:={manifest["hermes_home"]}}}"
 : "${{HERMES_PYTHON:=python}}"
+: "${{HERMES_KAME_INTERFACE_BASE_URL:={manifest["roles"]["interface"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_MODEL:={manifest["roles"]["asr"]["model"]}}}"
 : "${{HERMES_VOICE_STREAMING_TTS_MODEL:={manifest["roles"]["tts"]["model"]}}}"
 export HERMES_REPO_DIR HERMES_HOME
@@ -642,6 +643,7 @@ if [ "${{HERMES_DGX_SPARK_APPLY_PROFILE:-1}}" != "0" ]; then
     cd "$HERMES_REPO_DIR"
     "$HERMES_PYTHON" -m hermes_cli.realtime_voice_profile --preset kame --apply \\
       --kame-reflex-model {manifest["roles"]["interface"]["model"]} \\
+      --kame-interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL" \\
       --kame-interface-audio-input native_audio \\
       --kame-interface-max-audio-seconds {manifest["roles"]["interface"]["max_audio_seconds"]} \\
       --kame-asr-mode {manifest["engine"]["asr_mode"]} \\
