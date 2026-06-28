@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import sys
 import urllib.error
@@ -1043,6 +1044,11 @@ def preflight_dgx_spark_stack(
             timeout_seconds=timeout_seconds,
             expected_model=roles["interface"]["model"],
         ),
+        "interface_audio_probe": probe_openai_audio_chat_completion(
+            roles["interface"]["base_url"],
+            model=roles["interface"]["model"],
+            timeout_seconds=timeout_seconds,
+        ),
         "oracle_models": probe_json_endpoint(
             roles["oracle"]["models_url"],
             timeout_seconds=timeout_seconds,
@@ -1067,6 +1073,66 @@ def preflight_dgx_spark_stack(
     return {
         "ok": all(check["ok"] for check in checks.values()),
         "checks": checks,
+    }
+
+
+def probe_openai_audio_chat_completion(
+    base_url: str,
+    *,
+    model: str,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    """Probe that the interface endpoint accepts audio prompts and emits KAME JSON."""
+
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "audio_url", "audio_url": {"url": _silence_wav_data_url()}},
+                    {
+                        "type": "text",
+                        "text": (
+                            "This is a KAME realtime voice preflight probe. The audio may be silence. "
+                            "Return only JSON with route, intent, text, route_confidence, and local_reply. "
+                            "Use route=reject_or_clarify and intent='preflight audio probe' if no speech is present."
+                        ),
+                    },
+                ],
+            }
+        ],
+        "temperature": 0,
+        "max_tokens": 80,
+        "response_format": {"type": "json_object"},
+    }
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Accept": "application/json", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            status = getattr(response, "status", 200)
+            body = response.read()
+    except (OSError, TimeoutError, urllib.error.URLError) as exc:
+        return {"ok": False, "url": url, "model": model, "error": str(exc)}
+    try:
+        response_payload = json.loads(body.decode("utf-8") or "{}")
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return {"ok": False, "url": url, "model": model, "status": status, "error": f"invalid_json: {exc}"}
+
+    content = _chat_completion_message_content(response_payload)
+    schema_issues = _kame_preflight_content_schema_issues(content)
+    return {
+        "ok": 200 <= int(status) < 300 and not schema_issues,
+        "url": url,
+        "model": model,
+        "status": status,
+        "audio_prompt": True,
+        "schema_issues": schema_issues,
     }
 
 
@@ -1130,6 +1196,80 @@ def _models_payload_contains(payload: Mapping[str, Any], expected_model: str) ->
         if isinstance(item, Mapping) and item.get("id") == expected_model:
             return True
     return False
+
+
+def _chat_completion_message_content(payload: Mapping[str, Any]) -> str:
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    choice = choices[0]
+    if not isinstance(choice, Mapping):
+        return ""
+    message = choice.get("message")
+    if not isinstance(message, Mapping):
+        return ""
+    return str(message.get("content") or "").strip()
+
+
+def _kame_preflight_content_schema_issues(content: str) -> list[str]:
+    if not content:
+        return ["missing message content"]
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError as exc:
+        return [f"message content is not JSON: {exc}"]
+    if not isinstance(payload, Mapping):
+        return ["message content JSON is not an object"]
+    issues: list[str] = []
+    route = str(payload.get("route") or "").strip()
+    if route not in {"local", "defer", "oracle_direct", "reject_or_clarify"}:
+        issues.append("route must be local, defer, oracle_direct, or reject_or_clarify")
+    for key in ("intent", "text"):
+        if key not in payload:
+            issues.append(f"missing {key}")
+    confidence = payload.get("route_confidence")
+    if isinstance(confidence, bool):
+        issues.append("route_confidence must be numeric")
+    else:
+        try:
+            parsed_confidence = float(confidence)
+        except (TypeError, ValueError):
+            issues.append("route_confidence must be numeric")
+        else:
+            if parsed_confidence < 0 or parsed_confidence > 1:
+                issues.append("route_confidence must be between 0 and 1")
+    if route in {"local", "reject_or_clarify"} and "local_reply" not in payload:
+        issues.append("local_reply is required for local or reject_or_clarify")
+    return issues
+
+
+def _silence_wav_data_url() -> str:
+    sample_rate = 16_000
+    channels = 1
+    bits_per_sample = 16
+    sample_count = sample_rate // 10
+    block_align = channels * bits_per_sample // 8
+    byte_rate = sample_rate * block_align
+    data_size = sample_count * block_align
+    header = b"".join(
+        [
+            b"RIFF",
+            (36 + data_size).to_bytes(4, "little"),
+            b"WAVE",
+            b"fmt ",
+            (16).to_bytes(4, "little"),
+            (1).to_bytes(2, "little"),
+            channels.to_bytes(2, "little"),
+            sample_rate.to_bytes(4, "little"),
+            byte_rate.to_bytes(4, "little"),
+            block_align.to_bytes(2, "little"),
+            bits_per_sample.to_bytes(2, "little"),
+            b"data",
+            data_size.to_bytes(4, "little"),
+        ]
+    )
+    wav = header + (b"\x00" * data_size)
+    return "data:audio/wav;base64," + base64.b64encode(wav).decode("ascii")
 
 
 def _sidecar_expected_health_fields(roles: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
