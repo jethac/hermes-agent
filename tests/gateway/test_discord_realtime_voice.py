@@ -403,7 +403,11 @@ async def test_discord_realtime_session_reports_event_metrics_to_callback():
         sample_rate_hz=16000,
         channels=1,
     ).to_payload()
-    payload["metrics"] = {"final_transcript_to_first_audio_ms": 812}
+    payload["playback_generation"] = 3
+    payload["metrics"] = {
+        "final_transcript_to_first_audio_ms": 812,
+        "kame_oracle_first_token_to_first_tts_audio_ms": 48,
+    }
 
     await session.start()
     await sidecar.emit(VoiceEvent(
@@ -416,6 +420,8 @@ async def test_discord_realtime_session_reports_event_metrics_to_callback():
 
     assert observed[-1][0] == VoiceEventType.AUDIO_OUTPUT_CHUNK.value
     assert observed[-1][1]["metrics"]["final_transcript_to_first_audio_ms"] == 812
+    assert observed[-1][1]["metrics"]["kame_oracle_first_token_to_first_tts_audio_ms"] == 48
+    assert observed[-1][1]["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
 
 
 @pytest.mark.asyncio

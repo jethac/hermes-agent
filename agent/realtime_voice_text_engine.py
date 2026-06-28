@@ -61,6 +61,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._assistant_metadata_by_generation: dict[int, dict] = {}
         self._cancellation_token_by_generation: dict[int, str] = {}
         self._interface_decision_at_by_generation: dict[int, float] = {}
+        self._oracle_first_token_at_by_generation: dict[int, float] = {}
         self._first_audio_metric_generations: set[int] = set()
 
     @property
@@ -811,6 +812,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 now = time.perf_counter()
                 if oracle_request is not None and oracle_first_token_at is None:
                     oracle_first_token_at = now
+                    self._oracle_first_token_at_by_generation[playback_generation] = now
                     if oracle_accepted_at is not None:
                         kame_timing_metrics["kame_oracle_accepted_to_first_token_ms"] = _elapsed_perf_ms(
                             oracle_accepted_at,
@@ -1006,6 +1008,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._assistant_metadata_by_generation.pop(playback_generation, None)
             self._cancellation_token_by_generation.pop(playback_generation, None)
             self._interface_decision_at_by_generation.pop(playback_generation, None)
+            self._oracle_first_token_at_by_generation.pop(playback_generation, None)
             self._first_audio_metric_generations.discard(playback_generation)
 
     async def _speak_oracle_timeout_status(
@@ -1187,9 +1190,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         decision_at = self._interface_decision_at_by_generation.get(playback_generation)
         if decision_at is None:
             return {}
-        elapsed = _elapsed_perf_ms(decision_at, time.perf_counter())
+        first_audio_at = time.perf_counter()
+        elapsed = _elapsed_perf_ms(decision_at, first_audio_at)
         self._first_audio_metric_generations.add(playback_generation)
         metrics = {"kame_interface_decision_to_first_audio_ms": elapsed}
+        oracle_first_token_at = self._oracle_first_token_at_by_generation.get(playback_generation)
+        if oracle_first_token_at is not None:
+            metrics["kame_oracle_first_token_to_first_tts_audio_ms"] = _elapsed_perf_ms(
+                oracle_first_token_at,
+                first_audio_at,
+            )
         route = str(metadata.get("kame_route") or "")
         if route in {KameRoute.LOCAL.value, KameRoute.REJECT_OR_CLARIFY.value}:
             metrics["kame_interface_decision_to_local_first_audio_ms"] = elapsed

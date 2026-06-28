@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import time
 import types
 
 import pytest
@@ -5549,6 +5550,44 @@ def test_text_engine_file_tts_audio_chunk_includes_synthesis_metric(monkeypatch,
         event = await asyncio.wait_for(engine._events.get(), timeout=1)
         assert event.type == VoiceEventType.ASSISTANT_AUDIO_END
         assert event.payload["playback_generation"] == 1
+        await engine.close()
+
+    asyncio.run(run())
+
+
+def test_kame_file_tts_audio_chunk_includes_first_token_to_tts_metric(monkeypatch, tmp_path):
+    async def run():
+        audio_path = tmp_path / "tts.mp3"
+        audio_path.write_bytes(b"audio")
+        engine = KameInterfaceOracleEngine(oracle=FakeOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            )
+        )
+        monkeypatch.setattr(engine, "_tts_sync", lambda text: str(audio_path))
+        engine._playback_generation = 7
+        engine._assistant_metadata_by_generation[7] = {
+            "voice_architecture": "kame_frontend_oracle",
+            "kame_route": KameRoute.ORACLE_DIRECT.value,
+        }
+        engine._interface_decision_at_by_generation[7] = time.perf_counter() - 0.1
+        engine._oracle_first_token_at_by_generation[7] = time.perf_counter() - 0.05
+
+        await engine._speak_chunk("hello", 7)
+        event = await asyncio.wait_for(engine._events.get(), timeout=1)
+        assert event.type == VoiceEventType.SESSION_STARTED
+        event = await asyncio.wait_for(engine._events.get(), timeout=1)
+        assert event.type == VoiceEventType.PLAYBACK_STARTED
+        event = await asyncio.wait_for(engine._events.get(), timeout=1)
+        assert event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
+        assert event.payload["metrics"]["kame_interface_decision_to_first_audio_ms"] >= 0
+        assert event.payload["metrics"]["kame_oracle_first_token_to_first_tts_audio_ms"] >= 0
+        assert (
+            engine._assistant_metadata_by_generation[7]["metrics"]["kame_oracle_first_token_to_first_tts_audio_ms"]
+            == event.payload["metrics"]["kame_oracle_first_token_to_first_tts_audio_ms"]
+        )
         await engine.close()
 
     asyncio.run(run())

@@ -12,6 +12,7 @@ import contextlib
 import inspect
 import logging
 import sys
+import time
 from array import array
 from typing import Any, Callable, Optional
 
@@ -199,6 +200,8 @@ class DiscordRealtimeVoiceSession:
         self._activity = asyncio.Event()
         self._playback_pcm48_stereo_buffer = bytearray()
         self._active_playback_generation = 0
+        self._first_tts_audio_received_at_by_generation: dict[int, float] = {}
+        self._playback_start_metric_generations: set[int] = set()
         self._last_input_user_id: Optional[str] = None
 
     async def start(self) -> None:
@@ -517,10 +520,21 @@ class DiscordRealtimeVoiceSession:
         if generation is None:
             return
         self._active_playback_generation = max(self._active_playback_generation, generation)
+        self._first_tts_audio_received_at_by_generation = {
+            key: value
+            for key, value in self._first_tts_audio_received_at_by_generation.items()
+            if key >= self._active_playback_generation
+        }
+        self._playback_start_metric_generations = {
+            key for key in self._playback_start_metric_generations if key >= self._active_playback_generation
+        }
 
     def _handle_audio_output(self, event: VoiceEvent) -> None:
         if self.mixer is None:
             return
+        generation = _payload_generation(event.payload)
+        if generation is not None:
+            self._first_tts_audio_received_at_by_generation.setdefault(generation, time.perf_counter())
         try:
             chunk = AudioChunk.from_payload(event.payload)
         except Exception as exc:
@@ -548,9 +562,11 @@ class DiscordRealtimeVoiceSession:
             logger.warning("Could not convert Discord realtime output audio: %s", exc)
             return
 
-        self._enqueue_mixer_pcm(pcm48_stereo)
+        if self._enqueue_mixer_pcm(pcm48_stereo):
+            self._add_playback_start_metric(event, generation)
 
-    def _enqueue_mixer_pcm(self, pcm48_stereo: bytes) -> None:
+    def _enqueue_mixer_pcm(self, pcm48_stereo: bytes) -> bool:
+        enqueued = False
         self._playback_pcm48_stereo_buffer.extend(pcm48_stereo)
         enqueue = getattr(self.mixer, "enqueue_speech_frame", None)
         while len(self._playback_pcm48_stereo_buffer) >= DISCORD_FRAME_BYTES:
@@ -560,6 +576,26 @@ class DiscordRealtimeVoiceSession:
                 enqueue(frame, fade_in_ms=0)
             else:
                 self.mixer.play_speech(frame, fade_in_ms=0)
+            enqueued = True
+        return enqueued
+
+    def _add_playback_start_metric(self, event: VoiceEvent, generation: Optional[int]) -> None:
+        if generation is None or generation in self._playback_start_metric_generations:
+            return
+        first_tts_audio_at = self._first_tts_audio_received_at_by_generation.get(generation)
+        if first_tts_audio_at is None:
+            return
+        existing_metrics = event.payload.get("metrics")
+        if not isinstance(existing_metrics, dict) or not any(
+            str(key).startswith("kame_") for key in existing_metrics
+        ):
+            return
+        metrics = dict(existing_metrics)
+        metrics["kame_first_tts_audio_to_playback_start_ms"] = int(
+            round((time.perf_counter() - first_tts_audio_at) * 1000)
+        )
+        event.payload["metrics"] = metrics
+        self._playback_start_metric_generations.add(generation)
 
     def _flush_playback_buffer(self) -> None:
         if self.mixer is None:
