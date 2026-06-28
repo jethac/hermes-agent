@@ -618,6 +618,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             payload.update(dict(oracle_payload))
         if cancellation_token:
             payload.setdefault("cancellation_token", cancellation_token)
+        payload.setdefault("voice_response_policy", _voice_response_policy(config))
         request = KameOracleRequest.from_turn(
             session_id=config.session_id,
             turn_id=f"{config.session_id}:{playback_generation}",
@@ -646,14 +647,15 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 return
             planned_reply, truncated = _limit_spoken_text(
                 planned_reply,
-                max_sentences=_max_spoken_sentences(self.config),
+                max_sentences=_effective_max_spoken_sentences(self.config),
             )
             if not planned_reply:
                 return
             metadata = {
                 **metadata,
                 **_voice_response_policy_payload(
-                    max_sentences=_max_spoken_sentences(self.config),
+                    policy=_voice_response_policy(self.config),
+                    max_sentences=_effective_max_spoken_sentences(self.config),
                     truncated=truncated,
                 ),
             }
@@ -726,7 +728,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         speak_chain: Optional[asyncio.Task[None]] = None
         assistant_metadata = dict(metadata)
         tts_error_reported = False
-        max_spoken_sentences = _max_spoken_sentences(self.config, oracle_request=oracle_request)
+        voice_response_policy = _voice_response_policy(self.config, oracle_request=oracle_request)
+        max_spoken_sentences = _effective_max_spoken_sentences(
+            self.config,
+            oracle_request=oracle_request,
+        )
         spoken_answer = ""
         spoken_truncated = False
         turn_started_at = time.perf_counter()
@@ -912,6 +918,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                                 "playback_generation": playback_generation,
                                 **assistant_metadata,
                                 **_voice_response_policy_payload(
+                                    policy=voice_response_policy,
                                     max_sentences=max_spoken_sentences,
                                     truncated=spoken_truncated,
                                 ),
@@ -956,6 +963,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                             "playback_generation": playback_generation,
                             **assistant_metadata,
                             **_voice_response_policy_payload(
+                                policy=voice_response_policy,
                                 max_sentences=max_spoken_sentences,
                                 truncated=spoken_truncated,
                             ),
@@ -1012,6 +1020,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         "playback_generation": playback_generation,
                         **assistant_metadata,
                         **_voice_response_policy_payload(
+                            policy=voice_response_policy,
                             max_sentences=max_spoken_sentences,
                             truncated=spoken_truncated,
                         ),
@@ -1936,10 +1945,42 @@ def _max_spoken_sentences(
     return parsed if parsed > 0 else 0
 
 
-def _voice_response_policy_payload(*, max_sentences: int, truncated: bool) -> dict[str, Any]:
-    if max_sentences <= 0:
+def _voice_response_policy(
+    config: Optional[RealtimeVoiceSessionConfig],
+    *,
+    oracle_request: Optional[KameOracleRequest] = None,
+) -> str:
+    value: Any = None
+    if oracle_request is not None and isinstance(oracle_request.requested_response_style, Mapping):
+        value = (
+            oracle_request.requested_response_style.get("policy")
+            or oracle_request.requested_response_style.get("voice_response_policy")
+        )
+    if value is None and config is not None:
+        value = getattr(config, "voice_response_policy", None)
+    text = str(value or "").strip().lower().replace("-", "_")
+    return text if text in {"sentence_cap", "brief_summary", "full"} else "sentence_cap"
+
+
+def _effective_max_spoken_sentences(
+    config: Optional[RealtimeVoiceSessionConfig],
+    *,
+    oracle_request: Optional[KameOracleRequest] = None,
+) -> int:
+    if _voice_response_policy(config, oracle_request=oracle_request) == "full":
+        return 0
+    return _max_spoken_sentences(config, oracle_request=oracle_request)
+
+
+def _voice_response_policy_payload(*, policy: str, max_sentences: int, truncated: bool) -> dict[str, Any]:
+    if max_sentences <= 0 and (policy or "sentence_cap") == "sentence_cap":
         return {}
+    payload: dict[str, Any] = {"voice_response_policy": policy or "sentence_cap"}
+    if max_sentences <= 0:
+        payload["voice_response_truncated"] = False
+        return payload
     return {
+        **payload,
         "max_spoken_sentences": max_sentences,
         "voice_response_truncated": bool(truncated),
     }

@@ -801,6 +801,12 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Maximum spoken sentences for KAME oracle voice responses",
         "category": "voice",
     },
+    "voice.realtime.voice_response_policy": {
+        "type": "select",
+        "description": "How KAME shapes spoken oracle responses",
+        "options": ["sentence_cap", "brief_summary", "full"],
+        "category": "voice",
+    },
     "voice.realtime.tts_provider": {
         "type": "string",
         "description": "TTS provider used for KAME spoken output",
@@ -1160,6 +1166,12 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Maximum spoken sentences for Discord KAME oracle voice responses",
         "category": "discord",
     },
+    "discord.realtime_voice.voice_response_policy": {
+        "type": "select",
+        "description": "How Discord KAME shapes spoken oracle responses",
+        "options": ["sentence_cap", "brief_summary", "full"],
+        "category": "discord",
+    },
     "discord.realtime_voice.tts_provider": {
         "type": "string",
         "description": "TTS provider override for Discord realtime voice fallback speech",
@@ -1434,6 +1446,7 @@ class RealtimeVoiceProfileApply(BaseModel):
     oracle_model: str = ""
     oracle_base_url: str = ""
     oracle_provider_name: str = ""
+    voice_response_policy: str = "sentence_cap"
     streaming_stt_base_url: str = ""
     streaming_tts_base_url: str = ""
     streaming_stt_model: str = ""
@@ -14046,6 +14059,7 @@ def _realtime_voice_current_evidence_manifest(
     oracle_base_url: str = "",
     oracle_api_mode: str = "",
     max_spoken_sentences: int = 2,
+    voice_response_policy: str = "sentence_cap",
     tts_provider: str = "",
     tts_model: str = "",
     tts_voice: str = "",
@@ -14073,6 +14087,7 @@ def _realtime_voice_current_evidence_manifest(
         "oracle_base_url": _redact_realtime_voice_url(str(oracle_base_url or "")) if oracle_base_url else "",
         "oracle_api_mode": str(oracle_api_mode or ""),
         "max_spoken_sentences": int(max_spoken_sentences or 2),
+        "voice_response_policy": str(voice_response_policy or "sentence_cap"),
         "tts_provider": str(tts_provider or ""),
         "tts_model": str(tts_model or ""),
         "tts_voice": str(tts_voice or ""),
@@ -14456,6 +14471,7 @@ def _normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, A
     _set_realtime_voice_default(config, "oracle_base_url", oracle.get("base_url"))
     _set_realtime_voice_default(config, "oracle_api_mode", oracle.get("api_mode"))
     _set_realtime_voice_default(config, "max_spoken_sentences", oracle.get("max_spoken_sentences"))
+    _set_realtime_voice_default(config, "voice_response_policy", oracle.get("voice_response_policy") or oracle.get("response_policy"))
     if config.get("oracle_timeout_seconds") is None:
         if oracle.get("timeout_seconds") is not None:
             config["oracle_timeout_seconds"] = oracle.get("timeout_seconds")
@@ -14496,6 +14512,18 @@ def _realtime_voice_max_spoken_sentences(realtime: Mapping[str, Any]) -> int:
         _first_realtime_voice_config_value(realtime, ("max_spoken_sentences",), ("oracle", "max_spoken_sentences")),
         default=2,
     )
+
+
+def _realtime_voice_response_policy(realtime: Mapping[str, Any]) -> str:
+    raw = _first_realtime_voice_config_value(
+        realtime,
+        ("voice_response_policy",),
+        ("oracle", "voice_response_policy"),
+        ("oracle", "response_policy"),
+        default="sentence_cap",
+    )
+    value = str(raw or "sentence_cap").strip().lower().replace("-", "_")
+    return value if value in {"sentence_cap", "brief_summary", "full"} else "sentence_cap"
 
 
 def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, Any]:
@@ -14562,6 +14590,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     )
     oracle_timeout_seconds = _realtime_voice_oracle_timeout_seconds(realtime)
     max_spoken_sentences = _realtime_voice_max_spoken_sentences(realtime)
+    voice_response_policy = _realtime_voice_response_policy(realtime)
     tts_provider = str(_first_realtime_voice_config_value(realtime, ("tts_provider",), ("tts", "provider"), default="") or "")
     tts_model = str(
         _first_realtime_voice_config_value(realtime, ("tts_model",), ("tts", "model"), ("streaming_tts_model",), default="") or ""
@@ -14622,6 +14651,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         oracle_base_url=oracle_base_url,
         oracle_api_mode=oracle_api_mode,
         max_spoken_sentences=max_spoken_sentences,
+        voice_response_policy=voice_response_policy,
         tts_provider=tts_provider,
         tts_model=tts_model,
         tts_voice=tts_voice,
@@ -14743,6 +14773,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "oracle_api_mode": oracle_api_mode or None,
         "oracle_timeout_seconds": oracle_timeout_seconds,
         "max_spoken_sentences": max_spoken_sentences,
+        "voice_response_policy": voice_response_policy,
         "tts_provider": tts_provider or None,
         "tts_model": tts_model or None,
         "tts_voice": tts_voice or None,
@@ -14789,6 +14820,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "oracle_api_mode": oracle_api_mode or None,
             "oracle_timeout_seconds": oracle_timeout_seconds,
             "max_spoken_sentences": max_spoken_sentences,
+            "voice_response_policy": voice_response_policy,
             "tts_provider": tts_provider or None,
             "tts_model": tts_model or None,
             "tts_voice": tts_voice or None,
@@ -14990,6 +15022,7 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             interface_audio_input=body.interface_audio_input or "auto",
             asr_mode=body.asr_mode or "on_escalation",
             preferred_local_oracle_model=body.oracle_model or DEFAULT_KAME_ORACLE_MODEL,
+            voice_response_policy=body.voice_response_policy or "sentence_cap",
             oracle_base_url=body.oracle_base_url,
             oracle_provider_name=body.oracle_provider_name,
             streaming_stt_base_url=body.streaming_stt_base_url,
@@ -15069,6 +15102,7 @@ def _apply_realtime_voice_profile_body(body: RealtimeVoiceProfileApply, profile:
                     realtime.get("max_spoken_sentences"),
                     default=2,
                 ),
+                "voice_response_policy": realtime.get("voice_response_policy") or "sentence_cap",
                 "tts_provider": realtime.get("tts_provider") or "",
                 "tts_model": realtime.get("tts_model") or "",
                 "tts_voice": realtime.get("tts_voice") or "",
@@ -15135,6 +15169,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     oracle_model = str(realtime.get("oracle_model") or "")
     oracle_base_url = str(realtime.get("oracle_base_url") or "")
     oracle_api_mode = str(realtime.get("oracle_api_mode") or "")
+    voice_response_policy = _realtime_voice_response_policy(realtime)
     tts_provider = str(realtime.get("tts_provider") or "")
     tts_model = str(realtime.get("tts_model") or realtime.get("streaming_tts_model") or "")
     tts_voice = str(realtime.get("tts_voice") or realtime.get("streaming_tts_voice") or "")
@@ -15173,6 +15208,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         oracle_base_url=oracle_base_url,
         oracle_api_mode=oracle_api_mode,
         max_spoken_sentences=_positive_int_config(realtime.get("max_spoken_sentences"), default=2),
+        voice_response_policy=voice_response_policy,
         tts_provider=tts_provider,
         tts_model=tts_model,
         tts_voice=tts_voice,
@@ -15244,6 +15280,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             realtime.get("max_spoken_sentences"),
             default=2,
         ),
+        voice_response_policy=voice_response_policy,
         tts_provider=tts_provider or None,
         tts_model=tts_model or None,
         tts_voice=tts_voice or None,
@@ -15297,6 +15334,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
                 realtime.get("max_spoken_sentences"),
                 default=2,
             ),
+            "voice_response_policy": voice_response_policy,
             "tts_provider": tts_provider or None,
             "tts_model": tts_model or None,
             "tts_voice": tts_voice or None,

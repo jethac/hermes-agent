@@ -3186,6 +3186,12 @@ class TestBuildSchemaFromConfig:
         assert "oracle voice response" in CONFIG_SCHEMA["voice.realtime.oracle_timeout_seconds"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.max_spoken_sentences"]["type"] == "number"
         assert "Maximum spoken sentences" in CONFIG_SCHEMA["voice.realtime.max_spoken_sentences"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.voice_response_policy"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.voice_response_policy"]["options"] == [
+            "sentence_cap",
+            "brief_summary",
+            "full",
+        ]
         assert CONFIG_SCHEMA["voice.realtime.asr_provider"]["type"] == "string"
         assert "oracle-verbatim evidence" in CONFIG_SCHEMA["voice.realtime.asr_provider"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.asr_model"]["type"] == "string"
@@ -3283,6 +3289,12 @@ class TestBuildSchemaFromConfig:
         ]
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.max_spoken_sentences"]["type"] == "number"
+        assert CONFIG_SCHEMA["discord.realtime_voice.voice_response_policy"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.voice_response_policy"]["options"] == [
+            "sentence_cap",
+            "brief_summary",
+            "full",
+        ]
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_provider"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_model"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_voice"]["type"] == "string"
@@ -6907,6 +6919,7 @@ class TestRealtimeVoiceWebSocket:
                         "oracle_model": "deep-hermes",
                         "oracle_timeout_seconds": 18,
                         "max_spoken_sentences": 3,
+                        "voice_response_policy": "brief_summary",
                         "tts_provider": "cartesia",
                         "tts_model": "sonic-3.5",
                         "tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
@@ -6934,6 +6947,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.oracle_model == "deep-hermes"
         assert config.oracle_timeout_seconds == 18.0
         assert config.max_spoken_sentences == 3
+        assert config.voice_response_policy == "brief_summary"
         assert config.tts_provider == "cartesia"
         assert config.tts_model == "sonic-3.5"
         assert config.tts_voice == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
@@ -6954,6 +6968,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.metadata["oracle_model"] == "deep-hermes"
         assert config.metadata["oracle_timeout_seconds"] == 18.0
         assert config.metadata["max_spoken_sentences"] == 3
+        assert config.metadata["voice_response_policy"] == "brief_summary"
         assert config.metadata["tts_provider"] == "cartesia"
         assert config.metadata["tts_model"] == "sonic-3.5"
         assert config.metadata["tts_voice"] == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
@@ -7017,6 +7032,7 @@ class TestRealtimeVoiceWebSocket:
             oracle_model="gemma-4-26B-A4B-it",
             oracle_base_url="http://spark.local:8001/v1",
             oracle_provider_name="Spark Oracle",
+            voice_response_policy="brief_summary",
             streaming_stt_base_url="http://spark.local:8767",
             streaming_tts_base_url="http://spark.local:8768",
         )
@@ -7031,6 +7047,7 @@ class TestRealtimeVoiceWebSocket:
         assert profile["oracle_provider_name"] == "Spark Oracle"
         assert profile["oracle_model"] == "gemma-4-26B-A4B-it"
         assert profile["oracle_base_url"] == "http://spark.local:8001/v1"
+        assert profile["voice_response_policy"] == "brief_summary"
         assert profile["streaming_stt_base_url"] == "http://spark.local:8767"
         assert profile["streaming_tts_base_url"] == "http://spark.local:8768"
 
@@ -7068,6 +7085,7 @@ class TestRealtimeVoiceWebSocket:
                             "api_mode": "chat_completions",
                             "timeout_ms": 12000,
                             "max_spoken_sentences": 2,
+                            "voice_response_policy": "brief_summary",
                         },
                         "asr": {
                             "provider": "nemotron",
@@ -7107,6 +7125,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.preferred_local_oracle_model == "gemma-4-26B-A4B-it"
         assert config.oracle_model == "configured-oracle"
         assert config.oracle_timeout_seconds == 12.0
+        assert config.voice_response_policy == "brief_summary"
         assert config.tts_provider == "cartesia"
         assert config.tts_model == "sonic-3.5"
         assert config.tts_voice == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
@@ -7120,6 +7139,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.metadata["oracle_model"] == "configured-oracle"
         assert config.metadata["oracle_base_url"] == "http://spark.local:8001/v1"
         assert config.metadata["oracle_api_mode"] == "chat_completions"
+        assert config.metadata["voice_response_policy"] == "brief_summary"
         assert status["frontend_provider"] == "openai_compatible"
         assert status["frontend_model"] == "gemma-4-E2B-it"
         assert status["interface_temperature"] == 0.3
@@ -7132,8 +7152,10 @@ class TestRealtimeVoiceWebSocket:
         assert status["oracle_model"] == "configured-oracle"
         assert status["oracle_base_url"] == "http://spark.local:8001/v1"
         assert status["oracle_api_mode"] == "chat_completions"
+        assert status["voice_response_policy"] == "brief_summary"
         assert status["kame"]["oracle_provider"] == "custom"
         assert status["kame"]["oracle_base_url"] == "http://spark.local:8001/v1"
+        assert status["kame"]["voice_response_policy"] == "brief_summary"
         assert status["oracle_timeout_seconds"] == 12.0
         assert status["barge_in_min_rms"] == 410
         assert status["barge_in_min_speech_ms"] == 130
@@ -7683,6 +7705,7 @@ class TestRealtimeVoiceWebSocket:
         assert body["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
         assert body["oracle_timeout_seconds"] == 42.0
         assert body["max_spoken_sentences"] == 4
+        assert body["voice_response_policy"] == "sentence_cap"
         assert body["tts_provider"] == "cartesia"
         assert body["tts_model"] == "sonic-3.5"
         assert body["tts_voice"] == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
@@ -7724,6 +7747,7 @@ class TestRealtimeVoiceWebSocket:
             "oracle_api_mode": None,
             "oracle_timeout_seconds": 42.0,
             "max_spoken_sentences": 4,
+            "voice_response_policy": "sentence_cap",
             "tts_provider": "cartesia",
             "tts_model": "sonic-3.5",
             "tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",

@@ -156,6 +156,7 @@ def test_session_config_round_trips_wire_payload():
         sidecar_token="secret-token",
         sidecar_connect_timeout_seconds=3.5,
         max_spoken_sentences=3,
+        voice_response_policy="brief_summary",
         metadata={"profile": "default"},
     )
 
@@ -171,6 +172,7 @@ def test_session_config_round_trips_wire_payload():
     assert restored.sidecar_connect_timeout_seconds == 3.5
     assert restored.oracle_timeout_seconds == 12.5
     assert restored.max_spoken_sentences == 3
+    assert restored.voice_response_policy == "brief_summary"
 
 
 def test_session_config_round_trips_kame_fields():
@@ -188,6 +190,7 @@ def test_session_config_round_trips_kame_fields():
         asr_model="nemotron-speech",
         preferred_local_oracle_model="gemma-4-26B-A4B-it",
         max_spoken_sentences=4,
+        voice_response_policy="full",
         tts_provider="streaming_tts",
         tts_model="sonic-3.5",
         tts_voice="voice-123",
@@ -207,6 +210,7 @@ def test_session_config_round_trips_kame_fields():
     assert restored.asr_model == "nemotron-speech"
     assert restored.preferred_local_oracle_model == "gemma-4-26B-A4B-it"
     assert restored.max_spoken_sentences == 4
+    assert restored.voice_response_policy == "full"
     assert restored.tts_provider == "streaming_tts"
     assert restored.tts_model == "sonic-3.5"
     assert restored.tts_voice == "voice-123"
@@ -718,7 +722,7 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     assert "Verbatim ASR evidence (asr): find the node" in prompt
     assert "tool arguments" in prompt
     assert "The voice reflex already told the user: One moment." in prompt
-    assert "Requested response style: spoken=true; avoid automatic follow-up offers." in prompt
+    assert "Requested response style: spoken=true; policy=sentence_cap; avoid automatic follow-up offers." in prompt
 
 
 def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
@@ -801,6 +805,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.requested_response_style == {
             "spoken": True,
             "max_sentences": 2,
+            "policy": "sentence_cap",
             "allow_followup_offer": False,
         }
         assert request.cancellation_token == "voice-123:1:cancel"
@@ -830,6 +835,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert oracle_request.payload["requested_response_style"] == {
             "spoken": True,
             "max_sentences": 2,
+            "policy": "sentence_cap",
             "allow_followup_offer": False,
         }
         assert oracle_request.payload["cancellation_token"] == "voice-123:1:cancel"
@@ -1499,11 +1505,78 @@ def test_kame_engine_caps_oracle_speech_to_configured_sentence_budget(monkeypatc
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         assert oracle.requests[0].max_spoken_sentences == 2
         assert oracle.requests[0].requested_response_style["max_sentences"] == 2
+        assert oracle.requests[0].requested_response_style["policy"] == "sentence_cap"
         assert partials == ["First sentence.", "Second sentence."]
         assert spoken == ["First sentence.", "Second sentence."]
         assert commit.payload["text"] == "First sentence. Second sentence."
         assert commit.payload["max_spoken_sentences"] == 2
+        assert commit.payload["voice_response_policy"] == "sentence_cap"
         assert commit.payload["metrics"]["kame_oracle_called"] == 1
+
+    asyncio.run(run())
+
+
+def test_kame_engine_full_voice_response_policy_disables_sentence_cap(monkeypatch):
+    class VerboseOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "First sentence. "
+            yield "Second sentence. "
+            yield "Third sentence."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = VerboseOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                max_spoken_sentences=2,
+                voice_response_policy="full",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "explain the plan",
+                    "intent": "Explain the plan.",
+                    "route": "oracle_direct",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        assert oracle.requests[0].requested_response_style["policy"] == "full"
+        assert spoken == ["First sentence.", "Second sentence.", "Third sentence."]
+        assert commit.payload["text"] == "First sentence. Second sentence. Third sentence."
+        assert commit.payload["voice_response_policy"] == "full"
+        assert commit.payload["voice_response_truncated"] is False
 
     asyncio.run(run())
 

@@ -172,6 +172,7 @@ class RealtimeVoiceSessionConfig:
     oracle_model: Optional[str] = None
     oracle_timeout_seconds: float = 60.0
     max_spoken_sentences: int = 2
+    voice_response_policy: str = "sentence_cap"
     tts_provider: Optional[str] = None
     tts_model: Optional[str] = None
     tts_voice: Optional[str] = None
@@ -215,6 +216,7 @@ class RealtimeVoiceSessionConfig:
             "oracle_model": self.oracle_model,
             "oracle_timeout_seconds": self.oracle_timeout_seconds,
             "max_spoken_sentences": self.max_spoken_sentences,
+            "voice_response_policy": self.voice_response_policy,
             "tts_provider": self.tts_provider,
             "tts_model": self.tts_model,
             "tts_voice": self.tts_voice,
@@ -270,6 +272,7 @@ class RealtimeVoiceSessionConfig:
                 payload.get("max_spoken_sentences"),
                 default=2,
             ),
+            voice_response_policy=_optional_str(payload.get("voice_response_policy")) or "sentence_cap",
             tts_provider=_optional_str(payload.get("tts_provider")),
             tts_model=_optional_str(payload.get("tts_model")),
             tts_voice=_optional_str(payload.get("tts_voice")),

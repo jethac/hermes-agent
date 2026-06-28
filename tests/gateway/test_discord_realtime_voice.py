@@ -122,6 +122,7 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
                         "api_mode": "chat_completions",
                         "timeout_ms": 12000,
                         "max_spoken_sentences": 2,
+                        "voice_response_policy": "brief_summary",
                     },
                     "asr": {"provider": "nemotron", "model": "nemotron-speech"},
                     "tts": {
@@ -185,6 +186,7 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["oracle_base_url"] == "http://spark.local:8001/v1"
     assert cfg["oracle_api_mode"] == "chat_completions"
     assert cfg["oracle_timeout_seconds"] == 12.0
+    assert cfg["voice_response_policy"] == "brief_summary"
     assert cfg["tts_provider"] == "cartesia"
     assert cfg["tts_model"] == "sonic-3.5"
     assert cfg["tts_voice"] == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
@@ -223,6 +225,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         oracle_model="deep-hermes",
         oracle_timeout_seconds=17.5,
         max_spoken_sentences=3,
+        voice_response_policy="brief_summary",
         barge_in_stop_playback_deadline_ms=95,
         sidecar_connect_timeout_seconds=0.5,
         turn_acknowledgement={"enabled": True, "text": "One moment."},
@@ -256,6 +259,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.oracle_model == "deep-hermes"
     assert sidecar.started_with.oracle_timeout_seconds == 17.5
     assert sidecar.started_with.max_spoken_sentences == 3
+    assert sidecar.started_with.voice_response_policy == "brief_summary"
     assert sidecar.started_with.metadata["voice_architecture"] == "kame_frontend_oracle"
     assert sidecar.started_with.metadata["frontend_role"] == "low_latency_voice_interface"
     assert sidecar.started_with.metadata["oracle_role"] == "hermes_backend_oracle"
@@ -267,6 +271,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.metadata["oracle_model"] == "deep-hermes"
     assert sidecar.started_with.metadata["oracle_timeout_seconds"] == 17.5
     assert sidecar.started_with.metadata["max_spoken_sentences"] == 3
+    assert sidecar.started_with.metadata["voice_response_policy"] == "brief_summary"
     assert sidecar.started_with.metadata["turn_acknowledgement"] == {
         "enabled": True,
         "text": "One moment.",

@@ -147,6 +147,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Preferred local Hermes oracle model label for --preset kame",
     )
     parser.add_argument(
+        "--kame-voice-response-policy",
+        default="sentence_cap",
+        choices=("sentence_cap", "brief_summary", "full"),
+        help="How KAME should shape spoken oracle responses",
+    )
+    parser.add_argument(
         "--kame-oracle-base-url",
         default="",
         help=(
@@ -222,6 +228,7 @@ def main(argv: list[str] | None = None) -> int:
                 preferred_local_oracle_model=str(
                     args.kame_preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL
                 ),
+                voice_response_policy=str(args.kame_voice_response_policy or "sentence_cap"),
                 oracle_base_url=str(args.kame_oracle_base_url or ""),
                 oracle_provider_name=str(
                     args.kame_oracle_provider_name or DEFAULT_KAME_ORACLE_PROVIDER_NAME
@@ -704,6 +711,7 @@ def build_kame_realtime_voice_profile(
     interface_audio_input: str = "auto",
     asr_mode: str = "on_escalation",
     preferred_local_oracle_model: str = DEFAULT_KAME_ORACLE_MODEL,
+    voice_response_policy: str = "sentence_cap",
     oracle_base_url: str = "",
     oracle_provider_name: str = DEFAULT_KAME_ORACLE_PROVIDER_NAME,
     streaming_stt_base_url: str = "",
@@ -725,6 +733,9 @@ def build_kame_realtime_voice_profile(
     asr = str(asr_mode or "on_escalation").strip() or "on_escalation"
     if asr not in {"disabled", "on_escalation", "speculative", "debug", "fallback"}:
         raise ValueError("--kame-asr-mode must be disabled, on_escalation, speculative, debug, or fallback")
+    response_policy = str(voice_response_policy or "sentence_cap").strip().lower().replace("-", "_")
+    if response_policy not in {"sentence_cap", "brief_summary", "full"}:
+        raise ValueError("--kame-voice-response-policy must be sentence_cap, brief_summary, or full")
 
     oracle_url = _clean_url(oracle_base_url)
     oracle_model = str(preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL)
@@ -754,6 +765,7 @@ def build_kame_realtime_voice_profile(
         "preferred_local_oracle_model": oracle_model,
         "oracle_timeout_seconds": 60.0,
         "max_spoken_sentences": 2,
+        "voice_response_policy": response_policy,
         "tts_provider": "streaming_tts",
         "tts_model": str(streaming_tts_model or DEFAULT_STREAMING_TTS_MODEL),
         "tts_voice": "",
@@ -873,6 +885,7 @@ def merge_realtime_voice_profile(
             "preferred_local_oracle_model": profile.get("preferred_local_oracle_model"),
             "oracle_timeout_seconds": profile.get("oracle_timeout_seconds", 60.0),
             "max_spoken_sentences": profile.get("max_spoken_sentences", 2),
+            "voice_response_policy": profile.get("voice_response_policy", "sentence_cap"),
             "tts_provider": profile.get("tts_provider"),
             "tts_model": profile.get("tts_model"),
             "tts_voice": profile.get("tts_voice"),

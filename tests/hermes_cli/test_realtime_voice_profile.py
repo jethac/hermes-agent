@@ -267,6 +267,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
     assert realtime["oracle_timeout_seconds"] == 60.0
     assert realtime["max_spoken_sentences"] == 2
+    assert realtime["voice_response_policy"] == "sentence_cap"
     assert realtime["tts_provider"] == "streaming_tts"
     assert realtime["tts_model"] == "portable-streaming-voice"
     assert realtime["tts_voice"] == ""
@@ -336,6 +337,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
     assert discord_rt["oracle_timeout_seconds"] == 60.0
     assert discord_rt["max_spoken_sentences"] == 2
+    assert discord_rt["voice_response_policy"] == "sentence_cap"
     assert discord_rt["barge_in_stop_playback_deadline_ms"] == 150
     assert discord_rt["tts_provider"] == "streaming_tts"
     assert discord_rt["tts_model"] == "portable-streaming-voice"

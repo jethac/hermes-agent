@@ -18,6 +18,7 @@ class KameRoute(StrEnum):
 
 
 KAME_REFLEX_ROUTES = frozenset(route.value for route in KameRoute)
+VOICE_RESPONSE_POLICIES = frozenset({"sentence_cap", "brief_summary", "full"})
 KAME_VOICE_DENIAL_PATTERNS = (
     "cannot hear",
     "can't hear",
@@ -221,6 +222,7 @@ class KameOracleRequest:
             "kame_mode": self.mode,
             "kame_urgency": self.urgency,
             "max_spoken_sentences": self.max_spoken_sentences,
+            "voice_response_policy": response_style.get("policy") or "sentence_cap",
             "kame_requested_response_style": response_style,
         }
         if self.route_confidence is not None:
@@ -290,8 +292,15 @@ class KameOracleRequest:
             or _optional_text(payload.get("clarification"))
             or _optional_text(payload.get("interface_reply"))
         )
+        requested_response_style_payload = (
+            dict(payload.get("requested_response_style"))
+            if isinstance(payload.get("requested_response_style"), Mapping)
+            else {}
+        )
+        if "policy" not in requested_response_style_payload and payload.get("voice_response_policy") is not None:
+            requested_response_style_payload["policy"] = payload.get("voice_response_policy")
         requested_response_style = _response_style(
-            payload.get("requested_response_style"),
+            requested_response_style_payload,
             max_sentences=_positive_int(
                 payload.get("max_spoken_sentences"),
                 default=default_max_spoken_sentences,
@@ -476,8 +485,14 @@ def _response_style(value: Any, *, max_sentences: int) -> dict[str, Any]:
     return {
         "spoken": _bool(raw.get("spoken"), default=True),
         "max_sentences": _positive_int(raw.get("max_sentences"), default=max_sentences),
+        "policy": _voice_response_policy(raw.get("policy") or raw.get("voice_response_policy")),
         "allow_followup_offer": _bool(raw.get("allow_followup_offer"), default=False),
     }
+
+
+def _voice_response_policy(value: Any) -> str:
+    text = str(value or "").strip().lower().replace("-", "_")
+    return text if text in VOICE_RESPONSE_POLICIES else "sentence_cap"
 
 
 def _bool(value: Any, *, default: bool) -> bool:

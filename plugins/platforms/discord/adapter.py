@@ -78,6 +78,7 @@ class DiscordVoiceSessionState:
     oracle_api_mode: Optional[str] = None
     oracle_timeout_seconds: float = 60.0
     max_spoken_sentences: int = 2
+    voice_response_policy: str = "sentence_cap"
     tts_provider: Optional[str] = None
     tts_model: Optional[str] = None
     tts_voice: Optional[str] = None
@@ -228,6 +229,7 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
     _discord_set_realtime_default(config, "oracle_base_url", oracle.get("base_url"))
     _discord_set_realtime_default(config, "oracle_api_mode", oracle.get("api_mode"))
     _discord_set_realtime_default(config, "max_spoken_sentences", oracle.get("max_spoken_sentences"))
+    _discord_set_realtime_default(config, "voice_response_policy", oracle.get("voice_response_policy") or oracle.get("response_policy"))
     if config.get("oracle_timeout_seconds") is None:
         if oracle.get("timeout_seconds") is not None:
             config["oracle_timeout_seconds"] = oracle.get("timeout_seconds")
@@ -2983,6 +2985,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "oracle_api_mode": None,
             "oracle_timeout_seconds": 60.0,
             "max_spoken_sentences": 2,
+            "voice_response_policy": "sentence_cap",
             "tts_provider": None,
             "tts_model": None,
             "tts_voice": None,
@@ -3219,6 +3222,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "oracle_api_mode": str(cfg.get("oracle_api_mode") or "") or None,
             "oracle_timeout_seconds": float(cfg.get("oracle_timeout_seconds") or 60.0),
             "max_spoken_sentences": int(cfg.get("max_spoken_sentences") or 2),
+            "voice_response_policy": str(cfg.get("voice_response_policy") or "sentence_cap"),
             "tts_provider": str(cfg.get("tts_provider") or "") or None,
             "tts_model": str(cfg.get("tts_model") or "") or None,
             "tts_voice": str(cfg.get("tts_voice") or "") or None,
@@ -3303,6 +3307,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "oracle_api_mode": getattr(state, "oracle_api_mode", None) or architecture["oracle_api_mode"],
             "oracle_timeout_seconds": state.oracle_timeout_seconds or architecture["oracle_timeout_seconds"],
             "max_spoken_sentences": state.max_spoken_sentences or architecture["max_spoken_sentences"],
+            "voice_response_policy": getattr(state, "voice_response_policy", None) or architecture["voice_response_policy"],
             "tts_provider": getattr(state, "tts_provider", None) or architecture["tts_provider"],
             "tts_model": getattr(state, "tts_model", None) or architecture["tts_model"],
             "tts_voice": getattr(state, "tts_voice", None) or architecture["tts_voice"],
@@ -3347,6 +3352,7 @@ class DiscordAdapter(BasePlatformAdapter):
             oracle_model=cfg.get("oracle_model"),
             oracle_timeout_seconds=float(cfg.get("oracle_timeout_seconds") or 60.0),
             max_spoken_sentences=int(cfg.get("max_spoken_sentences") or 2),
+            voice_response_policy=str(cfg.get("voice_response_policy") or "sentence_cap"),
             tts_provider=cfg.get("tts_provider"),
             tts_model=str(cfg.get("tts_model") or "") or None,
             tts_voice=str(cfg.get("tts_voice") or "") or None,

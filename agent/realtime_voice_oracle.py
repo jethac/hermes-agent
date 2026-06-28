@@ -224,12 +224,21 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     if summary:
         parts.append(f"Ephemeral live voice summary: {summary}")
     max_sentences = response_style.get("max_sentences") or _metadata_positive_int(metadata.get("max_spoken_sentences"))
+    policy = _metadata_text(response_style.get("policy")) or _metadata_text(metadata.get("voice_response_policy"))
     if max_sentences is not None:
-        parts.append(f"Keep spoken output to at most {max_sentences} sentence(s) unless the task requires more.")
+        if policy == "full":
+            parts.append("The voice response policy is full: include the complete spoken answer when needed.")
+        elif policy == "brief_summary":
+            parts.append(
+                f"Summarize long oracle output for speech and keep the spoken summary to at most {max_sentences} sentence(s)."
+            )
+        else:
+            parts.append(f"Keep spoken output to at most {max_sentences} sentence(s) unless the task requires more.")
     if response_style:
         spoken = "true" if response_style.get("spoken", True) else "false"
         followups = "allowed" if response_style.get("allow_followup_offer") else "avoid automatic follow-up offers"
-        parts.append(f"Requested response style: spoken={spoken}; {followups}.")
+        policy_part = f"; policy={policy}" if policy else ""
+        parts.append(f"Requested response style: spoken={spoken}{policy_part}; {followups}.")
     return " ".join(parts)
 
 
@@ -294,6 +303,9 @@ def _metadata_response_style(value: object) -> dict[str, object]:
     followups = value.get("allow_followup_offer")
     if isinstance(followups, bool):
         style["allow_followup_offer"] = followups
+    policy = _metadata_text(value.get("policy") or value.get("voice_response_policy"))
+    if policy:
+        style["policy"] = policy
     return style
 
 
