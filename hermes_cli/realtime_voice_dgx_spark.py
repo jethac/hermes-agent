@@ -12,6 +12,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Mapping
 
+from agent.realtime_voice_kame import kame_reflex_instruction_text, kame_reflex_schema_issues
+
 
 DEFAULT_OUTPUT_DIR = "./artifacts/realtime-voice-dgx-spark"
 DEFAULT_INTERFACE_BASE_URL = "http://127.0.0.1:8000/v1"
@@ -1103,14 +1105,7 @@ def probe_openai_audio_chat_completion(
                 "role": "user",
                 "content": [
                     {"type": "audio_url", "audio_url": {"url": _silence_wav_data_url()}},
-                    {
-                        "type": "text",
-                        "text": (
-                            "This is a KAME realtime voice preflight probe. The audio may be silence. "
-                            "Return only JSON with route, intent, text, route_confidence, and local_reply. "
-                            "Use route=reject_or_clarify and intent='preflight audio probe' if no speech is present."
-                        ),
-                    },
+                    {"type": "text", "text": kame_reflex_instruction_text(preflight=True)},
                 ],
             }
         ],
@@ -1231,27 +1226,7 @@ def _kame_preflight_content_schema_issues(content: str) -> list[str]:
         return [f"message content is not JSON: {exc}"]
     if not isinstance(payload, Mapping):
         return ["message content JSON is not an object"]
-    issues: list[str] = []
-    route = str(payload.get("route") or "").strip()
-    if route not in {"local", "defer", "oracle_direct", "reject_or_clarify"}:
-        issues.append("route must be local, defer, oracle_direct, or reject_or_clarify")
-    for key in ("intent", "text"):
-        if key not in payload:
-            issues.append(f"missing {key}")
-    confidence = payload.get("route_confidence")
-    if isinstance(confidence, bool):
-        issues.append("route_confidence must be numeric")
-    else:
-        try:
-            parsed_confidence = float(confidence)
-        except (TypeError, ValueError):
-            issues.append("route_confidence must be numeric")
-        else:
-            if parsed_confidence < 0 or parsed_confidence > 1:
-                issues.append("route_confidence must be between 0 and 1")
-    if route in {"local", "reject_or_clarify"} and "local_reply" not in payload:
-        issues.append("local_reply is required for local or reject_or_clarify")
-    return issues
+    return kame_reflex_schema_issues(payload)
 
 
 def _silence_wav_data_url() -> str:

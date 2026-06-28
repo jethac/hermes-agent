@@ -42,7 +42,12 @@ from agent.realtime_voice import (
     transcript_metadata_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
-from agent.realtime_voice_kame import KameReflexDecision, KameRoute, apply_kame_routing_policy
+from agent.realtime_voice_kame import (
+    KameReflexDecision,
+    KameRoute,
+    apply_kame_routing_policy,
+    kame_reflex_instruction_text,
+)
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient
 
 
@@ -1323,26 +1328,9 @@ class ReferenceRealtimeVoiceSidecarSession:
                         {"type": "audio_url", "audio_url": {"url": f"data:{mime_type};base64,{audio_b64}"}},
                         {
                             "type": "text",
-                            "text": (
-                                "You are the low-latency KAME reflex for a Hermes realtime voice session. "
-                                "Listen to the audio segment and return only a compact JSON object. "
-                                "Required keys: route, intent, text. route must be one of local, defer, "
-                                "oracle_direct, or reject_or_clarify. Include route_confidence from 0 to 1. "
-                                "text should equal the best "
-                                "oracle-facing user wording. For local or reject_or_clarify, include "
-                                "local_reply with the exact short phrase to speak. Optional keys: "
-                                "transcript, transcript_confidence. "
-                                "Use intent for what the user wants. Use transcript only for the reflex's "
-                                "own audio hypothesis; dedicated ASR evidence is attached separately when configured. "
-                                "This voice session is already connected; never claim Hermes cannot hear, "
-                                "listen, join, or speak through the live voice interface. For can-you-hear-me "
-                                "checks, use route=local and a brief affirmative local_reply. "
-                                "Only use local for greetings, repeats, can-you-hear-me checks, or low-risk "
-                                "conversational glue. Use oracle_direct for tools, files, memory, projects, "
-                                "or any nontrivial answer. "
-                                f"Configured routing policy: {routing_policy} "
-                                f"ASR evidence mode is {asr_mode}; do not rely on external tools. "
-                                "Do not add markdown or commentary."
+                            "text": kame_reflex_instruction_text(
+                                routing_policy=routing_policy,
+                                asr_mode=asr_mode,
                             ),
                         },
                     ],

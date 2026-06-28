@@ -22,7 +22,13 @@ from agent.realtime_voice import (
     validate_client_event,
     validate_server_event,
 )
-from agent.realtime_voice_kame import KameOracleRequest, KameReflexDecision, KameRoute
+from agent.realtime_voice_kame import (
+    KameOracleRequest,
+    KameReflexDecision,
+    KameRoute,
+    kame_reflex_decision_json_schema,
+    kame_reflex_schema_issues,
+)
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_reference_sidecar import (
     ReferenceRealtimeVoiceSidecarSession,
@@ -4617,6 +4623,8 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     prompt = captured["body"]["messages"][0]["content"][1]["text"]
     assert "KAME reflex" in prompt
     assert "Required keys: route, intent, text" in prompt
+    assert "JSON schema:" in prompt
+    assert '"required":["route","intent","text","route_confidence"]' in prompt
     assert "Include route_confidence from 0 to 1" in prompt
     assert "route must be one of local, defer, oracle_direct, or reject_or_clarify" in prompt
     assert "This voice session is already connected" in prompt
@@ -4678,6 +4686,31 @@ def test_reference_sidecar_kame_reflex_validation_rejects_invalid_route():
 
 
 def test_kame_reflex_decision_validates_schema_and_exports_payload():
+    schema = kame_reflex_decision_json_schema()
+    schema["required"].append("mutated")
+
+    assert kame_reflex_decision_json_schema()["required"] == ["route", "intent", "text", "route_confidence"]
+    assert kame_reflex_schema_issues(
+        {
+            "route": "local",
+            "intent": "The user is checking whether Hermes can hear them.",
+            "text": "can you hear me",
+            "route_confidence": 0.93,
+            "local_reply": "Yes, I can hear you.",
+        }
+    ) == []
+    assert kame_reflex_schema_issues(
+        {
+            "route": "local",
+            "intent": "The user is checking whether Hermes can hear them.",
+            "text": "can you hear me",
+            "route_confidence": 1.2,
+        }
+    ) == [
+        "route_confidence must be between 0 and 1",
+        "local_reply is required for local or reject_or_clarify",
+    ]
+
     decision = KameReflexDecision.from_payload(
         {
             "route": "local",

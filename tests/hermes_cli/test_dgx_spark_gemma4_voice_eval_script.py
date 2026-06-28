@@ -1,6 +1,8 @@
 import subprocess
 from pathlib import Path
 
+from hermes_cli.realtime_voice_dgx_spark import _kame_preflight_content_schema_issues
+
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "dgx_spark_gemma4_voice_eval.sh"
 
@@ -27,3 +29,12 @@ def test_dgx_spark_eval_script_generates_full_kame_launch_pack():
 
 def test_dgx_spark_eval_script_is_valid_bash():
     subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
+
+
+def test_dgx_spark_kame_preflight_uses_reflex_schema():
+    assert _kame_preflight_content_schema_issues(
+        '{"route":"reject_or_clarify","intent":"preflight audio probe","text":"","route_confidence":0.8,"local_reply":"Say that again?"}'
+    ) == []
+    assert _kame_preflight_content_schema_issues(
+        '{"route":"local","intent":"preflight audio probe","text":"","route_confidence":false}'
+    ) == ["route_confidence must be numeric", "local_reply is required for local or reject_or_clarify"]

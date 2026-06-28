@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from enum import StrEnum
+import json
 import re
 from typing import Any, Mapping, Optional
 
@@ -91,6 +93,126 @@ KAME_GREETING_OR_HEAR_ME_TERMS = frozenset(
         "voice",
     }
 )
+
+KAME_REFLEX_DECISION_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["route", "intent", "text", "route_confidence"],
+    "properties": {
+        "route": {
+            "type": "string",
+            "enum": sorted(KAME_REFLEX_ROUTES),
+            "description": "Routing path for this spoken turn.",
+        },
+        "intent": {
+            "type": "string",
+            "description": "Normalized user intent inferred from the audio segment.",
+        },
+        "text": {
+            "type": "string",
+            "description": "Best oracle-facing user wording for this turn.",
+        },
+        "route_confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Confidence in the selected route.",
+        },
+        "local_reply": {
+            "type": "string",
+            "description": "Exact short phrase to speak for local or clarification routes.",
+        },
+        "transcript": {
+            "type": "string",
+            "description": "Optional reflex audio hypothesis; not dedicated ASR evidence.",
+        },
+        "transcript_confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+        },
+    },
+}
+
+
+def kame_reflex_decision_json_schema() -> dict[str, Any]:
+    """Return the JSON contract expected from the KAME interface model."""
+
+    return copy.deepcopy(KAME_REFLEX_DECISION_JSON_SCHEMA)
+
+
+def kame_reflex_instruction_text(
+    *,
+    routing_policy: str = "",
+    asr_mode: str = "on_escalation",
+    preflight: bool = False,
+) -> str:
+    """Prompt text shared by runtime and preflight KAME reflex probes."""
+
+    schema_json = json.dumps(KAME_REFLEX_DECISION_JSON_SCHEMA, sort_keys=True, separators=(",", ":"))
+    preflight_text = (
+        "This is a preflight probe. The audio may be silence. "
+        "Use route=reject_or_clarify and intent='preflight audio probe' if no speech is present. "
+        if preflight
+        else ""
+    )
+    routing_text = f" Configured routing policy: {routing_policy}" if routing_policy else ""
+    return (
+        "You are the low-latency KAME reflex for a Hermes realtime voice session. "
+        "Listen to the audio segment and return only a compact JSON object. "
+        "Required keys: route, intent, text, route_confidence. route must be one of local, defer, "
+        "oracle_direct, or reject_or_clarify. Include route_confidence from 0 to 1. "
+        "text should equal the best oracle-facing user wording. For local or reject_or_clarify, "
+        "include local_reply with the exact short phrase to speak. Optional keys: transcript, "
+        "transcript_confidence. "
+        "Use intent for what the user wants. Use transcript only for the reflex's own audio hypothesis; "
+        "dedicated ASR evidence is attached separately when configured. "
+        "This voice session is already connected; never claim Hermes cannot hear, listen, join, "
+        "or speak through the live voice interface. For can-you-hear-me checks, use route=local "
+        "and a brief affirmative local_reply. Only use local for greetings, repeats, "
+        "can-you-hear-me checks, or low-risk conversational glue. Use oracle_direct for tools, "
+        "files, memory, projects, or any nontrivial answer."
+        f"{routing_text} ASR evidence mode is {asr_mode}; do not rely on external tools. "
+        f"{preflight_text}JSON schema: {schema_json}. Do not add markdown or commentary."
+    )
+
+
+def kame_reflex_schema_issues(payload: Mapping[str, Any]) -> list[str]:
+    """Validate the portable subset of the KAME reflex JSON schema."""
+
+    issues: list[str] = []
+    route = str(payload.get("route") or "").strip()
+    if route not in KAME_REFLEX_ROUTES:
+        issues.append("route must be local, defer, oracle_direct, or reject_or_clarify")
+    for key in ("intent", "text"):
+        if key not in payload:
+            issues.append(f"missing {key}")
+    confidence = payload.get("route_confidence")
+    if isinstance(confidence, bool):
+        issues.append("route_confidence must be numeric")
+    else:
+        try:
+            parsed_confidence = float(confidence)
+        except (TypeError, ValueError):
+            issues.append("route_confidence must be numeric")
+        else:
+            if parsed_confidence < 0 or parsed_confidence > 1:
+                issues.append("route_confidence must be between 0 and 1")
+    if route in {KameRoute.LOCAL.value, KameRoute.REJECT_OR_CLARIFY.value} and "local_reply" not in payload:
+        issues.append("local_reply is required for local or reject_or_clarify")
+    transcript_confidence = payload.get("transcript_confidence")
+    if transcript_confidence is not None:
+        if isinstance(transcript_confidence, bool):
+            issues.append("transcript_confidence must be numeric")
+        else:
+            try:
+                parsed_transcript_confidence = float(transcript_confidence)
+            except (TypeError, ValueError):
+                issues.append("transcript_confidence must be numeric")
+            else:
+                if parsed_transcript_confidence < 0 or parsed_transcript_confidence > 1:
+                    issues.append("transcript_confidence must be between 0 and 1")
+    return issues
 
 
 @dataclass(frozen=True)
