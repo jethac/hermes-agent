@@ -2477,6 +2477,11 @@ class DiscordAdapter(BasePlatformAdapter):
         session = self._realtime_voice_sessions.get(guild_id)
         if session is None:
             return
+        active = getattr(self, "_realtime_voice_active_speakers", None)
+        if active is None:
+            self._realtime_voice_active_speakers = {}
+            active = self._realtime_voice_active_speakers
+        active[(guild_id, user_id)] = True
         self._note_voice_activity(guild_id)
         state = self._voice_state(guild_id)
         frame_count = int(state.latency_metrics_ms.get("pcm_frames_forwarded", 0)) + 1
@@ -2804,9 +2809,10 @@ class DiscordAdapter(BasePlatformAdapter):
         parts = entry.setdefault("parts", [])
         if not parts or str(parts[-1]).strip().lower() != transcript.lower():
             parts.append(transcript)
-        active = getattr(self, "_realtime_voice_active_speakers", {}) or {}
-        delay = 1.2 if active.get(key) else 0.8
-        self._schedule_realtime_voice_transcript_flush(guild_id, user_id, delay_seconds=delay)
+        # Provider finals can be eager fragments. Prefer Discord's own silence
+        # boundary for turn finalization; this fallback only prevents a stuck
+        # buffer if the receiver never emits an utterance boundary.
+        self._schedule_realtime_voice_transcript_flush(guild_id, user_id, delay_seconds=8.0)
 
     def _schedule_realtime_voice_transcript_flush(
         self,
