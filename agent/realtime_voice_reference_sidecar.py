@@ -55,6 +55,12 @@ from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient
 TranscribeFn = Callable[[str], Mapping[str, Any]]
 SynthesizeFn = Callable[..., Any]
 REFERENCE_SIDECAR_CLOSE_DRAIN_TIMEOUT_SECONDS = 1.0
+
+
+class KameAudioSegmentTooLongError(RuntimeError):
+    """Raised when a buffered audio segment exceeds the interface model limit."""
+
+
 PROVIDER_FORWARDED_EVENT_TYPES = frozenset(
     {
         VoiceEventType.TRANSCRIPT_PARTIAL,
@@ -1097,6 +1103,22 @@ class ReferenceRealtimeVoiceSidecarSession:
                 await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
         except asyncio.CancelledError:
             raise
+        except KameAudioSegmentTooLongError as exc:
+            error = sanitize_realtime_voice_error(exc)
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "kame_audio_segment_too_long",
+                    "error": error,
+                    "interface_audio_input": _interface_audio_input(self.config),
+                    "interface_max_audio_seconds": _interface_max_audio_seconds(self.config),
+                },
+            )
+            await self._emit(
+                VoiceEventType.SESSION_ERROR,
+                {"error": f"kame audio segment too long: {error}"},
+            )
         except Exception as exc:
             await self._emit(
                 VoiceEventType.SESSION_ERROR,
@@ -1220,6 +1242,8 @@ class ReferenceRealtimeVoiceSidecarSession:
         if self._wants_kame_vllm_reflex():
             try:
                 return self._understand_kame_with_vllm(audio, codec)
+            except KameAudioSegmentTooLongError:
+                raise
             except Exception as exc:
                 if not (self.runtime.local_stt_enabled and self._kame_stt_reflex_fallback_allowed()):
                     raise RuntimeError(
@@ -1416,7 +1440,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         if duration_seconds is None:
             return
         if duration_seconds > max_seconds:
-            raise RuntimeError(
+            raise KameAudioSegmentTooLongError(
                 "KAME audio segment exceeds interface_max_audio_seconds "
                 f"({duration_seconds:.2f}s > {max_seconds:.2f}s)"
             )

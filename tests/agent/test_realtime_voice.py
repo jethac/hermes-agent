@@ -5023,6 +5023,71 @@ def test_reference_sidecar_kame_audio_reflex_rejects_pcm_segments_over_model_lim
     assert calls == []
 
 
+def test_reference_sidecar_reports_kame_audio_segment_limit_during_live_receive(monkeypatch):
+    calls = []
+
+    def fake_urlopen(req, timeout):
+        calls.append(req.full_url)
+        raise AssertionError("overlong native audio must be rejected before vLLM")
+
+    monkeypatch.setattr("agent.realtime_voice_reference_sidecar.urllib.request.urlopen", fake_urlopen)
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                vllm_base_url="http://vllm.local:8000/v1",
+                vllm_model="google/gemma-4-E2B-it",
+                vllm_timeout_seconds=12,
+            )
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                sample_rate_hz=16000,
+                channels=1,
+                interface_max_audio_seconds=1.0,
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.PCM16, data=b"\x00\x00" * 16001).to_payload(),
+                    "end_of_utterance": True,
+                    "input_generation": 4,
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.SESSION_ERROR:
+                await sidecar.close()
+                break
+        return seen
+
+    seen = asyncio.run(run())
+    degraded = next(
+        event
+        for event in seen
+        if event.type == VoiceEventType.FRONTEND_STATE
+        and event.payload.get("reason") == "kame_audio_segment_too_long"
+    )
+    error = next(event for event in seen if event.type == VoiceEventType.SESSION_ERROR)
+    assert degraded.payload["status"] == "degraded"
+    assert degraded.payload["interface_audio_input"] == "native_audio"
+    assert degraded.payload["interface_max_audio_seconds"] == 1.0
+    assert "interface_max_audio_seconds" in degraded.payload["error"]
+    assert "kame audio segment too long" in error.payload["error"]
+    assert calls == []
+
+
 def test_reference_sidecar_kame_reflex_validation_rejects_invalid_route():
     payload = reference_sidecar_module._kame_reflex_payload_from_content(
         json.dumps(
