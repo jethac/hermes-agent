@@ -126,6 +126,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if event.type in {VoiceEventType.PLAYBACK_STARTED, VoiceEventType.PLAYBACK_STOPPED}:
             await self._handle_playback_lifecycle_event(event)
             return
+        if event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
+            await self._handle_interface_intent_final(event)
+            return
         if event.type != VoiceEventType.AUDIO_INPUT_CHUNK:
             return
 
@@ -353,6 +356,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     if self._is_stale_sidecar_input(payload):
                         continue
                     await self._emit(VoiceEventType.INTERFACE_INTENT_PARTIAL, payload)
+                elif event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
+                    if await self._handle_interface_intent_final(event, from_sidecar=True):
+                        continue
                 elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
                     payload = dict(event.payload)
                     if self._is_stale_sidecar_input(payload):
@@ -486,6 +492,34 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 },
             )
 
+    async def _handle_interface_intent_final(self, event: VoiceEvent, *, from_sidecar: bool = False) -> bool:
+        if self.config is None or self.config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+            return False
+        payload = dict(event.payload)
+        if from_sidecar and self._is_stale_sidecar_input(payload):
+            return True
+        text = _kame_final_turn_text_from_payload(payload)
+        if not text:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "empty_interface_intent_final",
+                    "sidecar": from_sidecar,
+                },
+            )
+            return True
+        input_generation = _payload_input_generation(payload)
+        if input_generation is not None:
+            self._mark_sidecar_input_completed(payload)
+        await self._start_turn(
+            text,
+            input_generation=input_generation,
+            metadata=transcript_metadata_from_payload(payload),
+            oracle_payload=payload,
+        )
+        return True
+
     async def _send_sidecar_event(self, event: VoiceEvent) -> bool:
         if self._sidecar is None:
             return False
@@ -607,6 +641,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._playback_generation += 1
             generation = self._playback_generation
         assistant_metadata = dict(metadata or {})
+        if input_generation is not None:
+            assistant_metadata["input_generation"] = input_generation
         if oracle_payload is not None:
             payload_metrics = oracle_payload.get("metrics")
             if isinstance(payload_metrics, Mapping):
@@ -1846,6 +1882,9 @@ def _kame_interface_payload_with_metrics(
     metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
     payload = _kame_interface_payload(request, playback_generation)
+    input_generation = _payload_input_generation(dict(metadata))
+    if input_generation is not None:
+        payload["input_generation"] = input_generation
     metrics = metadata.get("metrics") if isinstance(metadata, Mapping) else None
     if isinstance(metrics, Mapping):
         sanitized = _nonnegative_int_metrics(metrics)
@@ -1915,6 +1954,9 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
         payload["interface_input_source"] = str(metadata.get("kame_interface_input_source"))
     if metadata.get("kame_reflex_provider"):
         payload["reflex_provider"] = str(metadata.get("kame_reflex_provider"))
+    input_generation = _payload_input_generation(dict(metadata))
+    if input_generation is not None:
+        payload["input_generation"] = input_generation
     if isinstance(metadata.get("kame_requested_response_style"), Mapping):
         payload["requested_response_style"] = dict(metadata.get("kame_requested_response_style") or {})
     return {key: value for key, value in payload.items() if value != ""}
@@ -1952,6 +1994,14 @@ def _kame_interface_partial_payload_from_payload(payload: Mapping[str, Any]) -> 
     if input_generation is not None:
         partial["input_generation"] = input_generation
     return partial
+
+
+def _kame_final_turn_text_from_payload(payload: Mapping[str, Any]) -> str:
+    for key in ("text", "transcript", "intent", "local_reply"):
+        text = str(payload.get(key) or "").strip()
+        if text:
+            return text
+    return ""
 
 
 def _is_kame_metadata(metadata: Mapping[str, Any]) -> bool:

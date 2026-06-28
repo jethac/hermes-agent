@@ -1230,6 +1230,104 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_accepts_sidecar_interface_intent_final(monkeypatch):
+    class StructuredOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "The deployment is healthy."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = StructuredOracle()
+        sidecar = FakeSidecar()
+        engine = KameInterfaceOracleEngine(oracle=oracle, sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+                sidecar_base_url="http://voice.local:8765",
+                metadata={"transport": "discord_voice", "user_id": "42"},
+            )
+        )
+        await sidecar._events.put(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_INTENT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "input_generation": 3,
+                    "text": "check the deployment status",
+                    "intent": "Check the deployment status.",
+                    "intent_source": "reflex_audio",
+                    "route": "oracle_direct",
+                    "route_confidence": 0.86,
+                    "transcript": "check the deployment status",
+                    "transcript_source": "reflex_audio",
+                    "transcript_confidence": 0.74,
+                    "asr_transcript": "check deployment status",
+                    "asr_transcript_source": "asr",
+                    "asr_transcript_confidence": 0.91,
+                    "interface_input_source": "native_audio",
+                    "reflex_provider": "vllm",
+                    "metrics": {"kame_speech_end_to_interface_decision_ms": 42},
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+        assert len(oracle.requests) == 1
+        request = oracle.requests[0]
+        assert request.intent == "Check the deployment status."
+        assert request.intent_source == "reflex_audio"
+        assert request.route == KameRoute.ORACLE_DIRECT
+        assert request.route_confidence == 0.86
+        assert request.transcript == "check the deployment status"
+        assert request.transcript_source == "reflex_audio"
+        assert request.asr_transcript == "check deployment status"
+        assert request.asr_transcript_source == "asr"
+        assert request.asr_transcript_confidence == 0.91
+        assert request.oracle_text == "check deployment status"
+        assert request.interface_input_source == "native_audio"
+        assert request.reflex_provider == "vllm"
+
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
+        oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
+        commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        assert final.payload["input_generation"] == 3
+        assert final.payload["kame_intent"] == "Check the deployment status."
+        assert final.payload["kame_asr_transcript"] == "check deployment status"
+        assert final.payload["kame_interface_input_source"] == "native_audio"
+        assert intent.payload["input_generation"] == 3
+        assert intent.payload["metrics"]["kame_speech_end_to_interface_decision_ms"] == 42
+        assert intent.payload["metrics"]["kame_final_transcript_to_interface_decision_ms"] >= 0
+        assert oracle_request.payload["text"] == "check deployment status"
+        assert oracle_request.payload["oracle_text_source"] == "asr"
+        assert commit.payload["text"] == "The deployment is healthy."
+        assert spoken == ["The deployment is healthy."]
+
+    asyncio.run(run())
+
+
 def test_kame_engine_defer_acknowledgement_reports_first_audio_metric(monkeypatch, tmp_path):
     class StructuredOracle:
         async def stream_answer_for_request(self, request):
