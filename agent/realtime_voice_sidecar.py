@@ -16,7 +16,7 @@ from agent.realtime_voice import (
     VoiceEventType,
     binary_audio_frame_from_event,
     create_realtime_voice_event_queue,
-    event_from_binary_audio_frame,
+    event_from_binary_output_audio_frame,
     put_realtime_voice_event,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
@@ -120,7 +120,7 @@ class RealtimeVoiceSidecarClient:
                     try:
                         await put_realtime_voice_event(
                             self._events,
-                            event_from_binary_audio_frame(raw, expected_type=VoiceEventType.AUDIO_OUTPUT_CHUNK)
+                            event_from_binary_output_audio_frame(raw),
                         )
                         continue
                     except Exception:

@@ -19,7 +19,8 @@ from agent.realtime_voice import (
     VoiceEventType,
     binary_audio_frame_from_event,
     create_realtime_voice_event_queue,
-    event_from_binary_audio_frame,
+    event_from_binary_output_audio_frame,
+    is_output_audio_event_type,
     put_realtime_voice_event,
     realtime_voice_session_contract_payload,
     transcript_event_payload_from_payload,
@@ -31,6 +32,7 @@ from agent.realtime_voice_oracle import HermesRealtimeOracle
 STALE_SIDECAR_GENERATION_EVENT_TYPES = frozenset(
     {
         VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.ASSISTANT_AUDIO_CHUNK,
         VoiceEventType.ASSISTANT_AUDIO_END,
         VoiceEventType.PLAYBACK_STARTED,
         VoiceEventType.PLAYBACK_STOPPED,
@@ -198,7 +200,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             async for raw in self._ws:
                 if isinstance(raw, bytes):
                     try:
-                        event = event_from_binary_audio_frame(raw, expected_type=VoiceEventType.AUDIO_OUTPUT_CHUNK)
+                        event = event_from_binary_output_audio_frame(raw)
                     except Exception:
                         payload = AudioChunk(codec=VoiceAudioCodec.OPUS, data=raw).to_payload()
                         if self._playback_generation:
@@ -277,7 +279,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
         return event
 
     async def _queue_sidecar_event(self, event: VoiceEvent) -> None:
-        if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+        if is_output_audio_event_type(event.type):
             await self._emit_playback_started(_payload_generation(dict(event.payload)))
         elif event.type == VoiceEventType.PLAYBACK_STARTED:
             self._playback_active = True
@@ -292,10 +294,9 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
 
     def _track_sidecar_output_state(self, event: VoiceEvent) -> None:
         if event.type in {
-            VoiceEventType.AUDIO_OUTPUT_CHUNK,
             VoiceEventType.PLAYBACK_STARTED,
             VoiceEventType.ASSISTANT_TEXT_PARTIAL,
-        }:
+        } or is_output_audio_event_type(event.type):
             self._assistant_output_active = True
         elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
             self._auto_barge_in_input_active = False
@@ -326,6 +327,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             self._playback_generation = max(self._playback_generation, generation)
         elif event.type in {
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            VoiceEventType.ASSISTANT_AUDIO_CHUNK,
             VoiceEventType.ASSISTANT_AUDIO_END,
             VoiceEventType.PLAYBACK_STARTED,
             VoiceEventType.PLAYBACK_STOPPED,

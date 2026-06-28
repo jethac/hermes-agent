@@ -500,6 +500,13 @@ def event_from_binary_audio_frame(frame: bytes, *, expected_type: Optional[Voice
     return event
 
 
+def event_from_binary_output_audio_frame(frame: bytes) -> VoiceEvent:
+    event = event_from_binary_audio_frame(frame)
+    if not is_output_audio_event_type(event.type):
+        raise ValueError("binary audio frame must carry an output audio event")
+    return event
+
+
 def create_realtime_voice_event_queue() -> asyncio.Queue[VoiceEvent | None]:
     return asyncio.Queue(maxsize=REALTIME_VOICE_EVENT_QUEUE_LIMIT)
 

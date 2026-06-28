@@ -5098,6 +5098,66 @@ def test_sidecar_client_accepts_binary_audio_output_frame(monkeypatch):
     asyncio.run(run())
 
 
+def test_sidecar_client_accepts_binary_assistant_audio_frame(monkeypatch):
+    class FakeWs:
+        def __init__(self, items):
+            self._items = list(items)
+            self.sent = []
+
+        async def send(self, payload):
+            self.sent.append(payload)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._items:
+                raise StopAsyncIteration
+            return self._items.pop(0)
+
+        async def close(self):
+            return None
+
+    async def run():
+        output = VoiceEvent(
+            type=VoiceEventType.ASSISTANT_AUDIO_CHUNK,
+            session_id="sidecar-session",
+            sequence=9,
+            payload={
+                **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"speaker-audio").to_payload(),
+                "playback_generation": 3,
+            },
+        )
+        fake_ws = FakeWs([binary_audio_frame_from_event(output)])
+
+        async def fake_connect(url, **kwargs):
+            return fake_ws
+
+        async def fake_wait_for(awaitable, timeout):
+            return await awaitable
+
+        monkeypatch.setitem(__import__("sys").modules, "websockets", types.SimpleNamespace(connect=fake_connect))
+        monkeypatch.setattr("agent.realtime_voice_sidecar.asyncio.wait_for", fake_wait_for)
+
+        client = RealtimeVoiceSidecarClient()
+        await client.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="gemma4",
+                sidecar_base_url="http://voice.local:8765",
+            )
+        )
+
+        event = await asyncio.wait_for(client._events.get(), timeout=1)
+        assert event.type == VoiceEventType.ASSISTANT_AUDIO_CHUNK
+        assert event.sequence == 9
+        assert event.payload["playback_generation"] == 3
+        assert AudioChunk.from_payload(event.payload).data == b"speaker-audio"
+        await client.close()
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_accepts_transcript_payloads_without_gpu():
     async def run():
         sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
@@ -11068,6 +11128,51 @@ def test_native_s2s_engine_accepts_binary_audio_output_frame():
         assert event.payload["playback_generation"] == 6
         event = await engine._events.get()
         assert event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
+        assert event.session_id == "voice-123"
+        assert event.payload["playback_generation"] == 6
+        assert AudioChunk.from_payload(event.payload).data == b"s2s-speaker"
+
+    asyncio.run(run())
+
+
+def test_native_s2s_engine_accepts_binary_assistant_audio_frame():
+    class FakeWs:
+        def __init__(self, items):
+            self._items = list(items)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._items:
+                raise StopAsyncIteration
+            return self._items.pop(0)
+
+    async def run():
+        output = VoiceEvent(
+            type=VoiceEventType.ASSISTANT_AUDIO_CHUNK,
+            session_id="sidecar-session",
+            sequence=44,
+            payload={
+                **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"s2s-speaker").to_payload(),
+                "playback_generation": 6,
+            },
+        )
+        engine = NativeS2SSidecarEngine()
+        engine.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE,
+            sidecar_base_url="ws://voice.local",
+        )
+        engine._ws = FakeWs([binary_audio_frame_from_event(output)])
+
+        await engine._read_sidecar()
+
+        event = await engine._events.get()
+        assert event.type == VoiceEventType.PLAYBACK_STARTED
+        assert event.payload["playback_generation"] == 6
+        event = await engine._events.get()
+        assert event.type == VoiceEventType.ASSISTANT_AUDIO_CHUNK
         assert event.session_id == "voice-123"
         assert event.payload["playback_generation"] == 6
         assert AudioChunk.from_payload(event.payload).data == b"s2s-speaker"
