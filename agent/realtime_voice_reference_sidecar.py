@@ -2018,10 +2018,23 @@ class ReferenceRealtimeVoiceSidecarSession:
                     parts.append(f"last_speech_{key}={speech[key]}")
         else:
             parts.append("last_speech_event=none")
+        parts.extend(self._kame_feedback_context_parts())
         parts.append(
             "If playback_active=true, treat the new user segment as interruption-sensitive and keep any local reply brief."
         )
         return " ".join(parts)
+
+    def _kame_feedback_context_parts(self) -> list[str]:
+        parts: list[str] = []
+        if self._kame_last_interface_event:
+            parts.extend(_kame_feedback_record_context_parts("last_interface", self._kame_last_interface_event))
+        else:
+            parts.append("last_interface_event=none")
+        if self._kame_last_oracle_event:
+            parts.extend(_kame_feedback_record_context_parts("last_oracle", self._kame_last_oracle_event))
+        else:
+            parts.append("last_oracle_event=none")
+        return parts
 
     async def _emit_shutdown_playback_finalizers(self) -> None:
         if self.config is None or not self._active_playback_generations:
@@ -2926,6 +2939,51 @@ def _payload_int(value: Any) -> Optional[int]:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+def _kame_feedback_record_context_parts(prefix: str, record: Mapping[str, Any]) -> list[str]:
+    event_type = _kame_feedback_prompt_value(record.get("type"), limit=96)
+    parts = [f"{prefix}_event={event_type}" if event_type else f"{prefix}_event=unknown"]
+    payload = record.get("payload")
+    if not isinstance(payload, Mapping):
+        return parts
+    for key in (
+        "turn_id",
+        "route",
+        "text",
+        "delta",
+        "final",
+        "accepted",
+        "tool_name",
+        "tool_call_id",
+        "reason",
+        "error",
+        "outcome",
+    ):
+        if key not in payload:
+            continue
+        value = _kame_feedback_prompt_value(
+            payload.get(key),
+            limit=240 if key in {"text", "delta", "error", "outcome"} else 96,
+        )
+        if value:
+            parts.append(f"{prefix}_{key}={value}")
+    return parts
+
+
+def _kame_feedback_prompt_value(value: Any, *, limit: int) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if isinstance(value, float) and not math.isfinite(value):
+            return ""
+        return str(int(value)) if float(value).is_integer() else str(value)
+    text = " ".join(str(value or "").split())
+    if not text:
+        return ""
+    if len(text) > limit:
+        text = text[: max(0, limit - 1)].rstrip() + "..."
+    return json.dumps(text, ensure_ascii=True)
 
 
 def _unlink(path: str) -> None:

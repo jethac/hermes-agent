@@ -6863,6 +6863,27 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
             payload={"user_id": "42", "input_generation": 5, "rms": 512, "duration_ms": 140},
         )
     )
+    sidecar._record_kame_feedback_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            session_id="voice-123",
+            sequence=2,
+            payload={"turn_id": "voice-123:7", "route": "oracle_direct", "playback_generation": 7},
+        )
+    )
+    sidecar._record_kame_feedback_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_HINT,
+            session_id="voice-123",
+            sequence=3,
+            payload={
+                "turn_id": "voice-123:7",
+                "delta": "Hermes is checking the deployment notes.",
+                "final": False,
+                "playback_generation": 7,
+            },
+        )
+    )
 
     payload = sidecar._understand_audio_sync(b"audio", VoiceAudioCodec.WEBM_OPUS)
 
@@ -6916,6 +6937,12 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     assert "last_speech_input_generation=5" in prompt
     assert "last_speech_rms=512" in prompt
     assert "last_speech_duration_ms=140" in prompt
+    assert 'last_interface_event="interface.oracle.request"' in prompt
+    assert 'last_interface_turn_id="voice-123:7"' in prompt
+    assert 'last_interface_route="oracle_direct"' in prompt
+    assert 'last_oracle_event="oracle.hint"' in prompt
+    assert 'last_oracle_delta="Hermes is checking the deployment notes."' in prompt
+    assert "last_oracle_final=false" in prompt
 
 
 def test_reference_sidecar_vllm_kame_audio_reflex_falls_back_when_json_schema_unsupported(monkeypatch):
