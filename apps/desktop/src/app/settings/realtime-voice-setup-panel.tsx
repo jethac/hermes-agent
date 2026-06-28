@@ -17,7 +17,7 @@ import { Activity, AlertTriangle, CheckCircle2, Loader2, Mic, Play, RefreshCw, V
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 
-import { CONTROL_TEXT } from './constants'
+import { CONTROL_TEXT, ENUM_OPTIONS } from './constants'
 import { getNested, setNested } from './helpers'
 import { ListRow, Pill, SectionHeading } from './primitives'
 
@@ -62,8 +62,36 @@ const PROVIDER_VOICES: Record<string, string[]> = {
 const KAME_AUDIO_INPUT_OPTIONS = ['auto', 'native_audio', 'text_fallback']
 const KAME_ASR_MODE_OPTIONS = ['disabled', 'on_escalation', 'speculative', 'debug', 'fallback']
 const KAME_FALLBACK_POLICY_OPTIONS = ['legacy_voice', 'text_only', 'fail_closed']
+
+const KAME_INTERFACE_PROVIDER_OPTIONS = ENUM_OPTIONS['voice.realtime.frontend_provider'] ?? [
+  'reference',
+  'gemma4',
+  'openai_realtime',
+  'gemini_live'
+]
+
+const KAME_ASR_PROVIDER_OPTIONS = ENUM_OPTIONS['voice.realtime.asr_provider'] ?? [
+  'streaming_stt',
+  'deepgram',
+  'elevenlabs',
+  'cartesia',
+  'nvidia_speech',
+  'local_speech',
+  'reference'
+]
+
 const KAME_ORACLE_API_OPTIONS = ['chat_completions', 'anthropic_messages', 'codex_responses']
 const KAME_RESPONSE_POLICY_OPTIONS = ['sentence_cap', 'brief_summary', 'full']
+
+const KAME_TTS_PROVIDER_OPTIONS = ENUM_OPTIONS['voice.realtime.tts_provider'] ?? [
+  'streaming_tts',
+  'deepgram',
+  'elevenlabs',
+  'cartesia',
+  'nvidia_speech',
+  'local_speech',
+  'reference'
+]
 
 function statusTone(ok?: boolean | null) {
   return ok ? 'primary' : 'muted'
@@ -239,20 +267,25 @@ function KameControls({
   const boolValue = (key: string, fallback = true) => Boolean(getNested(config, key) ?? fallback)
   const numberValue = (key: string, fallback: number) => Number(getNested(config, key) ?? fallback)
 
-  const select = (key: string, fallback: string, options: string[]) => (
-    <Select onValueChange={value => patchConfig(key, value)} value={selectValue(key, fallback)}>
-      <SelectTrigger className={CONTROL_TEXT}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map(option => (
-          <SelectItem key={option} value={option}>
-            {option}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
+  const select = (key: string, fallback: string, options: string[]) => {
+    const value = selectValue(key, fallback)
+    const optionValues = Array.from(new Set([value, ...options].filter(Boolean)))
+
+    return (
+      <Select onValueChange={value => patchConfig(key, value)} value={value}>
+        <SelectTrigger className={CONTROL_TEXT}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {optionValues.map(option => (
+            <SelectItem key={option} value={option}>
+              {option}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    )
+  }
 
   const textInput = (key: string, placeholder = '') => (
     <Input
@@ -301,7 +334,7 @@ function KameControls({
         title="Served reflex model"
       />
       <ListRow
-        action={textInput('voice.realtime.frontend_provider', 'gemma4')}
+        action={select('voice.realtime.frontend_provider', 'gemma4', KAME_INTERFACE_PROVIDER_OPTIONS)}
         description="Provider label for the reflex/interface model."
         title="Interface provider"
       />
@@ -346,7 +379,7 @@ function KameControls({
         title="ASR bridge URL"
       />
       <ListRow
-        action={textInput('voice.realtime.asr_provider', 'streaming_stt')}
+        action={select('voice.realtime.asr_provider', 'streaming_stt', KAME_ASR_PROVIDER_OPTIONS)}
         description="Provider label for oracle-verbatim ASR evidence."
         title="ASR provider"
       />
@@ -361,7 +394,7 @@ function KameControls({
         title="TTS bridge URL"
       />
       <ListRow
-        action={textInput('voice.realtime.tts_provider', 'streaming_tts')}
+        action={select('voice.realtime.tts_provider', 'streaming_tts', KAME_TTS_PROVIDER_OPTIONS)}
         description="Provider label for spoken output."
         title="TTS provider"
       />

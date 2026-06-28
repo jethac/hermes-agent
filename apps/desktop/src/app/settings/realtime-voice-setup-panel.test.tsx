@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { HermesConfigRecord, RealtimeVoiceSetupResponse } from '@/hermes'
 
@@ -17,6 +17,12 @@ vi.mock('@/store/notifications', () => ({
   notify: vi.fn(),
   notifyError: vi.fn()
 }))
+
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn()
+  Element.prototype.hasPointerCapture = vi.fn(() => false)
+  Element.prototype.releasePointerCapture = vi.fn()
+})
 
 const setupResponse: RealtimeVoiceSetupResponse = {
   active_model: 'gemma-4-E2B-it',
@@ -285,6 +291,37 @@ describe('RealtimeVoiceSetupPanel', () => {
         voice_response_policy: 'brief_summary'
       })
     )
+  })
+
+  it('renders KAME provider controls as selectable provider lists', async () => {
+    render(<RealtimeVoiceSetupPanel config={config} onConfigChange={vi.fn()} />)
+
+    expect(await screen.findByText('KAME Reflex / Oracle')).toBeTruthy()
+
+    const comboboxWithValue = (value: string) => {
+      const combobox = screen
+        .getAllByRole('combobox')
+        .find(element => element.textContent?.includes(value))
+
+      expect(combobox).toBeTruthy()
+
+      return combobox as HTMLElement
+    }
+
+    fireEvent.click(comboboxWithValue('gemma4'))
+    expect(await screen.findByText('openai_realtime')).toBeTruthy()
+    expect(screen.getByText('gemini_live')).toBeTruthy()
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+
+    fireEvent.click(comboboxWithValue('nemotron_speech'))
+    expect((await screen.findAllByText('nemotron_speech')).length).toBeGreaterThan(0)
+    expect(screen.getByText('nvidia_speech')).toBeTruthy()
+    expect(screen.getByText('streaming_stt')).toBeTruthy()
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+
+    fireEvent.click(comboboxWithValue('cartesia'))
+    expect((await screen.findAllByText('cartesia')).length).toBeGreaterThan(0)
+    expect(screen.getByText('streaming_tts')).toBeTruthy()
   })
 
   it('submits nested KAME design config without flattening values to defaults', async () => {
