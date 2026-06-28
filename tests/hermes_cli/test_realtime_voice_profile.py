@@ -431,6 +431,31 @@ def test_kame_preset_can_override_interface_max_audio_seconds(capsys):
     assert data["voice"]["realtime"]["interface_max_audio_seconds"] == 12.0
 
 
+def test_kame_preset_can_set_interface_runtime_limits(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--kame-interface-temperature",
+            "0.1",
+            "--kame-interface-max-output-tokens",
+            "96",
+            "--kame-interface-timeout-seconds",
+            "1.25",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["interface_temperature"] == 0.1
+    assert realtime["interface_max_output_tokens"] == 96
+    assert realtime["interface_timeout_seconds"] == 1.25
+    assert realtime["interface"]["temperature"] == 0.1
+    assert realtime["interface"]["max_output_tokens"] == 96
+    assert realtime["interface"]["timeout_ms"] == 1250
+
+
 def test_kame_preset_can_set_interface_base_url(capsys):
     result = realtime_voice_profile.main(
         [
@@ -523,6 +548,51 @@ def test_kame_preset_can_set_fallback_policy(capsys):
     assert data["voice"]["realtime"]["fallback_policy"] == "fail_closed"
 
 
+def test_kame_preset_can_set_oracle_and_routing_policy(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--kame-oracle-timeout-seconds",
+            "42",
+            "--kame-max-spoken-sentences",
+            "1",
+            "--kame-voice-response-policy",
+            "brief_summary",
+            "--kame-allow-local-greetings",
+            "false",
+            "--kame-allow-local-clarifications",
+            "false",
+            "--kame-require-oracle-for-tools",
+            "true",
+            "--kame-require-oracle-for-memory",
+            "true",
+            "--kame-require-oracle-for-files",
+            "true",
+            "--kame-local-confidence-threshold",
+            "0.9",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["oracle_timeout_seconds"] == 42
+    assert realtime["oracle"]["timeout_ms"] == 42000
+    assert realtime["max_spoken_sentences"] == 1
+    assert realtime["oracle"]["max_spoken_sentences"] == 1
+    assert realtime["voice_response_policy"] == "brief_summary"
+    assert realtime["oracle"]["voice_response_policy"] == "brief_summary"
+    assert realtime["routing"] == {
+        "allow_local_greetings": False,
+        "allow_local_clarifications": False,
+        "require_oracle_for_tools": True,
+        "require_oracle_for_memory": True,
+        "require_oracle_for_files": True,
+        "local_confidence_threshold": 0.9,
+    }
+
+
 def test_kame_preset_can_disable_metrics(capsys):
     result = realtime_voice_profile.main(
         [
@@ -540,6 +610,29 @@ def test_kame_preset_can_disable_metrics(capsys):
         "enabled": False,
         "log_turn_spans": False,
         "log_provider_spans": False,
+    }
+
+
+def test_kame_preset_can_set_metrics_booleans(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--kame-metrics-enabled",
+            "false",
+            "--kame-log-turn-spans",
+            "false",
+            "--kame-log-provider-spans",
+            "true",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    assert data["voice"]["realtime"]["metrics"] == {
+        "enabled": False,
+        "log_turn_spans": False,
+        "log_provider_spans": True,
     }
 
 

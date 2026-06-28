@@ -58,6 +58,15 @@ KAME_QUALITY_TARGETS_MS = {
 }
 
 
+def _parse_bool(value: str) -> bool:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError("expected one of true, false, 1, 0, yes, no, on, or off")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Print or apply a portable Hermes realtime voice profile"
@@ -195,6 +204,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum native-audio segment seconds sent to the KAME reflex model",
     )
     parser.add_argument(
+        "--kame-interface-temperature",
+        type=float,
+        default=0.2,
+        help="Sampling temperature for the KAME reflex/interface model",
+    )
+    parser.add_argument(
+        "--kame-interface-max-output-tokens",
+        type=int,
+        default=160,
+        help="Maximum text tokens emitted by the KAME reflex/interface model",
+    )
+    parser.add_argument(
+        "--kame-interface-timeout-seconds",
+        type=float,
+        default=0.8,
+        help="Timeout for one KAME reflex/interface request",
+    )
+    parser.add_argument(
         "--kame-asr-mode",
         default="on_escalation",
         choices=("disabled", "on_escalation", "speculative", "debug", "fallback"),
@@ -209,6 +236,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--kame-preferred-local-oracle-model",
         default=DEFAULT_KAME_ORACLE_MODEL,
         help="Preferred local Hermes oracle model label for --preset kame",
+    )
+    parser.add_argument(
+        "--kame-oracle-provider",
+        default="",
+        help="Provider id for an explicit KAME oracle override; empty keeps Hermes' active oracle",
+    )
+    parser.add_argument(
+        "--kame-oracle-api-mode",
+        default="chat_completions",
+        choices=("chat_completions", "anthropic_messages", "codex_responses"),
+        help="API contract used by the explicit KAME oracle endpoint",
+    )
+    parser.add_argument(
+        "--kame-oracle-timeout-seconds",
+        type=float,
+        default=60.0,
+        help="Timeout for escalated Hermes oracle requests in KAME mode",
+    )
+    parser.add_argument(
+        "--kame-max-spoken-sentences",
+        type=int,
+        default=2,
+        help="Maximum spoken sentences for KAME oracle responses",
     )
     parser.add_argument(
         "--kame-voice-response-policy",
@@ -228,6 +278,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="How KAME should degrade when the realtime sidecar or reflex path is unavailable",
     )
     parser.add_argument(
+        "--kame-allow-local-greetings",
+        type=_parse_bool,
+        default=True,
+        help="Whether KAME may answer simple greetings locally",
+    )
+    parser.add_argument(
+        "--kame-allow-local-clarifications",
+        type=_parse_bool,
+        default=True,
+        help="Whether KAME may ask clarification prompts locally",
+    )
+    parser.add_argument(
+        "--kame-require-oracle-for-tools",
+        type=_parse_bool,
+        default=True,
+        help="Whether tool-related turns must escalate to Hermes' oracle",
+    )
+    parser.add_argument(
+        "--kame-require-oracle-for-memory",
+        type=_parse_bool,
+        default=True,
+        help="Whether memory-related turns must escalate to Hermes' oracle",
+    )
+    parser.add_argument(
+        "--kame-require-oracle-for-files",
+        type=_parse_bool,
+        default=True,
+        help="Whether file/project turns must escalate to Hermes' oracle",
+    )
+    parser.add_argument(
+        "--kame-local-confidence-threshold",
+        type=float,
+        default=0.75,
+        help="Minimum reflex confidence required for local KAME replies",
+    )
+    parser.add_argument(
         "--kame-barge-in-min-rms",
         type=int,
         default=350,
@@ -244,6 +330,24 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=150,
         help="Target milliseconds to stop playback after confirmed KAME barge-in",
+    )
+    parser.add_argument(
+        "--kame-metrics-enabled",
+        type=_parse_bool,
+        default=True,
+        help="Whether KAME realtime turn/provider metrics are enabled",
+    )
+    parser.add_argument(
+        "--kame-log-turn-spans",
+        type=_parse_bool,
+        default=True,
+        help="Whether KAME logs per-turn latency spans",
+    )
+    parser.add_argument(
+        "--kame-log-provider-spans",
+        type=_parse_bool,
+        default=True,
+        help="Whether KAME logs provider latency spans",
     )
     parser.add_argument(
         "--disable-kame-metrics",
@@ -336,11 +440,18 @@ def main(argv: list[str] | None = None) -> int:
                 interface_api_key_env=str(args.kame_interface_api_key_env or "HERMES_KAME_INTERFACE_API_KEY"),
                 interface_audio_input=str(args.kame_interface_audio_input or "auto"),
                 interface_max_audio_seconds=float(args.kame_interface_max_audio_seconds or 30.0),
+                interface_temperature=float(args.kame_interface_temperature or 0.2),
+                interface_max_output_tokens=int(args.kame_interface_max_output_tokens or 160),
+                interface_timeout_seconds=float(args.kame_interface_timeout_seconds or 0.8),
                 asr_mode=str(args.kame_asr_mode or "on_escalation"),
                 asr_provider=str(args.kame_asr_provider or "streaming_stt"),
                 preferred_local_oracle_model=str(
                     args.kame_preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL
                 ),
+                oracle_provider=str(args.kame_oracle_provider or ""),
+                oracle_api_mode=str(args.kame_oracle_api_mode or "chat_completions"),
+                oracle_timeout_seconds=float(args.kame_oracle_timeout_seconds or 60.0),
+                max_spoken_sentences=int(args.kame_max_spoken_sentences or 2),
                 voice_response_policy=str(args.kame_voice_response_policy or "sentence_cap"),
                 tts_provider=str(args.kame_tts_provider or "streaming_tts"),
                 fallback_policy=str(args.kame_fallback_policy or "legacy_voice"),
@@ -360,9 +471,17 @@ def main(argv: list[str] | None = None) -> int:
                 barge_in_stop_playback_deadline_ms=int(
                     args.kame_barge_in_stop_playback_deadline_ms or 150
                 ),
-                metrics_enabled=not bool(args.disable_kame_metrics),
-                metrics_log_turn_spans=not bool(args.disable_kame_turn_span_logs),
-                metrics_log_provider_spans=not bool(args.disable_kame_provider_span_logs),
+                allow_local_greetings=bool(args.kame_allow_local_greetings),
+                allow_local_clarifications=bool(args.kame_allow_local_clarifications),
+                require_oracle_for_tools=bool(args.kame_require_oracle_for_tools),
+                require_oracle_for_memory=bool(args.kame_require_oracle_for_memory),
+                require_oracle_for_files=bool(args.kame_require_oracle_for_files),
+                local_confidence_threshold=float(args.kame_local_confidence_threshold or 0.75),
+                metrics_enabled=bool(args.kame_metrics_enabled) and not bool(args.disable_kame_metrics),
+                metrics_log_turn_spans=bool(args.kame_log_turn_spans)
+                and not bool(args.disable_kame_turn_span_logs),
+                metrics_log_provider_spans=bool(args.kame_log_provider_spans)
+                and not bool(args.disable_kame_provider_span_logs),
                 sidecar_host=args.sidecar_host,
                 sidecar_port=args.sidecar_port,
                 production_evidence_report=args.production_evidence_report,

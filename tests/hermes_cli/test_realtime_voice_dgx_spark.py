@@ -483,13 +483,43 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert manifest["roles"]["interface"]["audio_input"] == "native_audio"
     assert manifest["roles"]["interface"]["provider"] == "gemma4"
     assert manifest["roles"]["interface"]["max_audio_seconds"] == 30.0
+    assert manifest["roles"]["interface"]["temperature"] == 0.2
+    assert manifest["roles"]["interface"]["max_output_tokens"] == 160
+    assert manifest["roles"]["interface"]["timeout_seconds"] == 0.8
     assert manifest["engine"]["max_spoken_sentences"] == 2
+    assert manifest["engine"]["voice_response_policy"] == "sentence_cap"
+    assert manifest["engine"]["fallback_policy"] == "legacy_voice"
+    assert manifest["routing"] == {
+        "allow_local_greetings": True,
+        "allow_local_clarifications": True,
+        "require_oracle_for_tools": True,
+        "require_oracle_for_memory": True,
+        "require_oracle_for_files": True,
+        "local_confidence_threshold": 0.75,
+    }
+    assert manifest["barge_in"] == {
+        "min_rms": 350,
+        "min_speech_ms": 120,
+        "stop_playback_deadline_ms": 150,
+    }
+    assert manifest["metrics"] == {
+        "enabled": True,
+        "log_turn_spans": True,
+        "log_provider_spans": True,
+    }
     assert "HERMES_KAME_INTERFACE_PROVIDER=gemma4" in env_example
     assert "HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS=30.0" in env_example
     assert "HERMES_KAME_INTERFACE_API_KEY_ENV=HERMES_KAME_INTERFACE_API_KEY" in env_example
     assert "HERMES_KAME_INTERFACE_API_KEY=" in env_example
     assert "HERMES_PYTHON=python3" in env_example
     assert "HERMES_KAME_MAX_SPOKEN_SENTENCES=2" in env_example
+    assert "HERMES_KAME_VOICE_RESPONSE_POLICY=sentence_cap" in env_example
+    assert "HERMES_KAME_FALLBACK_POLICY=legacy_voice" in env_example
+    assert "HERMES_KAME_ALLOW_LOCAL_GREETINGS=true" in env_example
+    assert "HERMES_KAME_LOCAL_CONFIDENCE_THRESHOLD=0.75" in env_example
+    assert "HERMES_KAME_BARGE_IN_MIN_RMS=350" in env_example
+    assert "HERMES_KAME_METRICS_ENABLED=true" in env_example
+    assert "HERMES_KAME_ORACLE_TIMEOUT_SECONDS=60.0" in env_example
     assert "HERMES_DGX_SPARK_ASR_PROVIDER=streaming_stt" in env_example
     assert "HERMES_DGX_SPARK_ASR_ADAPTER=loopback_smoke_bridge" in env_example
     assert "HERMES_DGX_SPARK_TTS_PROVIDER=streaming_tts" in env_example
@@ -505,6 +535,11 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert ': "${HERMES_KAME_ORACLE_MODEL:=gemma-4-26B-A4B-it}"' in launch
     assert ': "${HERMES_VOICE_STREAMING_STT_BASE_URL:=http://spark.local:8767}"' in launch
     assert ': "${HERMES_VOICE_STREAMING_TTS_BASE_URL:=http://spark.local:8768}"' in launch
+    assert ': "${HERMES_KAME_VOICE_RESPONSE_POLICY:=sentence_cap}"' in launch
+    assert ': "${HERMES_KAME_FALLBACK_POLICY:=legacy_voice}"' in launch
+    assert ': "${HERMES_KAME_ALLOW_LOCAL_GREETINGS:=true}"' in launch
+    assert ': "${HERMES_KAME_BARGE_IN_MIN_RMS:=350}"' in launch
+    assert ': "${HERMES_KAME_METRICS_ENABLED:=true}"' in launch
     assert '--kame-reflex-model "$HERMES_KAME_INTERFACE_MODEL"' in launch
     assert '--kame-interface-provider "$HERMES_KAME_INTERFACE_PROVIDER"' in launch
     assert '--kame-interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV"' in launch
@@ -516,7 +551,15 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert '--kame-preferred-local-oracle-model "$HERMES_KAME_ORACLE_MODEL"' in launch
     assert '--kame-oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL"' in launch
     assert '--kame-oracle-provider-name "KAME Local Oracle"' in launch
+    assert '--kame-oracle-timeout-seconds "$HERMES_KAME_ORACLE_TIMEOUT_SECONDS"' in launch
+    assert '--kame-max-spoken-sentences "$HERMES_KAME_MAX_SPOKEN_SENTENCES"' in launch
+    assert '--kame-voice-response-policy "$HERMES_KAME_VOICE_RESPONSE_POLICY"' in launch
     assert '--kame-tts-provider "$HERMES_DGX_SPARK_TTS_PROVIDER"' in launch
+    assert '--kame-fallback-policy "$HERMES_KAME_FALLBACK_POLICY"' in launch
+    assert '--kame-allow-local-greetings "$HERMES_KAME_ALLOW_LOCAL_GREETINGS"' in launch
+    assert '--kame-local-confidence-threshold "$HERMES_KAME_LOCAL_CONFIDENCE_THRESHOLD"' in launch
+    assert '--kame-barge-in-min-rms "$HERMES_KAME_BARGE_IN_MIN_RMS"' in launch
+    assert '--kame-metrics-enabled "$HERMES_KAME_METRICS_ENABLED"' in launch
     assert '--streaming-stt-base-url "$HERMES_VOICE_STREAMING_STT_BASE_URL"' in launch
     assert '--streaming-stt-model "$HERMES_VOICE_STREAMING_STT_MODEL"' in launch
     assert '--streaming-tts-base-url "$HERMES_VOICE_STREAMING_TTS_BASE_URL"' in launch
@@ -532,7 +575,12 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in preflight
     assert "--interface-api-key-env \"$HERMES_KAME_INTERFACE_API_KEY_ENV\"" in preflight
     assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in preflight
+    assert "--interface-temperature \"$HERMES_KAME_INTERFACE_TEMPERATURE\"" in preflight
     assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in preflight
+    assert "--max-spoken-sentences \"$HERMES_KAME_MAX_SPOKEN_SENTENCES\"" in preflight
+    assert "--voice-response-policy \"$HERMES_KAME_VOICE_RESPONSE_POLICY\"" in preflight
+    assert "--barge-in-min-rms \"$HERMES_KAME_BARGE_IN_MIN_RMS\"" in preflight
+    assert "--metrics-enabled \"$HERMES_KAME_METRICS_ENABLED\"" in preflight
     assert ': "${HERMES_KAME_ASR_MODE:=on_escalation}"' in preflight
     assert "--asr-mode \"$HERMES_KAME_ASR_MODE\"" in preflight
     assert "--asr-provider \"$HERMES_DGX_SPARK_ASR_PROVIDER\"" in preflight
@@ -550,7 +598,12 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in validate_benchmark
     assert "--interface-api-key-env \"$HERMES_KAME_INTERFACE_API_KEY_ENV\"" in validate_benchmark
     assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in validate_benchmark
+    assert "--interface-temperature \"$HERMES_KAME_INTERFACE_TEMPERATURE\"" in validate_benchmark
     assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in validate_benchmark
+    assert "--max-spoken-sentences \"$HERMES_KAME_MAX_SPOKEN_SENTENCES\"" in validate_benchmark
+    assert "--voice-response-policy \"$HERMES_KAME_VOICE_RESPONSE_POLICY\"" in validate_benchmark
+    assert "--barge-in-min-rms \"$HERMES_KAME_BARGE_IN_MIN_RMS\"" in validate_benchmark
+    assert "--metrics-enabled \"$HERMES_KAME_METRICS_ENABLED\"" in validate_benchmark
     assert ': "${HERMES_KAME_ASR_MODE:=on_escalation}"' in validate_benchmark
     assert "--asr-mode \"$HERMES_KAME_ASR_MODE\"" in validate_benchmark
     assert "--asr-provider \"$HERMES_DGX_SPARK_ASR_PROVIDER\"" in validate_benchmark

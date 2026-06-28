@@ -63,6 +63,15 @@ REQUIRED_DGX_SPARK_SMOKES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _parse_bool(value: str) -> bool:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError("expected one of true, false, 1, 0, yes, no, on, or off")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate a headless DGX Spark launch/preflight pack for KAME voice"
@@ -101,10 +110,37 @@ def add_dgx_spark_arguments(parser: argparse.ArgumentParser) -> argparse.Argumen
     parser.add_argument("--interface-context-tokens", type=int, default=8192)
     parser.add_argument("--interface-gpu-memory-utilization", type=float, default=0.18)
     parser.add_argument("--interface-max-audio-seconds", type=float, default=DEFAULT_INTERFACE_MAX_AUDIO_SECONDS)
+    parser.add_argument("--interface-temperature", type=float, default=0.2)
+    parser.add_argument("--interface-max-output-tokens", type=int, default=160)
+    parser.add_argument("--interface-timeout-seconds", type=float, default=0.8)
     parser.add_argument("--oracle-base-url", default=DEFAULT_ORACLE_BASE_URL)
     parser.add_argument("--oracle-model", default=DEFAULT_ORACLE_MODEL)
+    parser.add_argument("--oracle-timeout-seconds", type=float, default=60.0)
     parser.add_argument("--oracle-context-tokens", type=int, default=32768)
     parser.add_argument("--oracle-gpu-memory-utilization", type=float, default=0.62)
+    parser.add_argument("--max-spoken-sentences", type=int, default=2)
+    parser.add_argument(
+        "--voice-response-policy",
+        default="sentence_cap",
+        choices=("sentence_cap", "brief_summary", "full"),
+    )
+    parser.add_argument(
+        "--fallback-policy",
+        default="legacy_voice",
+        choices=("legacy_voice", "text_only", "fail_closed"),
+    )
+    parser.add_argument("--allow-local-greetings", type=_parse_bool, default=True)
+    parser.add_argument("--allow-local-clarifications", type=_parse_bool, default=True)
+    parser.add_argument("--require-oracle-for-tools", type=_parse_bool, default=True)
+    parser.add_argument("--require-oracle-for-memory", type=_parse_bool, default=True)
+    parser.add_argument("--require-oracle-for-files", type=_parse_bool, default=True)
+    parser.add_argument("--local-confidence-threshold", type=float, default=0.75)
+    parser.add_argument("--barge-in-min-rms", type=int, default=350)
+    parser.add_argument("--barge-in-min-speech-ms", type=int, default=120)
+    parser.add_argument("--barge-in-stop-playback-deadline-ms", type=int, default=150)
+    parser.add_argument("--metrics-enabled", type=_parse_bool, default=True)
+    parser.add_argument("--log-turn-spans", type=_parse_bool, default=True)
+    parser.add_argument("--log-provider-spans", type=_parse_bool, default=True)
     parser.add_argument("--sidecar-base-url", default=DEFAULT_SIDECAR_BASE_URL)
     parser.add_argument("--asr-base-url", default=DEFAULT_ASR_BASE_URL)
     parser.add_argument("--tts-base-url", default=DEFAULT_TTS_BASE_URL)
@@ -159,10 +195,29 @@ def run_from_args(args: argparse.Namespace) -> int:
         interface_context_tokens=int(args.interface_context_tokens),
         interface_gpu_memory_utilization=float(args.interface_gpu_memory_utilization),
         interface_max_audio_seconds=float(args.interface_max_audio_seconds),
+        interface_temperature=float(args.interface_temperature),
+        interface_max_output_tokens=int(args.interface_max_output_tokens),
+        interface_timeout_seconds=float(args.interface_timeout_seconds),
         oracle_base_url=str(args.oracle_base_url),
         oracle_model=str(args.oracle_model),
+        oracle_timeout_seconds=float(args.oracle_timeout_seconds),
         oracle_context_tokens=int(args.oracle_context_tokens),
         oracle_gpu_memory_utilization=float(args.oracle_gpu_memory_utilization),
+        max_spoken_sentences=int(args.max_spoken_sentences),
+        voice_response_policy=str(args.voice_response_policy),
+        fallback_policy=str(args.fallback_policy),
+        allow_local_greetings=bool(args.allow_local_greetings),
+        allow_local_clarifications=bool(args.allow_local_clarifications),
+        require_oracle_for_tools=bool(args.require_oracle_for_tools),
+        require_oracle_for_memory=bool(args.require_oracle_for_memory),
+        require_oracle_for_files=bool(args.require_oracle_for_files),
+        local_confidence_threshold=float(args.local_confidence_threshold),
+        barge_in_min_rms=int(args.barge_in_min_rms),
+        barge_in_min_speech_ms=int(args.barge_in_min_speech_ms),
+        barge_in_stop_playback_deadline_ms=int(args.barge_in_stop_playback_deadline_ms),
+        metrics_enabled=bool(args.metrics_enabled),
+        log_turn_spans=bool(args.log_turn_spans),
+        log_provider_spans=bool(args.log_provider_spans),
         sidecar_base_url=str(args.sidecar_base_url),
         asr_base_url=str(args.asr_base_url),
         tts_base_url=str(args.tts_base_url),
@@ -220,10 +275,29 @@ def build_dgx_spark_stack_manifest(
     interface_context_tokens: int = 8192,
     interface_gpu_memory_utilization: float = 0.18,
     interface_max_audio_seconds: float = DEFAULT_INTERFACE_MAX_AUDIO_SECONDS,
+    interface_temperature: float = 0.2,
+    interface_max_output_tokens: int = 160,
+    interface_timeout_seconds: float = 0.8,
     oracle_base_url: str = DEFAULT_ORACLE_BASE_URL,
     oracle_model: str = DEFAULT_ORACLE_MODEL,
+    oracle_timeout_seconds: float = 60.0,
     oracle_context_tokens: int = 32768,
     oracle_gpu_memory_utilization: float = 0.62,
+    max_spoken_sentences: int = 2,
+    voice_response_policy: str = "sentence_cap",
+    fallback_policy: str = "legacy_voice",
+    allow_local_greetings: bool = True,
+    allow_local_clarifications: bool = True,
+    require_oracle_for_tools: bool = True,
+    require_oracle_for_memory: bool = True,
+    require_oracle_for_files: bool = True,
+    local_confidence_threshold: float = 0.75,
+    barge_in_min_rms: int = 350,
+    barge_in_min_speech_ms: int = 120,
+    barge_in_stop_playback_deadline_ms: int = 150,
+    metrics_enabled: bool = True,
+    log_turn_spans: bool = True,
+    log_provider_spans: bool = True,
     sidecar_base_url: str = DEFAULT_SIDECAR_BASE_URL,
     asr_base_url: str = DEFAULT_ASR_BASE_URL,
     tts_base_url: str = DEFAULT_TTS_BASE_URL,
@@ -255,6 +329,8 @@ def build_dgx_spark_stack_manifest(
     interface_provider_name = _clean_nonempty(interface_provider, default=DEFAULT_INTERFACE_PROVIDER)
     asr_provider_name = _clean_nonempty(asr_provider, default=DEFAULT_ASR_PROVIDER)
     tts_provider_name = _clean_nonempty(tts_provider, default=DEFAULT_TTS_PROVIDER)
+    spoken_sentences = max(1, int(max_spoken_sentences or 2))
+    stop_playback_deadline_ms = max(1, int(barge_in_stop_playback_deadline_ms or 150))
     return {
         "kind": "kame_dgx_spark_stack",
         "version": 1,
@@ -269,7 +345,9 @@ def build_dgx_spark_stack_manifest(
             "name": "kame_interface_oracle",
             "interface_audio_input": "native_audio",
             "asr_mode": asr_mode,
-            "max_spoken_sentences": 2,
+            "max_spoken_sentences": spoken_sentences,
+            "voice_response_policy": str(voice_response_policy or "sentence_cap"),
+            "fallback_policy": str(fallback_policy or "legacy_voice"),
             "durability_policy": "commit final intents and oracle results only",
         },
         "model_assumptions": {
@@ -324,6 +402,9 @@ def build_dgx_spark_stack_manifest(
                 "max_model_len": interface_context_tokens,
                 "gpu_memory_utilization": interface_gpu_memory_utilization,
                 "max_audio_seconds": _bounded_interface_max_audio_seconds(interface_max_audio_seconds),
+                "temperature": float(interface_temperature),
+                "max_output_tokens": int(interface_max_output_tokens),
+                "timeout_seconds": float(interface_timeout_seconds),
                 "audio_input": "native_audio",
                 "limit_mm_per_prompt": {"audio": 1},
                 "routing": ["local", "defer", "oracle_direct", "reject_or_clarify"],
@@ -335,6 +416,7 @@ def build_dgx_spark_stack_manifest(
                 "models_url": oracle_models_url,
                 "max_model_len": oracle_context_tokens,
                 "gpu_memory_utilization": oracle_gpu_memory_utilization,
+                "timeout_seconds": float(oracle_timeout_seconds),
                 "authority": ["tools", "memory", "files", "project_context"],
             },
             "sidecar": {
@@ -376,7 +458,25 @@ def build_dgx_spark_stack_manifest(
             "oracle_first_token_to_first_tts_audio": 1000,
             "first_tts_audio_to_playback_start": 150,
             "tool_or_context_oracle_first_audio": 8000,
-            "barge_in_stop": 150,
+            "barge_in_stop": stop_playback_deadline_ms,
+        },
+        "routing": {
+            "allow_local_greetings": bool(allow_local_greetings),
+            "allow_local_clarifications": bool(allow_local_clarifications),
+            "require_oracle_for_tools": bool(require_oracle_for_tools),
+            "require_oracle_for_memory": bool(require_oracle_for_memory),
+            "require_oracle_for_files": bool(require_oracle_for_files),
+            "local_confidence_threshold": float(local_confidence_threshold),
+        },
+        "barge_in": {
+            "min_rms": max(0, int(barge_in_min_rms or 350)),
+            "min_speech_ms": max(1, int(barge_in_min_speech_ms or 120)),
+            "stop_playback_deadline_ms": stop_playback_deadline_ms,
+        },
+        "metrics": {
+            "enabled": bool(metrics_enabled),
+            "log_turn_spans": bool(log_turn_spans),
+            "log_provider_spans": bool(log_provider_spans),
         },
         "artifacts": {
             "compose": "compose.yaml",
@@ -623,6 +723,10 @@ def render_dgx_spark_env_example(manifest: Mapping[str, Any]) -> str:
     roles = _roles(manifest)
     images = dict(manifest.get("images") or {})
     volumes = dict(manifest.get("volumes") or {})
+    engine = dict(manifest.get("engine") or {})
+    routing = dict(manifest.get("routing") or {})
+    barge_in = dict(manifest.get("barge_in") or {})
+    metrics = dict(manifest.get("metrics") or {})
     speech_env = "\n".join(
         part
         for part in (
@@ -647,11 +751,29 @@ HERMES_KAME_INTERFACE_API_KEY_ENV={roles["interface"]["api_key_env"]}
 {roles["interface"]["api_key_env"]}=
 HERMES_KAME_INTERFACE_AUDIO_INPUT=native_audio
 HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS={roles["interface"]["max_audio_seconds"]}
+HERMES_KAME_INTERFACE_TEMPERATURE={roles["interface"]["temperature"]}
+HERMES_KAME_INTERFACE_MAX_OUTPUT_TOKENS={roles["interface"]["max_output_tokens"]}
+HERMES_KAME_INTERFACE_TIMEOUT_SECONDS={roles["interface"]["timeout_seconds"]}
 HERMES_KAME_ASR_MODE={manifest["engine"]["asr_mode"]}
-HERMES_KAME_MAX_SPOKEN_SENTENCES={manifest["engine"]["max_spoken_sentences"]}
+HERMES_KAME_MAX_SPOKEN_SENTENCES={engine["max_spoken_sentences"]}
+HERMES_KAME_VOICE_RESPONSE_POLICY={engine["voice_response_policy"]}
+HERMES_KAME_FALLBACK_POLICY={engine["fallback_policy"]}
+HERMES_KAME_ALLOW_LOCAL_GREETINGS={_env_bool(routing["allow_local_greetings"])}
+HERMES_KAME_ALLOW_LOCAL_CLARIFICATIONS={_env_bool(routing["allow_local_clarifications"])}
+HERMES_KAME_REQUIRE_ORACLE_FOR_TOOLS={_env_bool(routing["require_oracle_for_tools"])}
+HERMES_KAME_REQUIRE_ORACLE_FOR_MEMORY={_env_bool(routing["require_oracle_for_memory"])}
+HERMES_KAME_REQUIRE_ORACLE_FOR_FILES={_env_bool(routing["require_oracle_for_files"])}
+HERMES_KAME_LOCAL_CONFIDENCE_THRESHOLD={routing["local_confidence_threshold"]}
+HERMES_KAME_BARGE_IN_MIN_RMS={barge_in["min_rms"]}
+HERMES_KAME_BARGE_IN_MIN_SPEECH_MS={barge_in["min_speech_ms"]}
+HERMES_KAME_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS={barge_in["stop_playback_deadline_ms"]}
+HERMES_KAME_METRICS_ENABLED={_env_bool(metrics["enabled"])}
+HERMES_KAME_LOG_TURN_SPANS={_env_bool(metrics["log_turn_spans"])}
+HERMES_KAME_LOG_PROVIDER_SPANS={_env_bool(metrics["log_provider_spans"])}
 
 HERMES_KAME_ORACLE_MODEL={roles["oracle"]["preferred_local_model"]}
 HERMES_KAME_ORACLE_BASE_URL={roles["oracle"]["base_url"]}
+HERMES_KAME_ORACLE_TIMEOUT_SECONDS={roles["oracle"]["timeout_seconds"]}
 HERMES_VOICE_STREAMING_STT_BASE_URL={roles["asr"]["base_url"]}
 HERMES_DGX_SPARK_ASR_PROVIDER={roles["asr"]["provider"]}
 HERMES_VOICE_STREAMING_STT_MODEL={roles["asr"]["model"]}
@@ -718,6 +840,9 @@ def render_dgx_spark_launch_script(manifest: Mapping[str, Any]) -> str:
         str(manifest["roles"]["sidecar"]["base_url"]),
         default_port=8765,
     )
+    routing = dict(manifest.get("routing") or {})
+    barge_in = dict(manifest.get("barge_in") or {})
+    metrics = dict(manifest.get("metrics") or {})
     return f"""#!/usr/bin/env sh
 set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -730,9 +855,28 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={manifest["roles"]["interface"]["base_url"]}}}"
 : "${{HERMES_KAME_INTERFACE_API_KEY_ENV:={manifest["roles"]["interface"]["api_key_env"]}}}"
 : "${{HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS:={manifest["roles"]["interface"]["max_audio_seconds"]}}}"
+: "${{HERMES_KAME_INTERFACE_TEMPERATURE:={manifest["roles"]["interface"]["temperature"]}}}"
+: "${{HERMES_KAME_INTERFACE_MAX_OUTPUT_TOKENS:={manifest["roles"]["interface"]["max_output_tokens"]}}}"
+: "${{HERMES_KAME_INTERFACE_TIMEOUT_SECONDS:={manifest["roles"]["interface"]["timeout_seconds"]}}}"
 : "${{HERMES_KAME_ASR_MODE:={manifest["engine"]["asr_mode"]}}}"
+: "${{HERMES_KAME_MAX_SPOKEN_SENTENCES:={manifest["engine"]["max_spoken_sentences"]}}}"
+: "${{HERMES_KAME_VOICE_RESPONSE_POLICY:={manifest["engine"]["voice_response_policy"]}}}"
+: "${{HERMES_KAME_FALLBACK_POLICY:={manifest["engine"]["fallback_policy"]}}}"
+: "${{HERMES_KAME_ALLOW_LOCAL_GREETINGS:={_env_bool(routing["allow_local_greetings"])}}}"
+: "${{HERMES_KAME_ALLOW_LOCAL_CLARIFICATIONS:={_env_bool(routing["allow_local_clarifications"])}}}"
+: "${{HERMES_KAME_REQUIRE_ORACLE_FOR_TOOLS:={_env_bool(routing["require_oracle_for_tools"])}}}"
+: "${{HERMES_KAME_REQUIRE_ORACLE_FOR_MEMORY:={_env_bool(routing["require_oracle_for_memory"])}}}"
+: "${{HERMES_KAME_REQUIRE_ORACLE_FOR_FILES:={_env_bool(routing["require_oracle_for_files"])}}}"
+: "${{HERMES_KAME_LOCAL_CONFIDENCE_THRESHOLD:={routing["local_confidence_threshold"]}}}"
+: "${{HERMES_KAME_BARGE_IN_MIN_RMS:={barge_in["min_rms"]}}}"
+: "${{HERMES_KAME_BARGE_IN_MIN_SPEECH_MS:={barge_in["min_speech_ms"]}}}"
+: "${{HERMES_KAME_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS:={barge_in["stop_playback_deadline_ms"]}}}"
+: "${{HERMES_KAME_METRICS_ENABLED:={_env_bool(metrics["enabled"])}}}"
+: "${{HERMES_KAME_LOG_TURN_SPANS:={_env_bool(metrics["log_turn_spans"])}}}"
+: "${{HERMES_KAME_LOG_PROVIDER_SPANS:={_env_bool(metrics["log_provider_spans"])}}}"
 : "${{HERMES_KAME_ORACLE_MODEL:={manifest["roles"]["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={manifest["roles"]["oracle"]["base_url"]}}}"
+: "${{HERMES_KAME_ORACLE_TIMEOUT_SECONDS:={manifest["roles"]["oracle"]["timeout_seconds"]}}}"
 : "${{HERMES_DGX_SPARK_ASR_PROVIDER:={manifest["roles"]["asr"]["provider"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={manifest["roles"]["asr"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_MODEL:={manifest["roles"]["asr"]["model"]}}}"
@@ -751,12 +895,31 @@ if [ "${{HERMES_DGX_SPARK_APPLY_PROFILE:-1}}" != "0" ]; then
       --kame-interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV" \\
       --kame-interface-audio-input native_audio \\
       --kame-interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS" \\
+      --kame-interface-temperature "$HERMES_KAME_INTERFACE_TEMPERATURE" \\
+      --kame-interface-max-output-tokens "$HERMES_KAME_INTERFACE_MAX_OUTPUT_TOKENS" \\
+      --kame-interface-timeout-seconds "$HERMES_KAME_INTERFACE_TIMEOUT_SECONDS" \\
       --kame-asr-mode "$HERMES_KAME_ASR_MODE" \\
       --kame-asr-provider "$HERMES_DGX_SPARK_ASR_PROVIDER" \\
       --kame-preferred-local-oracle-model "$HERMES_KAME_ORACLE_MODEL" \\
       --kame-oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL" \\
       --kame-oracle-provider-name "KAME Local Oracle" \\
+      --kame-oracle-timeout-seconds "$HERMES_KAME_ORACLE_TIMEOUT_SECONDS" \\
+      --kame-max-spoken-sentences "$HERMES_KAME_MAX_SPOKEN_SENTENCES" \\
+      --kame-voice-response-policy "$HERMES_KAME_VOICE_RESPONSE_POLICY" \\
       --kame-tts-provider "$HERMES_DGX_SPARK_TTS_PROVIDER" \\
+      --kame-fallback-policy "$HERMES_KAME_FALLBACK_POLICY" \\
+      --kame-allow-local-greetings "$HERMES_KAME_ALLOW_LOCAL_GREETINGS" \\
+      --kame-allow-local-clarifications "$HERMES_KAME_ALLOW_LOCAL_CLARIFICATIONS" \\
+      --kame-require-oracle-for-tools "$HERMES_KAME_REQUIRE_ORACLE_FOR_TOOLS" \\
+      --kame-require-oracle-for-memory "$HERMES_KAME_REQUIRE_ORACLE_FOR_MEMORY" \\
+      --kame-require-oracle-for-files "$HERMES_KAME_REQUIRE_ORACLE_FOR_FILES" \\
+      --kame-local-confidence-threshold "$HERMES_KAME_LOCAL_CONFIDENCE_THRESHOLD" \\
+      --kame-barge-in-min-rms "$HERMES_KAME_BARGE_IN_MIN_RMS" \\
+      --kame-barge-in-min-speech-ms "$HERMES_KAME_BARGE_IN_MIN_SPEECH_MS" \\
+      --kame-barge-in-stop-playback-deadline-ms "$HERMES_KAME_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS" \\
+      --kame-metrics-enabled "$HERMES_KAME_METRICS_ENABLED" \\
+      --kame-log-turn-spans "$HERMES_KAME_LOG_TURN_SPANS" \\
+      --kame-log-provider-spans "$HERMES_KAME_LOG_PROVIDER_SPANS" \\
       --streaming-stt-base-url "$HERMES_VOICE_STREAMING_STT_BASE_URL" \\
       --streaming-stt-model "$HERMES_VOICE_STREAMING_STT_MODEL" \\
       --streaming-tts-base-url "$HERMES_VOICE_STREAMING_TTS_BASE_URL" \\
@@ -776,6 +939,9 @@ docker compose --env-file .env.example -f compose.yaml up --remove-orphans "$@"
 
 def render_dgx_spark_preflight_script(manifest: Mapping[str, Any]) -> str:
     roles = _roles(manifest)
+    routing = dict(manifest.get("routing") or {})
+    barge_in = dict(manifest.get("barge_in") or {})
+    metrics = dict(manifest.get("metrics") or {})
     return f"""#!/usr/bin/env sh
 set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -788,9 +954,28 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
 : "${{HERMES_KAME_INTERFACE_API_KEY_ENV:={roles["interface"]["api_key_env"]}}}"
 : "${{HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS:={roles["interface"]["max_audio_seconds"]}}}"
+: "${{HERMES_KAME_INTERFACE_TEMPERATURE:={roles["interface"]["temperature"]}}}"
+: "${{HERMES_KAME_INTERFACE_MAX_OUTPUT_TOKENS:={roles["interface"]["max_output_tokens"]}}}"
+: "${{HERMES_KAME_INTERFACE_TIMEOUT_SECONDS:={roles["interface"]["timeout_seconds"]}}}"
 : "${{HERMES_KAME_ASR_MODE:={manifest["engine"]["asr_mode"]}}}"
+: "${{HERMES_KAME_MAX_SPOKEN_SENTENCES:={manifest["engine"]["max_spoken_sentences"]}}}"
+: "${{HERMES_KAME_VOICE_RESPONSE_POLICY:={manifest["engine"]["voice_response_policy"]}}}"
+: "${{HERMES_KAME_FALLBACK_POLICY:={manifest["engine"]["fallback_policy"]}}}"
+: "${{HERMES_KAME_ALLOW_LOCAL_GREETINGS:={_env_bool(routing["allow_local_greetings"])}}}"
+: "${{HERMES_KAME_ALLOW_LOCAL_CLARIFICATIONS:={_env_bool(routing["allow_local_clarifications"])}}}"
+: "${{HERMES_KAME_REQUIRE_ORACLE_FOR_TOOLS:={_env_bool(routing["require_oracle_for_tools"])}}}"
+: "${{HERMES_KAME_REQUIRE_ORACLE_FOR_MEMORY:={_env_bool(routing["require_oracle_for_memory"])}}}"
+: "${{HERMES_KAME_REQUIRE_ORACLE_FOR_FILES:={_env_bool(routing["require_oracle_for_files"])}}}"
+: "${{HERMES_KAME_LOCAL_CONFIDENCE_THRESHOLD:={routing["local_confidence_threshold"]}}}"
+: "${{HERMES_KAME_BARGE_IN_MIN_RMS:={barge_in["min_rms"]}}}"
+: "${{HERMES_KAME_BARGE_IN_MIN_SPEECH_MS:={barge_in["min_speech_ms"]}}}"
+: "${{HERMES_KAME_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS:={barge_in["stop_playback_deadline_ms"]}}}"
+: "${{HERMES_KAME_METRICS_ENABLED:={_env_bool(metrics["enabled"])}}}"
+: "${{HERMES_KAME_LOG_TURN_SPANS:={_env_bool(metrics["log_turn_spans"])}}}"
+: "${{HERMES_KAME_LOG_PROVIDER_SPANS:={_env_bool(metrics["log_provider_spans"])}}}"
 : "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={roles["oracle"]["base_url"]}}}"
+: "${{HERMES_KAME_ORACLE_TIMEOUT_SECONDS:={roles["oracle"]["timeout_seconds"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={roles["asr"]["base_url"]}}}"
 : "${{HERMES_DGX_SPARK_ASR_PROVIDER:={roles["asr"]["provider"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_MODEL:={roles["asr"]["model"]}}}"
@@ -812,12 +997,31 @@ cd "$HERMES_REPO_DIR"
   --interface-model "$HERMES_KAME_INTERFACE_MODEL" \\
   --interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV" \\
   --interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS" \\
+  --interface-temperature "$HERMES_KAME_INTERFACE_TEMPERATURE" \\
+  --interface-max-output-tokens "$HERMES_KAME_INTERFACE_MAX_OUTPUT_TOKENS" \\
+  --interface-timeout-seconds "$HERMES_KAME_INTERFACE_TIMEOUT_SECONDS" \\
   --interface-context-tokens {roles["interface"]["max_model_len"]} \\
   --interface-gpu-memory-utilization {roles["interface"]["gpu_memory_utilization"]} \\
   --oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL" \\
   --oracle-model "$HERMES_KAME_ORACLE_MODEL" \\
+  --oracle-timeout-seconds "$HERMES_KAME_ORACLE_TIMEOUT_SECONDS" \\
   --oracle-context-tokens {roles["oracle"]["max_model_len"]} \\
   --oracle-gpu-memory-utilization {roles["oracle"]["gpu_memory_utilization"]} \\
+  --max-spoken-sentences "$HERMES_KAME_MAX_SPOKEN_SENTENCES" \\
+  --voice-response-policy "$HERMES_KAME_VOICE_RESPONSE_POLICY" \\
+  --fallback-policy "$HERMES_KAME_FALLBACK_POLICY" \\
+  --allow-local-greetings "$HERMES_KAME_ALLOW_LOCAL_GREETINGS" \\
+  --allow-local-clarifications "$HERMES_KAME_ALLOW_LOCAL_CLARIFICATIONS" \\
+  --require-oracle-for-tools "$HERMES_KAME_REQUIRE_ORACLE_FOR_TOOLS" \\
+  --require-oracle-for-memory "$HERMES_KAME_REQUIRE_ORACLE_FOR_MEMORY" \\
+  --require-oracle-for-files "$HERMES_KAME_REQUIRE_ORACLE_FOR_FILES" \\
+  --local-confidence-threshold "$HERMES_KAME_LOCAL_CONFIDENCE_THRESHOLD" \\
+  --barge-in-min-rms "$HERMES_KAME_BARGE_IN_MIN_RMS" \\
+  --barge-in-min-speech-ms "$HERMES_KAME_BARGE_IN_MIN_SPEECH_MS" \\
+  --barge-in-stop-playback-deadline-ms "$HERMES_KAME_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS" \\
+  --metrics-enabled "$HERMES_KAME_METRICS_ENABLED" \\
+  --log-turn-spans "$HERMES_KAME_LOG_TURN_SPANS" \\
+  --log-provider-spans "$HERMES_KAME_LOG_PROVIDER_SPANS" \\
   --sidecar-base-url {roles["sidecar"]["base_url"]} \\
   --asr-base-url "$HERMES_VOICE_STREAMING_STT_BASE_URL" \\
   --asr-provider "$HERMES_DGX_SPARK_ASR_PROVIDER" \\
@@ -839,6 +1043,9 @@ cd "$HERMES_REPO_DIR"
 
 def render_dgx_spark_benchmark_validation_script(manifest: Mapping[str, Any]) -> str:
     roles = _roles(manifest)
+    routing = dict(manifest.get("routing") or {})
+    barge_in = dict(manifest.get("barge_in") or {})
+    metrics = dict(manifest.get("metrics") or {})
     return f"""#!/usr/bin/env sh
 set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -856,9 +1063,28 @@ fi
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
 : "${{HERMES_KAME_INTERFACE_API_KEY_ENV:={roles["interface"]["api_key_env"]}}}"
 : "${{HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS:={roles["interface"]["max_audio_seconds"]}}}"
+: "${{HERMES_KAME_INTERFACE_TEMPERATURE:={roles["interface"]["temperature"]}}}"
+: "${{HERMES_KAME_INTERFACE_MAX_OUTPUT_TOKENS:={roles["interface"]["max_output_tokens"]}}}"
+: "${{HERMES_KAME_INTERFACE_TIMEOUT_SECONDS:={roles["interface"]["timeout_seconds"]}}}"
 : "${{HERMES_KAME_ASR_MODE:={manifest["engine"]["asr_mode"]}}}"
+: "${{HERMES_KAME_MAX_SPOKEN_SENTENCES:={manifest["engine"]["max_spoken_sentences"]}}}"
+: "${{HERMES_KAME_VOICE_RESPONSE_POLICY:={manifest["engine"]["voice_response_policy"]}}}"
+: "${{HERMES_KAME_FALLBACK_POLICY:={manifest["engine"]["fallback_policy"]}}}"
+: "${{HERMES_KAME_ALLOW_LOCAL_GREETINGS:={_env_bool(routing["allow_local_greetings"])}}}"
+: "${{HERMES_KAME_ALLOW_LOCAL_CLARIFICATIONS:={_env_bool(routing["allow_local_clarifications"])}}}"
+: "${{HERMES_KAME_REQUIRE_ORACLE_FOR_TOOLS:={_env_bool(routing["require_oracle_for_tools"])}}}"
+: "${{HERMES_KAME_REQUIRE_ORACLE_FOR_MEMORY:={_env_bool(routing["require_oracle_for_memory"])}}}"
+: "${{HERMES_KAME_REQUIRE_ORACLE_FOR_FILES:={_env_bool(routing["require_oracle_for_files"])}}}"
+: "${{HERMES_KAME_LOCAL_CONFIDENCE_THRESHOLD:={routing["local_confidence_threshold"]}}}"
+: "${{HERMES_KAME_BARGE_IN_MIN_RMS:={barge_in["min_rms"]}}}"
+: "${{HERMES_KAME_BARGE_IN_MIN_SPEECH_MS:={barge_in["min_speech_ms"]}}}"
+: "${{HERMES_KAME_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS:={barge_in["stop_playback_deadline_ms"]}}}"
+: "${{HERMES_KAME_METRICS_ENABLED:={_env_bool(metrics["enabled"])}}}"
+: "${{HERMES_KAME_LOG_TURN_SPANS:={_env_bool(metrics["log_turn_spans"])}}}"
+: "${{HERMES_KAME_LOG_PROVIDER_SPANS:={_env_bool(metrics["log_provider_spans"])}}}"
 : "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={roles["oracle"]["base_url"]}}}"
+: "${{HERMES_KAME_ORACLE_TIMEOUT_SECONDS:={roles["oracle"]["timeout_seconds"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={roles["asr"]["base_url"]}}}"
 : "${{HERMES_DGX_SPARK_ASR_PROVIDER:={roles["asr"]["provider"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_MODEL:={roles["asr"]["model"]}}}"
@@ -880,12 +1106,31 @@ cd "$HERMES_REPO_DIR"
   --interface-model "$HERMES_KAME_INTERFACE_MODEL" \\
   --interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV" \\
   --interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS" \\
+  --interface-temperature "$HERMES_KAME_INTERFACE_TEMPERATURE" \\
+  --interface-max-output-tokens "$HERMES_KAME_INTERFACE_MAX_OUTPUT_TOKENS" \\
+  --interface-timeout-seconds "$HERMES_KAME_INTERFACE_TIMEOUT_SECONDS" \\
   --interface-context-tokens {roles["interface"]["max_model_len"]} \\
   --interface-gpu-memory-utilization {roles["interface"]["gpu_memory_utilization"]} \\
   --oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL" \\
   --oracle-model "$HERMES_KAME_ORACLE_MODEL" \\
+  --oracle-timeout-seconds "$HERMES_KAME_ORACLE_TIMEOUT_SECONDS" \\
   --oracle-context-tokens {roles["oracle"]["max_model_len"]} \\
   --oracle-gpu-memory-utilization {roles["oracle"]["gpu_memory_utilization"]} \\
+  --max-spoken-sentences "$HERMES_KAME_MAX_SPOKEN_SENTENCES" \\
+  --voice-response-policy "$HERMES_KAME_VOICE_RESPONSE_POLICY" \\
+  --fallback-policy "$HERMES_KAME_FALLBACK_POLICY" \\
+  --allow-local-greetings "$HERMES_KAME_ALLOW_LOCAL_GREETINGS" \\
+  --allow-local-clarifications "$HERMES_KAME_ALLOW_LOCAL_CLARIFICATIONS" \\
+  --require-oracle-for-tools "$HERMES_KAME_REQUIRE_ORACLE_FOR_TOOLS" \\
+  --require-oracle-for-memory "$HERMES_KAME_REQUIRE_ORACLE_FOR_MEMORY" \\
+  --require-oracle-for-files "$HERMES_KAME_REQUIRE_ORACLE_FOR_FILES" \\
+  --local-confidence-threshold "$HERMES_KAME_LOCAL_CONFIDENCE_THRESHOLD" \\
+  --barge-in-min-rms "$HERMES_KAME_BARGE_IN_MIN_RMS" \\
+  --barge-in-min-speech-ms "$HERMES_KAME_BARGE_IN_MIN_SPEECH_MS" \\
+  --barge-in-stop-playback-deadline-ms "$HERMES_KAME_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS" \\
+  --metrics-enabled "$HERMES_KAME_METRICS_ENABLED" \\
+  --log-turn-spans "$HERMES_KAME_LOG_TURN_SPANS" \\
+  --log-provider-spans "$HERMES_KAME_LOG_PROVIDER_SPANS" \\
   --sidecar-base-url {roles["sidecar"]["base_url"]} \\
   --asr-base-url "$HERMES_VOICE_STREAMING_STT_BASE_URL" \\
   --asr-provider "$HERMES_DGX_SPARK_ASR_PROVIDER" \\
@@ -2217,6 +2462,10 @@ def _roles(manifest: Mapping[str, Any]) -> Mapping[str, Mapping[str, Any]]:
     if not isinstance(roles, Mapping):
         raise ValueError("manifest has no roles mapping")
     return roles  # type: ignore[return-value]
+
+
+def _env_bool(value: Any) -> str:
+    return "true" if bool(value) else "false"
 
 
 def _json(payload: Mapping[str, Any]) -> str:
