@@ -1845,6 +1845,73 @@ def test_kame_engine_full_voice_response_policy_disables_sentence_cap(monkeypatc
     asyncio.run(run())
 
 
+def test_kame_engine_brief_summary_policy_limits_spoken_output_to_one_sentence(monkeypatch):
+    class VerboseOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "First sentence. "
+            yield "Second sentence. "
+            yield "Third sentence."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = VerboseOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                max_spoken_sentences=3,
+                voice_response_policy="brief_summary",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "summarize the plan",
+                    "intent": "Summarize the plan.",
+                    "route": "oracle_direct",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        assert oracle.requests[0].requested_response_style["policy"] == "brief_summary"
+        assert oracle.requests[0].requested_response_style["max_sentences"] == 1
+        assert spoken == ["First sentence."]
+        assert commit.payload["text"] == "First sentence."
+        assert commit.payload["voice_response_policy"] == "brief_summary"
+        assert commit.payload["max_spoken_sentences"] == 1
+        assert commit.payload["voice_response_truncated"] is True
+
+    asyncio.run(run())
+
+
 def test_kame_engine_sends_oracle_timing_metrics_to_tts_sidecar():
     class TimedOracle:
         async def stream_answer_for_request(self, request):

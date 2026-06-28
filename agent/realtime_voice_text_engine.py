@@ -678,7 +678,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             user_id=user_id,
             payload=payload,
             fallback_text=transcript,
-            default_max_spoken_sentences=_max_spoken_sentences(config),
+            default_max_spoken_sentences=_effective_max_spoken_sentences(config),
             routing_policy=_kame_routing_policy(config),
         )
         if request.route == KameRoute.DEFER and not request.interface_already_said:
@@ -952,6 +952,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         spoken_truncated = spoken_truncated or chunk_truncated
                         if not planned_chunk:
                             if _spoken_sentence_count(spoken_answer) >= max_spoken_sentences > 0:
+                                spoken_truncated = True
                                 break
                             continue
                         spoken_answer = _join_spoken_text(spoken_answer, planned_chunk)
@@ -983,6 +984,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         )
                         queue_speak(planned_chunk)
                         if _spoken_sentence_count(spoken_answer) >= max_spoken_sentences > 0:
+                            spoken_truncated = True
                             break
 
             if buffer.strip():
@@ -2181,9 +2183,13 @@ def _effective_max_spoken_sentences(
     *,
     oracle_request: Optional[KameOracleRequest] = None,
 ) -> int:
-    if _voice_response_policy(config, oracle_request=oracle_request) == "full":
+    policy = _voice_response_policy(config, oracle_request=oracle_request)
+    if policy == "full":
         return 0
-    return _max_spoken_sentences(config, oracle_request=oracle_request)
+    max_sentences = _max_spoken_sentences(config, oracle_request=oracle_request)
+    if policy == "brief_summary":
+        return 1 if max_sentences <= 0 else min(max_sentences, 1)
+    return max_sentences
 
 
 def _voice_response_policy_payload(*, policy: str, max_sentences: int, truncated: bool) -> dict[str, Any]:
