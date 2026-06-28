@@ -5727,6 +5727,90 @@ def test_session_drops_stale_generated_events_after_barge_in():
     asyncio.run(run())
 
 
+def test_session_drops_stale_oracle_tool_events_after_barge_in():
+    class ToolEventEngine:
+        def __init__(self):
+            self.received = []
+            self._events = [
+                VoiceEvent(
+                    type=VoiceEventType.ORACLE_TOOL_CALL,
+                    session_id="voice-123",
+                    sequence=10,
+                    payload={
+                        "tool_name": "read_file",
+                        "tool_call_id": "call-stale",
+                        "playback_generation": 1,
+                    },
+                ),
+                VoiceEvent(
+                    type=VoiceEventType.ORACLE_TOOL_RESULT,
+                    session_id="voice-123",
+                    sequence=11,
+                    payload={
+                        "tool_name": "read_file",
+                        "tool_call_id": "call-stale",
+                        "result": "old",
+                        "playback_generation": 1,
+                    },
+                ),
+                VoiceEvent(
+                    type=VoiceEventType.ORACLE_TOOL_RESULT,
+                    session_id="voice-123",
+                    sequence=12,
+                    payload={
+                        "tool_name": "read_file",
+                        "tool_call_id": "call-fresh",
+                        "result": "new",
+                        "playback_generation": 2,
+                    },
+                ),
+            ]
+
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            self.received.append(event)
+
+        async def events(self):
+            for event in self._events:
+                yield event
+
+        async def close(self):
+            return None
+
+    async def run():
+        engine = ToolEventEngine()
+        session = RealtimeVoiceSession(RealtimeVoiceSessionConfig(session_id="voice-123"), engine=engine)
+        await session.start()
+        session._apply_server_event(
+            VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"text": "first", "playback_generation": 1},
+            )
+        )
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=1,
+                payload={"reason": "user_speech"},
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+
+        assert [event.sequence for event in seen] == [12]
+        assert seen[0].type == VoiceEventType.ORACLE_TOOL_RESULT
+        assert seen[0].payload["tool_call_id"] == "call-fresh"
+
+    asyncio.run(run())
+
+
 def test_session_marks_audio_only_output_as_speaking():
     class AudioOnlyEngine:
         async def start(self, config):

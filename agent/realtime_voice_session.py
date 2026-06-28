@@ -48,6 +48,8 @@ STALE_GENERATION_EVENT_TYPES = frozenset(
         VoiceEventType.PLAYBACK_STARTED,
         VoiceEventType.PLAYBACK_STOPPED,
         VoiceEventType.ORACLE_ACCEPTED,
+        VoiceEventType.ORACLE_TOOL_CALL,
+        VoiceEventType.ORACLE_TOOL_RESULT,
         VoiceEventType.ORACLE_RESPONSE_PARTIAL,
         VoiceEventType.ORACLE_RESPONSE_FINAL,
         VoiceEventType.ORACLE_ERROR,
