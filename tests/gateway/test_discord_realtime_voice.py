@@ -450,6 +450,7 @@ async def test_discord_realtime_session_reports_event_metrics_to_callback():
     payload["playback_generation"] = 3
     payload["metrics"] = {
         "final_transcript_to_first_audio_ms": 812,
+        "kame_speech_end_to_first_audio_ms": 900,
         "kame_oracle_first_token_to_first_tts_audio_ms": 48,
     }
 
@@ -464,8 +465,13 @@ async def test_discord_realtime_session_reports_event_metrics_to_callback():
 
     assert observed[-1][0] == VoiceEventType.AUDIO_OUTPUT_CHUNK.value
     assert observed[-1][1]["metrics"]["final_transcript_to_first_audio_ms"] == 812
+    assert observed[-1][1]["metrics"]["kame_speech_end_to_first_audio_ms"] == 900
     assert observed[-1][1]["metrics"]["kame_oracle_first_token_to_first_tts_audio_ms"] == 48
     assert observed[-1][1]["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
+    assert (
+        observed[-1][1]["metrics"]["kame_speech_end_to_playback_start_ms"]
+        >= observed[-1][1]["metrics"]["kame_speech_end_to_first_audio_ms"]
+    )
 
 
 def test_discord_realtime_event_records_kame_reflex_provenance():

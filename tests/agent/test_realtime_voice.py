@@ -5452,7 +5452,10 @@ def test_reference_sidecar_kame_local_tts_reports_playback_start_metric(tmp_path
                     "playback_generation": 7,
                     "voice_architecture": "kame_frontend_oracle",
                     "kame_route": KameRoute.DEFER.value,
-                    "metrics": {"kame_speech_end_to_interface_decision_ms": 25},
+                    "metrics": {
+                        "kame_speech_end_to_interface_decision_ms": 25,
+                        "kame_speech_end_to_first_audio_ms": 120,
+                    },
                 },
             )
         )
@@ -5467,7 +5470,9 @@ def test_reference_sidecar_kame_local_tts_reports_playback_start_metric(tmp_path
         playback = next(event for event in seen if event.type == VoiceEventType.PLAYBACK_STARTED)
         audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
         assert playback.payload["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
+        assert playback.payload["metrics"]["kame_speech_end_to_playback_start_ms"] >= 120
         assert audio.payload["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
+        assert audio.payload["metrics"]["kame_speech_end_to_playback_start_ms"] >= 120
         assert audio.payload["metrics"]["tts_synthesis_ms"] >= 0
 
     asyncio.run(run())
@@ -5503,6 +5508,7 @@ def test_reference_sidecar_cached_kame_ack_reports_playback_start_metric(tmp_pat
                     "playback_generation": 7,
                     "voice_architecture": "kame_frontend_oracle",
                     "kame_route": KameRoute.DEFER.value,
+                    "metrics": {"kame_speech_end_to_first_audio_ms": 80},
                 },
             )
         )
@@ -5517,7 +5523,9 @@ def test_reference_sidecar_cached_kame_ack_reports_playback_start_metric(tmp_pat
         playback = next(event for event in seen if event.type == VoiceEventType.PLAYBACK_STARTED)
         audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
         assert playback.payload["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
+        assert playback.payload["metrics"]["kame_speech_end_to_playback_start_ms"] >= 80
         assert audio.payload["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
+        assert audio.payload["metrics"]["kame_speech_end_to_playback_start_ms"] >= 80
         assert audio.payload["metrics"]["tts_cache"] == "prewarmed"
 
     asyncio.run(run())
@@ -8868,6 +8876,7 @@ def test_session_marks_kame_quality_target_misses(monkeypatch):
                         "kame_speech_end_to_interface_decision_ms": 650,
                         "kame_final_transcript_to_interface_decision_ms": 700,
                         "kame_speech_end_to_first_audio_ms": 3500,
+                        "kame_speech_end_to_playback_start_ms": 3600,
                         "barge_in_confirmed_to_playback_stopped_ms": 180,
                     },
                 },
@@ -8886,6 +8895,7 @@ def test_session_marks_kame_quality_target_misses(monkeypatch):
                         "kame_speech_end_to_interface_decision_ms": 500,
                         "kame_final_transcript_to_interface_decision_ms": 500,
                         "kame_speech_end_to_first_audio_ms": 3000,
+                        "kame_speech_end_to_playback_start_ms": 3000,
                         "barge_in_confirmed_to_playback_stopped_ms": 150,
                     },
                 },
@@ -8917,6 +8927,11 @@ def test_session_marks_kame_quality_target_misses(monkeypatch):
                 "metric": "kame_speech_end_to_interface_decision_ms",
                 "actual_ms": 650,
                 "target_ms": 500,
+            },
+            {
+                "metric": "kame_speech_end_to_playback_start_ms",
+                "actual_ms": 3600,
+                "target_ms": 3000,
             },
         ]
         await session.close()

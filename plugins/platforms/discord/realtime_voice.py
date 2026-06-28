@@ -626,9 +626,17 @@ class DiscordRealtimeVoiceSession:
         ):
             return
         metrics = dict(existing_metrics)
-        metrics["kame_first_tts_audio_to_playback_start_ms"] = int(
-            round((time.perf_counter() - first_tts_audio_at) * 1000)
+        playback_start_ms = max(
+            0,
+            int(round((time.perf_counter() - first_tts_audio_at) * 1000)),
         )
+        metrics["kame_first_tts_audio_to_playback_start_ms"] = playback_start_ms
+        speech_to_first_audio_ms = metrics.get("kame_speech_end_to_first_audio_ms")
+        if isinstance(speech_to_first_audio_ms, int) and not isinstance(speech_to_first_audio_ms, bool):
+            metrics["kame_speech_end_to_playback_start_ms"] = max(
+                0,
+                speech_to_first_audio_ms + playback_start_ms,
+            )
         event.payload["metrics"] = metrics
         self._playback_start_metric_generations.add(generation)
 

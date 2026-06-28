@@ -2305,12 +2305,20 @@ def _kame_playback_start_metrics(
 ) -> dict[str, int]:
     if str(metadata.get("voice_architecture") or "") != "kame_frontend_oracle":
         return {}
-    return {
-        "kame_first_tts_audio_to_playback_start_ms": max(
-            0,
-            int(round((playback_started_at - first_tts_audio_at) * 1000)),
-        )
-    }
+    playback_start_ms = max(
+        0,
+        int(round((playback_started_at - first_tts_audio_at) * 1000)),
+    )
+    metrics = {"kame_first_tts_audio_to_playback_start_ms": playback_start_ms}
+    existing_metrics = metadata.get("metrics")
+    if isinstance(existing_metrics, Mapping):
+        speech_to_first_audio_ms = existing_metrics.get("kame_speech_end_to_first_audio_ms")
+        if isinstance(speech_to_first_audio_ms, int) and not isinstance(speech_to_first_audio_ms, bool):
+            metrics["kame_speech_end_to_playback_start_ms"] = max(
+                0,
+                speech_to_first_audio_ms + playback_start_ms,
+            )
+    return metrics
 
 
 def _playback_lifecycle_payload(

@@ -1160,6 +1160,7 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
                     "kame_oracle_first_token_to_first_spoken_text_ms": 40 + index,
                     "kame_oracle_first_token_to_first_tts_audio_ms": 115 + index,
                     "kame_first_tts_audio_to_playback_start_ms": 12 + index,
+                    "kame_speech_end_to_playback_start_ms": 172 + index,
                     "kame_oracle_total_stream_ms": 300 + index,
                 }
             if entry.get("kind") == "barge_in":
@@ -1214,6 +1215,7 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
     assert summary["latency_ms"]["oracle_first_token_to_first_spoken_text"]["p90"] == 42
     assert summary["latency_ms"]["oracle_first_token_to_first_tts_audio"]["p90"] == 117
     assert summary["latency_ms"]["first_tts_audio_to_playback_start"]["p90"] == 14
+    assert summary["latency_ms"]["speech_end_to_playback_start"]["p90"] == 174
     assert summary["latency_ms"]["oracle_total_stream"]["p90"] == 302
     assert summary["latency_ms"]["oracle_verbatim_asr"]["p90"] == 37
     assert summary["latency_ms"]["barge_in_confirmed_to_playback_stopped"] == {

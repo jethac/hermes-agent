@@ -34,6 +34,7 @@ REALTIME_VOICE_KAME_STATUS_LATENCIES = (
     ("oracle_first_token_to_first_spoken_text", "oracle_speech"),
     ("oracle_first_token_to_first_tts_audio", "oracle_tts"),
     ("first_tts_audio_to_playback_start", "playback"),
+    ("speech_end_to_playback_start", "audible"),
     ("oracle_verbatim_asr", "asr_record"),
     ("barge_in_confirmed_to_playback_stopped", "barge_stop"),
 )

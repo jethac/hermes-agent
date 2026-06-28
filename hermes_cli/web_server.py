@@ -1010,6 +1010,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "voice.realtime.quality_targets_ms.kame_speech_end_to_first_audio_ms": {
         "type": "number",
+        "description": "Target milliseconds from speech boundary to first synthesized KAME assistant audio",
+        "category": "voice",
+    },
+    "voice.realtime.quality_targets_ms.kame_speech_end_to_playback_start_ms": {
+        "type": "number",
         "description": "Target milliseconds from speech boundary to first audible KAME assistant audio",
         "category": "voice",
     },
@@ -3524,6 +3529,7 @@ _REALTIME_VOICE_KAME_QUALITY_TARGETS_MS = {
     "kame_oracle_first_token_to_first_tts_audio_ms": 1000,
     "kame_first_tts_audio_to_playback_start_ms": 150,
     "kame_speech_end_to_first_audio_ms": 3000,
+    "kame_speech_end_to_playback_start_ms": 3000,
 }
 _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS = REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
 _VOICE_SIDECAR_HEALTH_TIMEOUT = 0.75

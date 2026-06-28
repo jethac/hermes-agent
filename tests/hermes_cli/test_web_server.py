@@ -3233,6 +3233,10 @@ class TestBuildSchemaFromConfig:
             == "number"
         )
         assert (
+            CONFIG_SCHEMA["voice.realtime.quality_targets_ms.kame_speech_end_to_playback_start_ms"]["type"]
+            == "number"
+        )
+        assert (
             CONFIG_SCHEMA[
                 "voice.realtime.quality_targets_ms.kame_final_transcript_to_interface_decision_ms"
             ]["type"]
@@ -7972,6 +7976,7 @@ class TestRealtimeVoiceWebSocket:
             "kame_oracle_first_token_to_first_tts_audio_ms": 1000,
             "kame_first_tts_audio_to_playback_start_ms": 150,
             "kame_speech_end_to_first_audio_ms": 3000,
+            "kame_speech_end_to_playback_start_ms": 3000,
         }
         assert body["kame"] == {
             "enabled": True,

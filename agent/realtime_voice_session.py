@@ -96,6 +96,7 @@ QUALITY_TARGET_METRIC_KEYS = frozenset(
         "kame_oracle_first_token_to_first_tts_audio_ms",
         "kame_first_tts_audio_to_playback_start_ms",
         "kame_speech_end_to_first_audio_ms",
+        "kame_speech_end_to_playback_start_ms",
     }
 )
 
