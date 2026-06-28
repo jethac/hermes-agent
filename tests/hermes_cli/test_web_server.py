@@ -3171,7 +3171,13 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.pre_roll_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.require_live_like"]["type"] == "boolean"
         assert "streaming STT/TTS" in CONFIG_SCHEMA["voice.realtime.require_live_like"]["description"]
-        assert CONFIG_SCHEMA["voice.realtime.frontend_provider"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.frontend_provider"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.frontend_provider"]["options"] == [
+            "reference",
+            "gemma4",
+            "openai_realtime",
+            "gemini_live",
+        ]
         assert "interface provider" in CONFIG_SCHEMA["voice.realtime.frontend_provider"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.interface_base_url"]["type"] == "string"
         assert "KAME interface model" in CONFIG_SCHEMA["voice.realtime.interface_base_url"]["description"]
@@ -3321,7 +3327,13 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.enabled"]["category"] == "discord"
         assert "voice-channel realtime sidecar" in CONFIG_SCHEMA["discord.realtime_voice.enabled"]["description"]
         assert CONFIG_SCHEMA["discord.realtime_voice.sidecar_base_url"]["type"] == "string"
-        assert CONFIG_SCHEMA["discord.realtime_voice.frontend_provider"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.frontend_provider"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.frontend_provider"]["options"] == [
+            "reference",
+            "gemma4",
+            "openai_realtime",
+            "gemini_live",
+        ]
         assert "Low-latency realtime voice frontend provider" in CONFIG_SCHEMA["discord.realtime_voice.frontend_provider"]["description"]
         assert CONFIG_SCHEMA["discord.realtime_voice.frontend_model"]["type"] == "string"
         assert "Low-latency realtime interface model" in CONFIG_SCHEMA["discord.realtime_voice.frontend_model"]["description"]

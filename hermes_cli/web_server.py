@@ -714,8 +714,9 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "category": "voice",
     },
     "voice.realtime.frontend_provider": {
-        "type": "string",
+        "type": "select",
         "description": "Low-latency realtime interface provider",
+        "options": ["reference", "gemma4", "openai_realtime", "gemini_live"],
         "category": "voice",
     },
     "voice.realtime.frontend_model": {
@@ -1166,8 +1167,9 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "category": "discord",
     },
     "discord.realtime_voice.frontend_provider": {
-        "type": "string",
+        "type": "select",
         "description": "Low-latency realtime voice frontend provider override for Discord voice sessions",
+        "options": ["reference", "gemma4", "openai_realtime", "gemini_live"],
         "category": "discord",
     },
     "discord.realtime_voice.frontend_model": {
