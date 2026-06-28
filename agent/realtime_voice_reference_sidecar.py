@@ -47,6 +47,7 @@ from agent.realtime_voice_kame import (
     KameReflexDecision,
     KameRoute,
     apply_kame_routing_policy,
+    kame_reflex_decision_json_schema,
     kame_reflex_instruction_text,
 )
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient
@@ -1626,7 +1627,14 @@ class ReferenceRealtimeVoiceSidecarSession:
             ],
             "max_tokens": 256,
             "temperature": _interface_temperature(config),
-            "response_format": {"type": "json_object"},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "kame_reflex_decision",
+                    "strict": True,
+                    "schema": kame_reflex_decision_json_schema(),
+                },
+            },
         }
         payload["max_tokens"] = _interface_max_output_tokens(config)
         url = f"{self.runtime.vllm_base_url.rstrip('/')}/chat/completions"

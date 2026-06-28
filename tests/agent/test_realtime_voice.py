@@ -6692,7 +6692,17 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     assert captured["body"]["model"] == "google/gemma-4-E2B-it"
     assert captured["body"]["temperature"] == 0.35
     assert captured["body"]["max_tokens"] == 96
-    assert captured["body"]["response_format"] == {"type": "json_object"}
+    assert captured["body"]["response_format"]["type"] == "json_schema"
+    response_schema = captured["body"]["response_format"]["json_schema"]
+    assert response_schema["name"] == "kame_reflex_decision"
+    assert response_schema["strict"] is True
+    assert response_schema["schema"]["required"] == ["route", "intent", "text", "route_confidence"]
+    assert response_schema["schema"]["properties"]["route"]["enum"] == [
+        "defer",
+        "local",
+        "oracle_direct",
+        "reject_or_clarify",
+    ]
     prompt = captured["body"]["messages"][0]["content"][1]["text"]
     assert "KAME reflex" in prompt
     assert "Required keys: route, intent, text" in prompt
