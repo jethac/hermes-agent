@@ -574,6 +574,7 @@ def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_pat
 
     assert result["ok"] is True
     assert result["issues"] == []
+    assert result["coverage"]["interface_direct_audio_latency"] is True
     assert result["coverage"]["interface_candidate_model_matrix"] is True
     assert result["coverage"]["interface_direct_audio_vs_stt_fallback"] is True
     assert result["coverage"]["oracle_outcomes_with_and_without_asr_hypotheses"] is True
@@ -607,6 +608,28 @@ def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):
         "requires direct_audio and stt_fallback results for every interface model"
     ) in result["issues"]
     assert "cloud_fallback_smoke: missing passing smoke result" in result["issues"]
+
+
+def test_benchmark_evidence_validator_enforces_direct_audio_latency_targets(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    evidence = _passing_benchmark_evidence()
+    for entry in evidence:
+        if entry.get("category") == "interface" and entry.get("input") == "direct_audio":
+            entry["metrics"]["speech_end_to_interface_decision_ms"] = 501
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["interface_direct_audio_latency"] is False
+    assert (
+        "interface:gemma-4-E2B-it:direct_audio: "
+        "speech_end_to_interface_decision_ms 501 exceeds target 500"
+    ) in result["issues"]
+    assert (
+        "interface_direct_audio_latency: "
+        "requires direct_audio speech_end_to_interface_decision_ms and "
+        "speech_end_to_local_first_audio_ms within configured targets"
+    ) in result["issues"]
 
 
 def test_benchmark_evidence_validator_requires_capability_and_interruption_smokes(tmp_path):

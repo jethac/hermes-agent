@@ -827,6 +827,10 @@ def validate_dgx_spark_benchmark_evidence(
         return {"ok": False, "issues": ["matrix: missing candidates mapping"], "coverage": {}}
 
     coverage: dict[str, bool] = {}
+    quality_targets = matrix.get("acceptance_targets_ms") if isinstance(matrix.get("acceptance_targets_ms"), Mapping) else {}
+    interface_decision_target_ms = _positive_metric_target(quality_targets.get("local_ack_first_audio"), default=500.0)
+    interface_first_audio_target_ms = _positive_metric_target(quality_targets.get("local_reply_first_audio"), default=1000.0)
+    direct_audio_latency_ok = True
     interface_candidates = candidates.get("interface") if isinstance(candidates.get("interface"), list) else []
     interface_models: set[str] = set()
     for candidate in interface_candidates:
@@ -841,8 +845,20 @@ def validate_dgx_spark_benchmark_evidence(
         coverage[label] = match is not None
         if match is None:
             issues.append(f"{label}: missing benchmark result")
+            if input_mode == "direct_audio":
+                direct_audio_latency_ok = False
             continue
         issues.extend(_missing_metric_issues(label, match, candidate.get("required_metrics")))
+        if input_mode == "direct_audio":
+            latency_issues = _interface_direct_audio_latency_issues(
+                label,
+                match,
+                decision_target_ms=interface_decision_target_ms,
+                first_audio_target_ms=interface_first_audio_target_ms,
+            )
+            if latency_issues:
+                direct_audio_latency_ok = False
+                issues.extend(latency_issues)
 
     coverage["interface_candidate_model_matrix"] = bool(interface_candidates) and all(
         coverage.get(
@@ -866,6 +882,13 @@ def validate_dgx_spark_benchmark_evidence(
         issues.append(
             "interface_direct_audio_vs_stt_fallback: "
             "requires direct_audio and stt_fallback results for every interface model"
+        )
+    coverage["interface_direct_audio_latency"] = has_direct and direct_audio_latency_ok
+    if not coverage["interface_direct_audio_latency"]:
+        issues.append(
+            "interface_direct_audio_latency: "
+            "requires direct_audio speech_end_to_interface_decision_ms and "
+            "speech_end_to_local_first_audio_ms within configured targets"
         )
 
     oracle_candidates = candidates.get("oracle") if isinstance(candidates.get("oracle"), list) else []
@@ -1034,6 +1057,51 @@ def _valid_metric_value(metric_name: str, value: Any) -> bool:
     if "accuracy" in metric_name or metric_name.endswith("_rate"):
         return parsed <= 1.0
     return True
+
+
+def _interface_direct_audio_latency_issues(
+    label: str,
+    entry: Mapping[str, Any],
+    *,
+    decision_target_ms: float,
+    first_audio_target_ms: float,
+) -> list[str]:
+    metrics = entry.get("metrics")
+    if not isinstance(metrics, Mapping):
+        return [f"{label}: missing metrics object"]
+    issues: list[str] = []
+    decision_ms = _metric_float(metrics.get("speech_end_to_interface_decision_ms"))
+    if decision_ms is None:
+        issues.append(f"{label}: missing valid speech_end_to_interface_decision_ms")
+    elif decision_ms > decision_target_ms:
+        issues.append(
+            f"{label}: speech_end_to_interface_decision_ms {decision_ms:g} exceeds target {decision_target_ms:g}"
+        )
+    first_audio_ms = _metric_float(metrics.get("speech_end_to_local_first_audio_ms"))
+    if first_audio_ms is None:
+        issues.append(f"{label}: missing valid speech_end_to_local_first_audio_ms")
+    elif first_audio_ms > first_audio_target_ms:
+        issues.append(
+            f"{label}: speech_end_to_local_first_audio_ms {first_audio_ms:g} exceeds target {first_audio_target_ms:g}"
+        )
+    return issues
+
+
+def _positive_metric_target(value: Any, *, default: float) -> float:
+    parsed = _metric_float(value)
+    return parsed if parsed is not None and parsed > 0 else default
+
+
+def _metric_float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed
 
 
 def _has_passing_smoke(entries: list[Mapping[str, Any]], name: str) -> bool:
