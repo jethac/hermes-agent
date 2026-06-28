@@ -2339,6 +2339,106 @@ def test_kame_engine_respects_metrics_policy_disabled(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_respects_turn_span_metrics_policy(monkeypatch):
+    class UnexpectedOracle:
+        async def stream_answer_for_request(self, request):
+            raise AssertionError("local KAME route must not call oracle")
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        engine = KameInterfaceOracleEngine(oracle=UnexpectedOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                metadata={"metrics": {"enabled": True, "log_turn_spans": False}},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "can you hear me",
+                    "intent": "The user is checking whether Hermes can hear them.",
+                    "route": "local",
+                    "local_reply": "Yes, I can hear you.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+        assert not any(event.type == VoiceEventType.SESSION_METRICS for event in seen)
+        assert any(event.type == VoiceEventType.ASSISTANT_COMMIT for event in seen)
+
+    asyncio.run(run())
+
+
+def test_kame_engine_respects_provider_span_metrics_policy():
+    class TimedOracle:
+        async def stream_answer_for_request(self, request):
+            yield "Done."
+
+    async def run():
+        sidecar = FakeSidecar()
+        engine = KameInterfaceOracleEngine(oracle=TimedOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                sidecar_base_url="http://voice.local:8765",
+                metadata={"metrics": {"enabled": True, "log_provider_spans": False}},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "look this up",
+                    "intent": "Look this up.",
+                    "route": "oracle_direct",
+                    "end_of_utterance": True,
+                    "metrics": {"kame_speech_end_to_interface_decision_ms": 42},
+                },
+            )
+        )
+
+        async for event in engine.events():
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        assert sidecar.spoken
+        metrics = sidecar.spoken[0].payload["metrics"]
+        assert metrics["kame_speech_end_to_interface_decision_ms"] == 42
+        assert metrics["kame_final_transcript_to_interface_decision_ms"] >= 0
+        assert "kame_interface_decision_to_oracle_accepted_ms" not in metrics
+        assert "kame_oracle_accepted_to_first_token_ms" not in metrics
+        assert "kame_oracle_first_token_to_first_spoken_text_ms" not in metrics
+        assert "kame_oracle_first_token_to_first_tts_audio_ms" not in metrics
+        assert "tts_synthesis_ms" not in metrics
+
+    asyncio.run(run())
+
+
 def test_text_engine_speaks_stable_phrase_before_sentence_ends(monkeypatch):
     class PhraseOracle:
         async def stream_answer(self, transcript: str):

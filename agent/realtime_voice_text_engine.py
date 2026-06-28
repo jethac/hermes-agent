@@ -594,15 +594,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         interface_decision_at = time.perf_counter()
         if oracle_request is not None:
             assistant_metadata.update(oracle_request.to_metadata())
-            assistant_metadata["metrics"] = _merge_metrics(
-                assistant_metadata.get("metrics"),
-                {
-                    "kame_final_transcript_to_interface_decision_ms": _elapsed_perf_ms(
-                        turn_started_at,
-                        interface_decision_at,
-                    )
-                },
-            )
+            if _kame_metrics_policy_turn_spans_enabled(self.config):
+                assistant_metadata["metrics"] = _merge_metrics(
+                    assistant_metadata.get("metrics"),
+                    {
+                        "kame_final_transcript_to_interface_decision_ms": _elapsed_perf_ms(
+                            turn_started_at,
+                            interface_decision_at,
+                        )
+                    },
+                )
             if oracle_request.cancellation_token:
                 self._cancellation_token_by_generation[generation] = oracle_request.cancellation_token
             self._interface_decision_at_by_generation[generation] = interface_decision_at
@@ -809,6 +810,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         first_spoken_text_at: Optional[float] = None
         kame_timing_metrics: dict[str, int] = {}
         voice_denial_corrected = False
+        kame_provider_metrics_enabled = _kame_metrics_policy_provider_spans_enabled(self.config)
 
         def sync_kame_timing_metrics() -> None:
             if not kame_timing_metrics:
@@ -903,11 +905,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     accepted=True,
                 )
                 oracle_accepted_at = time.perf_counter()
-                kame_timing_metrics["kame_interface_decision_to_oracle_accepted_ms"] = _elapsed_perf_ms(
-                    self._interface_decision_metric_start(playback_generation, fallback=turn_started_at),
-                    oracle_accepted_at,
-                )
-                sync_kame_timing_metrics()
+                if kame_provider_metrics_enabled:
+                    kame_timing_metrics["kame_interface_decision_to_oracle_accepted_ms"] = _elapsed_perf_ms(
+                        self._interface_decision_metric_start(playback_generation, fallback=turn_started_at),
+                        oracle_accepted_at,
+                    )
+                    sync_kame_timing_metrics()
             async for item in _stream_oracle_answer(
                 oracle,
                 transcript,
@@ -935,7 +938,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 if oracle_request is not None and oracle_first_token_at is None:
                     oracle_first_token_at = now
                     self._oracle_first_token_at_by_generation[playback_generation] = now
-                    if oracle_accepted_at is not None:
+                    if kame_provider_metrics_enabled and oracle_accepted_at is not None:
                         kame_timing_metrics["kame_oracle_accepted_to_first_token_ms"] = _elapsed_perf_ms(
                             oracle_accepted_at,
                             oracle_first_token_at,
@@ -974,7 +977,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         spoken_answer = _join_spoken_text(spoken_answer, planned_chunk)
                         if oracle_request is not None and first_spoken_text_at is None:
                             first_spoken_text_at = time.perf_counter()
-                            if oracle_first_token_at is not None:
+                            if kame_provider_metrics_enabled and oracle_first_token_at is not None:
                                 kame_timing_metrics["kame_oracle_first_token_to_first_spoken_text_ms"] = _elapsed_perf_ms(
                                     oracle_first_token_at,
                                     first_spoken_text_at,
@@ -1020,7 +1023,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     spoken_answer = _join_spoken_text(spoken_answer, planned_chunk)
                     if oracle_request is not None and first_spoken_text_at is None:
                         first_spoken_text_at = time.perf_counter()
-                        if oracle_first_token_at is not None:
+                        if kame_provider_metrics_enabled and oracle_first_token_at is not None:
                             kame_timing_metrics["kame_oracle_first_token_to_first_spoken_text_ms"] = _elapsed_perf_ms(
                                 oracle_first_token_at,
                                 first_spoken_text_at,
@@ -1047,7 +1050,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     queue_speak(planned_chunk)
 
             if oracle_request is not None and answer:
-                if oracle_accepted_at is not None:
+                if kame_provider_metrics_enabled and oracle_accepted_at is not None:
                     kame_timing_metrics["kame_oracle_total_stream_ms"] = _elapsed_perf_ms(
                         oracle_accepted_at,
                         time.perf_counter(),
@@ -1303,7 +1306,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 first_tts_audio_at = time.perf_counter()
                 playback_started_at = time.perf_counter()
                 playback_start_metrics: dict[str, int] = {}
-                if _is_kame_metadata(metadata):
+                include_provider_metrics = not _is_kame_metadata(metadata) or _kame_metrics_policy_provider_spans_enabled(
+                    self.config
+                )
+                if _is_kame_metadata(metadata) and include_provider_metrics:
                     playback_start_metrics["kame_first_tts_audio_to_playback_start_ms"] = _elapsed_perf_ms(
                         first_tts_audio_at,
                         playback_started_at,
@@ -1320,7 +1326,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 payload.update(metadata)
                 existing_metrics = payload.get("metrics")
                 metrics = dict(existing_metrics) if isinstance(existing_metrics, dict) else {}
-                metrics["tts_synthesis_ms"] = tts_synthesis_ms
+                if include_provider_metrics:
+                    metrics["tts_synthesis_ms"] = tts_synthesis_ms
                 if playback_start_metrics:
                     metrics.update(playback_start_metrics)
                 first_audio_metrics = self._kame_first_audio_metrics(playback_generation, metadata)
@@ -1351,6 +1358,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if playback_generation in self._first_audio_metric_generations:
             return {}
         if not _is_kame_metadata(metadata):
+            return {}
+        if not _kame_metrics_policy_provider_spans_enabled(self.config):
             return {}
         decision_at = self._interface_decision_at_by_generation.get(playback_generation)
         if decision_at is None:
@@ -1572,7 +1581,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
     ) -> None:
         if playback_generation != self._playback_generation or not _is_kame_metadata(metadata):
             return
-        if not _kame_metrics_policy_enabled(self.config):
+        if not _kame_metrics_policy_turn_spans_enabled(self.config):
             return
         metrics = _kame_route_metrics(
             metadata,
@@ -1943,6 +1952,26 @@ def _kame_metrics_policy_enabled(config: Optional[RealtimeVoiceSessionConfig]) -
     if not isinstance(metrics, Mapping):
         return True
     return _metadata_bool(metrics.get("enabled"), default=True)
+
+
+def _kame_metrics_policy_turn_spans_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    if not _kame_metrics_policy_enabled(config):
+        return False
+    metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
+    metrics = metadata.get("metrics") if isinstance(metadata, Mapping) else {}
+    if not isinstance(metrics, Mapping):
+        return True
+    return _metadata_bool(metrics.get("log_turn_spans"), default=True)
+
+
+def _kame_metrics_policy_provider_spans_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    if not _kame_metrics_policy_enabled(config):
+        return False
+    metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
+    metrics = metadata.get("metrics") if isinstance(metadata, Mapping) else {}
+    if not isinstance(metrics, Mapping):
+        return True
+    return _metadata_bool(metrics.get("log_provider_spans"), default=True)
 
 
 def _caption_alias_events_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
