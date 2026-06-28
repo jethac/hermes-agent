@@ -1784,6 +1784,10 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         payload["cancellation_token"] = request.cancellation_token
     if request.reflex_validation_error:
         payload["reflex_validation_error"] = request.reflex_validation_error
+    if request.interface_input_source:
+        payload["interface_input_source"] = request.interface_input_source
+    if request.reflex_provider:
+        payload["reflex_provider"] = request.reflex_provider
     return payload
 
 

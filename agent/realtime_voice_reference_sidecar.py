@@ -822,11 +822,33 @@ class ReferenceRealtimeVoiceSidecarSession:
                     if self._suppress_streaming_stt_transcript_events():
                         self._record_asr_hypothesis(event)
                         continue
-                    await self._emit(event.type, transcript_metadata_from_payload(event.payload) | {
-                        "text": str(event.payload.get("text") or ""),
+                    text = str(event.payload.get("text") or "")
+                    payload = transcript_metadata_from_payload(event.payload) | {
+                        "text": text,
                         **_numeric_transcript_fields(event.payload),
                         **_generation_transcript_fields(event.payload),
-                    })
+                    }
+                    if (
+                        event.type == VoiceEventType.TRANSCRIPT_FINAL
+                        and self.config is not None
+                        and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
+                        and self._streaming_stt_drives_reflex()
+                    ):
+                        payload.update(
+                            {
+                                "intent": text,
+                                "intent_source": "asr_fallback",
+                                "route": KameRoute.ORACLE_DIRECT.value,
+                                "transcript": text,
+                                "transcript_source": "asr",
+                                "asr_transcript": text,
+                                "asr_transcript_source": "asr",
+                                "interface_audio_input_fallback": True,
+                                "interface_input_source": "streaming_stt",
+                                "reflex_provider": "streaming_stt",
+                            }
+                        )
+                    await self._emit(event.type, payload)
                 elif event.type == VoiceEventType.FRONTEND_STATE:
                     payload = dict(event.payload)
                     payload.setdefault("streaming_stt", True)
@@ -1347,6 +1369,8 @@ class ReferenceRealtimeVoiceSidecarSession:
                     "asr_transcript": text,
                     "asr_transcript_source": "asr",
                     "interface_audio_input_fallback": True,
+                    "interface_input_source": "local_stt",
+                    "reflex_provider": "local_stt",
                 }
                 if not fallback_reason and self.config is not None:
                     fallback_reason = self._kame_audio_reflex_fallback_reason(self.config)
@@ -1477,7 +1501,10 @@ class ReferenceRealtimeVoiceSidecarSession:
         with urllib.request.urlopen(req, timeout=_interface_timeout_seconds(config, self.runtime.vllm_timeout_seconds)) as response:
             data = json.loads(response.read().decode("utf-8"))
         content = str(data["choices"][0]["message"].get("content") or "").strip()
-        return _kame_reflex_payload_from_content(content, config=config)
+        payload = _kame_reflex_payload_from_content(content, config=config)
+        payload.setdefault("interface_input_source", "native_audio")
+        payload.setdefault("reflex_provider", "vllm")
+        return payload
 
     def _raise_if_kame_audio_segment_too_long(self, audio: bytes, codec: VoiceAudioCodec) -> None:
         config = self.config

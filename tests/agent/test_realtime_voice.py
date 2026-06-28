@@ -886,6 +886,8 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
                     "asr_transcript": "find the node from yesterday's meeting",
                     "asr_transcript_source": "asr",
                     "asr_transcript_confidence": 0.68,
+                    "interface_input_source": "native_audio",
+                    "reflex_provider": "vllm",
                     "interface_already_said": "One moment.",
                     "conversation_summary": "The user is testing KAME voice.",
                     "end_of_utterance": True,
@@ -914,6 +916,8 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.asr_transcript_confidence == 0.68
         assert request.oracle_text == "find the node from yesterday's meeting"
         assert request.oracle_text_source == "asr"
+        assert request.interface_input_source == "native_audio"
+        assert request.reflex_provider == "vllm"
         assert request.source == "discord_voice"
         assert request.user_id == "42"
         assert request.requested_response_style == {
@@ -935,6 +939,8 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert final.payload["kame_transcript"] == "find the note from yesterday's meeting"
         assert final.payload["kame_asr_transcript"] == "find the node from yesterday's meeting"
         assert final.payload["kame_oracle_text_source"] == "asr"
+        assert final.payload["kame_interface_input_source"] == "native_audio"
+        assert final.payload["kame_reflex_provider"] == "vllm"
         assert final.payload["kame_cancellation_token"] == "voice-123:1:cancel"
         assert intent.payload["route"] == "oracle_direct"
         assert intent.payload["route_confidence"] == 0.81
@@ -948,6 +954,8 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert oracle_request.payload["oracle_text_source"] == "asr"
         assert oracle_request.payload["transcript"] == "find the note from yesterday's meeting"
         assert oracle_request.payload["asr_transcript"] == "find the node from yesterday's meeting"
+        assert oracle_request.payload["interface_input_source"] == "native_audio"
+        assert oracle_request.payload["reflex_provider"] == "vllm"
         assert oracle_request.payload["requested_response_style"] == {
             "spoken": True,
             "max_sentences": 2,
@@ -5793,6 +5801,8 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
         "transcript_source": "reflex_audio",
         "transcript": "find the node from yesterday",
         "transcript_confidence": 0.71,
+        "interface_input_source": "native_audio",
+        "reflex_provider": "vllm",
     }
     assert captured["url"] == "http://vllm.local:8000/v1/chat/completions"
     assert captured["timeout"] == 0.6
@@ -5856,6 +5866,8 @@ def test_reference_sidecar_text_fallback_bypasses_configured_vllm_reflex(monkeyp
     assert payload["asr_transcript"] == "check deployment status"
     assert payload["asr_transcript_source"] == "asr"
     assert payload["interface_audio_input_fallback"] is True
+    assert payload["interface_input_source"] == "local_stt"
+    assert payload["reflex_provider"] == "local_stt"
 
 
 def test_reference_sidecar_kame_audio_reflex_rejects_pcm_segments_over_model_limit(monkeypatch):
@@ -7299,6 +7311,91 @@ def test_reference_sidecar_bridges_streaming_stt_events(monkeypatch):
         }
 
     asyncio.run(run())
+
+
+def test_reference_sidecar_kame_streaming_stt_fallback_labels_reflex_provenance(monkeypatch):
+    class FakeStreamingSTTClient:
+        def __init__(self, *, path="/v1/realtime-text/session"):
+            self.path = path
+            self._events = asyncio.Queue()
+
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            await self._events.put(
+                VoiceEvent(
+                    type=VoiceEventType.TRANSCRIPT_FINAL,
+                    session_id=event.session_id,
+                    sequence=2,
+                    payload={
+                        "text": "check deployment status",
+                        "confidence": 0.88,
+                        "input_generation": event.payload.get("input_generation"),
+                    },
+                )
+            )
+
+        async def events(self):
+            while True:
+                event = await self._events.get()
+                if event is None:
+                    return
+                yield event
+
+        async def close(self):
+            await self._events.put(None)
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_reference_sidecar.RealtimeVoiceSidecarClient",
+        FakeStreamingSTTClient,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                streaming_stt_base_url="http://streaming-stt.local:9000",
+                streaming_stt_model="portable-streaming-asr",
+            )
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="text_fallback",
+                asr_mode=RealtimeVoiceASRMode.FALLBACK,
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "input_generation": 12,
+                },
+            )
+        )
+
+        async for event in sidecar.events():
+            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                await sidecar.close()
+                return event
+        raise AssertionError("missing transcript final")
+
+    final = asyncio.run(run())
+    assert final.payload["text"] == "check deployment status"
+    assert final.payload["intent"] == "check deployment status"
+    assert final.payload["intent_source"] == "asr_fallback"
+    assert final.payload["route"] == "oracle_direct"
+    assert final.payload["transcript"] == "check deployment status"
+    assert final.payload["transcript_source"] == "asr"
+    assert final.payload["asr_transcript"] == "check deployment status"
+    assert final.payload["asr_transcript_source"] == "asr"
+    assert final.payload["interface_audio_input_fallback"] is True
+    assert final.payload["interface_input_source"] == "streaming_stt"
+    assert final.payload["reflex_provider"] == "streaming_stt"
 
 
 def test_reference_sidecar_bridges_streaming_tts_audio(monkeypatch):
