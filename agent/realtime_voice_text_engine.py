@@ -1325,6 +1325,11 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         payload["transcript"] = request.transcript
     if request.transcript_confidence is not None:
         payload["transcript_confidence"] = request.transcript_confidence
+    if request.asr_transcript:
+        payload["asr_transcript"] = request.asr_transcript
+        payload["asr_transcript_source"] = request.asr_transcript_source or "asr"
+    if request.asr_transcript_confidence is not None:
+        payload["asr_transcript_confidence"] = request.asr_transcript_confidence
     if request.interface_already_said:
         payload["interface_already_said"] = request.interface_already_said
     if request.cancellation_token:
@@ -1364,6 +1369,11 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
         payload["transcript"] = str(metadata.get("kame_transcript"))
     if metadata.get("kame_transcript_confidence") is not None:
         payload["transcript_confidence"] = metadata.get("kame_transcript_confidence")
+    if metadata.get("kame_asr_transcript"):
+        payload["asr_transcript"] = str(metadata.get("kame_asr_transcript"))
+        payload["asr_transcript_source"] = str(metadata.get("kame_asr_transcript_source") or "asr")
+    if metadata.get("kame_asr_transcript_confidence") is not None:
+        payload["asr_transcript_confidence"] = metadata.get("kame_asr_transcript_confidence")
     if metadata.get("kame_interface_already_said"):
         payload["interface_already_said"] = str(metadata.get("kame_interface_already_said"))
     if metadata.get("kame_cancellation_token"):

@@ -585,9 +585,12 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
         user_id="42",
         intent="Find the note from yesterday's meeting.",
         route=KameRoute.ORACLE_DIRECT,
-        transcript="find the node from yesterday's meeting",
-        transcript_source="asr",
+        transcript="find the note from yesterday's meeting",
+        transcript_source="reflex_audio",
         transcript_confidence=0.73,
+        asr_transcript="find the node from yesterday's meeting",
+        asr_transcript_source="asr",
+        asr_transcript_confidence=0.68,
         interface_already_said="One moment.",
         conversation_summary="The user is testing KAME voice.",
     )
@@ -596,7 +599,8 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
 
     assert "KAME request" in prompt
     assert "Reflex interpreted intent (reflex_audio): Find the note" in prompt
-    assert "Verbatim transcript evidence (asr): find the node" in prompt
+    assert "Reflex transcript hypothesis (reflex_audio): find the note" in prompt
+    assert "Verbatim ASR evidence (asr): find the node" in prompt
     assert "tool arguments" in prompt
     assert "The voice reflex already told the user: One moment." in prompt
     assert "Requested response style: spoken=true; avoid automatic follow-up offers." in prompt
@@ -641,11 +645,14 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
                 session_id="voice-123",
                 sequence=1,
                 payload={
-                    "transcript": "find the node from yesterday's meeting",
+                    "transcript": "find the note from yesterday's meeting",
                     "intent": "Find the note from yesterday's meeting.",
                     "intent_source": "reflex_audio",
-                    "transcript_source": "asr",
+                    "transcript_source": "reflex_audio",
                     "transcript_confidence": 0.73,
+                    "asr_transcript": "find the node from yesterday's meeting",
+                    "asr_transcript_source": "asr",
+                    "asr_transcript_confidence": 0.68,
                     "interface_already_said": "One moment.",
                     "conversation_summary": "The user is testing KAME voice.",
                     "end_of_utterance": True,
@@ -665,9 +672,13 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.intent == "Find the note from yesterday's meeting."
         assert request.intent_source == "reflex_audio"
         assert request.route == KameRoute.ORACLE_DIRECT
-        assert request.transcript == "find the node from yesterday's meeting"
-        assert request.transcript_source == "asr"
+        assert request.transcript == "find the note from yesterday's meeting"
+        assert request.transcript_source == "reflex_audio"
         assert request.transcript_confidence == 0.73
+        assert request.asr_transcript == "find the node from yesterday's meeting"
+        assert request.asr_transcript_source == "asr"
+        assert request.asr_transcript_confidence == 0.68
+        assert request.oracle_text == "find the node from yesterday's meeting"
         assert request.source == "discord_voice"
         assert request.user_id == "42"
         assert request.requested_response_style == {
@@ -683,13 +694,18 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         assert final.payload["kame_intent"] == "Find the note from yesterday's meeting."
         assert final.payload["kame_route"] == "oracle_direct"
-        assert final.payload["kame_transcript"] == "find the node from yesterday's meeting"
+        assert final.payload["kame_transcript"] == "find the note from yesterday's meeting"
+        assert final.payload["kame_asr_transcript"] == "find the node from yesterday's meeting"
         assert final.payload["kame_cancellation_token"] == "voice-123:1:cancel"
         assert intent.payload["route"] == "oracle_direct"
         assert intent.payload["intent"] == "Find the note from yesterday's meeting."
+        assert intent.payload["transcript"] == "find the note from yesterday's meeting"
+        assert intent.payload["asr_transcript"] == "find the node from yesterday's meeting"
         assert intent.payload["cancellation_token"] == "voice-123:1:cancel"
         assert oracle_request.payload["turn_id"] == "voice-123:1"
         assert oracle_request.payload["text"] == "find the node from yesterday's meeting"
+        assert oracle_request.payload["transcript"] == "find the note from yesterday's meeting"
+        assert oracle_request.payload["asr_transcript"] == "find the node from yesterday's meeting"
         assert oracle_request.payload["requested_response_style"] == {
             "spoken": True,
             "max_sentences": 2,
@@ -3512,7 +3528,7 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
         "intent": "Find the note from yesterday.",
         "intent_source": "reflex_audio",
         "route": "oracle_direct",
-        "transcript_source": "asr",
+        "transcript_source": "reflex_audio",
         "transcript": "find the node from yesterday",
         "transcript_confidence": 0.71,
     }
@@ -3614,7 +3630,7 @@ def test_kame_reflex_decision_rejects_invalid_local_schema():
     assert denial.transcript_confidence == 0.0
     assert denial.validation_errors == ("voice_capability_denial",)
     assert invalid_route.route == KameRoute.ORACLE_DIRECT
-    assert invalid_route.transcript_source == "asr"
+    assert invalid_route.transcript_source == "reflex_audio"
     assert invalid_route.validation_errors == ("invalid_route",)
 
 
@@ -3867,9 +3883,11 @@ def test_reference_sidecar_kame_on_escalation_attaches_one_shot_asr_evidence(mon
     assert final.payload["text"] == "reflex wording"
     assert final.payload["intent"] == "Reflex intent."
     assert final.payload["route"] == "oracle_direct"
-    assert final.payload["transcript"] == "literal ASR note 123"
-    assert final.payload["transcript_source"] == "asr"
-    assert final.payload["transcript_confidence"] == 0.84
+    assert "transcript" not in final.payload
+    assert final.payload["transcript_source"] == "none"
+    assert final.payload["asr_transcript"] == "literal ASR note 123"
+    assert final.payload["asr_transcript_source"] == "asr"
+    assert final.payload["asr_transcript_confidence"] == 0.84
     assert final.payload["metrics"]["kame_speech_end_to_interface_decision_ms"] >= 0
     assert final.payload["metrics"]["oracle_verbatim_asr_ms"] >= 0
     assert sent_events[0].type == VoiceEventType.AUDIO_INPUT_CHUNK

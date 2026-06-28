@@ -911,10 +911,13 @@ class ReferenceRealtimeVoiceSidecarSession:
         text = str(event.payload.get("text") or "").strip()
         if not text:
             return
-        hypothesis: dict[str, Any] = {"transcript": text, "transcript_source": "asr"}
+        hypothesis: dict[str, Any] = {
+            "asr_transcript": text,
+            "asr_transcript_source": "asr",
+        }
         confidence = _bounded_confidence(event.payload.get("confidence"))
         if confidence is not None:
-            hypothesis["transcript_confidence"] = confidence
+            hypothesis["asr_transcript_confidence"] = confidence
         self._asr_hypotheses_by_generation[generation] = hypothesis
 
     async def _transcribe(
@@ -952,10 +955,10 @@ class ReferenceRealtimeVoiceSidecarSession:
                 if input_generation is not None:
                     asr_hypothesis = self._asr_hypotheses_by_generation.pop(input_generation, None)
                     if asr_hypothesis and self.config is not None and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
-                        payload.setdefault("transcript", asr_hypothesis.get("transcript"))
-                        payload.setdefault("transcript_source", asr_hypothesis.get("transcript_source"))
-                        if "transcript_confidence" in asr_hypothesis:
-                            payload.setdefault("transcript_confidence", asr_hypothesis["transcript_confidence"])
+                        payload.setdefault("asr_transcript", asr_hypothesis.get("asr_transcript"))
+                        payload.setdefault("asr_transcript_source", asr_hypothesis.get("asr_transcript_source"))
+                        if "asr_transcript_confidence" in asr_hypothesis:
+                            payload.setdefault("asr_transcript_confidence", asr_hypothesis["asr_transcript_confidence"])
                 if self._should_run_oracle_verbatim_asr(payload):
                     started_at = time.perf_counter()
                     asr_hypothesis = await self._run_oracle_verbatim_asr_once(
@@ -964,10 +967,10 @@ class ReferenceRealtimeVoiceSidecarSession:
                         input_generation,
                     )
                     if asr_hypothesis:
-                        payload["transcript"] = asr_hypothesis["transcript"]
-                        payload["transcript_source"] = asr_hypothesis["transcript_source"]
-                        if "transcript_confidence" in asr_hypothesis:
-                            payload["transcript_confidence"] = asr_hypothesis["transcript_confidence"]
+                        payload["asr_transcript"] = asr_hypothesis["asr_transcript"]
+                        payload["asr_transcript_source"] = asr_hypothesis["asr_transcript_source"]
+                        if "asr_transcript_confidence" in asr_hypothesis:
+                            payload["asr_transcript_confidence"] = asr_hypothesis["asr_transcript_confidence"]
                         existing_metrics = payload.get("metrics")
                         metrics = dict(existing_metrics) if isinstance(existing_metrics, Mapping) else {}
                         metrics["oracle_verbatim_asr_ms"] = int(round((time.perf_counter() - started_at) * 1000))
@@ -1056,12 +1059,12 @@ class ReferenceRealtimeVoiceSidecarSession:
                     if not text:
                         return {}
                     hypothesis: dict[str, Any] = {
-                        "transcript": text,
-                        "transcript_source": "asr",
+                        "asr_transcript": text,
+                        "asr_transcript_source": "asr",
                     }
                     confidence = _bounded_confidence(event.payload.get("confidence"))
                     if confidence is not None:
-                        hypothesis["transcript_confidence"] = confidence
+                        hypothesis["asr_transcript_confidence"] = confidence
                     return hypothesis
                 if event.type == VoiceEventType.SESSION_ERROR:
                     await self._emit(
@@ -1145,6 +1148,8 @@ class ReferenceRealtimeVoiceSidecarSession:
                     "route": "oracle_direct",
                     "transcript": text,
                     "transcript_source": "asr",
+                    "asr_transcript": text,
+                    "asr_transcript_source": "asr",
                     "interface_audio_input_fallback": True,
                 }
                 if not fallback_reason and self.config is not None:
@@ -1247,8 +1252,8 @@ class ReferenceRealtimeVoiceSidecarSession:
                                 "oracle-facing user wording. For local or reject_or_clarify, include "
                                 "local_reply with the exact short phrase to speak. Optional keys: "
                                 "transcript, transcript_confidence. "
-                                "Use intent for what the user wants. Use transcript only as a verbatim "
-                                "hypothesis for names, numbers, code identifiers, and tool arguments. "
+                                "Use intent for what the user wants. Use transcript only for the reflex's "
+                                "own audio hypothesis; dedicated ASR evidence is attached separately when configured. "
                                 "This voice session is already connected; never claim Hermes cannot hear, "
                                 "listen, join, or speak through the live voice interface. For can-you-hear-me "
                                 "checks, use route=local and a brief affirmative local_reply. "

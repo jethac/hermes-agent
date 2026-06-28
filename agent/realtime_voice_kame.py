@@ -53,10 +53,10 @@ class KameReflexDecision:
     def from_payload(cls, payload: Mapping[str, Any], *, fallback_text: str = "") -> "KameReflexDecision":
         """Build and validate a reflex decision from model JSON or sidecar payload."""
 
-        transcript = _optional_text(payload.get("transcript")) or _optional_text(payload.get("asr_transcript"))
+        transcript = _optional_text(payload.get("transcript"))
         intent = _optional_text(payload.get("intent")) or _optional_text(payload.get("text")) or fallback_text
         text = _optional_text(payload.get("text")) or transcript or intent
-        transcript_source = _optional_text(payload.get("transcript_source")) or ("asr" if transcript else "none")
+        transcript_source = _optional_text(payload.get("transcript_source")) or ("reflex_audio" if transcript else "none")
         local_reply = (
             _optional_text(payload.get("local_reply"))
             or _optional_text(payload.get("reply"))
@@ -121,6 +121,9 @@ class KameOracleRequest:
     transcript: str = ""
     transcript_source: str = "none"
     transcript_confidence: Optional[float] = None
+    asr_transcript: str = ""
+    asr_transcript_source: str = ""
+    asr_transcript_confidence: Optional[float] = None
     mode: str = "voice"
     urgency: str = "interactive"
     interface_already_said: str = ""
@@ -133,7 +136,7 @@ class KameOracleRequest:
     def oracle_text(self) -> str:
         """Return the best text to persist as the user's oracle-facing message."""
 
-        return (self.transcript or self.intent).strip()
+        return (self.asr_transcript or self.transcript or self.intent).strip()
 
     def to_metadata(self) -> dict[str, Any]:
         response_style = _response_style(
@@ -159,6 +162,11 @@ class KameOracleRequest:
             metadata["kame_user_id"] = self.user_id
         if self.transcript_confidence is not None:
             metadata["kame_transcript_confidence"] = self.transcript_confidence
+        if self.asr_transcript:
+            metadata["kame_asr_transcript"] = self.asr_transcript
+            metadata["kame_asr_transcript_source"] = self.asr_transcript_source or "asr"
+        if self.asr_transcript_confidence is not None:
+            metadata["kame_asr_transcript_confidence"] = self.asr_transcript_confidence
         if self.interface_already_said:
             metadata["kame_interface_already_said"] = self.interface_already_said
         if self.conversation_summary:
@@ -182,10 +190,29 @@ class KameOracleRequest:
         """Build a KAME oracle request from a reflex/ASR event payload."""
 
         intent = _optional_text(payload.get("intent")) or _optional_text(payload.get("text")) or fallback_text
-        transcript = _optional_text(payload.get("transcript")) or _optional_text(payload.get("asr_transcript")) or ""
+        transcript = _optional_text(payload.get("transcript")) or ""
         transcript_source = _optional_text(payload.get("transcript_source"))
         if not transcript_source:
-            transcript_source = "asr" if transcript else "none"
+            transcript_source = "reflex_audio" if transcript else "none"
+        asr_transcript = (
+            _optional_text(payload.get("asr_transcript"))
+            or _optional_text(payload.get("oracle_verbatim_transcript"))
+            or ""
+        )
+        asr_transcript_source = (
+            _optional_text(payload.get("asr_transcript_source"))
+            or _optional_text(payload.get("oracle_verbatim_transcript_source"))
+            or ""
+        )
+        asr_transcript_confidence = _confidence(
+            payload.get("asr_transcript_confidence")
+            if payload.get("asr_transcript_confidence") is not None
+            else payload.get("oracle_verbatim_transcript_confidence")
+        )
+        if not asr_transcript and transcript and transcript_source.lower().startswith("asr"):
+            asr_transcript = transcript
+            asr_transcript_source = transcript_source
+            asr_transcript_confidence = _confidence(payload.get("transcript_confidence"))
         local_reply = (
             _optional_text(payload.get("local_reply"))
             or _optional_text(payload.get("reply"))
@@ -211,6 +238,9 @@ class KameOracleRequest:
             transcript=transcript.strip(),
             transcript_source=transcript_source,
             transcript_confidence=_confidence(payload.get("transcript_confidence")),
+            asr_transcript=asr_transcript.strip(),
+            asr_transcript_source=asr_transcript_source or ("asr" if asr_transcript else ""),
+            asr_transcript_confidence=asr_transcript_confidence,
             mode=_optional_text(payload.get("mode")) or "voice",
             urgency=_optional_text(payload.get("urgency")) or "interactive",
             interface_already_said=_optional_text(payload.get("interface_already_said")) or "",

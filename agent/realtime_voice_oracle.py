@@ -184,6 +184,8 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     intent = _metadata_text(metadata.get("kame_intent"))
     transcript = _metadata_text(metadata.get("kame_transcript"))
     transcript_source = _metadata_text(metadata.get("kame_transcript_source"))
+    asr_transcript = _metadata_text(metadata.get("kame_asr_transcript"))
+    asr_transcript_source = _metadata_text(metadata.get("kame_asr_transcript_source"))
     intent_source = _metadata_text(metadata.get("kame_intent_source"))
     interface_already_said = _metadata_text(metadata.get("kame_interface_already_said"))
     summary = _metadata_text(metadata.get("kame_conversation_summary"))
@@ -195,10 +197,16 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     ]
     if intent:
         parts.append(f"Reflex interpreted intent ({intent_source or 'reflex'}): {intent}")
-    if transcript:
-        source_label = transcript_source or "transcript hypothesis"
+    transcript_source_is_asr = transcript_source.lower().startswith("asr")
+    if transcript and not transcript_source_is_asr:
+        parts.append(f"Reflex transcript hypothesis ({transcript_source or 'reflex_audio'}): {transcript}")
+    if not asr_transcript and transcript and transcript_source_is_asr:
+        asr_transcript = transcript
+        asr_transcript_source = transcript_source
+    if asr_transcript:
+        source_label = asr_transcript_source or "asr"
         parts.append(
-            f"Verbatim transcript evidence ({source_label}): {transcript}. "
+            f"Verbatim ASR evidence ({source_label}): {asr_transcript}. "
             "Use it for names, numbers, code identifiers, and tool arguments, but treat it as evidence rather than ground truth."
         )
     if interface_already_said:
