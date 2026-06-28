@@ -534,6 +534,14 @@ def apply_kame_routing_policy(
     route = _optional_text(routed.get("route")).lower()
     if route not in {KameRoute.LOCAL.value, KameRoute.REJECT_OR_CLARIFY.value}:
         return routed
+    local_reply = (
+        _optional_text(routed.get("local_reply"))
+        or _optional_text(routed.get("reply"))
+        or _optional_text(routed.get("clarification"))
+        or _optional_text(routed.get("interface_reply"))
+    )
+    if local_reply and kame_local_reply_denies_voice_capability(local_reply):
+        return downgrade_kame_local_route(routed, reason="voice_capability_denial")
     routing = routing_policy if isinstance(routing_policy, Mapping) else {}
     if route == KameRoute.LOCAL.value:
         required_reason = kame_oracle_required_reason(routed, routing)

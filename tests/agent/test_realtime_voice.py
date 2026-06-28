@@ -1362,6 +1362,78 @@ def test_kame_engine_enforces_oracle_required_routing_for_local_payloads(monkeyp
     asyncio.run(run())
 
 
+def test_kame_engine_downgrades_local_voice_capability_denial(monkeypatch):
+    class StructuredOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "Voice is active; I can hear and speak here."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = StructuredOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "can you hear me",
+                    "intent": "The user asks whether Hermes can hear them.",
+                    "intent_source": "reflex_audio",
+                    "route": "local",
+                    "route_confidence": 0.98,
+                    "local_reply": "I cannot hear you or speak in Discord voice.",
+                    "transcript_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        assert len(oracle.requests) == 1
+        request = oracle.requests[0]
+        assert request.route == KameRoute.ORACLE_DIRECT
+        assert request.local_reply == ""
+        assert request.reflex_validation_error == "voice_capability_denial"
+        intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
+        oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        assert not any(event.type == VoiceEventType.INTERFACE_REPLY_LOCAL for event in seen)
+        assert intent.payload["route"] == "oracle_direct"
+        assert intent.payload["reflex_validation_error"] == "voice_capability_denial"
+        assert "local_reply" not in intent.payload
+        assert oracle_request.payload["route"] == "oracle_direct"
+        assert oracle_request.payload["reflex_validation_error"] == "voice_capability_denial"
+        assert final.payload["kame_reflex_validation_error"] == "voice_capability_denial"
+        assert spoken == ["Voice is active; I can hear and speak here."]
+
+    asyncio.run(run())
+
+
 def test_kame_engine_enforces_disabled_local_greetings(monkeypatch):
     class StructuredOracle:
         def __init__(self):
