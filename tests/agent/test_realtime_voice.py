@@ -6047,7 +6047,6 @@ def test_reference_sidecar_bridges_streaming_tts_audio(monkeypatch):
             seen.append(event)
             if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
                 await sidecar.close()
-                break
 
         assert created[0].path == "/v1/streaming-tts/session"
         assert created[0].config.sidecar_base_url == "http://streaming-tts.local:9001"
@@ -6064,10 +6063,15 @@ def test_reference_sidecar_bridges_streaming_tts_audio(monkeypatch):
             VoiceEventType.SESSION_STARTED,
             VoiceEventType.FRONTEND_STATE,
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            VoiceEventType.PLAYBACK_STOPPED,
+            VoiceEventType.ASSISTANT_AUDIO_END,
+            VoiceEventType.SESSION_CLOSED,
         ]
         assert seen[1].payload["streaming_tts"] is True
         assert AudioChunk.from_payload(seen[2].payload).data == b"pcm-audio"
         assert seen[2].payload["playback_generation"] == 7
+        assert seen[3].payload == {"reason": "session_closed", "playback_generation": 7}
+        assert seen[4].payload == {"reason": "session_closed", "playback_generation": 7}
 
     asyncio.run(run())
 

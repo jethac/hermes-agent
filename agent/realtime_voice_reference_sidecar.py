@@ -284,6 +284,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._gemini_live: Any = None
         self._gemini_live_task: Optional[asyncio.Task[None]] = None
         self._cached_acknowledgement_audio: Optional[dict[str, Any]] = None
+        self._active_playback_generations: set[Optional[int]] = set()
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
         self.config = config
@@ -538,6 +539,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         if self._gemini_live_task:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._gemini_live_task
+        await self._emit_shutdown_playback_finalizers()
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
         await put_realtime_voice_event(self._events, None)
 
@@ -1511,6 +1513,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             return
         if self._closed and event_type != VoiceEventType.SESSION_CLOSED:
             return
+        self._track_playback_lifecycle_event(event_type, payload)
         self._sequence += 1
         await put_realtime_voice_event(
             self._events,
@@ -1521,6 +1524,38 @@ class ReferenceRealtimeVoiceSidecarSession:
                 payload=dict(payload),
             )
         )
+
+    def _track_playback_lifecycle_event(self, event_type: VoiceEventType, payload: Mapping[str, Any]) -> None:
+        generation = _payload_generation(payload)
+        if event_type in {VoiceEventType.PLAYBACK_STARTED, VoiceEventType.AUDIO_OUTPUT_CHUNK}:
+            self._active_playback_generations.add(generation)
+            return
+        if event_type in {VoiceEventType.PLAYBACK_STOPPED, VoiceEventType.ASSISTANT_AUDIO_END}:
+            if generation is None:
+                self._active_playback_generations.clear()
+            else:
+                self._active_playback_generations.discard(generation)
+
+    async def _emit_shutdown_playback_finalizers(self) -> None:
+        if self.config is None or not self._active_playback_generations:
+            return
+        active_generations = list(self._active_playback_generations)
+        self._active_playback_generations.clear()
+        for generation in active_generations:
+            payload = {"reason": "session_closed"}
+            if generation is not None:
+                payload["playback_generation"] = generation
+            for event_type in (VoiceEventType.PLAYBACK_STOPPED, VoiceEventType.ASSISTANT_AUDIO_END):
+                self._sequence += 1
+                await put_realtime_voice_event(
+                    self._events,
+                    VoiceEvent(
+                        type=event_type,
+                        session_id=self.config.session_id,
+                        sequence=self._sequence,
+                        payload=dict(payload),
+                    )
+                )
 
 
 def create_reference_sidecar_app(runtime: Optional[ReferenceSidecarRuntimeConfig] = None):
