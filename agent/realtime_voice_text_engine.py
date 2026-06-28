@@ -191,6 +191,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
 
     async def _interrupt_active_turn(self, event: VoiceEvent, *, reason: str) -> None:
         cancelled_generation = self._playback_generation
+        cancelled_metadata = self._assistant_metadata_by_generation.get(cancelled_generation) or {}
         cancellation_token = self._cancellation_token_by_generation.pop(cancelled_generation, "")
         self._playback_generation += 1
         self._pending_turn_generation = self._playback_generation
@@ -214,6 +215,17 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if hasattr(oracle, "interrupt"):
             oracle.interrupt("Realtime voice barge-in")  # type: ignore[attr-defined]
         self._clear_inbound_audio()
+        if cancellation_token and cancelled_metadata.get("kame_route") in {KameRoute.DEFER.value, KameRoute.ORACLE_DIRECT.value}:
+            await self._emit(
+                VoiceEventType.INTERFACE_ORACLE_CANCEL,
+                {
+                    "reason": payload["reason"],
+                    "playback_generation": self._playback_generation,
+                    "cancelled_playback_generation": cancelled_generation,
+                    "cancellation_token": cancellation_token,
+                    **_kame_interface_payload_from_metadata(cancelled_metadata),
+                },
+            )
         await self._emit(VoiceEventType.BARGE_IN, payload)
         if self._sidecar is not None:
             await self._send_sidecar_event(
@@ -456,12 +468,30 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             payload.update(assistant_metadata)
         await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
         self._assistant_metadata_by_generation[generation] = assistant_metadata
+        if oracle_request is not None:
+            interface_payload = _kame_interface_payload(oracle_request, generation)
+            await self._emit(VoiceEventType.INTERFACE_INTENT_FINAL, interface_payload)
         local_reply = _kame_local_reply(oracle_request)
         if local_reply:
+            if oracle_request is not None:
+                await self._emit(
+                    VoiceEventType.INTERFACE_REPLY_LOCAL,
+                    {
+                        **_kame_interface_payload(oracle_request, generation),
+                        "text": local_reply,
+                    },
+                )
             self._active_task = asyncio.create_task(
                 self._speak_kame_local_reply(local_reply, generation, assistant_metadata)
             )
             return
+        if oracle_request is not None:
+            interface_event_type = (
+                VoiceEventType.INTERFACE_REPLY_DEFER
+                if oracle_request.route == KameRoute.DEFER
+                else VoiceEventType.INTERFACE_ORACLE_REQUEST
+            )
+            await self._emit(interface_event_type, _kame_interface_payload(oracle_request, generation))
         self._active_task = asyncio.create_task(
             self._answer_and_speak(
                 transcript,
@@ -540,6 +570,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             if not plan.committed_text:
                 return
             if playback_generation == self._playback_generation:
+                await self._emit_interface_commit(
+                    playback_generation,
+                    metadata,
+                    text=plan.committed_text,
+                    local_reply=True,
+                )
                 await self._emit(
                     VoiceEventType.ASSISTANT_COMMIT,
                     {
@@ -811,6 +847,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             if not plan.committed_text:
                 return
             if playback_generation == self._playback_generation:
+                await self._emit_interface_commit(
+                    playback_generation,
+                    assistant_metadata,
+                    text=plan.committed_text,
+                )
                 await self._emit(
                     VoiceEventType.ASSISTANT_COMMIT,
                     {
@@ -888,7 +929,28 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 },
             )
         if playback_generation == self._playback_generation:
+            await self._emit_interface_commit(playback_generation, metadata, text=status_text)
             await self._emit(VoiceEventType.ASSISTANT_COMMIT, payload)
+
+    async def _emit_interface_commit(
+        self,
+        playback_generation: int,
+        metadata: Mapping[str, Any],
+        *,
+        text: str,
+        local_reply: bool = False,
+    ) -> None:
+        if not _is_kame_metadata(metadata):
+            return
+        await self._emit(
+            VoiceEventType.INTERFACE_COMMIT,
+            {
+                **_kame_interface_payload_from_metadata(metadata),
+                "playback_generation": playback_generation,
+                "local_reply": local_reply,
+                "text": text,
+            },
+        )
 
     def _transcribe_sync(self, audio: bytes, codec: VoiceAudioCodec) -> str:
         from tools.transcription_tools import transcribe_audio
@@ -1092,6 +1154,57 @@ def _kame_local_reply(request: Optional[KameOracleRequest]) -> str:
     if request.route not in {KameRoute.LOCAL, KameRoute.REJECT_OR_CLARIFY}:
         return ""
     return request.local_reply.strip()
+
+
+def _kame_interface_payload(request: KameOracleRequest, playback_generation: int) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "turn_id": request.turn_id,
+        "route": request.route.value,
+        "intent": request.intent,
+        "intent_source": request.intent_source,
+        "text": request.oracle_text,
+        "playback_generation": playback_generation,
+        "source": request.source,
+        "transcript_source": request.transcript_source,
+    }
+    if request.user_id:
+        payload["user_id"] = request.user_id
+    if request.local_reply:
+        payload["local_reply"] = request.local_reply
+    if request.transcript:
+        payload["transcript"] = request.transcript
+    if request.transcript_confidence is not None:
+        payload["transcript_confidence"] = request.transcript_confidence
+    if request.cancellation_token:
+        payload["cancellation_token"] = request.cancellation_token
+    return payload
+
+
+def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "turn_id": str(metadata.get("kame_turn_id") or ""),
+        "route": str(metadata.get("kame_route") or ""),
+        "intent": str(metadata.get("kame_intent") or ""),
+        "intent_source": str(metadata.get("kame_intent_source") or ""),
+        "text": str(metadata.get("kame_transcript") or metadata.get("kame_intent") or ""),
+        "source": str(metadata.get("kame_source") or ""),
+        "transcript_source": str(metadata.get("kame_transcript_source") or ""),
+    }
+    if metadata.get("kame_user_id"):
+        payload["user_id"] = str(metadata.get("kame_user_id"))
+    if metadata.get("kame_local_reply"):
+        payload["local_reply"] = str(metadata.get("kame_local_reply"))
+    if metadata.get("kame_transcript"):
+        payload["transcript"] = str(metadata.get("kame_transcript"))
+    if metadata.get("kame_transcript_confidence") is not None:
+        payload["transcript_confidence"] = metadata.get("kame_transcript_confidence")
+    if metadata.get("kame_cancellation_token"):
+        payload["cancellation_token"] = str(metadata.get("kame_cancellation_token"))
+    return {key: value for key, value in payload.items() if value != ""}
+
+
+def _is_kame_metadata(metadata: Mapping[str, Any]) -> bool:
+    return str(metadata.get("voice_architecture") or "") == "kame_frontend_oracle"
 
 
 def _kame_route_metrics_payload(

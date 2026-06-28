@@ -627,11 +627,22 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.user_id == "42"
         assert request.cancellation_token == "voice-123:1:cancel"
         final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
+        oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
+        interface_commit = next(event for event in seen if event.type == VoiceEventType.INTERFACE_COMMIT)
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         assert final.payload["kame_intent"] == "Find the note from yesterday's meeting."
         assert final.payload["kame_route"] == "oracle_direct"
         assert final.payload["kame_transcript"] == "find the node from yesterday's meeting"
         assert final.payload["kame_cancellation_token"] == "voice-123:1:cancel"
+        assert intent.payload["route"] == "oracle_direct"
+        assert intent.payload["intent"] == "Find the note from yesterday's meeting."
+        assert intent.payload["cancellation_token"] == "voice-123:1:cancel"
+        assert oracle_request.payload["turn_id"] == "voice-123:1"
+        assert oracle_request.payload["text"] == "find the node from yesterday's meeting"
+        assert oracle_request.payload["cancellation_token"] == "voice-123:1:cancel"
+        assert interface_commit.payload["text"] == "Done."
+        assert interface_commit.payload["cancellation_token"] == "voice-123:1:cancel"
         assert commit.payload["kame_cancellation_token"] == "voice-123:1:cancel"
         assert commit.payload["metrics"]["kame_oracle_called"] == 1
         assert commit.payload["metrics"]["kame_oracle_bypassed"] == 0
@@ -705,12 +716,17 @@ def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
             )
         )
 
+        cancel = await anext(engine.events())
         barge_in = await anext(engine.events())
         await engine.close()
 
         assert oracle.requests[0].cancellation_token == "voice-123:1:cancel"
         final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
         assert final.payload["kame_cancellation_token"] == "voice-123:1:cancel"
+        assert cancel.type == VoiceEventType.INTERFACE_ORACLE_CANCEL
+        assert cancel.payload["playback_generation"] == 2
+        assert cancel.payload["cancelled_playback_generation"] == 1
+        assert cancel.payload["cancellation_token"] == "voice-123:1:cancel"
         assert barge_in.type == VoiceEventType.BARGE_IN
         assert barge_in.payload["reason"] == "user_speech"
         assert barge_in.payload["playback_generation"] == 2
@@ -960,11 +976,18 @@ def test_kame_engine_local_route_speaks_without_oracle(monkeypatch):
         await engine.close()
 
         final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        interface_reply = next(event for event in seen if event.type == VoiceEventType.INTERFACE_REPLY_LOCAL)
+        interface_commit = next(event for event in seen if event.type == VoiceEventType.INTERFACE_COMMIT)
         partial = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL)
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         assert not any(event.type == VoiceEventType.ORACLE_HINT for event in seen)
+        assert not any(event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST for event in seen)
         assert final.payload["kame_route"] == "local"
         assert final.payload["kame_local_reply"] == "Yes, I can hear you."
+        assert interface_reply.payload["route"] == "local"
+        assert interface_reply.payload["text"] == "Yes, I can hear you."
+        assert interface_commit.payload["local_reply"] is True
+        assert interface_commit.payload["text"] == "Yes, I can hear you."
         assert partial.payload["local_reply"] is True
         assert commit.payload["local_reply"] is True
         assert commit.payload["text"] == "Yes, I can hear you."

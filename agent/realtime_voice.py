@@ -60,6 +60,12 @@ class VoiceEventType(StrEnum):
     TRANSCRIPT_PARTIAL = "transcript.partial"
     TRANSCRIPT_FINAL = "transcript.final"
     FRONTEND_STATE = "frontend.state"
+    INTERFACE_INTENT_FINAL = "interface.intent.final"
+    INTERFACE_REPLY_LOCAL = "interface.reply.local"
+    INTERFACE_REPLY_DEFER = "interface.reply.defer"
+    INTERFACE_ORACLE_REQUEST = "interface.oracle.request"
+    INTERFACE_ORACLE_CANCEL = "interface.oracle.cancel"
+    INTERFACE_COMMIT = "interface.commit"
     ORACLE_HINT = "oracle.hint"
     ASSISTANT_TEXT_PARTIAL = "assistant.text.partial"
     ASSISTANT_COMMIT = "assistant.commit"
@@ -87,6 +93,12 @@ SERVER_EVENT_TYPES = frozenset(
         VoiceEventType.TRANSCRIPT_PARTIAL,
         VoiceEventType.TRANSCRIPT_FINAL,
         VoiceEventType.FRONTEND_STATE,
+        VoiceEventType.INTERFACE_INTENT_FINAL,
+        VoiceEventType.INTERFACE_REPLY_LOCAL,
+        VoiceEventType.INTERFACE_REPLY_DEFER,
+        VoiceEventType.INTERFACE_ORACLE_REQUEST,
+        VoiceEventType.INTERFACE_ORACLE_CANCEL,
+        VoiceEventType.INTERFACE_COMMIT,
         VoiceEventType.ORACLE_HINT,
         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
         VoiceEventType.ASSISTANT_COMMIT,
