@@ -524,6 +524,37 @@ def test_discord_realtime_event_records_kame_reflex_provenance():
     }
 
 
+def test_discord_realtime_event_records_tts_failure_provenance():
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._voice_session_states = {}
+
+    adapter._handle_realtime_voice_event(
+        111,
+        "session.error",
+        {
+            "reason": "tts_unavailable",
+            "streaming_tts": False,
+            "local_tts": False,
+            "tts_provider": "cartesia",
+            "tts_model": "sonic-3.5",
+            "tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+        },
+    )
+
+    status = adapter.get_voice_session_status(111)
+
+    assert status["frontend_state"] == {
+        "reason": "tts_unavailable",
+        "streaming_tts": False,
+        "local_tts": False,
+        "tts_provider": "cartesia",
+        "tts_model": "sonic-3.5",
+        "tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+    }
+
+
 @pytest.mark.asyncio
 async def test_discord_realtime_session_barge_in_stops_mixer_and_notifies_sidecar():
     from agent.realtime_voice import VoiceEventType
