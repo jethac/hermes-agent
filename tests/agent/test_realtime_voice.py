@@ -21,7 +21,7 @@ from agent.realtime_voice import (
     validate_client_event,
     validate_server_event,
 )
-from agent.realtime_voice_kame import KameOracleRequest, KameRoute
+from agent.realtime_voice_kame import KameOracleRequest, KameReflexDecision, KameRoute
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_reference_sidecar import (
     ReferenceRealtimeVoiceSidecarSession,
@@ -2996,6 +2996,72 @@ def test_reference_sidecar_kame_reflex_validation_rejects_invalid_route():
     assert payload["text"] == "can you hear me"
     assert payload["local_reply"] == "Yes, I can hear you."
     assert payload["reflex_validation_error"] == "invalid_route"
+
+
+def test_kame_reflex_decision_validates_schema_and_exports_payload():
+    decision = KameReflexDecision.from_payload(
+        {
+            "route": "local",
+            "intent": "The user is checking whether Hermes can hear them.",
+            "text": "can you hear me",
+            "local_reply": "Yes, I can hear you.",
+            "transcript": "can you hear me",
+            "transcript_source": "asr",
+            "transcript_confidence": "1.7",
+        }
+    )
+
+    assert decision.route == KameRoute.LOCAL
+    assert decision.local_reply == "Yes, I can hear you."
+    assert decision.transcript_confidence == 1.0
+    assert decision.validation_errors == ()
+    assert decision.to_payload() == {
+        "text": "can you hear me",
+        "intent": "The user is checking whether Hermes can hear them.",
+        "intent_source": "reflex_audio",
+        "transcript_source": "asr",
+        "route": "local",
+        "local_reply": "Yes, I can hear you.",
+        "transcript": "can you hear me",
+        "transcript_confidence": 1.0,
+    }
+
+
+def test_kame_reflex_decision_rejects_invalid_local_schema():
+    missing_reply = KameReflexDecision.from_payload(
+        {
+            "route": "reject_or_clarify",
+            "intent": "The request is ambiguous.",
+            "text": "that one",
+        }
+    )
+    denial = KameReflexDecision.from_payload(
+        {
+            "route": "local",
+            "intent": "The user asks whether Hermes can hear them.",
+            "text": "can you hear me",
+            "local_reply": "I cannot hear you or speak in Discord voice.",
+            "transcript_confidence": "-0.5",
+        }
+    )
+    invalid_route = KameReflexDecision.from_payload(
+        {
+            "route": "maybe",
+            "intent": "Do something.",
+            "text": "do something",
+            "transcript": "do something",
+        }
+    )
+
+    assert missing_reply.route == KameRoute.ORACLE_DIRECT
+    assert missing_reply.validation_errors == ("missing_local_reply",)
+    assert denial.route == KameRoute.ORACLE_DIRECT
+    assert denial.local_reply == ""
+    assert denial.transcript_confidence == 0.0
+    assert denial.validation_errors == ("voice_capability_denial",)
+    assert invalid_route.route == KameRoute.ORACLE_DIRECT
+    assert invalid_route.transcript_source == "asr"
+    assert invalid_route.validation_errors == ("invalid_route",)
 
 
 def test_reference_sidecar_kame_reflex_never_speaks_voice_denial_locally():

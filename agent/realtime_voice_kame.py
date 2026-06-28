@@ -16,6 +16,96 @@ class KameRoute(StrEnum):
     REJECT_OR_CLARIFY = "reject_or_clarify"
 
 
+KAME_REFLEX_ROUTES = frozenset(route.value for route in KameRoute)
+KAME_VOICE_DENIAL_PATTERNS = (
+    "cannot hear",
+    "can't hear",
+    "can not hear",
+    "unable to hear",
+    "cannot listen",
+    "can't listen",
+    "cannot speak",
+    "can't speak",
+    "cannot join",
+    "can't join",
+    "only process text",
+    "no ability to listen",
+    "no ability to join",
+    "no ability to speak",
+)
+
+
+@dataclass(frozen=True)
+class KameReflexDecision:
+    """Validated interface-model decision for one voice turn."""
+
+    text: str
+    intent: str
+    intent_source: str = "reflex_audio"
+    route: KameRoute = KameRoute.ORACLE_DIRECT
+    local_reply: str = ""
+    transcript: str = ""
+    transcript_source: str = "none"
+    transcript_confidence: Optional[float] = None
+    validation_errors: tuple[str, ...] = ()
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any], *, fallback_text: str = "") -> "KameReflexDecision":
+        """Build and validate a reflex decision from model JSON or sidecar payload."""
+
+        transcript = _optional_text(payload.get("transcript")) or _optional_text(payload.get("asr_transcript"))
+        intent = _optional_text(payload.get("intent")) or _optional_text(payload.get("text")) or fallback_text
+        text = _optional_text(payload.get("text")) or transcript or intent
+        transcript_source = _optional_text(payload.get("transcript_source")) or ("asr" if transcript else "none")
+        local_reply = (
+            _optional_text(payload.get("local_reply"))
+            or _optional_text(payload.get("reply"))
+            or _optional_text(payload.get("clarification"))
+            or _optional_text(payload.get("interface_reply"))
+        )
+        validation_errors: list[str] = []
+        raw_route = _optional_text(payload.get("route")).lower()
+        if raw_route and raw_route not in KAME_REFLEX_ROUTES:
+            validation_errors.append("invalid_route")
+        route = _route(raw_route)
+        if route in {KameRoute.LOCAL, KameRoute.REJECT_OR_CLARIFY} and not local_reply:
+            validation_errors.append("missing_local_reply")
+            route = KameRoute.ORACLE_DIRECT
+        if local_reply and kame_local_reply_denies_voice_capability(local_reply):
+            validation_errors.append("voice_capability_denial")
+            route = KameRoute.ORACLE_DIRECT
+            local_reply = ""
+        return cls(
+            text=text.strip(),
+            intent=(intent or text).strip(),
+            intent_source=_optional_text(payload.get("intent_source")) or "reflex_audio",
+            route=route,
+            local_reply=local_reply,
+            transcript=transcript.strip(),
+            transcript_source=transcript_source,
+            transcript_confidence=_confidence(payload.get("transcript_confidence")),
+            validation_errors=tuple(validation_errors),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "text": self.text,
+            "intent": self.intent,
+            "intent_source": self.intent_source,
+            "transcript_source": self.transcript_source,
+            "route": self.route.value,
+        }
+        if self.local_reply:
+            payload["local_reply"] = self.local_reply
+        if self.validation_errors:
+            payload["reflex_validation_error"] = ",".join(self.validation_errors)
+        if self.transcript:
+            payload["transcript"] = self.transcript
+        if self.transcript_confidence is not None:
+            payload["transcript_confidence"] = self.transcript_confidence
+        return payload
+
+
 @dataclass(frozen=True)
 class KameOracleRequest:
     """Structured request from the realtime reflex to the Hermes oracle."""
@@ -148,6 +238,11 @@ def _route(value: Any) -> KameRoute:
         return KameRoute(text)
     except ValueError:
         return KameRoute.ORACLE_DIRECT
+
+
+def kame_local_reply_denies_voice_capability(text: str) -> bool:
+    normalized = " ".join(str(text or "").lower().split())
+    return any(pattern in normalized for pattern in KAME_VOICE_DENIAL_PATTERNS)
 
 
 def _positive_int(value: Any, *, default: int) -> int:
