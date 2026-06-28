@@ -38,6 +38,7 @@ from agent.realtime_voice_reference_sidecar import (
     runtime_config_from_env,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
+from agent.realtime_voice_gemini import GeminiLiveFrontendConfig, _setup_payload
 from agent.realtime_voice_oracle import _voice_oracle_prompt
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState, create_realtime_voice_engine
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
@@ -5842,6 +5843,35 @@ def test_reference_sidecar_kame_reflex_validation_rejects_invalid_route():
     assert payload["text"] == "can you hear me"
     assert payload["local_reply"] == "Yes, I can hear you."
     assert payload["reflex_validation_error"] == "invalid_route"
+
+
+def test_gemini_live_setup_omits_oracle_tool_instruction_when_tool_disabled():
+    payload = _setup_payload(
+        "gemini-live-test",
+        GeminiLiveFrontendConfig(api_key="secret", enable_oracle_tool=False),
+    )
+
+    setup = payload["setup"]
+    instruction = setup["systemInstruction"]["parts"][0]["text"]
+    assert "ask_hermes_oracle" not in instruction
+    assert "tools" not in setup
+
+
+def test_gemini_live_setup_advertises_oracle_tool_only_when_enabled():
+    payload = _setup_payload(
+        "gemini-live-test",
+        GeminiLiveFrontendConfig(api_key="secret", enable_oracle_tool=True),
+    )
+
+    setup = payload["setup"]
+    instruction = setup["systemInstruction"]["parts"][0]["text"]
+    tool_names = [
+        declaration["name"]
+        for tool in setup["tools"]
+        for declaration in tool.get("functionDeclarations", [])
+    ]
+    assert "ask_hermes_oracle" in instruction
+    assert "ask_hermes_oracle" in tool_names
 
 
 def test_kame_reflex_decision_validates_schema_and_exports_payload():

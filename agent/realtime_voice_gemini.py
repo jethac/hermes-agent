@@ -31,6 +31,14 @@ GEMINI_LIVE_DEFAULT_BASE_URL = (
     "wss://generativelanguage.googleapis.com/ws/"
     "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
 )
+GEMINI_LIVE_BASE_INSTRUCTIONS = (
+    "You are Hermes' low-latency realtime voice interface. Keep spoken output short. "
+    "Do not claim to be a separate bot. Hermes' backend oracle owns durable reasoning, "
+    "tools, memory, and final task execution."
+)
+GEMINI_LIVE_ORACLE_TOOL_INSTRUCTIONS = (
+    "Use ask_hermes_oracle when a request needs the backend Hermes agent."
+)
 
 
 WebSocketConnector = Callable[[str, float], Awaitable[Any]]
@@ -47,12 +55,7 @@ class GeminiLiveFrontendConfig:
     connect_timeout_seconds: float = 10.0
     enable_google_search: bool = False
     enable_oracle_tool: bool = True
-    instructions: str = (
-        "You are Hermes' low-latency realtime voice interface. Keep spoken output short. "
-        "Do not claim to be a separate bot. Hermes' backend oracle owns durable reasoning, "
-        "tools, memory, and final task execution. Use ask_hermes_oracle when a request needs "
-        "the backend Hermes agent."
-    )
+    instructions: str = GEMINI_LIVE_BASE_INSTRUCTIONS
 
 
 class GeminiLiveFrontendSession:
@@ -395,7 +398,7 @@ def _setup_payload(model: str, runtime: GeminiLiveFrontendConfig) -> dict[str, A
     setup: dict[str, Any] = {
         "model": f"models/{_strip_model_prefix(model)}",
         "responseModalities": ["AUDIO"],
-        "systemInstruction": {"parts": [{"text": runtime.instructions}]},
+        "systemInstruction": {"parts": [{"text": _gemini_live_system_instruction(runtime)}]},
         "inputAudioTranscription": {},
         "outputAudioTranscription": {},
         "contextWindowCompression": {"slidingWindow": {}},
@@ -415,6 +418,15 @@ def _setup_payload(model: str, runtime: GeminiLiveFrontendConfig) -> dict[str, A
     if tools:
         setup["tools"] = tools
     return {"setup": setup}
+
+
+def _gemini_live_system_instruction(runtime: GeminiLiveFrontendConfig) -> str:
+    instruction = str(runtime.instructions or GEMINI_LIVE_BASE_INSTRUCTIONS).strip()
+    if not instruction:
+        instruction = GEMINI_LIVE_BASE_INSTRUCTIONS
+    if runtime.enable_oracle_tool and "ask_hermes_oracle" not in instruction:
+        instruction = f"{instruction} {GEMINI_LIVE_ORACLE_TOOL_INSTRUCTIONS}"
+    return instruction
 
 
 def _gemini_kame_tool_declarations() -> list[dict[str, Any]]:
