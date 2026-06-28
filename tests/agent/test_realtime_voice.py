@@ -8752,6 +8752,9 @@ def test_reference_sidecar_bridges_streaming_tts_audio(monkeypatch):
             "playback_generation": 7,
             "language": "en",
         }
+        assert created[0].sent[1].type == VoiceEventType.SESSION_CLOSED
+        assert created[0].sent[1].session_id == "voice-123"
+        assert created[0].sent[1].payload == {"reason": "sidecar_session_closed"}
         assert [event.type for event in seen] == [
             VoiceEventType.SESSION_STARTED,
             VoiceEventType.FRONTEND_STATE,

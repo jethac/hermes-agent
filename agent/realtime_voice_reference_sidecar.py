@@ -656,6 +656,13 @@ class ReferenceRealtimeVoiceSidecarSession:
             return
         self._closed = True
         await self._drain_cancelled_tasks(self._cancel_active_tasks())
+        providers = (
+            (self._streaming_stt, "streaming_stt"),
+            (self._streaming_tts, "streaming_tts"),
+            (self._openai_realtime, "openai_realtime"),
+            (self._gemini_live, "gemini_live"),
+        )
+        await self._send_provider_session_stops(providers)
         streaming_stt_task = self._streaming_stt_task
         streaming_tts_task = self._streaming_tts_task
         openai_realtime_task = self._openai_realtime_task
@@ -1126,6 +1133,32 @@ class ReferenceRealtimeVoiceSidecarSession:
             logger.warning("Realtime voice sidecar provider close timed out: %s", label)
         except Exception as exc:
             logger.debug("Realtime voice sidecar provider close failed (%s): %s", label, exc)
+
+    async def _send_provider_session_stops(self, providers: tuple[tuple[Any, str], ...]) -> None:
+        for provider, label in providers:
+            await self._send_provider_session_stop(provider, label)
+
+    async def _send_provider_session_stop(self, provider: Any, label: str) -> None:
+        if provider is None or self.config is None:
+            return
+        send = getattr(provider, "receive_event", None) or getattr(provider, "send_event", None)
+        if send is None:
+            return
+        self._sequence += 1
+        event = VoiceEvent(
+            type=VoiceEventType.SESSION_CLOSED,
+            session_id=self.config.session_id,
+            sequence=self._sequence,
+            payload={"reason": "sidecar_session_closed"},
+        )
+        try:
+            result = send(event)
+            if inspect.isawaitable(result):
+                await asyncio.wait_for(result, timeout=REFERENCE_SIDECAR_PROVIDER_CLOSE_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.warning("Realtime voice sidecar provider stop timed out: %s", label)
+        except Exception as exc:
+            logger.debug("Realtime voice sidecar provider stop failed (%s): %s", label, exc)
 
     async def _append_audio_chunk(self, data: bytes) -> bool:
         config = self.config
