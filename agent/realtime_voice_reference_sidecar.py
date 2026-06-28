@@ -1498,12 +1498,18 @@ class ReferenceRealtimeVoiceSidecarSession:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
+        request_started_at = time.perf_counter()
         with urllib.request.urlopen(req, timeout=_interface_timeout_seconds(config, self.runtime.vllm_timeout_seconds)) as response:
             data = json.loads(response.read().decode("utf-8"))
+        request_ms = int(round((time.perf_counter() - request_started_at) * 1000))
         content = str(data["choices"][0]["message"].get("content") or "").strip()
         payload = _kame_reflex_payload_from_content(content, config=config)
         payload.setdefault("interface_input_source", "native_audio")
         payload.setdefault("reflex_provider", "vllm")
+        if _kame_provider_metrics_enabled(config):
+            metrics = dict(payload.get("metrics")) if isinstance(payload.get("metrics"), Mapping) else {}
+            metrics["kame_interface_model_request_ms"] = max(0, request_ms)
+            payload["metrics"] = metrics
         return payload
 
     def _raise_if_kame_audio_segment_too_long(self, audio: bytes, codec: VoiceAudioCodec) -> None:
@@ -2388,6 +2394,18 @@ def _audio_duration_seconds(
     if bytes_per_second <= 0:
         return None
     return len(audio) / bytes_per_second
+
+
+def _kame_provider_metrics_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        return False
+    metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
+    metrics = metadata.get("metrics") if isinstance(metadata, Mapping) else {}
+    if not isinstance(metrics, Mapping):
+        return True
+    if not _metadata_bool(metrics.get("enabled"), default=True):
+        return False
+    return _metadata_bool(metrics.get("log_provider_spans"), default=True)
 
 
 def _metadata_bool(value: Any, *, default: bool = False) -> bool:

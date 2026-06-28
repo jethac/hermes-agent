@@ -5893,6 +5893,8 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
 
     payload = sidecar._understand_audio_sync(b"audio", VoiceAudioCodec.WEBM_OPUS)
 
+    metrics = payload.pop("metrics")
+    assert metrics["kame_interface_model_request_ms"] >= 0
     assert payload == {
         "text": "find the note from yesterday",
         "intent": "Find the note from yesterday.",
@@ -5922,6 +5924,40 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     assert "allow_local_greetings=False" in prompt
     assert "local_confidence_threshold=0.82" in prompt
     assert "ASR evidence mode is on_escalation" in prompt
+
+
+def test_reference_sidecar_vllm_kame_audio_reflex_respects_provider_metrics_policy(monkeypatch):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"choices":[{"message":{"content":"{\\"route\\":\\"oracle_direct\\",\\"intent\\":\\"Check status.\\",\\"text\\":\\"check status\\",\\"route_confidence\\":0.9}"}}]}'
+
+    def fake_urlopen(req, timeout):
+        return FakeResponse()
+
+    monkeypatch.setattr("agent.realtime_voice_reference_sidecar.urllib.request.urlopen", fake_urlopen)
+    sidecar = ReferenceRealtimeVoiceSidecarSession(
+        ReferenceSidecarRuntimeConfig(
+            vllm_base_url="http://vllm.local:8000/v1",
+            vllm_model="google/gemma-4-E2B-it",
+        )
+    )
+    sidecar.config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        interface_audio_input="native_audio",
+        metadata={"metrics": {"enabled": True, "log_provider_spans": False}},
+    )
+
+    payload = sidecar._understand_audio_sync(b"audio", VoiceAudioCodec.WEBM_OPUS)
+
+    assert payload["reflex_provider"] == "vllm"
+    assert "metrics" not in payload
 
 
 def test_reference_sidecar_text_fallback_bypasses_configured_vllm_reflex(monkeypatch):
