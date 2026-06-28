@@ -110,6 +110,8 @@ def test_launchd_kame_sidecar_command_points_at_vllm_without_stt_bridge(tmp_path
 
     assert "hermes_cli.realtime_voice_sidecar" in command
     assert "HERMES_KAME_INTERFACE_BASE_URL=http://spark.local:8000/v1" in command
+    assert "HERMES_KAME_INTERFACE_MODEL=gemma-4-E2B-it" in command
+    assert 'HERMES_VOICE_VLLM_MODEL="${HERMES_VOICE_VLLM_MODEL:-$HERMES_KAME_INTERFACE_MODEL}"' in command
     assert "--interface-base-url http://spark.local:8000/v1" in command
     assert "--vllm-base-url http://spark.local:8000/v1" in command
     assert "http://legacy.local:8000/v1" not in command

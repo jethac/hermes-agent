@@ -257,6 +257,8 @@ def build_kame_realtime_voice_sidecar_plist(
         "export HERMES_KAME_INTERFACE_BASE_URL="
         f"{shlex.quote(effective_interface_base_url)}; "
         'export HERMES_VOICE_VLLM_BASE_URL="${HERMES_VOICE_VLLM_BASE_URL:-$HERMES_KAME_INTERFACE_BASE_URL}"; '
+        f"export HERMES_KAME_INTERFACE_MODEL={shlex.quote(str(vllm_model or DEFAULT_KAME_REFLEX_MODEL))}; "
+        'export HERMES_VOICE_VLLM_MODEL="${HERMES_VOICE_VLLM_MODEL:-$HERMES_KAME_INTERFACE_MODEL}"; '
     )
     args = [
         "--host",

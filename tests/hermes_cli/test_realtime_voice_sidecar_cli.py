@@ -7,11 +7,14 @@ from hermes_cli import realtime_voice_sidecar
 def test_sidecar_parser_prefers_canonical_interface_env(monkeypatch):
     monkeypatch.setenv("HERMES_KAME_INTERFACE_BASE_URL", "http://interface.local:8000/v1")
     monkeypatch.setenv("HERMES_VOICE_VLLM_BASE_URL", "http://legacy.local:8000/v1")
+    monkeypatch.setenv("HERMES_KAME_INTERFACE_MODEL", "gemma-4-E2B-it")
+    monkeypatch.setenv("HERMES_VOICE_VLLM_MODEL", "legacy-model")
 
     args = realtime_voice_sidecar.build_parser().parse_args([])
 
     assert args.interface_base_url == "http://interface.local:8000/v1"
     assert args.vllm_base_url == "http://legacy.local:8000/v1"
+    assert args.vllm_model == "gemma-4-E2B-it"
 
 
 def test_sidecar_main_mirrors_interface_base_url_to_legacy_runtime_env(monkeypatch):
@@ -20,6 +23,8 @@ def test_sidecar_main_mirrors_interface_base_url_to_legacy_runtime_env(monkeypat
     def fake_runtime_config_from_env():
         captured["interface_base_url"] = __import__("os").environ.get("HERMES_KAME_INTERFACE_BASE_URL")
         captured["vllm_base_url"] = __import__("os").environ.get("HERMES_VOICE_VLLM_BASE_URL")
+        captured["interface_model"] = __import__("os").environ.get("HERMES_KAME_INTERFACE_MODEL")
+        captured["vllm_model"] = __import__("os").environ.get("HERMES_VOICE_VLLM_MODEL")
         return SimpleNamespace()
 
     def fake_create_reference_sidecar_app(runtime):
@@ -43,11 +48,15 @@ def test_sidecar_main_mirrors_interface_base_url_to_legacy_runtime_env(monkeypat
             "http://interface.local:8000/v1",
             "--vllm-base-url",
             "http://legacy.local:8000/v1",
+            "--vllm-model",
+            "gemma-4-E2B-it",
         ]
     )
 
     assert captured["interface_base_url"] == "http://interface.local:8000/v1"
     assert captured["vllm_base_url"] == "http://interface.local:8000/v1"
+    assert captured["interface_model"] == "gemma-4-E2B-it"
+    assert captured["vllm_model"] == "gemma-4-E2B-it"
     assert captured["app"] == "app"
     assert captured["host"] == "127.0.0.1"
     assert captured["port"] == 9876

@@ -18,7 +18,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="OpenAI-compatible base URL for the KAME interface/reflex model",
     )
     parser.add_argument("--vllm-base-url", default=os.environ.get("HERMES_VOICE_VLLM_BASE_URL", ""))
-    parser.add_argument("--vllm-model", default=os.environ.get("HERMES_VOICE_VLLM_MODEL", ""))
+    parser.add_argument(
+        "--vllm-model",
+        default=os.environ.get("HERMES_KAME_INTERFACE_MODEL")
+        or os.environ.get("HERMES_VOICE_VLLM_MODEL", ""),
+    )
     parser.add_argument(
         "--streaming-stt-base-url",
         default=os.environ.get("HERMES_VOICE_STREAMING_STT_BASE_URL", ""),
@@ -98,6 +102,7 @@ def main(argv: list[str] | None = None) -> None:
         os.environ["HERMES_KAME_INTERFACE_BASE_URL"] = interface_base_url
         os.environ["HERMES_VOICE_VLLM_BASE_URL"] = interface_base_url
     if args.vllm_model:
+        os.environ["HERMES_KAME_INTERFACE_MODEL"] = args.vllm_model
         os.environ["HERMES_VOICE_VLLM_MODEL"] = args.vllm_model
     if args.streaming_stt_base_url:
         os.environ["HERMES_VOICE_STREAMING_STT_BASE_URL"] = args.streaming_stt_base_url
