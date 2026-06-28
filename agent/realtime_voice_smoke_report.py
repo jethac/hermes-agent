@@ -398,6 +398,8 @@ def validate_realtime_voice_smoke_report(
     barge_in_entries = by_kind.get("barge_in", [])
     session_turn_entries = by_kind.get("session_turn", [])
     audio_session_entries = by_kind.get("audio_session", [])
+    if require_alpha_targets and manifest_entries and _manifest_entry_is_kame_reflex(manifest_entries[0]):
+        issues.extend(_validate_kame_route_evidence([*session_turn_entries, *audio_session_entries]))
 
     issues.extend(_validate_required_entries(
         entries=audio_entries,
@@ -491,6 +493,36 @@ def validate_realtime_voice_smoke_report(
             ),
         ))
 
+    return issues
+
+
+def _validate_kame_route_evidence(entries: Sequence[Mapping[str, Any]]) -> list[RealtimeVoiceSmokeReportIssue]:
+    summary = _kame_route_summary(entries)
+    issues: list[RealtimeVoiceSmokeReportIssue] = []
+    if summary["total"] <= 0:
+        return [
+            RealtimeVoiceSmokeReportIssue(
+                "kame_routes",
+                "missing KAME route evidence",
+                "local/defer/oracle_direct/reject_or_clarify",
+            )
+        ]
+    if summary["oracle_avoided"] <= 0:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "kame_routes",
+                "missing oracle-avoiding local or clarify route evidence",
+                "local/reject_or_clarify",
+            )
+        )
+    if summary["oracle_required"] <= 0:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "kame_routes",
+                "missing oracle-bound defer or direct route evidence",
+                "defer/oracle_direct",
+            )
+        )
     return issues
 
 
@@ -613,6 +645,18 @@ def _validate_alpha_manifest_entry(
                 )
             )
     return issues
+
+
+def _manifest_entry_is_kame_reflex(entry: Mapping[str, Any]) -> bool:
+    conversation_quality = (
+        entry.get("conversation_quality")
+        if isinstance(entry.get("conversation_quality"), Mapping)
+        else {}
+    )
+    return (
+        str(entry.get("engine") or "") == "kame_interface_oracle"
+        or str(conversation_quality.get("mode") or "") == "kame_reflex"
+    )
 
 
 def _alpha_quality_target_ceilings_ms(manifest: Mapping[str, Any]) -> dict[str, int]:
