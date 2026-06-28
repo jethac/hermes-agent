@@ -163,6 +163,46 @@ def test_cartesia_preset_accepts_custom_bridge_base_url(capsys):
     assert realtime["streaming_tts_base_url"] == "http://voice-bridge.local:8769"
 
 
+def test_nvidia_speech_preset_prints_applyable_local_speech_profile(capsys):
+    result = realtime_voice_profile.main(["--preset", "nvidia_speech"])
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8767"
+    assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8768"
+    assert realtime["streaming_stt_model"] == "nemotron-speech-streaming-0.6b"
+    assert realtime["streaming_tts_model"] == "magpie-local-streaming-tts"
+    assert realtime["streaming_stt_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
+    assert realtime["streaming_tts_token_env"] == "HERMES_STREAMING_TTS_BRIDGE_TOKEN"
+    assert realtime["require_live_like"] is True
+
+
+def test_nvidia_speech_preset_accepts_custom_separate_bridge_urls(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "nvidia_speech",
+            "--streaming-stt-base-url",
+            "http://spark.local:8767/",
+            "--streaming-tts-base-url",
+            "http://spark.local:8768/",
+            "--streaming-stt-model",
+            "nemotron-custom",
+            "--streaming-tts-model",
+            "magpie-custom",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["streaming_stt_base_url"] == "http://spark.local:8767"
+    assert realtime["streaming_tts_base_url"] == "http://spark.local:8768"
+    assert realtime["streaming_stt_model"] == "nemotron-custom"
+    assert realtime["streaming_tts_model"] == "magpie-custom"
+
+
 def test_openai_preset_prints_managed_realtime_profile(capsys):
     result = realtime_voice_profile.main(["--preset", "openai"])
 
@@ -854,6 +894,57 @@ def test_cartesia_preset_apply_prints_bridge_next_steps(monkeypatch, tmp_path, c
     assert "realtime_voice_cartesia_bridge --host 127.0.0.1 --port 8769 --production-en-ja" in output
     assert "realtime_voice_alpha_evidence --runs 3 --apply --provider cartesia --start-bridge" in output
     assert "realtime_voice_live_evidence --require-live-discord --require-openai-realtime" in output
+
+
+def test_nvidia_speech_preset_apply_prints_local_bridge_next_steps(monkeypatch, tmp_path, capsys):
+    saved = {}
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {"model": {"provider": "openrouter"}},
+    )
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+
+    result = realtime_voice_profile.main(["--preset", "nvidia_speech", "--apply"])
+
+    assert result == 0
+    realtime = saved["config"]["voice"]["realtime"]
+    assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8767"
+    assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8768"
+    assert realtime["streaming_stt_model"] == "nemotron-speech-streaming-0.6b"
+    assert realtime["streaming_tts_model"] == "magpie-local-streaming-tts"
+    output = capsys.readouterr().out
+    assert "realtime_voice_profile --preset nvidia_speech --apply --generate-bridge-token" in output
+    assert "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL" in output
+    assert "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL" in output
+    assert "realtime_voice_nemotron_speech_bridge --check --strict --production-en-ja" in output
+    assert "realtime_voice_magpie_tts_bridge --check --strict --production-en-ja" in output
+    assert "realtime_voice_nemotron_speech_bridge --host 127.0.0.1 --port 8767 --production-en-ja" in output
+    assert "realtime_voice_magpie_tts_bridge --host 127.0.0.1 --port 8768 --production-en-ja" in output
+    assert "realtime_voice_alpha_evidence --runs 3 --apply --provider local_speech --start-bridge" in output
+
+
+def test_nvidia_speech_preset_generate_token_sets_bridge_alias_envs(monkeypatch, tmp_path):
+    saved = {}
+    env = {}
+    writes = {}
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {"model": {"provider": "openrouter"}},
+    )
+    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.setdefault("config", cfg))
+    monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: tmp_path / "config.yaml")
+    monkeypatch.setattr("hermes_cli.config.load_env", lambda: {**env, **writes})
+    monkeypatch.setattr("hermes_cli.config.save_env_value", lambda key, value: writes.setdefault(key, value))
+
+    result = realtime_voice_profile.main(["--preset", "nvidia_speech", "--apply", "--generate-bridge-token"])
+
+    assert result == 0
+    assert "HERMES_STREAMING_STT_BRIDGE_TOKEN" in writes
+    assert "HERMES_STREAMING_TTS_BRIDGE_TOKEN" in writes
+    assert writes["HERMES_NEMOTRON_SPEECH_BRIDGE_TOKEN"] == "${HERMES_STREAMING_STT_BRIDGE_TOKEN}"
+    assert writes["HERMES_MAGPIE_TTS_BRIDGE_TOKEN"] == "${HERMES_STREAMING_TTS_BRIDGE_TOKEN}"
+    assert saved["config"]["voice"]["realtime"]["streaming_stt_model"] == "nemotron-speech-streaming-0.6b"
 
 
 def test_openai_preset_apply_prints_live_evidence_next_steps(monkeypatch, tmp_path, capsys):

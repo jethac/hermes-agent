@@ -26,6 +26,10 @@ DEFAULT_ELEVENLABS_TTS_MODEL = "eleven_flash_v2_5"
 DEFAULT_CARTESIA_BRIDGE_BASE_URL = "http://127.0.0.1:8769"
 DEFAULT_CARTESIA_STT_MODEL = "ink-2"
 DEFAULT_CARTESIA_TTS_MODEL = "sonic-3.5"
+DEFAULT_NVIDIA_SPEECH_STT_BRIDGE_BASE_URL = "http://127.0.0.1:8767"
+DEFAULT_NVIDIA_SPEECH_TTS_BRIDGE_BASE_URL = "http://127.0.0.1:8768"
+DEFAULT_NVIDIA_SPEECH_STT_MODEL = "nemotron-speech-streaming-0.6b"
+DEFAULT_NVIDIA_SPEECH_TTS_MODEL = "magpie-local-streaming-tts"
 DEFAULT_OPENAI_REALTIME_MODEL = "gpt-realtime-2"
 DEFAULT_OPENAI_REALTIME_VOICE = "marin"
 DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL = "gpt-realtime-whisper"
@@ -59,7 +63,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--preset",
-        choices=("generic", "deepgram", "elevenlabs", "cartesia", "openai", "gemini", "kame"),
+        choices=(
+            "generic",
+            "deepgram",
+            "elevenlabs",
+            "cartesia",
+            "nvidia_speech",
+            "openai",
+            "gemini",
+            "kame",
+        ),
         default="generic",
         help="Provider preset for common portable realtime voice stacks",
     )
@@ -379,6 +392,8 @@ def main(argv: list[str] | None = None) -> int:
                 ensure_deepgram_bridge_token_env(primary_bridge_token_env)
             if args.preset == "cartesia":
                 ensure_cartesia_bridge_token_env(primary_bridge_token_env)
+            if args.preset == "nvidia_speech":
+                ensure_nvidia_speech_bridge_token_envs(bridge_token_envs)
             if token_result == "created":
                 print(f"Generated realtime voice bridge token in {_format_env_list(bridge_token_envs)}")
             elif token_result == "existing":
@@ -411,6 +426,22 @@ def main(argv: list[str] | None = None) -> int:
                 "--host 127.0.0.1 --port 8769 --production-en-ja"
             )
             print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --provider cartesia --start-bridge")
+        elif args.preset == "nvidia_speech":
+            if not args.generate_bridge_token:
+                print("  python -m hermes_cli.realtime_voice_profile --preset nvidia_speech --apply --generate-bridge-token")
+            print("  export HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL=http://<spark-host>:<asr-port>")
+            print("  export HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL=http://<spark-host>:<tts-port>")
+            print("  python -m hermes_cli.realtime_voice_nemotron_speech_bridge --check --strict --production-en-ja")
+            print("  python -m hermes_cli.realtime_voice_magpie_tts_bridge --check --strict --production-en-ja")
+            print(
+                "  python -m hermes_cli.realtime_voice_nemotron_speech_bridge "
+                "--host 127.0.0.1 --port 8767 --production-en-ja"
+            )
+            print(
+                "  python -m hermes_cli.realtime_voice_magpie_tts_bridge "
+                "--host 127.0.0.1 --port 8768 --production-en-ja"
+            )
+            print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --provider local_speech --start-bridge")
         elif args.preset == "openai":
             print("  export OPENAI_API_KEY=...")
             print("  export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=...")
@@ -495,6 +526,23 @@ def ensure_cartesia_bridge_token_env(token_env: str) -> None:
     save_env_value("HERMES_CARTESIA_BRIDGE_TOKEN_ENV", env_name)
 
 
+def ensure_nvidia_speech_bridge_token_envs(token_envs: list[str]) -> None:
+    env_names = [_clean_env_name(token_env) for token_env in token_envs]
+    env_names = [env_name for env_name in dict.fromkeys(env_names) if env_name]
+    if not env_names:
+        return
+    stt_env = env_names[0]
+    tts_env = env_names[-1]
+
+    from hermes_cli.config import load_env, save_env_value
+
+    env_on_disk = load_env()
+    if not str(env_on_disk.get("HERMES_NEMOTRON_SPEECH_BRIDGE_TOKEN") or ""):
+        save_env_value("HERMES_NEMOTRON_SPEECH_BRIDGE_TOKEN", f"${{{stt_env}}}")
+    if not str(env_on_disk.get("HERMES_MAGPIE_TTS_BRIDGE_TOKEN") or ""):
+        save_env_value("HERMES_MAGPIE_TTS_BRIDGE_TOKEN", f"${{{tts_env}}}")
+
+
 def _profile_preset_values(args: argparse.Namespace) -> dict[str, str]:
     streaming_stt_base_url = str(args.streaming_stt_base_url or "")
     streaming_tts_base_url = str(args.streaming_tts_base_url or "")
@@ -568,6 +616,31 @@ def _profile_preset_values(args: argparse.Namespace) -> dict[str, str]:
             ),
             "streaming_tts_model": (
                 DEFAULT_CARTESIA_TTS_MODEL
+                if streaming_tts_model == DEFAULT_STREAMING_TTS_MODEL
+                else streaming_tts_model
+            ),
+        }
+
+    if args.preset == "nvidia_speech":
+        shared_bridge_base_url = _clean_url(str(args.bridge_base_url or ""))
+        return {
+            "streaming_stt_base_url": (
+                streaming_stt_base_url
+                or shared_bridge_base_url
+                or DEFAULT_NVIDIA_SPEECH_STT_BRIDGE_BASE_URL
+            ),
+            "streaming_tts_base_url": (
+                streaming_tts_base_url
+                or shared_bridge_base_url
+                or DEFAULT_NVIDIA_SPEECH_TTS_BRIDGE_BASE_URL
+            ),
+            "streaming_stt_model": (
+                DEFAULT_NVIDIA_SPEECH_STT_MODEL
+                if streaming_stt_model == DEFAULT_STREAMING_STT_MODEL
+                else streaming_stt_model
+            ),
+            "streaming_tts_model": (
+                DEFAULT_NVIDIA_SPEECH_TTS_MODEL
                 if streaming_tts_model == DEFAULT_STREAMING_TTS_MODEL
                 else streaming_tts_model
             ),

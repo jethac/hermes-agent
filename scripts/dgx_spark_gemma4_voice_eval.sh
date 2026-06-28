@@ -178,7 +178,7 @@ if [[ -n "${DGX_SPARK_LOCAL_VOICE_BRIDGE_URL:-}" ]]; then
   LOCAL_STT_MODEL="${DGX_SPARK_LOCAL_VOICE_STT_MODEL:-nemotron-speech-streaming}"
   LOCAL_TTS_MODEL="${DGX_SPARK_LOCAL_VOICE_TTS_MODEL:-magpie-or-riva-tts}"
   if run env HERMES_HOME="$TRACK_C_HOME" uv run python -m hermes_cli.realtime_voice_profile \
-    --preset generic \
+    --preset nvidia_speech \
     --streaming-stt-base-url "$DGX_SPARK_LOCAL_VOICE_BRIDGE_URL" \
     --streaming-tts-base-url "${DGX_SPARK_LOCAL_TTS_BRIDGE_URL:-$DGX_SPARK_LOCAL_VOICE_BRIDGE_URL}" \
     --streaming-stt-model "$LOCAL_STT_MODEL" \

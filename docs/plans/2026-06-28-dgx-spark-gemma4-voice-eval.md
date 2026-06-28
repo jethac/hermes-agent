@@ -248,6 +248,8 @@ Expected external service:
   - Nemotron Speech streaming ASR + Magpie/Riva-like TTS.
   - Riva/NVIDIA speech stack if installation is stable enough.
   - Pipecat as a reference latency harness, not as the Hermes brain.
+- Hermes profile preset: `nvidia_speech`, which points the local speech lane at
+  the Nemotron Speech ASR proxy and Magpie TTS proxy by default.
 
 Headless variables:
 
@@ -264,7 +266,7 @@ Runner behavior:
 ```bash
 HERMES_HOME=<artifact-home> \
   uv run python -m hermes_cli.realtime_voice_profile \
-  --preset generic \
+  --preset nvidia_speech \
   --streaming-stt-base-url "$DGX_SPARK_LOCAL_VOICE_BRIDGE_URL" \
   --streaming-tts-base-url "$DGX_SPARK_LOCAL_TTS_BRIDGE_URL" \
   --streaming-stt-model "$DGX_SPARK_LOCAL_VOICE_STT_MODEL" \
@@ -322,11 +324,9 @@ while preserving reliability and local-only operation.
 
 After the first headless run:
 
-1. Add a first-class `riva` or `nvidia_speech` realtime voice profile preset
-   once the local bridge endpoint shape is known.
-2. If Track C is promising, add a managed local speech bridge launcher and tests
+1. If Track C is promising, add a managed local speech bridge launcher and tests
    equivalent to the Cartesia/ElevenLabs/Deepgram bridge tests.
-3. Keep Moshi/Ultravox as explicit watchlist items until a confirmed Spark
+2. Keep Moshi/Ultravox as explicit watchlist items until a confirmed Spark
    deployment shows stable realtime audio.
 
 ## One-command Headless Run
