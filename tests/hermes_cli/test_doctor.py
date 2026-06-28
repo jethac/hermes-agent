@@ -552,6 +552,107 @@ class TestRealtimeVoiceReadiness:
         assert "audio_to_partial_transcript_ms=800ms>300ms" in output
         assert any("quality_targets_ms" in issue for issue in issues)
 
+    def test_strict_accepts_kame_realtime_voice_latency_targets(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_status_payload",
+            lambda: {
+                "enabled": True,
+                "available": True,
+                "engine": "kame_interface_oracle",
+                "frontend_provider": "gemma4",
+                "frontend_model": "gemma-4-E2B-it",
+                "conversation_quality": {
+                    "mode": "kame_reflex",
+                    "reason": "audio_reflex_tts",
+                    "live_like": True,
+                    "kame_reflex": True,
+                },
+                "production_readiness": {
+                    "ready": True,
+                    "level": "production_ready",
+                    "issues": [],
+                },
+                "quality_targets_ms": {
+                    "audio_to_partial_transcript_ms": 300,
+                    "final_transcript_to_first_text_ms": 500,
+                    "final_transcript_to_first_audio_ms": 900,
+                    "barge_in_ack_ms": 150,
+                    "barge_in_confirmed_to_playback_stopped_ms": 150,
+                    "kame_speech_end_to_interface_decision_ms": 500,
+                    "kame_interface_decision_to_local_first_audio_ms": 500,
+                    "kame_speech_end_to_local_first_audio_ms": 1000,
+                    "kame_interface_decision_to_oracle_accepted_ms": 500,
+                    "kame_speech_end_to_first_audio_ms": 3000,
+                },
+                "language_support": {
+                    "production_languages": ["en", "ja"],
+                    "production_scripts": ["Latn", "Jpan"],
+                    "best_effort_languages": True,
+                },
+                "sidecar": {
+                    "mode": "external",
+                    "healthy": True,
+                },
+            },
+        )
+        issues = []
+
+        doctor._check_realtime_voice_readiness(issues, strict=True)
+
+        output = capsys.readouterr().out
+        assert "Realtime voice latency targets" in output
+        assert "kame_speech_end_to_interface_decision_ms=500ms" in output
+        assert "kame_speech_end_to_first_audio_ms=3000ms" in output
+        assert issues == []
+
+    def test_strict_rejects_missing_kame_realtime_voice_latency_targets(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            doctor,
+            "_realtime_voice_status_payload",
+            lambda: {
+                "enabled": True,
+                "available": True,
+                "engine": "kame_interface_oracle",
+                "frontend_provider": "gemma4",
+                "conversation_quality": {
+                    "mode": "kame_reflex",
+                    "reason": "audio_reflex_tts",
+                    "live_like": True,
+                    "kame_reflex": True,
+                },
+                "production_readiness": {
+                    "ready": False,
+                    "level": "live_like",
+                    "issues": ["loose_quality_targets"],
+                },
+                "quality_targets_ms": {
+                    "audio_to_partial_transcript_ms": 300,
+                    "final_transcript_to_first_text_ms": 500,
+                    "final_transcript_to_first_audio_ms": 900,
+                    "barge_in_ack_ms": 150,
+                },
+                "language_support": {
+                    "production_languages": ["en", "ja"],
+                    "production_scripts": ["Latn", "Jpan"],
+                    "best_effort_languages": True,
+                },
+                "sidecar": {
+                    "mode": "external",
+                    "healthy": True,
+                },
+            },
+        )
+        issues = []
+
+        doctor._check_realtime_voice_readiness(issues, strict=True)
+
+        output = capsys.readouterr().out
+        assert "Realtime voice latency targets" in output
+        assert "missing: barge_in_confirmed_to_playback_stopped_ms" in output
+        assert "kame_speech_end_to_interface_decision_ms" in output
+        assert any("quality_targets_ms" in issue for issue in issues)
+
     def test_strict_warns_on_machine_named_voice_provider(self, monkeypatch, capsys):
         monkeypatch.setattr(
             doctor,

@@ -67,6 +67,15 @@ _REALTIME_VOICE_LIVE_TARGETS_MS = {
     "final_transcript_to_first_audio_ms": 900,
     "barge_in_ack_ms": 150,
 }
+_REALTIME_VOICE_KAME_TARGETS_MS = {
+    **_REALTIME_VOICE_LIVE_TARGETS_MS,
+    "barge_in_confirmed_to_playback_stopped_ms": 150,
+    "kame_speech_end_to_interface_decision_ms": 500,
+    "kame_interface_decision_to_local_first_audio_ms": 500,
+    "kame_speech_end_to_local_first_audio_ms": 1000,
+    "kame_interface_decision_to_oracle_accepted_ms": 500,
+    "kame_speech_end_to_first_audio_ms": 3000,
+}
 
 
 def _realtime_voice_alpha_audio_fixtures() -> list[str]:
@@ -524,12 +533,13 @@ def _realtime_voice_enabled_in_config() -> bool:
 def _check_realtime_voice_quality_targets(payload: Mapping[str, Any], issues: list[str], *, strict: bool) -> None:
     raw_targets = payload.get("quality_targets_ms")
     targets = raw_targets if isinstance(raw_targets, Mapping) else {}
+    required_targets = _realtime_voice_required_quality_targets(payload)
     missing: list[str] = []
     invalid: list[str] = []
     loose: list[str] = []
     display_parts: list[str] = []
 
-    for key, max_ms in _REALTIME_VOICE_LIVE_TARGETS_MS.items():
+    for key, max_ms in required_targets.items():
         value = _realtime_voice_positive_int(targets.get(key))
         if value is None:
             if key in targets:
@@ -564,6 +574,19 @@ def _check_realtime_voice_quality_targets(payload: Mapping[str, Any], issues: li
         )
     else:
         check_warn("Realtime voice latency targets", f"({problem})")
+
+
+def _realtime_voice_required_quality_targets(payload: Mapping[str, Any]) -> Mapping[str, int]:
+    conversation_quality = payload.get("conversation_quality")
+    if not isinstance(conversation_quality, Mapping):
+        conversation_quality = {}
+    if (
+        str(payload.get("engine") or "").strip() == "kame_interface_oracle"
+        or conversation_quality.get("kame_reflex") is True
+        or str(payload.get("voice_architecture") or "").strip() == "kame_frontend_oracle"
+    ):
+        return _REALTIME_VOICE_KAME_TARGETS_MS
+    return _REALTIME_VOICE_LIVE_TARGETS_MS
 
 
 def _check_realtime_voice_production_readiness(
