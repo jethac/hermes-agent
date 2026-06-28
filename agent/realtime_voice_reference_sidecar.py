@@ -121,15 +121,18 @@ KAME_FEEDBACK_EVENT_TYPES = frozenset(
 class ReferenceSidecarRuntimeConfig:
     """Runtime knobs for the reference sidecar process."""
 
+    interface_provider: Optional[str] = None
     vllm_base_url: Optional[str] = None
     vllm_model: Optional[str] = None
     vllm_token: Optional[str] = None
     vllm_timeout_seconds: float = 60.0
+    streaming_stt_provider: Optional[str] = None
     streaming_stt_base_url: Optional[str] = None
     streaming_stt_model: Optional[str] = None
     streaming_stt_token: Optional[str] = None
     streaming_stt_timeout_seconds: float = 10.0
     streaming_bridge_health_timeout_seconds: float = 0.2
+    streaming_tts_provider: Optional[str] = None
     streaming_tts_base_url: Optional[str] = None
     streaming_tts_model: Optional[str] = None
     streaming_tts_token: Optional[str] = None
@@ -165,10 +168,13 @@ def _runtime_with_session_config(
 
     return replace(
         runtime,
+        interface_provider=config.frontend_provider or runtime.interface_provider,
         vllm_base_url=config.interface_base_url or runtime.vllm_base_url,
         vllm_model=config.frontend_model or runtime.vllm_model,
+        streaming_stt_provider=config.asr_provider or runtime.streaming_stt_provider,
         streaming_stt_base_url=config.asr_base_url or runtime.streaming_stt_base_url,
         streaming_stt_model=config.asr_model or runtime.streaming_stt_model,
+        streaming_tts_provider=config.tts_provider or runtime.streaming_tts_provider,
         streaming_tts_base_url=config.tts_base_url or runtime.streaming_tts_base_url,
         streaming_tts_model=config.tts_model or runtime.streaming_tts_model,
     )
@@ -190,6 +196,9 @@ def reference_sidecar_health_payload(
     streaming_stt_ready = _health_supports_streaming_stt(streaming_stt_health)
     streaming_tts_configured = bool(runtime.streaming_tts_base_url)
     streaming_tts_ready = _health_supports_tts(streaming_tts_health)
+    interface_provider_label = _provider_label(runtime.interface_provider, default="vllm")
+    streaming_stt_provider_label = _provider_label(runtime.streaming_stt_provider, default="streaming_stt")
+    streaming_tts_provider_label = _provider_label(runtime.streaming_tts_provider, default="streaming_tts")
     openai_realtime_configured = bool(runtime.openai_realtime_api_key)
     gemini_live_configured = bool(runtime.gemini_live_api_key)
     input_languages = _sanitize_metadata_list(runtime.input_languages)
@@ -208,9 +217,9 @@ def reference_sidecar_health_payload(
         if openai_realtime_configured
         else "gemini_live"
         if gemini_live_configured
-        else "vllm"
+        else interface_provider_label
         if vllm_enabled
-        else "streaming_stt"
+        else streaming_stt_provider_label
         if streaming_stt_ready
         else "local"
     )
@@ -249,6 +258,9 @@ def reference_sidecar_health_payload(
             "configured": True,
             "healthy": streaming_stt_ready,
         }
+        if streaming_stt_provider_label != "streaming_stt":
+            payload["frontend"]["streaming_stt_bridge"]["provider"] = streaming_stt_provider_label
+            payload["frontend"]["streaming_stt_bridge"]["implementation_provider"] = "streaming_stt"
     if streaming_tts_configured:
         payload["capabilities"]["streaming_tts_bridge"] = True
         payload["frontend"]["streaming_tts_bridge"] = {
@@ -256,6 +268,9 @@ def reference_sidecar_health_payload(
             "healthy": streaming_tts_ready,
             "model": runtime.streaming_tts_model or "",
         }
+        if streaming_tts_provider_label != "streaming_tts":
+            payload["frontend"]["streaming_tts_bridge"]["provider"] = streaming_tts_provider_label
+            payload["frontend"]["streaming_tts_bridge"]["implementation_provider"] = "streaming_tts"
     if vllm_configured:
         payload["capabilities"]["vllm_audio_frontend_configured"] = True
         payload["frontend"]["vllm_audio_frontend"] = {
@@ -264,6 +279,9 @@ def reference_sidecar_health_payload(
             "model": runtime.vllm_model or "",
             "token_configured": bool(runtime.vllm_token),
         }
+        if interface_provider_label != "vllm":
+            payload["frontend"]["vllm_audio_frontend"]["provider"] = interface_provider_label
+            payload["frontend"]["vllm_audio_frontend"]["implementation_provider"] = "vllm"
     if tts_model_languages:
         payload["frontend"]["tts_model_languages"] = tts_model_languages
     if openai_realtime_configured:
@@ -397,7 +415,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
             and (local_stt_drives_reflex or streaming_stt_drives_reflex)
         )
-        provider = (
+        implementation_provider = (
             "openai_realtime"
             if self._openai_realtime is not None
             else "gemini_live" if self._gemini_live is not None
@@ -405,8 +423,16 @@ class ReferenceRealtimeVoiceSidecarSession:
             else "streaming_stt" if streaming_stt_drives_reflex
             else "local_stt" if local_stt_drives_reflex
             else "unavailable" if fallback_reason
-            else config.frontend_provider if requested_provider not in {"openai_realtime", "openai", "gemini_live", "gemini"} and config.frontend_provider
             else "local"
+        )
+        provider = (
+            implementation_provider
+            if implementation_provider in {"openai_realtime", "gemini_live", "local_stt", "unavailable", "local"}
+            else _provider_label(config.frontend_provider or self.runtime.interface_provider, default="vllm")
+            if implementation_provider == "vllm"
+            else _provider_label(config.asr_provider or self.runtime.streaming_stt_provider, default="streaming_stt")
+            if implementation_provider == "streaming_stt"
+            else implementation_provider
         )
         payload = {
             "status": (
@@ -417,6 +443,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             "provider": provider,
             "model": _reported_frontend_model(
                 provider,
+                implementation_provider=implementation_provider,
                 runtime=self.runtime,
                 config=config,
             ),
@@ -428,6 +455,8 @@ class ReferenceRealtimeVoiceSidecarSession:
             "asr_mode": config.asr_mode.value,
             "interface_audio_input": _interface_audio_input(config),
         }
+        if implementation_provider != provider:
+            payload["implementation_provider"] = implementation_provider
         if fallback_reason:
             payload.update(
                 {
@@ -2021,6 +2050,7 @@ def create_reference_sidecar_app(runtime: Optional[ReferenceSidecarRuntimeConfig
 def runtime_config_from_env() -> ReferenceSidecarRuntimeConfig:
     language_fallback = os.environ.get("HERMES_VOICE_LANGUAGES") or ""
     return ReferenceSidecarRuntimeConfig(
+        interface_provider=os.environ.get("HERMES_KAME_INTERFACE_PROVIDER") or None,
         vllm_base_url=(
             os.environ.get("HERMES_KAME_INTERFACE_BASE_URL")
             or os.environ.get("HERMES_VOICE_VLLM_BASE_URL")
@@ -2039,12 +2069,22 @@ def runtime_config_from_env() -> ReferenceSidecarRuntimeConfig:
             or None
         ),
         vllm_timeout_seconds=float(os.environ.get("HERMES_VOICE_VLLM_TIMEOUT_SECONDS") or 60),
+        streaming_stt_provider=(
+            os.environ.get("HERMES_DGX_SPARK_ASR_PROVIDER")
+            or os.environ.get("HERMES_KAME_ASR_PROVIDER")
+            or None
+        ),
         streaming_stt_base_url=os.environ.get("HERMES_VOICE_STREAMING_STT_BASE_URL") or None,
         streaming_stt_model=os.environ.get("HERMES_VOICE_STREAMING_STT_MODEL") or None,
         streaming_stt_token=os.environ.get("HERMES_VOICE_STREAMING_STT_TOKEN") or None,
         streaming_stt_timeout_seconds=float(os.environ.get("HERMES_VOICE_STREAMING_STT_TIMEOUT_SECONDS") or 10),
         streaming_bridge_health_timeout_seconds=float(
             os.environ.get("HERMES_VOICE_STREAMING_BRIDGE_HEALTH_TIMEOUT_SECONDS") or 0.2
+        ),
+        streaming_tts_provider=(
+            os.environ.get("HERMES_DGX_SPARK_TTS_PROVIDER")
+            or os.environ.get("HERMES_KAME_TTS_PROVIDER")
+            or None
         ),
         streaming_tts_base_url=os.environ.get("HERMES_VOICE_STREAMING_TTS_BASE_URL") or None,
         streaming_tts_model=os.environ.get("HERMES_VOICE_STREAMING_TTS_MODEL") or None,
@@ -2554,18 +2594,20 @@ def _interface_audio_input(config: Optional[RealtimeVoiceSessionConfig]) -> str:
 def _reported_frontend_model(
     provider: str,
     *,
+    implementation_provider: Optional[str] = None,
     runtime: ReferenceSidecarRuntimeConfig,
     config: RealtimeVoiceSessionConfig,
 ) -> str:
-    if provider == "openai_realtime":
+    effective_provider = implementation_provider or provider
+    if effective_provider == "openai_realtime":
         return runtime.openai_realtime_model
-    if provider == "gemini_live":
+    if effective_provider == "gemini_live":
         return runtime.gemini_live_model
-    if provider == "vllm":
+    if effective_provider == "vllm":
         return runtime.vllm_model or config.frontend_model or ""
-    if provider == "streaming_stt":
+    if effective_provider == "streaming_stt":
         return runtime.streaming_stt_model or config.frontend_model or ""
-    if provider == "local_stt":
+    if effective_provider == "local_stt":
         return config.frontend_model or runtime.streaming_stt_model or ""
     return config.frontend_model or runtime.vllm_model or runtime.streaming_stt_model or ""
 
@@ -2742,6 +2784,13 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 _HEALTH_METADATA_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def _provider_label(value: Any, *, default: str) -> str:
+    text = str(value or "").strip()
+    if not text or not _HEALTH_METADATA_RE.fullmatch(text):
+        return default
+    return text
 
 
 def _sanitize_metadata_list(value: Any, *, limit: int = 32) -> list[str]:

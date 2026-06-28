@@ -5435,7 +5435,8 @@ def test_reference_sidecar_reports_vllm_as_active_kame_reflex_with_asr_evidence_
     assert started.payload["frontend_model"] == "configured-alias"
     assert event.type == VoiceEventType.FRONTEND_STATE
     assert event.payload["status"] == "ready"
-    assert event.payload["provider"] == "vllm"
+    assert event.payload["provider"] == "gemma4"
+    assert event.payload["implementation_provider"] == "vllm"
     assert event.payload["model"] == "configured-alias"
     assert event.payload["streaming_stt"] is False
     assert event.payload["vllm"] is True
@@ -5469,7 +5470,8 @@ def test_reference_sidecar_uses_session_interface_endpoint_for_kame_reflex():
     assert started.type == VoiceEventType.SESSION_STARTED
     assert event.type == VoiceEventType.FRONTEND_STATE
     assert event.payload["status"] == "ready"
-    assert event.payload["provider"] == "vllm"
+    assert event.payload["provider"] == "gemma4"
+    assert event.payload["implementation_provider"] == "vllm"
     assert event.payload["model"] == "google/gemma-4-E2B-it"
     assert event.payload["vllm"] is True
     assert runtime.vllm_base_url == "http://session-vllm.local:8000/v1"
@@ -5478,31 +5480,41 @@ def test_reference_sidecar_uses_session_interface_endpoint_for_kame_reflex():
 
 def test_reference_sidecar_runtime_with_session_config_scopes_endpoint_fields():
     runtime = ReferenceSidecarRuntimeConfig(
+        interface_provider="runtime-interface",
         vllm_base_url="http://runtime-interface.local:8000/v1",
         vllm_model="runtime-interface-model",
+        streaming_stt_provider="runtime-asr",
         streaming_stt_base_url="http://runtime-asr.local:8767",
         streaming_stt_model="runtime-asr-model",
+        streaming_tts_provider="runtime-tts",
         streaming_tts_base_url="http://runtime-tts.local:8768",
         streaming_tts_model="runtime-tts-model",
     )
     config = RealtimeVoiceSessionConfig(
         session_id="voice-123",
+        frontend_provider="session-interface",
         interface_base_url="http://session-interface.local:8000/v1",
         frontend_model="session-interface-model",
+        asr_provider="session-asr",
         asr_base_url="http://session-asr.local:8767",
         asr_model="session-asr-model",
+        tts_provider="session-tts",
         tts_base_url="http://session-tts.local:8768",
         tts_model="session-tts-model",
     )
 
     scoped = reference_sidecar_module._runtime_with_session_config(runtime, config)
 
+    assert scoped.interface_provider == "session-interface"
     assert scoped.vllm_base_url == "http://session-interface.local:8000/v1"
     assert scoped.vllm_model == "session-interface-model"
+    assert scoped.streaming_stt_provider == "session-asr"
     assert scoped.streaming_stt_base_url == "http://session-asr.local:8767"
     assert scoped.streaming_stt_model == "session-asr-model"
+    assert scoped.streaming_tts_provider == "session-tts"
     assert scoped.streaming_tts_base_url == "http://session-tts.local:8768"
     assert scoped.streaming_tts_model == "session-tts-model"
+    assert runtime.interface_provider == "runtime-interface"
     assert runtime.vllm_base_url == "http://runtime-interface.local:8000/v1"
 
 
@@ -5847,7 +5859,8 @@ def test_reference_sidecar_falls_back_to_local_stt_when_kame_vllm_reflex_fails(m
     )
     final = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
     assert ready.payload["status"] == "ready"
-    assert ready.payload["provider"] == "vllm"
+    assert ready.payload["provider"] == "gemma4"
+    assert ready.payload["implementation_provider"] == "vllm"
     assert ready.payload["model"] == "google/gemma-4-E2B-it"
     assert ready.payload["vllm"] is True
     assert fallback.payload["status"] == "fallback"
@@ -8226,6 +8239,54 @@ def test_reference_sidecar_health_prefers_vllm_reflex_over_stt_evidence_bridge()
     assert payload["capabilities"]["utterance_stt"] is True
 
 
+def test_reference_sidecar_health_reports_configured_kame_provider_labels():
+    runtime = ReferenceSidecarRuntimeConfig(
+        interface_provider="gemma4",
+        vllm_base_url="http://voice.local:8000/v1",
+        vllm_model="google/gemma-4-E2B-it",
+        streaming_stt_provider="nvidia_speech",
+        streaming_stt_base_url="http://voice.local:8767",
+        streaming_stt_model="nemotron-speech-streaming-0.6b",
+        streaming_tts_provider="cartesia",
+        streaming_tts_base_url="http://voice.local:8768",
+        streaming_tts_model="sonic-3.5",
+        local_stt_enabled=False,
+        local_tts_enabled=False,
+    )
+
+    payload = reference_sidecar_health_payload(
+        runtime,
+        vllm_health_checked=True,
+        vllm_health={"data": [{"id": "google/gemma-4-E2B-it"}]},
+        streaming_stt_health={
+            "ok": True,
+            "capabilities": {"streaming_stt": True},
+        },
+        streaming_tts_health={
+            "ok": True,
+            "capabilities": {"tts": True, "streaming_tts": True},
+        },
+    )
+
+    assert payload["frontend"]["provider"] == "gemma4"
+    assert payload["frontend"]["model"] == "google/gemma-4-E2B-it"
+    assert payload["frontend"]["vllm_audio_frontend"]["provider"] == "gemma4"
+    assert payload["frontend"]["vllm_audio_frontend"]["implementation_provider"] == "vllm"
+    assert payload["frontend"]["streaming_stt_bridge"] == {
+        "configured": True,
+        "healthy": True,
+        "provider": "nvidia_speech",
+        "implementation_provider": "streaming_stt",
+    }
+    assert payload["frontend"]["streaming_tts_bridge"] == {
+        "configured": True,
+        "healthy": True,
+        "provider": "cartesia",
+        "implementation_provider": "streaming_tts",
+        "model": "sonic-3.5",
+    }
+
+
 def test_reference_sidecar_health_payload_is_sanitized():
     payload = reference_sidecar_health_payload(
         ReferenceSidecarRuntimeConfig(
@@ -8279,16 +8340,19 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     monkeypatch.setenv("HERMES_VOICE_INPUT_LANGUAGES", "ja en-US JA")
     monkeypatch.setenv("HERMES_VOICE_OUTPUT_LANGUAGES", "ja,ko token=secret")
     monkeypatch.setenv("HERMES_VOICE_SCRIPTS", "Jpan Latn bad/script")
+    monkeypatch.setenv("HERMES_KAME_INTERFACE_PROVIDER", "gemma4")
     monkeypatch.setenv("HERMES_KAME_INTERFACE_BASE_URL", "http://interface.local:8000/v1")
     monkeypatch.setenv("HERMES_VOICE_VLLM_BASE_URL", "http://legacy.local:8000/v1")
     monkeypatch.setenv("HERMES_KAME_INTERFACE_MODEL", "gemma-4-E2B-it")
     monkeypatch.setenv("HERMES_VOICE_VLLM_MODEL", "legacy-reflex-model")
     monkeypatch.setenv("HERMES_KAME_INTERFACE_API_KEY", "interface-secret-token")
+    monkeypatch.setenv("HERMES_DGX_SPARK_ASR_PROVIDER", "nvidia_speech")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_BASE_URL", "http://streaming-stt.local:9000")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_MODEL", "portable-streaming-asr")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_TOKEN", "secret-token")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_TIMEOUT_SECONDS", "2.5")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_BRIDGE_HEALTH_TIMEOUT_SECONDS", "0.25")
+    monkeypatch.setenv("HERMES_DGX_SPARK_TTS_PROVIDER", "cartesia")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_BASE_URL", "http://streaming-tts.local:9001")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_MODEL", "portable-streaming-voice")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_TTS_TOKEN", "tts-secret-token")
@@ -8305,14 +8369,17 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     assert runtime.input_languages == ("ja", "en-US")
     assert runtime.output_languages == ("ja", "ko")
     assert runtime.scripts == ("Jpan", "Latn")
+    assert runtime.interface_provider == "gemma4"
     assert runtime.vllm_base_url == "http://interface.local:8000/v1"
     assert runtime.vllm_model == "gemma-4-E2B-it"
     assert runtime.vllm_token == "interface-secret-token"
+    assert runtime.streaming_stt_provider == "nvidia_speech"
     assert runtime.streaming_stt_base_url == "http://streaming-stt.local:9000"
     assert runtime.streaming_stt_model == "portable-streaming-asr"
     assert runtime.streaming_stt_token == "secret-token"
     assert runtime.streaming_stt_timeout_seconds == 2.5
     assert runtime.streaming_bridge_health_timeout_seconds == 0.25
+    assert runtime.streaming_tts_provider == "cartesia"
     assert runtime.streaming_tts_base_url == "http://streaming-tts.local:9001"
     assert runtime.streaming_tts_model == "portable-streaming-voice"
     assert runtime.streaming_tts_token == "tts-secret-token"
