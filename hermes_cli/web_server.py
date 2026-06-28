@@ -1086,6 +1086,36 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Emit assistant.caption.partial/final aliases for Discord realtime voice sessions",
         "category": "discord",
     },
+    "discord.realtime_voice.routing.allow_local_greetings": {
+        "type": "boolean",
+        "description": "Allow the Discord KAME reflex to answer greetings and hear-me checks without the oracle",
+        "category": "discord",
+    },
+    "discord.realtime_voice.routing.allow_local_clarifications": {
+        "type": "boolean",
+        "description": "Allow the Discord KAME reflex to ask short clarification questions without the oracle",
+        "category": "discord",
+    },
+    "discord.realtime_voice.routing.require_oracle_for_tools": {
+        "type": "boolean",
+        "description": "Require Hermes oracle authority for Discord tool-using voice turns",
+        "category": "discord",
+    },
+    "discord.realtime_voice.routing.require_oracle_for_memory": {
+        "type": "boolean",
+        "description": "Require Hermes oracle authority for Discord memory-dependent voice turns",
+        "category": "discord",
+    },
+    "discord.realtime_voice.routing.require_oracle_for_files": {
+        "type": "boolean",
+        "description": "Require Hermes oracle authority for Discord file or project voice turns",
+        "category": "discord",
+    },
+    "discord.realtime_voice.routing.local_confidence_threshold": {
+        "type": "number",
+        "description": "Minimum reflex confidence required for local Discord KAME replies",
+        "category": "discord",
+    },
     "display.skin": {
         "type": "select",
         "description": "CLI visual theme",

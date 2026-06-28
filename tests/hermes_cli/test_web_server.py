@@ -3246,6 +3246,12 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.sidecar_connect_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.sidecar_close_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.output_events.caption_aliases"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.routing.allow_local_greetings"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.routing.allow_local_clarifications"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.routing.require_oracle_for_tools"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.routing.require_oracle_for_memory"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.routing.require_oracle_for_files"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.routing.local_confidence_threshold"]["type"] == "number"
 
     def test_empty_prefix_produces_correct_keys(self):
         from hermes_cli.web_server import _build_schema_from_config

@@ -130,6 +130,14 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
                         "min_speech_ms": 130,
                         "stop_playback_deadline_ms": 95,
                     },
+                    "routing": {
+                        "allow_local_greetings": True,
+                        "allow_local_clarifications": True,
+                        "require_oracle_for_tools": True,
+                        "require_oracle_for_memory": True,
+                        "require_oracle_for_files": True,
+                        "local_confidence_threshold": 0.75,
+                    },
                 },
             },
             "discord": {
@@ -138,6 +146,10 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
                     "interface": {
                         "provider": "gemma4",
                         "model": "discord-reflex",
+                    },
+                    "routing": {
+                        "allow_local_clarifications": False,
+                        "local_confidence_threshold": 0.88,
                     },
                 },
             },
@@ -171,6 +183,14 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["barge_in_min_rms"] == 410
     assert cfg["barge_in_min_speech_ms"] == 130
     assert cfg["barge_in_stop_playback_deadline_ms"] == 95
+    assert cfg["routing"] == {
+        "allow_local_greetings": True,
+        "allow_local_clarifications": False,
+        "require_oracle_for_tools": True,
+        "require_oracle_for_memory": True,
+        "require_oracle_for_files": True,
+        "local_confidence_threshold": 0.88,
+    }
 
 
 @pytest.mark.asyncio
