@@ -5740,6 +5740,55 @@ def test_reference_sidecar_close_clears_provider_and_session_state():
     asyncio.run(run())
 
 
+def test_reference_sidecar_close_bounds_stuck_provider_shutdown(monkeypatch):
+    class StuckProvider:
+        def __init__(self):
+            self.close_started = False
+            self.close_cancelled = False
+
+        async def close(self):
+            self.close_started = True
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                self.close_cancelled = True
+                raise
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+        provider = StuckProvider()
+        sidecar._streaming_tts = provider
+        sidecar._active_playback_generations.add(11)
+
+        monkeypatch.setattr(
+            "agent.realtime_voice_reference_sidecar.REFERENCE_SIDECAR_PROVIDER_CLOSE_TIMEOUT_SECONDS",
+            0.001,
+        )
+
+        await asyncio.wait_for(sidecar.close(), timeout=1)
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+
+        assert provider.close_started is True
+        assert provider.close_cancelled is True
+        assert sidecar._streaming_tts is None
+        assert sidecar._active_playback_generations == set()
+        assert [event.type for event in seen] == [
+            VoiceEventType.SESSION_STARTED,
+            VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.PLAYBACK_STOPPED,
+            VoiceEventType.ASSISTANT_AUDIO_END,
+            VoiceEventType.SESSION_CLOSED,
+        ]
+        assert seen[2].payload == {"reason": "session_closed", "playback_generation": 11}
+        assert seen[3].payload == {"reason": "session_closed", "playback_generation": 11}
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_sanitizes_provider_errors():
     def failing_transcribe(path):
         raise RuntimeError("STT failed at http://user:pass@voice.local/v1?token=abc")

@@ -55,6 +55,7 @@ from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient
 TranscribeFn = Callable[[str], Mapping[str, Any]]
 SynthesizeFn = Callable[..., Any]
 REFERENCE_SIDECAR_CLOSE_DRAIN_TIMEOUT_SECONDS = 1.0
+REFERENCE_SIDECAR_PROVIDER_CLOSE_TIMEOUT_SECONDS = 1.0
 
 
 class KameAudioSegmentTooLongError(RuntimeError):
@@ -595,18 +596,10 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._cached_acknowledgement_audio = None
         self._clear_audio_buffer()
 
-        if streaming_stt is not None:
-            with contextlib.suppress(Exception):
-                await streaming_stt.close()
-        if streaming_tts is not None:
-            with contextlib.suppress(Exception):
-                await streaming_tts.close()
-        if openai_realtime is not None:
-            with contextlib.suppress(Exception):
-                await openai_realtime.close()
-        if gemini_live is not None:
-            with contextlib.suppress(Exception):
-                await gemini_live.close()
+        await self._close_provider(streaming_stt, "streaming_stt")
+        await self._close_provider(streaming_tts, "streaming_tts")
+        await self._close_provider(openai_realtime, "openai_realtime")
+        await self._close_provider(gemini_live, "gemini_live")
         if streaming_stt_task:
             with contextlib.suppress(asyncio.CancelledError):
                 await streaming_stt_task
@@ -973,9 +966,7 @@ class ReferenceRealtimeVoiceSidecarSession:
     async def _disable_openai_realtime(self, reason: str, error: Any) -> None:
         provider = self._openai_realtime
         self._openai_realtime = None
-        if provider is not None:
-            with contextlib.suppress(Exception):
-                await provider.close()
+        await self._close_provider(provider, "openai_realtime")
         await self._emit(
             VoiceEventType.FRONTEND_STATE,
             {
@@ -989,9 +980,7 @@ class ReferenceRealtimeVoiceSidecarSession:
     async def _disable_gemini_live(self, reason: str, error: Any) -> None:
         provider = self._gemini_live
         self._gemini_live = None
-        if provider is not None:
-            with contextlib.suppress(Exception):
-                await provider.close()
+        await self._close_provider(provider, "gemini_live")
         await self._emit(
             VoiceEventType.FRONTEND_STATE,
             {
@@ -1023,6 +1012,21 @@ class ReferenceRealtimeVoiceSidecarSession:
                 task.result()
             except (asyncio.CancelledError, Exception):
                 pass
+
+    async def _close_provider(self, provider: Any, label: str) -> None:
+        if provider is None:
+            return
+        close = getattr(provider, "close", None)
+        if close is None:
+            return
+        try:
+            result = close()
+            if inspect.isawaitable(result):
+                await asyncio.wait_for(result, timeout=REFERENCE_SIDECAR_PROVIDER_CLOSE_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.warning("Realtime voice sidecar provider close timed out: %s", label)
+        except Exception as exc:
+            logger.debug("Realtime voice sidecar provider close failed (%s): %s", label, exc)
 
     async def _append_audio_chunk(self, data: bytes) -> bool:
         config = self.config
