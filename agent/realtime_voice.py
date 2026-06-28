@@ -260,9 +260,11 @@ class RealtimeVoiceSessionConfig:
                 payload.get("interface_timeout_seconds"),
                 default=0.8,
             ),
-            interface_max_audio_seconds=_positive_float(
+            interface_max_audio_seconds=_bounded_float(
                 payload.get("interface_max_audio_seconds"),
                 default=30.0,
+                minimum=1.0,
+                maximum=30.0,
             ),
             interface_audio_input=_optional_str(payload.get("interface_audio_input")),
             asr_mode=_asr_mode(payload.get("asr_mode")),

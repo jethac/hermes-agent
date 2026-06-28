@@ -221,6 +221,26 @@ def test_session_config_round_trips_kame_fields():
     assert restored.fallback_policy == "fail_closed"
 
 
+def test_session_config_bounds_kame_interface_max_audio_seconds():
+    too_high = RealtimeVoiceSessionConfig.from_wire(
+        {
+            "session_id": "voice-123",
+            "engine": RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE.value,
+            "interface_max_audio_seconds": 45,
+        }
+    )
+    too_low = RealtimeVoiceSessionConfig.from_wire(
+        {
+            "session_id": "voice-123",
+            "engine": RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE.value,
+            "interface_max_audio_seconds": 0.25,
+        }
+    )
+
+    assert too_high.interface_max_audio_seconds == 30.0
+    assert too_low.interface_max_audio_seconds == 1.0
+
+
 def test_kame_engine_factory_uses_kame_interface_oracle_engine():
     engine = create_realtime_voice_engine(
         RealtimeVoiceSessionConfig(
