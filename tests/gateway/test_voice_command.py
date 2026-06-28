@@ -1011,6 +1011,8 @@ class TestVoiceChannelCommands:
                     "vllm_audio_frontend": True,
                     "route": "oracle_direct",
                     "reflex_validation_error": "invalid_json",
+                    "streaming_tts": False,
+                    "local_tts": False,
                 },
                 "last_realtime_event": "audio.output.chunk",
                 "latency_metrics_ms": {
@@ -1044,6 +1046,8 @@ class TestVoiceChannelCommands:
         assert "reflex=vllm" in result
         assert "route=oracle_direct" in result
         assert "reflex_error=invalid_json" in result
+        assert "streaming_tts=off" in result
+        assert "local_tts=off" in result
         assert "Fallback policy: legacy_voice" in result
         assert "Realtime audio queue: depth=3, dropped=2" in result
         assert "Realtime latency:" in result

@@ -146,6 +146,16 @@ def _voice_status_frontend_state_line(value: Any) -> str:
         parts.append(f"reflex_error={reflex_validation_error}")
     if value.get("interface_audio_input_fallback") is True:
         parts.append("fallback_input=yes")
+    for key, label in (
+        ("streaming_stt", "streaming_stt"),
+        ("local_stt", "local_stt"),
+        ("asr", "asr"),
+        ("streaming_tts", "streaming_tts"),
+        ("local_tts", "local_tts"),
+        ("tts", "tts"),
+    ):
+        if key in value and isinstance(value.get(key), bool):
+            parts.append(f"{label}={'on' if value[key] else 'off'}")
     if not parts:
         return ""
     return f"Frontend state: {'; '.join(parts)}"
