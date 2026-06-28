@@ -42,6 +42,13 @@ SIDECAR_FRAME_BYTES = SIDECAR_FRAME_SAMPLES * SIDECAR_CHANNELS * 2
 DEFAULT_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS = 150
 
 
+def _is_legacy_audio_output_alias(event: VoiceEvent) -> bool:
+    return (
+        event.type == VoiceEventType.ASSISTANT_AUDIO_CHUNK
+        and event.payload.get("audio_alias_for") == VoiceEventType.AUDIO_OUTPUT_CHUNK.value
+    )
+
+
 def _int16_array(pcm: bytes) -> array:
     samples = array("h")
     usable = len(pcm) - (len(pcm) % 2)
@@ -439,10 +446,11 @@ class DiscordRealtimeVoiceSession:
     async def _consume_sidecar_events(self) -> None:
         try:
             async for event in self.sidecar.events():
-                if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+                if event.type in {VoiceEventType.AUDIO_OUTPUT_CHUNK, VoiceEventType.ASSISTANT_AUDIO_CHUNK}:
                     if self._drop_stale_playback_event(event):
                         continue
-                    self._handle_audio_output(event)
+                    if not _is_legacy_audio_output_alias(event):
+                        self._handle_audio_output(event)
                 elif event.type == VoiceEventType.ASSISTANT_AUDIO_END:
                     if self._drop_stale_playback_event(event):
                         continue

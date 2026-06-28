@@ -43,6 +43,7 @@ DISCORD_VOICE_SESSION_CLOSED = "closed"
 DISCORD_VOICE_ARCHITECTURE_KAME = "kame_frontend_oracle"
 DISCORD_VOICE_FRONTEND_ROLE = "low_latency_voice_interface"
 DISCORD_VOICE_ORACLE_ROLE = "hermes_backend_oracle"
+DISCORD_REALTIME_AUDIO_OUTPUT_EVENTS = frozenset({"audio.output.chunk", "assistant.audio.chunk"})
 
 
 @dataclass
@@ -3573,10 +3574,16 @@ class DiscordAdapter(BasePlatformAdapter):
         metrics = _discord_voice_latency_metrics(payload.get("metrics"))
         misses = _discord_voice_quality_target_misses(payload.get("quality_target_misses"))
         updates: Dict[str, Any] = {"last_realtime_event": event_type}
-        if metrics or event_type == "audio.output.chunk":
+        is_audio_output = event_type in DISCORD_REALTIME_AUDIO_OUTPUT_EVENTS
+        is_legacy_audio_alias = (
+            event_type == "assistant.audio.chunk"
+            and payload.get("audio_alias_for") == "audio.output.chunk"
+        )
+        should_count_audio_output = is_audio_output and not is_legacy_audio_alias
+        if metrics or should_count_audio_output:
             state = self._voice_state(guild_id)
             merged_metrics = dict(state.latency_metrics_ms)
-            if event_type == "audio.output.chunk":
+            if should_count_audio_output:
                 merged_metrics["audio_output_chunks"] = int(merged_metrics.get("audio_output_chunks", 0)) + 1
             merged_metrics.update(metrics)
             updates["latency_metrics_ms"] = merged_metrics
@@ -3593,7 +3600,7 @@ class DiscordAdapter(BasePlatformAdapter):
             current_frontend_state = dict(self._voice_state(guild_id).frontend_state)
             current_frontend_state.update(frontend_state)
             updates["frontend_state"] = current_frontend_state
-        if event_type != "audio.output.chunk":
+        if not is_audio_output:
             text = str(
                 payload.get("text")
                 or payload.get("error")
@@ -3608,7 +3615,7 @@ class DiscordAdapter(BasePlatformAdapter):
                 event_type,
                 text[:120],
             )
-        elif not self._voice_state(guild_id).latency_metrics_ms.get("audio_output_chunks"):
+        elif should_count_audio_output and not self._voice_state(guild_id).latency_metrics_ms.get("audio_output_chunks"):
             logger.info("Discord realtime voice first audio output chunk (guild=%d)", guild_id)
         self._update_voice_state(guild_id, **updates)
         if event_type == "transcript.final":

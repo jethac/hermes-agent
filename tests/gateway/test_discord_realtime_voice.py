@@ -522,6 +522,85 @@ async def test_discord_realtime_session_routes_output_audio_to_mixer():
 
 
 @pytest.mark.asyncio
+async def test_discord_realtime_session_routes_assistant_audio_chunk_to_mixer():
+    from agent.realtime_voice import AudioChunk, VoiceAudioCodec, VoiceEvent, VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    sidecar = FakeSidecar()
+    mixer = MagicMock()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        mixer=mixer,
+        sidecar_base_url="http://127.0.0.1:8766",
+    )
+
+    await session.start()
+    await sidecar.emit(VoiceEvent(
+        type=VoiceEventType.ASSISTANT_AUDIO_CHUNK,
+        session_id="discord:111:222",
+        sequence=1,
+        payload=AudioChunk(
+            codec=VoiceAudioCodec.PCM16,
+            data=b"\x00" * 640,
+            sample_rate_hz=16000,
+            channels=1,
+        ).to_payload(),
+    ))
+    await asyncio.wait_for(session.wait_until_idle(), timeout=1)
+
+    mixer.enqueue_speech_frame.assert_called_once()
+    frame = mixer.enqueue_speech_frame.call_args.args[0]
+    assert len(frame) == 3840
+
+
+@pytest.mark.asyncio
+async def test_discord_realtime_session_does_not_replay_assistant_audio_alias():
+    from agent.realtime_voice import AudioChunk, VoiceAudioCodec, VoiceEvent, VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    sidecar = FakeSidecar()
+    mixer = MagicMock()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        mixer=mixer,
+        sidecar_base_url="http://127.0.0.1:8766",
+    )
+
+    payload = AudioChunk(
+        codec=VoiceAudioCodec.PCM16,
+        data=b"\x00" * 640,
+        sample_rate_hz=16000,
+        channels=1,
+    ).to_payload()
+    payload["playback_generation"] = 4
+    alias_payload = dict(payload)
+    alias_payload["audio_alias_for"] = VoiceEventType.AUDIO_OUTPUT_CHUNK.value
+
+    await session.start()
+    await sidecar.emit(VoiceEvent(
+        type=VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        session_id="discord:111:222",
+        sequence=1,
+        payload=payload,
+    ))
+    await sidecar.emit(VoiceEvent(
+        type=VoiceEventType.ASSISTANT_AUDIO_CHUNK,
+        session_id="discord:111:222",
+        sequence=2,
+        payload=alias_payload,
+    ))
+    await asyncio.wait_for(session.wait_until_idle(), timeout=1)
+
+    mixer.enqueue_speech_frame.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_discord_realtime_session_reports_event_metrics_to_callback():
     from agent.realtime_voice import AudioChunk, VoiceAudioCodec, VoiceEvent, VoiceEventType
     from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
@@ -651,6 +730,54 @@ def test_discord_realtime_event_records_tts_failure_provenance():
         "tts_model": "sonic-3.5",
         "tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
     }
+
+
+def test_discord_realtime_event_counts_native_assistant_audio_chunks():
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._voice_session_states = {}
+
+    adapter._handle_realtime_voice_event(
+        111,
+        "assistant.audio.chunk",
+        {
+            "metrics": {
+                "kame_speech_end_to_first_audio_ms": 820,
+            },
+        },
+    )
+
+    status = adapter.get_voice_session_status(111)
+
+    assert status["last_realtime_event"] == "assistant.audio.chunk"
+    assert status["latency_metrics_ms"]["audio_output_chunks"] == 1
+    assert status["latency_metrics_ms"]["kame_speech_end_to_first_audio_ms"] == 820
+
+
+def test_discord_realtime_event_does_not_double_count_assistant_audio_alias():
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._voice_session_states = {}
+
+    adapter._handle_realtime_voice_event(111, "audio.output.chunk", {})
+    adapter._handle_realtime_voice_event(
+        111,
+        "assistant.audio.chunk",
+        {
+            "audio_alias_for": "audio.output.chunk",
+            "metrics": {
+                "kame_speech_end_to_first_audio_ms": 820,
+            },
+        },
+    )
+
+    status = adapter.get_voice_session_status(111)
+
+    assert status["last_realtime_event"] == "assistant.audio.chunk"
+    assert status["latency_metrics_ms"]["audio_output_chunks"] == 1
+    assert status["latency_metrics_ms"]["kame_speech_end_to_first_audio_ms"] == 820
 
 
 @pytest.mark.asyncio
