@@ -100,7 +100,7 @@ def test_reference_sidecar_routes_requested_openai_realtime_provider(monkeypatch
         seen = []
         async for event in sidecar.events():
             seen.append(event)
-            if len(seen) == 2:
+            if len(seen) == 3:
                 break
         await sidecar.receive_event(
             VoiceEvent(
@@ -124,8 +124,9 @@ def test_reference_sidecar_routes_requested_openai_realtime_provider(monkeypatch
 
     seen, final, provider = asyncio.run(run())
 
-    assert seen[0].payload["provider"] == "openai_realtime"
+    assert seen[0].type == VoiceEventType.SESSION_STARTED
     assert seen[1].payload["provider"] == "openai_realtime"
+    assert seen[2].payload["provider"] == "openai_realtime"
     assert provider.config.frontend_model == "gpt-realtime-2"
     assert provider.received[0].type == VoiceEventType.AUDIO_INPUT_CHUNK
     assert final.type == VoiceEventType.TRANSCRIPT_FINAL
@@ -145,16 +146,17 @@ def test_reference_sidecar_degrades_openai_realtime_without_key_and_keeps_local_
         events = []
         async for event in sidecar.events():
             events.append(event)
-            if len(events) == 2:
+            if len(events) == 3:
                 break
         await sidecar.close()
         return events
 
     events = asyncio.run(run())
 
-    assert events[0].type == VoiceEventType.FRONTEND_STATE
-    assert events[0].payload["status"] == "degraded"
-    assert events[0].payload["reason"] == "openai_realtime_unavailable"
+    assert events[0].type == VoiceEventType.SESSION_STARTED
     assert events[1].type == VoiceEventType.FRONTEND_STATE
-    assert events[1].payload["status"] == "ready"
-    assert events[1].payload["provider"] == "local"
+    assert events[1].payload["status"] == "degraded"
+    assert events[1].payload["reason"] == "openai_realtime_unavailable"
+    assert events[2].type == VoiceEventType.FRONTEND_STATE
+    assert events[2].payload["status"] == "ready"
+    assert events[2].payload["provider"] == "local"

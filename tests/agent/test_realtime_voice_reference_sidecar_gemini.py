@@ -103,7 +103,7 @@ def test_reference_sidecar_routes_requested_gemini_live_provider(monkeypatch):
         seen = []
         async for event in sidecar.events():
             seen.append(event)
-            if len(seen) == 2:
+            if len(seen) == 3:
                 break
         await sidecar.receive_event(
             VoiceEvent(
@@ -127,8 +127,9 @@ def test_reference_sidecar_routes_requested_gemini_live_provider(monkeypatch):
 
     seen, final, provider = asyncio.run(run())
 
-    assert seen[0].payload["provider"] == "gemini_live"
+    assert seen[0].type == VoiceEventType.SESSION_STARTED
     assert seen[1].payload["provider"] == "gemini_live"
+    assert seen[2].payload["provider"] == "gemini_live"
     assert provider.config.frontend_model == "gemini-3.1-flash-live-preview"
     assert provider.received[0].type == VoiceEventType.AUDIO_INPUT_CHUNK
     assert final.type == VoiceEventType.TRANSCRIPT_FINAL
@@ -148,16 +149,17 @@ def test_reference_sidecar_degrades_gemini_live_without_key_and_keeps_local_path
         events = []
         async for event in sidecar.events():
             events.append(event)
-            if len(events) == 2:
+            if len(events) == 3:
                 break
         await sidecar.close()
         return events
 
     events = asyncio.run(run())
 
-    assert events[0].type == VoiceEventType.FRONTEND_STATE
-    assert events[0].payload["status"] == "degraded"
-    assert events[0].payload["reason"] == "gemini_live_unavailable"
+    assert events[0].type == VoiceEventType.SESSION_STARTED
     assert events[1].type == VoiceEventType.FRONTEND_STATE
-    assert events[1].payload["status"] == "ready"
-    assert events[1].payload["provider"] == "local"
+    assert events[1].payload["status"] == "degraded"
+    assert events[1].payload["reason"] == "gemini_live_unavailable"
+    assert events[2].type == VoiceEventType.FRONTEND_STATE
+    assert events[2].payload["status"] == "ready"
+    assert events[2].payload["provider"] == "local"

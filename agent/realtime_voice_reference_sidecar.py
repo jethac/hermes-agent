@@ -38,6 +38,7 @@ from agent.realtime_voice import (
     create_realtime_voice_event_queue,
     event_from_binary_audio_frame,
     put_realtime_voice_event,
+    realtime_voice_session_contract_payload,
     transcript_metadata_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
@@ -281,6 +282,18 @@ class ReferenceRealtimeVoiceSidecarSession:
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
         self.config = config
+        await self._emit(
+            VoiceEventType.SESSION_STARTED,
+            {
+                "engine": config.engine.value,
+                "input_codec": config.input_codec.value,
+                "output_codec": config.output_codec.value,
+                "frontend_provider": config.frontend_provider or "",
+                "frontend_model": config.frontend_model or "",
+                "sidecar": True,
+                **realtime_voice_session_contract_payload(config),
+            },
+        )
         requested_provider = str(config.frontend_provider or "").strip().lower()
         if requested_provider in {"openai_realtime", "openai"}:
             await self._start_openai_realtime(config)

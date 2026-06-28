@@ -3602,17 +3602,53 @@ def test_reference_sidecar_accepts_transcript_payloads_without_gpu():
                 break
 
         assert [event.type for event in seen] == [
+            VoiceEventType.SESSION_STARTED,
             VoiceEventType.FRONTEND_STATE,
             VoiceEventType.TRANSCRIPT_PARTIAL,
             VoiceEventType.TRANSCRIPT_FINAL,
         ]
         assert seen[-1].payload["text"] == "hello hermes"
-        assert [event.payload.get("input_generation") for event in seen[1:]] == [5, 5]
-        assert [event.payload.get("language") for event in seen[1:]] == ["ja", "ja"]
-        assert [event.payload.get("locale") for event in seen[1:]] == ["ja-JP", "ja-JP"]
-        assert [event.payload.get("script") for event in seen[1:]] == ["Jpan", "Jpan"]
+        assert [event.payload.get("input_generation") for event in seen[2:]] == [5, 5]
+        assert [event.payload.get("language") for event in seen[2:]] == ["ja", "ja"]
+        assert [event.payload.get("locale") for event in seen[2:]] == ["ja-JP", "ja-JP"]
+        assert [event.payload.get("script") for event in seen[2:]] == ["Jpan", "Jpan"]
 
     asyncio.run(run())
+
+
+def test_reference_sidecar_session_started_matches_realtime_contract():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                input_codec=VoiceAudioCodec.WEBM_OPUS,
+                output_codec=VoiceAudioCodec.OPUS,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                metadata={
+                    "routing": {"local_confidence_threshold": 0.75},
+                    "metrics": {"enabled": True},
+                },
+            )
+        )
+        started = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+        ready = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+        await sidecar.close()
+        return started, ready
+
+    started, ready = asyncio.run(run())
+    assert started.type == VoiceEventType.SESSION_STARTED
+    assert started.payload["engine"] == "kame_interface_oracle"
+    assert started.payload["input_codec"] == "webm_opus"
+    assert started.payload["output_codec"] == "opus"
+    assert started.payload["frontend_provider"] == "gemma4"
+    assert started.payload["frontend_model"] == "gemma-4-E2B-it"
+    assert started.payload["sidecar"] is True
+    assert started.payload["routing"] == {"local_confidence_threshold": 0.75}
+    assert started.payload["metrics"] == {"enabled": True}
+    assert ready.type == VoiceEventType.FRONTEND_STATE
 
 
 def test_reference_sidecar_echoes_barge_in_generation():
@@ -3655,7 +3691,9 @@ def test_reference_sidecar_forwards_provider_kame_oracle_events():
         sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
         await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
         started = await asyncio.wait_for(sidecar._events.get(), timeout=1)
-        assert started.type == VoiceEventType.FRONTEND_STATE
+        assert started.type == VoiceEventType.SESSION_STARTED
+        ready = await asyncio.wait_for(sidecar._events.get(), timeout=1)
+        assert ready.type == VoiceEventType.FRONTEND_STATE
         source_events = [
             VoiceEvent(
                 type=VoiceEventType.ORACLE_ACCEPTED,
@@ -3798,6 +3836,7 @@ def test_reference_sidecar_barge_in_ack_is_not_blocked_by_slow_streaming_bridge(
         await sidecar.start(
             RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="sidecar")
         )
+        assert (await anext(sidecar.events())).type == VoiceEventType.SESSION_STARTED
         assert (await anext(sidecar.events())).type == VoiceEventType.FRONTEND_STATE
 
         receive_task = asyncio.create_task(
@@ -3901,11 +3940,13 @@ def test_reference_sidecar_reports_kame_audio_reflex_fallback_without_vllm():
             )
         )
 
+        started = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
         event = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
         await sidecar.close()
-        return event
+        return started, event
 
-    event = asyncio.run(run())
+    started, event = asyncio.run(run())
+    assert started.type == VoiceEventType.SESSION_STARTED
     assert event.type == VoiceEventType.FRONTEND_STATE
     assert event.payload["status"] == "fallback"
     assert event.payload["reason"] == "kame_audio_reflex_unavailable"
@@ -4019,7 +4060,11 @@ def test_reference_sidecar_falls_back_to_local_stt_when_kame_vllm_reflex_fails(m
         return seen
 
     seen = asyncio.run(run())
-    ready = seen[0]
+    ready = next(
+        event
+        for event in seen
+        if event.type == VoiceEventType.FRONTEND_STATE and event.payload.get("status") == "ready"
+    )
     fallback = next(
         event
         for event in seen
@@ -4235,6 +4280,7 @@ def test_reference_sidecar_suppresses_worker_events_after_close():
 
         assert task.done()
         assert [event.type for event in seen] == [
+            VoiceEventType.SESSION_STARTED,
             VoiceEventType.FRONTEND_STATE,
             VoiceEventType.SESSION_CLOSED,
         ]
@@ -4270,6 +4316,7 @@ def test_reference_sidecar_close_does_not_wait_forever_for_stubborn_workers(monk
             seen.append(event)
 
         assert [event.type for event in seen] == [
+            VoiceEventType.SESSION_STARTED,
             VoiceEventType.FRONTEND_STATE,
             VoiceEventType.SESSION_CLOSED,
         ]
@@ -5092,7 +5139,7 @@ def test_reference_sidecar_emits_kame_partial_interface_intent():
             )
         )
 
-        seen = [await anext(sidecar.events()), await anext(sidecar.events())]
+        seen = [await anext(sidecar.events()), await anext(sidecar.events()), await anext(sidecar.events())]
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(anext(sidecar.events()), timeout=0.01)
         await sidecar.close()
@@ -5720,13 +5767,14 @@ def test_reference_sidecar_bridges_streaming_stt_events(monkeypatch):
         assert created[0].config.sidecar_connect_timeout_seconds == 2.5
         assert created[0].sent[0].payload["input_generation"] == 12
         assert [event.type for event in seen] == [
+            VoiceEventType.SESSION_STARTED,
             VoiceEventType.FRONTEND_STATE,
             VoiceEventType.TRANSCRIPT_PARTIAL,
             VoiceEventType.TRANSCRIPT_FINAL,
         ]
-        assert seen[0].payload["provider"] == "streaming_stt"
-        assert seen[0].payload["streaming_stt"] is True
-        assert seen[1].payload == {
+        assert seen[1].payload["provider"] == "streaming_stt"
+        assert seen[1].payload["streaming_stt"] is True
+        assert seen[2].payload == {
             "language": "ja",
             "locale": "ja-JP",
             "script": "Jpan",
@@ -5734,7 +5782,7 @@ def test_reference_sidecar_bridges_streaming_stt_events(monkeypatch):
             "stability": 0.4,
             "input_generation": 12,
         }
-        assert seen[2].payload == {
+        assert seen[3].payload == {
             "language": "ja",
             "locale": "ja-JP",
             "script": "Jpan",
@@ -5832,12 +5880,13 @@ def test_reference_sidecar_bridges_streaming_tts_audio(monkeypatch):
             "language": "en",
         }
         assert [event.type for event in seen] == [
+            VoiceEventType.SESSION_STARTED,
             VoiceEventType.FRONTEND_STATE,
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
         ]
-        assert seen[0].payload["streaming_tts"] is True
-        assert AudioChunk.from_payload(seen[1].payload).data == b"pcm-audio"
-        assert seen[1].payload["playback_generation"] == 7
+        assert seen[1].payload["streaming_tts"] is True
+        assert AudioChunk.from_payload(seen[2].payload).data == b"pcm-audio"
+        assert seen[2].payload["playback_generation"] == 7
 
     asyncio.run(run())
 
@@ -5892,9 +5941,12 @@ def test_reference_sidecar_websocket_requires_bearer_token():
             }
         )
         response = ws.receive_json()
+        ready = ws.receive_json()
 
-    assert response["type"] == "frontend.state"
+    assert response["type"] == "session.started"
     assert response["session_id"] == "voice-123"
+    assert ready["type"] == "frontend.state"
+    assert ready["session_id"] == "voice-123"
 
 
 def test_session_persists_only_final_and_committed_messages(monkeypatch):
