@@ -3224,6 +3224,18 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.output_events.audio_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.final_transcript_to_first_audio_ms"]["type"] == "number"
+        assert (
+            CONFIG_SCHEMA["voice.realtime.quality_targets_ms.kame_speech_end_to_interface_decision_ms"]["type"]
+            == "number"
+        )
+        assert (
+            CONFIG_SCHEMA["voice.realtime.quality_targets_ms.kame_speech_end_to_first_audio_ms"]["type"]
+            == "number"
+        )
+        assert (
+            CONFIG_SCHEMA["voice.realtime.quality_targets_ms.barge_in_confirmed_to_playback_stopped_ms"]["type"]
+            == "number"
+        )
         assert CONFIG_SCHEMA["voice.realtime.sidecar_close_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.openai_realtime_api_key_env"]["type"] == "string"
         assert "secrets stay outside config" in CONFIG_SCHEMA["voice.realtime.openai_realtime_api_key_env"]["description"]
@@ -7863,6 +7875,18 @@ class TestRealtimeVoiceWebSocket:
             "log_turn_spans": True,
             "log_provider_spans": True,
         }
+        assert body["quality_targets_ms"] == {
+            "audio_to_partial_transcript_ms": 300,
+            "final_transcript_to_first_text_ms": 500,
+            "final_transcript_to_first_audio_ms": 900,
+            "barge_in_ack_ms": 150,
+            "barge_in_confirmed_to_playback_stopped_ms": 150,
+            "kame_speech_end_to_interface_decision_ms": 500,
+            "kame_interface_decision_to_local_first_audio_ms": 500,
+            "kame_speech_end_to_local_first_audio_ms": 1000,
+            "kame_interface_decision_to_oracle_accepted_ms": 500,
+            "kame_speech_end_to_first_audio_ms": 3000,
+        }
         assert body["kame"] == {
             "enabled": True,
             "sidecar_required": True,
@@ -8157,6 +8181,18 @@ class TestRealtimeVoiceWebSocket:
                     "final_transcript_to_first_audio": {"count": 24, "p50": 250, "p90": 250, "p95": 250, "max": 250},
                     "barge_in_ack": {"count": 3, "p50": 45, "p90": 45, "p95": 45, "max": 45},
                 },
+                "kame_routes": {
+                    "counts": {
+                        "defer": 0,
+                        "local": 0,
+                        "oracle_direct": 0,
+                        "reject_or_clarify": 0,
+                    },
+                    "oracle_avoidance_rate": None,
+                    "oracle_avoided": 0,
+                    "oracle_required": 0,
+                    "total": 0,
+                },
                 "latency_by_stack": {
                     "text_oracle_tts|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model": {
                         "stack": {
@@ -8208,6 +8244,18 @@ class TestRealtimeVoiceWebSocket:
                                 "p95": 45,
                                 "max": 45,
                             },
+                        },
+                        "kame_routes": {
+                            "counts": {
+                                "defer": 0,
+                                "local": 0,
+                                "oracle_direct": 0,
+                                "reject_or_clarify": 0,
+                            },
+                            "oracle_avoidance_rate": None,
+                            "oracle_avoided": 0,
+                            "oracle_required": 0,
+                            "total": 0,
                         },
                     },
                 },

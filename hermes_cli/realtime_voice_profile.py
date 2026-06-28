@@ -32,6 +32,18 @@ DEFAULT_GEMINI_LIVE_VOICE = "Puck"
 DEFAULT_KAME_REFLEX_MODEL = "gemma-4-E2B-it"
 DEFAULT_KAME_ORACLE_MODEL = "gemma-4-26B-A4B-it"
 DEFAULT_KAME_ORACLE_PROVIDER_NAME = "KAME Local Oracle"
+KAME_QUALITY_TARGETS_MS = {
+    "audio_to_partial_transcript_ms": 300,
+    "final_transcript_to_first_text_ms": 500,
+    "final_transcript_to_first_audio_ms": 900,
+    "barge_in_ack_ms": 150,
+    "barge_in_confirmed_to_playback_stopped_ms": 150,
+    "kame_speech_end_to_interface_decision_ms": 500,
+    "kame_interface_decision_to_local_first_audio_ms": 500,
+    "kame_speech_end_to_local_first_audio_ms": 1000,
+    "kame_interface_decision_to_oracle_accepted_ms": 500,
+    "kame_speech_end_to_first_audio_ms": 3000,
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -929,12 +941,7 @@ def build_kame_realtime_voice_profile(
             "log_turn_spans": True,
             "log_provider_spans": True,
         },
-        "quality_targets_ms": {
-            "audio_to_partial_transcript_ms": 300,
-            "final_transcript_to_first_text_ms": 500,
-            "final_transcript_to_first_audio_ms": 900,
-            "barge_in_ack_ms": 150,
-        },
+        "quality_targets_ms": dict(KAME_QUALITY_TARGETS_MS),
     }
     if oracle_url:
         profile.update(

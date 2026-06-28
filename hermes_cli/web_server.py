@@ -958,6 +958,36 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Target milliseconds for backend barge-in acknowledgement",
         "category": "voice",
     },
+    "voice.realtime.quality_targets_ms.barge_in_confirmed_to_playback_stopped_ms": {
+        "type": "number",
+        "description": "Target milliseconds from confirmed speech barge-in to Discord playback stopped",
+        "category": "voice",
+    },
+    "voice.realtime.quality_targets_ms.kame_speech_end_to_interface_decision_ms": {
+        "type": "number",
+        "description": "Target milliseconds from speech boundary to KAME reflex routing decision",
+        "category": "voice",
+    },
+    "voice.realtime.quality_targets_ms.kame_interface_decision_to_local_first_audio_ms": {
+        "type": "number",
+        "description": "Target milliseconds from KAME local decision to first local reply audio",
+        "category": "voice",
+    },
+    "voice.realtime.quality_targets_ms.kame_speech_end_to_local_first_audio_ms": {
+        "type": "number",
+        "description": "Target milliseconds from speech boundary to first local KAME reply audio",
+        "category": "voice",
+    },
+    "voice.realtime.quality_targets_ms.kame_interface_decision_to_oracle_accepted_ms": {
+        "type": "number",
+        "description": "Target milliseconds from KAME routing decision to Hermes oracle acceptance",
+        "category": "voice",
+    },
+    "voice.realtime.quality_targets_ms.kame_speech_end_to_first_audio_ms": {
+        "type": "number",
+        "description": "Target milliseconds from speech boundary to first audible KAME assistant audio",
+        "category": "voice",
+    },
     "voice.realtime.sidecar_base_url": {
         "type": "string",
         "description": "Remote or local realtime voice sidecar URL",
@@ -1444,6 +1474,9 @@ for _k, _v in CONFIG_SCHEMA.items():
     if _k == "model":
         _ordered_schema["model_context_length"] = _mcl_entry
 CONFIG_SCHEMA = _ordered_schema
+for _schema_key, _schema_entry in _SCHEMA_OVERRIDES.items():
+    if _schema_key.startswith("voice.realtime.quality_targets_ms.") and _schema_key not in CONFIG_SCHEMA:
+        CONFIG_SCHEMA[_schema_key] = dict(_schema_entry)
 
 
 class ConfigUpdate(BaseModel):
@@ -3447,6 +3480,15 @@ _REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS = {
     "final_transcript_to_first_text_ms": 500,
     "final_transcript_to_first_audio_ms": 900,
     "barge_in_ack_ms": 150,
+}
+_REALTIME_VOICE_KAME_QUALITY_TARGETS_MS = {
+    **_REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS,
+    "barge_in_confirmed_to_playback_stopped_ms": 150,
+    "kame_speech_end_to_interface_decision_ms": 500,
+    "kame_interface_decision_to_local_first_audio_ms": 500,
+    "kame_speech_end_to_local_first_audio_ms": 1000,
+    "kame_interface_decision_to_oracle_accepted_ms": 500,
+    "kame_speech_end_to_first_audio_ms": 3000,
 }
 _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS = REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
 _VOICE_SIDECAR_HEALTH_TIMEOUT = 0.75
@@ -13532,7 +13574,10 @@ def _realtime_voice_language_support_payload(realtime: Dict[str, Any]) -> Dict[s
 
 def _realtime_voice_quality_targets_payload(realtime: Dict[str, Any]) -> Dict[str, int]:
     raw = realtime.get("quality_targets_ms") or realtime.get("latency_targets_ms")
-    targets = dict(_REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS)
+    if str(realtime.get("engine") or "").strip() == "kame_interface_oracle":
+        targets = dict(_REALTIME_VOICE_KAME_QUALITY_TARGETS_MS)
+    else:
+        targets = dict(_REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS)
     if not isinstance(raw, dict):
         return targets
 
@@ -13811,9 +13856,14 @@ def _realtime_voice_production_readiness_payload(
     if language_support.get("best_effort_languages") is not True:
         issues.append("best_effort_languages_disabled")
 
+    required_quality_targets = (
+        _REALTIME_VOICE_KAME_QUALITY_TARGETS_MS
+        if conversation_quality.get("kame_reflex") is True
+        else _REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS
+    )
     loose_targets = [
         key
-        for key, default in _REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS.items()
+        for key, default in required_quality_targets.items()
         if int(quality_targets_ms.get(key, default)) > default
     ]
     if loose_targets:
@@ -13848,7 +13898,7 @@ def _realtime_voice_production_readiness_payload(
         "evidence_ready": evidence_ready,
         "required_languages": list(_REALTIME_VOICE_DEFAULT_PRODUCTION_LANGUAGES),
         "required_scripts": list(_REALTIME_VOICE_DEFAULT_PRODUCTION_SCRIPTS),
-        "required_quality_targets_ms": dict(_REALTIME_VOICE_DEFAULT_QUALITY_TARGETS_MS),
+        "required_quality_targets_ms": dict(required_quality_targets),
         "evidence": evidence,
         "launch_review": launch_review,
     }

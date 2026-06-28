@@ -7651,6 +7651,74 @@ def test_session_marks_latency_quality_target_misses(monkeypatch):
     asyncio.run(run())
 
 
+def test_session_marks_kame_quality_target_misses(monkeypatch):
+    class KameMetricsEngine:
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            return None
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.SESSION_METRICS,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "playback_generation": 1,
+                    "metrics": {
+                        "kame_speech_end_to_interface_decision_ms": 650,
+                        "kame_speech_end_to_first_audio_ms": 3500,
+                        "barge_in_confirmed_to_playback_stopped_ms": 180,
+                    },
+                },
+            )
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                metadata={
+                    "quality_targets_ms": {
+                        "kame_speech_end_to_interface_decision_ms": 500,
+                        "kame_speech_end_to_first_audio_ms": 3000,
+                        "barge_in_confirmed_to_playback_stopped_ms": 150,
+                    },
+                },
+            ),
+            engine=KameMetricsEngine(),
+        )
+        monkeypatch.setattr(session, "_event_metrics", lambda event: {"session_elapsed_ms": 10})
+        await session.start()
+
+        event = await anext(session.events())
+
+        assert event.payload["quality_target_misses"] == [
+            {
+                "metric": "barge_in_confirmed_to_playback_stopped_ms",
+                "actual_ms": 180,
+                "target_ms": 150,
+            },
+            {
+                "metric": "kame_speech_end_to_first_audio_ms",
+                "actual_ms": 3500,
+                "target_ms": 3000,
+            },
+            {
+                "metric": "kame_speech_end_to_interface_decision_ms",
+                "actual_ms": 650,
+                "target_ms": 500,
+            },
+        ]
+        await session.close()
+
+    asyncio.run(run())
+
+
 def test_session_carries_quality_summary_after_target_miss(monkeypatch):
     class TwoEventEngine:
         async def start(self, config):
