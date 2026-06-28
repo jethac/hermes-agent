@@ -15784,6 +15784,27 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     routing_policy = _realtime_voice_routing_policy_payload(realtime)
     metrics_policy = _realtime_voice_metrics_policy_payload(realtime)
     output_events_policy = _realtime_voice_output_events_payload(realtime)
+    turn_acknowledgement = _realtime_voice_turn_acknowledgement_payload(realtime)
+    barge_in_policy = {
+        "min_rms": _bounded_int_config(
+            realtime.get("barge_in_min_rms"),
+            default=350,
+            minimum=0,
+            maximum=32767,
+        ),
+        "min_speech_ms": _bounded_int_config(
+            realtime.get("barge_in_min_speech_ms"),
+            default=120,
+            minimum=40,
+            maximum=1000,
+        ),
+        "stop_playback_deadline_ms": _bounded_int_config(
+            realtime.get("barge_in_stop_playback_deadline_ms"),
+            default=150,
+            minimum=20,
+            maximum=1000,
+        ),
+    }
     interface_base_url = str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "")
     asr_provider = str(realtime.get("asr_provider") or "")
     asr_model = str(realtime.get("asr_model") or realtime.get("streaming_stt_model") or "")
@@ -15925,9 +15946,11 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             maximum=30.0,
         ),
         interface_audio_input=str(realtime.get("interface_audio_input") or "") or None,
+        interface_base_url=interface_base_url or None,
         asr_mode=RealtimeVoiceASRMode(str(realtime.get("asr_mode") or RealtimeVoiceASRMode.ON_ESCALATION.value)),
         asr_provider=asr_provider or None,
         asr_model=asr_model or None,
+        asr_base_url=asr_base_url or None,
         preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or "") or None,
         oracle_model=oracle_model or None,
         oracle_timeout_seconds=_positive_float_config(
@@ -15942,6 +15965,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         tts_provider=tts_provider or None,
         tts_model=tts_model or None,
         tts_voice=tts_voice or None,
+        tts_base_url=tts_base_url or None,
         fallback_policy=fallback_policy or None,
         sidecar_base_url=str(sidecar_base_url or "") or None,
         sidecar_token=str(sidecar_token or "") or None,
@@ -15951,6 +15975,12 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         ),
         spark_base_url=str(sidecar_base_url or "") or None,
         spark_token=str(sidecar_token or "") or None,
+        turn_acknowledgement=turn_acknowledgement,
+        routing_policy=routing_policy,
+        metrics_policy=metrics_policy,
+        output_events=output_events_policy,
+        quality_targets_ms=quality_targets_ms,
+        barge_in_policy=barge_in_policy,
         metadata={
             "source": "desktop",
             "voice_architecture": "kame_frontend_oracle",
@@ -16011,7 +16041,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "routing": routing_policy,
             "metrics": metrics_policy,
             "output_events": output_events_policy,
-            "turn_acknowledgement": _realtime_voice_turn_acknowledgement_payload(realtime),
+            "turn_acknowledgement": turn_acknowledgement,
             "conversation_quality": conversation_quality,
             "production_readiness": production_readiness,
             "require_live_like": require_live_like,

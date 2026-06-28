@@ -7206,6 +7206,22 @@ class TestRealtimeVoiceWebSocket:
         assert config.input_buffer_limit_bytes == 4096
         assert config.spark_base_url == "http://voice.local:8080"
         assert config.spark_token == "secret-token"
+        assert config.quality_targets_ms == {
+            "audio_to_partial_transcript_ms": 300,
+            "final_transcript_to_first_text_ms": 500,
+            "final_transcript_to_first_audio_ms": 900,
+            "barge_in_ack_ms": 150,
+        }
+        assert config.turn_acknowledgement == {
+            "enabled": False,
+            "text": "One moment.",
+        }
+        assert config.output_events == {"caption_aliases": True, "audio_aliases": True}
+        assert config.barge_in_policy == {
+            "min_rms": 350,
+            "min_speech_ms": 120,
+            "stop_playback_deadline_ms": 150,
+        }
         assert config.metadata["voice_architecture"] == "kame_frontend_oracle"
         assert config.metadata["frontend_role"] == "low_latency_voice_interface"
         assert config.metadata["oracle_role"] == "hermes_backend_oracle"
@@ -7426,6 +7442,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.engine.value == "kame_interface_oracle"
         assert config.frontend_provider == "openai_compatible"
         assert config.frontend_model == "gemma-4-E2B-it"
+        assert config.interface_base_url == "http://spark.local:8000/v1"
         assert config.metadata["interface_base_url"] == "http://spark.local:8000/v1"
         assert config.interface_temperature == 0.3
         assert config.interface_max_output_tokens == 96
@@ -7435,6 +7452,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.asr_mode.value == "on_escalation"
         assert config.asr_provider == "nemotron"
         assert config.asr_model == "nemotron-speech"
+        assert config.asr_base_url == "http://spark.local:9000"
         assert config.metadata["asr_base_url"] == "http://spark.local:9000"
         assert config.preferred_local_oracle_model == "gemma-4-26B-A4B-it"
         assert config.oracle_model == "configured-oracle"
@@ -7443,7 +7461,13 @@ class TestRealtimeVoiceWebSocket:
         assert config.tts_provider == "cartesia"
         assert config.tts_model == "sonic-3.5"
         assert config.tts_voice == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
+        assert config.tts_base_url == "http://spark.local:9100"
         assert config.metadata["tts_base_url"] == "http://spark.local:9100"
+        assert config.barge_in_policy == {
+            "min_rms": 410,
+            "min_speech_ms": 130,
+            "stop_playback_deadline_ms": 150,
+        }
         assert config.metadata["frontend_provider"] == "openai_compatible"
         assert config.metadata["interface_temperature"] == 0.3
         assert config.metadata["interface_max_output_tokens"] == 96
