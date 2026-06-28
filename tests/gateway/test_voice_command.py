@@ -1785,8 +1785,10 @@ class TestDiscordVoiceChannelMethods:
             "sidecar_event_stream_failed",
             "websocket closed",
         )
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        for _ in range(5):
+            await asyncio.sleep(0)
+            if fake_session.close.await_count:
+                break
 
         assert 111 not in adapter._realtime_voice_sessions
         assert adapter._should_process_legacy_voice_input(111) is True
@@ -1795,6 +1797,80 @@ class TestDiscordVoiceChannelMethods:
         assert status["mode"] == "degraded_no_sidecar"
         assert status["session_state"] == "degraded"
         assert status["sidecar_running"] is False
+        assert status["fallback_reason"] == "sidecar_event_stream_failed: websocket closed"
+
+    @pytest.mark.asyncio
+    async def test_runtime_sidecar_degradation_text_only_policy_disables_legacy_voice_input(self):
+        adapter = self._make_adapter()
+        adapter._realtime_voice_cfg = {"enabled": True, "fallback_policy": "text_only"}
+        fake_session = AsyncMock()
+        fake_session.close = AsyncMock()
+        adapter._realtime_voice_sessions[111] = fake_session
+        adapter._update_voice_state(
+            111,
+            mode="realtime_active",
+            receiver_running=True,
+            mixer_installed=True,
+            sidecar_running=True,
+        )
+
+        adapter._handle_realtime_voice_degraded(
+            111,
+            "sidecar_event_stream_failed",
+            "websocket closed",
+        )
+        for _ in range(5):
+            await asyncio.sleep(0)
+            if fake_session.close.await_count:
+                break
+
+        assert 111 not in adapter._realtime_voice_sessions
+        assert adapter._should_process_legacy_voice_input(111) is False
+        fake_session.close.assert_awaited_once()
+        status = adapter.get_voice_session_status(111)
+        assert status["mode"] == "text_only_fallback"
+        assert status["session_state"] == "degraded"
+        assert status["fallback_policy"] == "text_only"
+        assert status["fallback_reason"] == "sidecar_event_stream_failed: websocket closed"
+
+    @pytest.mark.asyncio
+    async def test_runtime_sidecar_degradation_fail_closed_policy_disconnects_voice(self):
+        adapter = self._make_adapter()
+        adapter._realtime_voice_cfg = {"enabled": True, "fallback_policy": "fail_closed"}
+        fake_session = AsyncMock()
+        fake_session.close = AsyncMock()
+        adapter._realtime_voice_sessions[111] = fake_session
+        mock_vc = MagicMock()
+        mock_vc.is_connected.return_value = True
+        mock_vc.is_playing.return_value = False
+        mock_vc.disconnect = AsyncMock()
+        adapter._voice_clients[111] = mock_vc
+        adapter._update_voice_state(
+            111,
+            mode="realtime_active",
+            receiver_running=True,
+            mixer_installed=True,
+            sidecar_running=True,
+        )
+
+        adapter._handle_realtime_voice_degraded(
+            111,
+            "sidecar_event_stream_failed",
+            "websocket closed",
+        )
+        for _ in range(5):
+            await asyncio.sleep(0)
+            if 111 not in adapter._voice_clients:
+                break
+
+        assert 111 not in adapter._realtime_voice_sessions
+        assert 111 not in adapter._voice_clients
+        fake_session.close.assert_awaited_once()
+        mock_vc.disconnect.assert_awaited_once()
+        status = adapter.get_voice_session_status(111)
+        assert status["mode"] == "failed"
+        assert status["session_state"] == "closed"
+        assert status["fallback_policy"] == "fail_closed"
         assert status["fallback_reason"] == "sidecar_event_stream_failed: websocket closed"
 
     @pytest.mark.asyncio
