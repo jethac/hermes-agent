@@ -192,6 +192,7 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     reflex_validation_error = _metadata_text(metadata.get("kame_reflex_validation_error"))
     interface_already_said = _metadata_text(metadata.get("kame_interface_already_said"))
     summary = _metadata_text(metadata.get("kame_conversation_summary"))
+    oracle_text_source = _metadata_text(metadata.get("kame_oracle_text_source"))
     response_style = _metadata_response_style(metadata.get("kame_requested_response_style"))
 
     parts = [
@@ -219,6 +220,13 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
             f"Verbatim ASR evidence ({source_label}): {asr_transcript}. "
             "Use it for names, numbers, code identifiers, and tool arguments, but treat it as evidence rather than ground truth."
         )
+    if oracle_text_source:
+        if oracle_text_source.lower().startswith("asr"):
+            parts.append(
+                f"The oracle-facing text was selected from {oracle_text_source} evidence; preserve the reflex intent and route as the control signal."
+            )
+        else:
+            parts.append(f"The oracle-facing text source is {oracle_text_source}.")
     if interface_already_said:
         parts.append(f"The voice reflex already told the user: {interface_already_said}")
     if summary:

@@ -788,6 +788,8 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     assert "Reflex transcript hypothesis (reflex_audio): find the note" in prompt
     assert "Verbatim ASR evidence (asr): find the node" in prompt
     assert "tool arguments" in prompt
+    assert "oracle-facing text was selected from asr evidence" in prompt
+    assert "preserve the reflex intent and route as the control signal" in prompt
     assert "The voice reflex already told the user: One moment." in prompt
     assert "Requested response style: spoken=true; policy=sentence_cap; avoid automatic follow-up offers." in prompt
 
