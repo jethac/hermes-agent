@@ -221,6 +221,7 @@ def build_dgx_spark_stack_manifest(
             "env_example": ".env.example",
             "launch": "launch-local-stack.sh",
             "benchmark_matrix": "benchmark-matrix.json",
+            "benchmark_evidence_template": "benchmark-evidence-template.json",
             "preflight": "preflight.json",
         },
         "images": {
@@ -249,6 +250,7 @@ def write_dgx_spark_stack_artifacts(output_dir: Path, manifest: Mapping[str, Any
         "env_example": output_dir / ".env.example",
         "launch": output_dir / "launch-local-stack.sh",
         "benchmark_matrix": output_dir / "benchmark-matrix.json",
+        "benchmark_evidence_template": output_dir / "benchmark-evidence-template.json",
     }
     files["manifest"].write_text(_json(manifest), encoding="utf-8")
     files["compose"].write_text(render_dgx_spark_compose(manifest), encoding="utf-8")
@@ -257,6 +259,10 @@ def write_dgx_spark_stack_artifacts(output_dir: Path, manifest: Mapping[str, Any
     files["launch"].chmod(0o755)
     files["benchmark_matrix"].write_text(
         _json(build_dgx_spark_benchmark_matrix(manifest)),
+        encoding="utf-8",
+    )
+    files["benchmark_evidence_template"].write_text(
+        _json(build_dgx_spark_benchmark_evidence_template(build_dgx_spark_benchmark_matrix(manifest))),
         encoding="utf-8",
     )
     return {name: str(path) for name, path in files.items()}
@@ -537,6 +543,82 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
     }
 
 
+def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Return a JSON evidence skeleton matching the generated benchmark matrix."""
+
+    candidates = matrix.get("candidates") if isinstance(matrix.get("candidates"), Mapping) else {}
+    template: list[dict[str, Any]] = []
+
+    for candidate in candidates.get("interface", []) if isinstance(candidates.get("interface"), list) else []:
+        if not isinstance(candidate, Mapping):
+            continue
+        template.append(
+            {
+                "kind": "kame_benchmark_result",
+                "category": "interface",
+                "model": candidate.get("model"),
+                "input": candidate.get("input"),
+                "metrics": _null_metric_template(candidate.get("required_metrics")),
+            }
+        )
+
+    for candidate in candidates.get("oracle", []) if isinstance(candidates.get("oracle"), list) else []:
+        if not isinstance(candidate, Mapping):
+            continue
+        template.append(
+            {
+                "kind": "kame_benchmark_result",
+                "category": "oracle",
+                "model": candidate.get("model"),
+                "metrics": _null_metric_template(candidate.get("required_metrics")),
+            }
+        )
+
+    for candidate in candidates.get("oracle_outcome", []) if isinstance(candidates.get("oracle_outcome"), list) else []:
+        if not isinstance(candidate, Mapping):
+            continue
+        template.append(
+            {
+                "kind": "kame_benchmark_result",
+                "category": "oracle_outcome",
+                "model": candidate.get("model"),
+                "asr_hypothesis": candidate.get("asr_hypothesis"),
+                "metrics": _null_metric_template(candidate.get("required_metrics")),
+            }
+        )
+
+    for candidate in candidates.get("speech", []) if isinstance(candidates.get("speech"), list) else []:
+        if not isinstance(candidate, Mapping):
+            continue
+        template.append(
+            {
+                "kind": "kame_benchmark_result",
+                "category": "speech",
+                "role": candidate.get("role"),
+                "mode": candidate.get("mode"),
+                "metrics": _null_metric_template(candidate.get("required_metrics")),
+            }
+        )
+
+    template.extend(
+        [
+            {
+                "kind": "kame_smoke_result",
+                "name": "all_local_smoke",
+                "ok": False,
+                "notes": "Set ok=true only after Discord or loopback voice proves local interface, oracle, ASR, TTS, and sidecar are all healthy.",
+            },
+            {
+                "kind": "kame_smoke_result",
+                "name": "cloud_fallback_smoke",
+                "ok": False,
+                "notes": "Set ok=true only after sidecar/local-provider unavailability falls back according to configured policy.",
+            },
+        ]
+    )
+    return template
+
+
 def load_dgx_spark_benchmark_evidence(path: str | Path) -> list[dict[str, Any]]:
     evidence_path = Path(path).expanduser()
     data = json.loads(evidence_path.read_text(encoding="utf-8"))
@@ -692,6 +774,17 @@ def _missing_metric_issues(label: str, entry: Mapping[str, Any], required_metric
         if not _valid_metric_value(metric_name, value):
             issues.append(f"{label}: missing or invalid metric {metric_name}")
     return issues
+
+
+def _null_metric_template(required_metrics: Any) -> dict[str, None]:
+    if not isinstance(required_metrics, list):
+        return {}
+    metrics: dict[str, None] = {}
+    for metric in required_metrics:
+        metric_name = str(metric or "").strip()
+        if metric_name:
+            metrics[metric_name] = None
+    return metrics
 
 
 def _valid_metric_value(metric_name: str, value: Any) -> bool:

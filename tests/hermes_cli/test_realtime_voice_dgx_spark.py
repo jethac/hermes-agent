@@ -149,16 +149,25 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
         _manifest(tmp_path),
     )
 
-    assert set(written) == {"manifest", "compose", "env_example", "launch", "benchmark_matrix"}
+    assert set(written) == {
+        "manifest",
+        "compose",
+        "env_example",
+        "launch",
+        "benchmark_matrix",
+        "benchmark_evidence_template",
+    }
     assert (output_dir / "manifest.json").is_file()
     assert (output_dir / "compose.yaml").is_file()
     assert (output_dir / ".env.example").is_file()
     assert (output_dir / "launch-local-stack.sh").is_file()
     assert (output_dir / "benchmark-matrix.json").is_file()
+    assert (output_dir / "benchmark-evidence-template.json").is_file()
     assert (output_dir / "launch-local-stack.sh").stat().st_mode & 0o111
 
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
     matrix = json.loads((output_dir / "benchmark-matrix.json").read_text(encoding="utf-8"))
+    evidence_template = json.loads((output_dir / "benchmark-evidence-template.json").read_text(encoding="utf-8"))
     assert manifest["roles"]["interface"]["audio_input"] == "native_audio"
     assert manifest["engine"]["max_spoken_sentences"] == 2
     assert "HERMES_KAME_MAX_SPOKEN_SENTENCES=2" in (output_dir / ".env.example").read_text(encoding="utf-8")
@@ -166,6 +175,36 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert matrix["candidates"]["interface"][1]["input"] == "stt_fallback"
     assert matrix["candidates"]["oracle_outcome"][0]["asr_hypothesis"] == "without_asr_hypothesis"
     assert matrix["candidates"]["oracle_outcome"][1]["asr_hypothesis"] == "with_asr_hypothesis"
+    assert evidence_template[0]["kind"] == "kame_benchmark_result"
+    assert evidence_template[0]["category"] == "interface"
+    assert evidence_template[0]["input"] == "direct_audio"
+    assert evidence_template[0]["metrics"]["speech_end_to_interface_decision_ms"] is None
+    assert evidence_template[-2]["name"] == "all_local_smoke"
+    assert evidence_template[-2]["ok"] is False
+
+
+def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    template = realtime_voice_dgx_spark.build_dgx_spark_benchmark_evidence_template(matrix)
+
+    assert [entry["input"] for entry in template if entry.get("category") == "interface"] == [
+        "direct_audio",
+        "stt_fallback",
+    ]
+    assert [entry["asr_hypothesis"] for entry in template if entry.get("category") == "oracle_outcome"] == [
+        "without_asr_hypothesis",
+        "with_asr_hypothesis",
+    ]
+    assert {entry["role"] for entry in template if entry.get("category") == "speech"} == {
+        "oracle_verbatim_asr",
+        "tts",
+    }
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, template)
+
+    assert result["ok"] is False
+    assert "interface:direct_audio: missing or invalid metric speech_end_to_interface_decision_ms" in result["issues"]
+    assert "all_local_smoke: missing passing smoke result" in result["issues"]
 
 
 def test_preflight_checks_openai_models_and_health_urls(monkeypatch, tmp_path):
