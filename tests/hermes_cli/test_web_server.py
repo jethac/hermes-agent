@@ -3175,6 +3175,8 @@ class TestBuildSchemaFromConfig:
         assert "interface provider" in CONFIG_SCHEMA["voice.realtime.frontend_provider"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.interface_base_url"]["type"] == "string"
         assert "KAME interface model" in CONFIG_SCHEMA["voice.realtime.interface_base_url"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.interface_api_key_env"]["type"] == "string"
+        assert "secrets stay outside config" in CONFIG_SCHEMA["voice.realtime.interface_api_key_env"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.interface_temperature"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.interface_max_output_tokens"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.interface_timeout_seconds"]["type"] == "number"
@@ -6708,6 +6710,7 @@ class TestRealtimeVoiceWebSocket:
                 "frontend_provider": "gemma4",
                 "frontend_model": "gemma-4-E2B-it",
                 "interface_base_url": "http://spark.local:8000/v1",
+                "interface_api_key_env": "HERMES_KAME_INTERFACE_API_KEY",
                 "interface_audio_input": "native_audio",
                 "asr_mode": "on_escalation",
                 "asr_provider": "streaming_stt",
@@ -6729,6 +6732,7 @@ class TestRealtimeVoiceWebSocket:
         )
         cfg.setdefault("discord", {}).setdefault("realtime_voice", {}).update({"enabled": True})
         save_config(cfg)
+        save_env_value("HERMES_KAME_INTERFACE_API_KEY", "secret-interface-token")
         save_env_value("GEMINI_API_KEY", "test-gemini-key")
         save_env_value("HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL", "http://nemotron.local:9101")
         save_env_value("HERMES_NEMOTRON_SPEECH_UPSTREAM_TOKEN", "secret-nemotron-token")
@@ -6751,6 +6755,8 @@ class TestRealtimeVoiceWebSocket:
         assert kame["kind"] == "kame_interface_oracle"
         assert kame["model"] == "gemma-4-E2B-it"
         assert kame["base_url"] == "http://spark.local:8000/v1"
+        assert kame["api_key_env"] == "HERMES_KAME_INTERFACE_API_KEY"
+        assert kame["api_key_present"] is True
         assert kame["implemented"] is True
         assert gemini["api_key_present"] is True
         assert nemotron["kind"] == "local_streaming_asr_bridge"
@@ -6773,6 +6779,8 @@ class TestRealtimeVoiceWebSocket:
         assert payload["config"]["interface"]["provider"] == "gemma4"
         assert payload["config"]["interface"]["model"] == "gemma-4-E2B-it"
         assert payload["config"]["interface"]["base_url"] == "http://spark.local:8000/v1"
+        assert payload["config"]["interface"]["api_key_env"] == "HERMES_KAME_INTERFACE_API_KEY"
+        assert payload["config"]["interface"]["api_key_present"] is True
         assert payload["config"]["interface"]["audio_input"] == "native_audio"
         assert payload["config"]["oracle"]["provider_name"] == "Spark Oracle"
         assert payload["config"]["oracle"]["model"] == "gemma-4-26B-A4B-it"
@@ -6780,6 +6788,7 @@ class TestRealtimeVoiceWebSocket:
         assert payload["config"]["asr"]["local_upstream_base_url_present"] is True
         assert payload["config"]["tts"]["local_provider"] == "magpie_tts"
         assert payload["config"]["tts"]["local_upstream_base_url_present"] is True
+        assert "secret-interface-token" not in json.dumps(payload)
         assert "secret-nemotron-token" not in json.dumps(payload)
         assert "secret-magpie-token" not in json.dumps(payload)
         assert payload["discord"]["enabled"] is True
@@ -6815,6 +6824,7 @@ class TestRealtimeVoiceWebSocket:
                 "model": "gemma-4-E2B-it",
                 "vllm_model": "google/gemma-4-E2B-it",
                 "interface_base_url": "http://spark.local:8000/v1",
+                "interface_api_key_env": "KAME_INTERFACE_TOKEN",
                 "interface_temperature": 0.3,
                 "interface_max_output_tokens": 96,
                 "interface_timeout_seconds": 0.7,
@@ -6854,8 +6864,10 @@ class TestRealtimeVoiceWebSocket:
         assert realtime["engine"] == "kame_interface_oracle"
         assert realtime["frontend_provider"] == "gemma4"
         assert realtime["interface_base_url"] == "http://spark.local:8000/v1"
+        assert realtime["interface_api_key_env"] == "KAME_INTERFACE_TOKEN"
         assert realtime["vllm_base_url"] == "http://spark.local:8000/v1"
         assert realtime["vllm_model"] == "google/gemma-4-E2B-it"
+        assert realtime["interface"]["api_key_env"] == "KAME_INTERFACE_TOKEN"
         assert realtime["interface_temperature"] == 0.3
         assert realtime["interface_max_output_tokens"] == 96
         assert realtime["interface_timeout_seconds"] == 0.7
@@ -6871,6 +6883,7 @@ class TestRealtimeVoiceWebSocket:
         assert realtime["routing"] == expected_routing
         assert discord["enabled"] is True
         assert discord["interface_base_url"] == "http://spark.local:8000/v1"
+        assert discord["interface_api_key_env"] == "KAME_INTERFACE_TOKEN"
         assert discord["interface_temperature"] == 0.3
         assert discord["interface_max_output_tokens"] == 96
         assert discord["interface_timeout_seconds"] == 0.7
@@ -8387,6 +8400,15 @@ class TestRealtimeVoiceWebSocket:
                     "oracle_required": 0,
                     "total": 0,
                 },
+                "kame_reflex_provenance": {
+                    "total": 0,
+                    "input_sources": {},
+                    "reflex_providers": {},
+                    "native_audio": 0,
+                    "vllm": 0,
+                    "fallback": 0,
+                    "fallback_only": False,
+                },
                 "latency_by_stack": {
                     "text_oracle_tts|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model": {
                         "stack": {
@@ -8450,6 +8472,15 @@ class TestRealtimeVoiceWebSocket:
                             "oracle_avoided": 0,
                             "oracle_required": 0,
                             "total": 0,
+                        },
+                        "kame_reflex_provenance": {
+                            "total": 0,
+                            "input_sources": {},
+                            "reflex_providers": {},
+                            "native_audio": 0,
+                            "vllm": 0,
+                            "fallback": 0,
+                            "fallback_only": False,
                         },
                     },
                 },
@@ -10072,6 +10103,7 @@ class TestRealtimeVoiceWebSocket:
             "load_env",
             lambda: {
                 "CUSTOM_VOICE_TOKEN": "secret-token",
+                "CUSTOM_INTERFACE_TOKEN": "interface-secret-token",
                 "STREAMING_STT_TOKEN": "stream-secret-token",
                 "STREAMING_TTS_TOKEN": "stream-tts-secret-token",
                 "OPENAI_API_KEY": "openai-secret-token",
@@ -10089,6 +10121,7 @@ class TestRealtimeVoiceWebSocket:
                 "sidecar_port": 8765,
                 "sidecar_token_env": "CUSTOM_VOICE_TOKEN",
                 "interface_base_url": "http://interface.example.test:8000/v1",
+                "interface_api_key_env": "CUSTOM_INTERFACE_TOKEN",
                 "vllm_base_url": "http://legacy-vllm.example.test:8000/v1",
                 "vllm_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
                 "streaming_stt_base_url": "http://streaming-stt.local:9000",
@@ -10128,7 +10161,9 @@ class TestRealtimeVoiceWebSocket:
         assert kwargs["env"]["CUSTOM_VOICE_TOKEN"] == "secret-token"
         assert kwargs["env"]["HERMES_VOICE_SIDECAR_TOKEN"] == "secret-token"
         assert kwargs["env"]["HERMES_KAME_INTERFACE_BASE_URL"] == "http://interface.example.test:8000/v1"
+        assert kwargs["env"]["HERMES_KAME_INTERFACE_API_KEY"] == "interface-secret-token"
         assert kwargs["env"]["HERMES_VOICE_VLLM_BASE_URL"] == "http://interface.example.test:8000/v1"
+        assert kwargs["env"]["HERMES_VOICE_VLLM_TOKEN"] == "interface-secret-token"
         assert kwargs["env"]["HERMES_VOICE_VLLM_MODEL"] == "google/gemma-4-E4B-it-qat-w4a16-ct"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_BASE_URL"] == "http://streaming-stt.local:9000"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_MODEL"] == "portable-streaming-asr"

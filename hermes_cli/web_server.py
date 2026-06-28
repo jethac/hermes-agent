@@ -1048,6 +1048,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Local KAME audio reflex model served by vLLM",
         "category": "voice",
     },
+    "voice.realtime.interface_api_key_env": {
+        "type": "string",
+        "description": "Environment variable containing the KAME interface/reflex endpoint bearer token; secrets stay outside config",
+        "category": "voice",
+    },
     "voice.realtime.streaming_stt_base_url": {
         "type": "string",
         "description": "Optional compatible streaming STT bridge URL used by the managed reference sidecar",
@@ -1521,6 +1526,7 @@ class RealtimeVoiceProfileApply(BaseModel):
     api_key_env: str = ""
     interface_provider: str = "gemma4"
     interface_base_url: str = ""
+    interface_api_key_env: str = ""
     vllm_model: str = ""
     interface_temperature: float = 0.2
     interface_max_output_tokens: int = 160
@@ -14438,6 +14444,17 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
         child_env["HERMES_VOICE_VLLM_BASE_URL"] = interface_base_url
     if vllm_model:
         child_env["HERMES_VOICE_VLLM_MODEL"] = vllm_model
+    interface_token_env = str(realtime.get("interface_api_key_env") or "HERMES_KAME_INTERFACE_API_KEY").strip()
+    interface_token = _realtime_voice_env_value(
+        env_on_disk,
+        interface_token_env,
+        "HERMES_KAME_INTERFACE_TOKEN",
+        "HERMES_VOICE_VLLM_API_KEY",
+        "HERMES_VOICE_VLLM_TOKEN",
+    )
+    if interface_token:
+        child_env["HERMES_KAME_INTERFACE_API_KEY"] = interface_token
+        child_env["HERMES_VOICE_VLLM_TOKEN"] = interface_token
     streaming_stt_base_url = str(realtime.get("streaming_stt_base_url") or "").strip()
     streaming_stt_model = str(realtime.get("streaming_stt_model") or "").strip()
     streaming_stt_token_env = str(realtime.get("streaming_stt_token_env") or "HERMES_VOICE_STREAMING_STT_TOKEN")
@@ -14659,6 +14676,7 @@ def _normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, A
     _set_realtime_voice_default(config, "frontend_provider", interface.get("provider"))
     _set_realtime_voice_default(config, "frontend_model", interface.get("model"))
     _set_realtime_voice_default(config, "interface_base_url", interface.get("base_url"))
+    _set_realtime_voice_default(config, "interface_api_key_env", interface.get("api_key_env"))
     _set_realtime_voice_default(config, "interface_base_url", config.get("vllm_base_url"))
     _set_realtime_voice_default(config, "vllm_base_url", config.get("interface_base_url"))
     _set_realtime_voice_default(config, "interface_temperature", interface.get("temperature"))
@@ -15137,6 +15155,7 @@ def _realtime_voice_env_present_any(env_on_disk: Mapping[str, Any], key: str, *f
 def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk: Mapping[str, Any]) -> List[Dict[str, Any]]:
     openai_key_env = str(realtime.get("openai_realtime_api_key_env") or "OPENAI_API_KEY")
     gemini_key_env = str(realtime.get("gemini_live_api_key_env") or "GEMINI_API_KEY")
+    interface_key_env = str(realtime.get("interface_api_key_env") or "HERMES_KAME_INTERFACE_API_KEY")
     stt_token_env = str(realtime.get("streaming_stt_token_env") or "HERMES_STREAMING_STT_BRIDGE_TOKEN")
     tts_token_env = str(realtime.get("streaming_tts_token_env") or "HERMES_STREAMING_TTS_BRIDGE_TOKEN")
     nemotron_upstream_env = "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL"
@@ -15155,6 +15174,14 @@ def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk
             "kind": "kame_interface_oracle",
             "model": kame_model or "gemma-4-E2B-it",
             "base_url": _redact_realtime_voice_url(interface_base_url),
+            "api_key_env": interface_key_env,
+            "api_key_present": _realtime_voice_env_present_any(
+                env_on_disk,
+                interface_key_env,
+                "HERMES_KAME_INTERFACE_TOKEN",
+                "HERMES_VOICE_VLLM_API_KEY",
+                "HERMES_VOICE_VLLM_TOKEN",
+            ),
             "voice": str(realtime.get("tts_voice") or realtime.get("streaming_tts_voice") or ""),
             "implemented": True,
         },
@@ -15299,6 +15326,7 @@ def _realtime_voice_setup_config_payload(
     env_on_disk: Mapping[str, Any],
     status: Mapping[str, Any],
 ) -> Dict[str, Any]:
+    interface_key_env = str(realtime.get("interface_api_key_env") or "HERMES_KAME_INTERFACE_API_KEY")
     stt_token_env = str(realtime.get("streaming_stt_token_env") or "HERMES_STREAMING_STT_BRIDGE_TOKEN")
     tts_token_env = str(realtime.get("streaming_tts_token_env") or "HERMES_STREAMING_TTS_BRIDGE_TOKEN")
     nemotron_upstream_env = "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL"
@@ -15310,6 +15338,14 @@ def _realtime_voice_setup_config_payload(
             "model": str(realtime.get("frontend_model") or ""),
             "base_url": _redact_realtime_voice_url(
                 str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "")
+            ),
+            "api_key_env": interface_key_env,
+            "api_key_present": _realtime_voice_env_present_any(
+                env_on_disk,
+                interface_key_env,
+                "HERMES_KAME_INTERFACE_TOKEN",
+                "HERMES_VOICE_VLLM_API_KEY",
+                "HERMES_VOICE_VLLM_TOKEN",
             ),
             "audio_input": str(realtime.get("interface_audio_input") or ""),
             "temperature": status.get("interface_temperature"),
@@ -15436,6 +15472,7 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             reflex_provider=body.interface_provider or "gemma4",
             reflex_model=body.model or DEFAULT_KAME_REFLEX_MODEL,
             vllm_model=body.vllm_model,
+            interface_api_key_env=body.interface_api_key_env or "HERMES_KAME_INTERFACE_API_KEY",
             interface_base_url=body.interface_base_url,
             interface_temperature=body.interface_temperature,
             interface_max_output_tokens=body.interface_max_output_tokens,
@@ -15552,6 +15589,7 @@ def _apply_realtime_voice_profile_body(body: RealtimeVoiceProfileApply, profile:
                 "sidecar_base_url": sidecar_base_url,
                 "frontend_provider": realtime.get("frontend_provider") or "",
                 "frontend_model": realtime.get("frontend_model") or "",
+                "interface_api_key_env": realtime.get("interface_api_key_env") or "HERMES_KAME_INTERFACE_API_KEY",
                 "interface_audio_input": realtime.get("interface_audio_input") or "",
                 "asr_mode": realtime.get("asr_mode") or "on_escalation",
                 "asr_provider": realtime.get("asr_provider") or "",

@@ -298,6 +298,8 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["frontend_provider"] == "gemma4"
     assert realtime["frontend_model"] == "gemma-4-E2B-it"
     assert realtime["interface_audio_input"] == "auto"
+    assert realtime["interface_api_key_env"] == "HERMES_KAME_INTERFACE_API_KEY"
+    assert realtime["interface"]["api_key_env"] == "HERMES_KAME_INTERFACE_API_KEY"
     assert realtime["vllm_model"] == "gemma-4-E2B-it"
     assert realtime["interface_temperature"] == 0.2
     assert realtime["interface_max_output_tokens"] == 160
@@ -333,6 +335,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["interface"] == {
         "provider": "gemma4",
         "base_url": "",
+        "api_key_env": "HERMES_KAME_INTERFACE_API_KEY",
         "model": "gemma-4-E2B-it",
         "temperature": 0.2,
         "max_output_tokens": 160,
@@ -550,6 +553,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     profile = realtime_voice_profile.build_kame_realtime_voice_profile(
         reflex_model="gemma-4-E2B-it",
         vllm_model="google/gemma-4-E2B-it",
+        interface_api_key_env="CUSTOM_KAME_INTERFACE_TOKEN",
         interface_temperature=0.3,
         interface_max_output_tokens=96,
         interface_timeout_seconds=0.7,
@@ -568,6 +572,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["engine"] == "kame_interface_oracle"
     assert discord_rt["frontend_provider"] == "gemma4"
     assert discord_rt["frontend_model"] == "gemma-4-E2B-it"
+    assert discord_rt["interface_api_key_env"] == "CUSTOM_KAME_INTERFACE_TOKEN"
     assert discord_rt["interface_temperature"] == 0.3
     assert discord_rt["interface_max_output_tokens"] == 96
     assert discord_rt["interface_timeout_seconds"] == 0.7
@@ -590,6 +595,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["interface"] == {
         "provider": "gemma4",
         "base_url": "",
+        "api_key_env": "CUSTOM_KAME_INTERFACE_TOKEN",
         "model": "gemma-4-E2B-it",
         "temperature": 0.3,
         "max_output_tokens": 96,
