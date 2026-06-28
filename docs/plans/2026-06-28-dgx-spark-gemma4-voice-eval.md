@@ -94,6 +94,8 @@ Runner behavior:
   the preferred local oracle model unless environment variables override them.
 - Runs endpoint preflight only when `DGX_SPARK_KAME_CHECK=1` is set, so artifact
   generation remains headless before services are online.
+- Validates filled benchmark evidence with the generated stack-pack validator
+  when `DGX_SPARK_KAME_BENCHMARK_EVIDENCE` points at a JSON evidence file.
 
 Useful variables:
 
@@ -107,6 +109,7 @@ export DGX_SPARK_SIDECAR_BASE_URL=http://spark.local:8765
 export DGX_SPARK_LOCAL_VOICE_BRIDGE_URL=http://spark.local:8767
 export DGX_SPARK_LOCAL_TTS_BRIDGE_URL=http://spark.local:8768
 export DGX_SPARK_KAME_CHECK=1
+export DGX_SPARK_KAME_BENCHMARK_EVIDENCE=/path/to/filled-benchmark-evidence.json
 ```
 
 Acceptance gates:
@@ -118,6 +121,7 @@ Acceptance gates:
 | Oracle model | Defaults to Gemma 4 26B-A4B |
 | Preflight | Required only when `DGX_SPARK_KAME_CHECK=1` |
 | Benchmark matrix | Includes direct-audio vs STT-fallback reflex comparison |
+| Evidence validation | Required when `DGX_SPARK_KAME_BENCHMARK_EVIDENCE` is set |
 
 ## Track A: Gemma 4 26B-A4B Oracle
 
@@ -144,7 +148,8 @@ export DGX_SPARK_ORACLE_MAX_TOKENS=220
 
 Runner behavior:
 
-- Calls `/v1/chat/completions`.
+- Runs `python -m hermes_cli.realtime_voice_oracle_probe`.
+- Calls `/v1/chat/completions`, accepting either root or `/v1` base URLs.
 - Writes `oracle-gemma4-probe.json`.
 - Records elapsed milliseconds, completion tokens, approximate tokens/sec, and
   a response preview.
@@ -313,15 +318,13 @@ while preserving reliability and local-only operation.
 
 After the first headless run:
 
-1. Add a dedicated OpenAI-compatible local oracle benchmark command to Hermes
-   instead of keeping the Track A probe inside the shell runner.
-2. Add a first-class `riva` or `nvidia_speech` realtime voice profile preset
+1. Add a first-class `riva` or `nvidia_speech` realtime voice profile preset
    once the local bridge endpoint shape is known.
-3. Add an evidence report comparator that reads Track A/B/C artifacts and emits
+2. Add an evidence report comparator that reads Track A/B/C artifacts and emits
    a single ranked recommendation.
-4. If Track C is promising, add a managed local speech bridge launcher and tests
+3. If Track C is promising, add a managed local speech bridge launcher and tests
    equivalent to the Cartesia/ElevenLabs/Deepgram bridge tests.
-5. Keep Moshi/Ultravox as explicit watchlist items until a confirmed Spark
+4. Keep Moshi/Ultravox as explicit watchlist items until a confirmed Spark
    deployment shows stable realtime audio.
 
 ## One-command Headless Run
