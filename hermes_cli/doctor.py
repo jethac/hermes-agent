@@ -824,6 +824,16 @@ def _realtime_voice_smoke_report_payload(result: Any, *, kind: str, **extra: Any
             dict(mapping.get("first_audio_metrics", getattr(result, "first_audio_metrics", None)) or {})
             or None
         ),
+        "route": str(mapping.get("route", getattr(result, "route", "")) or "") or None,
+        "interface_input_source": str(
+            mapping.get("interface_input_source", getattr(result, "interface_input_source", "")) or ""
+        ) or None,
+        "reflex_provider": str(
+            mapping.get("reflex_provider", getattr(result, "reflex_provider", "")) or ""
+        ) or None,
+        "reflex_validation_error": str(
+            mapping.get("reflex_validation_error", getattr(result, "reflex_validation_error", "")) or ""
+        ) or None,
         "transport": str(mapping.get("transport", getattr(result, "transport", "")) or "") or None,
         "error": str(mapping.get("error", getattr(result, "error", "")) or "") or None,
     }

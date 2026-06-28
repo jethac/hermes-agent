@@ -14,10 +14,17 @@ import time
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Tuple
 
-from agent.realtime_voice import AudioChunk, RealtimeVoiceSessionConfig, VoiceAudioCodec, VoiceEvent, VoiceEventType
+from agent.realtime_voice import (
+    AudioChunk,
+    RealtimeVoiceEngineKind,
+    RealtimeVoiceSessionConfig,
+    VoiceAudioCodec,
+    VoiceEvent,
+    VoiceEventType,
+)
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_session import RealtimeVoiceSession
-from agent.realtime_voice_text_engine import TextOracleTTSEngine
+from agent.realtime_voice_text_engine import KameInterfaceOracleEngine, TextOracleTTSEngine
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient
 
 
@@ -36,6 +43,10 @@ class RealtimeVoiceSidecarSmokeResult:
     audio_after_barge_in_bytes: int = 0
     events: Tuple[str, ...] = ()
     first_audio_metrics: Optional[Mapping[str, Any]] = None
+    route: str = ""
+    interface_input_source: str = ""
+    reflex_provider: str = ""
+    reflex_validation_error: str = ""
     transport: str = ""
     error: str = ""
 
@@ -61,6 +72,10 @@ def realtime_voice_smoke_result_payload(
         "audio_after_barge_in_bytes": result.audio_after_barge_in_bytes,
         "events": list(result.events),
         "first_audio_metrics": dict(result.first_audio_metrics or {}) or None,
+        "route": result.route or None,
+        "interface_input_source": result.interface_input_source or None,
+        "reflex_provider": result.reflex_provider or None,
+        "reflex_validation_error": result.reflex_validation_error or None,
         "transport": result.transport or None,
         "error": result.error or None,
     }
@@ -291,7 +306,8 @@ async def run_realtime_voice_session_turn_smoke(
     final_text = ""
     assistant_committed = False
     events: list[str] = []
-    engine = TextOracleTTSEngine(oracle=_StaticRealtimeOracle(answer))
+    kame_evidence: dict[str, str] = {}
+    engine = _smoke_engine(config, answer=answer)
     session = RealtimeVoiceSession(config, engine=engine)
 
     try:
@@ -322,6 +338,7 @@ async def run_realtime_voice_session_turn_smoke(
                     final_text=final_text,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
+                    **kame_evidence,
                     error=f"timed out after {timeout:g}s waiting for session assistant text/audio",
                 )
             try:
@@ -335,11 +352,13 @@ async def run_realtime_voice_session_turn_smoke(
                     final_text=final_text,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
+                    **kame_evidence,
                     error="session event stream ended before assistant text/audio",
                 )
 
             elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
             events.append(event.type.value)
+            _capture_kame_evidence(kame_evidence, event.payload)
 
             if event.type == VoiceEventType.SESSION_ERROR:
                 return RealtimeVoiceSidecarSmokeResult(
@@ -350,6 +369,7 @@ async def run_realtime_voice_session_turn_smoke(
                     final_text=final_text,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
+                    **kame_evidence,
                     error=str(event.payload.get("error") or "session error"),
                 )
             if event.type == VoiceEventType.TRANSCRIPT_FINAL:
@@ -391,6 +411,7 @@ async def run_realtime_voice_session_turn_smoke(
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
                     first_audio_metrics=first_audio_metrics,
+                    **kame_evidence,
                     error="" if output_audio_bytes > 0 else "audio.output.chunk contained no audio bytes",
                 )
     except Exception as exc:
@@ -403,6 +424,7 @@ async def run_realtime_voice_session_turn_smoke(
             output_audio_bytes=output_audio_bytes,
             events=tuple(events),
             first_audio_metrics=first_audio_metrics,
+            **kame_evidence,
             error=sanitize_realtime_voice_error(exc),
         )
     finally:
@@ -431,8 +453,10 @@ async def run_realtime_voice_session_audio_smoke(
     first_audio_metrics: Optional[dict[str, Any]] = None
     output_audio_bytes = 0
     final_text = ""
+    assistant_committed = False
     events: list[str] = []
-    engine = TextOracleTTSEngine(oracle=_StaticRealtimeOracle(answer), sidecar=sidecar)
+    kame_evidence: dict[str, str] = {}
+    engine = _smoke_engine(config, answer=answer, sidecar=sidecar)
     session = RealtimeVoiceSession(config, engine=engine)
 
     try:
@@ -468,6 +492,7 @@ async def run_realtime_voice_session_audio_smoke(
                     audio_bytes=audio_bytes,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
+                    **kame_evidence,
                     error=f"timed out after {timeout:g}s waiting for audio session transcript/text/audio",
                 )
             try:
@@ -483,11 +508,13 @@ async def run_realtime_voice_session_audio_smoke(
                     audio_bytes=audio_bytes,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
+                    **kame_evidence,
                     error="session event stream ended before audio session transcript/text/audio",
                 )
 
             elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
             events.append(event.type.value)
+            _capture_kame_evidence(kame_evidence, event.payload)
 
             if event.type == VoiceEventType.SESSION_ERROR:
                 return RealtimeVoiceSidecarSmokeResult(
@@ -500,6 +527,7 @@ async def run_realtime_voice_session_audio_smoke(
                     audio_bytes=audio_bytes,
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
+                    **kame_evidence,
                     error=str(event.payload.get("error") or "session error"),
                 )
             if event.type == VoiceEventType.TRANSCRIPT_PARTIAL and transcript_partial_ms is None:
@@ -533,9 +561,18 @@ async def run_realtime_voice_session_audio_smoke(
                     output_audio_bytes = len(AudioChunk.from_payload(event.payload).data)
                 except Exception:
                     output_audio_bytes = 0
+            elif event.type == VoiceEventType.ASSISTANT_COMMIT:
+                final_text = str(event.payload.get("text") or final_text)
+                assistant_committed = True
 
-            if (
+            partial_or_kame_ready = (
                 transcript_partial_ms is not None
+                or config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
+            )
+            assistant_ready = config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE or assistant_committed
+            if (
+                partial_or_kame_ready
+                and assistant_ready
                 and final_text
                 and first_text_ms is not None
                 and first_audio_ms is not None
@@ -551,6 +588,7 @@ async def run_realtime_voice_session_audio_smoke(
                     output_audio_bytes=output_audio_bytes,
                     events=tuple(events),
                     first_audio_metrics=first_audio_metrics,
+                    **kame_evidence,
                     error="" if output_audio_bytes > 0 else "audio.output.chunk contained no audio bytes",
                 )
     except Exception as exc:
@@ -565,6 +603,7 @@ async def run_realtime_voice_session_audio_smoke(
             output_audio_bytes=output_audio_bytes,
             events=tuple(events),
             first_audio_metrics=first_audio_metrics,
+            **kame_evidence,
             error=sanitize_realtime_voice_error(exc),
         )
     finally:
@@ -578,6 +617,43 @@ def realtime_voice_smoke_text_metadata(text: str) -> dict[str, str]:
     if any(("A" <= char <= "Z") or ("a" <= char <= "z") for char in value):
         return {"language": "en", "locale": "en-US", "script": "Latn"}
     return {}
+
+
+def _smoke_engine(
+    config: RealtimeVoiceSessionConfig,
+    *,
+    answer: str,
+    sidecar: Optional[object] = None,
+):
+    oracle = _StaticRealtimeOracle(answer)
+    if config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        return KameInterfaceOracleEngine(oracle=oracle, sidecar=sidecar)
+    return TextOracleTTSEngine(oracle=oracle, sidecar=sidecar)
+
+
+def _capture_kame_evidence(target: dict[str, str], payload: Mapping[str, Any]) -> None:
+    if not isinstance(payload, Mapping):
+        return
+    route = str(payload.get("route") or payload.get("kame_route") or "").strip()
+    if route and not target.get("route"):
+        target["route"] = route
+    input_source = str(
+        payload.get("interface_input_source")
+        or payload.get("kame_interface_input_source")
+        or ""
+    ).strip()
+    if input_source and not target.get("interface_input_source"):
+        target["interface_input_source"] = input_source
+    reflex_provider = str(payload.get("reflex_provider") or payload.get("kame_reflex_provider") or "").strip()
+    if reflex_provider and not target.get("reflex_provider"):
+        target["reflex_provider"] = reflex_provider
+    validation_error = str(
+        payload.get("reflex_validation_error")
+        or payload.get("kame_reflex_validation_error")
+        or ""
+    ).strip()
+    if validation_error and not target.get("reflex_validation_error"):
+        target["reflex_validation_error"] = validation_error
 
 
 def _contains_japanese_script(text: str) -> bool:
