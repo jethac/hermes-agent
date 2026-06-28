@@ -9797,6 +9797,65 @@ def test_session_adds_barge_in_ack_latency_metric():
     asyncio.run(run())
 
 
+def test_session_adds_barge_in_to_playback_stopped_latency_metric():
+    class BargeStopEngine:
+        def __init__(self):
+            self.received = []
+
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            self.received.append(event)
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=10,
+                payload={"reason": "user_speech", "playback_generation": 1},
+            )
+            yield VoiceEvent(
+                type=VoiceEventType.PLAYBACK_STOPPED,
+                session_id="voice-123",
+                sequence=11,
+                payload={"reason": "barge_in", "playback_generation": 1},
+            )
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(session_id="voice-123"),
+            engine=BargeStopEngine(),
+        )
+        await session.start()
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=1,
+                payload={"reason": "user_speech"},
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+
+        barge_in = seen[0]
+        stopped = seen[1]
+        assert barge_in.type == VoiceEventType.BARGE_IN
+        assert stopped.type == VoiceEventType.PLAYBACK_STOPPED
+        assert barge_in.payload["metrics"]["barge_in_ack_ms"] >= 0
+        assert stopped.payload["metrics"]["barge_in_confirmed_to_playback_stopped_ms"] >= 0
+        assert "barge_in_confirmed_to_playback_stopped_ms" not in barge_in.payload["metrics"]
+        await session.close()
+
+    asyncio.run(run())
+
+
 def test_native_s2s_engine_streams_oracle_hint_to_sidecar():
     class FakeWs:
         def __init__(self):

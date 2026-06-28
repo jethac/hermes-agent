@@ -397,6 +397,9 @@ class RealtimeVoiceSession:
                 self._turn_first_audio_output = True
         elif event.type == VoiceEventType.BARGE_IN and self._last_barge_in_at is not None:
             metrics["barge_in_ack_ms"] = _elapsed_ms(self._last_barge_in_at, now)
+        elif event.type == VoiceEventType.PLAYBACK_STOPPED and self._last_barge_in_at is not None:
+            metrics["barge_in_confirmed_to_playback_stopped_ms"] = _elapsed_ms(self._last_barge_in_at, now)
+            self._last_barge_in_at = None
         return metrics
 
     def _quality_target_misses(self, metrics: Mapping[str, Any]) -> List[dict]:
