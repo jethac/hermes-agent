@@ -954,6 +954,8 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.reflex_provider == "vllm"
         assert request.source == "discord_voice"
         assert request.user_id == "42"
+        assert request.mode == "voice"
+        assert request.urgency == "interactive"
         assert request.requested_response_style == {
             "spoken": True,
             "max_sentences": 2,
@@ -967,23 +969,32 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         interface_commit = next(event for event in seen if event.type == VoiceEventType.INTERFACE_COMMIT)
         session_metrics = next(event for event in seen if event.type == VoiceEventType.SESSION_METRICS)
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        assert final.payload["kame_session_id"] == "voice-123"
         assert final.payload["kame_intent"] == "Find the note from yesterday's meeting."
         assert final.payload["kame_route"] == "oracle_direct"
         assert final.payload["kame_route_confidence"] == 0.81
+        assert final.payload["kame_mode"] == "voice"
+        assert final.payload["kame_urgency"] == "interactive"
         assert final.payload["kame_transcript"] == "find the note from yesterday's meeting"
         assert final.payload["kame_asr_transcript"] == "find the node from yesterday's meeting"
         assert final.payload["kame_oracle_text_source"] == "asr"
         assert final.payload["kame_interface_input_source"] == "native_audio"
         assert final.payload["kame_reflex_provider"] == "vllm"
         assert final.payload["kame_cancellation_token"] == "voice-123:1:cancel"
+        assert intent.payload["session_id"] == "voice-123"
         assert intent.payload["route"] == "oracle_direct"
         assert intent.payload["route_confidence"] == 0.81
         assert intent.payload["intent"] == "Find the note from yesterday's meeting."
+        assert intent.payload["mode"] == "voice"
+        assert intent.payload["urgency"] == "interactive"
         assert intent.payload["transcript"] == "find the note from yesterday's meeting"
         assert intent.payload["asr_transcript"] == "find the node from yesterday's meeting"
         assert intent.payload["cancellation_token"] == "voice-123:1:cancel"
+        assert oracle_request.payload["session_id"] == "voice-123"
         assert oracle_request.payload["turn_id"] == "voice-123:1"
         assert oracle_request.payload["route_confidence"] == 0.81
+        assert oracle_request.payload["mode"] == "voice"
+        assert oracle_request.payload["urgency"] == "interactive"
         assert oracle_request.payload["text"] == "find the node from yesterday's meeting"
         assert oracle_request.payload["oracle_text_source"] == "asr"
         assert oracle_request.payload["transcript"] == "find the note from yesterday's meeting"
@@ -998,13 +1009,21 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         }
         assert oracle_request.payload["cancellation_token"] == "voice-123:1:cancel"
         assert interface_commit.payload["text"] == "Done."
+        assert interface_commit.payload["session_id"] == "voice-123"
+        assert interface_commit.payload["mode"] == "voice"
+        assert interface_commit.payload["urgency"] == "interactive"
         assert interface_commit.payload["route_confidence"] == 0.81
         assert interface_commit.payload["cancellation_token"] == "voice-123:1:cancel"
         assert session_metrics.payload["outcome"] == "oracle_commit"
         assert session_metrics.payload["oracle_called"] is True
+        assert session_metrics.payload["session_id"] == "voice-123"
         assert session_metrics.payload["turn_id"] == "voice-123:1"
+        assert session_metrics.payload["mode"] == "voice"
+        assert session_metrics.payload["urgency"] == "interactive"
         assert session_metrics.payload["metrics"]["kame_oracle_called"] == 1
         assert session_metrics.payload["metrics"]["kame_oracle_bypassed"] == 0
+        assert commit.payload["kame_session_id"] == "voice-123"
+        assert commit.payload["session_id"] == "voice-123"
         assert commit.payload["kame_cancellation_token"] == "voice-123:1:cancel"
         assert commit.payload["metrics"]["kame_oracle_called"] == 1
         assert commit.payload["metrics"]["kame_oracle_bypassed"] == 0

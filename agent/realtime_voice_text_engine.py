@@ -1835,6 +1835,7 @@ def _kame_local_reply(request: Optional[KameOracleRequest]) -> str:
 
 def _kame_interface_payload(request: KameOracleRequest, playback_generation: int) -> dict[str, Any]:
     payload: dict[str, Any] = {
+        "session_id": request.session_id,
         "turn_id": request.turn_id,
         "route": request.route.value,
         "intent": request.intent,
@@ -1843,6 +1844,8 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         "oracle_text_source": request.oracle_text_source,
         "playback_generation": playback_generation,
         "source": request.source,
+        "mode": request.mode,
+        "urgency": request.urgency,
         "transcript_source": request.transcript_source,
         "requested_response_style": dict(request.requested_response_style),
     }
@@ -1917,12 +1920,15 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
     if oracle_text_source.lower().startswith("asr") and asr_transcript:
         text = asr_transcript
     payload: dict[str, Any] = {
+        "session_id": str(metadata.get("kame_session_id") or ""),
         "turn_id": str(metadata.get("kame_turn_id") or ""),
         "route": str(metadata.get("kame_route") or ""),
         "intent": intent,
         "intent_source": str(metadata.get("kame_intent_source") or ""),
         "text": text,
         "source": str(metadata.get("kame_source") or ""),
+        "mode": str(metadata.get("kame_mode") or ""),
+        "urgency": str(metadata.get("kame_urgency") or ""),
         "transcript_source": str(metadata.get("kame_transcript_source") or ""),
     }
     if oracle_text_source:

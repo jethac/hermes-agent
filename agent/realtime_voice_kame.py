@@ -378,6 +378,10 @@ class KameOracleRequest:
         )
         metadata: dict[str, Any] = {
             "voice_architecture": "kame_frontend_oracle",
+            "session_id": self.session_id,
+            "mode": self.mode,
+            "urgency": self.urgency,
+            "kame_session_id": self.session_id,
             "kame_turn_id": self.turn_id,
             "kame_source": self.source,
             "kame_intent": self.intent,
