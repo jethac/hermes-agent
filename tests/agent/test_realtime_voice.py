@@ -6126,6 +6126,8 @@ def test_reference_sidecar_close_clears_provider_and_session_state():
         sidecar._asr_hypotheses_by_generation[3] = {"asr_transcript": "stale hypothesis"}
         sidecar._cached_acknowledgement_audio = {"text": "One moment.", "data": b"audio"}
         sidecar._active_playback_generations.add(9)
+        sidecar._last_speech_lifecycle_event = {"event": "speech.energy", "input_generation": 3}
+        sidecar._last_streaming_tts_failure = {"reason": "streaming_tts_send_failed", "error": "failed"}
 
         await sidecar.close()
 
@@ -6155,6 +6157,8 @@ def test_reference_sidecar_close_clears_provider_and_session_state():
         assert sidecar._asr_hypotheses_by_generation == {}
         assert sidecar._cached_acknowledgement_audio is None
         assert sidecar._active_playback_generations == set()
+        assert sidecar._last_speech_lifecycle_event is None
+        assert sidecar._last_streaming_tts_failure is None
         assert [event.type for event in seen] == [
             VoiceEventType.SESSION_STARTED,
             VoiceEventType.FRONTEND_STATE,

@@ -631,6 +631,8 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._gemini_live = None
         self._asr_hypotheses_by_generation.clear()
         self._clear_kame_feedback_state()
+        self._last_speech_lifecycle_event = None
+        self._last_streaming_tts_failure = None
         self._cached_acknowledgement_audio = None
         self._clear_audio_buffer()
 
