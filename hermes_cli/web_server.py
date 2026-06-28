@@ -14830,6 +14830,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "interface_temperature": interface_temperature,
             "interface_max_output_tokens": interface_max_output_tokens,
             "interface_timeout_seconds": interface_timeout_seconds,
+            "interface_max_audio_seconds": interface_max_audio_seconds,
             "asr_mode": asr_mode or None,
             "interface_audio_input": interface_audio_input or None,
             "asr_provider": asr_provider or None,

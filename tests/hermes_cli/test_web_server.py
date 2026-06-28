@@ -7151,6 +7151,7 @@ class TestRealtimeVoiceWebSocket:
         assert status["interface_max_output_tokens"] == 96
         assert status["interface_timeout_seconds"] == 0.7
         assert status["interface_max_audio_seconds"] == 18.0
+        assert status["kame"]["interface_max_audio_seconds"] == 18.0
         assert status["asr_provider"] == "nemotron"
         assert status["tts_provider"] == "cartesia"
         assert status["oracle_provider"] == "custom"
@@ -7446,6 +7447,7 @@ class TestRealtimeVoiceWebSocket:
         assert body["interface_max_output_tokens"] == 160
         assert body["interface_timeout_seconds"] == 0.8
         assert body["interface_max_audio_seconds"] == 30.0
+        assert body["kame"]["interface_max_audio_seconds"] == 30.0
         assert body["oracle_model"] == "deep-hermes"
         assert body["input_buffer_limit_bytes"] == 4096
         assert body["input_frame_ms"] == 80
@@ -7742,6 +7744,7 @@ class TestRealtimeVoiceWebSocket:
             "interface_temperature": 0.2,
             "interface_max_output_tokens": 160,
             "interface_timeout_seconds": 0.8,
+            "interface_max_audio_seconds": 30.0,
             "asr_mode": "on_escalation",
             "interface_audio_input": "native_audio",
             "asr_provider": "streaming_stt",
