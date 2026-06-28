@@ -157,6 +157,29 @@ async def test_discord_realtime_session_tags_transcripts_with_last_input_user():
 
 
 @pytest.mark.asyncio
+async def test_discord_realtime_session_sends_end_of_utterance_marker():
+    from agent.realtime_voice import VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    sidecar = FakeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+    )
+
+    await session.start()
+    await session.handle_speech_end(user_id=42)
+
+    assert sidecar.sent[-1].type == VoiceEventType.AUDIO_INPUT_CHUNK
+    assert sidecar.sent[-1].payload["user_id"] == "42"
+    assert sidecar.sent[-1].payload["end_of_utterance"] is True
+    assert sidecar.sent[-1].payload["data_b64"] == ""
+
+
+@pytest.mark.asyncio
 async def test_discord_realtime_session_routes_output_audio_to_mixer():
     from agent.realtime_voice import AudioChunk, VoiceAudioCodec, VoiceEvent, VoiceEventType
     from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession

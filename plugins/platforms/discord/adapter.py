@@ -122,6 +122,22 @@ def _discord_voice_nonnegative_int(value: Any) -> Optional[int]:
     return None
 
 
+def _join_realtime_voice_transcript_parts(parts: List[Any]) -> str:
+    text = ""
+    for raw in parts:
+        part = str(raw or "").strip()
+        if not part:
+            continue
+        if not text:
+            text = part
+            continue
+        if part[:1] in {".", ",", "!", "?", ";", ":"}:
+            text = f"{text.rstrip()}{part}"
+        else:
+            text = f"{text.rstrip()} {part}"
+    return re.sub(r"\s+", " ", text).strip()
+
+
 class _Snowflake:
     """Minimal object exposing ``.id`` — satisfies discord.py's Snowflake
     protocol for ``channel.history(before=...)`` without constructing a
@@ -2480,6 +2496,11 @@ class DiscordAdapter(BasePlatformAdapter):
         session = self._realtime_voice_sessions.get(guild_id)
         if session is None:
             return
+        active = getattr(self, "_realtime_voice_active_speakers", None)
+        if active is None:
+            self._realtime_voice_active_speakers = {}
+            active = self._realtime_voice_active_speakers
+        active[(guild_id, user_id)] = True
         if not getattr(self, "_voice_mixers", {}).get(guild_id):
             vc = getattr(self, "_voice_clients", {}).get(guild_id)
             try:
@@ -2488,6 +2509,20 @@ class DiscordAdapter(BasePlatformAdapter):
             except Exception:
                 pass
         task = asyncio.create_task(session.handle_speech_start(user_id=user_id))
+        task.add_done_callback(self._log_realtime_voice_task_result)
+
+    def _schedule_realtime_voice_speech_end(self, guild_id: int, user_id: int) -> None:
+        session = self._realtime_voice_sessions.get(guild_id)
+        active = getattr(self, "_realtime_voice_active_speakers", None)
+        if active is not None:
+            active[(guild_id, user_id)] = False
+        self._schedule_realtime_voice_transcript_flush(guild_id, user_id, delay_seconds=0.8)
+        if session is None:
+            return
+        handle = getattr(session, "handle_speech_end", None)
+        if not callable(handle):
+            return
+        task = asyncio.create_task(handle(user_id=user_id))
         task.add_done_callback(self._log_realtime_voice_task_result)
 
     @staticmethod
@@ -2760,22 +2795,75 @@ class DiscordAdapter(BasePlatformAdapter):
         user_id = _discord_voice_nonnegative_int(payload.get("user_id"))
         if not transcript or user_id is None:
             return
-        callback = getattr(self, "_voice_input_callback", None)
-        if callback is None:
-            return
+        buffers = getattr(self, "_realtime_voice_transcript_buffers", None)
+        if buffers is None:
+            self._realtime_voice_transcript_buffers = {}
+            buffers = self._realtime_voice_transcript_buffers
+        key = (guild_id, user_id)
+        entry = buffers.setdefault(key, {"parts": [], "task": None})
+        parts = entry.setdefault("parts", [])
+        if not parts or str(parts[-1]).strip().lower() != transcript.lower():
+            parts.append(transcript)
+        active = getattr(self, "_realtime_voice_active_speakers", {}) or {}
+        delay = 1.2 if active.get(key) else 0.8
+        self._schedule_realtime_voice_transcript_flush(guild_id, user_id, delay_seconds=delay)
 
-        async def _run_callback() -> None:
+    def _schedule_realtime_voice_transcript_flush(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        delay_seconds: float,
+    ) -> None:
+        buffers = getattr(self, "_realtime_voice_transcript_buffers", None)
+        if not buffers:
+            return
+        key = (guild_id, user_id)
+        entry = buffers.get(key)
+        if not entry:
+            return
+        old_task = entry.get("task")
+        if old_task is not None and not old_task.done():
+            old_task.cancel()
+
+        async def _delayed_flush() -> None:
             try:
-                await callback(guild_id=guild_id, user_id=user_id, transcript=transcript)
+                await asyncio.sleep(max(0.0, float(delay_seconds)))
+                await self._flush_realtime_voice_transcript(guild_id, user_id)
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:
-                logger.warning("Discord realtime voice transcript callback failed: %s", exc, exc_info=True)
+                logger.warning("Discord realtime voice transcript flush failed: %s", exc, exc_info=True)
 
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        task = loop.create_task(_run_callback())
+        task = loop.create_task(_delayed_flush())
+        entry["task"] = task
         task.add_done_callback(self._log_realtime_voice_task_result)
+
+    async def _flush_realtime_voice_transcript(self, guild_id: int, user_id: int) -> None:
+        buffers = getattr(self, "_realtime_voice_transcript_buffers", None)
+        if not buffers:
+            return
+        key = (guild_id, user_id)
+        entry = buffers.pop(key, None)
+        if not entry:
+            return
+        transcript = _join_realtime_voice_transcript_parts(entry.get("parts") or [])
+        if not transcript:
+            return
+        callback = getattr(self, "_voice_input_callback", None)
+        if callback is None:
+            return
+        logger.info(
+            "Discord realtime voice transcript finalized (guild=%d, user=%d, text=%r)",
+            guild_id,
+            user_id,
+            transcript[:160],
+        )
+        await callback(guild_id=guild_id, user_id=user_id, transcript=transcript)
 
     async def _install_voice_mixer(self, guild_id: int, vc) -> None:
         """Create a VoiceMixer, start the ambient bed, and play it on the VC.
@@ -3361,10 +3449,13 @@ class DiscordAdapter(BasePlatformAdapter):
                 completed = receiver.check_silence()
                 if not self._should_process_legacy_voice_input(guild_id):
                     if completed:
-                        logger.debug(
-                            "Skipping %d legacy voice utterance(s); realtime voice session is active",
+                        logger.info(
+                            "Realtime voice utterance boundary detected (guild=%d, utterances=%d)",
+                            guild_id,
                             len(completed),
                         )
+                        for user_id, _pcm_data in completed:
+                            self._schedule_realtime_voice_speech_end(guild_id, user_id)
                     continue
                 # Voice inputs always originate from a specific guild
                 # (guild_id is in scope). Pass it so role checks are
