@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import inspect
 import logging
 import sys
@@ -268,6 +269,7 @@ class DiscordRealtimeVoiceSession:
         if self._closed:
             return
         if self._started:
+            await self._stop_mixer_speech_for_shutdown()
             self._flush_playback_buffer()
             try:
                 await self._send_event(
@@ -284,6 +286,10 @@ class DiscordRealtimeVoiceSession:
             except asyncio.CancelledError:
                 pass
         await self.sidecar.close()
+
+    async def _stop_mixer_speech_for_shutdown(self) -> None:
+        with contextlib.suppress(Exception):
+            await self._stop_mixer_speech_for_barge_in(require_active=True)
 
     async def handle_speech_start(self, *, user_id: int | str) -> None:
         if self._closed or not self._started:

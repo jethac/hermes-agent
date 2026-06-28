@@ -667,6 +667,35 @@ async def test_discord_realtime_session_sends_session_closed_before_sidecar_clos
 
 
 @pytest.mark.asyncio
+async def test_discord_realtime_session_close_stops_active_mixer_speech():
+    from agent.realtime_voice import VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    sidecar = FakeSidecar()
+    mixer = SimpleNamespace(
+        speech_active=True,
+        stop_speech=MagicMock(),
+        finish_speech_stream=MagicMock(),
+    )
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        mixer=mixer,
+        sidecar_base_url="http://127.0.0.1:8766",
+    )
+
+    await session.start()
+    await session.close()
+
+    mixer.stop_speech.assert_called_once()
+    mixer.finish_speech_stream.assert_called_once()
+    assert sidecar.closed is True
+    assert sidecar.sent[-1].type == VoiceEventType.SESSION_CLOSED
+
+
+@pytest.mark.asyncio
 async def test_discord_realtime_session_close_is_idempotent():
     from agent.realtime_voice import VoiceEventType
     from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
