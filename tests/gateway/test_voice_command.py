@@ -655,11 +655,21 @@ class TestVoiceReceiver:
         receiver.map_ssrc(100, 42)
         receiver._buffers[100] = bytearray(b"\x00" * 1000)
         receiver._last_packet_time[100] = time.monotonic()
+        receiver._realtime_speech_notified.add(100)
+        receiver._realtime_voiced_duration[100] = 0.25
         receiver.stop()
         assert receiver._running is False
         assert len(receiver._buffers) == 0
         assert len(receiver._ssrc_to_user) == 0
         assert len(receiver._last_packet_time) == 0
+        assert len(receiver._realtime_speech_notified) == 0
+        assert len(receiver._realtime_voiced_duration) == 0
+
+    def test_pcm16_rms_ignores_silence_and_detects_volume(self):
+        receiver = self._make_receiver()
+
+        assert receiver._pcm16_rms(b"\x00" * 3840) == 0
+        assert receiver._pcm16_rms((1000).to_bytes(2, "little", signed=True) * 100) == 1000
 
     def test_map_ssrc(self):
         receiver = self._make_receiver()
@@ -1333,6 +1343,8 @@ class TestDiscordVoiceChannelMethods:
         adapter._realtime_voice_cfg = {
             "enabled": True,
             "sidecar_base_url": "http://127.0.0.1:8766",
+            "barge_in_min_speech_ms": 160,
+            "barge_in_min_rms": 500,
         }
         adapter._reset_voice_timeout = MagicMock()
         fake_session = AsyncMock()
@@ -1355,6 +1367,8 @@ class TestDiscordVoiceChannelMethods:
             ok = await adapter.join_voice_channel(mock_channel)
             assert ok is True
             kwargs = receiver_cls.call_args.kwargs
+            assert kwargs["realtime_speech_start_min_duration"] == pytest.approx(0.16)
+            assert kwargs["realtime_speech_start_min_rms"] == 500
             frame_callback = kwargs["realtime_frame_callback"]
             speech_start_callback = kwargs["realtime_speech_start_callback"]
             frame_callback(42, b"pcm")
@@ -1404,6 +1418,33 @@ class TestDiscordVoiceChannelMethods:
         await asyncio.sleep(1.4)
 
         callback.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_realtime_transcript_final_after_silence_boundary_flushes_quickly(self):
+        adapter = self._make_adapter()
+        callback = AsyncMock()
+        adapter._voice_input_callback = callback
+
+        adapter._handle_realtime_voice_event(
+            111,
+            "transcript.final",
+            {"user_id": "42", "text": "All right"},
+        )
+        await asyncio.sleep(0.1)
+        adapter._schedule_realtime_voice_speech_end(111, 42)
+        await asyncio.sleep(0.1)
+        adapter._handle_realtime_voice_event(
+            111,
+            "transcript.final",
+            {"user_id": "42", "text": "keep it short."},
+        )
+        await asyncio.sleep(0.6)
+
+        callback.assert_awaited_once_with(
+            guild_id=111,
+            user_id=42,
+            transcript="All right keep it short.",
+        )
 
     @pytest.mark.asyncio
     async def test_realtime_voice_silence_boundary_signals_session_end(self):

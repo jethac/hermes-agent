@@ -2033,6 +2033,7 @@ DEFAULT_CONFIG = {
             "silence_timeout_ms": 650,
             "speech_level_threshold": 0.075,
             "barge_in_min_speech_ms": 120,
+            "barge_in_min_rms": 350,
             "pre_roll_ms": 300,
             "require_live_like": False,
             "frontend_provider": "",

@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import struct
@@ -479,11 +480,15 @@ class VoiceReceiver:
         allowed_user_ids: Optional[set] = None,
         realtime_frame_callback: Optional[Callable[[int, bytes], None]] = None,
         realtime_speech_start_callback: Optional[Callable[[int], None]] = None,
+        realtime_speech_start_min_duration: float = 0.0,
+        realtime_speech_start_min_rms: int = 0,
     ):
         self._vc = voice_client
         self._allowed_user_ids = allowed_user_ids or set()
         self._realtime_frame_callback = realtime_frame_callback
         self._realtime_speech_start_callback = realtime_speech_start_callback
+        self._realtime_speech_start_min_duration = max(0.0, float(realtime_speech_start_min_duration))
+        self._realtime_speech_start_min_rms = max(0, int(realtime_speech_start_min_rms))
         self._running = False
 
         # Decryption
@@ -499,6 +504,8 @@ class VoiceReceiver:
         self._buffers: Dict[int, bytearray] = defaultdict(bytearray)
         self._buffer_start_time: Dict[int, float] = {}
         self._last_packet_time: Dict[int, float] = {}
+        self._realtime_speech_notified: set[int] = set()
+        self._realtime_voiced_duration: Dict[int, float] = {}
 
         # Opus decoder per SSRC (each user needs own decoder state)
         self._decoders: Dict[int, object] = {}
@@ -536,6 +543,8 @@ class VoiceReceiver:
             self._buffers.clear()
             self._buffer_start_time.clear()
             self._last_packet_time.clear()
+            self._realtime_speech_notified.clear()
+            self._realtime_voiced_duration.clear()
             self._decoders.clear()
             self._ssrc_to_user.clear()
         logger.info("VoiceReceiver stopped")
@@ -590,6 +599,19 @@ class VoiceReceiver:
     # ------------------------------------------------------------------
     # Packet handler (called from SocketReader thread)
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _pcm16_rms(pcm: bytes) -> int:
+        """Return RMS amplitude for little-endian signed 16-bit PCM."""
+        usable = len(pcm) - (len(pcm) % 2)
+        if usable <= 0:
+            return 0
+        total = 0
+        count = 0
+        for (sample,) in struct.iter_unpack("<h", pcm[:usable]):
+            total += sample * sample
+            count += 1
+        return int(math.sqrt(total / count)) if count else 0
 
     def _on_packet(self, data: bytes):
         if not self._running or self._paused:
@@ -719,18 +741,30 @@ class VoiceReceiver:
                 self._decoders[ssrc] = discord.opus.Decoder()
             pcm = self._decoders[ssrc].decode(decrypted)
             realtime_user_id = 0
-            realtime_speech_started = False
+            realtime_speech_start_ready = False
+            pcm_rms = self._pcm16_rms(pcm)
+            pcm_duration = len(pcm) / (self.SAMPLE_RATE * self.CHANNELS * 2)
             now = time.monotonic()
             with self._lock:
-                realtime_speech_started = not self._buffers[ssrc]
-                if realtime_speech_started:
+                if not self._buffers[ssrc]:
                     self._buffer_start_time[ssrc] = now
                 self._buffers[ssrc].extend(pcm)
                 self._last_packet_time[ssrc] = now
+                if pcm_rms >= self._realtime_speech_start_min_rms:
+                    voiced_duration = self._realtime_voiced_duration.get(ssrc, 0.0) + pcm_duration
+                else:
+                    voiced_duration = 0.0
+                self._realtime_voiced_duration[ssrc] = voiced_duration
+                realtime_speech_start_ready = (
+                    ssrc not in self._realtime_speech_notified
+                    and voiced_duration >= self._realtime_speech_start_min_duration
+                )
                 realtime_user_id = self._ssrc_to_user.get(ssrc, 0)
             if not realtime_user_id:
                 realtime_user_id = self._infer_user_for_ssrc(ssrc)
-            if realtime_user_id and realtime_speech_started and self._realtime_speech_start_callback:
+            if realtime_user_id and realtime_speech_start_ready and self._realtime_speech_start_callback:
+                with self._lock:
+                    self._realtime_speech_notified.add(ssrc)
                 try:
                     self._realtime_speech_start_callback(realtime_user_id)
                 except Exception as cb_exc:
@@ -811,15 +845,21 @@ class VoiceReceiver:
                     self._buffers[ssrc] = bytearray()
                     self._buffer_start_time.pop(ssrc, None)
                     self._last_packet_time.pop(ssrc, None)
+                    self._realtime_speech_notified.discard(ssrc)
+                    self._realtime_voiced_duration.pop(ssrc, None)
                 elif reached_max_duration:
                     self._buffers[ssrc] = bytearray()
                     self._buffer_start_time.pop(ssrc, None)
                     self._last_packet_time.pop(ssrc, None)
+                    self._realtime_speech_notified.discard(ssrc)
+                    self._realtime_voiced_duration.pop(ssrc, None)
                 elif silence_duration >= self.SILENCE_THRESHOLD * 2:
                     # Stale buffer with no valid user — discard
                     self._buffers.pop(ssrc, None)
                     self._buffer_start_time.pop(ssrc, None)
                     self._last_packet_time.pop(ssrc, None)
+                    self._realtime_speech_notified.discard(ssrc)
+                    self._realtime_voiced_duration.pop(ssrc, None)
 
         return completed
 
@@ -2795,6 +2835,8 @@ class DiscordAdapter(BasePlatformAdapter):
             "tts_provider": None,
             "sidecar_connect_timeout_seconds": 10.0,
             "sidecar_close_timeout_seconds": 2.0,
+            "barge_in_min_speech_ms": 120,
+            "barge_in_min_rms": 350,
             "turn_acknowledgement": {
                 "enabled": True,
                 "text": "One moment.",
@@ -2888,6 +2930,11 @@ class DiscordAdapter(BasePlatformAdapter):
         active = getattr(self, "_realtime_voice_active_speakers", None)
         if active is not None:
             active[(guild_id, user_id)] = False
+        last_end = getattr(self, "_realtime_voice_last_speech_end", None)
+        if last_end is None:
+            self._realtime_voice_last_speech_end = {}
+            last_end = self._realtime_voice_last_speech_end
+        last_end[(guild_id, user_id)] = time.monotonic()
         self._schedule_realtime_voice_transcript_flush(guild_id, user_id, delay_seconds=0.8)
         if session is None:
             return
@@ -3179,7 +3226,13 @@ class DiscordAdapter(BasePlatformAdapter):
         # Provider finals can be eager fragments. Prefer Discord's own silence
         # boundary for turn finalization; this fallback only prevents a stuck
         # buffer if the receiver never emits an utterance boundary.
-        self._schedule_realtime_voice_transcript_flush(guild_id, user_id, delay_seconds=8.0)
+        last_end = getattr(self, "_realtime_voice_last_speech_end", {}) or {}
+        ended_at = last_end.get(key)
+        if ended_at is not None and time.monotonic() - float(ended_at) <= 2.0:
+            delay = 0.45
+        else:
+            delay = 8.0
+        self._schedule_realtime_voice_transcript_flush(guild_id, user_id, delay_seconds=delay)
 
     def _schedule_realtime_voice_transcript_flush(
         self,
@@ -3386,6 +3439,11 @@ class DiscordAdapter(BasePlatformAdapter):
                     allowed_user_ids=self._allowed_user_ids,
                     realtime_frame_callback=_realtime_frame_callback,
                     realtime_speech_start_callback=_realtime_speech_start_callback,
+                    realtime_speech_start_min_duration=max(
+                        0.0,
+                        float(self._realtime_voice_cfg.get("barge_in_min_speech_ms") or 0) / 1000.0,
+                    ),
+                    realtime_speech_start_min_rms=int(self._realtime_voice_cfg.get("barge_in_min_rms") or 0),
                 )
                 receiver.start()
                 self._voice_receivers[guild_id] = receiver

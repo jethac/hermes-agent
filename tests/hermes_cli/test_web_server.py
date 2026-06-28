@@ -3166,6 +3166,7 @@ class TestBuildSchemaFromConfig:
         assert "without claiming production quality" in CONFIG_SCHEMA["voice.realtime.best_effort_languages"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.speech_level_threshold"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.barge_in_min_speech_ms"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.barge_in_min_rms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.pre_roll_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.require_live_like"]["type"] == "boolean"
         assert "streaming STT/TTS" in CONFIG_SCHEMA["voice.realtime.require_live_like"]["description"]
@@ -7164,6 +7165,7 @@ class TestRealtimeVoiceWebSocket:
         assert body["silence_timeout_ms"] == 700
         assert body["speech_level_threshold"] == 0.075
         assert body["barge_in_min_speech_ms"] == 120
+        assert body["barge_in_min_rms"] == 350
         assert body["pre_roll_ms"] == 300
         assert body["language_support"] == {
             "production_languages": ["en", "ja"],
@@ -8367,6 +8369,7 @@ class TestRealtimeVoiceWebSocket:
                         "engine": "text_oracle_tts",
                         "speech_level_threshold": 2,
                         "barge_in_min_speech_ms": 5,
+                        "barge_in_min_rms": 40_000,
                         "pre_roll_ms": 5_000,
                     }
                 }
@@ -8379,6 +8382,7 @@ class TestRealtimeVoiceWebSocket:
         body = response.json()
         assert body["speech_level_threshold"] == 1.0
         assert body["barge_in_min_speech_ms"] == 40
+        assert body["barge_in_min_rms"] == 32767
         assert body["pre_roll_ms"] == 1000
 
     def test_status_reports_remote_unhealthy_sidecar_unavailable_and_redacted(self, monkeypatch):

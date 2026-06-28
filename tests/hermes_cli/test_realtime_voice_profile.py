@@ -23,6 +23,7 @@ def test_live_like_profile_contains_portable_streaming_bridge_config():
     assert profile["production_languages"] == ["en", "ja"]
     assert profile["production_scripts"] == ["Latn", "Jpan"]
     assert profile["best_effort_languages"] is True
+    assert profile["barge_in_min_rms"] == 350
     assert profile["quality_targets_ms"]["audio_to_partial_transcript_ms"] == 300
     assert profile["production_evidence_min_runs"] == 3
 
@@ -456,6 +457,7 @@ def test_cartesia_preset_apply_prints_bridge_next_steps(monkeypatch, tmp_path, c
     realtime = saved["config"]["voice"]["realtime"]
     assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8769"
     assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8769"
+    assert realtime["barge_in_min_rms"] == 350
     output = capsys.readouterr().out
     assert "realtime_voice_cartesia_bridge --generate-token" in output
     assert "realtime_voice_cartesia_bridge --check --strict --production-en-ja" in output
@@ -478,6 +480,7 @@ def test_openai_preset_apply_prints_live_evidence_next_steps(monkeypatch, tmp_pa
     assert result == 0
     realtime = saved["config"]["voice"]["realtime"]
     assert realtime["frontend_provider"] == "openai_realtime"
+    assert realtime["barge_in_min_rms"] == 350
     output = capsys.readouterr().out
     assert "export OPENAI_API_KEY=..." in output
     assert "export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=..." in output
@@ -499,6 +502,7 @@ def test_gemini_preset_apply_prints_live_evidence_next_steps(monkeypatch, tmp_pa
     assert result == 0
     realtime = saved["config"]["voice"]["realtime"]
     assert realtime["frontend_provider"] == "gemini_live"
+    assert realtime["barge_in_min_rms"] == 350
     output = capsys.readouterr().out
     assert "export GEMINI_API_KEY=..." in output
     assert "export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=..." in output
