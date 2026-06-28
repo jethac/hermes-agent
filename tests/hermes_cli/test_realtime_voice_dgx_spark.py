@@ -166,11 +166,19 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert (output_dir / "launch-local-stack.sh").stat().st_mode & 0o111
 
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    launch = (output_dir / "launch-local-stack.sh").read_text(encoding="utf-8")
     matrix = json.loads((output_dir / "benchmark-matrix.json").read_text(encoding="utf-8"))
     evidence_template = json.loads((output_dir / "benchmark-evidence-template.json").read_text(encoding="utf-8"))
     assert manifest["roles"]["interface"]["audio_input"] == "native_audio"
     assert manifest["engine"]["max_spoken_sentences"] == 2
     assert "HERMES_KAME_MAX_SPOKEN_SENTENCES=2" in (output_dir / ".env.example").read_text(encoding="utf-8")
+    assert "HERMES_DGX_SPARK_APPLY_PROFILE" in launch
+    assert "hermes_cli.realtime_voice_profile --preset kame --apply" in launch
+    assert "--kame-interface-audio-input native_audio" in launch
+    assert "--kame-asr-mode on_escalation" in launch
+    assert "--sidecar-host spark.local" in launch
+    assert "--sidecar-port 8765" in launch
+    assert "docker compose --env-file .env.example -f compose.yaml up" in launch
     assert matrix["candidates"]["interface"][0]["input"] == "direct_audio"
     assert matrix["candidates"]["interface"][1]["input"] == "stt_fallback"
     assert matrix["candidates"]["oracle_outcome"][0]["asr_hypothesis"] == "without_asr_hypothesis"

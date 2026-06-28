@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Mapping
@@ -445,23 +446,39 @@ HERMES_VOICE_STREAMING_TTS_BASE_URL={roles["tts"]["base_url"]}
 
 
 def render_dgx_spark_launch_script(manifest: Mapping[str, Any]) -> str:
+    sidecar_host, sidecar_port = _url_host_port(
+        str(manifest["roles"]["sidecar"]["base_url"]),
+        default_port=8765,
+    )
     return f"""#!/usr/bin/env sh
 set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+: "${{HERMES_REPO_DIR:={manifest["repo_dir"]}}}"
+: "${{HERMES_HOME:={manifest["hermes_home"]}}}"
+: "${{HERMES_PYTHON:=python}}"
+export HERMES_REPO_DIR HERMES_HOME
+
+if [ "${{HERMES_DGX_SPARK_APPLY_PROFILE:-1}}" != "0" ]; then
+  (
+    cd "$HERMES_REPO_DIR"
+    "$HERMES_PYTHON" -m hermes_cli.realtime_voice_profile --preset kame --apply \\
+      --kame-reflex-model {manifest["roles"]["interface"]["model"]} \\
+      --kame-interface-audio-input native_audio \\
+      --kame-asr-mode {manifest["engine"]["asr_mode"]} \\
+      --kame-preferred-local-oracle-model {manifest["roles"]["oracle"]["preferred_local_model"]} \\
+      --streaming-stt-base-url {manifest["roles"]["asr"]["base_url"]} \\
+      --streaming-tts-base-url {manifest["roles"]["tts"]["base_url"]} \\
+      --sidecar-host {sidecar_host} \\
+      --sidecar-port {sidecar_port}
+  )
+fi
+
 cd "$SCRIPT_DIR"
 docker compose --env-file .env.example -f compose.yaml up --remove-orphans "$@"
 
 # Readiness check once services are up:
 #   python -m hermes_cli.realtime_voice_dgx_spark --output-dir "$SCRIPT_DIR" --check
-#
-# Hermes voice profile:
-#   python -m hermes_cli.realtime_voice_profile --preset kame \\
-#     --kame-reflex-model {manifest["roles"]["interface"]["model"]} \\
-#     --kame-interface-audio-input native_audio \\
-#     --kame-asr-mode {manifest["engine"]["asr_mode"]} \\
-#     --kame-preferred-local-oracle-model {manifest["roles"]["oracle"]["preferred_local_model"]} \\
-#     --streaming-stt-base-url {manifest["roles"]["asr"]["base_url"]} \\
-#     --streaming-tts-base-url {manifest["roles"]["tts"]["base_url"]}
 """
 
 
@@ -889,6 +906,16 @@ def _openai_models_url(base_url: str) -> str:
 
 def _health_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/health"
+
+
+def _url_host_port(base_url: str, *, default_port: int) -> tuple[str, int]:
+    try:
+        parsed = urllib.parse.urlparse(base_url)
+    except Exception:
+        return "127.0.0.1", default_port
+    host = parsed.hostname or "127.0.0.1"
+    port = parsed.port or default_port
+    return host, port
 
 
 def _models_payload_contains(payload: Mapping[str, Any], expected_model: str) -> bool:
