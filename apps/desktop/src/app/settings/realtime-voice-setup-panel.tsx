@@ -69,11 +69,52 @@ function statusTone(ok?: boolean | null) {
   return ok ? 'primary' : 'muted'
 }
 
+function firstConfigValue(config: HermesConfigRecord, ...paths: string[]) {
+  for (const path of paths) {
+    const value = getNested(config, path)
+
+    if (value !== undefined && value !== null) {
+      return value
+    }
+  }
+
+  return undefined
+}
+
+function realtimeConfigValue(config: HermesConfigRecord, flatKey: string, ...nestedKeys: string[]) {
+  return firstConfigValue(
+    config,
+    `voice.realtime.${flatKey}`,
+    ...nestedKeys.map(key => `voice.realtime.${key}`)
+  )
+}
+
+function realtimeSecondsValue(
+  config: HermesConfigRecord,
+  flatKey: string,
+  nestedSecondsKey: string,
+  nestedMillisecondsKey: string
+) {
+  const seconds = realtimeConfigValue(config, flatKey, nestedSecondsKey)
+
+  if (seconds !== undefined) {
+    return seconds
+  }
+
+  const milliseconds = getNested(config, `voice.realtime.${nestedMillisecondsKey}`)
+
+  if (milliseconds === undefined || milliseconds === null) {
+    return undefined
+  }
+
+  return Number(milliseconds) / 1000
+}
+
 function setupProviderFor(config: HermesConfigRecord): string {
   const engine = String(getNested(config, 'voice.realtime.engine') ?? '')
-  const provider = String(getNested(config, 'voice.realtime.frontend_provider') ?? '')
-  const sttUrl = String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? '')
-  const sttModel = String(getNested(config, 'voice.realtime.streaming_stt_model') ?? '')
+  const provider = String(realtimeConfigValue(config, 'frontend_provider', 'interface.provider') ?? '')
+  const sttUrl = String(realtimeConfigValue(config, 'streaming_stt_base_url', 'asr.base_url') ?? '')
+  const sttModel = String(realtimeConfigValue(config, 'streaming_stt_model', 'asr.model') ?? '')
 
   if (engine === 'kame_interface_oracle' || provider === 'gemma4') {
     return 'kame'
@@ -466,15 +507,15 @@ export function RealtimeVoiceSetupPanel({
   const [runningSmoke, setRunningSmoke] = useState(false)
   const [smoke, setSmoke] = useState<RealtimeVoiceSmokeResponse | null>(null)
   const [selectedProvider, setSelectedProvider] = useState(() => setupProviderFor(config))
-  const [model, setModel] = useState(String(getNested(config, 'voice.realtime.frontend_model') ?? ''))
+  const [model, setModel] = useState(String(realtimeConfigValue(config, 'frontend_model', 'interface.model') ?? ''))
   const [voice, setVoice] = useState('')
 
   const [streamingSttModel, setStreamingSttModel] = useState(
-    String(getNested(config, 'voice.realtime.streaming_stt_model') ?? '')
+    String(realtimeConfigValue(config, 'streaming_stt_model', 'asr.model') ?? '')
   )
 
   const [bridgeBaseUrl, setBridgeBaseUrl] = useState(
-    String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? '')
+    String(realtimeConfigValue(config, 'streaming_stt_base_url', 'asr.base_url') ?? '')
   )
 
   const [requireDiscordSmoke, setRequireDiscordSmoke] = useState(true)
@@ -521,8 +562,8 @@ export function RealtimeVoiceSetupPanel({
   useEffect(() => {
     const nextModel =
       activeProvider === 'openai' || activeProvider === 'gemini' || activeProvider === 'kame'
-        ? String(getNested(config, 'voice.realtime.frontend_model') ?? '')
-        : String(getNested(config, 'voice.realtime.streaming_tts_model') ?? '')
+        ? String(realtimeConfigValue(config, 'frontend_model', 'interface.model') ?? '')
+        : String(realtimeConfigValue(config, 'streaming_tts_model', 'tts.model') ?? '')
 
     const nextVoice =
       activeProvider === 'openai'
@@ -534,10 +575,10 @@ export function RealtimeVoiceSetupPanel({
     setModel(nextModel || PROVIDER_MODELS[activeProvider]?.[0] || '')
     setVoice(nextVoice)
     setStreamingSttModel(
-      String(getNested(config, 'voice.realtime.streaming_stt_model') ?? PROVIDER_STT_MODELS[activeProvider]?.[0] ?? '')
+      String(realtimeConfigValue(config, 'streaming_stt_model', 'asr.model') ?? PROVIDER_STT_MODELS[activeProvider]?.[0] ?? '')
     )
     setBridgeBaseUrl(
-      String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? PROVIDER_BRIDGE_URLS[activeProvider] ?? '')
+      String(realtimeConfigValue(config, 'streaming_stt_base_url', 'asr.base_url') ?? PROVIDER_BRIDGE_URLS[activeProvider] ?? '')
     )
   }, [activeProvider, config])
 
@@ -556,103 +597,103 @@ export function RealtimeVoiceSetupPanel({
         streaming_stt_base_url: selectedIsBridge
           ? bridgeBaseUrl || PROVIDER_BRIDGE_URLS[selectedProvider]
           : selectedIsKame
-            ? String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? '')
+            ? String(realtimeConfigValue(config, 'streaming_stt_base_url', 'asr.base_url') ?? '')
             : undefined,
         streaming_tts_base_url: selectedIsBridge
           ? bridgeBaseUrl || PROVIDER_BRIDGE_URLS[selectedProvider]
           : selectedIsKame
-            ? String(getNested(config, 'voice.realtime.streaming_tts_base_url') ?? '')
+            ? String(realtimeConfigValue(config, 'streaming_tts_base_url', 'tts.base_url') ?? '')
             : undefined,
         streaming_stt_model: selectedIsBridge
           ? streamingSttModel || PROVIDER_STT_MODELS[selectedProvider]?.[0]
           : selectedIsKame
-            ? String(getNested(config, 'voice.realtime.streaming_stt_model') ?? 'portable-streaming-asr')
+            ? String(realtimeConfigValue(config, 'streaming_stt_model', 'asr.model') ?? 'portable-streaming-asr')
             : undefined,
         streaming_tts_model: selectedIsBridge
           ? model || PROVIDER_MODELS[selectedProvider]?.[0]
           : selectedIsKame
-            ? String(getNested(config, 'voice.realtime.streaming_tts_model') ?? 'portable-streaming-voice')
+            ? String(realtimeConfigValue(config, 'streaming_tts_model', 'tts.model') ?? 'portable-streaming-voice')
             : undefined,
         streaming_tts_voice: selectedIsKame
           ? String(
-              getNested(config, 'voice.realtime.streaming_tts_voice') ??
-                getNested(config, 'voice.realtime.tts_voice') ??
+              realtimeConfigValue(config, 'streaming_tts_voice') ??
+                realtimeConfigValue(config, 'tts_voice', 'tts.voice') ??
                 ''
             )
           : undefined,
         interface_base_url: selectedIsKame
           ? String(
-              getNested(config, 'voice.realtime.interface_base_url') ??
-                getNested(config, 'voice.realtime.vllm_base_url') ??
+              realtimeConfigValue(config, 'interface_base_url', 'interface.base_url') ??
+                realtimeConfigValue(config, 'vllm_base_url') ??
                 ''
             )
           : undefined,
         vllm_model: selectedIsKame
-          ? String(getNested(config, 'voice.realtime.vllm_model') ?? model ?? '')
+          ? String(realtimeConfigValue(config, 'vllm_model') ?? model ?? '')
           : undefined,
         interface_provider: selectedIsKame
-          ? String(getNested(config, 'voice.realtime.frontend_provider') ?? 'gemma4') || 'gemma4'
+          ? String(realtimeConfigValue(config, 'frontend_provider', 'interface.provider') ?? 'gemma4') || 'gemma4'
           : undefined,
         interface_api_key_env: selectedIsKame
-          ? String(getNested(config, 'voice.realtime.interface_api_key_env') ?? 'HERMES_KAME_INTERFACE_API_KEY') ||
+          ? String(realtimeConfigValue(config, 'interface_api_key_env', 'interface.api_key_env') ?? 'HERMES_KAME_INTERFACE_API_KEY') ||
             'HERMES_KAME_INTERFACE_API_KEY'
           : undefined,
         interface_temperature: selectedIsKame
-          ? Number(getNested(config, 'voice.realtime.interface_temperature') ?? 0.2)
+          ? Number(realtimeConfigValue(config, 'interface_temperature', 'interface.temperature') ?? 0.2)
           : undefined,
         interface_max_output_tokens: selectedIsKame
-          ? Number(getNested(config, 'voice.realtime.interface_max_output_tokens') ?? 160)
+          ? Number(realtimeConfigValue(config, 'interface_max_output_tokens', 'interface.max_output_tokens') ?? 160)
           : undefined,
         interface_timeout_seconds: selectedIsKame
-          ? Number(getNested(config, 'voice.realtime.interface_timeout_seconds') ?? 0.8)
+          ? Number(realtimeSecondsValue(config, 'interface_timeout_seconds', 'interface.timeout_seconds', 'interface.timeout_ms') ?? 0.8)
           : undefined,
         interface_audio_input: selectedIsKame
-          ? String(getNested(config, 'voice.realtime.interface_audio_input') ?? 'native_audio') || 'native_audio'
+          ? String(realtimeConfigValue(config, 'interface_audio_input', 'interface.audio_input') ?? 'native_audio') || 'native_audio'
           : undefined,
         interface_max_audio_seconds: selectedIsKame
-          ? Number(getNested(config, 'voice.realtime.interface_max_audio_seconds') ?? 30)
+          ? Number(realtimeConfigValue(config, 'interface_max_audio_seconds', 'interface.max_audio_seconds') ?? 30)
           : undefined,
         asr_mode: selectedIsKame
-          ? String(getNested(config, 'voice.realtime.asr_mode') ?? 'on_escalation') || 'on_escalation'
+          ? String(realtimeConfigValue(config, 'asr_mode', 'interface.asr_mode') ?? 'on_escalation') || 'on_escalation'
           : undefined,
         asr_provider: selectedIsKame
-          ? String(getNested(config, 'voice.realtime.asr_provider') ?? 'streaming_stt') || 'streaming_stt'
+          ? String(realtimeConfigValue(config, 'asr_provider', 'asr.provider') ?? 'streaming_stt') || 'streaming_stt'
           : undefined,
         oracle_model: selectedIsKame
           ? String(
-              getNested(config, 'voice.realtime.oracle_model') ??
-                getNested(config, 'voice.realtime.preferred_local_oracle_model') ??
+              realtimeConfigValue(config, 'oracle_model', 'oracle.model') ??
+                realtimeConfigValue(config, 'preferred_local_oracle_model', 'oracle.preferred_local_model') ??
                 ''
             )
           : undefined,
-        oracle_provider: selectedIsKame ? String(getNested(config, 'voice.realtime.oracle_provider') ?? '') : undefined,
-        oracle_base_url: selectedIsKame ? String(getNested(config, 'voice.realtime.oracle_base_url') ?? '') : undefined,
+        oracle_provider: selectedIsKame ? String(realtimeConfigValue(config, 'oracle_provider', 'oracle.provider') ?? '') : undefined,
+        oracle_base_url: selectedIsKame ? String(realtimeConfigValue(config, 'oracle_base_url', 'oracle.base_url') ?? '') : undefined,
         oracle_api_mode: selectedIsKame
-          ? String(getNested(config, 'voice.realtime.oracle_api_mode') ?? 'chat_completions') || 'chat_completions'
+          ? String(realtimeConfigValue(config, 'oracle_api_mode', 'oracle.api_mode') ?? 'chat_completions') || 'chat_completions'
           : undefined,
         oracle_timeout_seconds: selectedIsKame
-          ? Number(getNested(config, 'voice.realtime.oracle_timeout_seconds') ?? 60)
+          ? Number(realtimeSecondsValue(config, 'oracle_timeout_seconds', 'oracle.timeout_seconds', 'oracle.timeout_ms') ?? 60)
           : undefined,
         max_spoken_sentences: selectedIsKame
-          ? Number(getNested(config, 'voice.realtime.max_spoken_sentences') ?? 2)
+          ? Number(realtimeConfigValue(config, 'max_spoken_sentences', 'oracle.max_spoken_sentences') ?? 2)
           : undefined,
         oracle_provider_name: selectedIsKame
-          ? String(getNested(config, 'voice.realtime.oracle_provider_name') ?? '')
+          ? String(realtimeConfigValue(config, 'oracle_provider_name', 'oracle.provider_name') ?? '')
           : undefined,
         voice_response_policy: selectedIsKame
-          ? String(getNested(config, 'voice.realtime.voice_response_policy') ?? 'sentence_cap') || 'sentence_cap'
+          ? String(realtimeConfigValue(config, 'voice_response_policy', 'oracle.voice_response_policy', 'oracle.response_policy') ?? 'sentence_cap') || 'sentence_cap'
           : undefined,
         fallback_policy: selectedIsKame
           ? String(getNested(config, 'voice.realtime.fallback_policy') ?? 'legacy_voice') || 'legacy_voice'
           : undefined,
         tts_provider: selectedIsKame
-          ? String(getNested(config, 'voice.realtime.tts_provider') ?? 'streaming_tts') || 'streaming_tts'
+          ? String(realtimeConfigValue(config, 'tts_provider', 'tts.provider') ?? 'streaming_tts') || 'streaming_tts'
           : undefined,
         tts_model: selectedIsKame
-          ? String(getNested(config, 'voice.realtime.tts_model') ?? getNested(config, 'voice.realtime.streaming_tts_model') ?? '')
+          ? String(realtimeConfigValue(config, 'tts_model', 'tts.model') ?? realtimeConfigValue(config, 'streaming_tts_model') ?? '')
           : undefined,
         tts_voice: selectedIsKame
-          ? String(getNested(config, 'voice.realtime.tts_voice') ?? getNested(config, 'voice.realtime.streaming_tts_voice') ?? '')
+          ? String(realtimeConfigValue(config, 'tts_voice', 'tts.voice') ?? realtimeConfigValue(config, 'streaming_tts_voice') ?? '')
           : undefined,
         allow_local_greetings: selectedIsKame
           ? Boolean(getNested(config, 'voice.realtime.routing.allow_local_greetings') ?? true)
@@ -673,13 +714,13 @@ export function RealtimeVoiceSetupPanel({
           ? Number(getNested(config, 'voice.realtime.routing.local_confidence_threshold') ?? 0.75)
           : undefined,
         barge_in_min_rms: selectedIsKame
-          ? Number(getNested(config, 'voice.realtime.barge_in_min_rms') ?? 350)
+          ? Number(realtimeConfigValue(config, 'barge_in_min_rms', 'barge_in.min_rms') ?? 350)
           : undefined,
         barge_in_min_speech_ms: selectedIsKame
-          ? Number(getNested(config, 'voice.realtime.barge_in_min_speech_ms') ?? 120)
+          ? Number(realtimeConfigValue(config, 'barge_in_min_speech_ms', 'barge_in.min_speech_ms') ?? 120)
           : undefined,
         barge_in_stop_playback_deadline_ms: selectedIsKame
-          ? Number(getNested(config, 'voice.realtime.barge_in_stop_playback_deadline_ms') ?? 150)
+          ? Number(realtimeConfigValue(config, 'barge_in_stop_playback_deadline_ms', 'barge_in.stop_playback_deadline_ms') ?? 150)
           : undefined,
         metrics_enabled: selectedIsKame
           ? Boolean(getNested(config, 'voice.realtime.metrics.enabled') ?? true)

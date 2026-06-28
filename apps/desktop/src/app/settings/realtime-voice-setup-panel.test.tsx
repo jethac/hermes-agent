@@ -120,6 +120,74 @@ const config: HermesConfigRecord = {
   }
 }
 
+const nestedKameConfig: HermesConfigRecord = {
+  discord: {
+    realtime_voice: {
+      enabled: true,
+      sidecar_base_url: 'http://127.0.0.1:8765'
+    }
+  },
+  voice: {
+    realtime: {
+      enabled: true,
+      engine: 'kame_interface_oracle',
+      fallback_policy: 'fail_closed',
+      interface: {
+        api_key_env: 'NESTED_KAME_INTERFACE_TOKEN',
+        asr_mode: 'on_escalation',
+        audio_input: 'native_audio',
+        base_url: 'http://spark.local:8001/v1',
+        max_audio_seconds: 18,
+        max_output_tokens: 88,
+        model: 'google/gemma-4-E2B-it',
+        provider: 'gemma4',
+        temperature: 0.25,
+        timeout_ms: 650
+      },
+      oracle: {
+        api_mode: 'chat_completions',
+        base_url: 'http://spark.local:8002/v1',
+        max_spoken_sentences: 2,
+        model: 'gemma-4-26B-A4B-it',
+        preferred_local_model: 'gemma-4-26B-A4B-it',
+        provider: 'custom',
+        provider_name: 'Nested Spark Oracle',
+        response_policy: 'brief_summary',
+        timeout_ms: 45000
+      },
+      asr: {
+        base_url: 'http://127.0.0.1:8770',
+        model: 'nemotron-speech-streaming-0.6b',
+        provider: 'nemotron_speech'
+      },
+      tts: {
+        base_url: 'http://127.0.0.1:8771',
+        model: 'magpie-tts',
+        provider: 'nvidia_speech',
+        voice: 'puck-local'
+      },
+      barge_in: {
+        min_rms: 375,
+        min_speech_ms: 130,
+        stop_playback_deadline_ms: 145
+      },
+      metrics: {
+        enabled: true,
+        log_provider_spans: true,
+        log_turn_spans: false
+      },
+      routing: {
+        allow_local_clarifications: true,
+        allow_local_greetings: false,
+        local_confidence_threshold: 0.82,
+        require_oracle_for_files: true,
+        require_oracle_for_memory: true,
+        require_oracle_for_tools: true
+      }
+    }
+  }
+}
+
 describe('RealtimeVoiceSetupPanel', () => {
   beforeEach(() => {
     hermesMocks.getRealtimeVoiceSetup.mockResolvedValue(setupResponse)
@@ -213,6 +281,56 @@ describe('RealtimeVoiceSetupPanel', () => {
         tts_provider: 'cartesia',
         tts_model: 'sonic-3.5',
         tts_voice: '5ee9feff-1265-424a-9d7f-8e4d431a12c7',
+        vllm_model: 'google/gemma-4-E2B-it',
+        voice_response_policy: 'brief_summary'
+      })
+    )
+  })
+
+  it('submits nested KAME design config without flattening values to defaults', async () => {
+    render(<RealtimeVoiceSetupPanel config={nestedKameConfig} onConfigChange={vi.fn()} />)
+
+    expect(await screen.findByText('KAME Reflex / Oracle')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /apply provider/i }))
+
+    await waitFor(() => expect(hermesMocks.applyRealtimeVoiceProfile).toHaveBeenCalledTimes(1))
+    expect(hermesMocks.applyRealtimeVoiceProfile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allow_local_clarifications: true,
+        allow_local_greetings: false,
+        asr_mode: 'on_escalation',
+        asr_provider: 'nemotron_speech',
+        barge_in_min_rms: 375,
+        barge_in_min_speech_ms: 130,
+        barge_in_stop_playback_deadline_ms: 145,
+        fallback_policy: 'fail_closed',
+        interface_api_key_env: 'NESTED_KAME_INTERFACE_TOKEN',
+        interface_audio_input: 'native_audio',
+        interface_base_url: 'http://spark.local:8001/v1',
+        interface_max_audio_seconds: 18,
+        interface_max_output_tokens: 88,
+        interface_provider: 'gemma4',
+        interface_temperature: 0.25,
+        interface_timeout_seconds: 0.65,
+        metrics_enabled: true,
+        metrics_log_provider_spans: true,
+        metrics_log_turn_spans: false,
+        model: 'google/gemma-4-E2B-it',
+        oracle_api_mode: 'chat_completions',
+        oracle_base_url: 'http://spark.local:8002/v1',
+        oracle_model: 'gemma-4-26B-A4B-it',
+        oracle_provider: 'custom',
+        oracle_provider_name: 'Nested Spark Oracle',
+        oracle_timeout_seconds: 45,
+        preset: 'kame',
+        streaming_stt_base_url: 'http://127.0.0.1:8770',
+        streaming_stt_model: 'nemotron-speech-streaming-0.6b',
+        streaming_tts_base_url: 'http://127.0.0.1:8771',
+        streaming_tts_model: 'magpie-tts',
+        tts_model: 'magpie-tts',
+        tts_provider: 'nvidia_speech',
+        tts_voice: 'puck-local',
         vllm_model: 'google/gemma-4-E2B-it',
         voice_response_policy: 'brief_summary'
       })
