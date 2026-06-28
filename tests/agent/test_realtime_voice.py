@@ -5926,6 +5926,55 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     assert "ASR evidence mode is on_escalation" in prompt
 
 
+def test_reference_sidecar_vllm_kame_audio_reflex_wraps_pcm16_as_wav(monkeypatch):
+    captured = {}
+    pcm = b"\x01\x00\xff\x7f"
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"choices":[{"message":{"content":"{\\"route\\":\\"oracle_direct\\",\\"intent\\":\\"Check status.\\",\\"text\\":\\"check status\\",\\"route_confidence\\":0.9}"}}]}'
+
+    def fake_urlopen(req, timeout):
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        return FakeResponse()
+
+    monkeypatch.setattr("agent.realtime_voice_reference_sidecar.urllib.request.urlopen", fake_urlopen)
+    sidecar = ReferenceRealtimeVoiceSidecarSession(
+        ReferenceSidecarRuntimeConfig(
+            vllm_base_url="http://vllm.local:8000/v1",
+            vllm_model="google/gemma-4-E2B-it",
+        )
+    )
+    sidecar.config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        sample_rate_hz=16000,
+        channels=1,
+        interface_audio_input="native_audio",
+    )
+
+    payload = sidecar._understand_audio_sync(pcm, VoiceAudioCodec.PCM16)
+
+    audio_url = captured["body"]["messages"][0]["content"][0]["audio_url"]["url"]
+    prefix, encoded = audio_url.split(",", 1)
+    wav = base64.b64decode(encoded)
+    assert payload["reflex_provider"] == "vllm"
+    assert prefix == "data:audio/wav;base64"
+    assert wav[:4] == b"RIFF"
+    assert wav[8:12] == b"WAVE"
+    assert int.from_bytes(wav[22:24], "little") == 1
+    assert int.from_bytes(wav[24:28], "little") == 16000
+    assert wav[36:40] == b"data"
+    assert int.from_bytes(wav[40:44], "little") == len(pcm)
+    assert wav[44:] == pcm
+
+
 def test_reference_sidecar_vllm_kame_audio_reflex_respects_provider_metrics_policy(monkeypatch):
     class FakeResponse:
         def __enter__(self):
@@ -5970,6 +6019,11 @@ def test_reference_sidecar_text_fallback_bypasses_configured_vllm_reflex(monkeyp
 
     def fake_transcribe(path):
         transcribe_calls.append(path)
+        with open(path, "rb") as handle:
+            wav = handle.read()
+        assert wav[:4] == b"RIFF"
+        assert wav[8:12] == b"WAVE"
+        assert wav[36:40] == b"data"
         return {"success": True, "transcript": "check deployment status"}
 
     monkeypatch.setattr("agent.realtime_voice_reference_sidecar.urllib.request.urlopen", forbidden_urlopen)
@@ -5989,7 +6043,7 @@ def test_reference_sidecar_text_fallback_bypasses_configured_vllm_reflex(monkeyp
         asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
     )
 
-    payload = sidecar._understand_audio_sync(b"audio", VoiceAudioCodec.WEBM_OPUS)
+    payload = sidecar._understand_audio_sync(b"\x00\x00\x01\x00", VoiceAudioCodec.PCM16)
 
     assert urlopen_calls == []
     assert transcribe_calls

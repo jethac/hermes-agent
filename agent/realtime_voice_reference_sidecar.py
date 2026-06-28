@@ -1352,7 +1352,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         if transcribe_audio is None:
             from tools.transcription_tools import transcribe_audio as transcribe_audio
 
-        path = _write_temp_audio(audio, codec)
+        path = _write_temp_audio(audio, codec, self.config)
         try:
             result = transcribe_audio(path)
             if not result.get("success"):
@@ -1430,7 +1430,7 @@ class ReferenceRealtimeVoiceSidecarSession:
 
     def _transcribe_with_vllm(self, audio: bytes, codec: VoiceAudioCodec) -> str:
         mime_type = _mime_type_for_codec(codec)
-        audio_b64 = base64.b64encode(audio).decode("ascii")
+        audio_b64 = base64.b64encode(_audio_bytes_for_codec(audio, codec, self.config)).decode("ascii")
         payload = {
             "model": self.runtime.vllm_model,
             "messages": [
@@ -1465,7 +1465,7 @@ class ReferenceRealtimeVoiceSidecarSession:
     def _understand_kame_with_vllm(self, audio: bytes, codec: VoiceAudioCodec) -> dict[str, Any]:
         mime_type = _mime_type_for_codec(codec)
         self._raise_if_kame_audio_segment_too_long(audio, codec)
-        audio_b64 = base64.b64encode(audio).decode("ascii")
+        audio_b64 = base64.b64encode(_audio_bytes_for_codec(audio, codec, self.config)).decode("ascii")
         config = self.config
         asr_mode = str(config.asr_mode.value if config is not None else "on_escalation")
         routing_policy = _kame_routing_policy_text(config)
@@ -2049,15 +2049,65 @@ def _generation_transcript_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
     return fields
 
 
-def _write_temp_audio(audio: bytes, codec: VoiceAudioCodec) -> str:
+def _write_temp_audio(
+    audio: bytes,
+    codec: VoiceAudioCodec,
+    config: Optional[RealtimeVoiceSessionConfig] = None,
+) -> str:
     suffix = {
         VoiceAudioCodec.PCM16: ".wav",
         VoiceAudioCodec.OPUS: ".ogg",
         VoiceAudioCodec.WEBM_OPUS: ".webm",
     }.get(codec, ".webm")
     with tempfile.NamedTemporaryFile(prefix="hermes-voice-sidecar-", suffix=suffix, delete=False) as tmp:
-        tmp.write(audio)
+        tmp.write(_audio_bytes_for_codec(audio, codec, config))
         return tmp.name
+
+
+def _audio_bytes_for_codec(
+    audio: bytes,
+    codec: VoiceAudioCodec,
+    config: Optional[RealtimeVoiceSessionConfig] = None,
+) -> bytes:
+    if codec == VoiceAudioCodec.PCM16:
+        return _pcm16_wav_bytes(audio, config)
+    return audio
+
+
+def _pcm16_wav_bytes(audio: bytes, config: Optional[RealtimeVoiceSessionConfig]) -> bytes:
+    sample_rate_hz = getattr(config, "sample_rate_hz", 16000) if config is not None else 16000
+    channels = getattr(config, "channels", 1) if config is not None else 1
+    try:
+        sample_rate = max(1, int(sample_rate_hz))
+    except (TypeError, ValueError):
+        sample_rate = 16000
+    try:
+        channel_count = max(1, int(channels))
+    except (TypeError, ValueError):
+        channel_count = 1
+    bits_per_sample = 16
+    block_align = channel_count * bits_per_sample // 8
+    byte_rate = sample_rate * block_align
+    data_size = len(audio)
+    riff_size = 36 + data_size
+    return b"".join(
+        (
+            b"RIFF",
+            riff_size.to_bytes(4, "little", signed=False),
+            b"WAVE",
+            b"fmt ",
+            (16).to_bytes(4, "little", signed=False),
+            (1).to_bytes(2, "little", signed=False),
+            channel_count.to_bytes(2, "little", signed=False),
+            sample_rate.to_bytes(4, "little", signed=False),
+            byte_rate.to_bytes(4, "little", signed=False),
+            block_align.to_bytes(2, "little", signed=False),
+            bits_per_sample.to_bytes(2, "little", signed=False),
+            b"data",
+            data_size.to_bytes(4, "little", signed=False),
+            audio,
+        )
+    )
 
 
 def _mime_type_for_codec(codec: VoiceAudioCodec) -> str:
