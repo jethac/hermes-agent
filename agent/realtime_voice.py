@@ -95,6 +95,8 @@ CLIENT_EVENT_TYPES = frozenset(
         VoiceEventType.SPEECH_START,
         VoiceEventType.SPEECH_ENERGY,
         VoiceEventType.SPEECH_END,
+        VoiceEventType.PLAYBACK_STARTED,
+        VoiceEventType.PLAYBACK_STOPPED,
         VoiceEventType.BARGE_IN,
         VoiceEventType.SESSION_CLOSED,
     }

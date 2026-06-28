@@ -446,15 +446,31 @@ def test_event_validation_separates_client_and_server_events():
         sequence=8,
         payload={"audio_alias_for": VoiceEventType.AUDIO_OUTPUT_CHUNK.value, "playback_generation": 1},
     )
+    playback_started_event = VoiceEvent(
+        type=VoiceEventType.PLAYBACK_STARTED,
+        session_id="voice-123",
+        sequence=9,
+        payload={"playback_generation": 1},
+    )
+    playback_stopped_event = VoiceEvent(
+        type=VoiceEventType.PLAYBACK_STOPPED,
+        session_id="voice-123",
+        sequence=10,
+        payload={"playback_generation": 1},
+    )
 
     validate_client_event(audio_event)
     validate_client_event(speech_start_event)
     validate_client_event(speech_end_event)
+    validate_client_event(playback_started_event)
+    validate_client_event(playback_stopped_event)
     validate_server_event(transcript_event)
     validate_server_event(interface_event)
     validate_server_event(oracle_event)
     validate_server_event(metrics_event)
     validate_server_event(audio_alias_event)
+    validate_server_event(playback_started_event)
+    validate_server_event(playback_stopped_event)
 
     with pytest.raises(ValueError):
         validate_client_event(transcript_event)
@@ -4000,6 +4016,44 @@ def test_text_engine_forwards_speech_lifecycle_events_to_sidecar():
             VoiceEventType.SPEECH_ENERGY,
             VoiceEventType.SPEECH_END,
         ]
+
+    asyncio.run(run())
+
+
+def test_text_engine_forwards_transport_playback_lifecycle_events_to_sidecar():
+    async def run():
+        sidecar = FakeSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                sidecar_base_url="http://voice.local",
+            )
+        )
+        assert (await anext(engine.events())).type == VoiceEventType.SESSION_STARTED
+
+        for sequence, event_type in [
+            (1, VoiceEventType.PLAYBACK_STARTED),
+            (2, VoiceEventType.PLAYBACK_STOPPED),
+        ]:
+            await engine.receive_event(
+                VoiceEvent(
+                    type=event_type,
+                    session_id="voice-123",
+                    sequence=sequence,
+                    payload={"playback_generation": 3},
+                )
+            )
+
+        await engine.close()
+
+        assert [event.type for event in sidecar.received] == [
+            VoiceEventType.PLAYBACK_STARTED,
+            VoiceEventType.PLAYBACK_STOPPED,
+        ]
+        assert [event.payload["playback_generation"] for event in sidecar.received] == [3, 3]
+        assert engine._playback_generation == 3
+        assert engine._frontend_output_active is False
 
     asyncio.run(run())
 

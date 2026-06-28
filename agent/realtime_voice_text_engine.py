@@ -123,6 +123,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if event.type in {VoiceEventType.SPEECH_START, VoiceEventType.SPEECH_ENERGY, VoiceEventType.SPEECH_END}:
             await self._handle_speech_lifecycle_event(event)
             return
+        if event.type in {VoiceEventType.PLAYBACK_STARTED, VoiceEventType.PLAYBACK_STOPPED}:
+            await self._handle_playback_lifecycle_event(event)
+            return
         if event.type != VoiceEventType.AUDIO_INPUT_CHUNK:
             return
 
@@ -219,6 +222,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._speech_energy_ms_by_user.pop(_speech_energy_user_key(event.payload), None)
         elif event.type == VoiceEventType.SPEECH_ENERGY and self._speech_energy_confirms_barge_in(event.payload):
             await self._auto_barge_in_for_speech(event)
+        if self._sidecar is not None:
+            await self._send_sidecar_event(event)
+
+    async def _handle_playback_lifecycle_event(self, event: VoiceEvent) -> None:
+        generation = _payload_generation(event.payload)
+        if generation is not None and generation < self._playback_generation:
+            return
+        if generation is not None:
+            self._playback_generation = max(self._playback_generation, generation)
+        self._frontend_output_active = event.type == VoiceEventType.PLAYBACK_STARTED
         if self._sidecar is not None:
             await self._send_sidecar_event(event)
 
