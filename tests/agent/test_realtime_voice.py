@@ -2900,9 +2900,62 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     assert "KAME reflex" in prompt
     assert "Required keys: route, intent, text" in prompt
     assert "route must be one of local, defer, oracle_direct, or reject_or_clarify" in prompt
+    assert "This voice session is already connected" in prompt
+    assert "never claim Hermes cannot hear" in prompt
     assert "allow_local_greetings=False" in prompt
     assert "local_confidence_threshold=0.82" in prompt
     assert "ASR evidence mode is on_escalation" in prompt
+
+
+def test_reference_sidecar_kame_reflex_validation_rejects_invalid_route():
+    payload = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(
+            {
+                "route": "maybe_local",
+                "intent": "Check whether Hermes can hear me.",
+                "text": "can you hear me",
+                "local_reply": "Yes, I can hear you.",
+            }
+        )
+    )
+
+    assert payload["route"] == "oracle_direct"
+    assert payload["intent"] == "Check whether Hermes can hear me."
+    assert payload["text"] == "can you hear me"
+    assert payload["local_reply"] == "Yes, I can hear you."
+    assert payload["reflex_validation_error"] == "invalid_route"
+
+
+def test_reference_sidecar_kame_reflex_never_speaks_voice_denial_locally():
+    payload = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(
+            {
+                "route": "local",
+                "intent": "The user asks whether Hermes can hear them.",
+                "text": "can you hear me",
+                "local_reply": "I cannot hear you or speak in Discord voice.",
+            }
+        )
+    )
+
+    assert payload["route"] == "oracle_direct"
+    assert "local_reply" not in payload
+    assert payload["reflex_validation_error"] == "voice_capability_denial"
+
+
+def test_reference_sidecar_kame_reflex_local_route_requires_local_reply():
+    payload = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(
+            {
+                "route": "local",
+                "intent": "The user says hello.",
+                "text": "hello",
+            }
+        )
+    )
+
+    assert payload["route"] == "oracle_direct"
+    assert payload["reflex_validation_error"] == "missing_local_reply"
 
 
 def test_reference_sidecar_kame_on_escalation_does_not_start_streaming_stt(monkeypatch):

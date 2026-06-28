@@ -1116,6 +1116,9 @@ class ReferenceRealtimeVoiceSidecarSession:
                                 "transcript, transcript_confidence. "
                                 "Use intent for what the user wants. Use transcript only as a verbatim "
                                 "hypothesis for names, numbers, code identifiers, and tool arguments. "
+                                "This voice session is already connected; never claim Hermes cannot hear, "
+                                "listen, join, or speak through the live voice interface. For can-you-hear-me "
+                                "checks, use route=local and a brief affirmative local_reply. "
                                 "Only use local for greetings, repeats, can-you-hear-me checks, or low-risk "
                                 "conversational glue. Use oracle_direct for tools, files, memory, projects, "
                                 "or any nontrivial answer. "
@@ -1581,9 +1584,9 @@ def _kame_reflex_payload_from_content(content: str) -> dict[str, Any]:
         "intent_source": str(parsed.get("intent_source") or "reflex_audio"),
         "transcript_source": str(parsed.get("transcript_source") or ("asr" if transcript else "none")),
     }
-    route = str(parsed.get("route") or "").strip()
-    if route:
-        payload["route"] = route
+    raw_route = str(parsed.get("route") or "").strip()
+    route = _kame_reflex_route(raw_route)
+    payload["route"] = route
     local_reply = (
         str(
             parsed.get("local_reply")
@@ -1594,14 +1597,57 @@ def _kame_reflex_payload_from_content(content: str) -> dict[str, Any]:
         )
         .strip()
     )
+    validation_errors: list[str] = []
+    if raw_route and raw_route.lower() not in _KAME_REFLEX_ROUTES:
+        validation_errors.append("invalid_route")
+    if route in {"local", "reject_or_clarify"} and not local_reply:
+        validation_errors.append("missing_local_reply")
+        route = "oracle_direct"
+        payload["route"] = route
+    if local_reply and _kame_local_reply_denies_voice_capability(local_reply):
+        validation_errors.append("voice_capability_denial")
+        route = "oracle_direct"
+        payload["route"] = route
+        local_reply = ""
     if local_reply:
         payload["local_reply"] = local_reply
+    if validation_errors:
+        payload["reflex_validation_error"] = ",".join(validation_errors)
     if transcript:
         payload["transcript"] = transcript
     confidence = _bounded_confidence(parsed.get("transcript_confidence"))
     if confidence is not None:
         payload["transcript_confidence"] = confidence
     return payload
+
+
+_KAME_REFLEX_ROUTES = frozenset({"local", "defer", "oracle_direct", "reject_or_clarify"})
+_KAME_VOICE_DENIAL_PATTERNS = (
+    "cannot hear",
+    "can't hear",
+    "can not hear",
+    "unable to hear",
+    "cannot listen",
+    "can't listen",
+    "cannot speak",
+    "can't speak",
+    "cannot join",
+    "can't join",
+    "only process text",
+    "no ability to listen",
+    "no ability to join",
+    "no ability to speak",
+)
+
+
+def _kame_reflex_route(value: Any) -> str:
+    route = str(value or "").strip().lower()
+    return route if route in _KAME_REFLEX_ROUTES else "oracle_direct"
+
+
+def _kame_local_reply_denies_voice_capability(text: str) -> bool:
+    normalized = " ".join(str(text or "").lower().split())
+    return any(pattern in normalized for pattern in _KAME_VOICE_DENIAL_PATTERNS)
 
 
 def _bounded_confidence(value: Any) -> Optional[float]:
