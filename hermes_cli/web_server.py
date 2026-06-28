@@ -13770,6 +13770,7 @@ def _realtime_voice_sidecar_capability_error(
     *,
     engine: str,
     health_payload: Optional[Dict[str, Any]],
+    expected_kame_reflex_model: str = "",
 ) -> str:
     if not health_payload:
         return "sidecar_missing_capabilities"
@@ -13782,6 +13783,11 @@ def _realtime_voice_sidecar_capability_error(
     if engine == "kame_interface_oracle":
         if capabilities.get("vllm_audio_frontend") is not True:
             return "sidecar_missing_kame_reflex"
+        if not _realtime_voice_kame_reflex_model_matches(
+            health_payload,
+            expected_kame_reflex_model,
+        ):
+            return "sidecar_kame_reflex_model_mismatch"
         if capabilities.get("tts") is not True:
             return "sidecar_missing_tts"
         return ""
@@ -13799,12 +13805,20 @@ def _realtime_voice_conversation_quality_payload(
     engine: str,
     base_url: str,
     health_payload: Optional[Dict[str, Any]],
+    expected_kame_reflex_model: str = "",
 ) -> Dict[str, Any]:
     sidecar_ready = isinstance(health_payload, dict) and health_payload.get("ok") is True
     capabilities = health_payload.get("capabilities") if sidecar_ready else {}
     capabilities = capabilities if isinstance(capabilities, dict) else {}
     native_s2s = engine == "native_s2s_oracle" and capabilities.get("native_s2s") is True
-    kame_reflex = engine == "kame_interface_oracle" and capabilities.get("vllm_audio_frontend") is True
+    kame_reflex = (
+        engine == "kame_interface_oracle"
+        and capabilities.get("vllm_audio_frontend") is True
+        and _realtime_voice_kame_reflex_model_matches(
+            health_payload,
+            expected_kame_reflex_model,
+        )
+    )
     streaming_stt = capabilities.get("streaming_stt") is True
     utterance_stt = capabilities.get("utterance_stt") is True
     tts = capabilities.get("tts") is True
@@ -13855,6 +13869,38 @@ def _realtime_voice_conversation_quality_payload(
         "tts": tts,
         "sidecar_verified": sidecar_ready,
     }
+
+
+def _realtime_voice_kame_reflex_model_matches(
+    health_payload: Optional[Mapping[str, Any]],
+    expected_model: str = "",
+) -> bool:
+    expected = str(expected_model or "").strip()
+    if not expected:
+        return True
+    if not isinstance(health_payload, Mapping):
+        return False
+    frontend = health_payload.get("frontend") if isinstance(health_payload.get("frontend"), Mapping) else {}
+    vllm_frontend = frontend.get("vllm_audio_frontend") if isinstance(frontend, Mapping) else {}
+    reported = ""
+    if isinstance(vllm_frontend, Mapping):
+        reported = str(vllm_frontend.get("model") or "").strip()
+    if not reported and isinstance(frontend, Mapping):
+        reported = str(frontend.get("model") or "").strip()
+    if not reported:
+        return False
+    expected_keys = _realtime_voice_model_identity_keys(expected)
+    reported_keys = _realtime_voice_model_identity_keys(reported)
+    return bool(expected_keys.intersection(reported_keys))
+
+
+def _realtime_voice_model_identity_keys(value: str) -> set[str]:
+    normalized = str(value or "").strip().lower().replace("\\", "/")
+    if not normalized:
+        return set()
+    compact = normalized.removesuffix("/")
+    tail = compact.rsplit("/", 1)[-1]
+    return {key for key in {compact, tail} if key}
 
 
 def _realtime_voice_production_readiness_payload(
@@ -14771,6 +14817,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         _first_realtime_voice_config_value(realtime, ("tts_voice",), ("tts", "voice"), ("streaming_tts_voice",), default="") or ""
     )
     fallback_policy = str(realtime.get("fallback_policy") or "legacy_voice")
+    expected_kame_reflex_model = _realtime_voice_kame_vllm_model(realtime) or frontend_model
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     language_support = _realtime_voice_language_support_payload(realtime)
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
@@ -14797,6 +14844,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         _realtime_voice_sidecar_capability_error(
             engine=engine,
             health_payload=health_payload,
+            expected_kame_reflex_model=expected_kame_reflex_model,
         )
         if base_url and healthy is True
         else ""
@@ -14805,6 +14853,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         engine=engine,
         base_url=base_url,
         health_payload=health_payload,
+        expected_kame_reflex_model=expected_kame_reflex_model,
     )
     sidecar_mode = _realtime_voice_sidecar_mode(realtime, base_url)
 
@@ -15024,7 +15073,20 @@ def _realtime_voice_open_unavailable_reason(realtime: Dict[str, Any]) -> str:
     healthy, health_payload = _realtime_voice_sidecar_health_probe(base_url, token=sidecar_token)
     if not healthy:
         return "sidecar_unhealthy"
-    capability_error = _realtime_voice_sidecar_capability_error(engine=engine, health_payload=health_payload)
+    expected_kame_reflex_model = _realtime_voice_kame_vllm_model(realtime) or str(
+        _first_realtime_voice_config_value(
+            realtime,
+            ("frontend_model",),
+            ("interface", "model"),
+            default="",
+        )
+        or ""
+    )
+    capability_error = _realtime_voice_sidecar_capability_error(
+        engine=engine,
+        health_payload=health_payload,
+        expected_kame_reflex_model=expected_kame_reflex_model,
+    )
     if capability_error:
         return capability_error
     if _truthy_config(realtime.get("require_live_like"), default=False):
@@ -15032,6 +15094,7 @@ def _realtime_voice_open_unavailable_reason(realtime: Dict[str, Any]) -> str:
             engine=engine,
             base_url=base_url,
             health_payload=health_payload,
+            expected_kame_reflex_model=expected_kame_reflex_model,
         )
         if conversation_quality.get("live_like") is not True:
             return "live_like_required"
@@ -15578,6 +15641,8 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         engine=str(engine),
         base_url=str(sidecar_base_url or ""),
         health_payload=health_payload,
+        expected_kame_reflex_model=_realtime_voice_kame_vllm_model(realtime)
+        or str(realtime.get("frontend_model") or ""),
     )
     current_evidence_manifest = _realtime_voice_current_evidence_manifest(
         engine=str(engine),

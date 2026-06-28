@@ -8085,6 +8085,68 @@ class TestRealtimeVoiceWebSocket:
             "missing_evidence_report",
         ]
 
+    def test_status_rejects_kame_when_vllm_audio_reflex_model_mismatches(self, monkeypatch):
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "kind": "reference",
+                        "frontend": {
+                            "provider": "vllm",
+                            "model": "google/gemma-4-E4B-it",
+                        },
+                        "capabilities": {
+                            "utterance_stt": False,
+                            "streaming_stt": False,
+                            "tts": True,
+                            "native_s2s": False,
+                            "vllm_audio_frontend": True,
+                        },
+                        "local": {"stt": False, "tts": True},
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "kame_interface_oracle",
+                        "frontend_provider": "gemma4",
+                        "frontend_model": "gemma-4-E2B-it",
+                        "interface_audio_input": "native_audio",
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        body = self.client.get("/api/voice/realtime/status").json()
+
+        assert body["available"] is False
+        assert body["unavailable_reason"] == "sidecar_kame_reflex_model_mismatch"
+        assert body["conversation_quality"]["mode"] == "unready_sidecar"
+        assert body["conversation_quality"]["kame_reflex"] is False
+        assert body["kame"]["audio_reflex"] is False
+        assert body["sidecar"]["health"]["frontend"]["model"] == "google/gemma-4-E4B-it"
+        assert body["production_readiness"]["issues"] == [
+            "sidecar_kame_reflex_model_mismatch",
+            "not_live_like",
+            "missing_evidence_report",
+        ]
+
     def test_realtime_voice_sidecar_health_sanitizer_preserves_bridge_capabilities(self):
         sanitized = self.ws_module._sanitize_realtime_voice_sidecar_health(
             {
