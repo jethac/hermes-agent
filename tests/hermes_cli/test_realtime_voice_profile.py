@@ -289,6 +289,34 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
         "log_turn_spans": True,
         "log_provider_spans": True,
     }
+    assert realtime["interface"] == {
+        "provider": "gemma4",
+        "base_url": "",
+        "model": "gemma-4-E2B-it",
+        "temperature": 0.2,
+        "max_output_tokens": 160,
+        "timeout_ms": 800,
+        "max_audio_seconds": 30.0,
+        "audio_input": "auto",
+        "asr_mode": "on_escalation",
+    }
+    assert realtime["oracle"] == {
+        "mode": "hermes_active_oracle",
+        "provider": "",
+        "provider_name": "",
+        "preferred_local_model": "gemma-4-26B-A4B-it",
+        "model": "",
+        "base_url": "",
+        "api_mode": "chat_completions",
+        "timeout_ms": 60000,
+        "max_spoken_sentences": 2,
+        "voice_response_policy": "sentence_cap",
+    }
+    assert realtime["barge_in"] == {
+        "min_rms": 350,
+        "min_speech_ms": 120,
+        "stop_playback_deadline_ms": 150,
+    }
     assert realtime["quality_targets_ms"] == {
         "audio_to_partial_transcript_ms": 300,
         "final_transcript_to_first_text_ms": 500,
@@ -510,6 +538,34 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["fallback_policy"] == "legacy_voice"
     assert discord_rt["routing"]["require_oracle_for_tools"] is True
     assert discord_rt["metrics"]["log_turn_spans"] is True
+    assert discord_rt["interface"] == {
+        "provider": "gemma4",
+        "base_url": "",
+        "model": "gemma-4-E2B-it",
+        "temperature": 0.2,
+        "max_output_tokens": 160,
+        "timeout_ms": 800,
+        "max_audio_seconds": 30.0,
+        "audio_input": "native_audio",
+        "asr_mode": "speculative",
+    }
+    assert discord_rt["oracle"] == {
+        "mode": "hermes_active_oracle",
+        "provider": "",
+        "provider_name": "",
+        "preferred_local_model": "gemma-4-26B-A4B-it",
+        "model": "",
+        "base_url": "",
+        "api_mode": "chat_completions",
+        "timeout_ms": 60000,
+        "max_spoken_sentences": 2,
+        "voice_response_policy": "sentence_cap",
+    }
+    assert discord_rt["barge_in"] == {
+        "min_rms": 350,
+        "min_speech_ms": 120,
+        "stop_playback_deadline_ms": 150,
+    }
 
 
 def test_kame_profile_merge_can_point_hermes_oracle_at_local_vllm():
@@ -537,6 +593,18 @@ def test_kame_profile_merge_can_point_hermes_oracle_at_local_vllm():
         "name": "gemma-4-26B-A4B-it",
         "base_url": "http://spark.local:8001/v1",
         "api_mode": "chat_completions",
+    }
+    assert merged["voice"]["realtime"]["oracle"] == {
+        "mode": "local_openai_compatible",
+        "provider": "custom",
+        "provider_name": "Spark Oracle",
+        "preferred_local_model": "gemma-4-26B-A4B-it",
+        "model": "gemma-4-26B-A4B-it",
+        "base_url": "http://spark.local:8001/v1",
+        "api_mode": "chat_completions",
+        "timeout_ms": 60000,
+        "max_spoken_sentences": 2,
+        "voice_response_policy": "sentence_cap",
     }
     assert merged["custom_providers"] == [
         {

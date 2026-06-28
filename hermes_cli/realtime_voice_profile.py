@@ -1008,6 +1008,7 @@ def build_kame_realtime_voice_profile(
                 "oracle_api_mode": "chat_completions",
             }
         )
+    profile.update(_kame_nested_config(profile))
     return profile
 
 
@@ -1083,10 +1084,74 @@ def merge_realtime_voice_profile(
             "sidecar_close_timeout_seconds": profile.get("sidecar_close_timeout_seconds", 2.0),
         }
     )
+    if str(profile.get("engine") or "") == "kame_interface_oracle":
+        discord_rt.update(copy.deepcopy(_kame_nested_config(profile)))
     discord["realtime_voice"] = discord_rt
     updated["discord"] = discord
     _merge_kame_oracle_model_config(updated, profile)
     return updated
+
+
+def _kame_nested_config(profile: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the documented nested KAME config shape alongside legacy flat keys."""
+
+    timeout_seconds = _positive_float_or_default(profile.get("interface_timeout_seconds"), 0.8)
+    oracle_timeout_seconds = _positive_float_or_default(profile.get("oracle_timeout_seconds"), 60.0)
+    interface_base_url = profile.get("interface_base_url") or profile.get("vllm_base_url") or ""
+    streaming_stt_base_url = profile.get("streaming_stt_base_url") or ""
+    streaming_tts_base_url = profile.get("streaming_tts_base_url") or ""
+    oracle_base_url = profile.get("oracle_base_url") or ""
+    return {
+        "interface": {
+            "provider": profile.get("frontend_provider") or "",
+            "base_url": interface_base_url,
+            "model": profile.get("frontend_model") or "",
+            "temperature": profile.get("interface_temperature", 0.2),
+            "max_output_tokens": profile.get("interface_max_output_tokens", 160),
+            "timeout_ms": int(round(timeout_seconds * 1000)),
+            "max_audio_seconds": profile.get("interface_max_audio_seconds", 30.0),
+            "audio_input": profile.get("interface_audio_input") or "auto",
+            "asr_mode": profile.get("asr_mode") or "on_escalation",
+        },
+        "oracle": {
+            "mode": "local_openai_compatible" if oracle_base_url else "hermes_active_oracle",
+            "provider": profile.get("oracle_provider") or "",
+            "provider_name": profile.get("oracle_provider_name") or "",
+            "preferred_local_model": profile.get("preferred_local_oracle_model") or DEFAULT_KAME_ORACLE_MODEL,
+            "model": profile.get("oracle_model") or "",
+            "base_url": oracle_base_url,
+            "api_mode": profile.get("oracle_api_mode") or "chat_completions",
+            "timeout_ms": int(round(oracle_timeout_seconds * 1000)),
+            "max_spoken_sentences": profile.get("max_spoken_sentences", 2),
+            "voice_response_policy": profile.get("voice_response_policy") or "sentence_cap",
+        },
+        "asr": {
+            "provider": profile.get("asr_provider") or "",
+            "model": profile.get("asr_model") or profile.get("streaming_stt_model") or "",
+            "base_url": streaming_stt_base_url,
+            "token_env": profile.get("streaming_stt_token_env") or DEFAULT_STREAMING_STT_TOKEN_ENV,
+        },
+        "tts": {
+            "provider": profile.get("tts_provider") or "",
+            "model": profile.get("tts_model") or profile.get("streaming_tts_model") or "",
+            "voice": profile.get("tts_voice") or profile.get("streaming_tts_voice") or "",
+            "base_url": streaming_tts_base_url,
+            "token_env": profile.get("streaming_tts_token_env") or DEFAULT_STREAMING_TTS_TOKEN_ENV,
+        },
+        "barge_in": {
+            "min_rms": profile.get("barge_in_min_rms", 350),
+            "min_speech_ms": profile.get("barge_in_min_speech_ms", 120),
+            "stop_playback_deadline_ms": profile.get("barge_in_stop_playback_deadline_ms", 150),
+        },
+    }
+
+
+def _positive_float_or_default(value: Any, default: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
 
 
 def _merge_kame_oracle_model_config(updated: dict[str, Any], profile: Mapping[str, Any]) -> None:
