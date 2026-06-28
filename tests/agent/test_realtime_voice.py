@@ -8444,6 +8444,98 @@ def test_reference_sidecar_bridges_streaming_tts_audio(monkeypatch):
     asyncio.run(run())
 
 
+def test_reference_sidecar_reports_tts_unavailable_when_streaming_tts_fails_without_local_fallback(monkeypatch):
+    created = []
+
+    class FailingStreamingTTSClient:
+        def __init__(self, *, path="/v1/realtime-text/session"):
+            self.path = path
+            self.closed = False
+            created.append(self)
+
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            raise RuntimeError("TTS failed Bearer secret-token at http://user:pass@voice.local/v1?token=abc")
+
+        async def events(self):
+            if False:
+                yield None
+            await asyncio.Event().wait()
+
+        async def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_reference_sidecar.RealtimeVoiceSidecarClient",
+        FailingStreamingTTSClient,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                streaming_tts_base_url="http://streaming-tts.local:9001",
+                streaming_tts_model="portable-streaming-voice",
+                local_tts_enabled=False,
+            )
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                frontend_provider="sidecar",
+                tts_provider="streaming_tts",
+                tts_model="portable-streaming-voice",
+                tts_voice="spark-voice",
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "text": "hello back",
+                    "speak": True,
+                    "playback_generation": 7,
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.SESSION_ERROR:
+                await sidecar.close()
+                break
+        return seen
+
+    seen = asyncio.run(run())
+
+    assert created[0].closed is True
+    assert [event.type for event in seen] == [
+        VoiceEventType.SESSION_STARTED,
+        VoiceEventType.FRONTEND_STATE,
+        VoiceEventType.FRONTEND_STATE,
+        VoiceEventType.SESSION_ERROR,
+    ]
+    assert seen[2].payload["reason"] == "streaming_tts_send_failed"
+    assert seen[2].payload["streaming_tts"] is False
+    error = seen[3]
+    assert error.payload["reason"] == "tts_unavailable"
+    assert error.payload["streaming_tts"] is False
+    assert error.payload["local_tts"] is False
+    assert error.payload["playback_generation"] == 7
+    assert error.payload["tts_provider"] == "streaming_tts"
+    assert error.payload["tts_model"] == "portable-streaming-voice"
+    assert error.payload["tts_voice"] == "spark-voice"
+    assert "streaming_tts_send_failed" in error.payload["error"]
+    assert "TTS failed" in error.payload["error"]
+    assert "secret-token" not in error.payload["error"]
+    assert "user:pass" not in error.payload["error"]
+    assert "token=abc" not in error.payload["error"]
+
+
 def test_reference_sidecar_health_requires_bearer_token(monkeypatch):
     from fastapi.testclient import TestClient
 

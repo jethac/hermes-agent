@@ -317,6 +317,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._asr_hypotheses_by_generation: dict[int, dict[str, Any]] = {}
         self._streaming_tts: Optional[RealtimeVoiceSidecarClient] = None
         self._streaming_tts_task: Optional[asyncio.Task[None]] = None
+        self._last_streaming_tts_failure: Optional[dict[str, str]] = None
         self._openai_realtime: Any = None
         self._openai_realtime_task: Optional[asyncio.Task[None]] = None
         self._gemini_live: Any = None
@@ -801,6 +802,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             )
             return
         self._streaming_tts = client
+        self._last_streaming_tts_failure = None
         self._streaming_tts_task = asyncio.create_task(self._consume_streaming_tts_events())
 
     async def _send_streaming_stt_event(self, event: VoiceEvent) -> bool:
@@ -993,6 +995,11 @@ class ReferenceRealtimeVoiceSidecarSession:
     async def _disable_streaming_tts(self, reason: str, error: Any) -> None:
         client = self._streaming_tts
         self._streaming_tts = None
+        sanitized_error = sanitize_realtime_voice_error(error)
+        self._last_streaming_tts_failure = {
+            "reason": reason,
+            "error": sanitized_error,
+        }
         if client is not None:
             with contextlib.suppress(Exception):
                 await client.close()
@@ -1001,7 +1008,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             {
                 "status": "degraded",
                 "reason": reason,
-                "error": sanitize_realtime_voice_error(error),
+                "error": sanitized_error,
                 "streaming_tts": False,
             },
         )
@@ -1597,6 +1604,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             if sent:
                 return
         if not self.runtime.local_tts_enabled:
+            await self._emit_tts_unavailable_error(playback_generation)
             return
         if await self._emit_cached_acknowledgement_audio(text, playback_generation, clean_metadata):
             return
@@ -1653,6 +1661,28 @@ class ReferenceRealtimeVoiceSidecarSession:
                 VoiceEventType.SESSION_ERROR,
                 {"error": f"tts failed: {sanitize_realtime_voice_error(exc)}"},
             )
+
+    async def _emit_tts_unavailable_error(self, playback_generation: Optional[int]) -> None:
+        failure = self._last_streaming_tts_failure or {}
+        reason = str(failure.get("reason") or "tts_unavailable")
+        error = str(failure.get("error") or "local TTS disabled and no streaming TTS bridge is available")
+        payload: dict[str, Any] = {
+            "reason": "tts_unavailable",
+            "error": f"{reason}: {error}" if reason != "tts_unavailable" else error,
+            "streaming_tts": False,
+            "local_tts": False,
+        }
+        if playback_generation is not None:
+            payload["playback_generation"] = playback_generation
+        config = self.config
+        if config is not None:
+            if config.tts_provider:
+                payload["tts_provider"] = config.tts_provider
+            if config.tts_model:
+                payload["tts_model"] = config.tts_model
+            if config.tts_voice:
+                payload["tts_voice"] = config.tts_voice
+        await self._emit(VoiceEventType.SESSION_ERROR, payload)
 
     async def _prepare_acknowledgement_audio(self, config: RealtimeVoiceSessionConfig) -> None:
         if self._streaming_tts is not None or not self.runtime.local_tts_enabled:
