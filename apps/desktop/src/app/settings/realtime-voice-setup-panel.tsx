@@ -7,11 +7,11 @@ import { Switch } from '@/components/ui/switch'
 import {
   applyRealtimeVoiceProfile,
   getRealtimeVoiceSetup,
-  runRealtimeVoiceSmoke,
   type HermesConfigRecord,
   type RealtimeVoiceProviderSetup,
   type RealtimeVoiceSetupResponse,
-  type RealtimeVoiceSmokeResponse
+  type RealtimeVoiceSmokeResponse,
+  runRealtimeVoiceSmoke
 } from '@/hermes'
 import { Activity, AlertTriangle, CheckCircle2, Loader2, Mic, Play, RefreshCw, Volume2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
@@ -72,12 +72,31 @@ function setupProviderFor(config: HermesConfigRecord): string {
   const provider = String(getNested(config, 'voice.realtime.frontend_provider') ?? '')
   const sttUrl = String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? '')
   const sttModel = String(getNested(config, 'voice.realtime.streaming_stt_model') ?? '')
-  if (engine === 'kame_interface_oracle' || provider === 'gemma4') return 'kame'
-  if (provider === 'openai_realtime' || provider === 'openai') return 'openai'
-  if (provider === 'gemini_live' || provider === 'gemini') return 'gemini'
-  if (sttUrl.includes('8767') || sttModel.includes('scribe')) return 'elevenlabs'
-  if (sttUrl.includes('8769') || sttModel.includes('ink')) return 'cartesia'
-  if (sttUrl.includes('8766') || sttModel.includes('nova')) return 'deepgram'
+
+  if (engine === 'kame_interface_oracle' || provider === 'gemma4') {
+    return 'kame'
+  }
+
+  if (provider === 'openai_realtime' || provider === 'openai') {
+    return 'openai'
+  }
+
+  if (provider === 'gemini_live' || provider === 'gemini') {
+    return 'gemini'
+  }
+
+  if (sttUrl.includes('8767') || sttModel.includes('scribe')) {
+    return 'elevenlabs'
+  }
+
+  if (sttUrl.includes('8769') || sttModel.includes('ink')) {
+    return 'cartesia'
+  }
+
+  if (sttUrl.includes('8766') || sttModel.includes('nova')) {
+    return 'deepgram'
+  }
+
   return 'openai'
 }
 
@@ -95,6 +114,7 @@ function ProviderCard({
   onSelect: (id: string) => void
 }) {
   const implemented = provider.implemented !== false
+
   return (
     <button
       className={cn(
@@ -132,6 +152,7 @@ function StatusGrid({ setup }: { setup: RealtimeVoiceSetupResponse | null }) {
   const sidecar = status?.sidecar
   const caps = sidecar?.health?.capabilities ?? {}
   const quality = status?.conversation_quality ?? {}
+
   return (
     <div className="grid gap-2 sm:grid-cols-3">
       <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
@@ -206,7 +227,10 @@ function KameControls({
       min={min}
       onChange={event => {
         const next = event.target.value === '' ? fallback : Number(event.target.value)
-        if (!Number.isNaN(next)) patchConfig(key, next)
+
+        if (!Number.isNaN(next)) {
+          patchConfig(key, next)
+        }
       }}
       step={step}
       type="number"
@@ -257,6 +281,11 @@ function KameControls({
         title="TTS model"
       />
       <ListRow
+        action={textInput('voice.realtime.streaming_tts_voice', 'voice-id')}
+        description="Voice identifier sent to the TTS bridge."
+        title="TTS voice"
+      />
+      <ListRow
         action={textInput('voice.realtime.oracle_model', 'gemma-4-26B-A4B-it')}
         description="Optional oracle model override; empty uses the active Hermes oracle."
         title="Oracle model"
@@ -301,6 +330,21 @@ function KameControls({
         description="Minimum reflex confidence for a local answer."
         title="Local confidence"
       />
+      <ListRow
+        action={numberInput('voice.realtime.barge_in_min_rms', 350, 0, undefined, 1)}
+        description="Minimum PCM RMS before speech can interrupt playback."
+        title="Barge-in RMS"
+      />
+      <ListRow
+        action={numberInput('voice.realtime.barge_in_min_speech_ms', 120, 1, undefined, 10)}
+        description="Sustained speech duration required before interruption."
+        title="Barge-in speech"
+      />
+      <ListRow
+        action={numberInput('voice.realtime.barge_in_stop_playback_deadline_ms', 150, 1, undefined, 10)}
+        description="Target stop time after confirmed barge-in."
+        title="Stop deadline"
+      />
     </div>
   )
 }
@@ -320,12 +364,15 @@ export function RealtimeVoiceSetupPanel({
   const [selectedProvider, setSelectedProvider] = useState(() => setupProviderFor(config))
   const [model, setModel] = useState(String(getNested(config, 'voice.realtime.frontend_model') ?? ''))
   const [voice, setVoice] = useState('')
+
   const [streamingSttModel, setStreamingSttModel] = useState(
     String(getNested(config, 'voice.realtime.streaming_stt_model') ?? '')
   )
+
   const [bridgeBaseUrl, setBridgeBaseUrl] = useState(
     String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? '')
   )
+
   const [requireDiscordSmoke, setRequireDiscordSmoke] = useState(true)
   const [requireInboundSmoke, setRequireInboundSmoke] = useState(false)
 
@@ -338,6 +385,7 @@ export function RealtimeVoiceSetupPanel({
 
   async function refresh() {
     setLoading(true)
+
     try {
       setSetup(await getRealtimeVoiceSetup())
     } catch (err) {
@@ -356,7 +404,10 @@ export function RealtimeVoiceSetupPanel({
   }, [activeProvider])
 
   useEffect(() => {
-    if (selectedProvider === activeProvider) return
+    if (selectedProvider === activeProvider) {
+      return
+    }
+
     setModel(PROVIDER_MODELS[selectedProvider]?.[0] || '')
     setVoice(PROVIDER_VOICES[selectedProvider]?.[0] || '')
     setStreamingSttModel(PROVIDER_STT_MODELS[selectedProvider]?.[0] || '')
@@ -368,12 +419,14 @@ export function RealtimeVoiceSetupPanel({
       activeProvider === 'openai' || activeProvider === 'gemini' || activeProvider === 'kame'
         ? String(getNested(config, 'voice.realtime.frontend_model') ?? '')
         : String(getNested(config, 'voice.realtime.streaming_tts_model') ?? '')
+
     const nextVoice =
       activeProvider === 'openai'
         ? String(getNested(config, 'voice.realtime.openai_realtime_voice') ?? '')
         : activeProvider === 'gemini'
           ? String(getNested(config, 'voice.realtime.gemini_live_voice') ?? '')
           : ''
+
     setModel(nextModel || PROVIDER_MODELS[activeProvider]?.[0] || '')
     setVoice(nextVoice)
     setStreamingSttModel(
@@ -390,6 +443,7 @@ export function RealtimeVoiceSetupPanel({
 
   async function applyProvider() {
     setApplying(true)
+
     try {
       const result = await applyRealtimeVoiceProfile({
         preset: selectedProvider,
@@ -415,6 +469,13 @@ export function RealtimeVoiceSetupPanel({
           : selectedIsKame
             ? String(getNested(config, 'voice.realtime.streaming_tts_model') ?? 'portable-streaming-voice')
             : undefined,
+        streaming_tts_voice: selectedIsKame
+          ? String(
+              getNested(config, 'voice.realtime.streaming_tts_voice') ??
+                getNested(config, 'voice.realtime.tts_voice') ??
+                ''
+            )
+          : undefined,
         interface_audio_input: selectedIsKame
           ? String(getNested(config, 'voice.realtime.interface_audio_input') ?? 'native_audio') || 'native_audio'
           : undefined,
@@ -456,10 +517,18 @@ export function RealtimeVoiceSetupPanel({
         local_confidence_threshold: selectedIsKame
           ? Number(getNested(config, 'voice.realtime.routing.local_confidence_threshold') ?? 0.75)
           : undefined,
+        barge_in_min_rms: selectedIsKame ? Number(getNested(config, 'voice.realtime.barge_in_min_rms') ?? 350) : undefined,
+        barge_in_min_speech_ms: selectedIsKame
+          ? Number(getNested(config, 'voice.realtime.barge_in_min_speech_ms') ?? 120)
+          : undefined,
+        barge_in_stop_playback_deadline_ms: selectedIsKame
+          ? Number(getNested(config, 'voice.realtime.barge_in_stop_playback_deadline_ms') ?? 150)
+          : undefined,
         enable_discord: Boolean(getNested(config, 'discord.realtime_voice.enabled')),
         google_search: Boolean(getNested(config, 'voice.realtime.gemini_live_google_search')),
         oracle_tool: Boolean(getNested(config, 'voice.realtime.gemini_live_oracle_tool') ?? true)
       })
+
       onConfigChange(result.config)
       setSetup(result.setup)
       notify({
@@ -477,12 +546,14 @@ export function RealtimeVoiceSetupPanel({
   async function runSmoke() {
     setRunningSmoke(true)
     setSmoke(null)
+
     try {
       const result = await runRealtimeVoiceSmoke({
         require_discord: requireDiscordSmoke,
         require_inbound: requireInboundSmoke,
         wait_seconds: requireInboundSmoke ? 15 : 5
       })
+
       setSmoke(result)
       notify({
         kind: result.ok ? 'success' : 'error',

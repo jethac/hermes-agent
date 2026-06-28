@@ -95,6 +95,9 @@ export interface RealtimeVoiceProfileRequest {
   api_key_env?: string
   allow_local_clarifications?: boolean
   allow_local_greetings?: boolean
+  barge_in_min_rms?: number
+  barge_in_min_speech_ms?: number
+  barge_in_stop_playback_deadline_ms?: number
   enable_discord?: boolean
   google_search?: boolean
   interface_audio_input?: string
@@ -114,6 +117,7 @@ export interface RealtimeVoiceProfileRequest {
   streaming_stt_model?: string
   streaming_tts_base_url?: string
   streaming_tts_model?: string
+  streaming_tts_voice?: string
   voice_response_policy?: string
   voice?: string
 }

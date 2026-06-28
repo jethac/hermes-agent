@@ -7139,6 +7139,10 @@ class TestRealtimeVoiceWebSocket:
             voice_response_policy="brief_summary",
             streaming_stt_base_url="http://spark.local:8767",
             streaming_tts_base_url="http://spark.local:8768",
+            streaming_tts_voice="spark-voice-1",
+            barge_in_min_rms=420,
+            barge_in_min_speech_ms=160,
+            barge_in_stop_playback_deadline_ms=140,
         )
 
         profile = self.ws_module._realtime_voice_profile_for_request(body)
@@ -7155,6 +7159,11 @@ class TestRealtimeVoiceWebSocket:
         assert profile["voice_response_policy"] == "brief_summary"
         assert profile["streaming_stt_base_url"] == "http://spark.local:8767"
         assert profile["streaming_tts_base_url"] == "http://spark.local:8768"
+        assert profile["streaming_tts_voice"] == "spark-voice-1"
+        assert profile["tts_voice"] == "spark-voice-1"
+        assert profile["barge_in_min_rms"] == 420
+        assert profile["barge_in_min_speech_ms"] == 160
+        assert profile["barge_in_stop_playback_deadline_ms"] == 140
 
     def test_config_accepts_documented_nested_kame_shape(self, monkeypatch):
         class FakeWebSocket:

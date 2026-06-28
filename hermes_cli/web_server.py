@@ -1469,6 +1469,9 @@ class RealtimeVoiceProfileApply(BaseModel):
     streaming_stt_model: str = ""
     streaming_tts_model: str = ""
     streaming_tts_voice: str = ""
+    barge_in_min_rms: int = 350
+    barge_in_min_speech_ms: int = 120
+    barge_in_stop_playback_deadline_ms: int = 150
     allow_local_greetings: bool = True
     allow_local_clarifications: bool = True
     require_oracle_for_tools: bool = True
@@ -15230,6 +15233,9 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             require_oracle_for_memory=body.require_oracle_for_memory,
             require_oracle_for_files=body.require_oracle_for_files,
             local_confidence_threshold=body.local_confidence_threshold,
+            barge_in_min_rms=body.barge_in_min_rms,
+            barge_in_min_speech_ms=body.barge_in_min_speech_ms,
+            barge_in_stop_playback_deadline_ms=body.barge_in_stop_playback_deadline_ms,
         )
     if preset == "elevenlabs":
         return build_realtime_voice_live_like_profile(

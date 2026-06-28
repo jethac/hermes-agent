@@ -367,6 +367,28 @@ def test_kame_preset_can_set_streaming_tts_voice(capsys):
     assert realtime["streaming_tts_voice"] == "spark-voice-1"
 
 
+def test_kame_preset_can_set_barge_in_thresholds(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--kame-barge-in-min-rms",
+            "420",
+            "--kame-barge-in-min-speech-ms",
+            "160",
+            "--kame-barge-in-stop-playback-deadline-ms",
+            "140",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["barge_in_min_rms"] == 420
+    assert realtime["barge_in_min_speech_ms"] == 160
+    assert realtime["barge_in_stop_playback_deadline_ms"] == 140
+
+
 def test_kame_preset_rejects_invalid_interface_max_audio_seconds(capsys):
     result = realtime_voice_profile.main(
         [

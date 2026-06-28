@@ -169,6 +169,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="How KAME should shape spoken oracle responses",
     )
     parser.add_argument(
+        "--kame-barge-in-min-rms",
+        type=int,
+        default=350,
+        help="Minimum 16-bit PCM RMS amplitude required before KAME barge-in",
+    )
+    parser.add_argument(
+        "--kame-barge-in-min-speech-ms",
+        type=int,
+        default=120,
+        help="Milliseconds of sustained speech required before KAME barge-in",
+    )
+    parser.add_argument(
+        "--kame-barge-in-stop-playback-deadline-ms",
+        type=int,
+        default=150,
+        help="Target milliseconds to stop playback after confirmed KAME barge-in",
+    )
+    parser.add_argument(
         "--kame-oracle-base-url",
         default="",
         help=(
@@ -258,6 +276,11 @@ def main(argv: list[str] | None = None) -> int:
                 streaming_tts_voice=str(args.streaming_tts_voice or ""),
                 streaming_stt_token_env=args.streaming_stt_token_env,
                 streaming_tts_token_env=args.streaming_tts_token_env,
+                barge_in_min_rms=int(args.kame_barge_in_min_rms or 350),
+                barge_in_min_speech_ms=int(args.kame_barge_in_min_speech_ms or 120),
+                barge_in_stop_playback_deadline_ms=int(
+                    args.kame_barge_in_stop_playback_deadline_ms or 150
+                ),
                 sidecar_host=args.sidecar_host,
                 sidecar_port=args.sidecar_port,
                 production_evidence_report=args.production_evidence_report,
@@ -755,6 +778,9 @@ def build_kame_realtime_voice_profile(
     require_oracle_for_memory: bool = True,
     require_oracle_for_files: bool = True,
     local_confidence_threshold: float = 0.75,
+    barge_in_min_rms: int = 350,
+    barge_in_min_speech_ms: int = 120,
+    barge_in_stop_playback_deadline_ms: int = 150,
 ) -> dict[str, Any]:
     port = int(sidecar_port or 8765)
     if port <= 0 or port > 65535:
@@ -780,6 +806,24 @@ def build_kame_realtime_voice_profile(
         raise ValueError("--kame-local-confidence-threshold must be a number")
     if confidence_threshold < 0.0 or confidence_threshold > 1.0:
         raise ValueError("--kame-local-confidence-threshold must be between 0 and 1")
+    try:
+        min_rms = int(barge_in_min_rms)
+    except (TypeError, ValueError):
+        raise ValueError("--kame-barge-in-min-rms must be a non-negative integer")
+    if min_rms < 0:
+        raise ValueError("--kame-barge-in-min-rms must be a non-negative integer")
+    try:
+        min_speech_ms = int(barge_in_min_speech_ms)
+    except (TypeError, ValueError):
+        raise ValueError("--kame-barge-in-min-speech-ms must be a positive integer")
+    if min_speech_ms <= 0:
+        raise ValueError("--kame-barge-in-min-speech-ms must be a positive integer")
+    try:
+        stop_deadline_ms = int(barge_in_stop_playback_deadline_ms)
+    except (TypeError, ValueError):
+        raise ValueError("--kame-barge-in-stop-playback-deadline-ms must be a positive integer")
+    if stop_deadline_ms <= 0:
+        raise ValueError("--kame-barge-in-stop-playback-deadline-ms must be a positive integer")
 
     interface_url = _clean_url(interface_base_url)
     oracle_url = _clean_url(oracle_base_url)
@@ -793,9 +837,9 @@ def build_kame_realtime_voice_profile(
         "input_frame_ms": 100,
         "silence_timeout_ms": 650,
         "speech_level_threshold": 0.075,
-        "barge_in_min_speech_ms": 120,
-        "barge_in_min_rms": 350,
-        "barge_in_stop_playback_deadline_ms": 150,
+        "barge_in_min_speech_ms": min_speech_ms,
+        "barge_in_min_rms": min_rms,
+        "barge_in_stop_playback_deadline_ms": stop_deadline_ms,
         "pre_roll_ms": 300,
         "require_live_like": True,
         "frontend_provider": "gemma4",
