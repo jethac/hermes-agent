@@ -266,6 +266,34 @@ def test_merge_realtime_voice_profile_preserves_unrelated_config():
     assert merged["voice"]["realtime"]["enabled"] is True
     assert merged["voice"]["realtime"]["sidecar_base_url"] == ""
     assert merged["voice"]["realtime"]["streaming_stt_base_url"] == "http://streaming.local:8766"
+    assert merged["discord"]["realtime_voice"]["enabled"] is True
+    assert merged["discord"]["realtime_voice"]["sidecar_base_url"] == "http://127.0.0.1:8765"
+    assert merged["discord"]["realtime_voice"]["sidecar_token_env"] == "HERMES_VOICE_SIDECAR_TOKEN"
+
+
+def test_merge_realtime_voice_profile_replaces_stale_discord_provider_bridge_url():
+    existing = {
+        "discord": {
+            "realtime_voice": {
+                "enabled": True,
+                "sidecar_base_url": "http://127.0.0.1:8769",
+                "sidecar_token": "existing-token",
+            },
+        },
+    }
+    profile = realtime_voice_profile.build_realtime_voice_live_like_profile(
+        streaming_stt_base_url="http://127.0.0.1:8769",
+        streaming_tts_base_url="http://127.0.0.1:8769",
+        sidecar_host="127.0.0.1",
+        sidecar_port=8765,
+    )
+
+    merged = realtime_voice_profile.merge_realtime_voice_profile(existing, profile)
+
+    discord_rt = merged["discord"]["realtime_voice"]
+    assert discord_rt["sidecar_base_url"] == "http://127.0.0.1:8765"
+    assert discord_rt["sidecar_token"] == "existing-token"
+    assert merged["voice"]["realtime"]["streaming_stt_base_url"] == "http://127.0.0.1:8769"
 
 
 def test_apply_realtime_voice_profile_saves_merged_config(monkeypatch, tmp_path):

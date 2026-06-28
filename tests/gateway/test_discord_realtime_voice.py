@@ -41,6 +41,41 @@ class FakeSidecar:
         await self._events.put(event)
 
 
+def test_discord_realtime_config_derives_reference_sidecar_and_env_token(monkeypatch):
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    monkeypatch.delenv("HERMES_REALTIME_VOICE_SIDECAR_URL", raising=False)
+    monkeypatch.delenv("HERMES_REALTIME_VOICE_SIDECAR_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {
+            "voice": {
+                "realtime": {
+                    "enabled": True,
+                    "sidecar_host": "127.0.0.1",
+                    "sidecar_port": 8877,
+                    "sidecar_token_env": "CUSTOM_VOICE_TOKEN",
+                    "frontend_provider": "reference",
+                },
+            },
+            "discord": {
+                "realtime_voice": {
+                    "enabled": True,
+                },
+            },
+        },
+    )
+    monkeypatch.setattr("hermes_cli.config.load_env", lambda: {"CUSTOM_VOICE_TOKEN": "secret-token"})
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    cfg = adapter._load_realtime_voice_config()
+
+    assert cfg["enabled"] is True
+    assert cfg["sidecar_base_url"] == "http://127.0.0.1:8877"
+    assert cfg["sidecar_token"] == "secret-token"
+    assert cfg["frontend_provider"] == "reference"
+
+
 @pytest.mark.asyncio
 async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     from agent.realtime_voice import VoiceEventType

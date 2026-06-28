@@ -2403,6 +2403,9 @@ class DiscordAdapter(BasePlatformAdapter):
             "enabled": False,
             "sidecar_base_url": "",
             "sidecar_token": "",
+            "sidecar_token_env": "",
+            "sidecar_host": "127.0.0.1",
+            "sidecar_port": 8765,
             "frontend_provider": None,
             "frontend_model": None,
             "oracle_model": None,
@@ -2431,8 +2434,27 @@ class DiscordAdapter(BasePlatformAdapter):
             logger.debug("Could not load discord.realtime_voice config: %s", e)
         if not defaults.get("sidecar_base_url"):
             defaults["sidecar_base_url"] = os.getenv("HERMES_REALTIME_VOICE_SIDECAR_URL", "")
+        if not defaults.get("sidecar_base_url"):
+            host = str(defaults.get("sidecar_host") or "127.0.0.1").strip() or "127.0.0.1"
+            try:
+                port = int(defaults.get("sidecar_port") or 8765)
+            except (TypeError, ValueError):
+                port = 8765
+            if 0 < port <= 65535:
+                defaults["sidecar_base_url"] = f"http://{host}:{port}"
         if not defaults.get("sidecar_token"):
             defaults["sidecar_token"] = os.getenv("HERMES_REALTIME_VOICE_SIDECAR_TOKEN", "")
+        if not defaults.get("sidecar_token"):
+            token_env = str(defaults.get("sidecar_token_env") or "HERMES_VOICE_SIDECAR_TOKEN").strip()
+            if token_env:
+                defaults["sidecar_token"] = os.getenv(token_env, "")
+                if not defaults.get("sidecar_token"):
+                    try:
+                        from hermes_cli.config import load_env
+
+                        defaults["sidecar_token"] = str(load_env().get(token_env) or "")
+                    except Exception as e:
+                        logger.debug("Could not load discord realtime sidecar token env %s: %s", token_env, e)
         return defaults
 
     def _schedule_realtime_voice_frame(self, guild_id: int, user_id: int, pcm: bytes) -> None:

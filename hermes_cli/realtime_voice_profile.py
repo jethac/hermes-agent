@@ -601,7 +601,45 @@ def merge_realtime_voice_profile(
     realtime.update(dict(profile))
     voice["realtime"] = realtime
     updated["voice"] = voice
+    discord = updated.get("discord")
+    if not isinstance(discord, dict):
+        discord = {}
+    else:
+        discord = copy.deepcopy(discord)
+    discord_rt = discord.get("realtime_voice")
+    if not isinstance(discord_rt, dict):
+        discord_rt = {}
+    else:
+        discord_rt = copy.deepcopy(discord_rt)
+    sidecar_url = _reference_sidecar_base_url(profile)
+    discord_rt.update(
+        {
+            "enabled": bool(profile.get("enabled")),
+            "sidecar_base_url": sidecar_url,
+            "sidecar_token_env": str(profile.get("sidecar_token_env") or "HERMES_VOICE_SIDECAR_TOKEN"),
+            "frontend_provider": profile.get("frontend_provider"),
+            "frontend_model": profile.get("frontend_model"),
+            "sidecar_connect_timeout_seconds": profile.get("sidecar_connect_timeout_seconds", 10.0),
+            "sidecar_close_timeout_seconds": profile.get("sidecar_close_timeout_seconds", 2.0),
+        }
+    )
+    discord["realtime_voice"] = discord_rt
+    updated["discord"] = discord
     return updated
+
+
+def _reference_sidecar_base_url(profile: Mapping[str, Any]) -> str:
+    explicit = _clean_url(str(profile.get("sidecar_base_url") or ""))
+    if explicit:
+        return explicit
+    host = str(profile.get("sidecar_host") or "127.0.0.1").strip() or "127.0.0.1"
+    try:
+        port = int(profile.get("sidecar_port") or 8765)
+    except (TypeError, ValueError):
+        port = 8765
+    if port <= 0 or port > 65535:
+        port = 8765
+    return f"http://{host}:{port}"
 
 
 def _clean_url(value: str) -> str:
