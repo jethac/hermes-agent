@@ -677,16 +677,27 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
         reflex_model="gemma-4-E2B-it",
         vllm_model="google/gemma-4-E2B-it",
         interface_api_key_env="CUSTOM_KAME_INTERFACE_TOKEN",
+        interface_base_url="http://spark.local:8000/v1",
         interface_temperature=0.3,
         interface_max_output_tokens=96,
         interface_timeout_seconds=0.7,
         interface_audio_input="native_audio",
         asr_mode="speculative",
+        streaming_stt_base_url="http://spark.local:8767",
+        streaming_stt_token_env="CUSTOM_STT_TOKEN",
+        oracle_provider="custom",
+        oracle_api_mode="chat_completions",
+        oracle_base_url="http://spark.local:8001/v1",
+        oracle_provider_name="Spark Oracle",
         preferred_local_oracle_model="gemma-4-26B-A4B-it",
         oracle_timeout_seconds=42,
         max_spoken_sentences=3,
         tts_model="magpie-local-streaming-tts",
         tts_voice="spark-voice-1",
+        streaming_tts_base_url="http://spark.local:8768",
+        streaming_tts_token_env="CUSTOM_TTS_TOKEN",
+        barge_in_min_rms=410,
+        barge_in_min_speech_ms=130,
     )
 
     merged = realtime_voice_profile.merge_realtime_voice_profile({}, profile)
@@ -695,6 +706,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["engine"] == "kame_interface_oracle"
     assert discord_rt["frontend_provider"] == "gemma4"
     assert discord_rt["frontend_model"] == "gemma-4-E2B-it"
+    assert discord_rt["interface_base_url"] == "http://spark.local:8000/v1"
     assert discord_rt["interface_api_key_env"] == "CUSTOM_KAME_INTERFACE_TOKEN"
     assert discord_rt["interface_temperature"] == 0.3
     assert discord_rt["interface_max_output_tokens"] == 96
@@ -704,14 +716,27 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["asr_mode"] == "speculative"
     assert discord_rt["asr_provider"] == "streaming_stt"
     assert discord_rt["asr_model"] == "portable-streaming-asr"
+    assert discord_rt["asr_base_url"] == "http://spark.local:8767"
+    assert discord_rt["streaming_stt_base_url"] == "http://spark.local:8767"
+    assert discord_rt["streaming_stt_token_env"] == "CUSTOM_STT_TOKEN"
+    assert discord_rt["oracle_provider"] == "custom"
+    assert discord_rt["oracle_provider_name"] == "Spark Oracle"
     assert discord_rt["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+    assert discord_rt["oracle_model"] == "gemma-4-26B-A4B-it"
+    assert discord_rt["oracle_base_url"] == "http://spark.local:8001/v1"
+    assert discord_rt["oracle_api_mode"] == "chat_completions"
     assert discord_rt["oracle_timeout_seconds"] == 42.0
     assert discord_rt["max_spoken_sentences"] == 3
     assert discord_rt["voice_response_policy"] == "sentence_cap"
+    assert discord_rt["barge_in_min_rms"] == 410
+    assert discord_rt["barge_in_min_speech_ms"] == 130
     assert discord_rt["barge_in_stop_playback_deadline_ms"] == 150
     assert discord_rt["tts_provider"] == "streaming_tts"
     assert discord_rt["tts_model"] == "magpie-local-streaming-tts"
     assert discord_rt["tts_voice"] == "spark-voice-1"
+    assert discord_rt["tts_base_url"] == "http://spark.local:8768"
+    assert discord_rt["streaming_tts_base_url"] == "http://spark.local:8768"
+    assert discord_rt["streaming_tts_token_env"] == "CUSTOM_TTS_TOKEN"
     assert discord_rt["fallback_policy"] == "legacy_voice"
     assert discord_rt["routing"]["require_oracle_for_tools"] is True
     assert discord_rt["metrics"]["log_turn_spans"] is True
@@ -727,7 +752,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["quality_targets_ms"]["barge_in_confirmed_to_playback_stopped_ms"] == 150
     assert discord_rt["interface"] == {
         "provider": "gemma4",
-        "base_url": "",
+        "base_url": "http://spark.local:8000/v1",
         "api_key_env": "CUSTOM_KAME_INTERFACE_TOKEN",
         "model": "gemma-4-E2B-it",
         "temperature": 0.3,
@@ -738,20 +763,20 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
         "asr_mode": "speculative",
     }
     assert discord_rt["oracle"] == {
-        "mode": "hermes_active_oracle",
-        "provider": "",
-        "provider_name": "",
+        "mode": "local_openai_compatible",
+        "provider": "custom",
+        "provider_name": "Spark Oracle",
         "preferred_local_model": "gemma-4-26B-A4B-it",
-        "model": "",
-        "base_url": "",
+        "model": "gemma-4-26B-A4B-it",
+        "base_url": "http://spark.local:8001/v1",
         "api_mode": "chat_completions",
         "timeout_ms": 42000,
         "max_spoken_sentences": 3,
         "voice_response_policy": "sentence_cap",
     }
     assert discord_rt["barge_in"] == {
-        "min_rms": 350,
-        "min_speech_ms": 120,
+        "min_rms": 410,
+        "min_speech_ms": 130,
         "stop_playback_deadline_ms": 150,
     }
 
