@@ -1067,13 +1067,15 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "category": "discord",
     },
     "discord.realtime_voice.interface_audio_input": {
-        "type": "string",
+        "type": "select",
         "description": "How the Discord KAME reflex receives user input",
+        "options": ["auto", "native_audio", "text_fallback"],
         "category": "discord",
     },
     "discord.realtime_voice.asr_mode": {
-        "type": "string",
+        "type": "select",
         "description": "ASR role in Discord KAME realtime voice",
+        "options": ["disabled", "on_escalation", "speculative", "debug", "fallback"],
         "category": "discord",
     },
     "discord.realtime_voice.asr_provider": {
@@ -1122,8 +1124,9 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "category": "discord",
     },
     "discord.realtime_voice.fallback_policy": {
-        "type": "string",
+        "type": "select",
         "description": "Fallback behavior when the Discord KAME realtime sidecar or local stack is unavailable",
+        "options": ["legacy_voice", "text_only", "fail_closed"],
         "category": "discord",
     },
     "discord.realtime_voice.barge_in_min_speech_ms": {

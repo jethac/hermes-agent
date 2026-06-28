@@ -3242,8 +3242,20 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_temperature"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_max_output_tokens"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_timeout_seconds"]["type"] == "number"
-        assert CONFIG_SCHEMA["discord.realtime_voice.interface_audio_input"]["type"] == "string"
-        assert CONFIG_SCHEMA["discord.realtime_voice.asr_mode"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.interface_audio_input"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.interface_audio_input"]["options"] == [
+            "auto",
+            "native_audio",
+            "text_fallback",
+        ]
+        assert CONFIG_SCHEMA["discord.realtime_voice.asr_mode"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.asr_mode"]["options"] == [
+            "disabled",
+            "on_escalation",
+            "speculative",
+            "debug",
+            "fallback",
+        ]
         assert CONFIG_SCHEMA["discord.realtime_voice.asr_provider"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.asr_model"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.preferred_local_oracle_model"]["type"] == "string"
@@ -3254,7 +3266,12 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_provider"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_model"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_voice"]["type"] == "string"
-        assert CONFIG_SCHEMA["discord.realtime_voice.fallback_policy"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.fallback_policy"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.fallback_policy"]["options"] == [
+            "legacy_voice",
+            "text_only",
+            "fail_closed",
+        ]
         assert CONFIG_SCHEMA["discord.realtime_voice.barge_in_min_speech_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.barge_in_min_rms"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.barge_in_stop_playback_deadline_ms"]["type"] == "number"
