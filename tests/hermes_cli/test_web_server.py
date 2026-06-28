@@ -3197,12 +3197,30 @@ class TestBuildSchemaFromConfig:
             "brief_summary",
             "full",
         ]
-        assert CONFIG_SCHEMA["voice.realtime.asr_provider"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.asr_provider"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.asr_provider"]["options"] == [
+            "streaming_stt",
+            "deepgram",
+            "elevenlabs",
+            "cartesia",
+            "nvidia_speech",
+            "local_speech",
+            "reference",
+        ]
         assert "oracle-verbatim evidence" in CONFIG_SCHEMA["voice.realtime.asr_provider"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.asr_model"]["type"] == "string"
         assert CONFIG_SCHEMA["voice.realtime.asr_base_url"]["type"] == "string"
         assert "KAME ASR" in CONFIG_SCHEMA["voice.realtime.asr_base_url"]["description"]
-        assert CONFIG_SCHEMA["voice.realtime.tts_provider"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.tts_provider"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.tts_provider"]["options"] == [
+            "streaming_tts",
+            "deepgram",
+            "elevenlabs",
+            "cartesia",
+            "nvidia_speech",
+            "local_speech",
+            "reference",
+        ]
         assert CONFIG_SCHEMA["voice.realtime.tts_model"]["type"] == "string"
         assert CONFIG_SCHEMA["voice.realtime.tts_voice"]["type"] == "string"
         assert CONFIG_SCHEMA["voice.realtime.tts_base_url"]["type"] == "string"
@@ -3329,7 +3347,16 @@ class TestBuildSchemaFromConfig:
             "debug",
             "fallback",
         ]
-        assert CONFIG_SCHEMA["discord.realtime_voice.asr_provider"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.asr_provider"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.asr_provider"]["options"] == [
+            "streaming_stt",
+            "deepgram",
+            "elevenlabs",
+            "cartesia",
+            "nvidia_speech",
+            "local_speech",
+            "reference",
+        ]
         assert CONFIG_SCHEMA["discord.realtime_voice.asr_model"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.asr_base_url"]["type"] == "string"
         assert "Discord KAME ASR" in CONFIG_SCHEMA["discord.realtime_voice.asr_base_url"]["description"]
@@ -3353,7 +3380,16 @@ class TestBuildSchemaFromConfig:
             "brief_summary",
             "full",
         ]
-        assert CONFIG_SCHEMA["discord.realtime_voice.tts_provider"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.tts_provider"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.tts_provider"]["options"] == [
+            "streaming_tts",
+            "deepgram",
+            "elevenlabs",
+            "cartesia",
+            "nvidia_speech",
+            "local_speech",
+            "reference",
+        ]
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_model"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_voice"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_base_url"]["type"] == "string"

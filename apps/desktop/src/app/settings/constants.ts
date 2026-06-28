@@ -264,8 +264,26 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   'voice.realtime.frontend_provider': ['reference', 'gemma4', 'openai_realtime', 'gemini_live'],
   'voice.realtime.interface_audio_input': ['auto', 'native_audio', 'text_fallback'],
   'voice.realtime.asr_mode': ['disabled', 'on_escalation', 'speculative', 'debug', 'fallback'],
+  'voice.realtime.asr_provider': [
+    'streaming_stt',
+    'deepgram',
+    'elevenlabs',
+    'cartesia',
+    'nvidia_speech',
+    'local_speech',
+    'reference'
+  ],
   'voice.realtime.oracle_api_mode': ['chat_completions', 'anthropic_messages', 'codex_responses'],
   'voice.realtime.voice_response_policy': ['sentence_cap', 'brief_summary', 'full'],
+  'voice.realtime.tts_provider': [
+    'streaming_tts',
+    'deepgram',
+    'elevenlabs',
+    'cartesia',
+    'nvidia_speech',
+    'local_speech',
+    'reference'
+  ],
   'voice.realtime.fallback_policy': ['legacy_voice', 'text_only', 'fail_closed'],
   'voice.realtime.input_codec': ['webm_opus', 'opus', 'pcm16'],
   'voice.realtime.output_codec': ['opus', 'webm_opus', 'pcm16'],

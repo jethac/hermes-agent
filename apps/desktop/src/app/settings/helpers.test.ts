@@ -176,6 +176,24 @@ describe('settings helpers', () => {
         'debug',
         'fallback'
       ])
+      expect(enumOptionsFor('voice.realtime.asr_provider', 'streaming_stt', config)).toEqual([
+        'streaming_stt',
+        'deepgram',
+        'elevenlabs',
+        'cartesia',
+        'nvidia_speech',
+        'local_speech',
+        'reference'
+      ])
+      expect(enumOptionsFor('voice.realtime.tts_provider', 'streaming_tts', config)).toEqual([
+        'streaming_tts',
+        'deepgram',
+        'elevenlabs',
+        'cartesia',
+        'nvidia_speech',
+        'local_speech',
+        'reference'
+      ])
     })
 
     it('surfaces KAME routing and provider controls in the voice settings section', () => {

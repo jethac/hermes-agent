@@ -761,8 +761,9 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "category": "voice",
     },
     "voice.realtime.asr_provider": {
-        "type": "string",
+        "type": "select",
         "description": "ASR provider used for oracle-verbatim evidence or text fallback",
+        "options": ["streaming_stt", "deepgram", "elevenlabs", "cartesia", "nvidia_speech", "local_speech", "reference"],
         "category": "voice",
     },
     "voice.realtime.asr_model": {
@@ -823,8 +824,9 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "category": "voice",
     },
     "voice.realtime.tts_provider": {
-        "type": "string",
+        "type": "select",
         "description": "TTS provider used for KAME spoken output",
+        "options": ["streaming_tts", "deepgram", "elevenlabs", "cartesia", "nvidia_speech", "local_speech", "reference"],
         "category": "voice",
     },
     "voice.realtime.tts_model": {
@@ -1216,8 +1218,9 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "category": "discord",
     },
     "discord.realtime_voice.asr_provider": {
-        "type": "string",
+        "type": "select",
         "description": "ASR provider override for Discord oracle-verbatim evidence",
+        "options": ["streaming_stt", "deepgram", "elevenlabs", "cartesia", "nvidia_speech", "local_speech", "reference"],
         "category": "discord",
     },
     "discord.realtime_voice.asr_model": {
@@ -1278,8 +1281,9 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "category": "discord",
     },
     "discord.realtime_voice.tts_provider": {
-        "type": "string",
+        "type": "select",
         "description": "TTS provider override for Discord realtime voice fallback speech",
+        "options": ["streaming_tts", "deepgram", "elevenlabs", "cartesia", "nvidia_speech", "local_speech", "reference"],
         "category": "discord",
     },
     "discord.realtime_voice.tts_model": {
