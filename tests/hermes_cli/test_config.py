@@ -124,6 +124,7 @@ class TestLoadConfigDefaults:
                 "kame_oracle_first_token_to_first_tts_audio_ms": 1000,
                 "kame_first_tts_audio_to_playback_start_ms": 150,
                 "kame_speech_end_to_first_audio_ms": 3000,
+                "kame_speech_end_to_playback_start_ms": 3000,
             }
 
     def test_legacy_root_level_max_turns_migrates_to_agent_config(self, tmp_path):
