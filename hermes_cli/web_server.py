@@ -998,6 +998,16 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Target milliseconds from KAME routing decision to Hermes oracle acceptance",
         "category": "voice",
     },
+    "voice.realtime.quality_targets_ms.kame_oracle_first_token_to_first_tts_audio_ms": {
+        "type": "number",
+        "description": "Target milliseconds from Hermes oracle first token to first synthesized TTS audio",
+        "category": "voice",
+    },
+    "voice.realtime.quality_targets_ms.kame_first_tts_audio_to_playback_start_ms": {
+        "type": "number",
+        "description": "Target milliseconds from first synthesized TTS audio to Discord playback start",
+        "category": "voice",
+    },
     "voice.realtime.quality_targets_ms.kame_speech_end_to_first_audio_ms": {
         "type": "number",
         "description": "Target milliseconds from speech boundary to first audible KAME assistant audio",
@@ -3506,6 +3516,8 @@ _REALTIME_VOICE_KAME_QUALITY_TARGETS_MS = {
     "kame_interface_decision_to_defer_first_audio_ms": 500,
     "kame_speech_end_to_defer_first_audio_ms": 500,
     "kame_interface_decision_to_oracle_accepted_ms": 500,
+    "kame_oracle_first_token_to_first_tts_audio_ms": 1000,
+    "kame_first_tts_audio_to_playback_start_ms": 150,
     "kame_speech_end_to_first_audio_ms": 3000,
 }
 _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS = REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS

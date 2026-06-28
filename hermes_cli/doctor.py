@@ -77,6 +77,8 @@ _REALTIME_VOICE_KAME_TARGETS_MS = {
     "kame_interface_decision_to_defer_first_audio_ms": 500,
     "kame_speech_end_to_defer_first_audio_ms": 500,
     "kame_interface_decision_to_oracle_accepted_ms": 500,
+    "kame_oracle_first_token_to_first_tts_audio_ms": 1000,
+    "kame_first_tts_audio_to_playback_start_ms": 150,
     "kame_speech_end_to_first_audio_ms": 3000,
 }
 
