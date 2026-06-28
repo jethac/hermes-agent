@@ -165,25 +165,33 @@ def reference_sidecar_health_payload(
     )
     scripts = _sanitize_metadata_list(runtime.scripts)
     frontend_languages = _dedupe_metadata([*input_languages, *output_languages])
+    frontend_provider = (
+        "openai_realtime"
+        if openai_realtime_configured
+        else "gemini_live"
+        if gemini_live_configured
+        else "vllm"
+        if vllm_enabled
+        else "streaming_stt"
+        if streaming_stt_ready
+        else "local"
+    )
+    frontend_model = (
+        runtime.openai_realtime_model
+        if openai_realtime_configured
+        else runtime.gemini_live_model
+        if gemini_live_configured
+        else (runtime.vllm_model or "")
+        if vllm_enabled
+        else (runtime.streaming_stt_model or "")
+    )
 
     payload = {
         "ok": True,
         "kind": "reference",
         "frontend": {
-            "provider": (
-                "openai_realtime"
-                if openai_realtime_configured
-                else "gemini_live"
-                if gemini_live_configured
-                else "streaming_stt" if streaming_stt_ready else "vllm" if vllm_enabled else "local"
-            ),
-            "model": (
-                runtime.openai_realtime_model
-                if openai_realtime_configured
-                else runtime.gemini_live_model
-                if gemini_live_configured
-                else (runtime.streaming_stt_model or "") if streaming_stt_ready else runtime.vllm_model or ""
-            ),
+            "provider": frontend_provider,
+            "model": frontend_model,
         },
         "capabilities": {
             "utterance_stt": streaming_stt_ready or vllm_enabled or runtime.local_stt_enabled,

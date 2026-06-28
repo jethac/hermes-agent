@@ -7327,6 +7327,44 @@ def test_reference_sidecar_health_verifies_vllm_audio_frontend_after_models_heal
     assert verified["capabilities"]["utterance_stt"] is True
 
 
+def test_reference_sidecar_health_prefers_vllm_reflex_over_stt_evidence_bridge():
+    runtime = ReferenceSidecarRuntimeConfig(
+        vllm_base_url="http://voice.local:8000/v1",
+        vllm_model="google/gemma-4-E2B-it",
+        streaming_stt_base_url="http://voice.local:8767",
+        streaming_stt_model="nemotron-speech-streaming-0.6b",
+        local_stt_enabled=False,
+    )
+
+    payload = reference_sidecar_health_payload(
+        runtime,
+        vllm_health_checked=True,
+        vllm_health={"data": [{"id": "google/gemma-4-E2B-it"}]},
+        streaming_stt_health={
+            "ok": True,
+            "capabilities": {
+                "streaming_stt": True,
+            },
+        },
+    )
+
+    assert payload["frontend"]["provider"] == "vllm"
+    assert payload["frontend"]["model"] == "google/gemma-4-E2B-it"
+    assert payload["frontend"]["vllm_audio_frontend"] == {
+        "configured": True,
+        "healthy": True,
+        "model": "google/gemma-4-E2B-it",
+    }
+    assert payload["frontend"]["streaming_stt_bridge"] == {
+        "configured": True,
+        "healthy": True,
+    }
+    assert payload["capabilities"]["vllm_audio_frontend"] is True
+    assert payload["capabilities"]["streaming_stt"] is True
+    assert payload["capabilities"]["streaming_stt_bridge"] is True
+    assert payload["capabilities"]["utterance_stt"] is True
+
+
 def test_reference_sidecar_health_payload_is_sanitized():
     payload = reference_sidecar_health_payload(
         ReferenceSidecarRuntimeConfig(
