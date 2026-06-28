@@ -27,6 +27,17 @@ OPENAI_REALTIME_SAMPLE_RATE_HZ = 24000
 OPENAI_REALTIME_DEFAULT_MODEL = "gpt-realtime-2"
 OPENAI_REALTIME_DEFAULT_TRANSCRIPTION_MODEL = "gpt-realtime-whisper"
 OPENAI_REALTIME_DEFAULT_VOICE = "marin"
+OPENAI_REALTIME_ORACLE_CONTEXT_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.ORACLE_ACCEPTED,
+        VoiceEventType.ORACLE_HINT,
+        VoiceEventType.ORACLE_TOOL_CALL,
+        VoiceEventType.ORACLE_TOOL_RESULT,
+        VoiceEventType.ORACLE_RESPONSE_PARTIAL,
+        VoiceEventType.ORACLE_RESPONSE_FINAL,
+        VoiceEventType.ORACLE_ERROR,
+    }
+)
 
 
 WebSocketConnector = Callable[[str, Mapping[str, str], float], Awaitable[Any]]
@@ -132,6 +143,9 @@ class OpenAIRealtimeFrontendSession:
         if event.type == VoiceEventType.AUDIO_INPUT_CHUNK:
             await self._handle_audio_input(event)
             return
+        if event.type in OPENAI_REALTIME_ORACLE_CONTEXT_EVENT_TYPES:
+            await self._handle_oracle_context(event)
+            return
         if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("speak") is True:
             await self._handle_speak(event)
 
@@ -185,6 +199,21 @@ class OpenAIRealtimeFrontendSession:
         )
         if event.payload.get("end_of_utterance") is True:
             await self._send_openai({"type": "input_audio_buffer.commit"})
+
+    async def _handle_oracle_context(self, event: VoiceEvent) -> None:
+        text = _oracle_context_text(event)
+        if not text:
+            return
+        await self._send_openai(
+            {
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": text}],
+                },
+            }
+        )
 
     async def _handle_speak(self, event: VoiceEvent) -> None:
         text = str(event.payload.get("text") or "").strip()
@@ -409,6 +438,48 @@ def resample_pcm16_mono(data: bytes, *, from_rate_hz: int, to_rate_hz: int, chan
 
 def _pcm16(value: int) -> bytes:
     return max(-32768, min(32767, int(value))).to_bytes(2, "little", signed=True)
+
+
+def _oracle_context_text(event: VoiceEvent) -> str:
+    payload = event.payload if isinstance(event.payload, Mapping) else {}
+    parts = [
+        "Hermes backend oracle context update for the realtime voice interface.",
+        "Use this only to track the current oracle handoff; do not speak it by itself.",
+        f"event={event.type.value}",
+    ]
+    for key in (
+        "turn_id",
+        "route",
+        "text",
+        "delta",
+        "final",
+        "accepted",
+        "tool_name",
+        "tool_call_id",
+        "reason",
+        "error",
+    ):
+        if key not in payload:
+            continue
+        value = _oracle_context_value(payload.get(key))
+        if value:
+            parts.append(f"{key}={value}")
+    return " ".join(parts)
+
+
+def _oracle_context_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if isinstance(value, float) and not math.isfinite(value):
+            return ""
+        return str(int(value)) if float(value).is_integer() else str(value)
+    text = " ".join(str(value or "").split())
+    if not text:
+        return ""
+    if len(text) > 240:
+        text = text[:239].rstrip() + "..."
+    return json.dumps(text, ensure_ascii=True)
 
 
 def _payload_int(value: Any) -> Optional[int]:

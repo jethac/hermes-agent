@@ -235,6 +235,46 @@ async def test_openai_realtime_barge_in_cancels_response_and_clears_input():
 
 
 @pytest.mark.asyncio
+async def test_openai_realtime_oracle_hint_is_sent_as_context_only():
+    fake_ws = FakeOpenAIWebSocket()
+
+    async def connector(_url, _headers, _timeout):
+        return fake_ws
+
+    session = OpenAIRealtimeFrontendSession(
+        OpenAIRealtimeFrontendConfig(api_key="sk-test"),
+        connector=connector,
+    )
+    await session.start(RealtimeVoiceSessionConfig(session_id="voice-1"))
+
+    await session.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_HINT,
+            session_id="voice-1",
+            sequence=1,
+            payload={
+                "turn_id": "voice-1:3",
+                "delta": "Hermes found the deployment note.",
+                "final": False,
+            },
+        )
+    )
+
+    context = fake_ws.sent[-1]
+    assert context["type"] == "conversation.item.create"
+    assert context["item"]["role"] == "system"
+    text = context["item"]["content"][0]["text"]
+    assert "context update" in text
+    assert "do not speak it by itself" in text
+    assert "event=oracle.hint" in text
+    assert 'turn_id="voice-1:3"' in text
+    assert 'delta="Hermes found the deployment note."' in text
+    assert "final=false" in text
+
+    await session.close()
+
+
+@pytest.mark.asyncio
 async def test_openai_realtime_malformed_server_event_emits_session_error():
     fake_ws = FakeOpenAIWebSocket()
 

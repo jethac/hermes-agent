@@ -229,6 +229,45 @@ async def test_gemini_live_tool_call_routes_only_to_kame_oracle_bridge():
 
 
 @pytest.mark.asyncio
+async def test_gemini_live_oracle_hint_is_sent_as_context_only():
+    fake_ws = FakeGeminiWebSocket()
+
+    async def connector(_url, _timeout):
+        return fake_ws
+
+    session = GeminiLiveFrontendSession(
+        GeminiLiveFrontendConfig(api_key="gemini-secret"),
+        connector=connector,
+    )
+    await session.start(RealtimeVoiceSessionConfig(session_id="voice-1"))
+
+    await session.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_HINT,
+            session_id="voice-1",
+            sequence=1,
+            payload={
+                "turn_id": "voice-1:3",
+                "delta": "Hermes found the deployment note.",
+                "final": False,
+            },
+        )
+    )
+
+    context = fake_ws.sent[-1]["clientContent"]
+    assert context["turnComplete"] is False
+    text = context["turns"][0]["parts"][0]["text"]
+    assert "context update" in text
+    assert "do not speak it by itself" in text
+    assert "event=oracle.hint" in text
+    assert 'turn_id="voice-1:3"' in text
+    assert 'delta="Hermes found the deployment note."' in text
+    assert "final=false" in text
+
+    await session.close()
+
+
+@pytest.mark.asyncio
 async def test_gemini_live_requires_api_key():
     session = GeminiLiveFrontendSession(GeminiLiveFrontendConfig(api_key=""))
 

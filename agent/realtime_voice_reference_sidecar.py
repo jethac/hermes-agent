@@ -117,6 +117,17 @@ KAME_FEEDBACK_EVENT_TYPES = frozenset(
         VoiceEventType.SESSION_METRICS,
     }
 )
+KAME_LIVE_FRONTEND_ORACLE_CONTEXT_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.ORACLE_ACCEPTED,
+        VoiceEventType.ORACLE_HINT,
+        VoiceEventType.ORACLE_TOOL_CALL,
+        VoiceEventType.ORACLE_TOOL_RESULT,
+        VoiceEventType.ORACLE_RESPONSE_PARTIAL,
+        VoiceEventType.ORACLE_RESPONSE_FINAL,
+        VoiceEventType.ORACLE_ERROR,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -553,6 +564,8 @@ class ReferenceRealtimeVoiceSidecarSession:
             return
         if event.type in KAME_FEEDBACK_EVENT_TYPES:
             self._record_kame_feedback_event(event)
+            if event.type in KAME_LIVE_FRONTEND_ORACLE_CONTEXT_EVENT_TYPES:
+                await self._forward_live_frontend_oracle_context_event(event)
             return
         if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("speak") is True:
             text = str(event.payload.get("text") or "").strip()
@@ -912,6 +925,12 @@ class ReferenceRealtimeVoiceSidecarSession:
             await self._send_gemini_live_event(event)
 
     async def _forward_playback_lifecycle_event(self, event: VoiceEvent) -> None:
+        if self._openai_realtime is not None:
+            await self._send_openai_realtime_event(event)
+        if self._gemini_live is not None:
+            await self._send_gemini_live_event(event)
+
+    async def _forward_live_frontend_oracle_context_event(self, event: VoiceEvent) -> None:
         if self._openai_realtime is not None:
             await self._send_openai_realtime_event(event)
         if self._gemini_live is not None:

@@ -6,6 +6,7 @@ import asyncio
 import base64
 import contextlib
 import json
+import math
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional
 from urllib.parse import quote
@@ -38,6 +39,17 @@ GEMINI_LIVE_BASE_INSTRUCTIONS = (
 )
 GEMINI_LIVE_ORACLE_TOOL_INSTRUCTIONS = (
     "Use ask_hermes_oracle when a request needs the backend Hermes agent."
+)
+GEMINI_LIVE_ORACLE_CONTEXT_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.ORACLE_ACCEPTED,
+        VoiceEventType.ORACLE_HINT,
+        VoiceEventType.ORACLE_TOOL_CALL,
+        VoiceEventType.ORACLE_TOOL_RESULT,
+        VoiceEventType.ORACLE_RESPONSE_PARTIAL,
+        VoiceEventType.ORACLE_RESPONSE_FINAL,
+        VoiceEventType.ORACLE_ERROR,
+    }
 )
 
 
@@ -122,6 +134,9 @@ class GeminiLiveFrontendSession:
         if event.type == VoiceEventType.AUDIO_INPUT_CHUNK:
             await self._handle_audio_input(event)
             return
+        if event.type in GEMINI_LIVE_ORACLE_CONTEXT_EVENT_TYPES:
+            await self._handle_oracle_context(event)
+            return
         if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("speak") is True:
             await self._handle_speak(event)
 
@@ -169,6 +184,19 @@ class GeminiLiveFrontendSession:
                         "data": base64.b64encode(pcm16).decode("ascii"),
                         "mimeType": f"audio/pcm;rate={GEMINI_LIVE_INPUT_SAMPLE_RATE_HZ}",
                     }
+                }
+            }
+        )
+
+    async def _handle_oracle_context(self, event: VoiceEvent) -> None:
+        text = _oracle_context_text(event)
+        if not text:
+            return
+        await self._send_gemini(
+            {
+                "clientContent": {
+                    "turns": [{"role": "user", "parts": [{"text": text}]}],
+                    "turnComplete": False,
                 }
             }
         )
@@ -477,3 +505,45 @@ def _payload_int(value: Any) -> Optional[int]:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+def _oracle_context_text(event: VoiceEvent) -> str:
+    payload = event.payload if isinstance(event.payload, Mapping) else {}
+    parts = [
+        "Hermes backend oracle context update for the realtime voice interface.",
+        "Use this only to track the current oracle handoff; do not speak it by itself.",
+        f"event={event.type.value}",
+    ]
+    for key in (
+        "turn_id",
+        "route",
+        "text",
+        "delta",
+        "final",
+        "accepted",
+        "tool_name",
+        "tool_call_id",
+        "reason",
+        "error",
+    ):
+        if key not in payload:
+            continue
+        value = _oracle_context_value(payload.get(key))
+        if value:
+            parts.append(f"{key}={value}")
+    return " ".join(parts)
+
+
+def _oracle_context_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if isinstance(value, float) and not math.isfinite(value):
+            return ""
+        return str(int(value)) if float(value).is_integer() else str(value)
+    text = " ".join(str(value or "").split())
+    if not text:
+        return ""
+    if len(text) > 240:
+        text = text[:239].rstrip() + "..."
+    return json.dumps(text, ensure_ascii=True)

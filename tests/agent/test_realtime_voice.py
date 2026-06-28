@@ -5474,6 +5474,53 @@ def test_reference_sidecar_records_inbound_kame_feedback_events():
     asyncio.run(run())
 
 
+def test_reference_sidecar_forwards_oracle_feedback_to_live_frontends():
+    class FakeLiveFrontend:
+        def __init__(self):
+            self.received = []
+
+        async def receive_event(self, event):
+            self.received.append(event)
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        sidecar.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            frontend_provider="gemma4",
+        )
+        openai = FakeLiveFrontend()
+        gemini = FakeLiveFrontend()
+        sidecar._openai_realtime = openai
+        sidecar._gemini_live = gemini
+
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_HINT,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "turn_id": "voice-123:3",
+                    "delta": "Hermes found the deployment note.",
+                    "playback_generation": 3,
+                },
+            )
+        )
+
+        assert [event.type for event in openai.received] == [VoiceEventType.ORACLE_HINT]
+        assert [event.type for event in gemini.received] == [VoiceEventType.ORACLE_HINT]
+        assert sidecar._kame_last_oracle_event == {
+            "type": VoiceEventType.ORACLE_HINT.value,
+            "payload": {
+                "turn_id": "voice-123:3",
+                "delta": "Hermes found the deployment note.",
+                "playback_generation": 3,
+            },
+        }
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_clears_kame_feedback_on_barge_in_and_close():
     async def run():
         sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
