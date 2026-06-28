@@ -6277,6 +6277,7 @@ def test_reference_sidecar_vllm_audio_frontend(monkeypatch):
     def fake_urlopen(req, timeout):
         captured["url"] = req.full_url
         captured["body"] = __import__("json").loads(req.data.decode("utf-8"))
+        captured["authorization"] = req.get_header("Authorization")
         captured["timeout"] = timeout
         return FakeResponse()
 
@@ -6326,6 +6327,7 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     def fake_urlopen(req, timeout):
         captured["url"] = req.full_url
         captured["body"] = __import__("json").loads(req.data.decode("utf-8"))
+        captured["authorization"] = req.get_header("Authorization")
         captured["timeout"] = timeout
         return FakeResponse()
 
@@ -6335,6 +6337,7 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
         ReferenceSidecarRuntimeConfig(
             vllm_base_url="http://vllm.local:8000/v1",
             vllm_model="google/gemma-4-E2B-it",
+            vllm_token="reflex-secret-token",
             vllm_timeout_seconds=12,
         )
     )
@@ -6362,6 +6365,7 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
 
     metrics = payload.pop("metrics")
     assert metrics["kame_interface_model_request_ms"] >= 0
+    assert captured["authorization"] == "Bearer reflex-secret-token"
     assert payload == {
         "text": "find the note from yesterday",
         "intent": "Find the note from yesterday.",
@@ -7913,6 +7917,7 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     monkeypatch.setenv("HERMES_VOICE_VLLM_BASE_URL", "http://legacy.local:8000/v1")
     monkeypatch.setenv("HERMES_KAME_INTERFACE_MODEL", "gemma-4-E2B-it")
     monkeypatch.setenv("HERMES_VOICE_VLLM_MODEL", "legacy-reflex-model")
+    monkeypatch.setenv("HERMES_KAME_INTERFACE_API_KEY", "interface-secret-token")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_BASE_URL", "http://streaming-stt.local:9000")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_MODEL", "portable-streaming-asr")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_TOKEN", "secret-token")
@@ -7936,6 +7941,7 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     assert runtime.scripts == ("Jpan", "Latn")
     assert runtime.vllm_base_url == "http://interface.local:8000/v1"
     assert runtime.vllm_model == "gemma-4-E2B-it"
+    assert runtime.vllm_token == "interface-secret-token"
     assert runtime.streaming_stt_base_url == "http://streaming-stt.local:9000"
     assert runtime.streaming_stt_model == "portable-streaming-asr"
     assert runtime.streaming_stt_token == "secret-token"
@@ -7982,6 +7988,40 @@ def test_reference_sidecar_health_probe_uses_short_bridge_health_timeout(monkeyp
 
     assert health == {"ok": True, "capabilities": {"streaming_stt": True}}
     assert calls == [("http://streaming-stt.local:9000/health", 0.2)]
+
+
+def test_reference_sidecar_vllm_health_probe_uses_interface_token(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"data": [{"id": "google/gemma-4-E2B-it"}]}'
+
+    def fake_urlopen(request, timeout):
+        calls.append((request.full_url, request.get_header("Authorization"), request.get_header("Accept"), timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(reference_sidecar_module.urllib.request, "urlopen", fake_urlopen)
+
+    runtime = ReferenceSidecarRuntimeConfig(
+        vllm_base_url="http://vllm.local:8000/v1",
+        vllm_model="google/gemma-4-E2B-it",
+        vllm_token="reflex-secret-token",
+        vllm_timeout_seconds=12.0,
+    )
+
+    health = reference_sidecar_module._probe_vllm_health_sync(runtime)
+
+    assert health == {"data": [{"id": "google/gemma-4-E2B-it"}]}
+    assert calls == [
+        ("http://vllm.local:8000/v1/models", "Bearer reflex-secret-token", "application/json", 2.0)
+    ]
 
 
 def test_reference_sidecar_bridges_streaming_stt_events(monkeypatch):

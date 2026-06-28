@@ -123,6 +123,7 @@ class ReferenceSidecarRuntimeConfig:
 
     vllm_base_url: Optional[str] = None
     vllm_model: Optional[str] = None
+    vllm_token: Optional[str] = None
     vllm_timeout_seconds: float = 60.0
     streaming_stt_base_url: Optional[str] = None
     streaming_stt_model: Optional[str] = None
@@ -1487,7 +1488,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=_vllm_request_headers(self.runtime, content_json=True),
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=self.runtime.vllm_timeout_seconds) as response:
@@ -1527,7 +1528,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=_vllm_request_headers(self.runtime, content_json=True),
             method="POST",
         )
         request_started_at = time.perf_counter()
@@ -1920,6 +1921,13 @@ def runtime_config_from_env() -> ReferenceSidecarRuntimeConfig:
             or os.environ.get("HERMES_VOICE_VLLM_MODEL")
             or None
         ),
+        vllm_token=(
+            os.environ.get("HERMES_KAME_INTERFACE_API_KEY")
+            or os.environ.get("HERMES_KAME_INTERFACE_TOKEN")
+            or os.environ.get("HERMES_VOICE_VLLM_API_KEY")
+            or os.environ.get("HERMES_VOICE_VLLM_TOKEN")
+            or None
+        ),
         vllm_timeout_seconds=float(os.environ.get("HERMES_VOICE_VLLM_TIMEOUT_SECONDS") or 60),
         streaming_stt_base_url=os.environ.get("HERMES_VOICE_STREAMING_STT_BASE_URL") or None,
         streaming_stt_model=os.environ.get("HERMES_VOICE_STREAMING_STT_MODEL") or None,
@@ -1975,6 +1983,22 @@ def _authorized(headers: Mapping[str, str], token: Optional[str]) -> bool:
     if not token:
         return True
     return headers.get("authorization") == f"Bearer {token}"
+
+
+def _vllm_request_headers(
+    runtime: ReferenceSidecarRuntimeConfig,
+    *,
+    accept_json: bool = False,
+    content_json: bool = False,
+) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if accept_json:
+        headers["Accept"] = "application/json"
+    if content_json:
+        headers["Content-Type"] = "application/json"
+    if runtime.vllm_token:
+        headers["Authorization"] = f"Bearer {runtime.vllm_token}"
+    return headers
 
 
 async def _probe_vllm_health(runtime: ReferenceSidecarRuntimeConfig) -> Optional[Mapping[str, Any]]:
@@ -2037,7 +2061,7 @@ def _probe_vllm_health_sync(runtime: ReferenceSidecarRuntimeConfig) -> Optional[
     if not runtime.vllm_base_url or not runtime.vllm_model:
         return None
     url = f"{runtime.vllm_base_url.rstrip('/')}/models"
-    request = urllib.request.Request(url, headers={"Accept": "application/json"}, method="GET")
+    request = urllib.request.Request(url, headers=_vllm_request_headers(runtime, accept_json=True), method="GET")
     try:
         with urllib.request.urlopen(
             request,
