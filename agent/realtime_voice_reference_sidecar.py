@@ -923,6 +923,21 @@ class ReferenceRealtimeVoiceSidecarSession:
     ) -> None:
         try:
             payload = await asyncio.to_thread(self._understand_audio_sync, audio, codec)
+            fallback_reason = str(payload.get("fallback_reason") or "").strip()
+            if fallback_reason:
+                await self._emit(
+                    VoiceEventType.FRONTEND_STATE,
+                    {
+                        "status": "fallback",
+                        "reason": fallback_reason,
+                        "provider": "local_stt",
+                        "requested_provider": self.config.frontend_provider if self.config is not None else "",
+                        "fallback_provider": "local_stt",
+                        "intent_source": "asr_fallback",
+                        "transcript_source": "asr",
+                        **({"error": str(payload.get("fallback_error") or "")} if payload.get("fallback_error") else {}),
+                    },
+                )
             text = str(payload.get("text") or "").strip()
             if text:
                 if input_generation is not None:
@@ -1074,12 +1089,35 @@ class ReferenceRealtimeVoiceSidecarSession:
 
     def _understand_audio_sync(self, audio: bytes, codec: VoiceAudioCodec) -> dict[str, Any]:
         if self._wants_kame_vllm_reflex():
-            return self._understand_kame_with_vllm(audio, codec)
+            try:
+                return self._understand_kame_with_vllm(audio, codec)
+            except Exception as exc:
+                if not self.runtime.local_stt_enabled:
+                    raise
+                logger.warning("KAME audio reflex failed; falling back to local STT: %s", sanitize_realtime_voice_error(exc))
+                return self._understand_with_local_stt(
+                    audio,
+                    codec,
+                    force_kame_fallback=True,
+                    fallback_reason="kame_audio_reflex_failed",
+                    fallback_error=sanitize_realtime_voice_error(exc),
+                )
         if self.runtime.vllm_base_url and self.runtime.vllm_model:
             return {"text": self._transcribe_with_vllm(audio, codec)}
         if not self.runtime.local_stt_enabled:
             raise RuntimeError("local STT is disabled and no vLLM audio frontend is configured")
 
+        return self._understand_with_local_stt(audio, codec)
+
+    def _understand_with_local_stt(
+        self,
+        audio: bytes,
+        codec: VoiceAudioCodec,
+        *,
+        force_kame_fallback: bool = False,
+        fallback_reason: str = "",
+        fallback_error: str = "",
+    ) -> dict[str, Any]:
         transcribe_audio = self._transcribe_audio_func
         if transcribe_audio is None:
             from tools.transcription_tools import transcribe_audio as transcribe_audio
@@ -1090,8 +1128,8 @@ class ReferenceRealtimeVoiceSidecarSession:
             if not result.get("success"):
                 raise RuntimeError(str(result.get("error") or "transcription failed"))
             text = str(result.get("transcript") or "").strip()
-            if self._uses_kame_local_stt_fallback():
-                return {
+            if force_kame_fallback or self._uses_kame_local_stt_fallback():
+                payload = {
                     "text": text,
                     "intent": text,
                     "intent_source": "asr_fallback",
@@ -1100,6 +1138,13 @@ class ReferenceRealtimeVoiceSidecarSession:
                     "transcript_source": "asr",
                     "interface_audio_input_fallback": True,
                 }
+                if not fallback_reason and self.config is not None:
+                    fallback_reason = self._kame_audio_reflex_fallback_reason(self.config)
+                if fallback_reason:
+                    payload["fallback_reason"] = fallback_reason
+                if fallback_error:
+                    payload["fallback_error"] = fallback_error
+                return payload
             return {"text": text}
         finally:
             _unlink(path)

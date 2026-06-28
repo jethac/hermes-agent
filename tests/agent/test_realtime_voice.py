@@ -2976,6 +2976,79 @@ def test_reference_sidecar_labels_kame_local_stt_fallback_as_asr_evidence():
     assert final.payload["input_generation"] == 11
 
 
+def test_reference_sidecar_falls_back_to_local_stt_when_kame_vllm_reflex_fails(monkeypatch):
+    def failing_urlopen(req, timeout):
+        raise OSError("vLLM connection refused")
+
+    def fake_transcribe(path):
+        assert path
+        return {"success": True, "transcript": "check deployment status"}
+
+    monkeypatch.setattr("agent.realtime_voice_reference_sidecar.urllib.request.urlopen", failing_urlopen)
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                vllm_base_url="http://vllm.local:8000/v1",
+                vllm_model="google/gemma-4-E2B-it",
+            ),
+            transcribe_audio_func=fake_transcribe,
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="google/gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                    "input_generation": 12,
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                await sidecar.close()
+                break
+        return seen
+
+    seen = asyncio.run(run())
+    ready = seen[0]
+    fallback = next(
+        event
+        for event in seen
+        if event.type == VoiceEventType.FRONTEND_STATE and event.payload.get("reason") == "kame_audio_reflex_failed"
+    )
+    final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+    assert ready.payload["status"] == "ready"
+    assert ready.payload["provider"] == "gemma4"
+    assert ready.payload["vllm"] is True
+    assert fallback.payload["status"] == "fallback"
+    assert fallback.payload["provider"] == "local_stt"
+    assert fallback.payload["requested_provider"] == "gemma4"
+    assert "vLLM connection refused" in fallback.payload["error"]
+    assert final.payload["text"] == "check deployment status"
+    assert final.payload["intent_source"] == "asr_fallback"
+    assert final.payload["route"] == "oracle_direct"
+    assert final.payload["transcript_source"] == "asr"
+    assert final.payload["fallback_reason"] == "kame_audio_reflex_failed"
+    assert "vLLM connection refused" in final.payload["fallback_error"]
+    assert final.payload["input_generation"] == 12
+
+
 def test_reference_sidecar_passes_language_metadata_to_tts_callback(tmp_path):
     captured = {}
 
