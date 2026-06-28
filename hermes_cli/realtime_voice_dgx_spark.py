@@ -1410,10 +1410,13 @@ def probe_json_endpoint(
     if expected_model:
         model_ok = _models_payload_contains(payload, expected_model)
     field_misses = _expected_field_misses(payload, expected_fields or {})
+    payload_ok = payload.get("ok")
+    payload_ok_found = payload_ok is not False
     return {
-        "ok": 200 <= int(status) < 300 and model_ok and not field_misses,
+        "ok": 200 <= int(status) < 300 and model_ok and payload_ok_found and not field_misses,
         "url": url,
         "status": status,
+        "payload_ok": payload_ok if isinstance(payload_ok, bool) else None,
         "expected_model": expected_model,
         "model_found": model_ok if expected_model else None,
         "expected_fields": dict(expected_fields or {}),

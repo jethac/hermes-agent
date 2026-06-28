@@ -623,6 +623,99 @@ def test_preflight_fails_when_interface_audio_probe_is_not_kame_json(monkeypatch
     assert preflight["checks"]["interface_audio_probe"]["schema_issues"][0].startswith("message content is not JSON")
 
 
+def test_preflight_fails_when_speech_bridge_health_payload_is_not_ok(monkeypatch, tmp_path):
+    manifest = _manifest(tmp_path, production_speech=True)
+
+    class _Response:
+        status = 200
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return None
+
+        def read(self):
+            return json.dumps(self._payload).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        if request.full_url.endswith("/models") and ":8000" in request.full_url:
+            return _Response({"data": [{"id": "gemma-4-E2B-it"}]})
+        if request.full_url.endswith("/chat/completions") and ":8000" in request.full_url:
+            return _Response(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "route": "reject_or_clarify",
+                                        "intent": "preflight audio probe",
+                                        "text": "",
+                                        "route_confidence": 1.0,
+                                        "local_reply": "I did not catch speech.",
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                }
+            )
+        if request.full_url.endswith("/models") and ":8001" in request.full_url:
+            return _Response({"data": [{"id": "gemma-4-26B-A4B-it"}]})
+        if request.full_url.endswith("/health") and ":8765" in request.full_url:
+            return _Response(
+                {
+                    "ok": True,
+                    "capabilities": {
+                        "vllm_audio_frontend": True,
+                        "tts": True,
+                        "streaming_stt_bridge": True,
+                        "streaming_tts_bridge": True,
+                    },
+                    "frontend": {
+                        "streaming_stt_bridge": {"healthy": True},
+                        "streaming_tts_bridge": {"healthy": True},
+                    },
+                }
+            )
+        if request.full_url.endswith("/health") and ":8767" in request.full_url:
+            return _Response(
+                {
+                    "ok": False,
+                    "kind": "local_speech_proxy_bridge",
+                    "capabilities": {"streaming_stt": False},
+                    "frontend": {"provider": "nemotron_speech", "upstream_healthy": False},
+                }
+            )
+        if request.full_url.endswith("/health") and ":8768" in request.full_url:
+            return _Response(
+                {
+                    "ok": True,
+                    "kind": "local_speech_proxy_bridge",
+                    "capabilities": {"streaming_tts": True},
+                    "frontend": {"provider": "magpie_tts", "upstream_healthy": True},
+                }
+            )
+        return _Response({"ok": True})
+
+    monkeypatch.setattr(realtime_voice_dgx_spark.urllib.request, "urlopen", fake_urlopen)
+
+    preflight = realtime_voice_dgx_spark.preflight_dgx_spark_stack(
+        manifest,
+        timeout_seconds=0.1,
+    )
+
+    assert preflight["ok"] is False
+    assert preflight["checks"]["asr_health"]["ok"] is False
+    assert preflight["checks"]["asr_health"]["payload_ok"] is False
+    assert preflight["checks"]["tts_health"]["ok"] is True
+    assert preflight["checks"]["tts_health"]["payload_ok"] is True
+
+
 def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_path):
     matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
 
