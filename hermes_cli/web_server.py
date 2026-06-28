@@ -723,6 +723,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Low-latency realtime interface model",
         "category": "voice",
     },
+    "voice.realtime.interface_base_url": {
+        "type": "string",
+        "description": "OpenAI-compatible base URL for the low-latency KAME interface model",
+        "category": "voice",
+    },
     "voice.realtime.interface_temperature": {
         "type": "number",
         "description": "Sampling temperature for the low-latency KAME interface model",
@@ -14163,7 +14168,7 @@ def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
         sidecar_port,
     ]
 
-    vllm_base_url = str(realtime.get("vllm_base_url") or "").strip()
+    vllm_base_url = str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "").strip()
     vllm_model = str(realtime.get("vllm_model") or "").strip()
     if vllm_base_url:
         cmd.extend(["--vllm-base-url", vllm_base_url])
@@ -14268,7 +14273,7 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
     sidecar_token = _realtime_voice_sidecar_token(realtime, env_on_disk)
     if sidecar_token:
         child_env["HERMES_VOICE_SIDECAR_TOKEN"] = sidecar_token
-    vllm_base_url = str(realtime.get("vllm_base_url") or "").strip()
+    vllm_base_url = str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "").strip()
     vllm_model = str(realtime.get("vllm_model") or "").strip()
     if vllm_base_url:
         child_env["HERMES_VOICE_VLLM_BASE_URL"] = vllm_base_url
@@ -14479,7 +14484,9 @@ def _normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, A
 
     _set_realtime_voice_default(config, "frontend_provider", interface.get("provider"))
     _set_realtime_voice_default(config, "frontend_model", interface.get("model"))
-    _set_realtime_voice_default(config, "vllm_base_url", interface.get("base_url"))
+    _set_realtime_voice_default(config, "interface_base_url", interface.get("base_url"))
+    _set_realtime_voice_default(config, "interface_base_url", config.get("vllm_base_url"))
+    _set_realtime_voice_default(config, "vllm_base_url", config.get("interface_base_url"))
     _set_realtime_voice_default(config, "interface_temperature", interface.get("temperature"))
     _set_realtime_voice_default(config, "interface_max_output_tokens", interface.get("max_output_tokens"))
     _set_realtime_voice_default(config, "interface_max_audio_seconds", interface.get("max_audio_seconds"))
@@ -14559,6 +14566,16 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     engine = str(realtime.get("engine") or "text_oracle_tts")
     provider = str(_first_realtime_voice_config_value(realtime, ("frontend_provider",), ("interface", "provider"), default="") or "")
     frontend_model = str(_first_realtime_voice_config_value(realtime, ("frontend_model",), ("interface", "model"), default="") or "")
+    interface_base_url = str(
+        _first_realtime_voice_config_value(
+            realtime,
+            ("interface_base_url",),
+            ("interface", "base_url"),
+            ("vllm_base_url",),
+            default="",
+        )
+        or ""
+    )
     interface_temperature = _bounded_float_config(
         _first_realtime_voice_config_value(realtime, ("interface_temperature",), ("interface", "temperature")),
         default=0.2,
@@ -14799,6 +14816,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "oracle_role": "hermes_backend_oracle",
         "frontend_provider": provider or None,
         "frontend_model": frontend_model or None,
+        "interface_base_url": _redact_realtime_voice_url(interface_base_url) if interface_base_url else None,
         "interface_temperature": interface_temperature,
         "interface_max_output_tokens": interface_max_output_tokens,
         "interface_timeout_seconds": interface_timeout_seconds,
@@ -14847,6 +14865,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "enabled": engine == "kame_interface_oracle",
             "sidecar_required": engine == "kame_interface_oracle",
             "audio_reflex": conversation_quality.get("kame_reflex") is True,
+            "interface_base_url": _redact_realtime_voice_url(interface_base_url) if interface_base_url else None,
             "interface_temperature": interface_temperature,
             "interface_max_output_tokens": interface_max_output_tokens,
             "interface_timeout_seconds": interface_timeout_seconds,
@@ -14916,6 +14935,7 @@ def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk
         if str(realtime.get("frontend_provider") or "").strip() == "gemma4"
         else ""
     )
+    interface_base_url = str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "")
     return [
         {
             "id": "kame",
@@ -14923,6 +14943,7 @@ def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk
             "label": "KAME Gemma reflex",
             "kind": "kame_interface_oracle",
             "model": kame_model or "gemma-4-E2B-it",
+            "base_url": _redact_realtime_voice_url(interface_base_url),
             "voice": str(realtime.get("tts_voice") or realtime.get("streaming_tts_voice") or ""),
             "implemented": True,
         },
@@ -15064,7 +15085,9 @@ def _realtime_voice_setup_config_payload(
         "interface": {
             "provider": str(realtime.get("frontend_provider") or ""),
             "model": str(realtime.get("frontend_model") or ""),
-            "base_url": _redact_realtime_voice_url(str(realtime.get("vllm_base_url") or "")),
+            "base_url": _redact_realtime_voice_url(
+                str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "")
+            ),
             "audio_input": str(realtime.get("interface_audio_input") or ""),
             "temperature": status.get("interface_temperature"),
             "max_output_tokens": status.get("interface_max_output_tokens"),
@@ -15337,6 +15360,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     routing_policy = _realtime_voice_routing_policy_payload(realtime)
     metrics_policy = _realtime_voice_metrics_policy_payload(realtime)
     output_events_policy = _realtime_voice_output_events_payload(realtime)
+    interface_base_url = str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "")
     asr_provider = str(realtime.get("asr_provider") or "")
     asr_model = str(realtime.get("asr_model") or realtime.get("streaming_stt_model") or "")
     oracle_provider = str(realtime.get("oracle_provider") or "")
@@ -15503,6 +15527,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "oracle_role": "hermes_backend_oracle",
             "frontend_provider": str(realtime.get("frontend_provider") or "") or None,
             "frontend_model": str(realtime.get("frontend_model") or "") or None,
+            "interface_base_url": _redact_realtime_voice_url(interface_base_url) if interface_base_url else None,
             "interface_temperature": _bounded_float_config(
                 realtime.get("interface_temperature"),
                 default=0.2,

@@ -3173,6 +3173,8 @@ class TestBuildSchemaFromConfig:
         assert "streaming STT/TTS" in CONFIG_SCHEMA["voice.realtime.require_live_like"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.frontend_provider"]["type"] == "string"
         assert "interface provider" in CONFIG_SCHEMA["voice.realtime.frontend_provider"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.interface_base_url"]["type"] == "string"
+        assert "KAME interface model" in CONFIG_SCHEMA["voice.realtime.interface_base_url"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.interface_temperature"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.interface_max_output_tokens"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.interface_timeout_seconds"]["type"] == "number"
@@ -6663,6 +6665,7 @@ class TestRealtimeVoiceWebSocket:
                 "engine": "kame_interface_oracle",
                 "frontend_provider": "gemma4",
                 "frontend_model": "gemma-4-E2B-it",
+                "interface_base_url": "http://spark.local:8000/v1",
                 "interface_audio_input": "native_audio",
                 "asr_mode": "on_escalation",
                 "asr_provider": "streaming_stt",
@@ -6704,6 +6707,7 @@ class TestRealtimeVoiceWebSocket:
         assert kame["provider"] == "gemma4"
         assert kame["kind"] == "kame_interface_oracle"
         assert kame["model"] == "gemma-4-E2B-it"
+        assert kame["base_url"] == "http://spark.local:8000/v1"
         assert kame["implemented"] is True
         assert gemini["api_key_present"] is True
         assert nemotron["kind"] == "local_streaming_asr_bridge"
@@ -6724,6 +6728,7 @@ class TestRealtimeVoiceWebSocket:
         assert payload["config"]["engine"] == "kame_interface_oracle"
         assert payload["config"]["interface"]["provider"] == "gemma4"
         assert payload["config"]["interface"]["model"] == "gemma-4-E2B-it"
+        assert payload["config"]["interface"]["base_url"] == "http://spark.local:8000/v1"
         assert payload["config"]["interface"]["audio_input"] == "native_audio"
         assert payload["config"]["oracle"]["provider_name"] == "Spark Oracle"
         assert payload["config"]["oracle"]["model"] == "gemma-4-26B-A4B-it"
@@ -7212,6 +7217,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.engine.value == "kame_interface_oracle"
         assert config.frontend_provider == "openai_compatible"
         assert config.frontend_model == "gemma-4-E2B-it"
+        assert config.metadata["interface_base_url"] == "http://spark.local:8000/v1"
         assert config.interface_temperature == 0.3
         assert config.interface_max_output_tokens == 96
         assert config.interface_timeout_seconds == 0.7
@@ -7241,6 +7247,8 @@ class TestRealtimeVoiceWebSocket:
         assert config.metadata["voice_response_policy"] == "brief_summary"
         assert status["frontend_provider"] == "openai_compatible"
         assert status["frontend_model"] == "gemma-4-E2B-it"
+        assert status["interface_base_url"] == "http://spark.local:8000/v1"
+        assert status["kame"]["interface_base_url"] == "http://spark.local:8000/v1"
         assert status["interface_temperature"] == 0.3
         assert status["interface_max_output_tokens"] == 96
         assert status["interface_timeout_seconds"] == 0.7
@@ -7835,6 +7843,7 @@ class TestRealtimeVoiceWebSocket:
             "enabled": True,
             "sidecar_required": True,
             "audio_reflex": True,
+            "interface_base_url": None,
             "interface_temperature": 0.2,
             "interface_max_output_tokens": 160,
             "interface_timeout_seconds": 0.8,
@@ -9243,12 +9252,12 @@ class TestRealtimeVoiceWebSocket:
             disabled, self.ws_module._realtime_voice_sidecar_base_url(disabled)
         )
 
-    def test_sidecar_command_includes_vllm_args(self):
+    def test_sidecar_command_uses_interface_base_url_for_vllm_args(self):
         command = self.ws_module._realtime_voice_sidecar_command(
             {
                 "sidecar_host": "127.0.0.1",
                 "sidecar_port": 8765,
-                "vllm_base_url": "http://vllm.example.test:8000/v1",
+                "interface_base_url": "http://interface.example.test:8000/v1",
                 "vllm_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
                 "input_languages": ["ja", "en-US", "https://voice.local/secret"],
                 "output_languages": ["ja", "ko", "token=secret"],
@@ -9258,7 +9267,7 @@ class TestRealtimeVoiceWebSocket:
 
         assert command[:3] == [self.ws_module.sys.executable, "-m", "hermes_cli.realtime_voice_sidecar"]
         assert "--vllm-base-url" in command
-        assert "http://vllm.example.test:8000/v1" in command
+        assert "http://interface.example.test:8000/v1" in command
         assert "--vllm-model" in command
         assert "google/gemma-4-E4B-it-qat-w4a16-ct" in command
         assert "--input-languages" in command
@@ -9268,6 +9277,15 @@ class TestRealtimeVoiceWebSocket:
         assert "--scripts" in command
         assert "Jpan,Latn" in command
         assert "secret" not in __import__("json").dumps(command)
+
+        legacy_command = self.ws_module._realtime_voice_sidecar_command(
+            {
+                "sidecar_host": "127.0.0.1",
+                "sidecar_port": 8765,
+                "vllm_base_url": "http://legacy-vllm.example.test:8000/v1",
+            }
+        )
+        assert "http://legacy-vllm.example.test:8000/v1" in legacy_command
 
     def test_sidecar_command_includes_streaming_stt_bridge_args_without_token(self):
         command = self.ws_module._realtime_voice_sidecar_command(
@@ -9686,7 +9704,8 @@ class TestRealtimeVoiceWebSocket:
                 "sidecar_host": "127.0.0.1",
                 "sidecar_port": 8765,
                 "sidecar_token_env": "CUSTOM_VOICE_TOKEN",
-                "vllm_base_url": "http://vllm.example.test:8000/v1",
+                "interface_base_url": "http://interface.example.test:8000/v1",
+                "vllm_base_url": "http://legacy-vllm.example.test:8000/v1",
                 "vllm_model": "google/gemma-4-E4B-it-qat-w4a16-ct",
                 "streaming_stt_base_url": "http://streaming-stt.local:9000",
                 "streaming_stt_model": "portable-streaming-asr",
@@ -9717,10 +9736,13 @@ class TestRealtimeVoiceWebSocket:
         command, kwargs = calls["popen"]
         assert command[:3] == [self.ws_module.sys.executable, "-m", "hermes_cli.realtime_voice_sidecar"]
         assert "--vllm-base-url" in command
+        assert "http://interface.example.test:8000/v1" in command
+        assert "http://legacy-vllm.example.test:8000/v1" not in command
         assert kwargs["cwd"] == str(self.ws_module.PROJECT_ROOT)
         assert all(req.headers["Authorization"] == "Bearer secret-token" for req in calls["requests"])
         assert kwargs["env"]["CUSTOM_VOICE_TOKEN"] == "secret-token"
         assert kwargs["env"]["HERMES_VOICE_SIDECAR_TOKEN"] == "secret-token"
+        assert kwargs["env"]["HERMES_VOICE_VLLM_BASE_URL"] == "http://interface.example.test:8000/v1"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_BASE_URL"] == "http://streaming-stt.local:9000"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_MODEL"] == "portable-streaming-asr"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_TOKEN"] == "stream-secret-token"
