@@ -852,7 +852,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             return _kame_voice_capability_correction_text(self.config), True
 
         try:
-            acknowledgement = _turn_acknowledgement_text(self.config)
+            acknowledgement = _oracle_acknowledgement_text(self.config, oracle_request)
             if acknowledgement:
                 planned_acknowledgement = self._planner.clean(acknowledgement)
                 if planned_acknowledgement:
@@ -1628,6 +1628,19 @@ def _turn_acknowledgement_text(config: Optional[RealtimeVoiceSessionConfig]) -> 
     if not text:
         return ""
     return text[:120]
+
+
+def _oracle_acknowledgement_text(
+    config: Optional[RealtimeVoiceSessionConfig],
+    oracle_request: Optional[KameOracleRequest],
+) -> str:
+    if (
+        oracle_request is not None
+        and oracle_request.route == KameRoute.DEFER
+        and oracle_request.interface_already_said
+    ):
+        return oracle_request.interface_already_said.strip()[:120]
+    return _turn_acknowledgement_text(config)
 
 
 def _kame_voice_capability_correction_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:

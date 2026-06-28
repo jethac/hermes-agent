@@ -1034,6 +1034,7 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
                     "intent_source": "reflex_audio",
                     "route": "defer",
                     "transcript_source": "asr",
+                    "interface_already_said": "Checking that now.",
                     "end_of_utterance": True,
                 },
             )
@@ -1049,7 +1050,7 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
         assert len(oracle.requests) == 1
         request = oracle.requests[0]
         assert request.route == KameRoute.DEFER
-        assert request.interface_already_said == "One moment."
+        assert request.interface_already_said == "Checking that now."
 
         defer = next(event for event in seen if event.type == VoiceEventType.INTERFACE_REPLY_DEFER)
         oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
@@ -1060,20 +1061,20 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
         )
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         assert defer.payload["route"] == "defer"
-        assert defer.payload["interface_already_said"] == "One moment."
-        assert defer.payload["text"] == "One moment."
-        assert defer.payload["acknowledgement_text"] == "One moment."
+        assert defer.payload["interface_already_said"] == "Checking that now."
+        assert defer.payload["text"] == "Checking that now."
+        assert defer.payload["acknowledgement_text"] == "Checking that now."
         assert defer.payload["oracle_text"] == "check the deployment status"
         assert oracle_request.payload["route"] == "defer"
         assert oracle_request.payload["turn_id"] == "voice-123:1"
-        assert oracle_request.payload["interface_already_said"] == "One moment."
+        assert oracle_request.payload["interface_already_said"] == "Checking that now."
         assert oracle_request.payload["intent"] == "Check the deployment status."
         assert oracle_request.payload["text"] == "check the deployment status"
         assert "acknowledgement_text" not in oracle_request.payload
-        assert acknowledgement.payload["text"] == "One moment."
-        assert acknowledgement.payload["kame_interface_already_said"] == "One moment."
+        assert acknowledgement.payload["text"] == "Checking that now."
+        assert acknowledgement.payload["kame_interface_already_said"] == "Checking that now."
         assert commit.payload["text"] == "The deployment is healthy."
-        assert spoken == ["One moment.", "The deployment is healthy."]
+        assert spoken == ["Checking that now.", "The deployment is healthy."]
 
     asyncio.run(run())
 
