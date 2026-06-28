@@ -461,13 +461,21 @@ def _validate_alpha_manifest_entry(
     if health.get("ok") is not True:
         issues.append(RealtimeVoiceSmokeReportIssue("manifest", "manifest sidecar health was not ok", "manifest"))
     capabilities = health.get("capabilities") if isinstance(health.get("capabilities"), Mapping) else {}
-    if capabilities.get("native_s2s") is not True and not (
-        capabilities.get("streaming_stt") is True and capabilities.get("tts") is True
+    engine = str(entry.get("engine") or "")
+    has_kame_reflex = (
+        engine == "kame_interface_oracle"
+        and capabilities.get("vllm_audio_frontend") is True
+        and capabilities.get("tts") is True
+    )
+    if (
+        capabilities.get("native_s2s") is not True
+        and not (capabilities.get("streaming_stt") is True and capabilities.get("tts") is True)
+        and not has_kame_reflex
     ):
         issues.append(
             RealtimeVoiceSmokeReportIssue(
                 "manifest",
-                "missing native_s2s or streaming_stt+tts sidecar capability",
+                "missing native_s2s, streaming_stt+tts, or kame_reflex+tts sidecar capability",
                 "manifest",
             )
         )
@@ -582,9 +590,13 @@ def realtime_voice_alpha_manifest_fingerprint(entry: Mapping[str, Any]) -> tuple
         str(entry.get("engine") or ""),
         str(entry.get("frontend_provider") or ""),
         str(entry.get("frontend_model") or ""),
+        str(entry.get("interface_audio_input") or ""),
+        str(entry.get("asr_mode") or ""),
+        str(entry.get("preferred_local_oracle_model") or ""),
         str(conversation_quality.get("mode") or ""),
         str(sidecar.get("mode") or ""),
         capabilities.get("native_s2s") is True,
+        capabilities.get("vllm_audio_frontend") is True,
         capabilities.get("streaming_stt") is True,
         capabilities.get("tts") is True,
         tuple(sorted(_primary_language_set(capabilities.get("output_languages", [])))),

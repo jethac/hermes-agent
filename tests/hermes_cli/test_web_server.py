@@ -6859,6 +6859,7 @@ class TestRealtimeVoiceWebSocket:
             "partial_transcripts": False,
             "barge_in": True,
             "native_s2s": False,
+            "kame_reflex": False,
             "streaming_stt": False,
             "utterance_stt": False,
             "tts": False,
@@ -7342,6 +7343,7 @@ class TestRealtimeVoiceWebSocket:
             "partial_transcripts": False,
             "barge_in": True,
             "native_s2s": False,
+            "kame_reflex": False,
             "streaming_stt": False,
             "utterance_stt": True,
             "tts": True,
@@ -7350,6 +7352,80 @@ class TestRealtimeVoiceWebSocket:
         assert "secret" not in __import__("json").dumps(body["sidecar"]["health"])
         assert len(requests) == 1
         assert all(req.headers["Authorization"] == "Bearer secret-token" for req in requests)
+
+    def test_status_treats_kame_vllm_audio_reflex_as_live_like(self, monkeypatch):
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return __import__("json").dumps(
+                    {
+                        "ok": True,
+                        "kind": "reference",
+                        "frontend": {
+                            "provider": "vllm",
+                            "model": "google/gemma-4-E2B-it",
+                        },
+                        "capabilities": {
+                            "utterance_stt": True,
+                            "streaming_stt": False,
+                            "tts": True,
+                            "native_s2s": False,
+                            "vllm_audio_frontend": True,
+                            "output_languages": ["en", "ja"],
+                        },
+                        "local": {"stt": False, "tts": True},
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "kame_interface_oracle",
+                        "frontend_provider": "gemma4",
+                        "frontend_model": "gemma-4-E2B-it",
+                        "interface_audio_input": "native_audio",
+                        "asr_mode": "on_escalation",
+                        "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
+                        "require_live_like": True,
+                        "sidecar_base_url": "http://voice.example.test:8765",
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+
+        body = self.client.get("/api/voice/realtime/status").json()
+
+        assert body["available"] is True
+        assert body["unavailable_reason"] is None
+        assert body["interface_audio_input"] == "native_audio"
+        assert body["asr_mode"] == "on_escalation"
+        assert body["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+        assert body["conversation_quality"]["mode"] == "kame_reflex"
+        assert body["conversation_quality"]["reason"] == "audio_reflex_tts"
+        assert body["conversation_quality"]["live_like"] is True
+        assert body["conversation_quality"]["kame_reflex"] is True
+        assert body["conversation_quality"]["streaming_stt"] is False
+        assert body["kame"] == {
+            "enabled": True,
+            "sidecar_required": True,
+            "audio_reflex": True,
+            "asr_mode": "on_escalation",
+            "interface_audio_input": "native_audio",
+            "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
+        }
+        assert body["production_readiness"]["level"] == "live_like"
 
     def test_realtime_voice_sidecar_health_sanitizer_preserves_bridge_capabilities(self):
         sanitized = self.ws_module._sanitize_realtime_voice_sidecar_health(
@@ -8262,6 +8338,7 @@ class TestRealtimeVoiceWebSocket:
             "partial_transcripts": False,
             "barge_in": True,
             "native_s2s": False,
+            "kame_reflex": False,
             "streaming_stt": False,
             "utterance_stt": False,
             "tts": False,

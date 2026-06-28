@@ -13268,6 +13268,12 @@ def _realtime_voice_sidecar_capability_error(
     capabilities = health_payload.get("capabilities") if isinstance(health_payload.get("capabilities"), dict) else {}
     if engine == "native_s2s_oracle":
         return "" if capabilities.get("native_s2s") is True else "sidecar_missing_native_s2s"
+    if engine == "kame_interface_oracle":
+        if capabilities.get("vllm_audio_frontend") is not True:
+            return "sidecar_missing_kame_reflex"
+        if capabilities.get("tts") is not True:
+            return "sidecar_missing_tts"
+        return ""
 
     has_stt = capabilities.get("utterance_stt") is True or capabilities.get("streaming_stt") is True
     if not has_stt:
@@ -13287,6 +13293,7 @@ def _realtime_voice_conversation_quality_payload(
     capabilities = health_payload.get("capabilities") if sidecar_ready else {}
     capabilities = capabilities if isinstance(capabilities, dict) else {}
     native_s2s = engine == "native_s2s_oracle" and capabilities.get("native_s2s") is True
+    kame_reflex = engine == "kame_interface_oracle" and capabilities.get("vllm_audio_frontend") is True
     streaming_stt = capabilities.get("streaming_stt") is True
     utterance_stt = capabilities.get("utterance_stt") is True
     tts = capabilities.get("tts") is True
@@ -13294,6 +13301,10 @@ def _realtime_voice_conversation_quality_payload(
     if native_s2s:
         mode = "native_s2s"
         reason = "native_s2s"
+        live_like = True
+    elif kame_reflex and tts:
+        mode = "kame_reflex"
+        reason = "audio_reflex_tts"
         live_like = True
     elif streaming_stt and tts:
         mode = "streaming_text"
@@ -13327,6 +13338,7 @@ def _realtime_voice_conversation_quality_payload(
         "partial_transcripts": native_s2s or streaming_stt,
         "barge_in": True,
         "native_s2s": native_s2s,
+        "kame_reflex": kame_reflex,
         "streaming_stt": streaming_stt,
         "utterance_stt": utterance_stt,
         "tts": tts,
@@ -13642,6 +13654,9 @@ def _realtime_voice_current_evidence_manifest(
     engine: str,
     frontend_provider: str,
     frontend_model: str,
+    interface_audio_input: str = "",
+    asr_mode: str = "",
+    preferred_local_oracle_model: str = "",
     sidecar_mode: str,
     health_payload: Optional[Mapping[str, Any]],
     conversation_quality: Mapping[str, Any],
@@ -13651,6 +13666,9 @@ def _realtime_voice_current_evidence_manifest(
         "engine": str(engine or ""),
         "frontend_provider": str(frontend_provider or ""),
         "frontend_model": str(frontend_model or ""),
+        "interface_audio_input": str(interface_audio_input or ""),
+        "asr_mode": str(asr_mode or ""),
+        "preferred_local_oracle_model": str(preferred_local_oracle_model or ""),
         "conversation_quality": {
             "mode": str(conversation_quality.get("mode") or ""),
         },
@@ -13955,6 +13973,9 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     engine = str(realtime.get("engine") or "text_oracle_tts")
     provider = str(realtime.get("frontend_provider") or "")
     frontend_model = str(realtime.get("frontend_model") or "")
+    interface_audio_input = str(realtime.get("interface_audio_input") or "")
+    asr_mode = str(realtime.get("asr_mode") or "")
+    preferred_local_oracle_model = str(realtime.get("preferred_local_oracle_model") or "")
     oracle_model = str(realtime.get("oracle_model") or "")
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     language_support = _realtime_voice_language_support_payload(realtime)
@@ -13994,6 +14015,9 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         engine=engine,
         frontend_provider=provider,
         frontend_model=frontend_model,
+        interface_audio_input=interface_audio_input,
+        asr_mode=asr_mode,
+        preferred_local_oracle_model=preferred_local_oracle_model,
         sidecar_mode=sidecar_mode,
         health_payload=health_payload,
         conversation_quality=conversation_quality,
@@ -14088,6 +14112,9 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "oracle_role": "hermes_backend_oracle",
         "frontend_provider": provider or None,
         "frontend_model": frontend_model or None,
+        "interface_audio_input": interface_audio_input or None,
+        "asr_mode": asr_mode or None,
+        "preferred_local_oracle_model": preferred_local_oracle_model or None,
         "oracle_model": oracle_model or None,
         "language_support": language_support,
         "quality_targets_ms": quality_targets_ms,
@@ -14108,6 +14135,14 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "native_s2s": {
             "enabled": engine == "native_s2s_oracle",
             "sidecar_required": engine == "native_s2s_oracle",
+        },
+        "kame": {
+            "enabled": engine == "kame_interface_oracle",
+            "sidecar_required": engine == "kame_interface_oracle",
+            "audio_reflex": conversation_quality.get("kame_reflex") is True,
+            "asr_mode": asr_mode or None,
+            "interface_audio_input": interface_audio_input or None,
+            "preferred_local_oracle_model": preferred_local_oracle_model or None,
         },
     }
 
@@ -14421,6 +14456,9 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         engine=str(engine),
         frontend_provider=str(realtime.get("frontend_provider") or ""),
         frontend_model=str(realtime.get("frontend_model") or ""),
+        interface_audio_input=str(realtime.get("interface_audio_input") or ""),
+        asr_mode=str(realtime.get("asr_mode") or ""),
+        preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or ""),
         sidecar_mode=_realtime_voice_sidecar_mode(realtime, sidecar_base_url),
         health_payload=health_payload,
         conversation_quality=conversation_quality,
