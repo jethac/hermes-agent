@@ -223,6 +223,45 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["quality_targets_ms"]["kame_speech_end_to_playback_start_ms"] == 2345
 
 
+def test_discord_realtime_config_maps_gui_streaming_model_aliases(monkeypatch):
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    monkeypatch.delenv("HERMES_REALTIME_VOICE_SIDECAR_URL", raising=False)
+    monkeypatch.delenv("HERMES_REALTIME_VOICE_SIDECAR_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {
+            "voice": {
+                "realtime": {
+                    "enabled": True,
+                    "engine": "kame_interface_oracle",
+                    "sidecar_base_url": "http://127.0.0.1:8765",
+                    "streaming_stt_base_url": "http://127.0.0.1:8766",
+                    "streaming_stt_model": "nemotron-speech-streaming-0.6b",
+                    "streaming_tts_base_url": "http://127.0.0.1:8769",
+                    "streaming_tts_model": "sonic-3.5",
+                    "streaming_tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+                },
+            },
+            "discord": {
+                "realtime_voice": {
+                    "enabled": True,
+                },
+            },
+        },
+    )
+    monkeypatch.setattr("hermes_cli.config.load_env", lambda: {})
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    cfg = adapter._load_realtime_voice_config()
+
+    assert cfg["asr_base_url"] == "http://127.0.0.1:8766"
+    assert cfg["asr_model"] == "nemotron-speech-streaming-0.6b"
+    assert cfg["tts_base_url"] == "http://127.0.0.1:8769"
+    assert cfg["tts_model"] == "sonic-3.5"
+    assert cfg["tts_voice"] == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
+
+
 @pytest.mark.asyncio
 async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     from agent.realtime_voice import VoiceEventType

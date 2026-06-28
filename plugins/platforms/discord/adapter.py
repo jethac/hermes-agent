@@ -286,6 +286,7 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
 
     _discord_set_realtime_default(config, "asr_provider", asr.get("provider"))
     _discord_set_realtime_default(config, "asr_model", asr.get("model"))
+    _discord_set_realtime_default(config, "asr_model", config.get("streaming_stt_model"))
     _discord_set_realtime_default(config, "asr_base_url", asr.get("base_url"))
     _discord_set_realtime_default(config, "asr_base_url", config.get("streaming_stt_base_url"))
     _discord_set_realtime_default(config, "streaming_stt_base_url", config.get("asr_base_url"))
@@ -294,7 +295,9 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
 
     _discord_set_realtime_default(config, "tts_provider", tts.get("provider"))
     _discord_set_realtime_default(config, "tts_model", tts.get("model"))
+    _discord_set_realtime_default(config, "tts_model", config.get("streaming_tts_model"))
     _discord_set_realtime_default(config, "tts_voice", tts.get("voice"))
+    _discord_set_realtime_default(config, "tts_voice", config.get("streaming_tts_voice"))
     _discord_set_realtime_default(config, "tts_base_url", tts.get("base_url"))
     _discord_set_realtime_default(config, "tts_base_url", config.get("streaming_tts_base_url"))
     _discord_set_realtime_default(config, "streaming_tts_base_url", config.get("tts_base_url"))
