@@ -384,6 +384,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert (output_dir / "validate-benchmark-evidence.sh").stat().st_mode & 0o111
 
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    compose = (output_dir / "compose.yaml").read_text(encoding="utf-8")
     env_example = (output_dir / ".env.example").read_text(encoding="utf-8")
     launch = (output_dir / "launch-local-stack.sh").read_text(encoding="utf-8")
     preflight = (output_dir / "preflight-local-stack.sh").read_text(encoding="utf-8")
@@ -397,13 +398,19 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "HERMES_KAME_MAX_SPOKEN_SENTENCES=2" in env_example
     assert "HERMES_DGX_SPARK_ASR_ADAPTER=loopback_smoke_bridge" in env_example
     assert "HERMES_DGX_SPARK_TTS_ADAPTER=loopback_smoke_bridge" in env_example
+    assert "HERMES_VOICE_VLLM_MODEL: ${HERMES_KAME_INTERFACE_MODEL:-gemma-4-E2B-it}" in compose
+    assert "- ${HERMES_KAME_INTERFACE_MODEL:-gemma-4-E2B-it}" in compose
     assert "HERMES_DGX_SPARK_APPLY_PROFILE" in launch
     assert "hermes_cli.realtime_voice_profile --preset kame --apply" in launch
+    assert ': "${HERMES_KAME_INTERFACE_MODEL:=gemma-4-E2B-it}"' in launch
+    assert ': "${HERMES_KAME_ORACLE_MODEL:=gemma-4-26B-A4B-it}"' in launch
+    assert '--kame-reflex-model "$HERMES_KAME_INTERFACE_MODEL"' in launch
     assert "--kame-interface-audio-input native_audio" in launch
     assert '--kame-interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL"' in launch
-    assert "--kame-interface-max-audio-seconds 30.0" in launch
-    assert "--kame-asr-mode on_escalation" in launch
-    assert "--kame-oracle-base-url http://spark.local:8001/v1" in launch
+    assert '--kame-interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS"' in launch
+    assert '--kame-asr-mode "$HERMES_KAME_ASR_MODE"' in launch
+    assert '--kame-preferred-local-oracle-model "$HERMES_KAME_ORACLE_MODEL"' in launch
+    assert '--kame-oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL"' in launch
     assert '--kame-oracle-provider-name "KAME Local Oracle"' in launch
     assert '--streaming-stt-model "$HERMES_VOICE_STREAMING_STT_MODEL"' in launch
     assert '--streaming-tts-model "$HERMES_VOICE_STREAMING_TTS_MODEL"' in launch

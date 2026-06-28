@@ -481,7 +481,7 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       HERMES_HOME: /root/.hermes
       HERMES_KAME_INTERFACE_BASE_URL: {interface_internal_url}
       HERMES_VOICE_VLLM_BASE_URL: {interface_internal_url}
-      HERMES_VOICE_VLLM_MODEL: {interface["model"]}
+      HERMES_VOICE_VLLM_MODEL: ${{HERMES_KAME_INTERFACE_MODEL:-{interface["model"]}}}
       HERMES_VOICE_STREAMING_STT_BASE_URL: {asr_internal_url}
       HERMES_VOICE_STREAMING_STT_MODEL: ${{HERMES_VOICE_STREAMING_STT_MODEL:-{asr["model"]}}}
       HERMES_VOICE_STREAMING_TTS_BASE_URL: {tts_internal_url}
@@ -503,7 +503,7 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - --vllm-base-url
       - {interface_internal_url}
       - --vllm-model
-      - {interface["model"]}
+      - ${{HERMES_KAME_INTERFACE_MODEL:-{interface["model"]}}}
       - --streaming-stt-base-url
       - {asr_internal_url}
       - --streaming-stt-model
@@ -671,7 +671,12 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_REPO_DIR:={manifest["repo_dir"]}}}"
 : "${{HERMES_HOME:={manifest["hermes_home"]}}}"
 : "${{HERMES_PYTHON:=python}}"
+: "${{HERMES_KAME_INTERFACE_MODEL:={manifest["roles"]["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={manifest["roles"]["interface"]["base_url"]}}}"
+: "${{HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS:={manifest["roles"]["interface"]["max_audio_seconds"]}}}"
+: "${{HERMES_KAME_ASR_MODE:={manifest["engine"]["asr_mode"]}}}"
+: "${{HERMES_KAME_ORACLE_MODEL:={manifest["roles"]["oracle"]["preferred_local_model"]}}}"
+: "${{HERMES_KAME_ORACLE_BASE_URL:={manifest["roles"]["oracle"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_MODEL:={manifest["roles"]["asr"]["model"]}}}"
 : "${{HERMES_VOICE_STREAMING_TTS_MODEL:={manifest["roles"]["tts"]["model"]}}}"
 export HERMES_REPO_DIR HERMES_HOME
@@ -680,13 +685,13 @@ if [ "${{HERMES_DGX_SPARK_APPLY_PROFILE:-1}}" != "0" ]; then
   (
     cd "$HERMES_REPO_DIR"
     "$HERMES_PYTHON" -m hermes_cli.realtime_voice_profile --preset kame --apply \\
-      --kame-reflex-model {manifest["roles"]["interface"]["model"]} \\
+      --kame-reflex-model "$HERMES_KAME_INTERFACE_MODEL" \\
       --kame-interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL" \\
       --kame-interface-audio-input native_audio \\
-      --kame-interface-max-audio-seconds {manifest["roles"]["interface"]["max_audio_seconds"]} \\
-      --kame-asr-mode {manifest["engine"]["asr_mode"]} \\
-      --kame-preferred-local-oracle-model {manifest["roles"]["oracle"]["preferred_local_model"]} \\
-      --kame-oracle-base-url {manifest["roles"]["oracle"]["base_url"]} \\
+      --kame-interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS" \\
+      --kame-asr-mode "$HERMES_KAME_ASR_MODE" \\
+      --kame-preferred-local-oracle-model "$HERMES_KAME_ORACLE_MODEL" \\
+      --kame-oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL" \\
       --kame-oracle-provider-name "KAME Local Oracle" \\
       --streaming-stt-base-url {manifest["roles"]["asr"]["base_url"]} \\
       --streaming-stt-model "$HERMES_VOICE_STREAMING_STT_MODEL" \\
