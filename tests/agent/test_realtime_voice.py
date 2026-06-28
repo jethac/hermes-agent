@@ -3997,6 +3997,43 @@ def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
     asyncio.run(run())
 
 
+def test_reference_sidecar_reports_vllm_as_active_kame_reflex_with_asr_evidence_bridge():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                vllm_base_url="http://vllm.local:8000/v1",
+                vllm_model="google/gemma-4-E2B-it",
+                streaming_stt_base_url="http://streaming-stt.local:9000",
+                streaming_stt_model="nemotron-speech",
+            )
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="configured-alias",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+
+        started = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+        event = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+        await sidecar.close()
+        return started, event
+
+    started, event = asyncio.run(run())
+    assert started.type == VoiceEventType.SESSION_STARTED
+    assert event.type == VoiceEventType.FRONTEND_STATE
+    assert event.payload["status"] == "ready"
+    assert event.payload["provider"] == "vllm"
+    assert event.payload["model"] == "google/gemma-4-E2B-it"
+    assert event.payload["streaming_stt"] is False
+    assert event.payload["vllm"] is True
+    assert event.payload["interface_audio_input"] == "native_audio"
+
+
 def test_reference_sidecar_reports_kame_audio_reflex_fallback_without_vllm():
     async def run():
         sidecar = ReferenceRealtimeVoiceSidecarSession(
@@ -4214,7 +4251,8 @@ def test_reference_sidecar_falls_back_to_local_stt_when_kame_vllm_reflex_fails(m
     )
     final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
     assert ready.payload["status"] == "ready"
-    assert ready.payload["provider"] == "gemma4"
+    assert ready.payload["provider"] == "vllm"
+    assert ready.payload["model"] == "google/gemma-4-E2B-it"
     assert ready.payload["vllm"] is True
     assert fallback.payload["status"] == "fallback"
     assert fallback.payload["provider"] == "local_stt"

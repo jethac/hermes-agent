@@ -318,6 +318,13 @@ class ReferenceRealtimeVoiceSidecarSession:
         await self._prepare_acknowledgement_audio(config)
         fallback_reason = self._kame_audio_reflex_fallback_reason(config)
         text_fallback_requested = _interface_audio_input(config) == "text_fallback"
+        vllm_drives_reflex = bool(
+            self._openai_realtime is None
+            and self._gemini_live is None
+            and self._wants_kame_vllm_reflex()
+            and not fallback_reason
+            and not text_fallback_requested
+        )
         streaming_stt_drives_reflex = self._streaming_stt is not None and self._streaming_stt_drives_reflex()
         local_stt_drives_reflex = bool(
             (fallback_reason or text_fallback_requested)
@@ -329,6 +336,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             "openai_realtime"
             if self._openai_realtime is not None
             else "gemini_live" if self._gemini_live is not None
+            else "vllm" if vllm_drives_reflex
             else "streaming_stt" if streaming_stt_drives_reflex
             else "local_stt" if local_stt_drives_reflex
             else "unavailable" if fallback_reason
@@ -338,7 +346,11 @@ class ReferenceRealtimeVoiceSidecarSession:
         payload = {
             "status": "fallback" if local_stt_drives_reflex else "degraded" if fallback_reason else "ready",
             "provider": provider,
-            "model": self.runtime.streaming_stt_model or config.frontend_model or "",
+            "model": _reported_frontend_model(
+                provider,
+                runtime=self.runtime,
+                config=config,
+            ),
             "streaming_stt": self._streaming_stt is not None,
             "streaming_tts": self._streaming_tts is not None,
             "vllm": bool(self.runtime.vllm_base_url and self.runtime.vllm_model),
@@ -2012,6 +2024,25 @@ def _interface_audio_input(config: Optional[RealtimeVoiceSessionConfig]) -> str:
     if config is None:
         return "auto"
     return normalize_realtime_voice_interface_audio_input(config.interface_audio_input) or "auto"
+
+
+def _reported_frontend_model(
+    provider: str,
+    *,
+    runtime: ReferenceSidecarRuntimeConfig,
+    config: RealtimeVoiceSessionConfig,
+) -> str:
+    if provider == "openai_realtime":
+        return runtime.openai_realtime_model
+    if provider == "gemini_live":
+        return runtime.gemini_live_model
+    if provider == "vllm":
+        return runtime.vllm_model or config.frontend_model or ""
+    if provider == "streaming_stt":
+        return runtime.streaming_stt_model or config.frontend_model or ""
+    if provider == "local_stt":
+        return config.frontend_model or runtime.streaming_stt_model or ""
+    return config.frontend_model or runtime.vllm_model or runtime.streaming_stt_model or ""
 
 
 def _turn_acknowledgement_text(config: RealtimeVoiceSessionConfig) -> str:
