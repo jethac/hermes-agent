@@ -2462,6 +2462,17 @@ class DiscordAdapter(BasePlatformAdapter):
         if session is None:
             return
         self._note_voice_activity(guild_id)
+        state = self._voice_state(guild_id)
+        frame_count = int(state.latency_metrics_ms.get("pcm_frames_forwarded", 0)) + 1
+        state.latency_metrics_ms["pcm_frames_forwarded"] = frame_count
+        if frame_count in {1, 10, 50} or frame_count % 250 == 0:
+            logger.info(
+                "Discord realtime voice PCM forwarded (guild=%d, user=%d, frame=%d, bytes=%d)",
+                guild_id,
+                user_id,
+                frame_count,
+                len(pcm),
+            )
         task = asyncio.create_task(session.handle_pcm_frame(user_id=user_id, pcm48_stereo=pcm))
         task.add_done_callback(self._log_realtime_voice_task_result)
 
@@ -2718,7 +2729,53 @@ class DiscordAdapter(BasePlatformAdapter):
                 event_type,
                 misses,
             )
+        if event_type != "audio.output.chunk":
+            text = str(
+                payload.get("text")
+                or payload.get("error")
+                or payload.get("reason")
+                or payload.get("status")
+                or payload.get("provider")
+                or ""
+            )
+            logger.info(
+                "Discord realtime voice event (guild=%d, type=%s, text=%r)",
+                guild_id,
+                event_type,
+                text[:120],
+            )
+        elif not self._voice_state(guild_id).latency_metrics_ms.get("audio_output_chunks"):
+            logger.info("Discord realtime voice first audio output chunk (guild=%d)", guild_id)
+        if event_type == "audio.output.chunk":
+            state = self._voice_state(guild_id)
+            state.latency_metrics_ms["audio_output_chunks"] = (
+                int(state.latency_metrics_ms.get("audio_output_chunks", 0)) + 1
+            )
         self._update_voice_state(guild_id, **updates)
+        if event_type == "transcript.final":
+            self._schedule_realtime_voice_transcript(guild_id, payload)
+
+    def _schedule_realtime_voice_transcript(self, guild_id: int, payload: Dict[str, Any]) -> None:
+        transcript = str(payload.get("text") or "").strip()
+        user_id = _discord_voice_nonnegative_int(payload.get("user_id"))
+        if not transcript or user_id is None:
+            return
+        callback = getattr(self, "_voice_input_callback", None)
+        if callback is None:
+            return
+
+        async def _run_callback() -> None:
+            try:
+                await callback(guild_id=guild_id, user_id=user_id, transcript=transcript)
+            except Exception as exc:
+                logger.warning("Discord realtime voice transcript callback failed: %s", exc, exc_info=True)
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(_run_callback())
+        task.add_done_callback(self._log_realtime_voice_task_result)
 
     async def _install_voice_mixer(self, guild_id: int, vc) -> None:
         """Create a VoiceMixer, start the ambient bed, and play it on the VC.

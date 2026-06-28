@@ -1366,6 +1366,21 @@ class TestDiscordVoiceChannelMethods:
         fake_session.handle_speech_start.assert_awaited_once_with(user_id=42)
 
     @pytest.mark.asyncio
+    async def test_realtime_transcript_final_routes_to_voice_input_callback(self):
+        adapter = self._make_adapter()
+        callback = AsyncMock()
+        adapter._voice_input_callback = callback
+
+        adapter._handle_realtime_voice_event(
+            111,
+            "transcript.final",
+            {"user_id": "42", "text": "this is a test"},
+        )
+        await asyncio.sleep(0)
+
+        callback.assert_awaited_once_with(guild_id=111, user_id=42, transcript="this is a test")
+
+    @pytest.mark.asyncio
     async def test_leave_voice_channel_closes_realtime_session(self):
         adapter = self._make_adapter()
         fake_session = AsyncMock()

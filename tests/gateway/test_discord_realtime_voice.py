@@ -127,6 +127,36 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
 
 
 @pytest.mark.asyncio
+async def test_discord_realtime_session_tags_transcripts_with_last_input_user():
+    from agent.realtime_voice import VoiceEvent, VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    observed = []
+    sidecar = FakeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+        event_callback=lambda event_type, payload: observed.append((event_type, payload)),
+    )
+
+    await session.start()
+    await session.handle_pcm_frame(user_id=42, pcm48_stereo=b"\x00" * 3840)
+    await sidecar.emit(VoiceEvent(
+        type=VoiceEventType.TRANSCRIPT_FINAL,
+        session_id="discord:111:222",
+        sequence=1,
+        payload={"text": "this is a test"},
+    ))
+    await asyncio.wait_for(session.wait_until_idle(), timeout=1)
+
+    assert observed[-1][0] == VoiceEventType.TRANSCRIPT_FINAL.value
+    assert observed[-1][1]["user_id"] == "42"
+
+
+@pytest.mark.asyncio
 async def test_discord_realtime_session_routes_output_audio_to_mixer():
     from agent.realtime_voice import AudioChunk, VoiceAudioCodec, VoiceEvent, VoiceEventType
     from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
