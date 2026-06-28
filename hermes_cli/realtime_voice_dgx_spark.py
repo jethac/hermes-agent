@@ -989,6 +989,8 @@ def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> li
                     "oracle_bound_turns": None,
                     "oracle_bound_oracle_calls": None,
                     "oracle_authority_routes": [],
+                    "interface_input_sources": [],
+                    "reflex_providers": [],
                 }
             )
         template.append(entry)
@@ -1509,6 +1511,20 @@ def _all_local_smoke_issues(entry: Mapping[str, Any]) -> list[str]:
             issues.append(
                 "all_local_smoke: oracle_authority_routes missing " + ",".join(missing)
             )
+    interface_input_sources = entry.get("interface_input_sources")
+    if not isinstance(interface_input_sources, list):
+        issues.append("all_local_smoke: requires interface_input_sources list")
+    else:
+        sources = {str(source or "").strip() for source in interface_input_sources}
+        if "native_audio" not in sources:
+            issues.append("all_local_smoke: interface_input_sources missing native_audio")
+    reflex_providers = entry.get("reflex_providers")
+    if not isinstance(reflex_providers, list):
+        issues.append("all_local_smoke: requires reflex_providers list")
+    else:
+        providers = {str(provider or "").strip() for provider in reflex_providers}
+        if "vllm" not in providers:
+            issues.append("all_local_smoke: reflex_providers missing vllm")
     return issues
 
 

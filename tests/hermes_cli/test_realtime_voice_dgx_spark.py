@@ -186,6 +186,8 @@ def _passing_benchmark_evidence() -> list[dict]:
             "oracle_bound_turns": 4,
             "oracle_bound_oracle_calls": 4,
             "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
+            "interface_input_sources": ["native_audio"],
+            "reflex_providers": ["vllm"],
         },
         {"kind": "kame_smoke_result", "name": "cloud_fallback_smoke", "ok": True},
         {"kind": "kame_smoke_result", "name": "capability_honesty_smoke", "ok": True},
@@ -454,6 +456,8 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert smoke_entries[0]["oracle_bound_turns"] is None
     assert smoke_entries[0]["oracle_bound_oracle_calls"] is None
     assert smoke_entries[0]["oracle_authority_routes"] == []
+    assert smoke_entries[0]["interface_input_sources"] == []
+    assert smoke_entries[0]["reflex_providers"] == []
     assumption_entries = [
         entry for entry in evidence_template if entry.get("kind") == "kame_model_assumption_result"
     ]
@@ -883,6 +887,8 @@ def test_benchmark_evidence_validator_requires_local_bypass_and_oracle_authority
         if entry.get("kind") == "kame_smoke_result" and entry.get("name") == "all_local_smoke":
             entry["local_turn_oracle_calls"] = 1
             entry["oracle_authority_routes"] = ["tools"]
+            entry["interface_input_sources"] = ["streaming_stt"]
+            entry["reflex_providers"] = ["local_stt"]
 
     result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
 
@@ -893,6 +899,8 @@ def test_benchmark_evidence_validator_requires_local_bypass_and_oracle_authority
         "all_local_smoke: oracle_authority_routes missing files,memory,project_context"
         in result["issues"]
     )
+    assert "all_local_smoke: interface_input_sources missing native_audio" in result["issues"]
+    assert "all_local_smoke: reflex_providers missing vllm" in result["issues"]
 
 
 def test_benchmark_evidence_validator_requires_model_assumption_results(tmp_path):
