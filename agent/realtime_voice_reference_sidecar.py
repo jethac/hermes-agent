@@ -924,7 +924,14 @@ class ReferenceRealtimeVoiceSidecarSession:
         input_generation: Optional[int] = None,
     ) -> None:
         try:
+            understand_started_at = time.perf_counter()
             payload = await asyncio.to_thread(self._understand_audio_sync, audio, codec)
+            if self.config is not None and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+                metrics = dict(payload.get("metrics") or {}) if isinstance(payload.get("metrics"), Mapping) else {}
+                metrics["kame_speech_end_to_interface_decision_ms"] = int(
+                    round((time.perf_counter() - understand_started_at) * 1000)
+                )
+                payload["metrics"] = metrics
             fallback_reason = str(payload.get("fallback_reason") or "").strip()
             if fallback_reason:
                 await self._emit(

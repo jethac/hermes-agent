@@ -909,6 +909,7 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
                     "route": "oracle_direct",
                     "intent_source": "reflex_audio",
                     "end_of_utterance": True,
+                    "metrics": {"kame_speech_end_to_interface_decision_ms": 123},
                 },
             )
         )
@@ -951,10 +952,15 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
         assert oracle_events[-1].payload["text"] == "Looking now."
         assert oracle_events[-1].payload["turn_id"] == "voice-123:1"
         assert oracle_events[-1].payload["metrics"]["kame_oracle_total_stream_ms"] >= 0
+        intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
+        assert intent.payload["metrics"]["kame_speech_end_to_interface_decision_ms"] == 123
+        assert intent.payload["metrics"]["kame_final_transcript_to_interface_decision_ms"] >= 0
         assert [hint.payload.get("accepted") for hint in hints] == [True, None, None, None]
         assert [hint.payload["delta"] for hint in hints] == ["", "Looking now", ".", ""]
         assert hints[-1].payload["final"] is True
         assert hints[-1].payload["text"] == "Looking now."
+        assert hints[-1].payload["metrics"]["kame_speech_end_to_interface_decision_ms"] == 123
+        assert hints[-1].payload["metrics"]["kame_final_transcript_to_interface_decision_ms"] >= 0
         assert hints[-1].payload["metrics"]["kame_oracle_called"] == 1
         assert hints[-1].payload["metrics"]["kame_oracle_bypassed"] == 0
         assert hints[-1].payload["metrics"]["kame_interface_decision_to_oracle_accepted_ms"] >= 0
@@ -962,6 +968,8 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
         assert hints[-1].payload["metrics"]["kame_oracle_first_token_to_first_spoken_text_ms"] >= 0
         assert hints[-1].payload["metrics"]["kame_oracle_total_stream_ms"] >= 0
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        assert commit.payload["metrics"]["kame_speech_end_to_interface_decision_ms"] == 123
+        assert commit.payload["metrics"]["kame_final_transcript_to_interface_decision_ms"] >= 0
         assert commit.payload["metrics"]["kame_oracle_accepted_to_first_token_ms"] >= 0
         assert commit.payload["metrics"]["kame_oracle_first_token_to_first_spoken_text_ms"] >= 0
         assert [event.payload for event in forwarded] == [event.payload for event in hints]
@@ -1066,6 +1074,7 @@ def test_kame_engine_sends_oracle_timing_metrics_to_tts_sidecar():
                     "intent": "Look this up.",
                     "route": "oracle_direct",
                     "end_of_utterance": True,
+                    "metrics": {"kame_speech_end_to_interface_decision_ms": 42},
                 },
             )
         )
@@ -1078,6 +1087,8 @@ def test_kame_engine_sends_oracle_timing_metrics_to_tts_sidecar():
 
         assert sidecar.spoken
         metrics = sidecar.spoken[0].payload["metrics"]
+        assert metrics["kame_speech_end_to_interface_decision_ms"] == 42
+        assert metrics["kame_final_transcript_to_interface_decision_ms"] >= 0
         assert metrics["kame_oracle_called"] == 1
         assert metrics["kame_interface_decision_to_oracle_accepted_ms"] >= 0
         assert metrics["kame_oracle_accepted_to_first_token_ms"] >= 0
@@ -3847,6 +3858,7 @@ def test_reference_sidecar_kame_on_escalation_attaches_one_shot_asr_evidence(mon
     assert final.payload["transcript"] == "literal ASR note 123"
     assert final.payload["transcript_source"] == "asr"
     assert final.payload["transcript_confidence"] == 0.84
+    assert final.payload["metrics"]["kame_speech_end_to_interface_decision_ms"] >= 0
     assert final.payload["metrics"]["oracle_verbatim_asr_ms"] >= 0
     assert sent_events[0].type == VoiceEventType.AUDIO_INPUT_CHUNK
     assert sent_events[0].payload["end_of_utterance"] is True

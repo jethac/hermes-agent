@@ -458,6 +458,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         metadata: Optional[dict] = None,
         oracle_payload: Optional[Mapping[str, Any]] = None,
     ) -> None:
+        turn_started_at = time.perf_counter()
         if self._active_task and not self._active_task.done():
             self._active_task.cancel()
         if self._pending_turn_generation is not None:
@@ -467,6 +468,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._playback_generation += 1
             generation = self._playback_generation
         assistant_metadata = dict(metadata or {})
+        if oracle_payload is not None:
+            payload_metrics = oracle_payload.get("metrics")
+            if isinstance(payload_metrics, Mapping):
+                assistant_metadata["metrics"] = _merge_metrics(
+                    assistant_metadata.get("metrics"),
+                    payload_metrics,
+                )
         cancellation_token = _kame_cancellation_token(self.config, generation)
         oracle_request = self._kame_oracle_request(
             transcript,
@@ -475,8 +483,18 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             metadata=assistant_metadata,
             cancellation_token=cancellation_token,
         )
+        interface_decision_at = time.perf_counter()
         if oracle_request is not None:
             assistant_metadata.update(oracle_request.to_metadata())
+            assistant_metadata["metrics"] = _merge_metrics(
+                assistant_metadata.get("metrics"),
+                {
+                    "kame_final_transcript_to_interface_decision_ms": _elapsed_perf_ms(
+                        turn_started_at,
+                        interface_decision_at,
+                    )
+                },
+            )
             if oracle_request.cancellation_token:
                 self._cancellation_token_by_generation[generation] = oracle_request.cancellation_token
         payload = {"text": transcript, "playback_generation": generation}
@@ -487,7 +505,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
         self._assistant_metadata_by_generation[generation] = assistant_metadata
         if oracle_request is not None:
-            interface_payload = _kame_interface_payload(oracle_request, generation)
+            interface_payload = _kame_interface_payload_with_metrics(
+                oracle_request,
+                generation,
+                assistant_metadata,
+            )
             await self._emit(VoiceEventType.INTERFACE_INTENT_FINAL, interface_payload)
         local_reply = _kame_local_reply(oracle_request)
         if local_reply:
@@ -495,7 +517,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 await self._emit(
                     VoiceEventType.INTERFACE_REPLY_LOCAL,
                     {
-                        **_kame_interface_payload(oracle_request, generation),
+                        **_kame_interface_payload_with_metrics(oracle_request, generation, assistant_metadata),
                         "text": local_reply,
                     },
                 )
@@ -509,7 +531,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 if oracle_request.route == KameRoute.DEFER
                 else VoiceEventType.INTERFACE_ORACLE_REQUEST
             )
-            await self._emit(interface_event_type, _kame_interface_payload(oracle_request, generation))
+            await self._emit(
+                interface_event_type,
+                _kame_interface_payload_with_metrics(oracle_request, generation, assistant_metadata),
+            )
         self._active_task = asyncio.create_task(
             self._answer_and_speak(
                 transcript,
@@ -1269,6 +1294,20 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
     return payload
 
 
+def _kame_interface_payload_with_metrics(
+    request: KameOracleRequest,
+    playback_generation: int,
+    metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    payload = _kame_interface_payload(request, playback_generation)
+    metrics = metadata.get("metrics") if isinstance(metadata, Mapping) else None
+    if isinstance(metrics, Mapping):
+        sanitized = _nonnegative_int_metrics(metrics)
+        if sanitized:
+            payload["metrics"] = sanitized
+    return payload
+
+
 def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "turn_id": str(metadata.get("kame_turn_id") or ""),
@@ -1326,6 +1365,14 @@ def _is_kame_metadata(metadata: Mapping[str, Any]) -> bool:
     return str(metadata.get("voice_architecture") or "") == "kame_frontend_oracle"
 
 
+def _merge_metrics(*values: Any) -> dict[str, int]:
+    merged: dict[str, int] = {}
+    for value in values:
+        if isinstance(value, Mapping):
+            merged.update(_nonnegative_int_metrics(value))
+    return merged
+
+
 def _kame_route_metrics_payload(
     metadata: Mapping[str, Any],
     *,
@@ -1346,10 +1393,14 @@ def _kame_route_metrics(
     if not route:
         return {}
     oracle_called_int = 1 if oracle_called else 0
-    metrics = {
-        "kame_oracle_called": oracle_called_int,
-        "kame_oracle_bypassed": 0 if oracle_called else 1,
-    }
+    existing_metrics = metadata.get("metrics") if isinstance(metadata, Mapping) else None
+    metrics = _nonnegative_int_metrics(existing_metrics) if isinstance(existing_metrics, Mapping) else {}
+    metrics.update(
+        {
+            "kame_oracle_called": oracle_called_int,
+            "kame_oracle_bypassed": 0 if oracle_called else 1,
+        }
+    )
     if extra_metrics:
         metrics.update(_nonnegative_int_metrics(extra_metrics))
     return metrics
