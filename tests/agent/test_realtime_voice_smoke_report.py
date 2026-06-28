@@ -12,6 +12,7 @@ from agent.realtime_voice_smoke_report import (
     ALPHA_REQUIRED_TTS_METADATA,
     ALPHA_REQUIRED_TTS_TEXTS,
     load_realtime_voice_smoke_report,
+    realtime_voice_alpha_manifest_fingerprint,
     summarize_realtime_voice_smoke_report_runs,
     validate_realtime_voice_alpha_report_runs,
     validate_realtime_voice_alpha_report,
@@ -321,6 +322,42 @@ def test_realtime_voice_alpha_report_accepts_kame_reflex_manifest_capabilities()
     report = [manifest, *_valid_alpha_report()[1:]]
 
     assert validate_realtime_voice_alpha_report(report) == []
+
+
+def test_realtime_voice_alpha_manifest_fingerprint_includes_kame_interface_base_url():
+    manifest = _valid_manifest()
+    manifest["engine"] = "kame_interface_oracle"
+    manifest["frontend_provider"] = "gemma4"
+    manifest["frontend_model"] = "gemma-4-E2B-it"
+    manifest["interface_base_url"] = "http://spark-a.local:8000/v1"
+    manifest["interface_audio_input"] = "native_audio"
+    manifest["interface_temperature"] = 0.2
+    manifest["interface_max_output_tokens"] = 160
+    manifest["interface_timeout_seconds"] = 0.8
+    manifest["interface_max_audio_seconds"] = 30.0
+    manifest["asr_mode"] = "on_escalation"
+    manifest["conversation_quality"] = {
+        "live_like": True,
+        "mode": "kame_reflex",
+        "reason": "audio_reflex_tts",
+        "sidecar_verified": True,
+    }
+    manifest["sidecar"]["health"]["frontend"] = {
+        "provider": "vllm",
+        "model": "gemma-4-E2B-it",
+    }
+    manifest["sidecar"]["health"]["capabilities"] = {
+        "utterance_stt": True,
+        "streaming_stt": False,
+        "tts": True,
+        "native_s2s": False,
+        "vllm_audio_frontend": True,
+        "output_languages": ["en", "ja"],
+    }
+    other = dict(manifest)
+    other["interface_base_url"] = "http://spark-b.local:8000/v1"
+
+    assert realtime_voice_alpha_manifest_fingerprint(manifest) != realtime_voice_alpha_manifest_fingerprint(other)
 
 
 def test_realtime_voice_alpha_report_requires_sidecar_health_ok():

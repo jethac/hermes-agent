@@ -685,7 +685,7 @@ def realtime_voice_alpha_manifest_fingerprint(entry: Mapping[str, Any]) -> tuple
     )
 
 
-def _kame_interface_config_fingerprint(entry: Mapping[str, Any]) -> tuple[str, str, str, str]:
+def _kame_interface_config_fingerprint(entry: Mapping[str, Any]) -> tuple[str, str, str, str, str]:
     conversation_quality = (
         entry.get("conversation_quality")
         if isinstance(entry.get("conversation_quality"), Mapping)
@@ -696,8 +696,9 @@ def _kame_interface_config_fingerprint(entry: Mapping[str, Any]) -> tuple[str, s
         or str(conversation_quality.get("mode") or "") == "kame_reflex"
     )
     if not is_kame:
-        return ("", "", "", "")
+        return ("", "", "", "", "")
     return (
+        str(entry.get("interface_base_url") or ""),
         _fingerprint_number(entry.get("interface_temperature")),
         _fingerprint_number(entry.get("interface_max_output_tokens")),
         _fingerprint_number(entry.get("interface_timeout_seconds")),
