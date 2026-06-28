@@ -405,7 +405,9 @@ def validate_realtime_voice_smoke_report(
     session_turn_entries = by_kind.get("session_turn", [])
     audio_session_entries = by_kind.get("audio_session", [])
     if require_alpha_targets and manifest_entries and _manifest_entry_is_kame_reflex(manifest_entries[0]):
-        issues.extend(_validate_kame_route_evidence([*session_turn_entries, *audio_session_entries]))
+        kame_route_entries = [*session_turn_entries, *audio_session_entries]
+        issues.extend(_validate_kame_route_evidence(kame_route_entries))
+        issues.extend(_validate_kame_reflex_provenance(kame_route_entries))
         issues.extend(_validate_kame_capability_honesty(entries))
 
     issues.extend(_validate_required_entries(
@@ -528,6 +530,58 @@ def _validate_kame_route_evidence(entries: Sequence[Mapping[str, Any]]) -> list[
                 "kame_routes",
                 "missing oracle-bound defer or direct route evidence",
                 "defer/oracle_direct",
+            )
+        )
+    return issues
+
+
+def _validate_kame_reflex_provenance(entries: Sequence[Mapping[str, Any]]) -> list[RealtimeVoiceSmokeReportIssue]:
+    routed_entries = [
+        entry
+        for entry in entries
+        if str(entry.get("route") or "").strip().lower()
+    ]
+    if not routed_entries:
+        return []
+    native_audio_entries = [
+        entry
+        for entry in routed_entries
+        if str(entry.get("interface_input_source") or "").strip().lower() == "native_audio"
+    ]
+    vllm_reflex_entries = [
+        entry
+        for entry in routed_entries
+        if str(entry.get("reflex_provider") or "").strip().lower() == "vllm"
+    ]
+    fallback_entries = [
+        entry
+        for entry in routed_entries
+        if entry.get("interface_audio_input_fallback") is True
+        or str(entry.get("interface_input_source") or "").strip().lower() in {"local_stt", "streaming_stt"}
+    ]
+    issues: list[RealtimeVoiceSmokeReportIssue] = []
+    if not native_audio_entries:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "kame_reflex_provenance",
+                "missing native-audio reflex route evidence",
+                "interface_input_source=native_audio",
+            )
+        )
+    if not vllm_reflex_entries:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "kame_reflex_provenance",
+                "missing vLLM reflex provider route evidence",
+                "reflex_provider=vllm",
+            )
+        )
+    if fallback_entries and len(fallback_entries) == len(routed_entries):
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "kame_reflex_provenance",
+                "KAME route evidence used only fallback reflex input",
+                "interface_audio_input_fallback",
             )
         )
     return issues

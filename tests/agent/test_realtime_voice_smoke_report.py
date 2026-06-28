@@ -207,6 +207,8 @@ def _add_kame_route_evidence(report):
     for entry in report:
         if entry.get("kind") in route_by_kind:
             entry["route"] = next(route_by_kind[entry["kind"]])
+            entry["interface_input_source"] = "native_audio"
+            entry["reflex_provider"] = "vllm"
     return report
 
 
@@ -371,6 +373,45 @@ def test_realtime_voice_alpha_report_requires_kame_oracle_avoidance_evidence():
         "missing oracle-avoiding local or clarify route evidence" in issue.format()
         for issue in issues
     )
+
+
+def test_realtime_voice_alpha_report_requires_kame_native_audio_reflex_provenance():
+    manifest = _valid_manifest()
+    manifest["engine"] = "kame_interface_oracle"
+    manifest["frontend_provider"] = "gemma4"
+    manifest["frontend_model"] = "gemma-4-E2B-it"
+    manifest["interface_audio_input"] = "native_audio"
+    manifest["asr_mode"] = "on_escalation"
+    manifest["conversation_quality"] = {
+        "live_like": True,
+        "mode": "kame_reflex",
+        "reason": "audio_reflex_tts",
+        "sidecar_verified": True,
+    }
+    manifest["sidecar"]["health"]["frontend"] = {
+        "provider": "vllm",
+        "model": "gemma-4-E2B-it",
+    }
+    manifest["sidecar"]["health"]["capabilities"] = {
+        "utterance_stt": True,
+        "streaming_stt": False,
+        "tts": True,
+        "native_s2s": False,
+        "vllm_audio_frontend": True,
+        "output_languages": ["en", "ja"],
+    }
+    report = _add_kame_route_evidence([manifest, *_valid_alpha_report()[1:]])
+    for entry in report:
+        if entry.get("kind") in {"audio_session", "session_turn"}:
+            entry["interface_input_source"] = "streaming_stt"
+            entry["reflex_provider"] = "streaming_stt"
+            entry["interface_audio_input_fallback"] = True
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any("missing native-audio reflex route evidence" in issue.format() for issue in issues)
+    assert any("missing vLLM reflex provider route evidence" in issue.format() for issue in issues)
+    assert any("KAME route evidence used only fallback reflex input" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_alpha_report_rejects_kame_voice_capability_denial_output():
