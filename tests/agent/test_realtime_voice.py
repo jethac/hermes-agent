@@ -10057,6 +10057,71 @@ def test_session_adds_latency_metrics_to_realtime_events(monkeypatch):
     asyncio.run(run())
 
 
+def test_session_treats_assistant_audio_chunk_as_first_audio():
+    class NativeAssistantAudioEngine:
+        def __init__(self):
+            self._events = asyncio.Queue()
+
+        async def start(self, config):
+            self.config = config
+
+        async def receive_event(self, event):
+            if event.type == VoiceEventType.AUDIO_INPUT_CHUNK and event.payload.get("end_of_utterance") is True:
+                await self._events.put(
+                    VoiceEvent(
+                        type=VoiceEventType.TRANSCRIPT_FINAL,
+                        session_id=self.config.session_id,
+                        sequence=1,
+                        payload={"text": "hello native audio"},
+                    )
+                )
+                await self._events.put(
+                    VoiceEvent(
+                        type=VoiceEventType.ASSISTANT_AUDIO_CHUNK,
+                        session_id=self.config.session_id,
+                        sequence=2,
+                        payload={
+                            **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"assistant-audio").to_payload(),
+                            "playback_generation": 1,
+                        },
+                    )
+                )
+
+        async def events(self):
+            while True:
+                yield await self._events.get()
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(session_id="voice-123"),
+            engine=NativeAssistantAudioEngine(),
+        )
+        await session.start()
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello native audio", "end_of_utterance": True},
+            )
+        )
+
+        final = await anext(session.events())
+        audio = await anext(session.events())
+
+        assert final.type == VoiceEventType.TRANSCRIPT_FINAL
+        assert audio.type == VoiceEventType.ASSISTANT_AUDIO_CHUNK
+        assert audio.payload["metrics"]["final_transcript_to_first_audio_ms"] >= 0
+        assert audio.payload["metrics"]["speech_boundary_to_first_audio_ms"] >= 0
+        assert session.state == RealtimeVoiceSessionState.SPEAKING
+        await session.close()
+
+    asyncio.run(run())
+
+
 def test_text_engine_file_tts_audio_chunk_includes_synthesis_metric(monkeypatch, tmp_path):
     async def run():
         audio_path = tmp_path / "tts.mp3"

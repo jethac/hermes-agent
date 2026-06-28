@@ -16088,9 +16088,9 @@ def _realtime_voice_event_from_ws_message(message: Dict[str, Any]):
 
 
 def _realtime_voice_binary_frame_from_event(event) -> Optional[bytes]:
-    from agent.realtime_voice import VoiceEventType, binary_audio_frame_from_event
+    from agent.realtime_voice import binary_audio_frame_from_event, is_output_audio_event_type
 
-    return binary_audio_frame_from_event(event) if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK else None
+    return binary_audio_frame_from_event(event) if is_output_audio_event_type(event.type) else None
 
 
 async def _send_realtime_voice_server_event(ws: WebSocket, event) -> bool:
@@ -16332,11 +16332,11 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
         return
 
     async def pump_events() -> None:
-        from agent.realtime_voice import VoiceEventType
+        from agent.realtime_voice import VoiceEventType, is_output_audio_event_type
 
         async for event in session.events():
             sent = await _send_realtime_voice_server_event(ws, event)
-            if not sent and event.type != VoiceEventType.AUDIO_OUTPUT_CHUNK:
+            if not sent and not is_output_audio_event_type(event.type):
                 await ws.close(code=1011, reason="realtime voice desktop websocket backpressure")
                 return
             if event.type == VoiceEventType.SESSION_ERROR:

@@ -14,6 +14,7 @@ from agent.realtime_voice import (
     RealtimeVoiceSessionConfig,
     VoiceEvent,
     VoiceEventType,
+    is_output_audio_event_type,
     validate_client_event,
     validate_server_event,
 )
@@ -235,7 +236,7 @@ class RealtimeVoiceSession:
                     return
                 self.transcript.active_playback_generation = generation
             self.state = RealtimeVoiceSessionState.SPEAKING
-        elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+        elif is_output_audio_event_type(event.type):
             generation = _payload_generation(event.payload)
             if generation is not None:
                 if generation < self.transcript.active_playback_generation:
@@ -350,6 +351,7 @@ class RealtimeVoiceSession:
             VoiceEventType.ASSISTANT_CAPTION_PARTIAL,
             VoiceEventType.ASSISTANT_TEXT_PARTIAL,
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            VoiceEventType.ASSISTANT_AUDIO_CHUNK,
             VoiceEventType.ASSISTANT_AUDIO_END,
             VoiceEventType.PLAYBACK_STARTED,
         }:
@@ -390,7 +392,7 @@ class RealtimeVoiceSession:
             if self._last_transcript_final_at is not None and not self._turn_first_assistant_text:
                 metrics["final_transcript_to_first_text_ms"] = _elapsed_ms(self._last_transcript_final_at, now)
                 self._turn_first_assistant_text = True
-        elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+        elif is_output_audio_event_type(event.type):
             if self._last_transcript_final_at is not None and not self._turn_first_audio_output:
                 metrics["final_transcript_to_first_audio_ms"] = _elapsed_ms(self._last_transcript_final_at, now)
                 if self._response_speech_boundary_at is not None:
