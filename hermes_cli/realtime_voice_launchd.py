@@ -51,9 +51,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Launch profile to generate",
     )
     parser.add_argument(
+        "--interface-base-url",
+        default="",
+        help="OpenAI-compatible base URL for the KAME interface/reflex model",
+    )
+    parser.add_argument(
         "--vllm-base-url",
         default=DEFAULT_KAME_VLLM_BASE_URL,
-        help="OpenAI-compatible vLLM base URL for --profile kame",
+        help="Backward-compatible alias for --interface-base-url with --profile kame",
     )
     parser.add_argument(
         "--vllm-model",
@@ -121,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
             uv_bin=str(args.uv_bin),
             host=str(args.sidecar_host),
             port=int(args.sidecar_port),
+            interface_base_url=str(args.interface_base_url),
             vllm_base_url=str(args.vllm_base_url),
             vllm_model=str(args.vllm_model),
             streaming_tts_base_url=str(args.streaming_tts_base_url),
@@ -236,6 +242,7 @@ def build_kame_realtime_voice_sidecar_plist(
     uv_bin: str,
     host: str = "127.0.0.1",
     port: int = 8765,
+    interface_base_url: str = "",
     vllm_base_url: str = DEFAULT_KAME_VLLM_BASE_URL,
     vllm_model: str = DEFAULT_KAME_REFLEX_MODEL,
     streaming_tts_base_url: str = "",
@@ -244,14 +251,22 @@ def build_kame_realtime_voice_sidecar_plist(
     scripts: str = "Latn,Jpan",
     include_dev_extra: bool = True,
 ) -> dict[str, Any]:
+    effective_interface_base_url = str(interface_base_url or vllm_base_url or DEFAULT_KAME_VLLM_BASE_URL)
     command = _shell_prelude(repo_dir=repo_dir, hermes_home=hermes_home)
+    command += (
+        "export HERMES_KAME_INTERFACE_BASE_URL="
+        f"{shlex.quote(effective_interface_base_url)}; "
+        'export HERMES_VOICE_VLLM_BASE_URL="${HERMES_VOICE_VLLM_BASE_URL:-$HERMES_KAME_INTERFACE_BASE_URL}"; '
+    )
     args = [
         "--host",
         host,
         "--port",
         str(port),
+        "--interface-base-url",
+        effective_interface_base_url,
         "--vllm-base-url",
-        vllm_base_url,
+        effective_interface_base_url,
         "--vllm-model",
         vllm_model,
         "--input-languages",

@@ -12,6 +12,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the Hermes realtime voice reference sidecar")
     parser.add_argument("--host", default=os.environ.get("HERMES_VOICE_SIDECAR_HOST", "127.0.0.1"))
     parser.add_argument("--port", default=int(os.environ.get("HERMES_VOICE_SIDECAR_PORT", "8765")), type=int)
+    parser.add_argument(
+        "--interface-base-url",
+        default=os.environ.get("HERMES_KAME_INTERFACE_BASE_URL", ""),
+        help="OpenAI-compatible base URL for the KAME interface/reflex model",
+    )
     parser.add_argument("--vllm-base-url", default=os.environ.get("HERMES_VOICE_VLLM_BASE_URL", ""))
     parser.add_argument("--vllm-model", default=os.environ.get("HERMES_VOICE_VLLM_MODEL", ""))
     parser.add_argument(
@@ -88,8 +93,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
-    if args.vllm_base_url:
-        os.environ["HERMES_VOICE_VLLM_BASE_URL"] = args.vllm_base_url
+    interface_base_url = args.interface_base_url or args.vllm_base_url
+    if interface_base_url:
+        os.environ["HERMES_KAME_INTERFACE_BASE_URL"] = interface_base_url
+        os.environ["HERMES_VOICE_VLLM_BASE_URL"] = interface_base_url
     if args.vllm_model:
         os.environ["HERMES_VOICE_VLLM_MODEL"] = args.vllm_model
     if args.streaming_stt_base_url:

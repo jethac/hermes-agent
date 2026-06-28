@@ -99,7 +99,8 @@ def test_launchd_kame_sidecar_command_points_at_vllm_without_stt_bridge(tmp_path
         repo_dir=tmp_path / "repo",
         hermes_home=tmp_path / "home",
         uv_bin="uv",
-        vllm_base_url="http://spark.local:8000/v1",
+        interface_base_url="http://spark.local:8000/v1",
+        vllm_base_url="http://legacy.local:8000/v1",
         vllm_model="gemma-4-E2B-it",
         include_dev_extra=False,
     )
@@ -107,7 +108,10 @@ def test_launchd_kame_sidecar_command_points_at_vllm_without_stt_bridge(tmp_path
     command = plist["ProgramArguments"][2]
 
     assert "hermes_cli.realtime_voice_sidecar" in command
+    assert "HERMES_KAME_INTERFACE_BASE_URL=http://spark.local:8000/v1" in command
+    assert "--interface-base-url http://spark.local:8000/v1" in command
     assert "--vllm-base-url http://spark.local:8000/v1" in command
+    assert "http://legacy.local:8000/v1" not in command
     assert "--vllm-model gemma-4-E2B-it" in command
     assert "--streaming-stt-base-url" not in command
     assert "--streaming-tts-base-url" not in command
@@ -131,6 +135,7 @@ def test_launchd_kame_sidecar_can_include_streaming_tts_without_stt_bridge(tmp_p
     command = plist["ProgramArguments"][2]
 
     assert "--vllm-base-url http://spark.local:8000/v1" in command
+    assert "--interface-base-url http://spark.local:8000/v1" in command
     assert "--streaming-stt-base-url" not in command
     assert "--streaming-tts-base-url http://127.0.0.1:8768" in command
     assert "--streaming-tts-model cartesia-sonic" in command
