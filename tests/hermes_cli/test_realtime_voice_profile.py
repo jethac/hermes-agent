@@ -23,6 +23,9 @@ def test_live_like_profile_contains_portable_streaming_bridge_config():
     assert profile["production_languages"] == ["en", "ja"]
     assert profile["production_scripts"] == ["Latn", "Jpan"]
     assert profile["best_effort_languages"] is True
+    assert profile["interface_temperature"] == 0.2
+    assert profile["interface_max_output_tokens"] == 160
+    assert profile["interface_timeout_seconds"] == 0.8
     assert profile["barge_in_min_rms"] == 350
     assert profile["barge_in_stop_playback_deadline_ms"] == 150
     assert profile["quality_targets_ms"]["audio_to_partial_transcript_ms"] == 300
@@ -255,6 +258,9 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["frontend_provider"] == "gemma4"
     assert realtime["frontend_model"] == "gemma-4-E2B-it"
     assert realtime["interface_audio_input"] == "auto"
+    assert realtime["interface_temperature"] == 0.2
+    assert realtime["interface_max_output_tokens"] == 160
+    assert realtime["interface_timeout_seconds"] == 0.8
     assert realtime["asr_mode"] == "on_escalation"
     assert realtime["asr_provider"] == "streaming_stt"
     assert realtime["asr_model"] == "portable-streaming-asr"
@@ -297,6 +303,9 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["engine"] == "kame_interface_oracle"
     assert discord_rt["frontend_provider"] == "gemma4"
     assert discord_rt["frontend_model"] == "gemma-4-E2B-it"
+    assert discord_rt["interface_temperature"] == 0.2
+    assert discord_rt["interface_max_output_tokens"] == 160
+    assert discord_rt["interface_timeout_seconds"] == 0.8
     assert discord_rt["interface_audio_input"] == "native_audio"
     assert discord_rt["asr_mode"] == "speculative"
     assert discord_rt["asr_provider"] == "streaming_stt"
@@ -526,6 +535,9 @@ def test_cartesia_preset_apply_prints_bridge_next_steps(monkeypatch, tmp_path, c
     realtime = saved["config"]["voice"]["realtime"]
     assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8769"
     assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8769"
+    assert realtime["interface_temperature"] == 0.2
+    assert realtime["interface_max_output_tokens"] == 160
+    assert realtime["interface_timeout_seconds"] == 0.8
     assert realtime["barge_in_min_rms"] == 350
     assert realtime["barge_in_stop_playback_deadline_ms"] == 150
     output = capsys.readouterr().out
@@ -550,6 +562,9 @@ def test_openai_preset_apply_prints_live_evidence_next_steps(monkeypatch, tmp_pa
     assert result == 0
     realtime = saved["config"]["voice"]["realtime"]
     assert realtime["frontend_provider"] == "openai_realtime"
+    assert realtime["interface_temperature"] == 0.2
+    assert realtime["interface_max_output_tokens"] == 160
+    assert realtime["interface_timeout_seconds"] == 0.8
     assert realtime["barge_in_min_rms"] == 350
     assert realtime["barge_in_stop_playback_deadline_ms"] == 150
     output = capsys.readouterr().out
@@ -573,6 +588,9 @@ def test_gemini_preset_apply_prints_live_evidence_next_steps(monkeypatch, tmp_pa
     assert result == 0
     realtime = saved["config"]["voice"]["realtime"]
     assert realtime["frontend_provider"] == "gemini_live"
+    assert realtime["interface_temperature"] == 0.2
+    assert realtime["interface_max_output_tokens"] == 160
+    assert realtime["interface_timeout_seconds"] == 0.8
     assert realtime["barge_in_min_rms"] == 350
     assert realtime["barge_in_stop_playback_deadline_ms"] == 150
     output = capsys.readouterr().out

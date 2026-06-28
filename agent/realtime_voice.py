@@ -145,6 +145,9 @@ class RealtimeVoiceSessionConfig:
     input_buffer_limit_bytes: int = 8 * 1024 * 1024
     frontend_provider: Optional[str] = None
     frontend_model: Optional[str] = None
+    interface_temperature: float = 0.2
+    interface_max_output_tokens: int = 160
+    interface_timeout_seconds: float = 0.8
     interface_audio_input: Optional[str] = None
     asr_mode: RealtimeVoiceASRMode = RealtimeVoiceASRMode.ON_ESCALATION
     asr_provider: Optional[str] = None
@@ -185,6 +188,9 @@ class RealtimeVoiceSessionConfig:
             "input_buffer_limit_bytes": self.input_buffer_limit_bytes,
             "frontend_provider": self.frontend_provider,
             "frontend_model": self.frontend_model,
+            "interface_temperature": self.interface_temperature,
+            "interface_max_output_tokens": self.interface_max_output_tokens,
+            "interface_timeout_seconds": self.interface_timeout_seconds,
             "interface_audio_input": self.interface_audio_input,
             "asr_mode": self.asr_mode.value,
             "asr_provider": self.asr_provider,
@@ -220,6 +226,20 @@ class RealtimeVoiceSessionConfig:
             ),
             frontend_provider=_optional_str(payload.get("frontend_provider")),
             frontend_model=_optional_str(payload.get("frontend_model")),
+            interface_temperature=_bounded_float(
+                payload.get("interface_temperature"),
+                default=0.2,
+                minimum=0.0,
+                maximum=2.0,
+            ),
+            interface_max_output_tokens=_positive_int(
+                payload.get("interface_max_output_tokens"),
+                default=160,
+            ),
+            interface_timeout_seconds=_positive_float(
+                payload.get("interface_timeout_seconds"),
+                default=0.8,
+            ),
             interface_audio_input=_optional_str(payload.get("interface_audio_input")),
             asr_mode=_asr_mode(payload.get("asr_mode")),
             asr_provider=_optional_str(payload.get("asr_provider")),
@@ -551,6 +571,20 @@ def _positive_float(value: Any, *, default: float) -> float:
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
+
+
+def _bounded_float(value: Any, *, default: float, minimum: float, maximum: float) -> float:
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed < minimum:
+        return minimum
+    if parsed > maximum:
+        return maximum
+    return parsed
 
 
 def _positive_int(value: Any, *, default: int) -> int:

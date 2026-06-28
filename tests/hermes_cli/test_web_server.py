@@ -3173,6 +3173,9 @@ class TestBuildSchemaFromConfig:
         assert "streaming STT/TTS" in CONFIG_SCHEMA["voice.realtime.require_live_like"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.frontend_provider"]["type"] == "string"
         assert "interface provider" in CONFIG_SCHEMA["voice.realtime.frontend_provider"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.interface_temperature"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.interface_max_output_tokens"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.interface_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.frontend_model"]["type"] == "string"
         assert "interface model" in CONFIG_SCHEMA["voice.realtime.frontend_model"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.vllm_base_url"]["type"] == "string"
@@ -6960,6 +6963,9 @@ class TestRealtimeVoiceWebSocket:
                             "provider": "openai_compatible",
                             "base_url": "http://spark.local:8000/v1",
                             "model": "gemma-4-E2B-it",
+                            "temperature": 0.3,
+                            "max_output_tokens": 96,
+                            "timeout_ms": 700,
                             "audio_input": "auto",
                             "asr_mode": "on_escalation",
                         },
@@ -6998,6 +7004,9 @@ class TestRealtimeVoiceWebSocket:
         assert config.engine.value == "kame_interface_oracle"
         assert config.frontend_provider == "openai_compatible"
         assert config.frontend_model == "gemma-4-E2B-it"
+        assert config.interface_temperature == 0.3
+        assert config.interface_max_output_tokens == 96
+        assert config.interface_timeout_seconds == 0.7
         assert config.interface_audio_input == "auto"
         assert config.asr_mode.value == "on_escalation"
         assert config.asr_provider == "nemotron"
@@ -7009,9 +7018,15 @@ class TestRealtimeVoiceWebSocket:
         assert config.tts_model == "sonic-3.5"
         assert config.tts_voice == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
         assert config.metadata["frontend_provider"] == "openai_compatible"
+        assert config.metadata["interface_temperature"] == 0.3
+        assert config.metadata["interface_max_output_tokens"] == 96
+        assert config.metadata["interface_timeout_seconds"] == 0.7
         assert config.metadata["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
         assert status["frontend_provider"] == "openai_compatible"
         assert status["frontend_model"] == "gemma-4-E2B-it"
+        assert status["interface_temperature"] == 0.3
+        assert status["interface_max_output_tokens"] == 96
+        assert status["interface_timeout_seconds"] == 0.7
         assert status["asr_provider"] == "nemotron"
         assert status["tts_provider"] == "cartesia"
         assert status["oracle_timeout_seconds"] == 12.0
@@ -7294,6 +7309,9 @@ class TestRealtimeVoiceWebSocket:
         assert body["oracle_role"] == "hermes_backend_oracle"
         assert body["frontend_provider"] == "gemma4"
         assert body["frontend_model"] == "google/gemma-4-E4B-it-qat-w4a16-ct"
+        assert body["interface_temperature"] == 0.2
+        assert body["interface_max_output_tokens"] == 160
+        assert body["interface_timeout_seconds"] == 0.8
         assert body["oracle_model"] == "deep-hermes"
         assert body["input_buffer_limit_bytes"] == 4096
         assert body["input_frame_ms"] == 80
@@ -7585,6 +7603,9 @@ class TestRealtimeVoiceWebSocket:
             "enabled": True,
             "sidecar_required": True,
             "audio_reflex": True,
+            "interface_temperature": 0.2,
+            "interface_max_output_tokens": 160,
+            "interface_timeout_seconds": 0.8,
             "asr_mode": "on_escalation",
             "interface_audio_input": "native_audio",
             "asr_provider": "streaming_stt",
@@ -8618,6 +8639,9 @@ class TestRealtimeVoiceWebSocket:
                     "realtime": {
                         "enabled": True,
                         "engine": "text_oracle_tts",
+                        "interface_temperature": 5,
+                        "interface_max_output_tokens": 50_000,
+                        "interface_timeout_seconds": -1,
                         "speech_level_threshold": 2,
                         "barge_in_min_speech_ms": 5,
                         "barge_in_min_rms": 40_000,
@@ -8632,6 +8656,9 @@ class TestRealtimeVoiceWebSocket:
 
         assert response.status_code == 200
         body = response.json()
+        assert body["interface_temperature"] == 2.0
+        assert body["interface_max_output_tokens"] == 4096
+        assert body["interface_timeout_seconds"] == 0.8
         assert body["speech_level_threshold"] == 1.0
         assert body["barge_in_min_speech_ms"] == 40
         assert body["barge_in_min_rms"] == 32767

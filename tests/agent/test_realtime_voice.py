@@ -140,6 +140,9 @@ def test_session_config_round_trips_wire_payload():
         input_buffer_limit_bytes=4096,
         frontend_provider="gemma",
         frontend_model="gemma-4-e4b",
+        interface_temperature=0.4,
+        interface_max_output_tokens=128,
+        interface_timeout_seconds=1.25,
         asr_provider="streaming_stt",
         asr_model="nemotron-speech",
         oracle_model="configured-hermes-model",
@@ -161,6 +164,9 @@ def test_session_config_round_trips_wire_payload():
     assert restored.effective_sidecar_base_url == "http://voice.local:8080"
     assert restored.effective_sidecar_token == "secret-token"
     assert restored.input_buffer_limit_bytes == 4096
+    assert restored.interface_temperature == 0.4
+    assert restored.interface_max_output_tokens == 128
+    assert restored.interface_timeout_seconds == 1.25
     assert restored.sidecar_connect_timeout_seconds == 3.5
     assert restored.oracle_timeout_seconds == 12.5
     assert restored.max_spoken_sentences == 3
@@ -172,6 +178,9 @@ def test_session_config_round_trips_kame_fields():
         engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
         frontend_provider="gemma4",
         frontend_model="gemma-4-E2B-it",
+        interface_temperature=0.35,
+        interface_max_output_tokens=96,
+        interface_timeout_seconds=0.6,
         interface_audio_input="native_audio",
         asr_mode=RealtimeVoiceASRMode.SPECULATIVE,
         asr_provider="streaming_stt",
@@ -188,6 +197,9 @@ def test_session_config_round_trips_kame_fields():
 
     assert restored.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
     assert restored.frontend_model == "gemma-4-E2B-it"
+    assert restored.interface_temperature == 0.35
+    assert restored.interface_max_output_tokens == 96
+    assert restored.interface_timeout_seconds == 0.6
     assert restored.interface_audio_input == "native_audio"
     assert restored.asr_mode == RealtimeVoiceASRMode.SPECULATIVE
     assert restored.asr_provider == "streaming_stt"
@@ -3165,6 +3177,9 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     sidecar.config = RealtimeVoiceSessionConfig(
         session_id="voice-123",
         engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        interface_temperature=0.35,
+        interface_max_output_tokens=96,
+        interface_timeout_seconds=0.6,
         interface_audio_input="native_audio",
         asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
         metadata={
@@ -3191,8 +3206,10 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
         "transcript_confidence": 0.71,
     }
     assert captured["url"] == "http://vllm.local:8000/v1/chat/completions"
-    assert captured["timeout"] == 12
+    assert captured["timeout"] == 0.6
     assert captured["body"]["model"] == "google/gemma-4-E2B-it"
+    assert captured["body"]["temperature"] == 0.35
+    assert captured["body"]["max_tokens"] == 96
     assert captured["body"]["response_format"] == {"type": "json_object"}
     prompt = captured["body"]["messages"][0]["content"][1]["text"]
     assert "KAME reflex" in prompt

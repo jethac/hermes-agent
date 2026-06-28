@@ -1159,9 +1159,10 @@ class ReferenceRealtimeVoiceSidecarSession:
                 }
             ],
             "max_tokens": 256,
-            "temperature": 0,
+            "temperature": _interface_temperature(config),
             "response_format": {"type": "json_object"},
         }
+        payload["max_tokens"] = _interface_max_output_tokens(config)
         url = f"{self.runtime.vllm_base_url.rstrip('/')}/chat/completions"
         req = urllib.request.Request(
             url,
@@ -1169,7 +1170,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=self.runtime.vllm_timeout_seconds) as response:
+        with urllib.request.urlopen(req, timeout=_interface_timeout_seconds(config, self.runtime.vllm_timeout_seconds)) as response:
             data = json.loads(response.read().decode("utf-8"))
         content = str(data["choices"][0]["message"].get("content") or "").strip()
         return _kame_reflex_payload_from_content(content)
@@ -1710,6 +1711,50 @@ def _kame_routing_policy_text(config: Optional[RealtimeVoiceSessionConfig]) -> s
         f"require_oracle_for_files={_metadata_bool(routing.get('require_oracle_for_files'), default=True)}, "
         f"local_confidence_threshold={_metadata_float(routing.get('local_confidence_threshold'), default=0.75):.2f}."
     )
+
+
+def _interface_temperature(config: Optional[RealtimeVoiceSessionConfig]) -> float:
+    value = getattr(config, "interface_temperature", 0.2) if config is not None else 0.2
+    if isinstance(value, bool):
+        return 0.2
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return 0.2
+    return max(0.0, min(2.0, parsed))
+
+
+def _interface_max_output_tokens(config: Optional[RealtimeVoiceSessionConfig]) -> int:
+    value = getattr(config, "interface_max_output_tokens", 160) if config is not None else 160
+    if isinstance(value, bool):
+        return 160
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 160
+    return max(1, min(4096, parsed))
+
+
+def _interface_timeout_seconds(
+    config: Optional[RealtimeVoiceSessionConfig],
+    runtime_timeout_seconds: float,
+) -> float:
+    value = getattr(config, "interface_timeout_seconds", 0.8) if config is not None else 0.8
+    if isinstance(value, bool):
+        value = 0.8
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = 0.8
+    if parsed <= 0:
+        parsed = 0.8
+    try:
+        runtime_timeout = float(runtime_timeout_seconds)
+    except (TypeError, ValueError):
+        runtime_timeout = parsed
+    if runtime_timeout > 0:
+        return min(parsed, runtime_timeout)
+    return parsed
 
 
 def _metadata_bool(value: Any, *, default: bool = False) -> bool:

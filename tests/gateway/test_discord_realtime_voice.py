@@ -107,6 +107,9 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
                         "provider": "openai_compatible",
                         "base_url": "http://spark.local:8000/v1",
                         "model": "gemma-4-E2B-it",
+                        "temperature": 0.3,
+                        "max_output_tokens": 96,
+                        "timeout_ms": 700,
                         "audio_input": "auto",
                         "asr_mode": "on_escalation",
                     },
@@ -152,6 +155,9 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["frontend_provider"] == "gemma4"
     assert cfg["frontend_model"] == "discord-reflex"
     assert cfg["vllm_base_url"] == "http://spark.local:8000/v1"
+    assert cfg["interface_temperature"] == 0.3
+    assert cfg["interface_max_output_tokens"] == 96
+    assert cfg["interface_timeout_seconds"] == 0.7
     assert cfg["interface_audio_input"] == "auto"
     assert cfg["asr_mode"] == "on_escalation"
     assert cfg["asr_provider"] == "nemotron"
@@ -183,6 +189,9 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         sidecar_base_url="http://127.0.0.1:8766",
         frontend_provider="elevenlabs",
         frontend_model="realtime-voice",
+        interface_temperature=0.35,
+        interface_max_output_tokens=96,
+        interface_timeout_seconds=0.6,
         oracle_model="deep-hermes",
         oracle_timeout_seconds=17.5,
         max_spoken_sentences=3,
@@ -212,6 +221,9 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.sidecar_connect_timeout_seconds == 0.5
     assert sidecar.started_with.frontend_provider == "elevenlabs"
     assert sidecar.started_with.frontend_model == "realtime-voice"
+    assert sidecar.started_with.interface_temperature == 0.35
+    assert sidecar.started_with.interface_max_output_tokens == 96
+    assert sidecar.started_with.interface_timeout_seconds == 0.6
     assert sidecar.started_with.oracle_model == "deep-hermes"
     assert sidecar.started_with.oracle_timeout_seconds == 17.5
     assert sidecar.started_with.max_spoken_sentences == 3
@@ -220,6 +232,9 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.metadata["oracle_role"] == "hermes_backend_oracle"
     assert sidecar.started_with.metadata["frontend_provider"] == "elevenlabs"
     assert sidecar.started_with.metadata["frontend_model"] == "realtime-voice"
+    assert sidecar.started_with.metadata["interface_temperature"] == 0.35
+    assert sidecar.started_with.metadata["interface_max_output_tokens"] == 96
+    assert sidecar.started_with.metadata["interface_timeout_seconds"] == 0.6
     assert sidecar.started_with.metadata["oracle_model"] == "deep-hermes"
     assert sidecar.started_with.metadata["oracle_timeout_seconds"] == 17.5
     assert sidecar.started_with.metadata["max_spoken_sentences"] == 3

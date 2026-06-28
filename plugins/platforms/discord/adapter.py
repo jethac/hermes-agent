@@ -63,6 +63,9 @@ class DiscordVoiceSessionState:
     oracle_role: str = DISCORD_VOICE_ORACLE_ROLE
     frontend_provider: Optional[str] = None
     frontend_model: Optional[str] = None
+    interface_temperature: float = 0.2
+    interface_max_output_tokens: int = 160
+    interface_timeout_seconds: float = 0.8
     interface_audio_input: Optional[str] = None
     asr_mode: Optional[str] = None
     asr_provider: Optional[str] = None
@@ -165,6 +168,16 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
     _discord_set_realtime_default(config, "frontend_provider", interface.get("provider"))
     _discord_set_realtime_default(config, "frontend_model", interface.get("model"))
     _discord_set_realtime_default(config, "vllm_base_url", interface.get("base_url"))
+    _discord_set_realtime_default(config, "interface_temperature", interface.get("temperature"))
+    _discord_set_realtime_default(config, "interface_max_output_tokens", interface.get("max_output_tokens"))
+    if config.get("interface_timeout_seconds") is None:
+        if interface.get("timeout_seconds") is not None:
+            config["interface_timeout_seconds"] = interface.get("timeout_seconds")
+        elif interface.get("timeout_ms") is not None:
+            try:
+                config["interface_timeout_seconds"] = float(interface.get("timeout_ms")) / 1000.0
+            except (TypeError, ValueError):
+                pass
     _discord_set_realtime_default(config, "interface_audio_input", interface.get("audio_input"))
     _discord_set_realtime_default(config, "asr_mode", interface.get("asr_mode"))
 
@@ -2907,6 +2920,9 @@ class DiscordAdapter(BasePlatformAdapter):
             "frontend_provider": None,
             "frontend_model": None,
             "vllm_base_url": None,
+            "interface_temperature": 0.2,
+            "interface_max_output_tokens": 160,
+            "interface_timeout_seconds": 0.8,
             "interface_audio_input": None,
             "asr_mode": "on_escalation",
             "asr_provider": None,
@@ -3134,6 +3150,9 @@ class DiscordAdapter(BasePlatformAdapter):
             "engine": str(cfg.get("engine") or "") or None,
             "frontend_provider": str(cfg.get("frontend_provider") or "") or None,
             "frontend_model": str(cfg.get("frontend_model") or "") or None,
+            "interface_temperature": float(cfg.get("interface_temperature") or 0.2),
+            "interface_max_output_tokens": int(cfg.get("interface_max_output_tokens") or 160),
+            "interface_timeout_seconds": float(cfg.get("interface_timeout_seconds") or 0.8),
             "interface_audio_input": str(cfg.get("interface_audio_input") or "") or None,
             "asr_mode": str(cfg.get("asr_mode") or "") or None,
             "asr_provider": str(cfg.get("asr_provider") or "") or None,
@@ -3203,6 +3222,9 @@ class DiscordAdapter(BasePlatformAdapter):
             "oracle_role": state.oracle_role or architecture["oracle_role"],
             "frontend_provider": state.frontend_provider or architecture["frontend_provider"],
             "frontend_model": state.frontend_model or architecture["frontend_model"],
+            "interface_temperature": state.interface_temperature or architecture["interface_temperature"],
+            "interface_max_output_tokens": state.interface_max_output_tokens or architecture["interface_max_output_tokens"],
+            "interface_timeout_seconds": state.interface_timeout_seconds or architecture["interface_timeout_seconds"],
             "interface_audio_input": getattr(state, "interface_audio_input", None) or architecture["interface_audio_input"],
             "asr_mode": getattr(state, "asr_mode", None) or architecture["asr_mode"],
             "asr_provider": getattr(state, "asr_provider", None) or architecture["asr_provider"],
@@ -3241,6 +3263,9 @@ class DiscordAdapter(BasePlatformAdapter):
             engine=str(cfg.get("engine") or "text_oracle_tts"),
             frontend_provider=cfg.get("frontend_provider"),
             frontend_model=cfg.get("frontend_model"),
+            interface_temperature=float(cfg.get("interface_temperature") or 0.2),
+            interface_max_output_tokens=int(cfg.get("interface_max_output_tokens") or 160),
+            interface_timeout_seconds=float(cfg.get("interface_timeout_seconds") or 0.8),
             interface_audio_input=str(cfg.get("interface_audio_input") or "") or None,
             asr_mode=str(cfg.get("asr_mode") or "on_escalation"),
             asr_provider=str(cfg.get("asr_provider") or "") or None,

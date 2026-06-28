@@ -723,6 +723,21 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Low-latency realtime interface model",
         "category": "voice",
     },
+    "voice.realtime.interface_temperature": {
+        "type": "number",
+        "description": "Sampling temperature for the low-latency KAME interface model",
+        "category": "voice",
+    },
+    "voice.realtime.interface_max_output_tokens": {
+        "type": "number",
+        "description": "Maximum output tokens for one KAME interface routing decision",
+        "category": "voice",
+    },
+    "voice.realtime.interface_timeout_seconds": {
+        "type": "number",
+        "description": "Seconds to wait for the KAME interface model before treating it as unavailable",
+        "category": "voice",
+    },
     "voice.realtime.interface_audio_input": {
         "type": "select",
         "description": "How the KAME reflex receives user input",
@@ -14204,6 +14219,13 @@ def _normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, A
     _set_realtime_voice_default(config, "frontend_provider", interface.get("provider"))
     _set_realtime_voice_default(config, "frontend_model", interface.get("model"))
     _set_realtime_voice_default(config, "vllm_base_url", interface.get("base_url"))
+    _set_realtime_voice_default(config, "interface_temperature", interface.get("temperature"))
+    _set_realtime_voice_default(config, "interface_max_output_tokens", interface.get("max_output_tokens"))
+    if config.get("interface_timeout_seconds") is None:
+        if interface.get("timeout_seconds") is not None:
+            config["interface_timeout_seconds"] = interface.get("timeout_seconds")
+        elif interface.get("timeout_ms") is not None:
+            config["interface_timeout_seconds"] = _positive_float_config(interface.get("timeout_ms"), default=800.0) / 1000.0
     _set_realtime_voice_default(config, "interface_audio_input", interface.get("audio_input"))
     _set_realtime_voice_default(config, "asr_mode", interface.get("asr_mode"))
 
@@ -14258,6 +14280,28 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     engine = str(realtime.get("engine") or "text_oracle_tts")
     provider = str(_first_realtime_voice_config_value(realtime, ("frontend_provider",), ("interface", "provider"), default="") or "")
     frontend_model = str(_first_realtime_voice_config_value(realtime, ("frontend_model",), ("interface", "model"), default="") or "")
+    interface_temperature = _bounded_float_config(
+        _first_realtime_voice_config_value(realtime, ("interface_temperature",), ("interface", "temperature")),
+        default=0.2,
+        minimum=0.0,
+        maximum=2.0,
+    )
+    interface_max_output_tokens = _bounded_int_config(
+        _first_realtime_voice_config_value(realtime, ("interface_max_output_tokens",), ("interface", "max_output_tokens")),
+        default=160,
+        minimum=1,
+        maximum=4096,
+    )
+    interface_timeout_seconds = _positive_float_config(
+        _first_realtime_voice_config_value(realtime, ("interface_timeout_seconds",), ("interface", "timeout_seconds")),
+        default=(
+            _positive_float_config(
+                _first_realtime_voice_config_value(realtime, ("interface", "timeout_ms")),
+                default=800.0,
+            )
+            / 1000.0
+        ),
+    )
     interface_audio_input = str(
         _first_realtime_voice_config_value(realtime, ("interface_audio_input",), ("interface", "audio_input"), default="") or ""
     )
@@ -14445,6 +14489,9 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "oracle_role": "hermes_backend_oracle",
         "frontend_provider": provider or None,
         "frontend_model": frontend_model or None,
+        "interface_temperature": interface_temperature,
+        "interface_max_output_tokens": interface_max_output_tokens,
+        "interface_timeout_seconds": interface_timeout_seconds,
         "interface_audio_input": interface_audio_input or None,
         "asr_mode": asr_mode or None,
         "asr_provider": asr_provider or None,
@@ -14483,6 +14530,9 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "enabled": engine == "kame_interface_oracle",
             "sidecar_required": engine == "kame_interface_oracle",
             "audio_reflex": conversation_quality.get("kame_reflex") is True,
+            "interface_temperature": interface_temperature,
+            "interface_max_output_tokens": interface_max_output_tokens,
+            "interface_timeout_seconds": interface_timeout_seconds,
             "asr_mode": asr_mode or None,
             "interface_audio_input": interface_audio_input or None,
             "asr_provider": asr_provider or None,
@@ -14883,6 +14933,22 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         ),
         frontend_provider=str(realtime.get("frontend_provider") or "") or None,
         frontend_model=str(realtime.get("frontend_model") or "") or None,
+        interface_temperature=_bounded_float_config(
+            realtime.get("interface_temperature"),
+            default=0.2,
+            minimum=0.0,
+            maximum=2.0,
+        ),
+        interface_max_output_tokens=_bounded_int_config(
+            realtime.get("interface_max_output_tokens"),
+            default=160,
+            minimum=1,
+            maximum=4096,
+        ),
+        interface_timeout_seconds=_positive_float_config(
+            realtime.get("interface_timeout_seconds"),
+            default=0.8,
+        ),
         interface_audio_input=str(realtime.get("interface_audio_input") or "") or None,
         asr_mode=RealtimeVoiceASRMode(str(realtime.get("asr_mode") or RealtimeVoiceASRMode.ON_ESCALATION.value)),
         asr_provider=asr_provider or None,
@@ -14916,6 +14982,22 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "oracle_role": "hermes_backend_oracle",
             "frontend_provider": str(realtime.get("frontend_provider") or "") or None,
             "frontend_model": str(realtime.get("frontend_model") or "") or None,
+            "interface_temperature": _bounded_float_config(
+                realtime.get("interface_temperature"),
+                default=0.2,
+                minimum=0.0,
+                maximum=2.0,
+            ),
+            "interface_max_output_tokens": _bounded_int_config(
+                realtime.get("interface_max_output_tokens"),
+                default=160,
+                minimum=1,
+                maximum=4096,
+            ),
+            "interface_timeout_seconds": _positive_float_config(
+                realtime.get("interface_timeout_seconds"),
+                default=0.8,
+            ),
             "interface_audio_input": str(realtime.get("interface_audio_input") or "") or None,
             "asr_mode": str(realtime.get("asr_mode") or "") or None,
             "asr_provider": asr_provider or None,
