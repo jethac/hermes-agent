@@ -1753,8 +1753,14 @@ def _apply_kame_routing_policy(
     config: Optional[RealtimeVoiceSessionConfig],
 ) -> dict[str, Any]:
     routed = dict(payload)
-    if str(routed.get("route") or "").strip().lower() != KameRoute.LOCAL.value:
+    route = str(routed.get("route") or "").strip().lower()
+    if route not in {KameRoute.LOCAL.value, KameRoute.REJECT_OR_CLARIFY.value}:
         return routed
+    if route == KameRoute.REJECT_OR_CLARIFY.value and not _kame_local_clarifications_allowed(config):
+        return _downgrade_kame_local_route(
+            routed,
+            reason="local_clarifications_disabled",
+        )
     confidence = _bounded_confidence(
         routed.get("route_confidence") if routed.get("route_confidence") is not None else routed.get("confidence")
     )
@@ -1763,11 +1769,19 @@ def _apply_kame_routing_policy(
     threshold = _kame_local_confidence_threshold(config)
     if confidence >= threshold:
         return routed
+    return _downgrade_kame_local_route(
+        routed,
+        reason="local_confidence_below_threshold",
+    )
+
+
+def _downgrade_kame_local_route(payload: Mapping[str, Any], *, reason: str) -> dict[str, Any]:
+    routed = dict(payload)
     routed["route"] = KameRoute.ORACLE_DIRECT.value
     routed.pop("local_reply", None)
     existing_error = str(routed.get("reflex_validation_error") or "").strip()
     routed["reflex_validation_error"] = ",".join(
-        part for part in (existing_error, "local_confidence_below_threshold") if part
+        part for part in (existing_error, reason) if part
     )
     return routed
 
@@ -1877,6 +1891,14 @@ def _kame_local_confidence_threshold(config: Optional[RealtimeVoiceSessionConfig
     if not isinstance(routing, Mapping):
         routing = {}
     return _metadata_float(routing.get("local_confidence_threshold"), default=0.75)
+
+
+def _kame_local_clarifications_allowed(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
+    routing = metadata.get("routing") if isinstance(metadata, Mapping) else {}
+    if not isinstance(routing, Mapping):
+        routing = {}
+    return _metadata_bool(routing.get("allow_local_clarifications"), default=True)
 
 
 def _interface_temperature(config: Optional[RealtimeVoiceSessionConfig]) -> float:

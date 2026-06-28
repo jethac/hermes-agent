@@ -3884,6 +3884,54 @@ def test_reference_sidecar_kame_local_route_respects_confidence_threshold():
     assert payload["reflex_validation_error"] == "local_confidence_below_threshold"
 
 
+def test_reference_sidecar_kame_clarify_route_respects_routing_policy():
+    payload = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(
+            {
+                "route": "reject_or_clarify",
+                "route_confidence": 0.91,
+                "intent": "The user gave an incomplete request.",
+                "text": "that one from yesterday",
+                "local_reply": "Which project should I check?",
+            }
+        ),
+        config=RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            metadata={"routing": {"allow_local_clarifications": False}},
+        ),
+    )
+
+    assert payload["route"] == "oracle_direct"
+    assert payload["route_confidence"] == 0.91
+    assert "local_reply" not in payload
+    assert payload["reflex_validation_error"] == "local_clarifications_disabled"
+
+
+def test_reference_sidecar_kame_clarify_route_respects_confidence_threshold():
+    payload = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(
+            {
+                "route": "reject_or_clarify",
+                "route_confidence": 0.5,
+                "intent": "The user gave an ambiguous request.",
+                "text": "fix the thing",
+                "local_reply": "Which issue should I fix?",
+            }
+        ),
+        config=RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            metadata={"routing": {"local_confidence_threshold": 0.75}},
+        ),
+    )
+
+    assert payload["route"] == "oracle_direct"
+    assert payload["route_confidence"] == 0.5
+    assert "local_reply" not in payload
+    assert payload["reflex_validation_error"] == "local_confidence_below_threshold"
+
+
 def test_reference_sidecar_kame_reflex_local_route_requires_local_reply():
     payload = reference_sidecar_module._kame_reflex_payload_from_content(
         json.dumps(
