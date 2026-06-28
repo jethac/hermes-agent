@@ -14908,6 +14908,8 @@ def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk
     gemini_key_env = str(realtime.get("gemini_live_api_key_env") or "GEMINI_API_KEY")
     stt_token_env = str(realtime.get("streaming_stt_token_env") or "HERMES_STREAMING_STT_BRIDGE_TOKEN")
     tts_token_env = str(realtime.get("streaming_tts_token_env") or stt_token_env)
+    nemotron_upstream_env = "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL"
+    magpie_upstream_env = "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL"
     kame_model = (
         str(realtime.get("frontend_model") or "")
         if str(realtime.get("frontend_provider") or "").strip() == "gemma4"
@@ -14974,6 +14976,37 @@ def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk
             "implemented": True,
         },
         {
+            "id": "nemotron_speech",
+            "provider": "reference",
+            "label": "Nemotron Speech bridge",
+            "kind": "local_streaming_asr_bridge",
+            "model": str(realtime.get("asr_model") or realtime.get("streaming_stt_model") or "nemotron-speech-streaming-0.6b"),
+            "base_url": str(realtime.get("streaming_stt_base_url") or ""),
+            "upstream_base_url_env": nemotron_upstream_env,
+            "upstream_base_url_present": _realtime_voice_env_present(env_on_disk, nemotron_upstream_env),
+            "upstream_token_env": "HERMES_NEMOTRON_SPEECH_UPSTREAM_TOKEN",
+            "upstream_token_present": _realtime_voice_env_present(env_on_disk, "HERMES_NEMOTRON_SPEECH_UPSTREAM_TOKEN"),
+            "bridge_token_env": stt_token_env,
+            "bridge_token_present": _realtime_voice_env_present(env_on_disk, stt_token_env),
+            "implemented": True,
+        },
+        {
+            "id": "magpie_tts",
+            "provider": "reference",
+            "label": "Magpie TTS bridge",
+            "kind": "local_streaming_tts_bridge",
+            "model": str(realtime.get("tts_model") or realtime.get("streaming_tts_model") or "magpie-local-streaming-tts"),
+            "voice": str(realtime.get("tts_voice") or realtime.get("streaming_tts_voice") or ""),
+            "base_url": str(realtime.get("streaming_tts_base_url") or ""),
+            "upstream_base_url_env": magpie_upstream_env,
+            "upstream_base_url_present": _realtime_voice_env_present(env_on_disk, magpie_upstream_env),
+            "upstream_token_env": "HERMES_MAGPIE_TTS_UPSTREAM_TOKEN",
+            "upstream_token_present": _realtime_voice_env_present(env_on_disk, "HERMES_MAGPIE_TTS_UPSTREAM_TOKEN"),
+            "bridge_token_env": tts_token_env,
+            "bridge_token_present": _realtime_voice_env_present(env_on_disk, tts_token_env),
+            "implemented": True,
+        },
+        {
             "id": "cartesia",
             "provider": "reference",
             "label": "Cartesia bridge",
@@ -15016,6 +15049,78 @@ def _realtime_voice_discord_setup(realtime: Mapping[str, Any], env_on_disk: Mapp
     }
 
 
+def _realtime_voice_setup_config_payload(
+    realtime: Mapping[str, Any],
+    env_on_disk: Mapping[str, Any],
+    status: Mapping[str, Any],
+) -> Dict[str, Any]:
+    stt_token_env = str(realtime.get("streaming_stt_token_env") or "HERMES_STREAMING_STT_BRIDGE_TOKEN")
+    tts_token_env = str(realtime.get("streaming_tts_token_env") or stt_token_env)
+    nemotron_upstream_env = "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL"
+    magpie_upstream_env = "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL"
+    return {
+        "engine": str(realtime.get("engine") or status.get("engine") or "text_oracle_tts"),
+        "interface": {
+            "provider": str(realtime.get("frontend_provider") or ""),
+            "model": str(realtime.get("frontend_model") or ""),
+            "base_url": _redact_realtime_voice_url(str(realtime.get("vllm_base_url") or "")),
+            "audio_input": str(realtime.get("interface_audio_input") or ""),
+            "temperature": status.get("interface_temperature"),
+            "max_output_tokens": status.get("interface_max_output_tokens"),
+            "timeout_seconds": status.get("interface_timeout_seconds"),
+            "max_audio_seconds": status.get("interface_max_audio_seconds"),
+        },
+        "oracle": {
+            "provider": str(realtime.get("oracle_provider") or ""),
+            "provider_name": str(realtime.get("oracle_provider_name") or ""),
+            "preferred_local_model": str(realtime.get("preferred_local_oracle_model") or ""),
+            "model": str(realtime.get("oracle_model") or ""),
+            "base_url": _redact_realtime_voice_url(str(realtime.get("oracle_base_url") or "")),
+            "api_mode": str(realtime.get("oracle_api_mode") or ""),
+            "timeout_seconds": status.get("oracle_timeout_seconds"),
+            "max_spoken_sentences": status.get("max_spoken_sentences"),
+            "voice_response_policy": status.get("voice_response_policy"),
+        },
+        "asr": {
+            "mode": str(realtime.get("asr_mode") or ""),
+            "provider": str(realtime.get("asr_provider") or ""),
+            "model": str(realtime.get("asr_model") or realtime.get("streaming_stt_model") or ""),
+            "bridge_base_url": _redact_realtime_voice_url(str(realtime.get("streaming_stt_base_url") or "")),
+            "bridge_token_env": stt_token_env,
+            "bridge_token_present": _realtime_voice_env_present(env_on_disk, stt_token_env),
+            "local_provider": "nemotron_speech",
+            "local_upstream_base_url_env": nemotron_upstream_env,
+            "local_upstream_base_url_present": _realtime_voice_env_present(env_on_disk, nemotron_upstream_env),
+            "local_upstream_token_env": "HERMES_NEMOTRON_SPEECH_UPSTREAM_TOKEN",
+            "local_upstream_token_present": _realtime_voice_env_present(
+                env_on_disk,
+                "HERMES_NEMOTRON_SPEECH_UPSTREAM_TOKEN",
+            ),
+        },
+        "tts": {
+            "provider": str(realtime.get("tts_provider") or ""),
+            "model": str(realtime.get("tts_model") or realtime.get("streaming_tts_model") or ""),
+            "voice": str(realtime.get("tts_voice") or realtime.get("streaming_tts_voice") or ""),
+            "bridge_base_url": _redact_realtime_voice_url(str(realtime.get("streaming_tts_base_url") or "")),
+            "bridge_token_env": tts_token_env,
+            "bridge_token_present": _realtime_voice_env_present(env_on_disk, tts_token_env),
+            "local_provider": "magpie_tts",
+            "local_upstream_base_url_env": magpie_upstream_env,
+            "local_upstream_base_url_present": _realtime_voice_env_present(env_on_disk, magpie_upstream_env),
+            "local_upstream_token_env": "HERMES_MAGPIE_TTS_UPSTREAM_TOKEN",
+            "local_upstream_token_present": _realtime_voice_env_present(env_on_disk, "HERMES_MAGPIE_TTS_UPSTREAM_TOKEN"),
+        },
+        "barge_in": {
+            "min_rms": status.get("barge_in_min_rms"),
+            "min_speech_ms": status.get("barge_in_min_speech_ms"),
+            "stop_playback_deadline_ms": status.get("barge_in_stop_playback_deadline_ms"),
+        },
+        "routing": dict(status.get("routing") if isinstance(status.get("routing"), Mapping) else {}),
+        "metrics": dict(status.get("metrics") if isinstance(status.get("metrics"), Mapping) else {}),
+        "fallback_policy": str(realtime.get("fallback_policy") or status.get("fallback_policy") or "legacy_voice"),
+    }
+
+
 def _realtime_voice_setup_payload(profile: Optional[str] = None) -> Dict[str, Any]:
     with _profile_scope(profile):
         cfg = load_config()
@@ -15025,6 +15130,7 @@ def _realtime_voice_setup_payload(profile: Optional[str] = None) -> Dict[str, An
         return {
             "status": status,
             "providers": _realtime_voice_provider_setup_rows(realtime, env_on_disk),
+            "config": _realtime_voice_setup_config_payload(realtime, env_on_disk, status),
             "discord": _realtime_voice_discord_setup(realtime, env_on_disk),
             "config_path": str(get_config_path()),
             "env_path": str(get_env_path()),

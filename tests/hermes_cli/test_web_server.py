@@ -6660,8 +6660,22 @@ class TestRealtimeVoiceWebSocket:
         cfg.setdefault("voice", {}).setdefault("realtime", {}).update(
             {
                 "enabled": True,
-                "frontend_provider": "gemini_live",
-                "frontend_model": "gemini-3.1-flash-live-preview",
+                "engine": "kame_interface_oracle",
+                "frontend_provider": "gemma4",
+                "frontend_model": "gemma-4-E2B-it",
+                "interface_audio_input": "native_audio",
+                "asr_mode": "on_escalation",
+                "asr_provider": "streaming_stt",
+                "asr_model": "nemotron-speech-streaming-0.6b",
+                "oracle_provider": "custom",
+                "oracle_provider_name": "Spark Oracle",
+                "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
+                "oracle_model": "gemma-4-26B-A4B-it",
+                "oracle_base_url": "http://spark.local:8001/v1",
+                "tts_provider": "streaming_tts",
+                "tts_model": "magpie-local-streaming-tts",
+                "streaming_stt_base_url": "http://127.0.0.1:8767",
+                "streaming_tts_base_url": "http://127.0.0.1:8768",
                 "gemini_live_api_key_env": "GEMINI_API_KEY",
                 "sidecar_autostart": True,
                 "sidecar_host": "127.0.0.1",
@@ -6671,6 +6685,10 @@ class TestRealtimeVoiceWebSocket:
         cfg.setdefault("discord", {}).setdefault("realtime_voice", {}).update({"enabled": True})
         save_config(cfg)
         save_env_value("GEMINI_API_KEY", "test-gemini-key")
+        save_env_value("HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL", "http://nemotron.local:9101")
+        save_env_value("HERMES_NEMOTRON_SPEECH_UPSTREAM_TOKEN", "secret-nemotron-token")
+        save_env_value("HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL", "http://magpie.local:9102")
+        save_env_value("HERMES_MAGPIE_TTS_UPSTREAM_TOKEN", "secret-magpie-token")
         save_env_value("DISCORD_BOT_TOKEN", "test-discord-token")
 
         monkeypatch.setattr(self.ws_module, "_realtime_voice_sidecar_health_probe", lambda *_args, **_kwargs: (False, None))
@@ -6681,14 +6699,40 @@ class TestRealtimeVoiceWebSocket:
         kame = next(provider for provider in payload["providers"] if provider["id"] == "kame")
         gemini = next(provider for provider in payload["providers"] if provider["id"] == "gemini")
         cartesia = next(provider for provider in payload["providers"] if provider["id"] == "cartesia")
+        nemotron = next(provider for provider in payload["providers"] if provider["id"] == "nemotron_speech")
+        magpie = next(provider for provider in payload["providers"] if provider["id"] == "magpie_tts")
         assert kame["provider"] == "gemma4"
         assert kame["kind"] == "kame_interface_oracle"
         assert kame["model"] == "gemma-4-E2B-it"
         assert kame["implemented"] is True
         assert gemini["api_key_present"] is True
+        assert nemotron["kind"] == "local_streaming_asr_bridge"
+        assert nemotron["model"] == "nemotron-speech-streaming-0.6b"
+        assert nemotron["base_url"] == "http://127.0.0.1:8767"
+        assert nemotron["upstream_base_url_env"] == "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL"
+        assert nemotron["upstream_base_url_present"] is True
+        assert nemotron["upstream_token_present"] is True
+        assert magpie["kind"] == "local_streaming_tts_bridge"
+        assert magpie["model"] == "magpie-local-streaming-tts"
+        assert magpie["base_url"] == "http://127.0.0.1:8768"
+        assert magpie["upstream_base_url_env"] == "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL"
+        assert magpie["upstream_base_url_present"] is True
+        assert magpie["upstream_token_present"] is True
         assert cartesia["implemented"] is True
         assert cartesia["bridge_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
         assert cartesia["voice_id_env"] == "CARTESIA_VOICE_ID"
+        assert payload["config"]["engine"] == "kame_interface_oracle"
+        assert payload["config"]["interface"]["provider"] == "gemma4"
+        assert payload["config"]["interface"]["model"] == "gemma-4-E2B-it"
+        assert payload["config"]["interface"]["audio_input"] == "native_audio"
+        assert payload["config"]["oracle"]["provider_name"] == "Spark Oracle"
+        assert payload["config"]["oracle"]["model"] == "gemma-4-26B-A4B-it"
+        assert payload["config"]["asr"]["local_provider"] == "nemotron_speech"
+        assert payload["config"]["asr"]["local_upstream_base_url_present"] is True
+        assert payload["config"]["tts"]["local_provider"] == "magpie_tts"
+        assert payload["config"]["tts"]["local_upstream_base_url_present"] is True
+        assert "secret-nemotron-token" not in json.dumps(payload)
+        assert "secret-magpie-token" not in json.dumps(payload)
         assert payload["discord"]["enabled"] is True
         assert payload["discord"]["bot_token_present"] is True
         assert payload["discord"]["sidecar_base_url"] == "http://127.0.0.1:8765"
