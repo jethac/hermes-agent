@@ -982,10 +982,16 @@ class ReferenceRealtimeVoiceSidecarSession:
                             "text": (
                                 "You are the low-latency KAME reflex for a Hermes realtime voice session. "
                                 "Listen to the audio segment and return only a compact JSON object. "
-                                "Required keys: intent, text. text should equal the best oracle-facing user "
-                                "wording. Optional keys: transcript, transcript_confidence. "
+                                "Required keys: route, intent, text. route must be one of local, defer, "
+                                "oracle_direct, or reject_or_clarify. text should equal the best "
+                                "oracle-facing user wording. For local or reject_or_clarify, include "
+                                "local_reply with the exact short phrase to speak. Optional keys: "
+                                "transcript, transcript_confidence. "
                                 "Use intent for what the user wants. Use transcript only as a verbatim "
                                 "hypothesis for names, numbers, code identifiers, and tool arguments. "
+                                "Only use local for greetings, repeats, can-you-hear-me checks, or low-risk "
+                                "conversational glue. Use oracle_direct for tools, files, memory, projects, "
+                                "or any nontrivial answer. "
                                 f"ASR evidence mode is {asr_mode}; do not rely on external tools. "
                                 "Do not add markdown or commentary."
                             ),
@@ -1447,6 +1453,21 @@ def _kame_reflex_payload_from_content(content: str) -> dict[str, Any]:
         "intent_source": str(parsed.get("intent_source") or "reflex_audio"),
         "transcript_source": str(parsed.get("transcript_source") or ("asr" if transcript else "none")),
     }
+    route = str(parsed.get("route") or "").strip()
+    if route:
+        payload["route"] = route
+    local_reply = (
+        str(
+            parsed.get("local_reply")
+            or parsed.get("reply")
+            or parsed.get("clarification")
+            or parsed.get("interface_reply")
+            or ""
+        )
+        .strip()
+    )
+    if local_reply:
+        payload["local_reply"] = local_reply
     if transcript:
         payload["transcript"] = transcript
     confidence = _bounded_confidence(parsed.get("transcript_confidence"))

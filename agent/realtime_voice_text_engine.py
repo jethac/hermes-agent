@@ -25,7 +25,7 @@ from agent.realtime_voice import (
     transcript_metadata_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
-from agent.realtime_voice_kame import KameOracleRequest
+from agent.realtime_voice_kame import KameOracleRequest, KameRoute
 from agent.realtime_voice_oracle import HermesRealtimeOracle, NullRealtimeOracle
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, wants_realtime_sidecar
@@ -426,6 +426,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             payload.update(assistant_metadata)
         await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
         self._assistant_metadata_by_generation[generation] = assistant_metadata
+        local_reply = _kame_local_reply(oracle_request)
+        if local_reply:
+            self._active_task = asyncio.create_task(
+                self._speak_kame_local_reply(local_reply, generation, assistant_metadata)
+            )
+            return
         self._active_task = asyncio.create_task(
             self._answer_and_speak(
                 transcript,
@@ -461,6 +467,54 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             payload=payload,
             fallback_text=transcript,
         )
+
+    async def _speak_kame_local_reply(
+        self,
+        reply: str,
+        playback_generation: int,
+        metadata: dict,
+    ) -> None:
+        try:
+            planned_reply = self._planner.clean(reply)
+            if not planned_reply:
+                return
+            await self._emit(
+                VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                {
+                    "text": planned_reply,
+                    "playback_generation": playback_generation,
+                    "local_reply": True,
+                    **metadata,
+                },
+            )
+            await self._speak_chunk(planned_reply, playback_generation)
+            plan = self._planner.plan(planned_reply)
+            if not plan.committed_text:
+                return
+            if playback_generation == self._playback_generation:
+                await self._emit(
+                    VoiceEventType.ASSISTANT_COMMIT,
+                    {
+                        "text": plan.committed_text,
+                        "playback_generation": playback_generation,
+                        "local_reply": True,
+                        **metadata,
+                    },
+                )
+        except asyncio.CancelledError:
+            if not self._closed and playback_generation == self._playback_generation:
+                await self._emit(
+                    VoiceEventType.ASSISTANT_COMMIT,
+                    {"interrupted": True, "text": "", "playback_generation": playback_generation},
+                )
+            raise
+        except Exception as exc:
+            await self._emit(
+                VoiceEventType.SESSION_ERROR,
+                {"error": f"local reply TTS failed: {sanitize_realtime_voice_error(exc)}"},
+            )
+        finally:
+            self._assistant_metadata_by_generation.pop(playback_generation, None)
 
     async def _answer_and_speak(
         self,
@@ -757,6 +811,14 @@ def _turn_acknowledgement_text(config: Optional[RealtimeVoiceSessionConfig]) -> 
     if not text:
         return ""
     return text[:120]
+
+
+def _kame_local_reply(request: Optional[KameOracleRequest]) -> str:
+    if request is None:
+        return ""
+    if request.route not in {KameRoute.LOCAL, KameRoute.REJECT_OR_CLARIFY}:
+        return ""
+    return request.local_reply.strip()
 
 
 def _metadata_bool(value: Any, *, default: bool = False) -> bool:

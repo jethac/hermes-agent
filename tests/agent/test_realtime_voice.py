@@ -21,7 +21,7 @@ from agent.realtime_voice import (
     validate_client_event,
     validate_server_event,
 )
-from agent.realtime_voice_kame import KameOracleRequest
+from agent.realtime_voice_kame import KameOracleRequest, KameRoute
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_reference_sidecar import (
     ReferenceRealtimeVoiceSidecarSession,
@@ -517,6 +517,7 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
         source="discord_voice",
         user_id="42",
         intent="Find the note from yesterday's meeting.",
+        route=KameRoute.ORACLE_DIRECT,
         transcript="find the node from yesterday's meeting",
         transcript_source="asr",
         transcript_confidence=0.73,
@@ -595,6 +596,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         request = oracle.requests[0]
         assert request.intent == "Find the note from yesterday's meeting."
         assert request.intent_source == "reflex_audio"
+        assert request.route == KameRoute.ORACLE_DIRECT
         assert request.transcript == "find the node from yesterday's meeting"
         assert request.transcript_source == "asr"
         assert request.transcript_confidence == 0.73
@@ -602,8 +604,73 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.user_id == "42"
         final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
         assert final.payload["kame_intent"] == "Find the note from yesterday's meeting."
+        assert final.payload["kame_route"] == "oracle_direct"
         assert final.payload["kame_transcript"] == "find the node from yesterday's meeting"
         assert spoken == ["Done."]
+
+    asyncio.run(run())
+
+
+def test_kame_engine_local_route_speaks_without_oracle(monkeypatch):
+    class UnexpectedOracle:
+        async def stream_answer_for_request(self, request):
+            raise AssertionError("local KAME route must not call oracle")
+
+        async def stream_answer_with_metadata(self, transcript, metadata):
+            raise AssertionError("local KAME route must not call oracle")
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        engine = KameInterfaceOracleEngine(oracle=UnexpectedOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "can you hear me",
+                    "text": "can you hear me",
+                    "intent": "The user is checking whether Hermes can hear them.",
+                    "route": "local",
+                    "local_reply": "Yes, I can hear you.",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        partial = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL)
+        commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        assert final.payload["kame_route"] == "local"
+        assert final.payload["kame_local_reply"] == "Yes, I can hear you."
+        assert partial.payload["local_reply"] is True
+        assert commit.payload["local_reply"] is True
+        assert commit.payload["text"] == "Yes, I can hear you."
+        assert spoken == ["Yes, I can hear you."]
 
     asyncio.run(run())
 
@@ -2526,7 +2593,8 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
         def read(self):
             return (
                 b'{"choices":[{"message":{"content":"'
-                b'{\\"intent\\":\\"Find the note from yesterday.\\",'
+                b'{\\"route\\":\\"oracle_direct\\",'
+                b'\\"intent\\":\\"Find the note from yesterday.\\",'
                 b'\\"text\\":\\"find the note from yesterday\\",'
                 b'\\"transcript\\":\\"find the node from yesterday\\",'
                 b'\\"transcript_confidence\\":0.71}'
@@ -2561,6 +2629,7 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
         "text": "find the note from yesterday",
         "intent": "Find the note from yesterday.",
         "intent_source": "reflex_audio",
+        "route": "oracle_direct",
         "transcript_source": "asr",
         "transcript": "find the node from yesterday",
         "transcript_confidence": 0.71,
@@ -2571,7 +2640,8 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     assert captured["body"]["response_format"] == {"type": "json_object"}
     prompt = captured["body"]["messages"][0]["content"][1]["text"]
     assert "KAME reflex" in prompt
-    assert "Required keys: intent, text" in prompt
+    assert "Required keys: route, intent, text" in prompt
+    assert "route must be one of local, defer, oracle_direct, or reject_or_clarify" in prompt
     assert "ASR evidence mode is on_escalation" in prompt
 
 

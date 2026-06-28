@@ -26,6 +26,8 @@ class KameOracleRequest:
     user_id: Optional[str]
     intent: str
     intent_source: str = "reflex_audio"
+    route: KameRoute = KameRoute.ORACLE_DIRECT
+    local_reply: str = ""
     transcript: str = ""
     transcript_source: str = "none"
     transcript_confidence: Optional[float] = None
@@ -49,6 +51,8 @@ class KameOracleRequest:
             "kame_source": self.source,
             "kame_intent": self.intent,
             "kame_intent_source": self.intent_source,
+            "kame_route": self.route.value,
+            "kame_local_reply": self.local_reply,
             "kame_transcript": self.transcript,
             "kame_transcript_source": self.transcript_source,
             "kame_mode": self.mode,
@@ -85,6 +89,12 @@ class KameOracleRequest:
         transcript_source = _optional_text(payload.get("transcript_source"))
         if not transcript_source:
             transcript_source = "asr" if transcript else "none"
+        local_reply = (
+            _optional_text(payload.get("local_reply"))
+            or _optional_text(payload.get("reply"))
+            or _optional_text(payload.get("clarification"))
+            or _optional_text(payload.get("interface_reply"))
+        )
         return cls(
             session_id=session_id,
             turn_id=_optional_text(payload.get("turn_id")) or turn_id,
@@ -92,6 +102,8 @@ class KameOracleRequest:
             user_id=_optional_text(payload.get("user_id")) or user_id,
             intent=intent.strip(),
             intent_source=_optional_text(payload.get("intent_source")) or "reflex_audio",
+            route=_route(payload.get("route")),
+            local_reply=local_reply,
             transcript=transcript.strip(),
             transcript_source=transcript_source,
             transcript_confidence=_confidence(payload.get("transcript_confidence")),
@@ -122,6 +134,16 @@ def _confidence(value: Any) -> Optional[float]:
     if parsed > 1.0:
         return 1.0
     return parsed
+
+
+def _route(value: Any) -> KameRoute:
+    text = _optional_text(value).lower()
+    if not text:
+        return KameRoute.ORACLE_DIRECT
+    try:
+        return KameRoute(text)
+    except ValueError:
+        return KameRoute.ORACLE_DIRECT
 
 
 def _positive_int(value: Any, *, default: int) -> int:
