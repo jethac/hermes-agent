@@ -35,6 +35,8 @@ def test_dgx_spark_eval_script_generates_full_kame_launch_pack():
     assert "DGX_SPARK_LOCAL_VOICE_STT_MODEL" in text
     assert "DGX_SPARK_LOCAL_VOICE_TTS_MODEL" in text
     assert "Full KAME stack pack: $KAME_STACK_DIR" in text
+    assert "python -m hermes_cli.realtime_voice_oracle_probe" in text
+    assert "--output \"$ARTIFACT_DIR/oracle-gemma4-probe.json\"" in text
     assert "CARTESIA_API_KEY" not in text.split("Track 0: full KAME DGX Spark launch pack", 1)[1].split(
         "Track A: Gemma 4 oracle probe",
         1,

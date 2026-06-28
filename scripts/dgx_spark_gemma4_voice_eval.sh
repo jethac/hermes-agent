@@ -58,6 +58,7 @@ run uv run python -m py_compile \
   hermes_cli/realtime_voice_profile.py \
   hermes_cli/realtime_voice_alpha_evidence.py \
   hermes_cli/realtime_voice_dgx_spark.py \
+  hermes_cli/realtime_voice_oracle_probe.py \
   hermes_cli/realtime_voice_cartesia_bridge.py \
   hermes_cli/web_server.py \
   agent/realtime_voice_cartesia_bridge.py
@@ -115,88 +116,10 @@ fi
 
 note "Track A: Gemma 4 oracle probe"
 if [[ -n "${DGX_SPARK_ORACLE_BASE_URL:-}" && -n "${DGX_SPARK_ORACLE_MODEL:-}" ]]; then
-  if run uv run python - "$ARTIFACT_DIR/oracle-gemma4-probe.json" <<'PY'
-import json
-import os
-import sys
-import time
-import urllib.error
-import urllib.request
-
-out = sys.argv[1]
-base = os.environ["DGX_SPARK_ORACLE_BASE_URL"].rstrip("/")
-model = os.environ["DGX_SPARK_ORACLE_MODEL"]
-api_key = os.environ.get("DGX_SPARK_ORACLE_API_KEY", "")
-prompt = os.environ.get(
-    "DGX_SPARK_ORACLE_PROMPT",
-    "You are Hermes's local oracle. In one short paragraph, explain your role in a KAME-style realtime voice session.",
-)
-
-headers = {"Content-Type": "application/json"}
-if api_key:
-    headers["Authorization"] = f"Bearer {api_key}"
-
-payload = {
-    "model": model,
-    "messages": [
-        {"role": "system", "content": "You are a concise local Hermes oracle benchmark."},
-        {"role": "user", "content": prompt},
-    ],
-    "temperature": 0.2,
-    "max_tokens": int(os.environ.get("DGX_SPARK_ORACLE_MAX_TOKENS", "220")),
-    "stream": False,
-}
-
-started = time.perf_counter()
-request = urllib.request.Request(
-    f"{base}/v1/chat/completions",
-    data=json.dumps(payload).encode("utf-8"),
-    headers=headers,
-    method="POST",
-)
-try:
-    with urllib.request.urlopen(request, timeout=float(os.environ.get("DGX_SPARK_ORACLE_TIMEOUT_SECONDS", "120"))) as response:
-        body = response.read()
-        status = response.status
-except urllib.error.HTTPError as exc:
-    body = exc.read()
-    status = exc.code
-except Exception as exc:
-    result = {"ok": False, "error": str(exc), "base_url": base, "model": model}
-    with open(out, "w", encoding="utf-8") as fh:
-        json.dump(result, fh, indent=2)
-    raise SystemExit(1)
-
-elapsed_ms = (time.perf_counter() - started) * 1000.0
-try:
-    data = json.loads(body.decode("utf-8"))
-except Exception:
-    data = {"raw": body.decode("utf-8", errors="replace")[:4000]}
-
-content = ""
-try:
-    content = data["choices"][0]["message"]["content"]
-except Exception:
-    pass
-usage = data.get("usage") if isinstance(data, dict) else {}
-completion_tokens = int((usage or {}).get("completion_tokens") or 0)
-tokens_per_second = completion_tokens / (elapsed_ms / 1000.0) if completion_tokens else None
-result = {
-    "ok": 200 <= int(status) < 300,
-    "status": status,
-    "base_url": base,
-    "model": model,
-    "elapsed_ms": round(elapsed_ms, 2),
-    "completion_tokens": completion_tokens,
-    "tokens_per_second": round(tokens_per_second, 2) if tokens_per_second else None,
-    "content_preview": content[:1000],
-    "usage": usage,
-}
-with open(out, "w", encoding="utf-8") as fh:
-    json.dump(result, fh, indent=2)
-if not result["ok"]:
-    raise SystemExit(1)
-PY
+  if run uv run python -m hermes_cli.realtime_voice_oracle_probe \
+    --output "$ARTIFACT_DIR/oracle-gemma4-probe.json" \
+    --base-url "$DGX_SPARK_ORACLE_BASE_URL" \
+    --model "$DGX_SPARK_ORACLE_MODEL"
   then
     record_pass "track A gemma4 oracle probe"
   else
