@@ -760,9 +760,35 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "ASR model used for oracle-verbatim evidence or text fallback",
         "category": "voice",
     },
+    "voice.realtime.oracle_provider": {
+        "type": "string",
+        "description": "Hermes oracle provider override for KAME realtime voice",
+        "category": "voice",
+    },
+    "voice.realtime.oracle_provider_name": {
+        "type": "string",
+        "description": "Display name for the KAME local oracle provider",
+        "category": "voice",
+    },
     "voice.realtime.preferred_local_oracle_model": {
         "type": "string",
         "description": "Preferred local Hermes oracle model label for KAME realtime voice",
+        "category": "voice",
+    },
+    "voice.realtime.oracle_model": {
+        "type": "string",
+        "description": "Hermes backend oracle model override for KAME realtime voice",
+        "category": "voice",
+    },
+    "voice.realtime.oracle_base_url": {
+        "type": "string",
+        "description": "OpenAI-compatible base URL for the KAME local oracle override",
+        "category": "voice",
+    },
+    "voice.realtime.oracle_api_mode": {
+        "type": "select",
+        "description": "Wire protocol used by the KAME local oracle override",
+        "options": ["chat_completions", "anthropic_messages", "codex_responses"],
         "category": "voice",
     },
     "voice.realtime.oracle_timeout_seconds": {
@@ -1093,6 +1119,16 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "ASR model override for Discord oracle-verbatim evidence",
         "category": "discord",
     },
+    "discord.realtime_voice.oracle_provider": {
+        "type": "string",
+        "description": "Hermes oracle provider override for Discord KAME realtime voice",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_provider_name": {
+        "type": "string",
+        "description": "Display name for the Discord KAME local oracle provider",
+        "category": "discord",
+    },
     "discord.realtime_voice.preferred_local_oracle_model": {
         "type": "string",
         "description": "Preferred local Hermes oracle model label for Discord KAME realtime voice",
@@ -1101,6 +1137,17 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.oracle_model": {
         "type": "string",
         "description": "Hermes backend oracle model override for Discord realtime voice sessions",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_base_url": {
+        "type": "string",
+        "description": "OpenAI-compatible base URL for the Discord KAME local oracle override",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_api_mode": {
+        "type": "select",
+        "description": "Wire protocol used by the Discord KAME local oracle override",
+        "options": ["chat_completions", "anthropic_messages", "codex_responses"],
         "category": "discord",
     },
     "discord.realtime_voice.oracle_timeout_seconds": {
@@ -1382,6 +1429,11 @@ class RealtimeVoiceProfileApply(BaseModel):
     model: str = ""
     voice: str = ""
     api_key_env: str = ""
+    interface_audio_input: str = "auto"
+    asr_mode: str = "on_escalation"
+    oracle_model: str = ""
+    oracle_base_url: str = ""
+    oracle_provider_name: str = ""
     streaming_stt_base_url: str = ""
     streaming_tts_base_url: str = ""
     streaming_stt_model: str = ""
@@ -13987,7 +14039,12 @@ def _realtime_voice_current_evidence_manifest(
     asr_mode: str = "",
     asr_provider: str = "",
     asr_model: str = "",
+    oracle_provider: str = "",
+    oracle_provider_name: str = "",
     preferred_local_oracle_model: str = "",
+    oracle_model: str = "",
+    oracle_base_url: str = "",
+    oracle_api_mode: str = "",
     max_spoken_sentences: int = 2,
     tts_provider: str = "",
     tts_model: str = "",
@@ -14009,7 +14066,12 @@ def _realtime_voice_current_evidence_manifest(
         "asr_mode": str(asr_mode or ""),
         "asr_provider": str(asr_provider or ""),
         "asr_model": str(asr_model or ""),
+        "oracle_provider": str(oracle_provider or ""),
+        "oracle_provider_name": str(oracle_provider_name or ""),
         "preferred_local_oracle_model": str(preferred_local_oracle_model or ""),
+        "oracle_model": str(oracle_model or ""),
+        "oracle_base_url": _redact_realtime_voice_url(str(oracle_base_url or "")) if oracle_base_url else "",
+        "oracle_api_mode": str(oracle_api_mode or ""),
         "max_spoken_sentences": int(max_spoken_sentences or 2),
         "tts_provider": str(tts_provider or ""),
         "tts_model": str(tts_model or ""),
@@ -14387,8 +14449,12 @@ def _normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, A
     _set_realtime_voice_default(config, "interface_audio_input", interface.get("audio_input"))
     _set_realtime_voice_default(config, "asr_mode", interface.get("asr_mode"))
 
+    _set_realtime_voice_default(config, "oracle_provider", oracle.get("provider"))
+    _set_realtime_voice_default(config, "oracle_provider_name", oracle.get("provider_name"))
     _set_realtime_voice_default(config, "preferred_local_oracle_model", oracle.get("preferred_local_model"))
     _set_realtime_voice_default(config, "oracle_model", oracle.get("model"))
+    _set_realtime_voice_default(config, "oracle_base_url", oracle.get("base_url"))
+    _set_realtime_voice_default(config, "oracle_api_mode", oracle.get("api_mode"))
     _set_realtime_voice_default(config, "max_spoken_sentences", oracle.get("max_spoken_sentences"))
     if config.get("oracle_timeout_seconds") is None:
         if oracle.get("timeout_seconds") is not None:
@@ -14484,7 +14550,16 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         )
         or ""
     )
+    oracle_provider = str(_first_realtime_voice_config_value(realtime, ("oracle_provider",), ("oracle", "provider"), default="") or "")
+    oracle_provider_name = str(
+        _first_realtime_voice_config_value(realtime, ("oracle_provider_name",), ("oracle", "provider_name"), default="")
+        or ""
+    )
     oracle_model = str(_first_realtime_voice_config_value(realtime, ("oracle_model",), ("oracle", "model"), default="") or "")
+    oracle_base_url = str(_first_realtime_voice_config_value(realtime, ("oracle_base_url",), ("oracle", "base_url"), default="") or "")
+    oracle_api_mode = str(
+        _first_realtime_voice_config_value(realtime, ("oracle_api_mode",), ("oracle", "api_mode"), default="") or ""
+    )
     oracle_timeout_seconds = _realtime_voice_oracle_timeout_seconds(realtime)
     max_spoken_sentences = _realtime_voice_max_spoken_sentences(realtime)
     tts_provider = str(_first_realtime_voice_config_value(realtime, ("tts_provider",), ("tts", "provider"), default="") or "")
@@ -14540,7 +14615,12 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         asr_mode=asr_mode,
         asr_provider=asr_provider,
         asr_model=asr_model,
+        oracle_provider=oracle_provider,
+        oracle_provider_name=oracle_provider_name,
         preferred_local_oracle_model=preferred_local_oracle_model,
+        oracle_model=oracle_model,
+        oracle_base_url=oracle_base_url,
+        oracle_api_mode=oracle_api_mode,
         max_spoken_sentences=max_spoken_sentences,
         tts_provider=tts_provider,
         tts_model=tts_model,
@@ -14655,8 +14735,12 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "asr_mode": asr_mode or None,
         "asr_provider": asr_provider or None,
         "asr_model": asr_model or None,
+        "oracle_provider": oracle_provider or None,
+        "oracle_provider_name": oracle_provider_name or None,
         "preferred_local_oracle_model": preferred_local_oracle_model or None,
         "oracle_model": oracle_model or None,
+        "oracle_base_url": _redact_realtime_voice_url(oracle_base_url) if oracle_base_url else None,
+        "oracle_api_mode": oracle_api_mode or None,
         "oracle_timeout_seconds": oracle_timeout_seconds,
         "max_spoken_sentences": max_spoken_sentences,
         "tts_provider": tts_provider or None,
@@ -14697,7 +14781,12 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "interface_audio_input": interface_audio_input or None,
             "asr_provider": asr_provider or None,
             "asr_model": asr_model or None,
+            "oracle_provider": oracle_provider or None,
+            "oracle_provider_name": oracle_provider_name or None,
             "preferred_local_oracle_model": preferred_local_oracle_model or None,
+            "oracle_model": oracle_model or None,
+            "oracle_base_url": _redact_realtime_voice_url(oracle_base_url) if oracle_base_url else None,
+            "oracle_api_mode": oracle_api_mode or None,
             "oracle_timeout_seconds": oracle_timeout_seconds,
             "max_spoken_sentences": max_spoken_sentences,
             "tts_provider": tts_provider or None,
@@ -14868,9 +14957,12 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
         DEFAULT_ELEVENLABS_TTS_MODEL,
         DEFAULT_GEMINI_LIVE_MODEL,
         DEFAULT_GEMINI_LIVE_VOICE,
+        DEFAULT_KAME_ORACLE_MODEL,
+        DEFAULT_KAME_REFLEX_MODEL,
         DEFAULT_OPENAI_REALTIME_MODEL,
         DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL,
         DEFAULT_OPENAI_REALTIME_VOICE,
+        build_kame_realtime_voice_profile,
         build_gemini_live_voice_profile,
         build_openai_realtime_voice_profile,
         build_realtime_voice_live_like_profile,
@@ -14891,6 +14983,19 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             api_key_env=body.api_key_env or "GEMINI_API_KEY",
             google_search=bool(body.google_search),
             oracle_tool=bool(body.oracle_tool),
+        )
+    if preset in {"kame", "kame_interface_oracle"}:
+        return build_kame_realtime_voice_profile(
+            reflex_model=body.model or DEFAULT_KAME_REFLEX_MODEL,
+            interface_audio_input=body.interface_audio_input or "auto",
+            asr_mode=body.asr_mode or "on_escalation",
+            preferred_local_oracle_model=body.oracle_model or DEFAULT_KAME_ORACLE_MODEL,
+            oracle_base_url=body.oracle_base_url,
+            oracle_provider_name=body.oracle_provider_name,
+            streaming_stt_base_url=body.streaming_stt_base_url,
+            streaming_tts_base_url=body.streaming_tts_base_url,
+            streaming_stt_model=body.streaming_stt_model or "portable-streaming-asr",
+            streaming_tts_model=body.streaming_tts_model or "portable-streaming-voice",
         )
     if preset == "elevenlabs":
         return build_realtime_voice_live_like_profile(
@@ -14950,7 +15055,12 @@ def _apply_realtime_voice_profile_body(body: RealtimeVoiceProfileApply, profile:
                 "asr_mode": realtime.get("asr_mode") or "on_escalation",
                 "asr_provider": realtime.get("asr_provider") or "",
                 "asr_model": realtime.get("asr_model") or "",
+                "oracle_provider": realtime.get("oracle_provider") or "",
+                "oracle_provider_name": realtime.get("oracle_provider_name") or "",
                 "preferred_local_oracle_model": realtime.get("preferred_local_oracle_model") or "",
+                "oracle_model": realtime.get("oracle_model") or "",
+                "oracle_base_url": realtime.get("oracle_base_url") or "",
+                "oracle_api_mode": realtime.get("oracle_api_mode") or "",
                 "oracle_timeout_seconds": _positive_float_config(
                     realtime.get("oracle_timeout_seconds"),
                     default=60.0,
@@ -15020,6 +15130,11 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     output_events_policy = _realtime_voice_output_events_payload(realtime)
     asr_provider = str(realtime.get("asr_provider") or "")
     asr_model = str(realtime.get("asr_model") or realtime.get("streaming_stt_model") or "")
+    oracle_provider = str(realtime.get("oracle_provider") or "")
+    oracle_provider_name = str(realtime.get("oracle_provider_name") or "")
+    oracle_model = str(realtime.get("oracle_model") or "")
+    oracle_base_url = str(realtime.get("oracle_base_url") or "")
+    oracle_api_mode = str(realtime.get("oracle_api_mode") or "")
     tts_provider = str(realtime.get("tts_provider") or "")
     tts_model = str(realtime.get("tts_model") or realtime.get("streaming_tts_model") or "")
     tts_voice = str(realtime.get("tts_voice") or realtime.get("streaming_tts_voice") or "")
@@ -15051,7 +15166,12 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         asr_mode=str(realtime.get("asr_mode") or ""),
         asr_provider=asr_provider,
         asr_model=asr_model,
+        oracle_provider=oracle_provider,
+        oracle_provider_name=oracle_provider_name,
         preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or ""),
+        oracle_model=oracle_model,
+        oracle_base_url=oracle_base_url,
+        oracle_api_mode=oracle_api_mode,
         max_spoken_sentences=_positive_int_config(realtime.get("max_spoken_sentences"), default=2),
         tts_provider=tts_provider,
         tts_model=tts_model,
@@ -15115,7 +15235,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         asr_provider=asr_provider or None,
         asr_model=asr_model or None,
         preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or "") or None,
-        oracle_model=str(realtime.get("oracle_model") or "") or None,
+        oracle_model=oracle_model or None,
         oracle_timeout_seconds=_positive_float_config(
             realtime.get("oracle_timeout_seconds"),
             default=60.0,
@@ -15163,8 +15283,12 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "asr_mode": str(realtime.get("asr_mode") or "") or None,
             "asr_provider": asr_provider or None,
             "asr_model": asr_model or None,
+            "oracle_provider": oracle_provider or None,
+            "oracle_provider_name": oracle_provider_name or None,
             "preferred_local_oracle_model": str(realtime.get("preferred_local_oracle_model") or "") or None,
-            "oracle_model": str(realtime.get("oracle_model") or "") or None,
+            "oracle_model": oracle_model or None,
+            "oracle_base_url": _redact_realtime_voice_url(oracle_base_url) if oracle_base_url else None,
+            "oracle_api_mode": oracle_api_mode or None,
             "oracle_timeout_seconds": _positive_float_config(
                 realtime.get("oracle_timeout_seconds"),
                 default=60.0,

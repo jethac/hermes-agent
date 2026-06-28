@@ -3228,6 +3228,16 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.gemini_live_voice"]["type"] == "string"
         assert CONFIG_SCHEMA["voice.realtime.gemini_live_google_search"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.gemini_live_oracle_tool"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_provider"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_provider_name"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_model"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_base_url"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_api_mode"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_api_mode"]["options"] == [
+            "chat_completions",
+            "anthropic_messages",
+            "codex_responses",
+        ]
 
     def test_discord_realtime_voice_config_fields_are_exposed(self):
         from hermes_cli.web_server import CONFIG_SCHEMA
@@ -3259,9 +3269,18 @@ class TestBuildSchemaFromConfig:
         ]
         assert CONFIG_SCHEMA["discord.realtime_voice.asr_provider"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.asr_model"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_provider"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_provider_name"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.preferred_local_oracle_model"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_model"]["type"] == "string"
         assert "Hermes backend oracle model" in CONFIG_SCHEMA["discord.realtime_voice.oracle_model"]["description"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_base_url"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_api_mode"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_api_mode"]["options"] == [
+            "chat_completions",
+            "anthropic_messages",
+            "codex_responses",
+        ]
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.max_spoken_sentences"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_provider"]["type"] == "string"
@@ -6989,6 +7008,32 @@ class TestRealtimeVoiceWebSocket:
         assert readiness["launch_review"]["issues"] == []
         assert config.metadata["require_live_like"] is False
 
+    def test_profile_apply_accepts_kame_local_oracle_profile(self):
+        body = self.ws_module.RealtimeVoiceProfileApply(
+            preset="kame",
+            model="gemma-4-E2B-it",
+            interface_audio_input="native_audio",
+            asr_mode="on_escalation",
+            oracle_model="gemma-4-26B-A4B-it",
+            oracle_base_url="http://spark.local:8001/v1",
+            oracle_provider_name="Spark Oracle",
+            streaming_stt_base_url="http://spark.local:8767",
+            streaming_tts_base_url="http://spark.local:8768",
+        )
+
+        profile = self.ws_module._realtime_voice_profile_for_request(body)
+
+        assert profile["engine"] == "kame_interface_oracle"
+        assert profile["frontend_model"] == "gemma-4-E2B-it"
+        assert profile["interface_audio_input"] == "native_audio"
+        assert profile["asr_mode"] == "on_escalation"
+        assert profile["oracle_provider"] == "custom"
+        assert profile["oracle_provider_name"] == "Spark Oracle"
+        assert profile["oracle_model"] == "gemma-4-26B-A4B-it"
+        assert profile["oracle_base_url"] == "http://spark.local:8001/v1"
+        assert profile["streaming_stt_base_url"] == "http://spark.local:8767"
+        assert profile["streaming_tts_base_url"] == "http://spark.local:8768"
+
     def test_config_accepts_documented_nested_kame_shape(self, monkeypatch):
         class FakeWebSocket:
             query_params = {"session_id": "voice-nested"}
@@ -7015,8 +7060,12 @@ class TestRealtimeVoiceWebSocket:
                         },
                         "oracle": {
                             "mode": "hermes_active_oracle",
+                            "provider": "custom",
+                            "provider_name": "Spark Oracle",
                             "preferred_local_model": "gemma-4-26B-A4B-it",
                             "model": "configured-oracle",
+                            "base_url": "http://spark.local:8001/v1",
+                            "api_mode": "chat_completions",
                             "timeout_ms": 12000,
                             "max_spoken_sentences": 2,
                         },
@@ -7065,7 +7114,12 @@ class TestRealtimeVoiceWebSocket:
         assert config.metadata["interface_temperature"] == 0.3
         assert config.metadata["interface_max_output_tokens"] == 96
         assert config.metadata["interface_timeout_seconds"] == 0.7
+        assert config.metadata["oracle_provider"] == "custom"
+        assert config.metadata["oracle_provider_name"] == "Spark Oracle"
         assert config.metadata["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+        assert config.metadata["oracle_model"] == "configured-oracle"
+        assert config.metadata["oracle_base_url"] == "http://spark.local:8001/v1"
+        assert config.metadata["oracle_api_mode"] == "chat_completions"
         assert status["frontend_provider"] == "openai_compatible"
         assert status["frontend_model"] == "gemma-4-E2B-it"
         assert status["interface_temperature"] == 0.3
@@ -7073,6 +7127,13 @@ class TestRealtimeVoiceWebSocket:
         assert status["interface_timeout_seconds"] == 0.7
         assert status["asr_provider"] == "nemotron"
         assert status["tts_provider"] == "cartesia"
+        assert status["oracle_provider"] == "custom"
+        assert status["oracle_provider_name"] == "Spark Oracle"
+        assert status["oracle_model"] == "configured-oracle"
+        assert status["oracle_base_url"] == "http://spark.local:8001/v1"
+        assert status["oracle_api_mode"] == "chat_completions"
+        assert status["kame"]["oracle_provider"] == "custom"
+        assert status["kame"]["oracle_base_url"] == "http://spark.local:8001/v1"
         assert status["oracle_timeout_seconds"] == 12.0
         assert status["barge_in_min_rms"] == 410
         assert status["barge_in_min_speech_ms"] == 130
@@ -7655,7 +7716,12 @@ class TestRealtimeVoiceWebSocket:
             "interface_audio_input": "native_audio",
             "asr_provider": "streaming_stt",
             "asr_model": "nemotron-speech",
+            "oracle_provider": None,
+            "oracle_provider_name": None,
             "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
+            "oracle_model": None,
+            "oracle_base_url": None,
+            "oracle_api_mode": None,
             "oracle_timeout_seconds": 42.0,
             "max_spoken_sentences": 4,
             "tts_provider": "cartesia",

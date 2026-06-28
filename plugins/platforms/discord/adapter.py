@@ -70,8 +70,12 @@ class DiscordVoiceSessionState:
     asr_mode: Optional[str] = None
     asr_provider: Optional[str] = None
     asr_model: Optional[str] = None
+    oracle_provider: Optional[str] = None
+    oracle_provider_name: Optional[str] = None
     preferred_local_oracle_model: Optional[str] = None
     oracle_model: Optional[str] = None
+    oracle_base_url: Optional[str] = None
+    oracle_api_mode: Optional[str] = None
     oracle_timeout_seconds: float = 60.0
     max_spoken_sentences: int = 2
     tts_provider: Optional[str] = None
@@ -217,8 +221,12 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
     _discord_set_realtime_default(config, "interface_audio_input", interface.get("audio_input"))
     _discord_set_realtime_default(config, "asr_mode", interface.get("asr_mode"))
 
+    _discord_set_realtime_default(config, "oracle_provider", oracle.get("provider"))
+    _discord_set_realtime_default(config, "oracle_provider_name", oracle.get("provider_name"))
     _discord_set_realtime_default(config, "preferred_local_oracle_model", oracle.get("preferred_local_model"))
     _discord_set_realtime_default(config, "oracle_model", oracle.get("model"))
+    _discord_set_realtime_default(config, "oracle_base_url", oracle.get("base_url"))
+    _discord_set_realtime_default(config, "oracle_api_mode", oracle.get("api_mode"))
     _discord_set_realtime_default(config, "max_spoken_sentences", oracle.get("max_spoken_sentences"))
     if config.get("oracle_timeout_seconds") is None:
         if oracle.get("timeout_seconds") is not None:
@@ -2967,8 +2975,12 @@ class DiscordAdapter(BasePlatformAdapter):
             "asr_model": None,
             "streaming_stt_base_url": None,
             "streaming_stt_token_env": None,
+            "oracle_provider": None,
+            "oracle_provider_name": None,
             "preferred_local_oracle_model": None,
             "oracle_model": None,
+            "oracle_base_url": None,
+            "oracle_api_mode": None,
             "oracle_timeout_seconds": 60.0,
             "max_spoken_sentences": 2,
             "tts_provider": None,
@@ -3199,8 +3211,12 @@ class DiscordAdapter(BasePlatformAdapter):
             "asr_mode": str(cfg.get("asr_mode") or "") or None,
             "asr_provider": str(cfg.get("asr_provider") or "") or None,
             "asr_model": str(cfg.get("asr_model") or "") or None,
+            "oracle_provider": str(cfg.get("oracle_provider") or "") or None,
+            "oracle_provider_name": str(cfg.get("oracle_provider_name") or "") or None,
             "preferred_local_oracle_model": str(cfg.get("preferred_local_oracle_model") or "") or None,
             "oracle_model": str(cfg.get("oracle_model") or "") or None,
+            "oracle_base_url": str(cfg.get("oracle_base_url") or "") or None,
+            "oracle_api_mode": str(cfg.get("oracle_api_mode") or "") or None,
             "oracle_timeout_seconds": float(cfg.get("oracle_timeout_seconds") or 60.0),
             "max_spoken_sentences": int(cfg.get("max_spoken_sentences") or 2),
             "tts_provider": str(cfg.get("tts_provider") or "") or None,
@@ -3273,11 +3289,18 @@ class DiscordAdapter(BasePlatformAdapter):
             "asr_mode": getattr(state, "asr_mode", None) or architecture["asr_mode"],
             "asr_provider": getattr(state, "asr_provider", None) or architecture["asr_provider"],
             "asr_model": getattr(state, "asr_model", None) or architecture["asr_model"],
+            "oracle_provider": getattr(state, "oracle_provider", None) or architecture["oracle_provider"],
+            "oracle_provider_name": (
+                getattr(state, "oracle_provider_name", None)
+                or architecture["oracle_provider_name"]
+            ),
             "preferred_local_oracle_model": (
                 getattr(state, "preferred_local_oracle_model", None)
                 or architecture["preferred_local_oracle_model"]
             ),
             "oracle_model": state.oracle_model or architecture["oracle_model"],
+            "oracle_base_url": getattr(state, "oracle_base_url", None) or architecture["oracle_base_url"],
+            "oracle_api_mode": getattr(state, "oracle_api_mode", None) or architecture["oracle_api_mode"],
             "oracle_timeout_seconds": state.oracle_timeout_seconds or architecture["oracle_timeout_seconds"],
             "max_spoken_sentences": state.max_spoken_sentences or architecture["max_spoken_sentences"],
             "tts_provider": getattr(state, "tts_provider", None) or architecture["tts_provider"],

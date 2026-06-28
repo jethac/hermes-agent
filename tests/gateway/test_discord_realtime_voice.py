@@ -114,8 +114,12 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
                         "asr_mode": "on_escalation",
                     },
                     "oracle": {
+                        "provider": "custom",
+                        "provider_name": "Spark Oracle",
                         "preferred_local_model": "gemma-4-26B-A4B-it",
                         "model": "configured-oracle",
+                        "base_url": "http://spark.local:8001/v1",
+                        "api_mode": "chat_completions",
                         "timeout_ms": 12000,
                         "max_spoken_sentences": 2,
                     },
@@ -174,8 +178,12 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["asr_mode"] == "on_escalation"
     assert cfg["asr_provider"] == "nemotron"
     assert cfg["asr_model"] == "nemotron-speech"
+    assert cfg["oracle_provider"] == "custom"
+    assert cfg["oracle_provider_name"] == "Spark Oracle"
     assert cfg["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
     assert cfg["oracle_model"] == "configured-oracle"
+    assert cfg["oracle_base_url"] == "http://spark.local:8001/v1"
+    assert cfg["oracle_api_mode"] == "chat_completions"
     assert cfg["oracle_timeout_seconds"] == 12.0
     assert cfg["tts_provider"] == "cartesia"
     assert cfg["tts_model"] == "sonic-3.5"
