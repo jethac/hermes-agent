@@ -115,6 +115,8 @@ def _passing_benchmark_evidence() -> list[dict]:
         },
         {"kind": "kame_smoke_result", "name": "all_local_smoke", "ok": True},
         {"kind": "kame_smoke_result", "name": "cloud_fallback_smoke", "ok": True},
+        {"kind": "kame_smoke_result", "name": "capability_honesty_smoke", "ok": True},
+        {"kind": "kame_smoke_result", "name": "barge_in_interruption_smoke", "ok": True},
     ]
 
 
@@ -143,6 +145,8 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     assert manifest["roles"]["tts"]["default_adapter"] == "loopback_smoke_bridge"
     assert manifest["roles"]["tts"]["production_replacement"] == "local_streaming_tts"
     assert "all_local_smoke" in manifest["evidence_required"]
+    assert "capability_honesty_smoke" in manifest["evidence_required"]
+    assert "barge_in_interruption_smoke" in manifest["evidence_required"]
 
 
 def test_rendered_compose_has_reflex_oracle_and_sidecar_without_secret_material(tmp_path):
@@ -233,8 +237,14 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert evidence_template[0]["model"] == "gemma-4-E2B-it"
     assert evidence_template[0]["input"] == "direct_audio"
     assert evidence_template[0]["metrics"]["speech_end_to_interface_decision_ms"] is None
-    assert evidence_template[-2]["name"] == "all_local_smoke"
-    assert evidence_template[-2]["ok"] is False
+    smoke_entries = [entry for entry in evidence_template if entry.get("kind") == "kame_smoke_result"]
+    assert [entry["name"] for entry in smoke_entries] == [
+        "all_local_smoke",
+        "cloud_fallback_smoke",
+        "capability_honesty_smoke",
+        "barge_in_interruption_smoke",
+    ]
+    assert all(entry["ok"] is False for entry in smoke_entries)
 
 
 def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation(tmp_path):
@@ -401,6 +411,8 @@ def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_pat
     assert result["coverage"]["local_asr_tts_benchmark_matrix"] is True
     assert result["coverage"]["all_local_smoke"] is True
     assert result["coverage"]["cloud_fallback_smoke"] is True
+    assert result["coverage"]["capability_honesty_smoke"] is True
+    assert result["coverage"]["barge_in_interruption_smoke"] is True
 
 
 def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):
@@ -425,6 +437,23 @@ def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):
         "requires direct_audio and stt_fallback results for every interface model"
     ) in result["issues"]
     assert "cloud_fallback_smoke: missing passing smoke result" in result["issues"]
+
+
+def test_benchmark_evidence_validator_requires_capability_and_interruption_smokes(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    evidence = [
+        entry
+        for entry in _passing_benchmark_evidence()
+        if entry.get("name") not in {"capability_honesty_smoke", "barge_in_interruption_smoke"}
+    ]
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["capability_honesty_smoke"] is False
+    assert result["coverage"]["barge_in_interruption_smoke"] is False
+    assert "capability_honesty_smoke: missing passing smoke result" in result["issues"]
+    assert "barge_in_interruption_smoke: missing passing smoke result" in result["issues"]
 
 
 def test_benchmark_evidence_validator_requires_every_interface_candidate(tmp_path):

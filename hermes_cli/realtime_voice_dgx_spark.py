@@ -23,6 +23,24 @@ DEFAULT_ASR_BASE_URL = "http://127.0.0.1:8767"
 DEFAULT_TTS_BASE_URL = "http://127.0.0.1:8768"
 DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:latest"
 DEFAULT_HERMES_IMAGE = "ghcr.io/astral-sh/uv:python3.12-bookworm-slim"
+REQUIRED_DGX_SPARK_SMOKES: tuple[tuple[str, str], ...] = (
+    (
+        "all_local_smoke",
+        "Set ok=true only after Discord or loopback voice proves local interface, oracle, ASR, TTS, and sidecar are all healthy.",
+    ),
+    (
+        "cloud_fallback_smoke",
+        "Set ok=true only after sidecar/local-provider unavailability falls back according to configured policy.",
+    ),
+    (
+        "capability_honesty_smoke",
+        "Set ok=true only after the live KAME path answers voice-capability checks without claiming it cannot hear or speak.",
+    ),
+    (
+        "barge_in_interruption_smoke",
+        "Set ok=true only after confirmed user speech during playback stops audio within target and avoids committing the interrupted response as complete.",
+    ),
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -267,6 +285,8 @@ def build_dgx_spark_stack_manifest(
             "local_asr_tts_benchmark_matrix",
             "all_local_smoke",
             "cloud_fallback_smoke",
+            "capability_honesty_smoke",
+            "barge_in_interruption_smoke",
         ],
     }
 
@@ -749,20 +769,8 @@ def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> li
         )
 
     template.extend(
-        [
-            {
-                "kind": "kame_smoke_result",
-                "name": "all_local_smoke",
-                "ok": False,
-                "notes": "Set ok=true only after Discord or loopback voice proves local interface, oracle, ASR, TTS, and sidecar are all healthy.",
-            },
-            {
-                "kind": "kame_smoke_result",
-                "name": "cloud_fallback_smoke",
-                "ok": False,
-                "notes": "Set ok=true only after sidecar/local-provider unavailability falls back according to configured policy.",
-            },
-        ]
+        {"kind": "kame_smoke_result", "name": name, "ok": False, "notes": notes}
+        for name, notes in REQUIRED_DGX_SPARK_SMOKES
     )
     return template
 
@@ -893,7 +901,7 @@ def validate_dgx_spark_benchmark_evidence(
     coverage["local_asr_tts_benchmark_matrix"] = (
         coverage.get("speech:oracle_verbatim_asr") is True and coverage.get("speech:tts") is True
     )
-    for smoke_name in ("all_local_smoke", "cloud_fallback_smoke"):
+    for smoke_name, _notes in REQUIRED_DGX_SPARK_SMOKES:
         ok = _has_passing_smoke(entries, smoke_name)
         coverage[smoke_name] = ok
         if not ok:
