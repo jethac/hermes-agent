@@ -123,6 +123,7 @@ class KameOracleRequest:
     intent: str
     intent_source: str = "reflex_audio"
     route: KameRoute = KameRoute.ORACLE_DIRECT
+    route_confidence: Optional[float] = None
     local_reply: str = ""
     transcript: str = ""
     transcript_source: str = "none"
@@ -164,6 +165,8 @@ class KameOracleRequest:
             "max_spoken_sentences": self.max_spoken_sentences,
             "kame_requested_response_style": response_style,
         }
+        if self.route_confidence is not None:
+            metadata["kame_route_confidence"] = self.route_confidence
         if self.user_id:
             metadata["kame_user_id"] = self.user_id
         if self.transcript_confidence is not None:
@@ -240,6 +243,9 @@ class KameOracleRequest:
             intent=intent.strip(),
             intent_source=_optional_text(payload.get("intent_source")) or "reflex_audio",
             route=_route(payload.get("route")),
+            route_confidence=_confidence(
+                payload.get("route_confidence") if payload.get("route_confidence") is not None else payload.get("confidence")
+            ),
             local_reply=local_reply,
             transcript=transcript.strip(),
             transcript_source=transcript_source,

@@ -594,6 +594,7 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
         user_id="42",
         intent="Find the note from yesterday's meeting.",
         route=KameRoute.ORACLE_DIRECT,
+        route_confidence=0.81,
         transcript="find the note from yesterday's meeting",
         transcript_source="reflex_audio",
         transcript_confidence=0.73,
@@ -608,6 +609,7 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
 
     assert "KAME request" in prompt
     assert "Reflex interpreted intent (reflex_audio): Find the note" in prompt
+    assert "Reflex route: oracle_direct (confidence 0.81)." in prompt
     assert "Reflex transcript hypothesis (reflex_audio): find the note" in prompt
     assert "Verbatim ASR evidence (asr): find the node" in prompt
     assert "tool arguments" in prompt
@@ -657,6 +659,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
                     "transcript": "find the note from yesterday's meeting",
                     "intent": "Find the note from yesterday's meeting.",
                     "intent_source": "reflex_audio",
+                    "route_confidence": 0.81,
                     "transcript_source": "reflex_audio",
                     "transcript_confidence": 0.73,
                     "asr_transcript": "find the node from yesterday's meeting",
@@ -681,6 +684,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.intent == "Find the note from yesterday's meeting."
         assert request.intent_source == "reflex_audio"
         assert request.route == KameRoute.ORACLE_DIRECT
+        assert request.route_confidence == 0.81
         assert request.transcript == "find the note from yesterday's meeting"
         assert request.transcript_source == "reflex_audio"
         assert request.transcript_confidence == 0.73
@@ -704,15 +708,18 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         assert final.payload["kame_intent"] == "Find the note from yesterday's meeting."
         assert final.payload["kame_route"] == "oracle_direct"
+        assert final.payload["kame_route_confidence"] == 0.81
         assert final.payload["kame_transcript"] == "find the note from yesterday's meeting"
         assert final.payload["kame_asr_transcript"] == "find the node from yesterday's meeting"
         assert final.payload["kame_cancellation_token"] == "voice-123:1:cancel"
         assert intent.payload["route"] == "oracle_direct"
+        assert intent.payload["route_confidence"] == 0.81
         assert intent.payload["intent"] == "Find the note from yesterday's meeting."
         assert intent.payload["transcript"] == "find the note from yesterday's meeting"
         assert intent.payload["asr_transcript"] == "find the node from yesterday's meeting"
         assert intent.payload["cancellation_token"] == "voice-123:1:cancel"
         assert oracle_request.payload["turn_id"] == "voice-123:1"
+        assert oracle_request.payload["route_confidence"] == 0.81
         assert oracle_request.payload["text"] == "find the node from yesterday's meeting"
         assert oracle_request.payload["transcript"] == "find the note from yesterday's meeting"
         assert oracle_request.payload["asr_transcript"] == "find the node from yesterday's meeting"
@@ -723,6 +730,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         }
         assert oracle_request.payload["cancellation_token"] == "voice-123:1:cancel"
         assert interface_commit.payload["text"] == "Done."
+        assert interface_commit.payload["route_confidence"] == 0.81
         assert interface_commit.payload["cancellation_token"] == "voice-123:1:cancel"
         assert session_metrics.payload["outcome"] == "oracle_commit"
         assert session_metrics.payload["oracle_called"] is True

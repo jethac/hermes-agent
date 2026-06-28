@@ -187,6 +187,8 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     asr_transcript = _metadata_text(metadata.get("kame_asr_transcript"))
     asr_transcript_source = _metadata_text(metadata.get("kame_asr_transcript_source"))
     intent_source = _metadata_text(metadata.get("kame_intent_source"))
+    route = _metadata_text(metadata.get("kame_route"))
+    route_confidence = _metadata_float(metadata.get("kame_route_confidence"))
     interface_already_said = _metadata_text(metadata.get("kame_interface_already_said"))
     summary = _metadata_text(metadata.get("kame_conversation_summary"))
     response_style = _metadata_response_style(metadata.get("kame_requested_response_style"))
@@ -197,6 +199,11 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     ]
     if intent:
         parts.append(f"Reflex interpreted intent ({intent_source or 'reflex'}): {intent}")
+    if route:
+        if route_confidence is None:
+            parts.append(f"Reflex route: {route}.")
+        else:
+            parts.append(f"Reflex route: {route} (confidence {route_confidence:.2f}).")
     transcript_source_is_asr = transcript_source.lower().startswith("asr")
     if transcript and not transcript_source_is_asr:
         parts.append(f"Reflex transcript hypothesis ({transcript_source or 'reflex_audio'}): {transcript}")
@@ -255,6 +262,20 @@ def _metadata_positive_int(value: object) -> Optional[int]:
         parsed = int(value)
         return parsed if parsed > 0 else None
     return None
+
+
+def _metadata_float(value: object) -> Optional[float]:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0.0:
+        return 0.0
+    if parsed > 1.0:
+        return 1.0
+    return parsed
 
 
 def _metadata_response_style(value: object) -> dict[str, object]:

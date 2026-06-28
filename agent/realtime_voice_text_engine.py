@@ -1418,6 +1418,8 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         "transcript_source": request.transcript_source,
         "requested_response_style": dict(request.requested_response_style),
     }
+    if request.route_confidence is not None:
+        payload["route_confidence"] = request.route_confidence
     if request.user_id:
         payload["user_id"] = request.user_id
     if request.local_reply:
@@ -1464,6 +1466,8 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
     }
     if metadata.get("kame_user_id"):
         payload["user_id"] = str(metadata.get("kame_user_id"))
+    if metadata.get("kame_route_confidence") is not None:
+        payload["route_confidence"] = metadata.get("kame_route_confidence")
     if metadata.get("kame_local_reply"):
         payload["local_reply"] = str(metadata.get("kame_local_reply"))
     if metadata.get("kame_transcript"):
