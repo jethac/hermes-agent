@@ -1000,6 +1000,33 @@ def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> li
                     "reflex_providers": [],
                 }
             )
+        elif name == "cloud_fallback_smoke":
+            entry.update(
+                {
+                    "fallback_trigger": None,
+                    "fallback_mode": None,
+                    "fallback_reason_visible": False,
+                    "configured_policy_applied": False,
+                }
+            )
+        elif name == "capability_honesty_smoke":
+            entry.update(
+                {
+                    "voice_active": False,
+                    "voice_capability_checks": None,
+                    "voice_denial_count": None,
+                    "unsupported_voice_claims": None,
+                }
+            )
+        elif name == "barge_in_interruption_smoke":
+            entry.update(
+                {
+                    "trigger_reason": None,
+                    "playback_active": False,
+                    "stop_latency_ms": None,
+                    "interrupted_response_committed": True,
+                }
+            )
         template.append(entry)
     assumptions = matrix.get("model_assumptions") if isinstance(matrix.get("model_assumptions"), Mapping) else {}
     for name, assumption in assumptions.items():
@@ -1063,6 +1090,10 @@ def validate_dgx_spark_benchmark_evidence(
     )
     playback_start_target_ms = _positive_metric_target(
         quality_targets.get("first_tts_audio_to_playback_start"),
+        default=150.0,
+    )
+    barge_in_stop_target_ms = _positive_metric_target(
+        quality_targets.get("barge_in_stop"),
         default=150.0,
     )
     direct_audio_latency_ok = True
@@ -1247,7 +1278,11 @@ def validate_dgx_spark_benchmark_evidence(
         )
 
     for smoke_name, _notes in REQUIRED_DGX_SPARK_SMOKES:
-        smoke_issues = _passing_smoke_issues(entries, smoke_name)
+        smoke_issues = _passing_smoke_issues(
+            entries,
+            smoke_name,
+            barge_in_stop_target_ms=barge_in_stop_target_ms,
+        )
         coverage[smoke_name] = not smoke_issues
         issues.extend(smoke_issues)
 
@@ -1475,12 +1510,26 @@ def _metric_float(value: Any) -> float | None:
     return parsed
 
 
-def _passing_smoke_issues(entries: list[Mapping[str, Any]], name: str) -> list[str]:
+def _passing_smoke_issues(
+    entries: list[Mapping[str, Any]],
+    name: str,
+    *,
+    barge_in_stop_target_ms: float,
+) -> list[str]:
     entry = _passing_smoke_entry(entries, name)
     if entry is None:
         return [f"{name}: missing passing smoke result"]
     if name == "all_local_smoke":
         return _all_local_smoke_issues(entry)
+    if name == "cloud_fallback_smoke":
+        return _cloud_fallback_smoke_issues(entry)
+    if name == "capability_honesty_smoke":
+        return _capability_honesty_smoke_issues(entry)
+    if name == "barge_in_interruption_smoke":
+        return _barge_in_interruption_smoke_issues(
+            entry,
+            stop_target_ms=barge_in_stop_target_ms,
+        )
     return []
 
 
@@ -1532,6 +1581,69 @@ def _all_local_smoke_issues(entry: Mapping[str, Any]) -> list[str]:
         providers = {str(provider or "").strip() for provider in reflex_providers}
         if "vllm" not in providers:
             issues.append("all_local_smoke: reflex_providers missing vllm")
+    return issues
+
+
+def _cloud_fallback_smoke_issues(entry: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    trigger = str(entry.get("fallback_trigger") or "").strip()
+    allowed_triggers = {
+        "sidecar_unavailable",
+        "interface_provider_unavailable",
+        "local_provider_unavailable",
+        "tts_unavailable",
+        "audio_native_reflex_unavailable",
+    }
+    if trigger not in allowed_triggers:
+        issues.append("cloud_fallback_smoke: requires recognized fallback_trigger")
+    mode = str(entry.get("fallback_mode") or "").strip()
+    allowed_modes = {"legacy_voice", "text_only", "stt_fed_reflex", "cloud_provider"}
+    if mode not in allowed_modes:
+        issues.append("cloud_fallback_smoke: requires recognized fallback_mode")
+    if entry.get("fallback_reason_visible") is not True:
+        issues.append("cloud_fallback_smoke: requires fallback_reason_visible == true")
+    if entry.get("configured_policy_applied") is not True:
+        issues.append("cloud_fallback_smoke: requires configured_policy_applied == true")
+    return issues
+
+
+def _capability_honesty_smoke_issues(entry: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    checks = _metric_float(entry.get("voice_capability_checks"))
+    denial_count = _metric_float(entry.get("voice_denial_count"))
+    unsupported_claims = _metric_float(entry.get("unsupported_voice_claims"))
+    if entry.get("voice_active") is not True:
+        issues.append("capability_honesty_smoke: requires voice_active == true")
+    if checks is None or checks < 1:
+        issues.append("capability_honesty_smoke: requires voice_capability_checks >= 1")
+    if denial_count is None or denial_count != 0:
+        issues.append("capability_honesty_smoke: requires voice_denial_count == 0")
+    if unsupported_claims is None or unsupported_claims != 0:
+        issues.append("capability_honesty_smoke: requires unsupported_voice_claims == 0")
+    return issues
+
+
+def _barge_in_interruption_smoke_issues(
+    entry: Mapping[str, Any],
+    *,
+    stop_target_ms: float,
+) -> list[str]:
+    issues: list[str] = []
+    trigger = str(entry.get("trigger_reason") or "").strip()
+    stop_latency = _metric_float(entry.get("stop_latency_ms"))
+    if trigger != "confirmed_user_speech":
+        issues.append("barge_in_interruption_smoke: requires trigger_reason == confirmed_user_speech")
+    if entry.get("playback_active") is not True:
+        issues.append("barge_in_interruption_smoke: requires playback_active == true")
+    if stop_latency is None:
+        issues.append("barge_in_interruption_smoke: requires stop_latency_ms")
+    elif stop_latency > stop_target_ms:
+        issues.append(
+            f"barge_in_interruption_smoke: stop_latency_ms {stop_latency:g} "
+            f"exceeds target {stop_target_ms:g}"
+        )
+    if entry.get("interrupted_response_committed") is not False:
+        issues.append("barge_in_interruption_smoke: requires interrupted_response_committed == false")
     return issues
 
 

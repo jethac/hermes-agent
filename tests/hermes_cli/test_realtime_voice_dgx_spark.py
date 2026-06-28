@@ -189,9 +189,33 @@ def _passing_benchmark_evidence() -> list[dict]:
             "interface_input_sources": ["native_audio"],
             "reflex_providers": ["vllm"],
         },
-        {"kind": "kame_smoke_result", "name": "cloud_fallback_smoke", "ok": True},
-        {"kind": "kame_smoke_result", "name": "capability_honesty_smoke", "ok": True},
-        {"kind": "kame_smoke_result", "name": "barge_in_interruption_smoke", "ok": True},
+        {
+            "kind": "kame_smoke_result",
+            "name": "cloud_fallback_smoke",
+            "ok": True,
+            "fallback_trigger": "sidecar_unavailable",
+            "fallback_mode": "legacy_voice",
+            "fallback_reason_visible": True,
+            "configured_policy_applied": True,
+        },
+        {
+            "kind": "kame_smoke_result",
+            "name": "capability_honesty_smoke",
+            "ok": True,
+            "voice_active": True,
+            "voice_capability_checks": 3,
+            "voice_denial_count": 0,
+            "unsupported_voice_claims": 0,
+        },
+        {
+            "kind": "kame_smoke_result",
+            "name": "barge_in_interruption_smoke",
+            "ok": True,
+            "trigger_reason": "confirmed_user_speech",
+            "playback_active": True,
+            "stop_latency_ms": 95,
+            "interrupted_response_committed": False,
+        },
     ]
 
 
@@ -469,6 +493,18 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert smoke_entries[0]["oracle_authority_routes"] == []
     assert smoke_entries[0]["interface_input_sources"] == []
     assert smoke_entries[0]["reflex_providers"] == []
+    assert smoke_entries[1]["fallback_trigger"] is None
+    assert smoke_entries[1]["fallback_mode"] is None
+    assert smoke_entries[1]["fallback_reason_visible"] is False
+    assert smoke_entries[1]["configured_policy_applied"] is False
+    assert smoke_entries[2]["voice_active"] is False
+    assert smoke_entries[2]["voice_capability_checks"] is None
+    assert smoke_entries[2]["voice_denial_count"] is None
+    assert smoke_entries[2]["unsupported_voice_claims"] is None
+    assert smoke_entries[3]["trigger_reason"] is None
+    assert smoke_entries[3]["playback_active"] is False
+    assert smoke_entries[3]["stop_latency_ms"] is None
+    assert smoke_entries[3]["interrupted_response_committed"] is True
     assumption_entries = [
         entry for entry in evidence_template if entry.get("kind") == "kame_model_assumption_result"
     ]
@@ -996,6 +1032,54 @@ def test_benchmark_evidence_validator_requires_capability_and_interruption_smoke
     assert result["coverage"]["barge_in_interruption_smoke"] is False
     assert "capability_honesty_smoke: missing passing smoke result" in result["issues"]
     assert "barge_in_interruption_smoke: missing passing smoke result" in result["issues"]
+
+
+def test_benchmark_evidence_validator_requires_explicit_fallback_honesty_and_barge_in_details(
+    tmp_path,
+):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence = _passing_benchmark_evidence()
+    for entry in evidence:
+        if entry.get("name") == "cloud_fallback_smoke":
+            entry.pop("fallback_trigger")
+            entry["fallback_mode"] = "silent_ignore"
+            entry["fallback_reason_visible"] = False
+            entry["configured_policy_applied"] = False
+        elif entry.get("name") == "capability_honesty_smoke":
+            entry["voice_active"] = False
+            entry["voice_capability_checks"] = 0
+            entry["voice_denial_count"] = 1
+            entry["unsupported_voice_claims"] = 1
+        elif entry.get("name") == "barge_in_interruption_smoke":
+            entry["trigger_reason"] = "decoded_packet"
+            entry["playback_active"] = False
+            entry["stop_latency_ms"] = 151
+            entry["interrupted_response_committed"] = True
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["cloud_fallback_smoke"] is False
+    assert result["coverage"]["capability_honesty_smoke"] is False
+    assert result["coverage"]["barge_in_interruption_smoke"] is False
+    assert "cloud_fallback_smoke: requires recognized fallback_trigger" in result["issues"]
+    assert "cloud_fallback_smoke: requires recognized fallback_mode" in result["issues"]
+    assert "cloud_fallback_smoke: requires fallback_reason_visible == true" in result["issues"]
+    assert "cloud_fallback_smoke: requires configured_policy_applied == true" in result["issues"]
+    assert "capability_honesty_smoke: requires voice_active == true" in result["issues"]
+    assert "capability_honesty_smoke: requires voice_capability_checks >= 1" in result["issues"]
+    assert "capability_honesty_smoke: requires voice_denial_count == 0" in result["issues"]
+    assert "capability_honesty_smoke: requires unsupported_voice_claims == 0" in result["issues"]
+    assert (
+        "barge_in_interruption_smoke: requires trigger_reason == confirmed_user_speech"
+        in result["issues"]
+    )
+    assert "barge_in_interruption_smoke: requires playback_active == true" in result["issues"]
+    assert "barge_in_interruption_smoke: stop_latency_ms 151 exceeds target 150" in result["issues"]
+    assert (
+        "barge_in_interruption_smoke: requires interrupted_response_committed == false"
+        in result["issues"]
+    )
 
 
 def test_benchmark_evidence_validator_requires_every_interface_candidate(tmp_path):
