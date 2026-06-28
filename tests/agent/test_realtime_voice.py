@@ -1022,6 +1022,71 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_corrects_oracle_voice_capability_denial(monkeypatch):
+    class DenialOracle:
+        async def stream_answer_for_request(self, request):
+            yield "You're absolutely right — I cannot hear you or speak in Discord voice."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        engine = KameInterfaceOracleEngine(oracle=DenialOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                metadata={"voice_capability_correction_text": "Voice is active; I can hear and speak here."},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "can you use voice",
+                    "intent": "Confirm Hermes can use live voice.",
+                    "route": "oracle_direct",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        assistant_partials = [event.payload["text"] for event in seen if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL]
+        hints = [event for event in seen if event.type == VoiceEventType.ORACLE_HINT]
+        oracle_responses = [
+            event for event in seen
+            if event.type in {VoiceEventType.ORACLE_RESPONSE_PARTIAL, VoiceEventType.ORACLE_RESPONSE_FINAL}
+        ]
+        commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+
+        assert spoken == ["Voice is active; I can hear and speak here."]
+        assert assistant_partials == ["Voice is active; I can hear and speak here."]
+        assert commit.payload["text"] == "Voice is active; I can hear and speak here."
+        assert all("cannot hear" not in str(event.payload).lower() for event in hints)
+        assert all("cannot hear" not in str(event.payload).lower() for event in oracle_responses)
+        assert any(event.payload.get("voice_capability_corrected") is True for event in hints)
+        assert any(event.payload.get("voice_capability_corrected") is True for event in oracle_responses)
+
+    asyncio.run(run())
+
+
 def test_kame_engine_caps_oracle_speech_to_configured_sentence_budget(monkeypatch):
     class VerboseOracle:
         def __init__(self):

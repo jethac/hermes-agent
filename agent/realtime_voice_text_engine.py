@@ -26,7 +26,7 @@ from agent.realtime_voice import (
     transcript_metadata_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
-from agent.realtime_voice_kame import KameOracleRequest, KameRoute
+from agent.realtime_voice_kame import KameOracleRequest, KameRoute, kame_local_reply_denies_voice_capability
 from agent.realtime_voice_oracle import HermesRealtimeOracle, NullRealtimeOracle
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, wants_realtime_sidecar
@@ -689,6 +689,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         oracle_first_token_at: Optional[float] = None
         first_spoken_text_at: Optional[float] = None
         kame_timing_metrics: dict[str, int] = {}
+        voice_denial_corrected = False
 
         def sync_kame_timing_metrics() -> None:
             if not kame_timing_metrics:
@@ -743,6 +744,15 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             for task in speak_tasks:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
+
+        def correct_voice_denial(text: str) -> tuple[str, bool]:
+            nonlocal voice_denial_corrected
+            if oracle_request is None or not kame_local_reply_denies_voice_capability(text):
+                return text, False
+            if voice_denial_corrected:
+                return "", True
+            voice_denial_corrected = True
+            return _kame_voice_capability_correction_text(self.config), True
 
         try:
             acknowledgement = _turn_acknowledgement_text(self.config)
@@ -811,6 +821,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 if chunk:
                     planned_chunk = self._planner.clean(chunk)
                     if planned_chunk:
+                        planned_chunk, denial_corrected = correct_voice_denial(planned_chunk)
+                        if denial_corrected:
+                            spoken_truncated = True
+                        if not planned_chunk:
+                            continue
                         planned_chunk, chunk_truncated = _limit_spoken_text(
                             planned_chunk,
                             max_sentences=max_spoken_sentences,
@@ -853,6 +868,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
 
             if buffer.strip():
                 planned_chunk = self._planner.clean(buffer)
+                if planned_chunk:
+                    planned_chunk, denial_corrected = correct_voice_denial(planned_chunk)
+                    if denial_corrected:
+                        spoken_truncated = True
                 if planned_chunk:
                     planned_chunk, chunk_truncated = _limit_spoken_text(
                         planned_chunk,
@@ -1161,6 +1180,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
     ) -> None:
         if playback_generation != self._playback_generation:
             return
+        voice_capability_corrected = False
+        if _is_kame_metadata(metadata) and kame_local_reply_denies_voice_capability(text or delta):
+            text = _kame_voice_capability_correction_text(self.config)
+            delta = text if delta else ""
+            voice_capability_corrected = True
         payload: dict[str, Any] = {
             "text": text,
             "delta": delta,
@@ -1169,6 +1193,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             "playback_generation": playback_generation,
             **_kame_route_metrics_payload(metadata, oracle_called=True, extra_metrics=metrics),
         }
+        if voice_capability_corrected:
+            payload["voice_capability_corrected"] = True
         if accepted:
             payload["accepted"] = True
         if _is_kame_metadata(metadata):
@@ -1187,6 +1213,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 "playback_generation": playback_generation,
                 **_kame_route_metrics_payload(metadata, oracle_called=True, extra_metrics=metrics),
             }
+            if voice_capability_corrected:
+                oracle_payload["voice_capability_corrected"] = True
             if accepted:
                 oracle_payload["accepted"] = True
             oracle_event = await self._emit(oracle_event_type, oracle_payload)
@@ -1360,6 +1388,14 @@ def _turn_acknowledgement_text(config: Optional[RealtimeVoiceSessionConfig]) -> 
     if not text:
         return ""
     return text[:120]
+
+
+def _kame_voice_capability_correction_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:
+    if config is not None and isinstance(config.metadata, Mapping):
+        text = str(config.metadata.get("voice_capability_correction_text") or "").strip()
+        if text:
+            return text[:160]
+    return "Voice is active here; I can hear you and speak in this channel."
 
 
 def _kame_local_reply(request: Optional[KameOracleRequest]) -> str:
