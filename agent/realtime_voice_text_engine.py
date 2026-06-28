@@ -1314,6 +1314,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 metrics["kame_speech_end_to_local_first_audio_ms"] = metrics[
                     "kame_speech_end_to_first_audio_ms"
                 ]
+        elif route == KameRoute.DEFER.value and metadata.get("kame_interface_already_said"):
+            metrics["kame_interface_decision_to_defer_first_audio_ms"] = elapsed
+            if "kame_speech_end_to_first_audio_ms" in metrics:
+                metrics["kame_speech_end_to_defer_first_audio_ms"] = metrics[
+                    "kame_speech_end_to_first_audio_ms"
+                ]
         return metrics
 
     def _interface_decision_metric_start(self, playback_generation: int, *, fallback: float) -> float:

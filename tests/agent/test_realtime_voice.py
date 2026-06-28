@@ -1074,6 +1074,75 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_defer_acknowledgement_reports_first_audio_metric(monkeypatch, tmp_path):
+    class StructuredOracle:
+        async def stream_answer_for_request(self, request):
+            yield "The deployment is healthy."
+
+    async def run():
+        counter = 0
+
+        def fake_tts_sync(text):
+            nonlocal counter
+            counter += 1
+            audio_path = tmp_path / f"defer-{counter}.ogg"
+            audio_path.write_bytes(text.encode("utf-8"))
+            return str(audio_path)
+
+        engine = KameInterfaceOracleEngine(oracle=StructuredOracle())
+        monkeypatch.setattr(engine, "_tts_sync", fake_tts_sync)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                metadata={
+                    "transport": "discord_voice",
+                    "turn_acknowledgement": {"enabled": True, "text": "One moment."},
+                },
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "check the deployment status",
+                    "intent": "Check the deployment status.",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "transcript_source": "reflex_audio",
+                    "end_of_utterance": True,
+                    "metrics": {"kame_speech_end_to_interface_decision_ms": 41},
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
+        session_metrics = next(event for event in seen if event.type == VoiceEventType.SESSION_METRICS)
+        assert AudioChunk.from_payload(audio.payload).data == b"One moment."
+        assert audio.payload["kame_interface_already_said"] == "One moment."
+        assert audio.payload["metrics"]["kame_interface_decision_to_first_audio_ms"] >= 0
+        assert audio.payload["metrics"]["kame_interface_decision_to_defer_first_audio_ms"] >= 0
+        assert audio.payload["metrics"]["kame_speech_end_to_first_audio_ms"] >= 41
+        assert audio.payload["metrics"]["kame_speech_end_to_defer_first_audio_ms"] >= 41
+        assert session_metrics.payload["metrics"]["kame_interface_decision_to_defer_first_audio_ms"] >= 0
+        assert session_metrics.payload["metrics"]["kame_speech_end_to_defer_first_audio_ms"] >= 41
+
+    asyncio.run(run())
+
+
 def test_kame_engine_enforces_oracle_required_routing_for_local_payloads(monkeypatch):
     class StructuredOracle:
         def __init__(self):

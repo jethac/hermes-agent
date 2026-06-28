@@ -3233,6 +3233,14 @@ class TestBuildSchemaFromConfig:
             == "number"
         )
         assert (
+            CONFIG_SCHEMA["voice.realtime.quality_targets_ms.kame_interface_decision_to_defer_first_audio_ms"]["type"]
+            == "number"
+        )
+        assert (
+            CONFIG_SCHEMA["voice.realtime.quality_targets_ms.kame_speech_end_to_defer_first_audio_ms"]["type"]
+            == "number"
+        )
+        assert (
             CONFIG_SCHEMA["voice.realtime.quality_targets_ms.barge_in_confirmed_to_playback_stopped_ms"]["type"]
             == "number"
         )
@@ -7884,6 +7892,8 @@ class TestRealtimeVoiceWebSocket:
             "kame_speech_end_to_interface_decision_ms": 500,
             "kame_interface_decision_to_local_first_audio_ms": 500,
             "kame_speech_end_to_local_first_audio_ms": 1000,
+            "kame_interface_decision_to_defer_first_audio_ms": 500,
+            "kame_speech_end_to_defer_first_audio_ms": 500,
             "kame_interface_decision_to_oracle_accepted_ms": 500,
             "kame_speech_end_to_first_audio_ms": 3000,
         }
