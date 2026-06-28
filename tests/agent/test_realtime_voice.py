@@ -332,15 +332,24 @@ def test_event_validation_separates_client_and_server_events():
         sequence=3,
         payload={"intent": "Greeting.", "intent_source": "reflex_audio"},
     )
+    oracle_event = VoiceEvent(
+        type=VoiceEventType.ORACLE_RESPONSE_PARTIAL,
+        session_id="voice-123",
+        sequence=4,
+        payload={"delta": "Hello", "playback_generation": 1},
+    )
 
     validate_client_event(audio_event)
     validate_server_event(transcript_event)
     validate_server_event(interface_event)
+    validate_server_event(oracle_event)
 
     with pytest.raises(ValueError):
         validate_client_event(transcript_event)
     with pytest.raises(ValueError):
         validate_client_event(interface_event)
+    with pytest.raises(ValueError):
+        validate_client_event(oracle_event)
 
     with pytest.raises(ValueError):
         validate_server_event(audio_event)
@@ -799,7 +808,35 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
         await engine.close()
 
         hints = [event for event in seen if event.type == VoiceEventType.ORACLE_HINT]
+        oracle_events = [
+            event for event in seen
+            if event.type in {
+                VoiceEventType.ORACLE_ACCEPTED,
+                VoiceEventType.ORACLE_RESPONSE_PARTIAL,
+                VoiceEventType.ORACLE_RESPONSE_FINAL,
+            }
+        ]
         forwarded = [event for event in sidecar.received if event.type == VoiceEventType.ORACLE_HINT]
+        forwarded_oracle_events = [
+            event for event in sidecar.received
+            if event.type in {
+                VoiceEventType.ORACLE_ACCEPTED,
+                VoiceEventType.ORACLE_RESPONSE_PARTIAL,
+                VoiceEventType.ORACLE_RESPONSE_FINAL,
+            }
+        ]
+        assert [event.type for event in oracle_events] == [
+            VoiceEventType.ORACLE_ACCEPTED,
+            VoiceEventType.ORACLE_RESPONSE_PARTIAL,
+            VoiceEventType.ORACLE_RESPONSE_PARTIAL,
+            VoiceEventType.ORACLE_RESPONSE_FINAL,
+        ]
+        assert [event.payload.get("accepted") for event in oracle_events] == [True, None, None, None]
+        assert [event.payload["delta"] for event in oracle_events] == ["", "Looking now", ".", ""]
+        assert oracle_events[-1].payload["final"] is True
+        assert oracle_events[-1].payload["text"] == "Looking now."
+        assert oracle_events[-1].payload["turn_id"] == "voice-123:1"
+        assert oracle_events[-1].payload["metrics"]["kame_oracle_total_stream_ms"] >= 0
         assert [hint.payload.get("accepted") for hint in hints] == [True, None, None, None]
         assert [hint.payload["delta"] for hint in hints] == ["", "Looking now", ".", ""]
         assert hints[-1].payload["final"] is True
@@ -814,6 +851,7 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
         assert commit.payload["metrics"]["kame_oracle_accepted_to_first_token_ms"] >= 0
         assert commit.payload["metrics"]["kame_oracle_first_token_to_first_spoken_text_ms"] >= 0
         assert [event.payload for event in forwarded] == [event.payload for event in hints]
+        assert [event.payload for event in forwarded_oracle_events] == [event.payload for event in oracle_events]
         assert spoken == ["Looking now."]
 
     asyncio.run(run())
@@ -1498,6 +1536,10 @@ def test_kame_engine_timeout_status_keeps_oracle_metrics(monkeypatch):
                 break
 
         commit = seen[-1]
+        oracle_error = next(event for event in seen if event.type == VoiceEventType.ORACLE_ERROR)
+        assert oracle_error.payload["reason"] == "oracle_timeout"
+        assert oracle_error.payload["error"] == "oracle response timed out"
+        assert oracle_error.payload["turn_id"] == "voice-123:1"
         assert commit.payload["oracle_timeout"] is True
         assert commit.payload["metrics"]["kame_oracle_called"] == 1
         assert commit.payload["metrics"]["kame_oracle_bypassed"] == 0

@@ -893,9 +893,21 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         except asyncio.TimeoutError:
             await cancel_speak_tasks()
             if playback_generation == self._playback_generation:
+                await self._emit_oracle_error(
+                    playback_generation,
+                    assistant_metadata,
+                    reason="oracle_timeout",
+                    error="oracle response timed out",
+                )
                 await self._speak_oracle_timeout_status(playback_generation, assistant_metadata)
         except Exception as exc:
             await cancel_speak_tasks()
+            await self._emit_oracle_error(
+                playback_generation,
+                assistant_metadata,
+                reason="oracle_or_tts_failed",
+                error=sanitize_realtime_voice_error(exc),
+            )
             await self._emit(
                 VoiceEventType.SESSION_ERROR,
                 {"error": f"oracle/tts failed: {sanitize_realtime_voice_error(exc)}"},
@@ -1092,7 +1104,50 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         }
         if accepted:
             payload["accepted"] = True
+        if _is_kame_metadata(metadata):
+            if accepted:
+                oracle_event_type = VoiceEventType.ORACLE_ACCEPTED
+            elif final:
+                oracle_event_type = VoiceEventType.ORACLE_RESPONSE_FINAL
+            else:
+                oracle_event_type = VoiceEventType.ORACLE_RESPONSE_PARTIAL
+            oracle_payload = {
+                **_kame_interface_payload_from_metadata(metadata),
+                "text": text,
+                "delta": delta,
+                "final": final,
+                "source": "hermes",
+                "playback_generation": playback_generation,
+                **_kame_route_metrics_payload(metadata, oracle_called=True, extra_metrics=metrics),
+            }
+            if accepted:
+                oracle_payload["accepted"] = True
+            oracle_event = await self._emit(oracle_event_type, oracle_payload)
+            if oracle_event is not None and self._sidecar is not None:
+                await self._send_sidecar_event(oracle_event)
         event = await self._emit(VoiceEventType.ORACLE_HINT, payload)
+        if event is not None and self._sidecar is not None:
+            await self._send_sidecar_event(event)
+
+    async def _emit_oracle_error(
+        self,
+        playback_generation: int,
+        metadata: Mapping[str, Any],
+        *,
+        reason: str,
+        error: str,
+    ) -> None:
+        if playback_generation != self._playback_generation or not _is_kame_metadata(metadata):
+            return
+        payload = {
+            **_kame_interface_payload_from_metadata(metadata),
+            "reason": reason,
+            "error": sanitize_realtime_voice_error(error),
+            "source": "hermes",
+            "playback_generation": playback_generation,
+            **_kame_route_metrics_payload(metadata, oracle_called=True),
+        }
+        event = await self._emit(VoiceEventType.ORACLE_ERROR, payload)
         if event is not None and self._sidecar is not None:
             await self._send_sidecar_event(event)
 
