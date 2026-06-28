@@ -957,6 +957,71 @@ def test_kame_engine_enforces_oracle_required_routing_for_local_payloads(monkeyp
     asyncio.run(run())
 
 
+def test_kame_engine_enforces_disabled_local_greetings(monkeypatch):
+    class StructuredOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "Voice is active."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = StructuredOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                metadata={"routing": {"allow_local_greetings": False}},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "can you hear me",
+                    "intent": "The user asks whether Hermes can hear them.",
+                    "intent_source": "reflex_audio",
+                    "route": "local",
+                    "route_confidence": 0.98,
+                    "local_reply": "Yes, I can hear you.",
+                    "transcript_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        assert len(oracle.requests) == 1
+        assert oracle.requests[0].route == KameRoute.ORACLE_DIRECT
+        assert oracle.requests[0].reflex_validation_error == "local_greetings_disabled"
+        assert not any(event.type == VoiceEventType.INTERFACE_REPLY_LOCAL for event in seen)
+        intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
+        assert intent.payload["route"] == "oracle_direct"
+        assert intent.payload["reflex_validation_error"] == "local_greetings_disabled"
+        assert spoken == ["Voice is active."]
+
+    asyncio.run(run())
+
+
 def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
     class SlowOracle:
         def __init__(self):
@@ -4100,6 +4165,29 @@ def test_reference_sidecar_kame_local_route_allows_smoke_test_phrase():
 
     assert payload["route"] == "local"
     assert payload["local_reply"] == "Test received."
+
+
+def test_reference_sidecar_kame_local_route_respects_disabled_greetings():
+    payload = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(
+            {
+                "route": "local",
+                "route_confidence": 0.91,
+                "intent": "The user is checking whether Hermes can hear them.",
+                "text": "can you hear me",
+                "local_reply": "Yes, I can hear you.",
+            }
+        ),
+        config=RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            metadata={"routing": {"allow_local_greetings": False}},
+        ),
+    )
+
+    assert payload["route"] == "oracle_direct"
+    assert "local_reply" not in payload
+    assert payload["reflex_validation_error"] == "local_greetings_disabled"
 
 
 def test_reference_sidecar_kame_clarify_route_respects_routing_policy():

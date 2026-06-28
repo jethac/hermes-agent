@@ -75,6 +75,21 @@ KAME_FILE_OR_PROJECT_TERMS = frozenset(
     }
 )
 KAME_MEMORY_TERMS = frozenset({"forget", "memory", "recall", "remember", "save"})
+KAME_GREETING_OR_HEAR_ME_TERMS = frozenset(
+    {
+        "hello",
+        "hi",
+        "hey",
+        "hear",
+        "hearing",
+        "listening",
+        "speak",
+        "speaking",
+        "test",
+        "testing",
+        "voice",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -336,6 +351,8 @@ def apply_kame_routing_policy(
         required_reason = kame_oracle_required_reason(routed, routing)
         if required_reason:
             return downgrade_kame_local_route(routed, reason=required_reason)
+        if not _bool(routing.get("allow_local_greetings"), default=True) and kame_is_greeting_or_hear_me_check(routed):
+            return downgrade_kame_local_route(routed, reason="local_greetings_disabled")
     if route == KameRoute.REJECT_OR_CLARIFY.value and not _bool(
         routing.get("allow_local_clarifications"),
         default=True,
@@ -385,6 +402,10 @@ def kame_oracle_required_reason(
     ):
         return "oracle_required_for_memory"
     return ""
+
+
+def kame_is_greeting_or_hear_me_check(payload: Mapping[str, Any]) -> bool:
+    return bool(_policy_terms(payload).intersection(KAME_GREETING_OR_HEAR_ME_TERMS))
 
 
 def _policy_terms(payload: Mapping[str, Any]) -> set[str]:
