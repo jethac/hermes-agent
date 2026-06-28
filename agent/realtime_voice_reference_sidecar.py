@@ -381,6 +381,8 @@ class ReferenceRealtimeVoiceSidecarSession:
                     partial_intent_payload = _kame_interface_partial_payload_from_payload(event.payload)
                     if partial_intent_payload:
                         await self._emit(VoiceEventType.INTERFACE_INTENT_PARTIAL, partial_intent_payload)
+                    if not _allow_kame_transcript_events(self.config):
+                        return
                 payload["stability"] = 0.8
                 await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, payload)
             return
@@ -898,7 +900,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         config = self.config
         if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
             return False
-        return not self._streaming_stt_drives_reflex()
+        return not _allow_kame_transcript_events(config)
 
     def _record_asr_hypothesis(self, event: VoiceEvent) -> None:
         if event.type != VoiceEventType.TRANSCRIPT_FINAL:
@@ -1752,6 +1754,14 @@ def _bounded_confidence(value: Any) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     return max(0.0, min(1.0, parsed))
+
+
+def _allow_kame_transcript_events(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        return True
+    if config.asr_mode.value in {"debug", "fallback"}:
+        return True
+    return str(config.interface_audio_input or "").strip().lower() == "text_fallback"
 
 
 def _call_synthesize(synthesize: SynthesizeFn, text: str, metadata: Mapping[str, str]) -> Any:

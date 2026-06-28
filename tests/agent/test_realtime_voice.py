@@ -1342,18 +1342,59 @@ def test_kame_engine_emits_partial_interface_intent_without_oracle():
             )
         )
 
-        events = [await anext(engine.events()), await anext(engine.events()), await anext(engine.events())]
+        events = [await anext(engine.events()), await anext(engine.events())]
 
+        assert [event.type for event in events] == [
+            VoiceEventType.SESSION_STARTED,
+            VoiceEventType.INTERFACE_INTENT_PARTIAL,
+        ]
+        assert events[1].payload["intent"] == "The user is starting a hearing check."
+        assert events[1].payload["route"] == "local"
+        assert events[1].payload["input_generation"] == 4
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(anext(engine.events()), timeout=0.01)
+        assert oracle.called is False
+        await engine.close()
+
+    asyncio.run(run())
+
+
+def test_kame_engine_emits_partial_transcripts_in_debug_mode():
+    async def run():
+        engine = KameInterfaceOracleEngine(oracle=FakeOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.DEBUG,
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "can you",
+                    "intent": "The user is starting a hearing check.",
+                    "intent_source": "reflex_audio",
+                    "route": "local",
+                    "end_of_utterance": False,
+                    "input_generation": 4,
+                },
+            )
+        )
+
+        events = [await anext(engine.events()), await anext(engine.events()), await anext(engine.events())]
         assert [event.type for event in events] == [
             VoiceEventType.SESSION_STARTED,
             VoiceEventType.INTERFACE_INTENT_PARTIAL,
             VoiceEventType.TRANSCRIPT_PARTIAL,
         ]
-        assert events[1].payload["intent"] == "The user is starting a hearing check."
-        assert events[1].payload["route"] == "local"
-        assert events[1].payload["input_generation"] == 4
         assert events[2].payload["text"] == "can you"
-        assert oracle.called is False
         await engine.close()
 
     asyncio.run(run())
@@ -3624,6 +3665,88 @@ def test_reference_sidecar_kame_on_escalation_does_not_start_streaming_stt(monke
     assert created == []
 
 
+def test_reference_sidecar_kame_debug_exposes_streaming_stt_partials(monkeypatch):
+    class FakeBridge:
+        def __init__(self, *, path="/v1/realtime-text/session"):
+            self.path = path
+            self._events = asyncio.Queue()
+
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            await self._events.put(
+                VoiceEvent(
+                    type=VoiceEventType.TRANSCRIPT_PARTIAL,
+                    session_id=event.session_id,
+                    sequence=1,
+                    payload={
+                        "text": "debug caption",
+                        "stability": 0.5,
+                        "input_generation": event.payload.get("input_generation"),
+                    },
+                )
+            )
+
+        async def events(self):
+            while True:
+                event = await self._events.get()
+                if event is None:
+                    return
+                yield event
+
+        async def close(self):
+            await self._events.put(None)
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_reference_sidecar.RealtimeVoiceSidecarClient",
+        FakeBridge,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                streaming_stt_base_url="http://streaming-stt.local:9000",
+                vllm_base_url="http://vllm.local:8000/v1",
+                vllm_model="google/gemma-4-E2B-it",
+            )
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.DEBUG,
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "input_generation": 14,
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.TRANSCRIPT_PARTIAL:
+                await sidecar.close()
+                break
+        return seen
+
+    seen = asyncio.run(run())
+    partial = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_PARTIAL)
+    assert partial.payload["text"] == "debug caption"
+    assert partial.payload["stability"] == 0.5
+    assert partial.payload["input_generation"] == 14
+
+
 def test_reference_sidecar_kame_on_escalation_attaches_one_shot_asr_evidence(monkeypatch):
     calls = []
     sent_events = []
@@ -3760,6 +3883,47 @@ def test_reference_sidecar_emits_kame_partial_interface_intent():
             )
         )
 
+        seen = [await anext(sidecar.events()), await anext(sidecar.events())]
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(anext(sidecar.events()), timeout=0.01)
+        await sidecar.close()
+        return seen
+
+    seen = asyncio.run(run())
+    partial_intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_PARTIAL)
+    assert partial_intent.payload["intent"] == "The user is starting a hearing check."
+    assert partial_intent.payload["route"] == "local"
+    assert partial_intent.payload["input_generation"] == 8
+
+
+def test_reference_sidecar_emits_kame_partial_transcripts_in_debug_mode():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.DEBUG,
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "can you",
+                    "intent": "The user is starting a hearing check.",
+                    "intent_source": "reflex_audio",
+                    "route": "local",
+                    "end_of_utterance": False,
+                    "input_generation": 8,
+                },
+            )
+        )
+
         seen = []
         async for event in sidecar.events():
             seen.append(event)
@@ -3772,8 +3936,6 @@ def test_reference_sidecar_emits_kame_partial_interface_intent():
     partial_intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_PARTIAL)
     transcript_partial = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_PARTIAL)
     assert partial_intent.payload["intent"] == "The user is starting a hearing check."
-    assert partial_intent.payload["route"] == "local"
-    assert partial_intent.payload["input_generation"] == 8
     assert transcript_partial.payload["text"] == "can you"
 
 

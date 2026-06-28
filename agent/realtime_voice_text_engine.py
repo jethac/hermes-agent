@@ -119,6 +119,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     partial_intent_payload = _kame_interface_partial_payload_from_payload(event.payload)
                     if partial_intent_payload:
                         await self._emit(VoiceEventType.INTERFACE_INTENT_PARTIAL, partial_intent_payload)
+                    if not _allow_kame_transcript_events(self.config):
+                        return
                 await self._emit(
                     VoiceEventType.TRANSCRIPT_PARTIAL,
                     {
@@ -256,6 +258,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         partial_intent_payload = _kame_interface_partial_payload_from_payload(payload)
                         if partial_intent_payload:
                             await self._emit(VoiceEventType.INTERFACE_INTENT_PARTIAL, partial_intent_payload)
+                        if not _allow_kame_transcript_events(self.config):
+                            continue
                     await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, transcript_event_payload_from_payload(payload))
                 elif event.type == VoiceEventType.INTERFACE_INTENT_PARTIAL:
                     payload = dict(event.payload)
@@ -1206,6 +1210,14 @@ def _kame_cancellation_token(config: Optional[RealtimeVoiceSessionConfig], playb
         return ""
     session_id = str(config.session_id or "voice").strip() or "voice"
     return f"{session_id}:{playback_generation}:cancel"
+
+
+def _allow_kame_transcript_events(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        return True
+    if config.asr_mode.value in {"debug", "fallback"}:
+        return True
+    return str(config.interface_audio_input or "").strip().lower() == "text_fallback"
 
 
 def _turn_acknowledgement_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:
