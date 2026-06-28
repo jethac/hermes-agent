@@ -4,6 +4,7 @@ import type { HermesConfigRecord } from '@/types/hermes'
 
 import { defineFieldCopy, fieldCopyForSchemaKey, schemaKeyToFieldCopyKey } from './field-copy'
 import { enumOptionsFor, getNested, providerGroup, setNested, stripToolsetLabel, toolsetDisplayLabel } from './helpers'
+import { SECTIONS } from './constants'
 
 describe('settings helpers', () => {
   it('lists Hindsight as a built-in desktop memory provider option', () => {
@@ -156,6 +157,36 @@ describe('settings helpers', () => {
     it('renders a dropdown for the STT provider including xAI (Grok)', () => {
       const opts = enumOptionsFor('stt.provider', 'local', config)
       expect(opts).toEqual(['local', 'groq', 'openai', 'mistral', 'xai', 'elevenlabs'])
+    })
+
+    it('renders dropdowns for full KAME realtime voice controls', () => {
+      expect(enumOptionsFor('voice.realtime.engine', 'kame_interface_oracle', config)).toContain(
+        'kame_interface_oracle'
+      )
+      expect(enumOptionsFor('voice.realtime.frontend_provider', 'gemma4', config)).toContain('gemma4')
+      expect(enumOptionsFor('voice.realtime.interface_audio_input', 'native_audio', config)).toEqual([
+        'auto',
+        'native_audio',
+        'text_fallback'
+      ])
+      expect(enumOptionsFor('voice.realtime.asr_mode', 'on_escalation', config)).toEqual([
+        'disabled',
+        'on_escalation',
+        'speculative',
+        'debug',
+        'fallback'
+      ])
+    })
+
+    it('surfaces KAME routing and provider controls in the voice settings section', () => {
+      const voiceKeys = SECTIONS.find(section => section.id === 'voice')?.keys ?? []
+
+      expect(voiceKeys).toContain('voice.realtime.interface_max_audio_seconds')
+      expect(voiceKeys).toContain('voice.realtime.asr_mode')
+      expect(voiceKeys).toContain('voice.realtime.oracle_base_url')
+      expect(voiceKeys).toContain('voice.realtime.tts_voice')
+      expect(voiceKeys).toContain('voice.realtime.routing.local_confidence_threshold')
+      expect(voiceKeys).toContain('voice.realtime.metrics.log_provider_spans')
     })
 
     it('renders dropdowns for per-backend model/device sub-fields', () => {

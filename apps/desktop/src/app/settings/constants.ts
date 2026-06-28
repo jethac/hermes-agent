@@ -260,8 +260,13 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   // NeuTTS local inference device.
   'tts.neutts.device': ['cpu', 'cuda', 'mps'],
   'updates.non_interactive_local_changes': ['stash', 'discard'],
-  'voice.realtime.engine': ['text_oracle_tts', 'native_s2s_oracle'],
-  'voice.realtime.frontend_provider': ['reference', 'openai_realtime', 'gemini_live'],
+  'voice.realtime.engine': ['text_oracle_tts', 'kame_interface_oracle', 'native_s2s_oracle'],
+  'voice.realtime.frontend_provider': ['reference', 'gemma4', 'openai_realtime', 'gemini_live'],
+  'voice.realtime.interface_audio_input': ['auto', 'native_audio', 'text_fallback'],
+  'voice.realtime.asr_mode': ['disabled', 'on_escalation', 'speculative', 'debug', 'fallback'],
+  'voice.realtime.oracle_api_mode': ['chat_completions', 'anthropic_messages', 'codex_responses'],
+  'voice.realtime.voice_response_policy': ['sentence_cap', 'brief_summary', 'full'],
+  'voice.realtime.fallback_policy': ['legacy_voice', 'text_only', 'fail_closed'],
   'voice.realtime.input_codec': ['webm_opus', 'opus', 'pcm16'],
   'voice.realtime.output_codec': ['opus', 'webm_opus', 'pcm16'],
   'voice.realtime.openai_realtime_voice': ['marin', 'cedar', 'alloy', 'verse'],
@@ -337,6 +342,8 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
       silenceTimeoutMs: 'Realtime Silence Timeout',
       speechLevelThreshold: 'Speech Start Threshold',
       bargeInMinSpeechMs: 'Barge-In Speech Window',
+      bargeInMinRms: 'Barge-In RMS',
+      bargeInStopPlaybackDeadlineMs: 'Barge-In Stop Deadline',
       preRollMs: 'Mic Pre-Roll',
       requireLiveLike: 'Require Live-Like Voice',
       productionLanguages: 'Production Voice Languages',
@@ -350,6 +357,48 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
       },
       frontendProvider: 'Frontend Provider',
       frontendModel: 'Frontend Model',
+      interfaceTemperature: 'Interface Temperature',
+      interfaceMaxOutputTokens: 'Interface Token Limit',
+      interfaceTimeoutSeconds: 'Interface Timeout',
+      interfaceMaxAudioSeconds: 'Interface Audio Limit',
+      interfaceAudioInput: 'Interface Audio Input',
+      asrMode: 'ASR Mode',
+      asrProvider: 'ASR Provider',
+      asrModel: 'ASR Model',
+      oracleProvider: 'Oracle Provider',
+      oracleProviderName: 'Oracle Provider Name',
+      preferredLocalOracleModel: 'Preferred Local Oracle',
+      oracleModel: 'Oracle Model',
+      oracleBaseUrl: 'Oracle Base URL',
+      oracleApiMode: 'Oracle API Mode',
+      oracleTimeoutSeconds: 'Oracle Timeout',
+      maxSpokenSentences: 'Spoken Sentence Cap',
+      voiceResponsePolicy: 'Voice Response Policy',
+      ttsProvider: 'Realtime TTS Provider',
+      ttsModel: 'Realtime TTS Model',
+      ttsVoice: 'Realtime TTS Voice',
+      fallbackPolicy: 'Realtime Fallback',
+      turnAcknowledgement: {
+        enabled: 'Oracle Acknowledgement',
+        text: 'Acknowledgement Text'
+      },
+      routing: {
+        allowLocalGreetings: 'Local Greetings',
+        allowLocalClarifications: 'Local Clarifications',
+        requireOracleForTools: 'Oracle For Tools',
+        requireOracleForMemory: 'Oracle For Memory',
+        requireOracleForFiles: 'Oracle For Files',
+        localConfidenceThreshold: 'Local Confidence Threshold'
+      },
+      metrics: {
+        enabled: 'Realtime Metrics',
+        logTurnSpans: 'Log Turn Spans',
+        logProviderSpans: 'Log Provider Spans'
+      },
+      outputEvents: {
+        captionAliases: 'Caption Alias Events',
+        audioAliases: 'Audio Alias Events'
+      },
       sidecarBaseUrl: 'Voice Sidecar URL',
       sidecarHost: 'Managed Sidecar Host',
       sidecarPort: 'Managed Sidecar Port',
@@ -519,12 +568,16 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
     realtime: {
       enabled: 'Use the KAME-inspired realtime websocket path instead of the turn-based record/transcribe/speak loop.',
       inputBufferLimitBytes: 'Maximum local realtime audio bytes Hermes buffers before dropping an unfinished turn.',
-      inputFrameMs: 'Microphone chunk duration in milliseconds for realtime voice. Lower values reduce latency but send more frames.',
+      inputFrameMs:
+        'Microphone chunk duration in milliseconds for realtime voice. Lower values reduce latency but send more frames.',
       silenceTimeoutMs: 'Milliseconds of silence before Hermes closes the current realtime voice turn.',
       speechLevelThreshold:
         'Normalized microphone level required before realtime voice starts a user turn. Raise it in noisy rooms.',
       bargeInMinSpeechMs:
         'Milliseconds of sustained speech over assistant playback before Hermes sends a barge-in event.',
+      bargeInMinRms: 'Minimum decoded PCM RMS amplitude required before Discord voice barge-in can interrupt playback.',
+      bargeInStopPlaybackDeadlineMs:
+        'Maximum milliseconds allowed to stop assistant playback after confirmed barge-in.',
       preRollMs:
         'Milliseconds of microphone audio retained before speech starts, so the first syllable is not clipped.',
       requireLiveLike:
@@ -536,10 +589,59 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
       bestEffortLanguages:
         'Allow other languages to pass through captions, prompts, and provider auto-detection without claiming production quality.',
       qualityTargetsMs: {
-        audioToPartialTranscriptMs: 'Milliseconds from user audio to the first partial transcript before realtime voice is considered slow.',
-        finalTranscriptToFirstTextMs: 'Milliseconds from final transcript to first assistant text before realtime voice is considered slow.',
-        finalTranscriptToFirstAudioMs: 'Milliseconds from final transcript to first assistant audio before realtime voice is considered slow.',
-        bargeInAckMs: 'Milliseconds for backend barge-in acknowledgement before realtime interruption is considered slow.'
+        audioToPartialTranscriptMs:
+          'Milliseconds from user audio to the first partial transcript before realtime voice is considered slow.',
+        finalTranscriptToFirstTextMs:
+          'Milliseconds from final transcript to first assistant text before realtime voice is considered slow.',
+        finalTranscriptToFirstAudioMs:
+          'Milliseconds from final transcript to first assistant audio before realtime voice is considered slow.',
+        bargeInAckMs:
+          'Milliseconds for backend barge-in acknowledgement before realtime interruption is considered slow.'
+      },
+      frontendProvider: 'Low-latency realtime interface provider. Use gemma4 for full KAME reflex/oracle mode.',
+      frontendModel: 'Low-latency realtime interface model, such as Gemma 4 E2B.',
+      interfaceTemperature: 'Sampling temperature for one KAME interface routing decision.',
+      interfaceMaxOutputTokens: 'Maximum output tokens for one KAME interface routing decision.',
+      interfaceTimeoutSeconds: 'Seconds to wait for the KAME interface model before falling back.',
+      interfaceMaxAudioSeconds: 'Maximum native-audio segment seconds sent to the KAME interface model.',
+      interfaceAudioInput:
+        'Whether the KAME reflex receives native audio, transcript fallback, or automatic selection.',
+      asrMode: 'Controls when ASR runs as oracle-verbatim evidence instead of feeding the reflex.',
+      asrProvider: 'ASR provider used for oracle-verbatim evidence or text fallback.',
+      asrModel: 'ASR model used for oracle-verbatim evidence or text fallback.',
+      oracleProvider: 'Optional Hermes oracle provider override for KAME realtime voice.',
+      oracleProviderName: 'Display name for the local oracle provider added by KAME profile setup.',
+      preferredLocalOracleModel: 'Preferred local Hermes oracle model label for KAME realtime voice.',
+      oracleModel: 'Hermes backend oracle model override for KAME realtime voice.',
+      oracleBaseUrl: 'OpenAI-compatible base URL for a local KAME oracle override.',
+      oracleApiMode: 'Wire protocol used by the KAME oracle override.',
+      oracleTimeoutSeconds: 'Seconds to wait for an oracle voice response before speaking a timeout status.',
+      maxSpokenSentences: 'Maximum spoken sentences for KAME oracle voice responses.',
+      voiceResponsePolicy: 'How KAME shapes long oracle answers for spoken output.',
+      ttsProvider: 'TTS provider used for KAME spoken output.',
+      ttsModel: 'TTS model used for KAME spoken output.',
+      ttsVoice: 'TTS voice identifier used for KAME spoken output.',
+      fallbackPolicy: 'Fallback behavior when the KAME sidecar or local stack is unavailable.',
+      turnAcknowledgement: {
+        enabled: 'Speak a short acknowledgement while the oracle thinks.',
+        text: 'Short acknowledgement text used before the final response is ready.'
+      },
+      routing: {
+        allowLocalGreetings: 'Allow the KAME reflex to answer greetings and hear-me checks without the oracle.',
+        allowLocalClarifications: 'Allow the KAME reflex to ask short clarification questions without the oracle.',
+        requireOracleForTools: 'Require Hermes oracle authority for tool-using voice turns.',
+        requireOracleForMemory: 'Require Hermes oracle authority for memory-dependent voice turns.',
+        requireOracleForFiles: 'Require Hermes oracle authority for file or project voice turns.',
+        localConfidenceThreshold: 'Minimum reflex confidence required before local KAME replies are allowed.'
+      },
+      metrics: {
+        enabled: 'Enable realtime voice turn and provider metrics.',
+        logTurnSpans: 'Log per-turn KAME latency spans.',
+        logProviderSpans: 'Log provider-specific realtime voice spans.'
+      },
+      outputEvents: {
+        captionAliases: 'Emit assistant.caption.partial/final aliases alongside legacy assistant text events.',
+        audioAliases: 'Emit assistant.audio.chunk aliases alongside legacy audio.output.chunk events.'
       },
       sidecarBaseUrl:
         'LAN or private-network URL for a remote inference sidecar running Gemma, streaming TTS, or native S2S.',
@@ -547,7 +649,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
       sidecarPort: 'Port used when Hermes autostarts the managed realtime voice sidecar.',
       sidecarAutostart: 'Start the managed loopback sidecar automatically when realtime voice opens.',
       sidecarTokenEnv: 'Environment variable that contains the bearer token for the voice sidecar.',
-      sidecarConnectTimeoutSeconds: 'Seconds Hermes waits for a realtime voice sidecar websocket before falling back or failing.',
+      sidecarConnectTimeoutSeconds:
+        'Seconds Hermes waits for a realtime voice sidecar websocket before falling back or failing.',
       streamingSttBaseUrl: 'Compatible streaming speech-to-text bridge URL for the reference sidecar.',
       streamingSttModel: 'Speech-to-text model label advertised by the streaming bridge.',
       streamingSttTokenEnv: 'Environment variable containing the streaming STT bridge bearer token.',
@@ -563,8 +666,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
       geminiLiveVoice: 'Voice used by Gemini Live native speech output.',
       geminiLiveGoogleSearch: 'Allow Gemini Live to use Google Search as a frontend context tool.',
       geminiLiveOracleTool: 'Allow Gemini Live to call the restricted Hermes oracle bridge tool.',
-      sparkBaseUrl:
-        'Deprecated compatibility alias for the voice sidecar URL. Prefer voice.realtime.sidecar_base_url.'
+      sparkBaseUrl: 'Deprecated compatibility alias for the voice sidecar URL. Prefer voice.realtime.sidecar_base_url.'
     }
   },
   tts: {
@@ -698,6 +800,8 @@ export const SECTIONS: DesktopConfigSection[] = [
       'voice.realtime.silence_timeout_ms',
       'voice.realtime.speech_level_threshold',
       'voice.realtime.barge_in_min_speech_ms',
+      'voice.realtime.barge_in_min_rms',
+      'voice.realtime.barge_in_stop_playback_deadline_ms',
       'voice.realtime.pre_roll_ms',
       'voice.realtime.require_live_like',
       'voice.realtime.production_languages',
@@ -709,6 +813,40 @@ export const SECTIONS: DesktopConfigSection[] = [
       'voice.realtime.quality_targets_ms.barge_in_ack_ms',
       'voice.realtime.frontend_provider',
       'voice.realtime.frontend_model',
+      'voice.realtime.interface_temperature',
+      'voice.realtime.interface_max_output_tokens',
+      'voice.realtime.interface_timeout_seconds',
+      'voice.realtime.interface_max_audio_seconds',
+      'voice.realtime.interface_audio_input',
+      'voice.realtime.asr_mode',
+      'voice.realtime.asr_provider',
+      'voice.realtime.asr_model',
+      'voice.realtime.oracle_provider',
+      'voice.realtime.oracle_provider_name',
+      'voice.realtime.preferred_local_oracle_model',
+      'voice.realtime.oracle_model',
+      'voice.realtime.oracle_base_url',
+      'voice.realtime.oracle_api_mode',
+      'voice.realtime.oracle_timeout_seconds',
+      'voice.realtime.max_spoken_sentences',
+      'voice.realtime.voice_response_policy',
+      'voice.realtime.tts_provider',
+      'voice.realtime.tts_model',
+      'voice.realtime.tts_voice',
+      'voice.realtime.fallback_policy',
+      'voice.realtime.turn_acknowledgement.enabled',
+      'voice.realtime.turn_acknowledgement.text',
+      'voice.realtime.routing.allow_local_greetings',
+      'voice.realtime.routing.allow_local_clarifications',
+      'voice.realtime.routing.require_oracle_for_tools',
+      'voice.realtime.routing.require_oracle_for_memory',
+      'voice.realtime.routing.require_oracle_for_files',
+      'voice.realtime.routing.local_confidence_threshold',
+      'voice.realtime.metrics.enabled',
+      'voice.realtime.metrics.log_turn_spans',
+      'voice.realtime.metrics.log_provider_spans',
+      'voice.realtime.output_events.caption_aliases',
+      'voice.realtime.output_events.audio_aliases',
       'voice.realtime.sidecar_base_url',
       'voice.realtime.sidecar_host',
       'voice.realtime.sidecar_port',

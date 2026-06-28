@@ -6678,8 +6678,13 @@ class TestRealtimeVoiceWebSocket:
         response = self.client.get("/api/voice/realtime/setup")
         assert response.status_code == 200
         payload = response.json()
+        kame = next(provider for provider in payload["providers"] if provider["id"] == "kame")
         gemini = next(provider for provider in payload["providers"] if provider["id"] == "gemini")
         cartesia = next(provider for provider in payload["providers"] if provider["id"] == "cartesia")
+        assert kame["provider"] == "gemma4"
+        assert kame["kind"] == "kame_interface_oracle"
+        assert kame["model"] == "gemma-4-E2B-it"
+        assert kame["implemented"] is True
         assert gemini["api_key_present"] is True
         assert cartesia["implemented"] is True
         assert cartesia["bridge_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"

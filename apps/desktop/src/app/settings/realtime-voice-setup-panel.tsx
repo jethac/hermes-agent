@@ -22,6 +22,7 @@ import { getNested, setNested } from './helpers'
 import { ListRow, Pill, SectionHeading } from './primitives'
 
 const PROVIDER_LABELS: Record<string, string> = {
+  kame: 'KAME Gemma reflex',
   openai: 'OpenAI Realtime',
   gemini: 'Gemini Live',
   elevenlabs: 'ElevenLabs bridge',
@@ -30,6 +31,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 }
 
 const PROVIDER_MODELS: Record<string, string[]> = {
+  kame: ['gemma-4-E2B-it', 'gemma-4-E4B-it'],
   openai: ['gpt-realtime-2'],
   gemini: ['gemini-3.1-flash-live-preview', 'gemini-2.5-flash-live-preview'],
   elevenlabs: ['eleven_flash_v2_5', 'eleven_multilingual_v2'],
@@ -62,9 +64,11 @@ function statusTone(ok?: boolean | null) {
 }
 
 function setupProviderFor(config: HermesConfigRecord): string {
+  const engine = String(getNested(config, 'voice.realtime.engine') ?? '')
   const provider = String(getNested(config, 'voice.realtime.frontend_provider') ?? '')
   const sttUrl = String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? '')
   const sttModel = String(getNested(config, 'voice.realtime.streaming_stt_model') ?? '')
+  if (engine === 'kame_interface_oracle' || provider === 'gemma4') return 'kame'
   if (provider === 'openai_realtime' || provider === 'openai') return 'openai'
   if (provider === 'gemini_live' || provider === 'gemini') return 'gemini'
   if (sttUrl.includes('8767') || sttModel.includes('scribe')) return 'elevenlabs'
@@ -104,7 +108,11 @@ function ProviderCard({
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
         <Pill>{provider.kind === 'native_s2s' ? 'Native S2S' : 'Bridge'}</Pill>
-        {provider.implemented === false ? <Pill>Planned</Pill> : envPill(provider.api_key_env || 'API key', provider.api_key_present)}
+        {provider.implemented === false ? (
+          <Pill>Planned</Pill>
+        ) : (
+          envPill(provider.api_key_env || 'API key', provider.api_key_present)
+        )}
         {provider.voice_id_env ? envPill('Voice ID', provider.voice_id_present) : null}
         {provider.bridge_token_env ? envPill('Bridge token', provider.bridge_token_present) : null}
       </div>
@@ -126,7 +134,9 @@ function StatusGrid({ setup }: { setup: RealtimeVoiceSetupResponse | null }) {
         <div className="text-xs font-medium">Availability</div>
         <div className="mt-1 flex flex-wrap gap-1.5">
           <Pill tone={statusTone(status?.enabled)}>Realtime {status?.enabled ? 'on' : 'off'}</Pill>
-          <Pill tone={statusTone(status?.available)}>{status?.available ? 'Ready' : status?.unavailable_reason || 'Unavailable'}</Pill>
+          <Pill tone={statusTone(status?.available)}>
+            {status?.available ? 'Ready' : status?.unavailable_reason || 'Unavailable'}
+          </Pill>
         </div>
       </div>
       <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
@@ -164,8 +174,12 @@ export function RealtimeVoiceSetupPanel({
   const [selectedProvider, setSelectedProvider] = useState(() => setupProviderFor(config))
   const [model, setModel] = useState(String(getNested(config, 'voice.realtime.frontend_model') ?? ''))
   const [voice, setVoice] = useState('')
-  const [streamingSttModel, setStreamingSttModel] = useState(String(getNested(config, 'voice.realtime.streaming_stt_model') ?? ''))
-  const [bridgeBaseUrl, setBridgeBaseUrl] = useState(String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? ''))
+  const [streamingSttModel, setStreamingSttModel] = useState(
+    String(getNested(config, 'voice.realtime.streaming_stt_model') ?? '')
+  )
+  const [bridgeBaseUrl, setBridgeBaseUrl] = useState(
+    String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? '')
+  )
   const [requireDiscordSmoke, setRequireDiscordSmoke] = useState(true)
   const [requireInboundSmoke, setRequireInboundSmoke] = useState(false)
 
@@ -173,6 +187,7 @@ export function RealtimeVoiceSetupPanel({
   const providers = setup?.providers ?? []
   const selectedSetup = providers.find(provider => provider.id === selectedProvider)
   const selectedIsBridge = selectedSetup?.kind === 'stt_tts_bridge'
+  const selectedIsKame = selectedSetup?.kind === 'kame_interface_oracle' || selectedProvider === 'kame'
   const discord = setup?.discord
 
   async function refresh() {
@@ -204,7 +219,7 @@ export function RealtimeVoiceSetupPanel({
 
   useEffect(() => {
     const nextModel =
-      activeProvider === 'openai' || activeProvider === 'gemini'
+      activeProvider === 'openai' || activeProvider === 'gemini' || activeProvider === 'kame'
         ? String(getNested(config, 'voice.realtime.frontend_model') ?? '')
         : String(getNested(config, 'voice.realtime.streaming_tts_model') ?? '')
     const nextVoice =
@@ -215,8 +230,12 @@ export function RealtimeVoiceSetupPanel({
           : ''
     setModel(nextModel || PROVIDER_MODELS[activeProvider]?.[0] || '')
     setVoice(nextVoice)
-    setStreamingSttModel(String(getNested(config, 'voice.realtime.streaming_stt_model') ?? PROVIDER_STT_MODELS[activeProvider]?.[0] ?? ''))
-    setBridgeBaseUrl(String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? PROVIDER_BRIDGE_URLS[activeProvider] ?? ''))
+    setStreamingSttModel(
+      String(getNested(config, 'voice.realtime.streaming_stt_model') ?? PROVIDER_STT_MODELS[activeProvider]?.[0] ?? '')
+    )
+    setBridgeBaseUrl(
+      String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? PROVIDER_BRIDGE_URLS[activeProvider] ?? '')
+    )
   }, [activeProvider, config])
 
   function patchConfig(key: string, value: unknown) {
@@ -230,17 +249,60 @@ export function RealtimeVoiceSetupPanel({
         preset: selectedProvider,
         model,
         voice,
-        streaming_stt_base_url: selectedIsBridge ? bridgeBaseUrl || PROVIDER_BRIDGE_URLS[selectedProvider] : undefined,
-        streaming_tts_base_url: selectedIsBridge ? bridgeBaseUrl || PROVIDER_BRIDGE_URLS[selectedProvider] : undefined,
-        streaming_stt_model: selectedIsBridge ? streamingSttModel || PROVIDER_STT_MODELS[selectedProvider]?.[0] : undefined,
-        streaming_tts_model: selectedIsBridge ? model || PROVIDER_MODELS[selectedProvider]?.[0] : undefined,
+        streaming_stt_base_url: selectedIsBridge
+          ? bridgeBaseUrl || PROVIDER_BRIDGE_URLS[selectedProvider]
+          : selectedIsKame
+            ? String(getNested(config, 'voice.realtime.streaming_stt_base_url') ?? '')
+            : undefined,
+        streaming_tts_base_url: selectedIsBridge
+          ? bridgeBaseUrl || PROVIDER_BRIDGE_URLS[selectedProvider]
+          : selectedIsKame
+            ? String(getNested(config, 'voice.realtime.streaming_tts_base_url') ?? '')
+            : undefined,
+        streaming_stt_model: selectedIsBridge
+          ? streamingSttModel || PROVIDER_STT_MODELS[selectedProvider]?.[0]
+          : selectedIsKame
+            ? String(getNested(config, 'voice.realtime.streaming_stt_model') ?? 'portable-streaming-asr')
+            : undefined,
+        streaming_tts_model: selectedIsBridge
+          ? model || PROVIDER_MODELS[selectedProvider]?.[0]
+          : selectedIsKame
+            ? String(getNested(config, 'voice.realtime.streaming_tts_model') ?? 'portable-streaming-voice')
+            : undefined,
+        interface_audio_input: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.interface_audio_input') ?? 'native_audio') || 'native_audio'
+          : undefined,
+        interface_max_audio_seconds: selectedIsKame
+          ? Number(getNested(config, 'voice.realtime.interface_max_audio_seconds') ?? 30)
+          : undefined,
+        asr_mode: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.asr_mode') ?? 'on_escalation') || 'on_escalation'
+          : undefined,
+        oracle_model: selectedIsKame
+          ? String(
+              getNested(config, 'voice.realtime.oracle_model') ??
+                getNested(config, 'voice.realtime.preferred_local_oracle_model') ??
+                ''
+            )
+          : undefined,
+        oracle_base_url: selectedIsKame ? String(getNested(config, 'voice.realtime.oracle_base_url') ?? '') : undefined,
+        oracle_provider_name: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.oracle_provider_name') ?? '')
+          : undefined,
+        voice_response_policy: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.voice_response_policy') ?? 'sentence_cap') || 'sentence_cap'
+          : undefined,
         enable_discord: Boolean(getNested(config, 'discord.realtime_voice.enabled')),
         google_search: Boolean(getNested(config, 'voice.realtime.gemini_live_google_search')),
         oracle_tool: Boolean(getNested(config, 'voice.realtime.gemini_live_oracle_tool') ?? true)
       })
       onConfigChange(result.config)
       setSetup(result.setup)
-      notify({ kind: 'success', title: `${PROVIDER_LABELS[selectedProvider]} applied`, message: 'Realtime voice settings updated.' })
+      notify({
+        kind: 'success',
+        title: `${PROVIDER_LABELS[selectedProvider]} applied`,
+        message: 'Realtime voice settings updated.'
+      })
     } catch (err) {
       notifyError(err, 'Realtime voice preset failed')
     } finally {
@@ -313,8 +375,12 @@ export function RealtimeVoiceSetupPanel({
               </SelectContent>
             </Select>
           }
-          description={selectedSetup?.kind === 'native_s2s' ? 'Low-latency interface model.' : 'Streaming bridge TTS model.'}
-          title={selectedSetup?.kind === 'native_s2s' ? 'Model' : 'TTS model'}
+          description={
+            selectedIsKame || selectedSetup?.kind === 'native_s2s'
+              ? 'Low-latency interface model.'
+              : 'Streaming bridge TTS model.'
+          }
+          title={selectedIsKame || selectedSetup?.kind === 'native_s2s' ? 'Model' : 'TTS model'}
         />
         {selectedIsBridge ? (
           <>
@@ -331,7 +397,10 @@ export function RealtimeVoiceSetupPanel({
             />
             <ListRow
               action={
-                <Select onValueChange={setStreamingSttModel} value={streamingSttModel || PROVIDER_STT_MODELS[selectedProvider]?.[0] || ''}>
+                <Select
+                  onValueChange={setStreamingSttModel}
+                  value={streamingSttModel || PROVIDER_STT_MODELS[selectedProvider]?.[0] || ''}
+                >
                   <SelectTrigger className={CONTROL_TEXT}>
                     <SelectValue />
                   </SelectTrigger>
@@ -394,7 +463,11 @@ export function RealtimeVoiceSetupPanel({
             </div>
             <div className="flex flex-wrap gap-1.5">
               <Pill tone={statusTone(setup?.status.sidecar?.healthy ?? setup?.status.sidecar?.autostart)}>
-                {setup?.status.sidecar?.healthy ? 'Healthy' : setup?.status.sidecar?.autostart ? 'Autostart' : 'Not healthy'}
+                {setup?.status.sidecar?.healthy
+                  ? 'Healthy'
+                  : setup?.status.sidecar?.autostart
+                    ? 'Autostart'
+                    : 'Not healthy'}
               </Pill>
               {setup?.status.sidecar?.externally_managed ? <Pill>External</Pill> : null}
               {setup?.status.sidecar?.health?.frontend?.provider ? (
@@ -430,7 +503,9 @@ export function RealtimeVoiceSetupPanel({
               className={CONTROL_TEXT}
               onChange={event => patchConfig('discord.realtime_voice.sidecar_base_url', event.target.value)}
               placeholder="http://127.0.0.1:8765"
-              value={String(getNested(config, 'discord.realtime_voice.sidecar_base_url') ?? discord?.sidecar_base_url ?? '')}
+              value={String(
+                getNested(config, 'discord.realtime_voice.sidecar_base_url') ?? discord?.sidecar_base_url ?? ''
+              )}
             />
           </div>
         </div>

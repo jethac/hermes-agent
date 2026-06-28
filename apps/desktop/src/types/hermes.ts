@@ -95,13 +95,20 @@ export interface RealtimeVoiceProfileRequest {
   api_key_env?: string
   enable_discord?: boolean
   google_search?: boolean
+  interface_audio_input?: string
+  interface_max_audio_seconds?: number
   model?: string
+  oracle_base_url?: string
+  oracle_model?: string
+  oracle_provider_name?: string
   oracle_tool?: boolean
   preset: string
+  asr_mode?: string
   streaming_stt_base_url?: string
   streaming_stt_model?: string
   streaming_tts_base_url?: string
   streaming_tts_model?: string
+  voice_response_policy?: string
   voice?: string
 }
 

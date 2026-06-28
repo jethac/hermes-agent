@@ -14902,7 +14902,21 @@ def _realtime_voice_provider_setup_rows(realtime: Mapping[str, Any], env_on_disk
     gemini_key_env = str(realtime.get("gemini_live_api_key_env") or "GEMINI_API_KEY")
     stt_token_env = str(realtime.get("streaming_stt_token_env") or "HERMES_STREAMING_STT_BRIDGE_TOKEN")
     tts_token_env = str(realtime.get("streaming_tts_token_env") or stt_token_env)
+    kame_model = (
+        str(realtime.get("frontend_model") or "")
+        if str(realtime.get("frontend_provider") or "").strip() == "gemma4"
+        else ""
+    )
     return [
+        {
+            "id": "kame",
+            "provider": "gemma4",
+            "label": "KAME Gemma reflex",
+            "kind": "kame_interface_oracle",
+            "model": kame_model or "gemma-4-E2B-it",
+            "voice": str(realtime.get("tts_voice") or realtime.get("streaming_tts_voice") or ""),
+            "implemented": True,
+        },
         {
             "id": "openai",
             "provider": "openai_realtime",
