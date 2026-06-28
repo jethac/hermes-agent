@@ -2893,6 +2893,89 @@ def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
     asyncio.run(run())
 
 
+def test_reference_sidecar_reports_kame_audio_reflex_fallback_without_vllm():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(vllm_base_url=None, vllm_model=None)
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+
+        event = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+        await sidecar.close()
+        return event
+
+    event = asyncio.run(run())
+    assert event.type == VoiceEventType.FRONTEND_STATE
+    assert event.payload["status"] == "fallback"
+    assert event.payload["reason"] == "kame_audio_reflex_unavailable"
+    assert event.payload["requested_provider"] == "gemma4"
+    assert event.payload["provider"] == "local_stt"
+    assert event.payload["fallback_provider"] == "local_stt"
+    assert event.payload["intent_source"] == "asr_fallback"
+    assert event.payload["transcript_source"] == "asr"
+    assert event.payload["interface_audio_input"] == "native_audio"
+
+
+def test_reference_sidecar_labels_kame_local_stt_fallback_as_asr_evidence():
+    def fake_transcribe(path):
+        assert path
+        return {"success": True, "transcript": "check deployment status"}
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(vllm_base_url=None, vllm_model=None),
+            transcribe_audio_func=fake_transcribe,
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                    "input_generation": 11,
+                },
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                await sidecar.close()
+                break
+        return seen
+
+    seen = asyncio.run(run())
+    final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+    assert final.payload["text"] == "check deployment status"
+    assert final.payload["intent"] == "check deployment status"
+    assert final.payload["intent_source"] == "asr_fallback"
+    assert final.payload["route"] == "oracle_direct"
+    assert final.payload["transcript"] == "check deployment status"
+    assert final.payload["transcript_source"] == "asr"
+    assert final.payload["interface_audio_input_fallback"] is True
+    assert final.payload["input_generation"] == 11
+
+
 def test_reference_sidecar_passes_language_metadata_to_tts_callback(tmp_path):
     captured = {}
 
