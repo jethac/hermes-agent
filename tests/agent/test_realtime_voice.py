@@ -156,7 +156,6 @@ def test_session_config_round_trips_wire_payload():
         interface_max_audio_seconds=24.0,
         asr_provider="streaming_stt",
         asr_model="nemotron-speech",
-        oracle_model="configured-hermes-model",
         oracle_timeout_seconds=12.5,
         tts_provider="edge",
         tts_model="sonic-3.5",

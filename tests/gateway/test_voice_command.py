@@ -987,7 +987,7 @@ class TestVoiceChannelCommands:
                 "frontend_provider": "vllm",
                 "frontend_model": "gemma-4-E2B-it",
                 "interface_audio_input": "native_audio",
-                "oracle_model": "kimi-k2.6",
+                "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
                 "asr_mode": "on_escalation",
                 "asr_provider": "nemotron",
                 "asr_model": "speech-0.6b",
@@ -1040,7 +1040,7 @@ class TestVoiceChannelCommands:
         assert "Lifecycle: ready" in result
         assert "Playback: active" in result
         assert "Interface: vllm gemma-4-E2B-it (audio=native_audio)" in result
-        assert "Oracle: kimi-k2.6" in result
+        assert "Oracle: gemma-4-26B-A4B-it" in result
         assert "ASR: nemotron speech-0.6b (mode=on_escalation)" in result
         assert "TTS: cartesia sonic-2 (voice=5ee9feff-1265-424a-9d7f-8e4d431a12c7)" in result
         assert "Frontend state: ready; audio_reflex_tts; vllm gemma-4-E2B-it; audio=native_audio; audio_reflex=healthy" in result
@@ -1380,7 +1380,6 @@ class TestDiscordVoiceChannelMethods:
             "interface_max_audio_seconds": 14,
             "asr_base_url": "http://asr.local:8767",
             "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
-            "oracle_model": "deep-hermes",
             "oracle_timeout_seconds": 19,
             "max_spoken_sentences": 3,
             "tts_base_url": "http://tts.local:8768",
@@ -1427,7 +1426,7 @@ class TestDiscordVoiceChannelMethods:
         assert session_cls.call_args.kwargs["interface_max_audio_seconds"] == 14.0
         assert session_cls.call_args.kwargs["asr_base_url"] == "http://asr.local:8767"
         assert session_cls.call_args.kwargs["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
-        assert session_cls.call_args.kwargs["oracle_model"] == "deep-hermes"
+        assert "oracle_model" not in session_cls.call_args.kwargs
         assert session_cls.call_args.kwargs["oracle_timeout_seconds"] == 19.0
         assert session_cls.call_args.kwargs["max_spoken_sentences"] == 3
         assert session_cls.call_args.kwargs["tts_base_url"] == "http://tts.local:8768"
@@ -1457,7 +1456,7 @@ class TestDiscordVoiceChannelMethods:
         assert status["interface_max_audio_seconds"] == 14.0
         assert status["asr_base_url"] == "http://asr.local:8767"
         assert status["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
-        assert status["oracle_model"] == "deep-hermes"
+        assert "oracle_model" not in status
         assert status["oracle_timeout_seconds"] == 19.0
         assert status["max_spoken_sentences"] == 3
         assert status["tts_base_url"] == "http://tts.local:8768"
@@ -3239,7 +3238,6 @@ class TestVoiceChannelAwareness:
         adapter._realtime_voice_cfg = {
             "frontend_provider": "elevenlabs",
             "frontend_model": "realtime-voice",
-            "oracle_model": "deep-hermes",
         }
         vc = MagicMock()
         vc.is_connected.return_value = True
@@ -3263,7 +3261,7 @@ class TestVoiceChannelAwareness:
         assert "low-latency voice frontend handles live audio" in ctx
         assert "elevenlabs realtime-voice" in ctx
         assert "Hermes backend oracle handles reasoning" in ctx
-        assert "deep-hermes" in ctx
+        assert "active Hermes model" in ctx
 
     def test_context_includes_realtime_voice_provider_failure_state(self):
         adapter = self._make_adapter()

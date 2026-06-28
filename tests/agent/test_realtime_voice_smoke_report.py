@@ -1292,7 +1292,6 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         "asr_mode": "",
         "asr_provider": "",
         "asr_model": "",
-        "oracle_model": "",
         "preferred_local_oracle_model": "",
         "tts_provider": "",
         "tts_model": "",

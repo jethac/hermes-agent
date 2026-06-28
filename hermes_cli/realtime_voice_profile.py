@@ -1170,7 +1170,7 @@ def build_kame_realtime_voice_profile(
     oracle_url = _clean_url(oracle_base_url)
     asr_url = _clean_url(streaming_stt_base_url)
     tts_url = _clean_url(streaming_tts_base_url)
-    oracle_model = str(preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL)
+    local_oracle_model = str(preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL)
     reflex_model_label = str(reflex_model or DEFAULT_KAME_REFLEX_MODEL)
     served_vllm_model = str(vllm_model or reflex_model_label)
     tts_model_label = str(tts_model or streaming_tts_model or DEFAULT_STREAMING_TTS_MODEL)
@@ -1204,7 +1204,7 @@ def build_kame_realtime_voice_profile(
         "asr_provider": str(asr_provider or "streaming_stt"),
         "asr_model": str(streaming_stt_model or DEFAULT_STREAMING_STT_MODEL),
         "asr_base_url": asr_url,
-        "preferred_local_oracle_model": oracle_model,
+        "preferred_local_oracle_model": local_oracle_model,
         "oracle_provider": str(oracle_provider or ""),
         "oracle_api_mode": oracle_api,
         "oracle_timeout_seconds": oracle_timeout,
@@ -1336,7 +1336,6 @@ def merge_realtime_voice_profile(
             "oracle_provider": profile.get("oracle_provider"),
             "oracle_provider_name": profile.get("oracle_provider_name"),
             "preferred_local_oracle_model": profile.get("preferred_local_oracle_model"),
-            "oracle_model": profile.get("oracle_model"),
             "oracle_base_url": profile.get("oracle_base_url"),
             "oracle_api_mode": profile.get("oracle_api_mode"),
             "oracle_timeout_seconds": profile.get("oracle_timeout_seconds", 60.0),
@@ -1424,7 +1423,6 @@ def _kame_nested_config(profile: Mapping[str, Any]) -> dict[str, Any]:
             "provider": profile.get("oracle_provider") or "",
             "provider_name": profile.get("oracle_provider_name") or "",
             "preferred_local_model": profile.get("preferred_local_oracle_model") or DEFAULT_KAME_ORACLE_MODEL,
-            "model": profile.get("oracle_model") or "",
             "base_url": oracle_base_url,
             "api_mode": profile.get("oracle_api_mode") or "chat_completions",
             "timeout_ms": int(round(oracle_timeout_seconds * 1000)),
@@ -1484,13 +1482,9 @@ def _merge_kame_oracle_provider_config(updated: dict[str, Any], profile: Mapping
     oracle_base_url = _clean_url(str(profile.get("oracle_base_url") or ""))
     if not oracle_base_url:
         return
-    oracle_model = str(
-        profile.get("oracle_model")
-        or profile.get("preferred_local_oracle_model")
-        or DEFAULT_KAME_ORACLE_MODEL
-    ).strip()
-    if not oracle_model:
-        oracle_model = DEFAULT_KAME_ORACLE_MODEL
+    local_oracle_model = str(profile.get("preferred_local_oracle_model") or DEFAULT_KAME_ORACLE_MODEL).strip()
+    if not local_oracle_model:
+        local_oracle_model = DEFAULT_KAME_ORACLE_MODEL
     oracle_api_mode = (
         str(profile.get("oracle_api_mode") or "chat_completions").strip()
         or "chat_completions"
@@ -1502,7 +1496,7 @@ def _merge_kame_oracle_provider_config(updated: dict[str, Any], profile: Mapping
     custom_entry = {
         "name": provider_name,
         "base_url": oracle_base_url,
-        "model": oracle_model,
+        "model": local_oracle_model,
         "api_mode": oracle_api_mode,
     }
     raw_custom_providers = updated.get("custom_providers")

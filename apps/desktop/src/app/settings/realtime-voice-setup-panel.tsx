@@ -419,11 +419,6 @@ function KameControls({
         title="TTS bridge voice"
       />
       <ListRow
-        action={textInput('voice.realtime.oracle_model', 'gemma-4-26B-A4B-it')}
-        description="Optional oracle model override; empty uses the active Hermes oracle."
-        title="Oracle model"
-      />
-      <ListRow
         action={textInput('voice.realtime.oracle_provider', 'custom')}
         description="Provider slug for a local oracle override."
         title="Oracle provider"
@@ -692,11 +687,9 @@ export function RealtimeVoiceSetupPanel({
         asr_provider: selectedIsKame
           ? String(realtimeConfigValue(config, 'asr_provider', 'asr.provider') ?? 'streaming_stt') || 'streaming_stt'
           : undefined,
-        oracle_model: selectedIsKame
+        preferred_local_oracle_model: selectedIsKame
           ? String(
-              realtimeConfigValue(config, 'oracle_model', 'oracle.model') ??
-                realtimeConfigValue(config, 'preferred_local_oracle_model', 'oracle.preferred_local_model') ??
-                ''
+              realtimeConfigValue(config, 'preferred_local_oracle_model', 'oracle.preferred_local_model') ?? ''
             )
           : undefined,
         oracle_provider: selectedIsKame ? String(realtimeConfigValue(config, 'oracle_provider', 'oracle.provider') ?? '') : undefined,

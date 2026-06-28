@@ -2565,7 +2565,7 @@ class GatewaySlashCommandsMixin:
                     oracle_line = _voice_status_provider_line(
                         "Oracle",
                         None,
-                        session.get("oracle_model") or session.get("preferred_local_oracle_model"),
+                        session.get("preferred_local_oracle_model"),
                     )
                     if oracle_line:
                         lines.append(oracle_line)

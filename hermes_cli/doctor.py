@@ -1173,7 +1173,6 @@ def _realtime_voice_smoke_config():
         interface_audio_input=str(realtime.get("interface_audio_input") or "") or None,
         asr_mode=RealtimeVoiceASRMode(str(realtime.get("asr_mode") or RealtimeVoiceASRMode.ON_ESCALATION.value)),
         preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or "") or None,
-        oracle_model=str(realtime.get("oracle_model") or "") or None,
         oracle_timeout_seconds=_positive_float_config(
             realtime.get("oracle_timeout_seconds"),
             default=60.0,
@@ -1216,7 +1215,6 @@ def _realtime_voice_smoke_config():
             "interface_audio_input": str(realtime.get("interface_audio_input") or "") or None,
             "asr_mode": str(realtime.get("asr_mode") or "") or None,
             "preferred_local_oracle_model": str(realtime.get("preferred_local_oracle_model") or "") or None,
-            "oracle_model": str(realtime.get("oracle_model") or "") or None,
             "oracle_timeout_seconds": _positive_float_config(
                 realtime.get("oracle_timeout_seconds"),
                 default=60.0,

@@ -116,7 +116,7 @@ export interface RealtimeVoiceProfileRequest {
   model?: string
   oracle_base_url?: string
   oracle_api_mode?: string
-  oracle_model?: string
+  preferred_local_oracle_model?: string
   oracle_provider?: string
   oracle_provider_name?: string
   oracle_timeout_seconds?: number

@@ -99,7 +99,7 @@ class HermesRealtimeOracle:
         from run_agent import AIAgent
 
         agent = AIAgent(
-            model=self.config.oracle_model or "",
+            model="",
             platform="desktop_voice",
             session_id=self.config.session_id,
         )
@@ -165,13 +165,11 @@ def _voice_architecture_context(metadata: Mapping[str, object]) -> str:
         value = metadata.get(key)
         if isinstance(value, str) and value.strip():
             frontend_bits.append(value.strip())
-    oracle_model = metadata.get("oracle_model")
-    oracle_label = oracle_model.strip() if isinstance(oracle_model, str) and oracle_model.strip() else "the configured Hermes model"
     frontend_label = f" ({' '.join(frontend_bits)})" if frontend_bits else ""
     return (
         "Voice architecture: a low-latency realtime frontend model handles live speech, "
         f"turn-taking, and spoken audio{frontend_label}. You are the Hermes backend oracle "
-        f"for deeper reasoning, tools, memory, and durable agent work ({oracle_label}). "
+        "for deeper reasoning, tools, memory, and durable agent work using the active Hermes model. "
         "Do not describe the frontend as a separate user-visible bot; answer as Hermes "
         "through the voice interface."
     )

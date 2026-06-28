@@ -28,14 +28,13 @@ def test_voice_oracle_prompt_includes_kame_frontend_backend_roles():
             "voice_architecture": "kame_frontend_oracle",
             "frontend_provider": "elevenlabs",
             "frontend_model": "realtime-voice",
-            "oracle_model": "deep-hermes",
         },
     )
 
     assert "low-latency realtime frontend model handles live speech" in prompt
     assert "elevenlabs realtime-voice" in prompt
     assert "Hermes backend oracle" in prompt
-    assert "deep-hermes" in prompt
+    assert "active Hermes model" in prompt
     assert "Do not describe the frontend as a separate user-visible bot" in prompt
 
 

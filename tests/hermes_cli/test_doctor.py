@@ -116,7 +116,6 @@ class TestRealtimeVoiceReadiness:
                     "interface_max_output_tokens": 96,
                     "interface_timeout_seconds": 0.7,
                     "interface_max_audio_seconds": 22,
-                    "oracle_model": "deep-hermes",
                 }
             }
         }
@@ -137,7 +136,6 @@ class TestRealtimeVoiceReadiness:
         assert smoke_config.interface_max_output_tokens == 96
         assert smoke_config.interface_timeout_seconds == 0.7
         assert smoke_config.interface_max_audio_seconds == 22
-        assert smoke_config.oracle_model == "deep-hermes"
         assert smoke_config.metadata["voice_architecture"] == "kame_frontend_oracle"
         assert smoke_config.metadata["frontend_role"] == "low_latency_voice_interface"
         assert smoke_config.metadata["oracle_role"] == "hermes_backend_oracle"
@@ -147,7 +145,8 @@ class TestRealtimeVoiceReadiness:
         assert smoke_config.metadata["interface_max_output_tokens"] == 96
         assert smoke_config.metadata["interface_timeout_seconds"] == 0.7
         assert smoke_config.metadata["interface_max_audio_seconds"] == 22.0
-        assert smoke_config.metadata["oracle_model"] == "deep-hermes"
+        assert "oracle_model" not in smoke_config.to_wire()
+        assert "oracle_model" not in smoke_config.metadata
 
     def test_realtime_voice_smoke_result_payload_is_json_safe(self):
         payload = realtime_voice_smoke_result_payload(

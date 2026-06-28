@@ -121,7 +121,7 @@ Acceptance gates:
 | --- | --- |
 | KAME launch pack generation | Required |
 | Interface model | Defaults to Gemma 4 E2B native audio |
-| Oracle model | Defaults to Gemma 4 26B-A4B |
+| Local oracle provider target | Defaults to Gemma 4 26B-A4B; Hermes still selects the active oracle through `/model` |
 | Preflight | Required only when `DGX_SPARK_KAME_CHECK=1` |
 | Benchmark matrix | Includes direct-audio vs STT-fallback reflex comparison |
 | Evidence validation | Required when `DGX_SPARK_KAME_BENCHMARK_EVIDENCE` is set |

@@ -193,7 +193,6 @@ class RealtimeVoiceSessionConfig:
     asr_model: Optional[str] = None
     asr_base_url: Optional[str] = None
     preferred_local_oracle_model: Optional[str] = None
-    oracle_model: Optional[str] = None
     oracle_timeout_seconds: float = 60.0
     max_spoken_sentences: int = 2
     voice_response_policy: str = "sentence_cap"
@@ -247,7 +246,6 @@ class RealtimeVoiceSessionConfig:
             "asr_model": self.asr_model,
             "asr_base_url": self.asr_base_url,
             "preferred_local_oracle_model": self.preferred_local_oracle_model,
-            "oracle_model": self.oracle_model,
             "oracle_timeout_seconds": self.oracle_timeout_seconds,
             "max_spoken_sentences": self.max_spoken_sentences,
             "voice_response_policy": normalize_realtime_voice_response_policy(self.voice_response_policy),
@@ -312,7 +310,6 @@ class RealtimeVoiceSessionConfig:
             asr_model=_optional_str(payload.get("asr_model")),
             asr_base_url=_optional_str(payload.get("asr_base_url")),
             preferred_local_oracle_model=_optional_str(payload.get("preferred_local_oracle_model")),
-            oracle_model=_optional_str(payload.get("oracle_model")),
             oracle_timeout_seconds=_positive_float(
                 payload.get("oracle_timeout_seconds"),
                 default=60.0,

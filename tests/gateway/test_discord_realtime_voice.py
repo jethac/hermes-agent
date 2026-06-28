@@ -198,7 +198,7 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["oracle_provider"] == "custom"
     assert cfg["oracle_provider_name"] == "Spark Oracle"
     assert cfg["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
-    assert cfg["oracle_model"] == "configured-oracle"
+    assert "oracle_model" not in cfg
     assert cfg["oracle_base_url"] == "http://spark.local:8001/v1"
     assert cfg["oracle_api_mode"] == "chat_completions"
     assert cfg["oracle_timeout_seconds"] == 12.0
@@ -286,7 +286,6 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         interface_timeout_seconds=0.6,
         interface_max_audio_seconds=14,
         asr_base_url="http://asr.local:8767",
-        oracle_model="deep-hermes",
         oracle_timeout_seconds=17.5,
         max_spoken_sentences=3,
         voice_response_policy="brief_summary",
@@ -328,7 +327,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.interface_max_audio_seconds == 14
     assert sidecar.started_with.interface_base_url == "http://interface.local:8000/v1"
     assert sidecar.started_with.asr_base_url == "http://asr.local:8767"
-    assert sidecar.started_with.oracle_model == "deep-hermes"
+    assert "oracle_model" not in sidecar.started_with.to_wire()
     assert sidecar.started_with.oracle_timeout_seconds == 17.5
     assert sidecar.started_with.max_spoken_sentences == 3
     assert sidecar.started_with.voice_response_policy == "brief_summary"
@@ -366,7 +365,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.metadata["interface_timeout_seconds"] == 0.6
     assert sidecar.started_with.metadata["interface_max_audio_seconds"] == 14
     assert sidecar.started_with.metadata["asr_base_url"] == "http://asr.local:8767"
-    assert sidecar.started_with.metadata["oracle_model"] == "deep-hermes"
+    assert "oracle_model" not in sidecar.started_with.metadata
     assert sidecar.started_with.metadata["oracle_timeout_seconds"] == 17.5
     assert sidecar.started_with.metadata["max_spoken_sentences"] == 3
     assert sidecar.started_with.metadata["voice_response_policy"] == "brief_summary"

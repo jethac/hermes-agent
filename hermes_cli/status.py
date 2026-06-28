@@ -271,7 +271,7 @@ def _realtime_voice_stack_latency_summary_parts(summary: Any) -> list[str]:
         stack = stack_summary.get("stack") if isinstance(stack_summary.get("stack"), Mapping) else {}
         frontend = _stack_label(stack, "frontend_provider", "frontend_model", default="unknown_frontend")
         oracle = (
-            str(stack.get("preferred_local_oracle_model") or stack.get("oracle_model") or "").strip()
+            str(stack.get("preferred_local_oracle_model") or "").strip()
             if isinstance(stack, Mapping)
             else ""
         )

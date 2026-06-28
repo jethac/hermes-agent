@@ -975,7 +975,6 @@ def _manifest_stack_summary(entry: Mapping[str, Any]) -> dict[str, str]:
         "asr_mode": str(entry.get("asr_mode") or ""),
         "asr_provider": str(entry.get("asr_provider") or ""),
         "asr_model": str(entry.get("asr_model") or ""),
-        "oracle_model": str(entry.get("oracle_model") or ""),
         "preferred_local_oracle_model": str(entry.get("preferred_local_oracle_model") or ""),
         "tts_provider": str(entry.get("tts_provider") or ""),
         "tts_model": str(entry.get("tts_model") or ""),
@@ -988,7 +987,7 @@ def _stack_summary_key(stack: Mapping[str, str]) -> str:
         stack.get("engine") or "unknown_engine",
         stack.get("frontend_provider") or "unknown_frontend",
         stack.get("frontend_model") or "unknown_model",
-        stack.get("preferred_local_oracle_model") or stack.get("oracle_model") or "unknown_oracle",
+        stack.get("preferred_local_oracle_model") or "unknown_oracle",
         stack.get("tts_provider") or "unknown_tts",
         stack.get("tts_model") or "unknown_tts_model",
     ]
