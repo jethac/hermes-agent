@@ -603,9 +603,12 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.source == "discord_voice"
         assert request.user_id == "42"
         final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         assert final.payload["kame_intent"] == "Find the note from yesterday's meeting."
         assert final.payload["kame_route"] == "oracle_direct"
         assert final.payload["kame_transcript"] == "find the node from yesterday's meeting"
+        assert commit.payload["metrics"]["kame_oracle_called"] == 1
+        assert commit.payload["metrics"]["kame_oracle_bypassed"] == 0
         assert spoken == ["Done."]
 
     asyncio.run(run())
@@ -670,6 +673,8 @@ def test_kame_engine_local_route_speaks_without_oracle(monkeypatch):
         assert partial.payload["local_reply"] is True
         assert commit.payload["local_reply"] is True
         assert commit.payload["text"] == "Yes, I can hear you."
+        assert commit.payload["metrics"]["kame_oracle_called"] == 0
+        assert commit.payload["metrics"]["kame_oracle_bypassed"] == 1
         assert spoken == ["Yes, I can hear you."]
 
     asyncio.run(run())

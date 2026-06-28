@@ -485,6 +485,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     "playback_generation": playback_generation,
                     "local_reply": True,
                     **metadata,
+                    **_kame_route_metrics_payload(metadata, oracle_called=False),
                 },
             )
             await self._speak_chunk(planned_reply, playback_generation)
@@ -499,6 +500,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         "playback_generation": playback_generation,
                         "local_reply": True,
                         **metadata,
+                        **_kame_route_metrics_payload(metadata, oracle_called=False),
                     },
                 )
         except asyncio.CancelledError:
@@ -583,6 +585,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                             "playback_generation": playback_generation,
                             "acknowledgement": True,
                             **assistant_metadata,
+                            **_kame_route_metrics_payload(assistant_metadata, oracle_called=True),
                         },
                     )
                     queue_speak(planned_acknowledgement)
@@ -610,6 +613,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                                 "text": planned_chunk,
                                 "playback_generation": playback_generation,
                                 **assistant_metadata,
+                                **_kame_route_metrics_payload(assistant_metadata, oracle_called=True),
                             },
                         )
                         queue_speak(planned_chunk)
@@ -623,6 +627,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                             "text": planned_chunk,
                             "playback_generation": playback_generation,
                             **assistant_metadata,
+                            **_kame_route_metrics_payload(assistant_metadata, oracle_called=True),
                         },
                     )
                     queue_speak(planned_chunk)
@@ -639,6 +644,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         "text": plan.committed_text,
                         "playback_generation": playback_generation,
                         **assistant_metadata,
+                        **_kame_route_metrics_payload(assistant_metadata, oracle_called=True),
                     },
                 )
         except asyncio.CancelledError:
@@ -819,6 +825,22 @@ def _kame_local_reply(request: Optional[KameOracleRequest]) -> str:
     if request.route not in {KameRoute.LOCAL, KameRoute.REJECT_OR_CLARIFY}:
         return ""
     return request.local_reply.strip()
+
+
+def _kame_route_metrics_payload(metadata: Mapping[str, Any], *, oracle_called: bool) -> dict:
+    metrics = _kame_route_metrics(metadata, oracle_called=oracle_called)
+    return {"metrics": metrics} if metrics else {}
+
+
+def _kame_route_metrics(metadata: Mapping[str, Any], *, oracle_called: bool) -> dict[str, int]:
+    route = str(metadata.get("kame_route") or "").strip()
+    if not route:
+        return {}
+    oracle_called_int = 1 if oracle_called else 0
+    return {
+        "kame_oracle_called": oracle_called_int,
+        "kame_oracle_bypassed": 0 if oracle_called else 1,
+    }
 
 
 def _metadata_bool(value: Any, *, default: bool = False) -> bool:
