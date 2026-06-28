@@ -2513,6 +2513,68 @@ def test_reference_sidecar_vllm_audio_frontend(monkeypatch):
     assert "do not translate" in prompt
 
 
+def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return (
+                b'{"choices":[{"message":{"content":"'
+                b'{\\"intent\\":\\"Find the note from yesterday.\\",'
+                b'\\"text\\":\\"find the note from yesterday\\",'
+                b'\\"transcript\\":\\"find the node from yesterday\\",'
+                b'\\"transcript_confidence\\":0.71}'
+                b'"}}]}'
+            )
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        captured["body"] = __import__("json").loads(req.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr("agent.realtime_voice_reference_sidecar.urllib.request.urlopen", fake_urlopen)
+
+    sidecar = ReferenceRealtimeVoiceSidecarSession(
+        ReferenceSidecarRuntimeConfig(
+            vllm_base_url="http://vllm.local:8000/v1",
+            vllm_model="google/gemma-4-E2B-it",
+            vllm_timeout_seconds=12,
+        )
+    )
+    sidecar.config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        interface_audio_input="native_audio",
+        asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+    )
+
+    payload = sidecar._understand_audio_sync(b"audio", VoiceAudioCodec.WEBM_OPUS)
+
+    assert payload == {
+        "text": "find the note from yesterday",
+        "intent": "Find the note from yesterday.",
+        "intent_source": "reflex_audio",
+        "transcript_source": "asr",
+        "transcript": "find the node from yesterday",
+        "transcript_confidence": 0.71,
+    }
+    assert captured["url"] == "http://vllm.local:8000/v1/chat/completions"
+    assert captured["timeout"] == 12
+    assert captured["body"]["model"] == "google/gemma-4-E2B-it"
+    assert captured["body"]["response_format"] == {"type": "json_object"}
+    prompt = captured["body"]["messages"][0]["content"][1]["text"]
+    assert "KAME reflex" in prompt
+    assert "Required keys: intent, text" in prompt
+    assert "ASR evidence mode is on_escalation" in prompt
+
+
 def test_reference_sidecar_health_marks_streaming_stt_only_after_bridge_health():
     runtime = ReferenceSidecarRuntimeConfig(
         streaming_stt_base_url="http://streaming-stt.local:9000",

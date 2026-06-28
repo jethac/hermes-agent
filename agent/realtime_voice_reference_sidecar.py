@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 from agent.realtime_voice import (
     AudioChunk,
+    RealtimeVoiceEngineKind,
     RealtimeVoiceSessionConfig,
     VoiceAudioCodec,
     VoiceEvent,
@@ -832,9 +833,9 @@ class ReferenceRealtimeVoiceSidecarSession:
         input_generation: Optional[int] = None,
     ) -> None:
         try:
-            transcript = await asyncio.to_thread(self._transcribe_sync, audio, codec)
-            if transcript:
-                payload = {"text": transcript}
+            payload = await asyncio.to_thread(self._understand_audio_sync, audio, codec)
+            text = str(payload.get("text") or "").strip()
+            if text:
                 if input_generation is not None:
                     payload["input_generation"] = input_generation
                 await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
@@ -847,8 +848,13 @@ class ReferenceRealtimeVoiceSidecarSession:
             )
 
     def _transcribe_sync(self, audio: bytes, codec: VoiceAudioCodec) -> str:
+        return str(self._understand_audio_sync(audio, codec).get("text") or "").strip()
+
+    def _understand_audio_sync(self, audio: bytes, codec: VoiceAudioCodec) -> dict[str, Any]:
+        if self._wants_kame_vllm_reflex():
+            return self._understand_kame_with_vllm(audio, codec)
         if self.runtime.vllm_base_url and self.runtime.vllm_model:
-            return self._transcribe_with_vllm(audio, codec)
+            return {"text": self._transcribe_with_vllm(audio, codec)}
         if not self.runtime.local_stt_enabled:
             raise RuntimeError("local STT is disabled and no vLLM audio frontend is configured")
 
@@ -861,9 +867,18 @@ class ReferenceRealtimeVoiceSidecarSession:
             result = transcribe_audio(path)
             if not result.get("success"):
                 raise RuntimeError(str(result.get("error") or "transcription failed"))
-            return str(result.get("transcript") or "").strip()
+            return {"text": str(result.get("transcript") or "").strip()}
         finally:
             _unlink(path)
+
+    def _wants_kame_vllm_reflex(self) -> bool:
+        config = self.config
+        return (
+            config is not None
+            and config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
+            and bool(self.runtime.vllm_base_url and self.runtime.vllm_model)
+            and str(config.interface_audio_input or "auto") != "text_fallback"
+        )
 
     def _transcribe_with_vllm(self, audio: bytes, codec: VoiceAudioCodec) -> str:
         mime_type = _mime_type_for_codec(codec)
@@ -898,6 +913,50 @@ class ReferenceRealtimeVoiceSidecarSession:
         with urllib.request.urlopen(req, timeout=self.runtime.vllm_timeout_seconds) as response:
             data = json.loads(response.read().decode("utf-8"))
         return str(data["choices"][0]["message"].get("content") or "").strip()
+
+    def _understand_kame_with_vllm(self, audio: bytes, codec: VoiceAudioCodec) -> dict[str, Any]:
+        mime_type = _mime_type_for_codec(codec)
+        audio_b64 = base64.b64encode(audio).decode("ascii")
+        config = self.config
+        asr_mode = str(config.asr_mode.value if config is not None else "on_escalation")
+        payload = {
+            "model": self.runtime.vllm_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "audio_url", "audio_url": {"url": f"data:{mime_type};base64,{audio_b64}"}},
+                        {
+                            "type": "text",
+                            "text": (
+                                "You are the low-latency KAME reflex for a Hermes realtime voice session. "
+                                "Listen to the audio segment and return only a compact JSON object. "
+                                "Required keys: intent, text. text should equal the best oracle-facing user "
+                                "wording. Optional keys: transcript, transcript_confidence. "
+                                "Use intent for what the user wants. Use transcript only as a verbatim "
+                                "hypothesis for names, numbers, code identifiers, and tool arguments. "
+                                f"ASR evidence mode is {asr_mode}; do not rely on external tools. "
+                                "Do not add markdown or commentary."
+                            ),
+                        },
+                    ],
+                }
+            ],
+            "max_tokens": 256,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+        }
+        url = f"{self.runtime.vllm_base_url.rstrip('/')}/chat/completions"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=self.runtime.vllm_timeout_seconds) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        content = str(data["choices"][0]["message"].get("content") or "").strip()
+        return _kame_reflex_payload_from_content(content)
 
     async def _speak(
         self,
@@ -1310,6 +1369,49 @@ def _mime_type_for_path(path: str) -> str:
         ".wav": "audio/wav",
         ".flac": "audio/flac",
     }.get(ext, "audio/mpeg")
+
+
+def _kame_reflex_payload_from_content(content: str) -> dict[str, Any]:
+    text = str(content or "").strip()
+    if not text:
+        return {"text": ""}
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return {
+            "text": text,
+            "intent": text,
+            "intent_source": "reflex_audio",
+            "transcript_source": "none",
+        }
+    if not isinstance(parsed, Mapping):
+        return {"text": text, "intent": text, "intent_source": "reflex_audio", "transcript_source": "none"}
+
+    intent = str(parsed.get("intent") or parsed.get("text") or "").strip()
+    transcript = str(parsed.get("transcript") or parsed.get("asr_transcript") or "").strip()
+    oracle_text = str(parsed.get("text") or transcript or intent).strip()
+    payload: dict[str, Any] = {
+        "text": oracle_text,
+        "intent": intent or oracle_text,
+        "intent_source": str(parsed.get("intent_source") or "reflex_audio"),
+        "transcript_source": str(parsed.get("transcript_source") or ("asr" if transcript else "none")),
+    }
+    if transcript:
+        payload["transcript"] = transcript
+    confidence = _bounded_confidence(parsed.get("transcript_confidence"))
+    if confidence is not None:
+        payload["transcript_confidence"] = confidence
+    return payload
+
+
+def _bounded_confidence(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(1.0, parsed))
 
 
 def _call_synthesize(synthesize: SynthesizeFn, text: str, metadata: Mapping[str, str]) -> Any:
