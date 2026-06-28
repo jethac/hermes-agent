@@ -14759,6 +14759,7 @@ def _realtime_voice_response_policy(realtime: Mapping[str, Any]) -> str:
 
 def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, Any]:
     realtime = _realtime_voice_config_dict()
+    env_on_disk = load_env()
     enabled = realtime.get("enabled") is True
     engine = str(realtime.get("engine") or "text_oracle_tts")
     provider = str(_first_realtime_voice_config_value(realtime, ("frontend_provider",), ("interface", "provider"), default="") or "")
@@ -14807,6 +14808,22 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     )
     interface_audio_input = str(
         _first_realtime_voice_config_value(realtime, ("interface_audio_input",), ("interface", "audio_input"), default="") or ""
+    )
+    interface_api_key_env = str(
+        _first_realtime_voice_config_value(
+            realtime,
+            ("interface_api_key_env",),
+            ("interface", "api_key_env"),
+            default="HERMES_KAME_INTERFACE_API_KEY",
+        )
+        or "HERMES_KAME_INTERFACE_API_KEY"
+    )
+    interface_api_key_present = _realtime_voice_env_present_any(
+        env_on_disk,
+        interface_api_key_env,
+        "HERMES_KAME_INTERFACE_TOKEN",
+        "HERMES_VOICE_VLLM_API_KEY",
+        "HERMES_VOICE_VLLM_TOKEN",
     )
     asr_mode = str(_first_realtime_voice_config_value(realtime, ("asr_mode",), ("interface", "asr_mode"), default="") or "")
     asr_provider = str(_first_realtime_voice_config_value(realtime, ("asr_provider",), ("asr", "provider"), default="") or "")
@@ -15022,6 +15039,8 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "interface_max_output_tokens": interface_max_output_tokens,
         "interface_timeout_seconds": interface_timeout_seconds,
         "interface_max_audio_seconds": interface_max_audio_seconds,
+        "interface_api_key_env": interface_api_key_env,
+        "interface_api_key_present": interface_api_key_present,
         "interface_audio_input": interface_audio_input or None,
         "asr_mode": asr_mode or None,
         "asr_provider": asr_provider or None,
@@ -15071,6 +15090,8 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "interface_max_output_tokens": interface_max_output_tokens,
             "interface_timeout_seconds": interface_timeout_seconds,
             "interface_max_audio_seconds": interface_max_audio_seconds,
+            "interface_api_key_env": interface_api_key_env,
+            "interface_api_key_present": interface_api_key_present,
             "asr_mode": asr_mode or None,
             "interface_audio_input": interface_audio_input or None,
             "asr_provider": asr_provider or None,

@@ -7347,6 +7347,7 @@ class TestRealtimeVoiceWebSocket:
                             "provider": "openai_compatible",
                             "base_url": "http://spark.local:8000/v1",
                             "model": "gemma-4-E2B-it",
+                            "api_key_env": "CUSTOM_KAME_INTERFACE_TOKEN",
                             "temperature": 0.3,
                             "max_output_tokens": 96,
                             "timeout_ms": 700,
@@ -7386,7 +7387,14 @@ class TestRealtimeVoiceWebSocket:
                 }
             },
         )
-        monkeypatch.setattr(self.ws_module, "load_env", lambda: {"HERMES_VOICE_SIDECAR_TOKEN": "secret-token"})
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_env",
+            lambda: {
+                "HERMES_VOICE_SIDECAR_TOKEN": "secret-token",
+                "CUSTOM_KAME_INTERFACE_TOKEN": "secret-interface-token",
+            },
+        )
 
         config = self.ws_module._realtime_voice_config_from_request(FakeWebSocket())
         status = self.ws_module._realtime_voice_status_payload(probe_health=False)
@@ -7431,6 +7439,11 @@ class TestRealtimeVoiceWebSocket:
         assert status["interface_timeout_seconds"] == 0.7
         assert status["interface_max_audio_seconds"] == 18.0
         assert status["kame"]["interface_max_audio_seconds"] == 18.0
+        assert status["interface_api_key_env"] == "CUSTOM_KAME_INTERFACE_TOKEN"
+        assert status["interface_api_key_present"] is True
+        assert status["kame"]["interface_api_key_env"] == "CUSTOM_KAME_INTERFACE_TOKEN"
+        assert status["kame"]["interface_api_key_present"] is True
+        assert "secret-interface-token" not in json.dumps(status)
         assert status["asr_provider"] == "nemotron"
         assert status["tts_provider"] == "cartesia"
         assert status["oracle_provider"] == "custom"
@@ -7963,6 +7976,7 @@ class TestRealtimeVoiceWebSocket:
                         "engine": "kame_interface_oracle",
                         "frontend_provider": "gemma4",
                         "frontend_model": "gemma-4-E2B-it",
+                        "interface_api_key_env": "HERMES_KAME_INTERFACE_API_KEY",
                         "interface_audio_input": "native_audio",
                         "asr_mode": "on_escalation",
                         "asr_provider": "streaming_stt",
@@ -7980,6 +7994,11 @@ class TestRealtimeVoiceWebSocket:
                 }
             },
         )
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_env",
+            lambda: {"HERMES_KAME_INTERFACE_API_KEY": "secret-interface-token"},
+        )
         monkeypatch.setattr(self.ws_module.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
 
         body = self.client.get("/api/voice/realtime/status").json()
@@ -7987,6 +8006,11 @@ class TestRealtimeVoiceWebSocket:
         assert body["available"] is True
         assert body["unavailable_reason"] is None
         assert body["interface_audio_input"] == "native_audio"
+        assert body["interface_api_key_env"] == "HERMES_KAME_INTERFACE_API_KEY"
+        assert body["interface_api_key_present"] is True
+        assert body["kame"]["interface_api_key_env"] == "HERMES_KAME_INTERFACE_API_KEY"
+        assert body["kame"]["interface_api_key_present"] is True
+        assert "secret-interface-token" not in json.dumps(body)
         assert body["asr_mode"] == "on_escalation"
         assert body["asr_provider"] == "streaming_stt"
         assert body["asr_model"] == "nemotron-speech"
@@ -8043,6 +8067,8 @@ class TestRealtimeVoiceWebSocket:
             "interface_max_output_tokens": 160,
             "interface_timeout_seconds": 0.8,
             "interface_max_audio_seconds": 30.0,
+            "interface_api_key_env": "HERMES_KAME_INTERFACE_API_KEY",
+            "interface_api_key_present": True,
             "asr_mode": "on_escalation",
             "interface_audio_input": "native_audio",
             "asr_provider": "streaming_stt",
