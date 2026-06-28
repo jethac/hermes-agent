@@ -80,6 +80,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 self._sidecar_task = asyncio.create_task(self._consume_sidecar_events())
             except Exception as exc:
                 await self._disable_sidecar()
+                if str(config.fallback_policy or "").strip().lower() == "fail_closed":
+                    raise RuntimeError(
+                        "realtime voice sidecar unavailable and fallback_policy=fail_closed: "
+                        f"{sanitize_realtime_voice_error(exc)}"
+                    ) from exc
                 await self._emit(
                     VoiceEventType.FRONTEND_STATE,
                     {

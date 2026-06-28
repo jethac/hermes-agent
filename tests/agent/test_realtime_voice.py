@@ -2523,6 +2523,38 @@ def test_text_engine_reports_sidecar_start_failure_as_frontend_fallback():
     asyncio.run(run())
 
 
+def test_text_engine_fail_closed_policy_raises_on_sidecar_start_failure():
+    closed = {"value": False}
+
+    class FailingStartSidecar:
+        async def start(self, config):
+            raise RuntimeError("sidecar down at http://user:pass@voice.local:8765/v1?token=abc")
+
+        async def close(self):
+            closed["value"] = True
+
+    async def run():
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=FailingStartSidecar())
+        with pytest.raises(RuntimeError) as exc:
+            await engine.start(
+                RealtimeVoiceSessionConfig(
+                    session_id="voice-123",
+                    frontend_provider="gemma4",
+                    sidecar_base_url="http://voice.local:8080",
+                    fallback_policy="fail_closed",
+                )
+            )
+
+        message = str(exc.value)
+        assert "fallback_policy=fail_closed" in message
+        assert "sidecar down" in message
+        assert "user:pass" not in message
+        assert "token=abc" not in message
+        assert closed["value"] is True
+
+    asyncio.run(run())
+
+
 def test_text_engine_treats_sidecar_session_error_as_frontend_fallback():
     class ErrorSidecar(FakeSidecar):
         async def start(self, config):
