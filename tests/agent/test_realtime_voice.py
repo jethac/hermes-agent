@@ -1141,7 +1141,10 @@ def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
                 type=VoiceEventType.AUDIO_INPUT_CHUNK,
                 session_id="voice-123",
                 sequence=2,
-                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"new-speech").to_payload(),
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"new-speech").to_payload(),
+                    "speech_confirmed": True,
+                },
             )
         )
 
@@ -2825,7 +2828,10 @@ def test_text_engine_auto_barge_in_on_new_speech_while_answering(monkeypatch):
                 type=VoiceEventType.AUDIO_INPUT_CHUNK,
                 session_id="voice-123",
                 sequence=2,
-                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"new-speech").to_payload(),
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"new-speech").to_payload(),
+                    "speech_confirmed": True,
+                },
             )
         )
 
@@ -2842,6 +2848,61 @@ def test_text_engine_auto_barge_in_on_new_speech_while_answering(monkeypatch):
             event.payload.get("interrupted") is True and event.payload.get("playback_generation") == 1
             for event in seen
         )
+
+    asyncio.run(run())
+
+
+def test_text_engine_raw_audio_without_confirmed_speech_does_not_barge_in(monkeypatch):
+    class SlowInterruptibleOracle:
+        def __init__(self):
+            self.interrupted = False
+            self.release = asyncio.Event()
+
+        async def stream_answer(self, transcript: str):
+            yield "First answer starts."
+            await self.release.wait()
+            yield " stale ending."
+
+        def interrupt(self, message: str = ""):
+            self.interrupted = True
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        oracle = SlowInterruptibleOracle()
+        engine = TextOracleTTSEngine(oracle=oracle)
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "first turn"},
+            )
+        )
+
+        while True:
+            event = await anext(engine.events())
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                break
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"packet-without-speech").to_payload(),
+            )
+        )
+
+        await engine.close()
+
+        assert oracle.interrupted is False
+        assert engine._playback_generation == 1
+        assert engine._inbound_audio == [b"packet-without-speech"]
 
     asyncio.run(run())
 
@@ -2884,7 +2945,10 @@ def test_text_engine_auto_barge_in_on_new_speech_while_frontend_output_active():
                 type=VoiceEventType.AUDIO_INPUT_CHUNK,
                 session_id="voice-123",
                 sequence=2,
-                payload=AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"new-speech").to_payload(),
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"new-speech").to_payload(),
+                    "speech_confirmed": True,
+                },
             )
         )
 

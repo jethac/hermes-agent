@@ -142,7 +142,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
 
         try:
             chunk = AudioChunk.from_payload(event.payload)
-            if chunk.data:
+            if chunk.data and _payload_confirms_speech_for_barge_in(event.payload):
                 await self._auto_barge_in_for_speech(event)
             if self._sidecar is not None:
                 sidecar_event = self._sidecar_input_event(event)
@@ -1748,6 +1748,18 @@ def _metadata_bool(value: Any, *, default: bool = False) -> bool:
     if isinstance(value, (int, float)):
         return value != 0
     return str(value).strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def _payload_confirms_speech_for_barge_in(payload: Mapping[str, Any]) -> bool:
+    for key in (
+        "speech_confirmed",
+        "barge_in_confirmed",
+        "vad_speech",
+        "speech_detected",
+    ):
+        if key in payload:
+            return _metadata_bool(payload.get(key), default=False)
+    return False
 
 
 def _payload_input_generation(payload: dict) -> Optional[int]:
