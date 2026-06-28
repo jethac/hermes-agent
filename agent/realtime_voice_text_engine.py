@@ -65,6 +65,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._oracle_first_token_at_by_generation: dict[int, float] = {}
         self._first_audio_metric_generations: set[int] = set()
         self._speech_energy_ms_by_user: dict[str, int] = {}
+        self._kame_committed_turns: list[tuple[str, str]] = []
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -665,6 +666,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if cancellation_token:
             payload.setdefault("cancellation_token", cancellation_token)
         payload.setdefault("voice_response_policy", _voice_response_policy(config))
+        if "conversation_summary" not in payload:
+            summary = self._kame_conversation_summary()
+            if summary:
+                payload["conversation_summary"] = summary
         request = KameOracleRequest.from_turn(
             session_id=config.session_id,
             turn_id=f"{config.session_id}:{playback_generation}",
@@ -1180,6 +1185,32 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 "text": text,
             },
         )
+        self._record_kame_committed_turn(metadata, text)
+
+    def _record_kame_committed_turn(self, metadata: Mapping[str, Any], assistant_text: str) -> None:
+        if not _is_kame_metadata(metadata):
+            return
+        user_text = _compact_kame_summary_text(
+            str(metadata.get("kame_intent") or metadata.get("kame_transcript") or "")
+        )
+        assistant = _compact_kame_summary_text(assistant_text)
+        if not user_text and not assistant:
+            return
+        self._kame_committed_turns.append((user_text, assistant))
+        del self._kame_committed_turns[:-4]
+
+    def _kame_conversation_summary(self) -> str:
+        if not self._kame_committed_turns:
+            return ""
+        parts = []
+        for user_text, assistant_text in self._kame_committed_turns[-4:]:
+            if user_text and assistant_text:
+                parts.append(f"User: {user_text} / Hermes: {assistant_text}")
+            elif user_text:
+                parts.append(f"User: {user_text}")
+            elif assistant_text:
+                parts.append(f"Hermes: {assistant_text}")
+        return "Recent committed voice turns: " + " | ".join(parts) if parts else ""
 
     def _transcribe_sync(self, audio: bytes, codec: VoiceAudioCodec) -> str:
         from tools.transcription_tools import transcribe_audio
@@ -1643,6 +1674,11 @@ def _oracle_acknowledgement_text(
     return _turn_acknowledgement_text(config)
 
 
+def _compact_kame_summary_text(text: str) -> str:
+    compacted = " ".join(str(text or "").split())
+    return compacted[:220]
+
+
 def _kame_voice_capability_correction_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:
     if config is not None and isinstance(config.metadata, Mapping):
         text = str(config.metadata.get("voice_capability_correction_text") or "").strip()
@@ -1688,6 +1724,8 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         payload["asr_transcript_confidence"] = request.asr_transcript_confidence
     if request.interface_already_said:
         payload["interface_already_said"] = request.interface_already_said
+    if request.conversation_summary:
+        payload["conversation_summary"] = request.conversation_summary
     if request.cancellation_token:
         payload["cancellation_token"] = request.cancellation_token
     if request.reflex_validation_error:
@@ -1750,6 +1788,8 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
         payload["asr_transcript_confidence"] = metadata.get("kame_asr_transcript_confidence")
     if metadata.get("kame_interface_already_said"):
         payload["interface_already_said"] = str(metadata.get("kame_interface_already_said"))
+    if metadata.get("kame_conversation_summary"):
+        payload["conversation_summary"] = str(metadata.get("kame_conversation_summary"))
     if metadata.get("kame_cancellation_token"):
         payload["cancellation_token"] = str(metadata.get("kame_cancellation_token"))
     if metadata.get("kame_reflex_validation_error"):

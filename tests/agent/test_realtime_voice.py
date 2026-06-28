@@ -1994,6 +1994,88 @@ def test_kame_engine_local_route_reports_first_audio_metric(monkeypatch, tmp_pat
     asyncio.run(run())
 
 
+def test_kame_engine_adds_committed_voice_context_to_next_oracle_request(monkeypatch):
+    class StructuredOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "I found the deployment status."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = StructuredOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "can you hear me",
+                    "intent": "The user is checking whether Hermes can hear them.",
+                    "route": "local",
+                    "local_reply": "Yes, I can hear you.",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+        async for event in engine.events():
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "transcript": "check deployment status",
+                    "intent": "Check deployment status.",
+                    "route": "oracle_direct",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        assert len(oracle.requests) == 1
+        summary = oracle.requests[0].conversation_summary
+        assert summary.startswith("Recent committed voice turns:")
+        assert "The user is checking whether Hermes can hear them." in summary
+        assert "Yes, I can hear you." in summary
+        oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
+        assert oracle_request.payload["conversation_summary"] == summary
+        assert spoken == ["Yes, I can hear you.", "I found the deployment status."]
+
+    asyncio.run(run())
+
+
 def test_kame_engine_respects_metrics_policy_disabled(monkeypatch):
     class UnexpectedOracle:
         async def stream_answer_for_request(self, request):
