@@ -1173,6 +1173,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Low-latency realtime interface model override for Discord voice sessions",
         "category": "discord",
     },
+    "discord.realtime_voice.interface_base_url": {
+        "type": "string",
+        "description": "OpenAI-compatible base URL for the Discord KAME interface model",
+        "category": "discord",
+    },
     "discord.realtime_voice.interface_temperature": {
         "type": "number",
         "description": "Sampling temperature for the Discord KAME interface model",
@@ -1218,6 +1223,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.asr_model": {
         "type": "string",
         "description": "ASR model override for Discord oracle-verbatim evidence",
+        "category": "discord",
+    },
+    "discord.realtime_voice.asr_base_url": {
+        "type": "string",
+        "description": "Base URL for the Discord KAME ASR evidence or text-fallback service; mirrors streaming_stt_base_url",
         "category": "discord",
     },
     "discord.realtime_voice.oracle_provider": {
@@ -1280,6 +1290,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.tts_voice": {
         "type": "string",
         "description": "TTS voice identifier override for Discord KAME spoken output",
+        "category": "discord",
+    },
+    "discord.realtime_voice.tts_base_url": {
+        "type": "string",
+        "description": "Base URL for the Discord KAME TTS service; mirrors streaming_tts_base_url",
         "category": "discord",
     },
     "discord.realtime_voice.fallback_policy": {

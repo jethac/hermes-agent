@@ -247,7 +247,9 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
 
     _discord_set_realtime_default(config, "frontend_provider", interface.get("provider"))
     _discord_set_realtime_default(config, "frontend_model", interface.get("model"))
-    _discord_set_realtime_default(config, "vllm_base_url", interface.get("base_url"))
+    _discord_set_realtime_default(config, "interface_base_url", interface.get("base_url"))
+    _discord_set_realtime_default(config, "interface_base_url", config.get("vllm_base_url"))
+    _discord_set_realtime_default(config, "vllm_base_url", config.get("interface_base_url"))
     _discord_set_realtime_default(config, "interface_temperature", interface.get("temperature"))
     _discord_set_realtime_default(config, "interface_max_output_tokens", interface.get("max_output_tokens"))
     _discord_set_realtime_default(config, "interface_max_audio_seconds", interface.get("max_audio_seconds"))
@@ -281,12 +283,18 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
 
     _discord_set_realtime_default(config, "asr_provider", asr.get("provider"))
     _discord_set_realtime_default(config, "asr_model", asr.get("model"))
+    _discord_set_realtime_default(config, "asr_base_url", asr.get("base_url"))
+    _discord_set_realtime_default(config, "asr_base_url", config.get("streaming_stt_base_url"))
+    _discord_set_realtime_default(config, "streaming_stt_base_url", config.get("asr_base_url"))
     _discord_set_realtime_default(config, "streaming_stt_base_url", asr.get("base_url"))
     _discord_set_realtime_default(config, "streaming_stt_token_env", asr.get("token_env"))
 
     _discord_set_realtime_default(config, "tts_provider", tts.get("provider"))
     _discord_set_realtime_default(config, "tts_model", tts.get("model"))
     _discord_set_realtime_default(config, "tts_voice", tts.get("voice"))
+    _discord_set_realtime_default(config, "tts_base_url", tts.get("base_url"))
+    _discord_set_realtime_default(config, "tts_base_url", config.get("streaming_tts_base_url"))
+    _discord_set_realtime_default(config, "streaming_tts_base_url", config.get("tts_base_url"))
     _discord_set_realtime_default(config, "streaming_tts_base_url", tts.get("base_url"))
     _discord_set_realtime_default(config, "streaming_tts_token_env", tts.get("token_env"))
 
@@ -3014,6 +3022,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "sidecar_port": 8765,
             "frontend_provider": None,
             "frontend_model": None,
+            "interface_base_url": None,
             "vllm_base_url": None,
             "interface_temperature": 0.2,
             "interface_max_output_tokens": 160,
@@ -3023,6 +3032,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "asr_mode": "on_escalation",
             "asr_provider": None,
             "asr_model": None,
+            "asr_base_url": None,
             "streaming_stt_base_url": None,
             "streaming_stt_token_env": None,
             "oracle_provider": None,
@@ -3037,6 +3047,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "tts_provider": None,
             "tts_model": None,
             "tts_voice": None,
+            "tts_base_url": None,
             "streaming_tts_base_url": None,
             "streaming_tts_token_env": None,
             "fallback_policy": "legacy_voice",

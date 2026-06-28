@@ -125,11 +125,16 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
                         "max_spoken_sentences": 2,
                         "voice_response_policy": "brief_summary",
                     },
-                    "asr": {"provider": "nemotron", "model": "nemotron-speech"},
+                    "asr": {
+                        "provider": "nemotron",
+                        "model": "nemotron-speech",
+                        "base_url": "http://spark.local:8767",
+                    },
                     "tts": {
                         "provider": "cartesia",
                         "model": "sonic-3.5",
                         "voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+                        "base_url": "http://spark.local:8768",
                     },
                     "barge_in": {
                         "min_rms": 410,
@@ -157,6 +162,8 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
                         "allow_local_clarifications": False,
                         "local_confidence_threshold": 0.88,
                     },
+                    "asr_base_url": "http://discord.local:8767",
+                    "tts_base_url": "http://discord.local:8768",
                 },
             },
         },
@@ -172,6 +179,7 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["sidecar_token"] == "secret-token"
     assert cfg["frontend_provider"] == "gemma4"
     assert cfg["frontend_model"] == "discord-reflex"
+    assert cfg["interface_base_url"] == "http://spark.local:8000/v1"
     assert cfg["vllm_base_url"] == "http://spark.local:8000/v1"
     assert cfg["interface_temperature"] == 0.3
     assert cfg["interface_max_output_tokens"] == 96
@@ -181,6 +189,8 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["asr_mode"] == "on_escalation"
     assert cfg["asr_provider"] == "nemotron"
     assert cfg["asr_model"] == "nemotron-speech"
+    assert cfg["asr_base_url"] == "http://discord.local:8767"
+    assert cfg["streaming_stt_base_url"] == "http://discord.local:8767"
     assert cfg["oracle_provider"] == "custom"
     assert cfg["oracle_provider_name"] == "Spark Oracle"
     assert cfg["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
@@ -192,6 +202,8 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["tts_provider"] == "cartesia"
     assert cfg["tts_model"] == "sonic-3.5"
     assert cfg["tts_voice"] == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
+    assert cfg["tts_base_url"] == "http://discord.local:8768"
+    assert cfg["streaming_tts_base_url"] == "http://discord.local:8768"
     assert cfg["barge_in_min_rms"] == 410
     assert cfg["barge_in_min_speech_ms"] == 130
     assert cfg["barge_in_stop_playback_deadline_ms"] == 95

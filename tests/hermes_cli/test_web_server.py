@@ -3307,6 +3307,8 @@ class TestBuildSchemaFromConfig:
         assert "Low-latency realtime voice frontend provider" in CONFIG_SCHEMA["discord.realtime_voice.frontend_provider"]["description"]
         assert CONFIG_SCHEMA["discord.realtime_voice.frontend_model"]["type"] == "string"
         assert "Low-latency realtime interface model" in CONFIG_SCHEMA["discord.realtime_voice.frontend_model"]["description"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.interface_base_url"]["type"] == "string"
+        assert "Discord KAME interface model" in CONFIG_SCHEMA["discord.realtime_voice.interface_base_url"]["description"]
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_temperature"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_max_output_tokens"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_timeout_seconds"]["type"] == "number"
@@ -3329,6 +3331,8 @@ class TestBuildSchemaFromConfig:
         ]
         assert CONFIG_SCHEMA["discord.realtime_voice.asr_provider"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.asr_model"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.asr_base_url"]["type"] == "string"
+        assert "Discord KAME ASR" in CONFIG_SCHEMA["discord.realtime_voice.asr_base_url"]["description"]
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_provider"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_provider_name"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.preferred_local_oracle_model"]["type"] == "string"
@@ -3352,6 +3356,8 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_provider"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_model"]["type"] == "string"
         assert CONFIG_SCHEMA["discord.realtime_voice.tts_voice"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.tts_base_url"]["type"] == "string"
+        assert "Discord KAME TTS" in CONFIG_SCHEMA["discord.realtime_voice.tts_base_url"]["description"]
         assert CONFIG_SCHEMA["discord.realtime_voice.fallback_policy"]["type"] == "select"
         assert CONFIG_SCHEMA["discord.realtime_voice.fallback_policy"]["options"] == [
             "legacy_voice",
