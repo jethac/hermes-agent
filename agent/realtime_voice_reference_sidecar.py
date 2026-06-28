@@ -1756,6 +1756,13 @@ def _apply_kame_routing_policy(
     route = str(routed.get("route") or "").strip().lower()
     if route not in {KameRoute.LOCAL.value, KameRoute.REJECT_OR_CLARIFY.value}:
         return routed
+    if route == KameRoute.LOCAL.value:
+        required_reason = _kame_oracle_required_reason(routed, config)
+        if required_reason:
+            return _downgrade_kame_local_route(
+                routed,
+                reason=required_reason,
+            )
     if route == KameRoute.REJECT_OR_CLARIFY.value and not _kame_local_clarifications_allowed(config):
         return _downgrade_kame_local_route(
             routed,
@@ -1899,6 +1906,84 @@ def _kame_local_clarifications_allowed(config: Optional[RealtimeVoiceSessionConf
     if not isinstance(routing, Mapping):
         routing = {}
     return _metadata_bool(routing.get("allow_local_clarifications"), default=True)
+
+
+_KAME_TOOL_OR_TASK_TERMS = frozenset(
+    {
+        "call",
+        "command",
+        "commit",
+        "deploy",
+        "execute",
+        "grep",
+        "install",
+        "pytest",
+        "push",
+        "rebase",
+        "restart",
+        "run",
+        "search",
+        "shell",
+        "tool",
+    }
+)
+_KAME_FILE_OR_PROJECT_TERMS = frozenset(
+    {
+        "branch",
+        "code",
+        "config",
+        "directory",
+        "diff",
+        "file",
+        "folder",
+        "function",
+        "github",
+        "issue",
+        "log",
+        "pr",
+        "project",
+        "repo",
+        "repository",
+        "source",
+        "workspace",
+    }
+)
+_KAME_MEMORY_TERMS = frozenset({"forget", "memory", "recall", "remember", "save"})
+
+
+def _kame_oracle_required_reason(
+    payload: Mapping[str, Any],
+    config: Optional[RealtimeVoiceSessionConfig],
+) -> str:
+    metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
+    routing = metadata.get("routing") if isinstance(metadata, Mapping) else {}
+    if not isinstance(routing, Mapping):
+        routing = {}
+    terms = _kame_policy_terms(payload)
+    if (
+        _metadata_bool(routing.get("require_oracle_for_tools"), default=True)
+        and terms.intersection(_KAME_TOOL_OR_TASK_TERMS)
+    ):
+        return "oracle_required_for_tools"
+    if (
+        _metadata_bool(routing.get("require_oracle_for_files"), default=True)
+        and terms.intersection(_KAME_FILE_OR_PROJECT_TERMS)
+    ):
+        return "oracle_required_for_files"
+    if (
+        _metadata_bool(routing.get("require_oracle_for_memory"), default=True)
+        and terms.intersection(_KAME_MEMORY_TERMS)
+    ):
+        return "oracle_required_for_memory"
+    return ""
+
+
+def _kame_policy_terms(payload: Mapping[str, Any]) -> set[str]:
+    text = " ".join(
+        str(payload.get(key) or "")
+        for key in ("text", "transcript", "intent")
+    ).lower()
+    return set(re.findall(r"[a-z][a-z0-9_-]*", text))
 
 
 def _interface_temperature(config: Optional[RealtimeVoiceSessionConfig]) -> float:

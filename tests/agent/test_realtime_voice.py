@@ -3884,6 +3884,95 @@ def test_reference_sidecar_kame_local_route_respects_confidence_threshold():
     assert payload["reflex_validation_error"] == "local_confidence_below_threshold"
 
 
+def test_reference_sidecar_kame_local_route_requires_oracle_for_files_by_default():
+    payload = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(
+            {
+                "route": "local",
+                "route_confidence": 0.91,
+                "intent": "The user wants Hermes to inspect the project config file.",
+                "text": "check the config file",
+                "local_reply": "The config file looks fine.",
+            }
+        ),
+        config=RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        ),
+    )
+
+    assert payload["route"] == "oracle_direct"
+    assert payload["route_confidence"] == 0.91
+    assert "local_reply" not in payload
+    assert payload["reflex_validation_error"] == "oracle_required_for_files"
+
+
+def test_reference_sidecar_kame_local_route_requires_oracle_for_memory_by_default():
+    payload = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(
+            {
+                "route": "local",
+                "route_confidence": 0.91,
+                "intent": "The user wants Hermes to remember a preference.",
+                "text": "remember this voice id",
+                "local_reply": "I will remember it.",
+            }
+        ),
+        config=RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        ),
+    )
+
+    assert payload["route"] == "oracle_direct"
+    assert "local_reply" not in payload
+    assert payload["reflex_validation_error"] == "oracle_required_for_memory"
+
+
+def test_reference_sidecar_kame_local_route_allows_configured_file_opt_out():
+    payload = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(
+            {
+                "route": "local",
+                "route_confidence": 0.91,
+                "intent": "The user asks about a generic config setting.",
+                "text": "what is a config file",
+                "local_reply": "A config file stores settings.",
+            }
+        ),
+        config=RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            metadata={"routing": {"require_oracle_for_files": False}},
+        ),
+    )
+
+    assert payload["route"] == "local"
+    assert payload["route_confidence"] == 0.91
+    assert payload["local_reply"] == "A config file stores settings."
+
+
+def test_reference_sidecar_kame_local_route_allows_smoke_test_phrase():
+    payload = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(
+            {
+                "route": "local",
+                "route_confidence": 0.91,
+                "intent": "The user is checking whether voice works.",
+                "text": "this is a test",
+                "local_reply": "Test received.",
+            }
+        ),
+        config=RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        ),
+    )
+
+    assert payload["route"] == "local"
+    assert payload["local_reply"] == "Test received."
+
+
 def test_reference_sidecar_kame_clarify_route_respects_routing_policy():
     payload = reference_sidecar_module._kame_reflex_payload_from_content(
         json.dumps(
