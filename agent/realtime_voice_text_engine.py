@@ -593,6 +593,15 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             oracle = self._oracle or NullRealtimeOracle()
             answer = ""
             buffer = ""
+            if oracle_request is not None:
+                await self._emit_oracle_hint(
+                    text="",
+                    delta="",
+                    final=False,
+                    playback_generation=playback_generation,
+                    metadata=assistant_metadata,
+                    accepted=True,
+                )
             async for delta in _stream_oracle_answer(
                 oracle,
                 transcript,
@@ -603,6 +612,14 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     return
                 answer += delta
                 buffer += delta
+                if oracle_request is not None:
+                    await self._emit_oracle_hint(
+                        text=answer,
+                        delta=str(delta),
+                        final=False,
+                        playback_generation=playback_generation,
+                        metadata=assistant_metadata,
+                    )
                 chunk, buffer = _take_speakable_chunk(buffer)
                 if chunk:
                     planned_chunk = self._planner.clean(chunk)
@@ -631,6 +648,15 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         },
                     )
                     queue_speak(planned_chunk)
+
+            if oracle_request is not None and answer:
+                await self._emit_oracle_hint(
+                    text=answer,
+                    delta="",
+                    final=True,
+                    playback_generation=playback_generation,
+                    metadata=assistant_metadata,
+                )
 
             plan = self._planner.plan(answer)
             if speak_chain is not None:
@@ -760,19 +786,44 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             raise RuntimeError(result.get("error") or "speech synthesis failed")
         return str(result.get("file_path") or "")
 
-    async def _emit(self, event_type: VoiceEventType, payload: dict) -> None:
-        if self.config is None:
+    async def _emit_oracle_hint(
+        self,
+        *,
+        text: str,
+        delta: str,
+        final: bool,
+        playback_generation: int,
+        metadata: Mapping[str, Any],
+        accepted: bool = False,
+    ) -> None:
+        if playback_generation != self._playback_generation:
             return
+        payload: dict[str, Any] = {
+            "text": text,
+            "delta": delta,
+            "final": final,
+            "source": "hermes",
+            "playback_generation": playback_generation,
+            **_kame_route_metrics_payload(metadata, oracle_called=True),
+        }
+        if accepted:
+            payload["accepted"] = True
+        event = await self._emit(VoiceEventType.ORACLE_HINT, payload)
+        if event is not None and self._sidecar is not None:
+            await self._send_sidecar_event(event)
+
+    async def _emit(self, event_type: VoiceEventType, payload: dict) -> Optional[VoiceEvent]:
+        if self.config is None:
+            return None
         self._sequence += 1
-        await put_realtime_voice_event(
-            self._events,
-            VoiceEvent(
-                type=event_type,
-                session_id=self.config.session_id,
-                sequence=self._sequence,
-                payload=payload,
-            )
+        event = VoiceEvent(
+            type=event_type,
+            session_id=self.config.session_id,
+            sequence=self._sequence,
+            payload=payload,
         )
+        await put_realtime_voice_event(self._events, event)
+        return event
 
 
 class KameInterfaceOracleEngine(TextOracleTTSEngine):

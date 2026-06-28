@@ -614,6 +614,70 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
+    class HintOracle:
+        async def stream_answer_for_request(self, request):
+            yield "Looking now"
+            yield "."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        sidecar = FakeSidecar()
+        engine = KameInterfaceOracleEngine(oracle=HintOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                sidecar_base_url="http://voice.local:8765",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "look this up",
+                    "text": "look this up",
+                    "intent": "Look this up.",
+                    "route": "oracle_direct",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        hints = [event for event in seen if event.type == VoiceEventType.ORACLE_HINT]
+        forwarded = [event for event in sidecar.received if event.type == VoiceEventType.ORACLE_HINT]
+        assert [hint.payload.get("accepted") for hint in hints] == [True, None, None, None]
+        assert [hint.payload["delta"] for hint in hints] == ["", "Looking now", ".", ""]
+        assert hints[-1].payload["final"] is True
+        assert hints[-1].payload["text"] == "Looking now."
+        assert hints[-1].payload["metrics"]["kame_oracle_called"] == 1
+        assert hints[-1].payload["metrics"]["kame_oracle_bypassed"] == 0
+        assert [event.payload for event in forwarded] == [event.payload for event in hints]
+        assert spoken == ["Looking now."]
+
+    asyncio.run(run())
+
+
 def test_kame_engine_local_route_speaks_without_oracle(monkeypatch):
     class UnexpectedOracle:
         async def stream_answer_for_request(self, request):
@@ -668,6 +732,7 @@ def test_kame_engine_local_route_speaks_without_oracle(monkeypatch):
         final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
         partial = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL)
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        assert not any(event.type == VoiceEventType.ORACLE_HINT for event in seen)
         assert final.payload["kame_route"] == "local"
         assert final.payload["kame_local_reply"] == "Yes, I can hear you."
         assert partial.payload["local_reply"] is True
