@@ -110,6 +110,7 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
                         "temperature": 0.3,
                         "max_output_tokens": 96,
                         "timeout_ms": 700,
+                        "max_audio_seconds": 16,
                         "audio_input": "auto",
                         "asr_mode": "on_escalation",
                     },
@@ -175,6 +176,7 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["interface_temperature"] == 0.3
     assert cfg["interface_max_output_tokens"] == 96
     assert cfg["interface_timeout_seconds"] == 0.7
+    assert cfg["interface_max_audio_seconds"] == 16
     assert cfg["interface_audio_input"] == "auto"
     assert cfg["asr_mode"] == "on_escalation"
     assert cfg["asr_provider"] == "nemotron"
@@ -222,6 +224,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         interface_temperature=0.35,
         interface_max_output_tokens=96,
         interface_timeout_seconds=0.6,
+        interface_max_audio_seconds=14,
         oracle_model="deep-hermes",
         oracle_timeout_seconds=17.5,
         max_spoken_sentences=3,
@@ -256,6 +259,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.interface_temperature == 0.35
     assert sidecar.started_with.interface_max_output_tokens == 96
     assert sidecar.started_with.interface_timeout_seconds == 0.6
+    assert sidecar.started_with.interface_max_audio_seconds == 14
     assert sidecar.started_with.oracle_model == "deep-hermes"
     assert sidecar.started_with.oracle_timeout_seconds == 17.5
     assert sidecar.started_with.max_spoken_sentences == 3
@@ -268,6 +272,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.metadata["interface_temperature"] == 0.35
     assert sidecar.started_with.metadata["interface_max_output_tokens"] == 96
     assert sidecar.started_with.metadata["interface_timeout_seconds"] == 0.6
+    assert sidecar.started_with.metadata["interface_max_audio_seconds"] == 14
     assert sidecar.started_with.metadata["oracle_model"] == "deep-hermes"
     assert sidecar.started_with.metadata["oracle_timeout_seconds"] == 17.5
     assert sidecar.started_with.metadata["max_spoken_sentences"] == 3

@@ -144,6 +144,7 @@ def test_session_config_round_trips_wire_payload():
         interface_temperature=0.4,
         interface_max_output_tokens=128,
         interface_timeout_seconds=1.25,
+        interface_max_audio_seconds=24.0,
         asr_provider="streaming_stt",
         asr_model="nemotron-speech",
         oracle_model="configured-hermes-model",
@@ -169,6 +170,7 @@ def test_session_config_round_trips_wire_payload():
     assert restored.interface_temperature == 0.4
     assert restored.interface_max_output_tokens == 128
     assert restored.interface_timeout_seconds == 1.25
+    assert restored.interface_max_audio_seconds == 24.0
     assert restored.sidecar_connect_timeout_seconds == 3.5
     assert restored.oracle_timeout_seconds == 12.5
     assert restored.max_spoken_sentences == 3
@@ -184,6 +186,7 @@ def test_session_config_round_trips_kame_fields():
         interface_temperature=0.35,
         interface_max_output_tokens=96,
         interface_timeout_seconds=0.6,
+        interface_max_audio_seconds=12.0,
         interface_audio_input="native_audio",
         asr_mode=RealtimeVoiceASRMode.SPECULATIVE,
         asr_provider="streaming_stt",
@@ -204,6 +207,7 @@ def test_session_config_round_trips_kame_fields():
     assert restored.interface_temperature == 0.35
     assert restored.interface_max_output_tokens == 96
     assert restored.interface_timeout_seconds == 0.6
+    assert restored.interface_max_audio_seconds == 12.0
     assert restored.interface_audio_input == "native_audio"
     assert restored.asr_mode == RealtimeVoiceASRMode.SPECULATIVE
     assert restored.asr_provider == "streaming_stt"
@@ -4600,6 +4604,38 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     assert "allow_local_greetings=False" in prompt
     assert "local_confidence_threshold=0.82" in prompt
     assert "ASR evidence mode is on_escalation" in prompt
+
+
+def test_reference_sidecar_kame_audio_reflex_rejects_pcm_segments_over_model_limit(monkeypatch):
+    calls = []
+
+    def fake_urlopen(req, timeout):
+        calls.append(req.full_url)
+        raise AssertionError("overlong native audio must be rejected before vLLM")
+
+    monkeypatch.setattr("agent.realtime_voice_reference_sidecar.urllib.request.urlopen", fake_urlopen)
+
+    sidecar = ReferenceRealtimeVoiceSidecarSession(
+        ReferenceSidecarRuntimeConfig(
+            vllm_base_url="http://vllm.local:8000/v1",
+            vllm_model="google/gemma-4-E2B-it",
+            vllm_timeout_seconds=12,
+        )
+    )
+    sidecar.config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        sample_rate_hz=16000,
+        channels=1,
+        interface_max_audio_seconds=1.0,
+        interface_audio_input="native_audio",
+        asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+    )
+
+    with pytest.raises(RuntimeError, match="interface_max_audio_seconds"):
+        sidecar._understand_audio_sync(b"\x00\x00" * 16001, VoiceAudioCodec.PCM16)
+
+    assert calls == []
 
 
 def test_reference_sidecar_kame_reflex_validation_rejects_invalid_route():

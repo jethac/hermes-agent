@@ -133,6 +133,7 @@ class DiscordRealtimeVoiceSession:
         interface_temperature: float = 0.2,
         interface_max_output_tokens: int = 160,
         interface_timeout_seconds: float = 0.8,
+        interface_max_audio_seconds: float = 30.0,
         interface_audio_input: Optional[str] = None,
         asr_mode: str = RealtimeVoiceASRMode.ON_ESCALATION.value,
         asr_provider: Optional[str] = None,
@@ -168,6 +169,7 @@ class DiscordRealtimeVoiceSession:
         self.interface_temperature = interface_temperature
         self.interface_max_output_tokens = interface_max_output_tokens
         self.interface_timeout_seconds = interface_timeout_seconds
+        self.interface_max_audio_seconds = interface_max_audio_seconds
         self.interface_audio_input = interface_audio_input
         self.asr_mode = asr_mode
         self.asr_provider = asr_provider
@@ -219,6 +221,7 @@ class DiscordRealtimeVoiceSession:
             interface_temperature=self.interface_temperature,
             interface_max_output_tokens=self.interface_max_output_tokens,
             interface_timeout_seconds=self.interface_timeout_seconds,
+            interface_max_audio_seconds=self.interface_max_audio_seconds,
             interface_audio_input=self.interface_audio_input,
             asr_mode=RealtimeVoiceASRMode(str(self.asr_mode or RealtimeVoiceASRMode.ON_ESCALATION.value)),
             asr_provider=self.asr_provider,
@@ -245,6 +248,7 @@ class DiscordRealtimeVoiceSession:
                 "interface_temperature": self.interface_temperature,
                 "interface_max_output_tokens": self.interface_max_output_tokens,
                 "interface_timeout_seconds": self.interface_timeout_seconds,
+                "interface_max_audio_seconds": self.interface_max_audio_seconds,
                 "interface_audio_input": self.interface_audio_input,
                 "asr_mode": self.asr_mode,
                 "asr_provider": self.asr_provider,

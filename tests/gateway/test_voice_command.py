@@ -1358,6 +1358,7 @@ class TestDiscordVoiceChannelMethods:
             "interface_temperature": 0.35,
             "interface_max_output_tokens": 96,
             "interface_timeout_seconds": 0.6,
+            "interface_max_audio_seconds": 14,
             "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
             "oracle_model": "deep-hermes",
             "oracle_timeout_seconds": 19,
@@ -1397,6 +1398,7 @@ class TestDiscordVoiceChannelMethods:
         assert session_cls.call_args.kwargs["interface_temperature"] == 0.35
         assert session_cls.call_args.kwargs["interface_max_output_tokens"] == 96
         assert session_cls.call_args.kwargs["interface_timeout_seconds"] == 0.6
+        assert session_cls.call_args.kwargs["interface_max_audio_seconds"] == 14.0
         assert session_cls.call_args.kwargs["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
         assert session_cls.call_args.kwargs["oracle_model"] == "deep-hermes"
         assert session_cls.call_args.kwargs["oracle_timeout_seconds"] == 19.0
@@ -1419,6 +1421,7 @@ class TestDiscordVoiceChannelMethods:
         assert status["interface_temperature"] == 0.35
         assert status["interface_max_output_tokens"] == 96
         assert status["interface_timeout_seconds"] == 0.6
+        assert status["interface_max_audio_seconds"] == 14.0
         assert status["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
         assert status["oracle_model"] == "deep-hermes"
         assert status["oracle_timeout_seconds"] == 19.0

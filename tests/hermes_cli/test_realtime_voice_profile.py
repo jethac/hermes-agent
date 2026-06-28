@@ -261,6 +261,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["interface_temperature"] == 0.2
     assert realtime["interface_max_output_tokens"] == 160
     assert realtime["interface_timeout_seconds"] == 0.8
+    assert realtime["interface_max_audio_seconds"] == 30.0
     assert realtime["asr_mode"] == "on_escalation"
     assert realtime["asr_provider"] == "streaming_stt"
     assert realtime["asr_model"] == "portable-streaming-asr"
@@ -330,6 +331,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["interface_temperature"] == 0.2
     assert discord_rt["interface_max_output_tokens"] == 160
     assert discord_rt["interface_timeout_seconds"] == 0.8
+    assert discord_rt["interface_max_audio_seconds"] == 30.0
     assert discord_rt["interface_audio_input"] == "native_audio"
     assert discord_rt["asr_mode"] == "speculative"
     assert discord_rt["asr_provider"] == "streaming_stt"

@@ -738,6 +738,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Seconds to wait for the KAME interface model before treating it as unavailable",
         "category": "voice",
     },
+    "voice.realtime.interface_max_audio_seconds": {
+        "type": "number",
+        "description": "Maximum native-audio segment seconds sent to the KAME interface model",
+        "category": "voice",
+    },
     "voice.realtime.interface_audio_input": {
         "type": "select",
         "description": "How the KAME reflex receives user input",
@@ -1101,6 +1106,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.interface_timeout_seconds": {
         "type": "number",
         "description": "Seconds to wait for the Discord KAME interface model before treating it as unavailable",
+        "category": "discord",
+    },
+    "discord.realtime_voice.interface_max_audio_seconds": {
+        "type": "number",
+        "description": "Maximum native-audio segment seconds sent to the Discord KAME interface model",
         "category": "discord",
     },
     "discord.realtime_voice.interface_audio_input": {
@@ -14456,6 +14466,7 @@ def _normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, A
     _set_realtime_voice_default(config, "vllm_base_url", interface.get("base_url"))
     _set_realtime_voice_default(config, "interface_temperature", interface.get("temperature"))
     _set_realtime_voice_default(config, "interface_max_output_tokens", interface.get("max_output_tokens"))
+    _set_realtime_voice_default(config, "interface_max_audio_seconds", interface.get("max_audio_seconds"))
     if config.get("interface_timeout_seconds") is None:
         if interface.get("timeout_seconds") is not None:
             config["interface_timeout_seconds"] = interface.get("timeout_seconds")
@@ -14553,6 +14564,16 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             )
             / 1000.0
         ),
+    )
+    interface_max_audio_seconds = _bounded_float_config(
+        _first_realtime_voice_config_value(
+            realtime,
+            ("interface_max_audio_seconds",),
+            ("interface", "max_audio_seconds"),
+        ),
+        default=30.0,
+        minimum=1.0,
+        maximum=30.0,
     )
     interface_audio_input = str(
         _first_realtime_voice_config_value(realtime, ("interface_audio_input",), ("interface", "audio_input"), default="") or ""
@@ -14761,6 +14782,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "interface_temperature": interface_temperature,
         "interface_max_output_tokens": interface_max_output_tokens,
         "interface_timeout_seconds": interface_timeout_seconds,
+        "interface_max_audio_seconds": interface_max_audio_seconds,
         "interface_audio_input": interface_audio_input or None,
         "asr_mode": asr_mode or None,
         "asr_provider": asr_provider or None,
@@ -15266,6 +15288,12 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             realtime.get("interface_timeout_seconds"),
             default=0.8,
         ),
+        interface_max_audio_seconds=_bounded_float_config(
+            realtime.get("interface_max_audio_seconds"),
+            default=30.0,
+            minimum=1.0,
+            maximum=30.0,
+        ),
         interface_audio_input=str(realtime.get("interface_audio_input") or "") or None,
         asr_mode=RealtimeVoiceASRMode(str(realtime.get("asr_mode") or RealtimeVoiceASRMode.ON_ESCALATION.value)),
         asr_provider=asr_provider or None,
@@ -15315,6 +15343,12 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "interface_timeout_seconds": _positive_float_config(
                 realtime.get("interface_timeout_seconds"),
                 default=0.8,
+            ),
+            "interface_max_audio_seconds": _bounded_float_config(
+                realtime.get("interface_max_audio_seconds"),
+                default=30.0,
+                minimum=1.0,
+                maximum=30.0,
             ),
             "interface_audio_input": str(realtime.get("interface_audio_input") or "") or None,
             "asr_mode": str(realtime.get("asr_mode") or "") or None,

@@ -1309,6 +1309,7 @@ class ReferenceRealtimeVoiceSidecarSession:
 
     def _understand_kame_with_vllm(self, audio: bytes, codec: VoiceAudioCodec) -> dict[str, Any]:
         mime_type = _mime_type_for_codec(codec)
+        self._raise_if_kame_audio_segment_too_long(audio, codec)
         audio_b64 = base64.b64encode(audio).decode("ascii")
         config = self.config
         asr_mode = str(config.asr_mode.value if config is not None else "on_escalation")
@@ -1363,6 +1364,18 @@ class ReferenceRealtimeVoiceSidecarSession:
             data = json.loads(response.read().decode("utf-8"))
         content = str(data["choices"][0]["message"].get("content") or "").strip()
         return _kame_reflex_payload_from_content(content, config=config)
+
+    def _raise_if_kame_audio_segment_too_long(self, audio: bytes, codec: VoiceAudioCodec) -> None:
+        config = self.config
+        max_seconds = _interface_max_audio_seconds(config)
+        duration_seconds = _audio_duration_seconds(audio, codec, config)
+        if duration_seconds is None:
+            return
+        if duration_seconds > max_seconds:
+            raise RuntimeError(
+                "KAME audio segment exceeds interface_max_audio_seconds "
+                f"({duration_seconds:.2f}s > {max_seconds:.2f}s)"
+            )
 
     async def _speak(
         self,
@@ -2024,6 +2037,41 @@ def _interface_timeout_seconds(
     if runtime_timeout > 0:
         return min(parsed, runtime_timeout)
     return parsed
+
+
+def _interface_max_audio_seconds(config: Optional[RealtimeVoiceSessionConfig]) -> float:
+    value = getattr(config, "interface_max_audio_seconds", 30.0) if config is not None else 30.0
+    if isinstance(value, bool):
+        return 30.0
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return 30.0
+    if parsed <= 0:
+        return 30.0
+    return min(parsed, 30.0)
+
+
+def _audio_duration_seconds(
+    audio: bytes,
+    codec: VoiceAudioCodec,
+    config: Optional[RealtimeVoiceSessionConfig],
+) -> Optional[float]:
+    if codec != VoiceAudioCodec.PCM16:
+        return None
+    if not audio:
+        return 0.0
+    sample_rate_hz = getattr(config, "sample_rate_hz", 16000) if config is not None else 16000
+    channels = getattr(config, "channels", 1) if config is not None else 1
+    try:
+        sample_rate = int(sample_rate_hz)
+        channel_count = int(channels)
+    except (TypeError, ValueError):
+        return None
+    bytes_per_second = sample_rate * max(1, channel_count) * 2
+    if bytes_per_second <= 0:
+        return None
+    return len(audio) / bytes_per_second
 
 
 def _metadata_bool(value: Any, *, default: bool = False) -> bool:

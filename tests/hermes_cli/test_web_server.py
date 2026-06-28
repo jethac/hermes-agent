@@ -3176,6 +3176,7 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.interface_temperature"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.interface_max_output_tokens"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.interface_timeout_seconds"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.interface_max_audio_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.frontend_model"]["type"] == "string"
         assert "interface model" in CONFIG_SCHEMA["voice.realtime.frontend_model"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.vllm_base_url"]["type"] == "string"
@@ -3259,6 +3260,7 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_temperature"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_max_output_tokens"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_timeout_seconds"]["type"] == "number"
+        assert CONFIG_SCHEMA["discord.realtime_voice.interface_max_audio_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_audio_input"]["type"] == "select"
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_audio_input"]["options"] == [
             "auto",
@@ -7072,6 +7074,7 @@ class TestRealtimeVoiceWebSocket:
                             "temperature": 0.3,
                             "max_output_tokens": 96,
                             "timeout_ms": 700,
+                            "max_audio_seconds": 18,
                             "audio_input": "auto",
                             "asr_mode": "on_escalation",
                         },
@@ -7118,6 +7121,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.interface_temperature == 0.3
         assert config.interface_max_output_tokens == 96
         assert config.interface_timeout_seconds == 0.7
+        assert config.interface_max_audio_seconds == 18.0
         assert config.interface_audio_input == "auto"
         assert config.asr_mode.value == "on_escalation"
         assert config.asr_provider == "nemotron"
@@ -7133,6 +7137,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.metadata["interface_temperature"] == 0.3
         assert config.metadata["interface_max_output_tokens"] == 96
         assert config.metadata["interface_timeout_seconds"] == 0.7
+        assert config.metadata["interface_max_audio_seconds"] == 18.0
         assert config.metadata["oracle_provider"] == "custom"
         assert config.metadata["oracle_provider_name"] == "Spark Oracle"
         assert config.metadata["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
@@ -7145,6 +7150,7 @@ class TestRealtimeVoiceWebSocket:
         assert status["interface_temperature"] == 0.3
         assert status["interface_max_output_tokens"] == 96
         assert status["interface_timeout_seconds"] == 0.7
+        assert status["interface_max_audio_seconds"] == 18.0
         assert status["asr_provider"] == "nemotron"
         assert status["tts_provider"] == "cartesia"
         assert status["oracle_provider"] == "custom"
@@ -7439,6 +7445,7 @@ class TestRealtimeVoiceWebSocket:
         assert body["interface_temperature"] == 0.2
         assert body["interface_max_output_tokens"] == 160
         assert body["interface_timeout_seconds"] == 0.8
+        assert body["interface_max_audio_seconds"] == 30.0
         assert body["oracle_model"] == "deep-hermes"
         assert body["input_buffer_limit_bytes"] == 4096
         assert body["input_frame_ms"] == 80
@@ -8907,6 +8914,7 @@ class TestRealtimeVoiceWebSocket:
                         "interface_temperature": 5,
                         "interface_max_output_tokens": 50_000,
                         "interface_timeout_seconds": -1,
+                        "interface_max_audio_seconds": 90,
                         "speech_level_threshold": 2,
                         "barge_in_min_speech_ms": 5,
                         "barge_in_min_rms": 40_000,
@@ -8924,6 +8932,7 @@ class TestRealtimeVoiceWebSocket:
         assert body["interface_temperature"] == 2.0
         assert body["interface_max_output_tokens"] == 4096
         assert body["interface_timeout_seconds"] == 0.8
+        assert body["interface_max_audio_seconds"] == 30.0
         assert body["speech_level_threshold"] == 1.0
         assert body["barge_in_min_speech_ms"] == 40
         assert body["barge_in_min_rms"] == 32767
