@@ -9085,6 +9085,76 @@ def test_session_drops_stale_oracle_tool_events_after_barge_in():
     asyncio.run(run())
 
 
+def test_session_drops_stale_oracle_hints_after_barge_in():
+    class HintEngine:
+        def __init__(self):
+            self.received = []
+            self._events = [
+                VoiceEvent(
+                    type=VoiceEventType.ORACLE_HINT,
+                    session_id="voice-123",
+                    sequence=10,
+                    payload={
+                        "delta": "old",
+                        "playback_generation": 1,
+                    },
+                ),
+                VoiceEvent(
+                    type=VoiceEventType.ORACLE_HINT,
+                    session_id="voice-123",
+                    sequence=11,
+                    payload={
+                        "delta": "new",
+                        "playback_generation": 2,
+                    },
+                ),
+            ]
+
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            self.received.append(event)
+
+        async def events(self):
+            for event in self._events:
+                yield event
+
+        async def close(self):
+            return None
+
+    async def run():
+        engine = HintEngine()
+        session = RealtimeVoiceSession(RealtimeVoiceSessionConfig(session_id="voice-123"), engine=engine)
+        await session.start()
+        session._apply_server_event(
+            VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"text": "first", "playback_generation": 1},
+            )
+        )
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=1,
+                payload={"reason": "user_speech"},
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+
+        assert [event.sequence for event in seen] == [11]
+        assert seen[0].type == VoiceEventType.ORACLE_HINT
+        assert seen[0].payload["delta"] == "new"
+
+    asyncio.run(run())
+
+
 def test_session_drops_stale_kame_interface_and_alias_events_after_barge_in():
     class KameAliasEngine:
         def __init__(self):
