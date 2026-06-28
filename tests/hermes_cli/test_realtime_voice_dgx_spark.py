@@ -179,6 +179,31 @@ def _passing_benchmark_evidence() -> list[dict]:
             },
         },
         {
+            "kind": "kame_comparison_result",
+            "name": "interface_direct_audio_vs_stt_fallback",
+            "metrics": {
+                "paired_turns": 40,
+                "direct_audio_p50_decision_ms": 320,
+                "stt_fallback_p50_decision_ms": 470,
+                "direct_audio_routing_accuracy": 0.94,
+                "stt_fallback_routing_accuracy": 0.91,
+                "routing_agreement_rate": 0.9,
+            },
+        },
+        {
+            "kind": "kame_comparison_result",
+            "name": "oracle_outcome_asr_hypothesis_delta",
+            "metrics": {
+                "paired_cases": 40,
+                "with_asr_task_success_rate": 0.84,
+                "without_asr_task_success_rate": 0.78,
+                "with_asr_literal_argument_accuracy": 0.9,
+                "without_asr_literal_argument_accuracy": 0.72,
+                "with_asr_tool_argument_error_rate": 0.08,
+                "without_asr_tool_argument_error_rate": 0.21,
+            },
+        },
+        {
             "kind": "kame_smoke_result",
             "name": "all_local_smoke",
             "ok": True,
@@ -474,12 +499,25 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert matrix["model_assumptions"]["interface_audio_input_supported"]["validated_by"] == "interface_audio_probe"
     assert matrix["candidates"]["oracle_outcome"][0]["asr_hypothesis"] == "without_asr_hypothesis"
     assert matrix["candidates"]["oracle_outcome"][1]["asr_hypothesis"] == "with_asr_hypothesis"
+    assert [entry["name"] for entry in matrix["candidates"]["comparison"]] == [
+        "interface_direct_audio_vs_stt_fallback",
+        "oracle_outcome_asr_hypothesis_delta",
+    ]
     assert evidence_template[0]["kind"] == "kame_benchmark_result"
     assert evidence_template[0]["category"] == "interface"
     assert evidence_template[0]["model"] == "gemma-4-E2B-it"
     assert evidence_template[0]["input"] == "direct_audio"
     assert evidence_template[0]["metrics"]["speech_end_to_interface_decision_ms"] is None
     assert evidence_template[0]["metrics"]["kame_interface_model_request_ms"] is None
+    comparison_entries = [
+        entry for entry in evidence_template if entry.get("kind") == "kame_comparison_result"
+    ]
+    assert [entry["name"] for entry in comparison_entries] == [
+        "interface_direct_audio_vs_stt_fallback",
+        "oracle_outcome_asr_hypothesis_delta",
+    ]
+    assert comparison_entries[0]["metrics"]["paired_turns"] is None
+    assert comparison_entries[1]["metrics"]["paired_cases"] is None
     smoke_entries = [entry for entry in evidence_template if entry.get("kind") == "kame_smoke_result"]
     assert [entry["name"] for entry in smoke_entries] == [
         "all_local_smoke",
@@ -542,6 +580,10 @@ def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation
         "oracle_verbatim_asr",
         "tts",
     }
+    assert [entry["name"] for entry in template if entry.get("kind") == "kame_comparison_result"] == [
+        "interface_direct_audio_vs_stt_fallback",
+        "oracle_outcome_asr_hypothesis_delta",
+    ]
     assert {
         (entry["role"], entry["model"], entry["adapter"], entry["protocol_smoke_only"])
         for entry in template
@@ -562,6 +604,10 @@ def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation
     assert (
         "local_asr_tts_benchmark_matrix: "
         "requires benchmark evidence for non-loopback local ASR and TTS adapters"
+    ) in result["issues"]
+    assert (
+        "comparison:interface_direct_audio_vs_stt_fallback: "
+        "missing or invalid metric paired_turns"
     ) in result["issues"]
 
 
@@ -1115,6 +1161,51 @@ def test_benchmark_evidence_validator_requires_oracle_asr_outcome_comparison(tmp
     assert (
         "oracle_outcomes_with_and_without_asr_hypotheses: "
         "requires with_asr_hypothesis and without_asr_hypothesis results"
+    ) in result["issues"]
+
+
+def test_benchmark_evidence_validator_requires_paired_comparison_results(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence = [
+        entry
+        for entry in _passing_benchmark_evidence()
+        if entry.get("kind") != "kame_comparison_result"
+    ]
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["interface_direct_audio_vs_stt_fallback"] is False
+    assert result["coverage"]["oracle_outcomes_with_and_without_asr_hypotheses"] is False
+    assert (
+        "comparison:interface_direct_audio_vs_stt_fallback: missing paired comparison result"
+        in result["issues"]
+    )
+    assert (
+        "comparison:oracle_outcome_asr_hypothesis_delta: missing paired comparison result"
+        in result["issues"]
+    )
+
+
+def test_benchmark_evidence_validator_rejects_asr_hypothesis_regression(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence = _passing_benchmark_evidence()
+    for entry in evidence:
+        if entry.get("kind") == "kame_comparison_result" and entry.get("name") == "oracle_outcome_asr_hypothesis_delta":
+            entry["metrics"]["with_asr_literal_argument_accuracy"] = 0.6
+            entry["metrics"]["with_asr_tool_argument_error_rate"] = 0.3
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["oracle_outcomes_with_and_without_asr_hypotheses"] is False
+    assert (
+        "comparison:oracle_outcome_asr_hypothesis_delta: "
+        "with_asr_literal_argument_accuracy 0.6 is below without_asr_literal_argument_accuracy 0.72"
+    ) in result["issues"]
+    assert (
+        "comparison:oracle_outcome_asr_hypothesis_delta: "
+        "with_asr_tool_argument_error_rate 0.3 exceeds without_asr_tool_argument_error_rate 0.21"
     ) in result["issues"]
 
 

@@ -921,6 +921,31 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                     ],
                 },
             ],
+            "comparison": [
+                {
+                    "name": "interface_direct_audio_vs_stt_fallback",
+                    "required_metrics": [
+                        "paired_turns",
+                        "direct_audio_p50_decision_ms",
+                        "stt_fallback_p50_decision_ms",
+                        "direct_audio_routing_accuracy",
+                        "stt_fallback_routing_accuracy",
+                        "routing_agreement_rate",
+                    ],
+                },
+                {
+                    "name": "oracle_outcome_asr_hypothesis_delta",
+                    "required_metrics": [
+                        "paired_cases",
+                        "with_asr_task_success_rate",
+                        "without_asr_task_success_rate",
+                        "with_asr_literal_argument_accuracy",
+                        "without_asr_literal_argument_accuracy",
+                        "with_asr_tool_argument_error_rate",
+                        "without_asr_tool_argument_error_rate",
+                    ],
+                },
+            ],
         },
         "acceptance_targets_ms": manifest["quality_targets_ms"],
     }
@@ -984,6 +1009,18 @@ def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> li
                 "module": candidate.get("module"),
                 "protocol_smoke_only": candidate.get("protocol_smoke_only") is True,
                 "metrics": _null_metric_template(candidate.get("required_metrics")),
+            }
+        )
+
+    for candidate in candidates.get("comparison", []) if isinstance(candidates.get("comparison"), list) else []:
+        if not isinstance(candidate, Mapping):
+            continue
+        template.append(
+            {
+                "kind": "kame_comparison_result",
+                "name": candidate.get("name"),
+                "metrics": _null_metric_template(candidate.get("required_metrics")),
+                "notes": "Fill from a paired evaluation over the same utterance/case set.",
             }
         )
 
@@ -1069,6 +1106,8 @@ def validate_dgx_spark_benchmark_evidence(
     - ``kind=kame_benchmark_result`` with ``category`` (interface/oracle/speech),
       optional ``input``, ``role``, ``model``, ``adapter``, or ``asr_hypothesis``,
       and a ``metrics`` object.
+    - ``kind=kame_comparison_result`` with one of the generated comparison names
+      and a ``metrics`` object from a paired evaluation over the same test set.
     - ``kind=kame_model_assumption_result`` with a required model assumption
       ``name``, matching ``validated_by``, and ``ok=true``.
     - ``kind=kame_smoke_result`` with one of ``REQUIRED_DGX_SPARK_SMOKES``
@@ -1099,6 +1138,12 @@ def validate_dgx_spark_benchmark_evidence(
     )
     direct_audio_latency_ok = True
     oracle_latency_ok = True
+    comparison_candidates = candidates.get("comparison") if isinstance(candidates.get("comparison"), list) else []
+    comparison_required_metrics = {
+        str(candidate.get("name") or "").strip(): candidate.get("required_metrics")
+        for candidate in comparison_candidates
+        if isinstance(candidate, Mapping)
+    }
     interface_candidates = candidates.get("interface") if isinstance(candidates.get("interface"), list) else []
     interface_models: set[str] = set()
     for candidate in interface_candidates:
@@ -1145,12 +1190,21 @@ def validate_dgx_spark_benchmark_evidence(
     has_fallback = bool(interface_models) and all(
         coverage.get(f"interface:{model}:stt_fallback") is True for model in interface_models
     )
-    coverage["interface_direct_audio_vs_stt_fallback"] = has_direct and has_fallback
+    interface_comparison_issues = _comparison_issues(
+        entries,
+        "interface_direct_audio_vs_stt_fallback",
+        required_metrics=comparison_required_metrics.get("interface_direct_audio_vs_stt_fallback"),
+        minimum_paired_count=10,
+    )
+    coverage["interface_direct_audio_vs_stt_fallback"] = (
+        has_direct and has_fallback and not interface_comparison_issues
+    )
     if not has_direct or not has_fallback:
         issues.append(
             "interface_direct_audio_vs_stt_fallback: "
             "requires direct_audio and stt_fallback results for every interface model"
         )
+    issues.extend(interface_comparison_issues)
     coverage["interface_direct_audio_latency"] = has_direct and direct_audio_latency_ok
     if not coverage["interface_direct_audio_latency"]:
         issues.append(
@@ -1207,12 +1261,23 @@ def validate_dgx_spark_benchmark_evidence(
 
     has_oracle_without_asr = coverage.get("oracle_outcome:without_asr_hypothesis") is True
     has_oracle_with_asr = coverage.get("oracle_outcome:with_asr_hypothesis") is True
-    coverage["oracle_outcomes_with_and_without_asr_hypotheses"] = has_oracle_without_asr and has_oracle_with_asr
+    oracle_asr_comparison_issues = _comparison_issues(
+        entries,
+        "oracle_outcome_asr_hypothesis_delta",
+        required_metrics=comparison_required_metrics.get("oracle_outcome_asr_hypothesis_delta"),
+        minimum_paired_count=10,
+    )
+    if not oracle_asr_comparison_issues:
+        oracle_asr_comparison_issues.extend(_oracle_asr_outcome_delta_issues(entries))
+    coverage["oracle_outcomes_with_and_without_asr_hypotheses"] = (
+        has_oracle_without_asr and has_oracle_with_asr and not oracle_asr_comparison_issues
+    )
     if not has_oracle_without_asr or not has_oracle_with_asr:
         issues.append(
             "oracle_outcomes_with_and_without_asr_hypotheses: "
             "requires with_asr_hypothesis and without_asr_hypothesis results"
         )
+    issues.extend(oracle_asr_comparison_issues)
 
     speech_candidates = candidates.get("speech") if isinstance(candidates.get("speech"), list) else []
     speech_coverage_labels: list[str] = []
@@ -1323,6 +1388,15 @@ def _find_benchmark_entry(
     return None
 
 
+def _find_comparison_entry(entries: list[Mapping[str, Any]], name: str) -> Mapping[str, Any] | None:
+    for entry in entries:
+        if str(entry.get("kind") or "") != "kame_comparison_result":
+            continue
+        if str(entry.get("name") or "") == name:
+            return entry
+    return None
+
+
 def _interface_candidate_models(
     interface_model: str,
     requested_candidates: list[str] | tuple[str, ...] | None,
@@ -1392,6 +1466,54 @@ def _missing_metric_issues(label: str, entry: Mapping[str, Any], required_metric
         value = metrics.get(metric_name)
         if not _valid_metric_value(metric_name, value):
             issues.append(f"{label}: missing or invalid metric {metric_name}")
+    return issues
+
+
+def _comparison_issues(
+    entries: list[Mapping[str, Any]],
+    name: str,
+    *,
+    required_metrics: Any,
+    minimum_paired_count: int,
+) -> list[str]:
+    entry = _find_comparison_entry(entries, name)
+    label = f"comparison:{name}"
+    if entry is None:
+        return [f"{label}: missing paired comparison result"]
+    metrics = entry.get("metrics")
+    if not isinstance(metrics, Mapping):
+        return [f"{label}: missing metrics object"]
+    issues = _missing_metric_issues(label, entry, required_metrics)
+    count_key = "paired_cases" if "paired_cases" in metrics else "paired_turns"
+    paired_count = _metric_float(metrics.get(count_key))
+    if paired_count is None or paired_count < minimum_paired_count:
+        issues.append(f"{label}: requires {count_key} >= {minimum_paired_count}")
+    return issues
+
+
+def _oracle_asr_outcome_delta_issues(entries: list[Mapping[str, Any]]) -> list[str]:
+    entry = _find_comparison_entry(entries, "oracle_outcome_asr_hypothesis_delta")
+    if entry is None:
+        return []
+    metrics = entry.get("metrics")
+    if not isinstance(metrics, Mapping):
+        return []
+    label = "comparison:oracle_outcome_asr_hypothesis_delta"
+    issues: list[str] = []
+    with_literal = _metric_float(metrics.get("with_asr_literal_argument_accuracy"))
+    without_literal = _metric_float(metrics.get("without_asr_literal_argument_accuracy"))
+    if with_literal is not None and without_literal is not None and with_literal < without_literal:
+        issues.append(
+            f"{label}: with_asr_literal_argument_accuracy {with_literal:g} "
+            f"is below without_asr_literal_argument_accuracy {without_literal:g}"
+        )
+    with_errors = _metric_float(metrics.get("with_asr_tool_argument_error_rate"))
+    without_errors = _metric_float(metrics.get("without_asr_tool_argument_error_rate"))
+    if with_errors is not None and without_errors is not None and with_errors > without_errors:
+        issues.append(
+            f"{label}: with_asr_tool_argument_error_rate {with_errors:g} "
+            f"exceeds without_asr_tool_argument_error_rate {without_errors:g}"
+        )
     return issues
 
 
