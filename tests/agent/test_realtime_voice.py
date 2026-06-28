@@ -3541,6 +3541,7 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     prompt = captured["body"]["messages"][0]["content"][1]["text"]
     assert "KAME reflex" in prompt
     assert "Required keys: route, intent, text" in prompt
+    assert "Include route_confidence from 0 to 1" in prompt
     assert "route must be one of local, defer, oracle_direct, or reject_or_clarify" in prompt
     assert "This voice session is already connected" in prompt
     assert "never claim Hermes cannot hear" in prompt
@@ -3578,11 +3579,13 @@ def test_kame_reflex_decision_validates_schema_and_exports_payload():
             "transcript": "can you hear me",
             "transcript_source": "asr",
             "transcript_confidence": "1.7",
+            "route_confidence": "0.93",
         }
     )
 
     assert decision.route == KameRoute.LOCAL
     assert decision.local_reply == "Yes, I can hear you."
+    assert decision.route_confidence == 0.93
     assert decision.transcript_confidence == 1.0
     assert decision.validation_errors == ()
     assert decision.to_payload() == {
@@ -3591,6 +3594,7 @@ def test_kame_reflex_decision_validates_schema_and_exports_payload():
         "intent_source": "reflex_audio",
         "transcript_source": "asr",
         "route": "local",
+        "route_confidence": 0.93,
         "local_reply": "Yes, I can hear you.",
         "transcript": "can you hear me",
         "transcript_confidence": 1.0,
@@ -3649,6 +3653,30 @@ def test_reference_sidecar_kame_reflex_never_speaks_voice_denial_locally():
     assert payload["route"] == "oracle_direct"
     assert "local_reply" not in payload
     assert payload["reflex_validation_error"] == "voice_capability_denial"
+
+
+def test_reference_sidecar_kame_local_route_respects_confidence_threshold():
+    payload = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(
+            {
+                "route": "local",
+                "route_confidence": 0.42,
+                "intent": "The user is checking whether Hermes can hear them.",
+                "text": "can you hear me",
+                "local_reply": "Yes, I can hear you.",
+            }
+        ),
+        config=RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            metadata={"routing": {"local_confidence_threshold": 0.75}},
+        ),
+    )
+
+    assert payload["route"] == "oracle_direct"
+    assert payload["route_confidence"] == 0.42
+    assert "local_reply" not in payload
+    assert payload["reflex_validation_error"] == "local_confidence_below_threshold"
 
 
 def test_reference_sidecar_kame_reflex_local_route_requires_local_reply():

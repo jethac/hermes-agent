@@ -43,6 +43,7 @@ class KameReflexDecision:
     intent: str
     intent_source: str = "reflex_audio"
     route: KameRoute = KameRoute.ORACLE_DIRECT
+    route_confidence: Optional[float] = None
     local_reply: str = ""
     transcript: str = ""
     transcript_source: str = "none"
@@ -80,6 +81,9 @@ class KameReflexDecision:
             intent=(intent or text).strip(),
             intent_source=_optional_text(payload.get("intent_source")) or "reflex_audio",
             route=route,
+            route_confidence=_confidence(
+                payload.get("route_confidence") if payload.get("route_confidence") is not None else payload.get("confidence")
+            ),
             local_reply=local_reply,
             transcript=transcript.strip(),
             transcript_source=transcript_source,
@@ -95,6 +99,8 @@ class KameReflexDecision:
             "transcript_source": self.transcript_source,
             "route": self.route.value,
         }
+        if self.route_confidence is not None:
+            payload["route_confidence"] = self.route_confidence
         if self.local_reply:
             payload["local_reply"] = self.local_reply
         if self.validation_errors:

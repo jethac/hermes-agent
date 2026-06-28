@@ -41,7 +41,7 @@ from agent.realtime_voice import (
     transcript_metadata_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
-from agent.realtime_voice_kame import KameReflexDecision
+from agent.realtime_voice_kame import KameReflexDecision, KameRoute
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient
 
 
@@ -1248,7 +1248,8 @@ class ReferenceRealtimeVoiceSidecarSession:
                                 "You are the low-latency KAME reflex for a Hermes realtime voice session. "
                                 "Listen to the audio segment and return only a compact JSON object. "
                                 "Required keys: route, intent, text. route must be one of local, defer, "
-                                "oracle_direct, or reject_or_clarify. text should equal the best "
+                                "oracle_direct, or reject_or_clarify. Include route_confidence from 0 to 1. "
+                                "text should equal the best "
                                 "oracle-facing user wording. For local or reject_or_clarify, include "
                                 "local_reply with the exact short phrase to speak. Optional keys: "
                                 "transcript, transcript_confidence. "
@@ -1283,7 +1284,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         with urllib.request.urlopen(req, timeout=_interface_timeout_seconds(config, self.runtime.vllm_timeout_seconds)) as response:
             data = json.loads(response.read().decode("utf-8"))
         content = str(data["choices"][0]["message"].get("content") or "").strip()
-        return _kame_reflex_payload_from_content(content)
+        return _kame_reflex_payload_from_content(content, config=config)
 
     async def _speak(
         self,
@@ -1714,7 +1715,11 @@ def _mime_type_for_path(path: str) -> str:
     }.get(ext, "audio/mpeg")
 
 
-def _kame_reflex_payload_from_content(content: str) -> dict[str, Any]:
+def _kame_reflex_payload_from_content(
+    content: str,
+    *,
+    config: Optional[RealtimeVoiceSessionConfig] = None,
+) -> dict[str, Any]:
     text = str(content or "").strip()
     if not text:
         return {"text": ""}
@@ -1729,7 +1734,32 @@ def _kame_reflex_payload_from_content(content: str) -> dict[str, Any]:
         }
     if not isinstance(parsed, Mapping):
         return {"text": text, "intent": text, "intent_source": "reflex_audio", "transcript_source": "none"}
-    return KameReflexDecision.from_payload(parsed, fallback_text=text).to_payload()
+    payload = KameReflexDecision.from_payload(parsed, fallback_text=text).to_payload()
+    return _apply_kame_routing_policy(payload, config)
+
+
+def _apply_kame_routing_policy(
+    payload: Mapping[str, Any],
+    config: Optional[RealtimeVoiceSessionConfig],
+) -> dict[str, Any]:
+    routed = dict(payload)
+    if str(routed.get("route") or "").strip().lower() != KameRoute.LOCAL.value:
+        return routed
+    confidence = _bounded_confidence(
+        routed.get("route_confidence") if routed.get("route_confidence") is not None else routed.get("confidence")
+    )
+    if confidence is None:
+        return routed
+    threshold = _kame_local_confidence_threshold(config)
+    if confidence >= threshold:
+        return routed
+    routed["route"] = KameRoute.ORACLE_DIRECT.value
+    routed.pop("local_reply", None)
+    existing_error = str(routed.get("reflex_validation_error") or "").strip()
+    routed["reflex_validation_error"] = ",".join(
+        part for part in (existing_error, "local_confidence_below_threshold") if part
+    )
+    return routed
 
 
 def _kame_interface_partial_payload_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -1829,6 +1859,14 @@ def _kame_routing_policy_text(config: Optional[RealtimeVoiceSessionConfig]) -> s
         f"require_oracle_for_files={_metadata_bool(routing.get('require_oracle_for_files'), default=True)}, "
         f"local_confidence_threshold={_metadata_float(routing.get('local_confidence_threshold'), default=0.75):.2f}."
     )
+
+
+def _kame_local_confidence_threshold(config: Optional[RealtimeVoiceSessionConfig]) -> float:
+    metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
+    routing = metadata.get("routing") if isinstance(metadata, Mapping) else {}
+    if not isinstance(routing, Mapping):
+        routing = {}
+    return _metadata_float(routing.get("local_confidence_threshold"), default=0.75)
 
 
 def _interface_temperature(config: Optional[RealtimeVoiceSessionConfig]) -> float:
