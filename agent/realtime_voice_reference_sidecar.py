@@ -245,6 +245,7 @@ def reference_sidecar_health_payload(
             "configured": True,
             "healthy": vllm_enabled,
             "model": runtime.vllm_model or "",
+            "token_configured": bool(runtime.vllm_token),
         }
     if tts_model_languages:
         payload["frontend"]["tts_model_languages"] = tts_model_languages

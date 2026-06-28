@@ -7810,6 +7810,7 @@ def test_reference_sidecar_health_verifies_vllm_audio_frontend_after_models_heal
         "configured": True,
         "healthy": False,
         "model": "google/gemma-4-E2B-it",
+        "token_configured": False,
     }
     assert unverified["capabilities"]["vllm_audio_frontend"] is False
     assert unverified["capabilities"]["vllm_audio_frontend_configured"] is True
@@ -7819,6 +7820,7 @@ def test_reference_sidecar_health_verifies_vllm_audio_frontend_after_models_heal
         "configured": True,
         "healthy": True,
         "model": "google/gemma-4-E2B-it",
+        "token_configured": False,
     }
     assert verified["capabilities"]["vllm_audio_frontend"] is True
     assert verified["capabilities"]["utterance_stt"] is True
@@ -7851,6 +7853,7 @@ def test_reference_sidecar_health_prefers_vllm_reflex_over_stt_evidence_bridge()
         "configured": True,
         "healthy": True,
         "model": "google/gemma-4-E2B-it",
+        "token_configured": False,
     }
     assert payload["frontend"]["streaming_stt_bridge"] == {
         "configured": True,
@@ -7867,6 +7870,7 @@ def test_reference_sidecar_health_payload_is_sanitized():
         ReferenceSidecarRuntimeConfig(
             vllm_base_url="http://user:secret@voice.local:8000/v1",
             vllm_model="google/gemma-4-E4B-it-qat-w4a16-ct",
+            vllm_token="reflex-secret-token",
             local_stt_enabled=False,
             local_tts_enabled=True,
             input_languages=("ja", "en-US", "JA", "https://voice.local/secret"),
@@ -7885,6 +7889,7 @@ def test_reference_sidecar_health_payload_is_sanitized():
                 "configured": True,
                 "healthy": True,
                 "model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+                "token_configured": True,
             },
             "languages": ["ja", "en-US", "ko"],
             "scripts": ["Jpan", "Latn"],
