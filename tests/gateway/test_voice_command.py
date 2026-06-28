@@ -972,6 +972,14 @@ class TestVoiceChannelCommands:
                     "dropped_frames": 2,
                     "active": True,
                 },
+                "frontend_state": {
+                    "status": "ready",
+                    "reason": "audio_reflex_tts",
+                    "provider": "vllm",
+                    "frontend_model": "gemma-4-E2B-it",
+                    "interface_audio_input": "native_audio",
+                    "vllm_audio_frontend": True,
+                },
                 "last_realtime_event": "audio.output.chunk",
                 "latency_metrics_ms": {
                     "final_transcript_to_first_audio_ms": 812,
@@ -999,6 +1007,7 @@ class TestVoiceChannelCommands:
         assert "Oracle: kimi-k2.6" in result
         assert "ASR: nemotron speech-0.6b (mode=on_escalation)" in result
         assert "TTS: cartesia sonic-2 (voice=5ee9feff-1265-424a-9d7f-8e4d431a12c7)" in result
+        assert "Frontend state: ready; audio_reflex_tts; vllm gemma-4-E2B-it; audio=native_audio; audio_reflex=healthy" in result
         assert "Fallback policy: legacy_voice" in result
         assert "Realtime audio queue: depth=3, dropped=2" in result
         assert "Realtime latency:" in result
@@ -1799,6 +1808,35 @@ class TestDiscordVoiceChannelMethods:
                 "target_ms": 500,
             }
         ]
+
+        adapter._handle_realtime_voice_event(
+            111,
+            "frontend.state",
+            {
+                "status": "fallback",
+                "reason": "kame_audio_reflex_failed",
+                "provider": "local_stt",
+                "requested_provider": "gemma4",
+                "fallback_provider": "local_stt",
+                "interface_audio_input": "native_audio",
+                "vllm_audio_frontend": False,
+                "interface_audio_input_fallback": True,
+                "error": "secret token should not be kept",
+            },
+        )
+
+        status = adapter.get_voice_session_status(111)
+        assert status["last_realtime_event"] == "frontend.state"
+        assert status["frontend_state"] == {
+            "status": "fallback",
+            "reason": "kame_audio_reflex_failed",
+            "provider": "local_stt",
+            "requested_provider": "gemma4",
+            "fallback_provider": "local_stt",
+            "interface_audio_input": "native_audio",
+            "vllm_audio_frontend": False,
+            "interface_audio_input_fallback": True,
+        }
 
     @pytest.mark.asyncio
     async def test_realtime_speech_start_stops_one_shot_playback_when_mixer_missing(self):

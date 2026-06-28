@@ -108,6 +108,37 @@ def _voice_status_provider_line(
     return f"{label}: {details}"
 
 
+def _voice_status_frontend_state_line(value: Any) -> str:
+    if not isinstance(value, dict) or not value:
+        return ""
+    status = str(value.get("status") or "").strip()
+    reason = str(value.get("reason") or "").strip()
+    provider = (
+        str(value.get("provider") or value.get("frontend_provider") or value.get("fallback_provider") or "")
+        .strip()
+    )
+    model = str(value.get("frontend_model") or "").strip()
+    input_mode = str(value.get("interface_audio_input") or "").strip()
+    parts = []
+    if status:
+        parts.append(status)
+    if reason:
+        parts.append(reason)
+    if provider or model:
+        parts.append(" ".join(part for part in (provider, model) if part))
+    if input_mode:
+        parts.append(f"audio={input_mode}")
+    if value.get("vllm_audio_frontend") is True:
+        parts.append("audio_reflex=healthy")
+    elif value.get("vllm_audio_frontend") is False:
+        parts.append("audio_reflex=unhealthy")
+    if value.get("interface_audio_input_fallback") is True:
+        parts.append("fallback_input=yes")
+    if not parts:
+        return ""
+    return f"Frontend state: {'; '.join(parts)}"
+
+
 class GatewaySlashCommandsMixin:
     """In-session slash-command handlers for GatewayRunner."""
 
@@ -2513,6 +2544,9 @@ class GatewaySlashCommandsMixin:
                     )
                     if tts_line:
                         lines.append(tts_line)
+                    frontend_state_line = _voice_status_frontend_state_line(session.get("frontend_state"))
+                    if frontend_state_line:
+                        lines.append(frontend_state_line)
                     if session.get("fallback_policy"):
                         lines.append(f"Fallback policy: {session['fallback_policy']}")
                     if isinstance(streaming_speech, dict) and streaming_speech:

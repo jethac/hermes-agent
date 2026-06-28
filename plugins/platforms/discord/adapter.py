@@ -81,6 +81,7 @@ class DiscordVoiceSessionState:
     routing: Dict[str, Any] = field(default_factory=dict)
     latency_metrics_ms: Dict[str, int] = field(default_factory=dict)
     quality_target_misses: List[Dict[str, Any]] = field(default_factory=list)
+    frontend_state: Dict[str, Any] = field(default_factory=dict)
     updated_at: float = field(default_factory=time.monotonic)
 
     def update(self, **values: Any) -> "DiscordVoiceSessionState":
@@ -137,6 +138,38 @@ def _discord_voice_nonnegative_int(value: Any) -> Optional[int]:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+def _discord_voice_frontend_state(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    state: Dict[str, Any] = {}
+    for key in (
+        "status",
+        "reason",
+        "provider",
+        "requested_provider",
+        "fallback_provider",
+        "intent_source",
+        "transcript_source",
+        "interface_audio_input",
+        "frontend_provider",
+        "frontend_model",
+    ):
+        text = str(value.get(key) or "").strip()
+        if text:
+            state[key] = text[:160]
+    for key in (
+        "sidecar",
+        "streaming_stt",
+        "streaming_tts",
+        "vllm",
+        "vllm_audio_frontend",
+        "interface_audio_input_fallback",
+    ):
+        if key in value and isinstance(value.get(key), bool):
+            state[key] = value[key]
+    return state
 
 
 def _discord_realtime_voice_fallback_policy(cfg: Dict[str, Any]) -> str:
@@ -3213,6 +3246,7 @@ class DiscordAdapter(BasePlatformAdapter):
                 "last_realtime_event": None,
                 "latency_metrics_ms": {},
                 "quality_target_misses": [],
+                "frontend_state": {},
                 **playback,
                 **architecture,
             }
@@ -3252,6 +3286,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "routing": dict(getattr(state, "routing", None) or architecture.get("routing") or {}),
             "latency_metrics_ms": dict(state.latency_metrics_ms),
             "quality_target_misses": [dict(item) for item in state.quality_target_misses],
+            "frontend_state": dict(state.frontend_state),
             **playback,
         }
 
@@ -3397,6 +3432,10 @@ class DiscordAdapter(BasePlatformAdapter):
                 event_type,
                 misses,
             )
+        if event_type == "frontend.state":
+            frontend_state = _discord_voice_frontend_state(payload)
+            if frontend_state:
+                updates["frontend_state"] = frontend_state
         if event_type != "audio.output.chunk":
             text = str(
                 payload.get("text")
