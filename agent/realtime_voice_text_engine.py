@@ -118,7 +118,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             await self._interrupt_active_turn(event, reason=str(event.payload.get("reason") or "client"))
             return
         if event.type == VoiceEventType.SESSION_CLOSED:
-            await self.close()
+            await self._close(sidecar_stop_event=event)
             return
         if event.type in {VoiceEventType.SPEECH_START, VoiceEventType.SPEECH_ENERGY, VoiceEventType.SPEECH_END}:
             await self._handle_speech_lifecycle_event(event)
@@ -187,6 +187,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             yield event
 
     async def close(self) -> None:
+        await self._close()
+
+    async def _close(self, *, sidecar_stop_event: Optional[VoiceEvent] = None) -> None:
         if self._closed:
             return
         self._closed = True
@@ -194,6 +197,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._active_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._active_task
+        await self._notify_sidecar_session_stop(sidecar_stop_event)
         if self._sidecar_task and not self._sidecar_task.done():
             self._sidecar_task.cancel()
         if self._sidecar is not None:
@@ -206,6 +210,18 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 await self._sidecar_task
         await self._emit(VoiceEventType.SESSION_CLOSED, {"reason": "closed"})
         await put_realtime_voice_event(self._events, None)
+
+    async def _notify_sidecar_session_stop(self, event: Optional[VoiceEvent]) -> None:
+        if self._sidecar is None or self.config is None:
+            return
+        stop_event = event or VoiceEvent(
+            type=VoiceEventType.SESSION_CLOSED,
+            session_id=self.config.session_id,
+            sequence=self._sequence + 1,
+            payload={"reason": "closed"},
+        )
+        with contextlib.suppress(Exception):
+            await self._sidecar.send_event(stop_event)  # type: ignore[attr-defined]
 
     async def _auto_barge_in_for_speech(self, event: VoiceEvent) -> None:
         if self._pending_turn_generation is not None:

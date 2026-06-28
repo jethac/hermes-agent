@@ -4015,7 +4015,12 @@ def test_text_engine_forwards_speech_lifecycle_events_to_sidecar():
 
         await engine.close()
 
-        assert [event.type for event in sidecar.received] == [
+        speech_events = [
+            event
+            for event in sidecar.received
+            if event.type in {VoiceEventType.SPEECH_START, VoiceEventType.SPEECH_ENERGY, VoiceEventType.SPEECH_END}
+        ]
+        assert [event.type for event in speech_events] == [
             VoiceEventType.SPEECH_START,
             VoiceEventType.SPEECH_ENERGY,
             VoiceEventType.SPEECH_END,
@@ -4051,13 +4056,68 @@ def test_text_engine_forwards_transport_playback_lifecycle_events_to_sidecar():
 
         await engine.close()
 
-        assert [event.type for event in sidecar.received] == [
+        playback_events = [
+            event for event in sidecar.received if event.type in {VoiceEventType.PLAYBACK_STARTED, VoiceEventType.PLAYBACK_STOPPED}
+        ]
+        assert [event.type for event in playback_events] == [
             VoiceEventType.PLAYBACK_STARTED,
             VoiceEventType.PLAYBACK_STOPPED,
         ]
-        assert [event.payload["playback_generation"] for event in sidecar.received] == [3, 3]
+        assert [event.payload["playback_generation"] for event in playback_events] == [3, 3]
         assert engine._playback_generation == 3
         assert engine._frontend_output_active is False
+
+    asyncio.run(run())
+
+
+def test_text_engine_notifies_sidecar_before_session_close():
+    async def run():
+        sidecar = FakeSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                sidecar_base_url="http://voice.local",
+            )
+        )
+        assert (await anext(engine.events())).type == VoiceEventType.SESSION_STARTED
+
+        await engine.close()
+
+        assert sidecar.closed is True
+        assert sidecar.received[-1].type == VoiceEventType.SESSION_CLOSED
+        assert sidecar.received[-1].payload == {"reason": "closed"}
+        assert (await anext(engine.events())).type == VoiceEventType.SESSION_CLOSED
+
+    asyncio.run(run())
+
+
+def test_text_engine_forwards_client_session_close_to_sidecar():
+    async def run():
+        sidecar = FakeSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                sidecar_base_url="http://voice.local",
+            )
+        )
+        assert (await anext(engine.events())).type == VoiceEventType.SESSION_STARTED
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.SESSION_CLOSED,
+                session_id="voice-123",
+                sequence=9,
+                payload={"reason": "client_leave"},
+            )
+        )
+
+        assert sidecar.closed is True
+        assert sidecar.received[-1].type == VoiceEventType.SESSION_CLOSED
+        assert sidecar.received[-1].sequence == 9
+        assert sidecar.received[-1].payload == {"reason": "client_leave"}
+        assert (await anext(engine.events())).type == VoiceEventType.SESSION_CLOSED
 
     asyncio.run(run())
 
@@ -4115,11 +4175,16 @@ def test_text_engine_auto_barge_in_on_new_speech_while_frontend_output_active():
         assert barge_in.payload["playback_generation"] == 8
         assert barge_in.payload["frontend_cancel_requested"] is True
         assert barge_in.payload["backend_interrupt_requested"] is False
-        assert [event.type for event in sidecar.received] == [
+        turn_events = [
+            event
+            for event in sidecar.received
+            if event.type in {VoiceEventType.BARGE_IN, VoiceEventType.AUDIO_INPUT_CHUNK}
+        ]
+        assert [event.type for event in turn_events] == [
             VoiceEventType.BARGE_IN,
             VoiceEventType.AUDIO_INPUT_CHUNK,
         ]
-        assert sidecar.received[0].payload["playback_generation"] == 8
+        assert turn_events[0].payload["playback_generation"] == 8
         assert engine._frontend_output_active is False
 
     asyncio.run(run())
