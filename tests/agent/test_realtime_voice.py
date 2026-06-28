@@ -7737,6 +7737,7 @@ def test_session_marks_kame_quality_target_misses(monkeypatch):
                     "playback_generation": 1,
                     "metrics": {
                         "kame_speech_end_to_interface_decision_ms": 650,
+                        "kame_final_transcript_to_interface_decision_ms": 700,
                         "kame_speech_end_to_first_audio_ms": 3500,
                         "barge_in_confirmed_to_playback_stopped_ms": 180,
                     },
@@ -7754,6 +7755,7 @@ def test_session_marks_kame_quality_target_misses(monkeypatch):
                 metadata={
                     "quality_targets_ms": {
                         "kame_speech_end_to_interface_decision_ms": 500,
+                        "kame_final_transcript_to_interface_decision_ms": 500,
                         "kame_speech_end_to_first_audio_ms": 3000,
                         "barge_in_confirmed_to_playback_stopped_ms": 150,
                     },
@@ -7771,6 +7773,11 @@ def test_session_marks_kame_quality_target_misses(monkeypatch):
                 "metric": "barge_in_confirmed_to_playback_stopped_ms",
                 "actual_ms": 180,
                 "target_ms": 150,
+            },
+            {
+                "metric": "kame_final_transcript_to_interface_decision_ms",
+                "actual_ms": 700,
+                "target_ms": 500,
             },
             {
                 "metric": "kame_speech_end_to_first_audio_ms",

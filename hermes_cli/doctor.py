@@ -71,6 +71,7 @@ _REALTIME_VOICE_KAME_TARGETS_MS = {
     **_REALTIME_VOICE_LIVE_TARGETS_MS,
     "barge_in_confirmed_to_playback_stopped_ms": 150,
     "kame_speech_end_to_interface_decision_ms": 500,
+    "kame_final_transcript_to_interface_decision_ms": 500,
     "kame_interface_decision_to_local_first_audio_ms": 500,
     "kame_speech_end_to_local_first_audio_ms": 1000,
     "kame_interface_decision_to_defer_first_audio_ms": 500,

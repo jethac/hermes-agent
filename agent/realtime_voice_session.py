@@ -87,6 +87,7 @@ QUALITY_TARGET_METRIC_KEYS = frozenset(
         "barge_in_ack_ms",
         "barge_in_confirmed_to_playback_stopped_ms",
         "kame_speech_end_to_interface_decision_ms",
+        "kame_final_transcript_to_interface_decision_ms",
         "kame_interface_decision_to_local_first_audio_ms",
         "kame_speech_end_to_local_first_audio_ms",
         "kame_interface_decision_to_defer_first_audio_ms",

@@ -296,6 +296,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
         "barge_in_ack_ms": 150,
         "barge_in_confirmed_to_playback_stopped_ms": 150,
         "kame_speech_end_to_interface_decision_ms": 500,
+        "kame_final_transcript_to_interface_decision_ms": 500,
         "kame_interface_decision_to_local_first_audio_ms": 500,
         "kame_speech_end_to_local_first_audio_ms": 1000,
         "kame_interface_decision_to_defer_first_audio_ms": 500,
