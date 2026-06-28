@@ -954,7 +954,12 @@ class ReferenceRealtimeVoiceSidecarSession:
             if text:
                 if input_generation is not None:
                     asr_hypothesis = self._asr_hypotheses_by_generation.pop(input_generation, None)
-                    if asr_hypothesis and self.config is not None and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+                    if (
+                        asr_hypothesis
+                        and self.config is not None
+                        and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
+                        and _kame_payload_accepts_oracle_asr_evidence(payload)
+                    ):
                         payload.setdefault("asr_transcript", asr_hypothesis.get("asr_transcript"))
                         payload.setdefault("asr_transcript_source", asr_hypothesis.get("asr_transcript_source"))
                         if "asr_transcript_confidence" in asr_hypothesis:
@@ -1736,6 +1741,11 @@ def _kame_reflex_payload_from_content(
         return {"text": text, "intent": text, "intent_source": "reflex_audio", "transcript_source": "none"}
     payload = KameReflexDecision.from_payload(parsed, fallback_text=text).to_payload()
     return _apply_kame_routing_policy(payload, config)
+
+
+def _kame_payload_accepts_oracle_asr_evidence(payload: Mapping[str, Any]) -> bool:
+    route = str(payload.get("route") or KameRoute.ORACLE_DIRECT.value).strip().lower()
+    return route in {KameRoute.DEFER.value, KameRoute.ORACLE_DIRECT.value}
 
 
 def _apply_kame_routing_policy(

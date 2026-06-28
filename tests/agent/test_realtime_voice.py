@@ -4297,6 +4297,11 @@ def test_reference_sidecar_kame_speculative_asr_does_not_drive_reflex(monkeypatc
             asr_mode=RealtimeVoiceASRMode.SPECULATIVE,
         )
         sidecar._streaming_stt = object()
+        sidecar._asr_hypotheses_by_generation[1] = {
+            "asr_transcript": "speculative literal transcript",
+            "asr_transcript_source": "asr",
+            "asr_transcript_confidence": 0.91,
+        }
         sent_to_asr = []
 
         async def fake_send_streaming_stt_event(event):
@@ -4308,6 +4313,8 @@ def test_reference_sidecar_kame_speculative_asr_does_not_drive_reflex(monkeypatc
                 "text": "reflex wording",
                 "intent": "Reflex intent.",
                 "intent_source": "reflex_audio",
+                "route": "local",
+                "local_reply": "Local reply.",
                 "transcript_source": "none",
             }
 
@@ -4338,6 +4345,10 @@ def test_reference_sidecar_kame_speculative_asr_does_not_drive_reflex(monkeypatc
         assert final.type == VoiceEventType.TRANSCRIPT_FINAL
         assert final.payload["text"] == "reflex wording"
         assert final.payload["intent"] == "Reflex intent."
+        assert final.payload["route"] == "local"
+        assert "asr_transcript" not in final.payload
+        assert "asr_transcript_source" not in final.payload
+        assert "asr_transcript_confidence" not in final.payload
 
     asyncio.run(run())
 
