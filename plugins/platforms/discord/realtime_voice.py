@@ -156,6 +156,7 @@ class DiscordRealtimeVoiceSession:
         self._activity = asyncio.Event()
         self._playback_pcm48_stereo_buffer = bytearray()
         self._active_playback_generation = 0
+        self._last_input_user_id: Optional[str] = None
 
     async def start(self) -> None:
         config = RealtimeVoiceSessionConfig(
@@ -234,6 +235,7 @@ class DiscordRealtimeVoiceSession:
     async def handle_pcm_frame(self, *, user_id: int | str, pcm48_stereo: bytes) -> None:
         if self._closed or not self._started or not pcm48_stereo:
             return
+        self._last_input_user_id = str(user_id)
         pcm16_mono = discord_pcm48_stereo_to_pcm16_mono(pcm48_stereo)
         await self._send_event(
             VoiceEventType.AUDIO_INPUT_CHUNK,
@@ -294,6 +296,8 @@ class DiscordRealtimeVoiceSession:
                     await self._notify_degraded("sidecar_session_error", error)
                     self._activity.set()
                     return
+                if event.type in {VoiceEventType.TRANSCRIPT_PARTIAL, VoiceEventType.TRANSCRIPT_FINAL}:
+                    event.payload.setdefault("user_id", self._last_input_user_id or "")
                 await self._notify_event_observed(event)
                 self._activity.set()
         except asyncio.CancelledError:
