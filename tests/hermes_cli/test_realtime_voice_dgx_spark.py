@@ -503,6 +503,8 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert ': "${HERMES_KAME_INTERFACE_MODEL:=gemma-4-E2B-it}"' in launch
     assert ': "${HERMES_KAME_INTERFACE_API_KEY_ENV:=HERMES_KAME_INTERFACE_API_KEY}"' in launch
     assert ': "${HERMES_KAME_ORACLE_MODEL:=gemma-4-26B-A4B-it}"' in launch
+    assert ': "${HERMES_VOICE_STREAMING_STT_BASE_URL:=http://spark.local:8767}"' in launch
+    assert ': "${HERMES_VOICE_STREAMING_TTS_BASE_URL:=http://spark.local:8768}"' in launch
     assert '--kame-reflex-model "$HERMES_KAME_INTERFACE_MODEL"' in launch
     assert '--kame-interface-provider "$HERMES_KAME_INTERFACE_PROVIDER"' in launch
     assert '--kame-interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV"' in launch
@@ -515,7 +517,9 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert '--kame-oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL"' in launch
     assert '--kame-oracle-provider-name "KAME Local Oracle"' in launch
     assert '--kame-tts-provider "$HERMES_DGX_SPARK_TTS_PROVIDER"' in launch
+    assert '--streaming-stt-base-url "$HERMES_VOICE_STREAMING_STT_BASE_URL"' in launch
     assert '--streaming-stt-model "$HERMES_VOICE_STREAMING_STT_MODEL"' in launch
+    assert '--streaming-tts-base-url "$HERMES_VOICE_STREAMING_TTS_BASE_URL"' in launch
     assert '--streaming-tts-model "$HERMES_VOICE_STREAMING_TTS_MODEL"' in launch
     assert "--sidecar-host spark.local" in launch
     assert "--sidecar-port 8765" in launch

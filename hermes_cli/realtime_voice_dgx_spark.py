@@ -734,8 +734,10 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_KAME_ORACLE_MODEL:={manifest["roles"]["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={manifest["roles"]["oracle"]["base_url"]}}}"
 : "${{HERMES_DGX_SPARK_ASR_PROVIDER:={manifest["roles"]["asr"]["provider"]}}}"
+: "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={manifest["roles"]["asr"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_MODEL:={manifest["roles"]["asr"]["model"]}}}"
 : "${{HERMES_DGX_SPARK_TTS_PROVIDER:={manifest["roles"]["tts"]["provider"]}}}"
+: "${{HERMES_VOICE_STREAMING_TTS_BASE_URL:={manifest["roles"]["tts"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_TTS_MODEL:={manifest["roles"]["tts"]["model"]}}}"
 export HERMES_REPO_DIR HERMES_HOME
 
@@ -755,9 +757,9 @@ if [ "${{HERMES_DGX_SPARK_APPLY_PROFILE:-1}}" != "0" ]; then
       --kame-oracle-base-url "$HERMES_KAME_ORACLE_BASE_URL" \\
       --kame-oracle-provider-name "KAME Local Oracle" \\
       --kame-tts-provider "$HERMES_DGX_SPARK_TTS_PROVIDER" \\
-      --streaming-stt-base-url {manifest["roles"]["asr"]["base_url"]} \\
+      --streaming-stt-base-url "$HERMES_VOICE_STREAMING_STT_BASE_URL" \\
       --streaming-stt-model "$HERMES_VOICE_STREAMING_STT_MODEL" \\
-      --streaming-tts-base-url {manifest["roles"]["tts"]["base_url"]} \\
+      --streaming-tts-base-url "$HERMES_VOICE_STREAMING_TTS_BASE_URL" \\
       --streaming-tts-model "$HERMES_VOICE_STREAMING_TTS_MODEL" \\
       --sidecar-host {sidecar_host} \\
       --sidecar-port {sidecar_port}
