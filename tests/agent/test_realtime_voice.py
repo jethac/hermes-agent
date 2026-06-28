@@ -4340,6 +4340,44 @@ def test_reference_sidecar_echoes_barge_in_generation():
     asyncio.run(run())
 
 
+def test_reference_sidecar_barge_in_finalizes_active_playback_generations():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+        sidecar._active_playback_generations.add(4)
+
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.BARGE_IN,
+                session_id="voice-123",
+                sequence=1,
+                payload={"reason": "user_speech", "playback_generation": 4},
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_AUDIO_END:
+                await sidecar.close()
+                break
+
+        barge_in = next(event for event in seen if event.type == VoiceEventType.BARGE_IN)
+        stopped = next(event for event in seen if event.type == VoiceEventType.PLAYBACK_STOPPED)
+        audio_end = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_AUDIO_END)
+        assert barge_in.payload["playback_generation"] == 4
+        assert stopped.payload == {
+            "reason": "barge_in",
+            "interrupted": True,
+            "barge_in_reason": "user_speech",
+            "playback_generation": 4,
+        }
+        assert audio_end.payload == stopped.payload
+        assert sidecar._active_playback_generations == set()
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_forwards_provider_kame_oracle_events():
     class Provider:
         def __init__(self, events):

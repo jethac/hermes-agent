@@ -418,6 +418,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             if playback_generation is not None:
                 payload["playback_generation"] = playback_generation
             await self._emit(VoiceEventType.BARGE_IN, payload)
+            await self._emit_interrupted_playback_finalizers(payload)
             if self._streaming_stt is not None:
                 await self._send_streaming_stt_event(
                     VoiceEvent(
@@ -1699,6 +1700,21 @@ class ReferenceRealtimeVoiceSidecarSession:
                         payload=dict(payload),
                     )
                 )
+
+    async def _emit_interrupted_playback_finalizers(self, barge_in_payload: Mapping[str, Any]) -> None:
+        if self.config is None or not self._active_playback_generations:
+            return
+        active_generations = list(self._active_playback_generations)
+        for generation in active_generations:
+            payload: dict[str, Any] = {
+                "reason": "barge_in",
+                "interrupted": True,
+                "barge_in_reason": str(barge_in_payload.get("reason") or "client"),
+            }
+            if generation is not None:
+                payload["playback_generation"] = generation
+            await self._emit(VoiceEventType.PLAYBACK_STOPPED, payload)
+            await self._emit(VoiceEventType.ASSISTANT_AUDIO_END, payload)
 
 
 def create_reference_sidecar_app(runtime: Optional[ReferenceSidecarRuntimeConfig] = None):
