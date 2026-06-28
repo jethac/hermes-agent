@@ -171,6 +171,7 @@ def _realtime_voice_evidence_line(production: Mapping[str, Any]) -> str:
             _realtime_voice_latency_summary_part(latency, "barge_in_ack", "barge"),
         ]
         parts.extend(part for part in metric_parts if part)
+    parts.extend(_realtime_voice_stack_latency_summary_parts(summary))
     return "; ".join(parts)
 
 
@@ -191,9 +192,62 @@ def _realtime_voice_latency_summary_part(latency: Mapping[str, Any], key: str, l
     value = latency.get(key)
     if not isinstance(value, Mapping) or not value.get("count"):
         return ""
-    p95 = value.get("p95")
-    max_ms = value.get("max")
-    return f"{label} p95={p95}ms max={max_ms}ms"
+    spans = []
+    for percentile in ("p50", "p90", "p95"):
+        if value.get(percentile) is not None:
+            spans.append(f"{percentile}={value.get(percentile)}ms")
+    if value.get("max") is not None:
+        spans.append(f"max={value.get('max')}ms")
+    if not spans:
+        return ""
+    return f"{label} {' '.join(spans)}"
+
+
+def _realtime_voice_stack_latency_summary_parts(summary: Any) -> list[str]:
+    if not isinstance(summary, Mapping):
+        return []
+    latency_by_stack = summary.get("latency_by_stack")
+    if not isinstance(latency_by_stack, Mapping):
+        return []
+    parts: list[str] = []
+    for stack_key, stack_summary in sorted(latency_by_stack.items()):
+        if not isinstance(stack_summary, Mapping):
+            continue
+        stack_latency = stack_summary.get("latency_ms")
+        if not isinstance(stack_latency, Mapping):
+            continue
+        audio = _realtime_voice_latency_summary_part(
+            stack_latency,
+            "final_transcript_to_first_audio",
+            "audio",
+        )
+        if not audio:
+            audio = _realtime_voice_latency_summary_part(
+                stack_latency,
+                "audio_to_partial_transcript",
+                "partial",
+            )
+        if not audio:
+            continue
+        stack = stack_summary.get("stack") if isinstance(stack_summary.get("stack"), Mapping) else {}
+        frontend = _stack_label(stack, "frontend_provider", "frontend_model", default="unknown_frontend")
+        oracle = (
+            str(stack.get("preferred_local_oracle_model") or stack.get("oracle_model") or "").strip()
+            if isinstance(stack, Mapping)
+            else ""
+        )
+        tts = _stack_label(stack, "tts_provider", "tts_model", default="unknown_tts")
+        stack_id = str(stack_key or "unknown_stack")
+        parts.append(f"stack {stack_id} {audio} frontend={frontend} oracle={oracle or 'unknown'} tts={tts}")
+    return parts
+
+
+def _stack_label(stack: Mapping[str, Any], provider_key: str, model_key: str, *, default: str) -> str:
+    provider = str(stack.get(provider_key) or "").strip()
+    model = str(stack.get(model_key) or "").strip()
+    if provider and model:
+        return f"{provider}/{model}"
+    return provider or model or default
 
 
 from hermes_constants import is_termux as _is_termux

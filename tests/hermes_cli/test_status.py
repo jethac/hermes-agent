@@ -47,11 +47,31 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
                     "min_runs": 3,
                     "summary": {
                         "latency_ms": {
-                            "audio_to_partial_transcript": {"count": 12, "p95": 120, "max": 140},
-                            "final_transcript_to_first_text": {"count": 3, "p95": 180, "max": 200},
-                            "final_transcript_to_first_audio": {"count": 12, "p95": 420, "max": 500},
-                            "barge_in_ack": {"count": 3, "p95": 55, "max": 60},
-                        }
+                            "audio_to_partial_transcript": {"count": 12, "p50": 80, "p90": 110, "p95": 120, "max": 140},
+                            "final_transcript_to_first_text": {"count": 3, "p50": 140, "p90": 170, "p95": 180, "max": 200},
+                            "final_transcript_to_first_audio": {"count": 12, "p50": 320, "p90": 400, "p95": 420, "max": 500},
+                            "barge_in_ack": {"count": 3, "p50": 35, "p90": 50, "p95": 55, "max": 60},
+                        },
+                        "latency_by_stack": {
+                            "kame_interface_oracle|vllm|gemma-4-E2B-it|kimi-k2.6|cartesia|sonic-2": {
+                                "stack": {
+                                    "frontend_provider": "vllm",
+                                    "frontend_model": "gemma-4-E2B-it",
+                                    "oracle_model": "kimi-k2.6",
+                                    "tts_provider": "cartesia",
+                                    "tts_model": "sonic-2",
+                                },
+                                "latency_ms": {
+                                    "final_transcript_to_first_audio": {
+                                        "count": 9,
+                                        "p50": 310,
+                                        "p90": 390,
+                                        "p95": 410,
+                                        "max": 480,
+                                    }
+                                },
+                            }
+                        },
                     },
                 },
                 "launch_review": {
@@ -82,10 +102,13 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
     assert "production_ready" in output
     assert "Evidence:" in output
     assert "runs 3/3" in output
-    assert "partial p95=120ms max=140ms" in output
-    assert "text p95=180ms max=200ms" in output
-    assert "audio p95=420ms max=500ms" in output
-    assert "barge p95=55ms max=60ms" in output
+    assert "partial p50=80ms p90=110ms p95=120ms max=140ms" in output
+    assert "text p50=140ms p90=170ms p95=180ms max=200ms" in output
+    assert "audio p50=320ms p90=400ms p95=420ms max=500ms" in output
+    assert "barge p50=35ms p90=50ms p95=55ms max=60ms" in output
+    assert "stack kame_interface_oracle|vllm|gemma-4-E2B-it|kimi-k2.6|cartesia|sonic-2" in output
+    assert "audio p50=310ms p90=390ms p95=410ms max=480ms" in output
+    assert "frontend=vllm/gemma-4-E2B-it oracle=kimi-k2.6 tts=cartesia/sonic-2" in output
     assert "Review:" in output
     assert "passed (2026-06-08T00:00:00Z)" in output
     assert "Require live: yes" in output
