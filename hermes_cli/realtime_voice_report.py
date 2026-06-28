@@ -131,6 +131,9 @@ def main(argv: list[str] | None = None) -> int:
                 f"p90={metric.get('p90')}ms p95={metric.get('p95')}ms "
                 f"max={metric.get('max')}ms n={metric.get('count')}"
             )
+        route_summary = _format_kame_route_summary(summary.get("kame_routes"))
+        if route_summary:
+            print(f"  kame_routes: {route_summary}")
         latency_by_stack = summary.get("latency_by_stack")
         if isinstance(latency_by_stack, dict):
             for stack_key, stack_summary in sorted(latency_by_stack.items()):
@@ -153,6 +156,9 @@ def main(argv: list[str] | None = None) -> int:
                         f"p90={metric.get('p90')}ms p95={metric.get('p95')}ms "
                         f"max={metric.get('max')}ms n={metric.get('count')}"
                     )
+                route_summary = _format_kame_route_summary(stack_summary.get("kame_routes"))
+                if route_summary:
+                    print(f"    kame_routes: {route_summary}")
         if args.apply_production_evidence:
             from hermes_cli.realtime_voice_alpha_evidence import (
                 apply_realtime_voice_production_evidence_report,
@@ -177,6 +183,32 @@ def _format_report_issue(issue: object) -> str:
     if callable(formatter):
         return str(formatter())
     return str(issue)
+
+
+def _format_kame_route_summary(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    total = _positive_int(value.get("total"))
+    if total <= 0:
+        return ""
+    counts = value.get("counts") if isinstance(value.get("counts"), dict) else {}
+    route_parts = [
+        f"{route}={_positive_int(counts.get(route))}"
+        for route in ("local", "defer", "oracle_direct", "reject_or_clarify")
+        if _positive_int(counts.get(route)) > 0
+    ]
+    oracle_avoided = _positive_int(value.get("oracle_avoided"))
+    oracle_required = _positive_int(value.get("oracle_required"))
+    rate = value.get("oracle_avoidance_rate")
+    try:
+        rate_text = f"{float(rate) * 100:.1f}%"
+    except (TypeError, ValueError):
+        rate_text = "unknown"
+    return (
+        f"total={total} oracle_avoided={oracle_avoided} "
+        f"oracle_required={oracle_required} avoidance={rate_text} "
+        + " ".join(route_parts)
+    ).strip()
 
 
 def validate_discord_live_probe_report(

@@ -56,6 +56,18 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
                             "oracle_accepted_to_first_token": {"count": 3, "p50": 180, "p90": 220, "p95": 240, "max": 260},
                             "barge_in_confirmed_to_playback_stopped": {"count": 3, "p50": 28, "p90": 42, "p95": 48, "max": 55},
                         },
+                        "kame_routes": {
+                            "total": 12,
+                            "counts": {
+                                "local": 4,
+                                "defer": 3,
+                                "oracle_direct": 4,
+                                "reject_or_clarify": 1,
+                            },
+                            "oracle_avoided": 5,
+                            "oracle_required": 7,
+                            "oracle_avoidance_rate": 0.4167,
+                        },
                         "latency_by_stack": {
                             "kame_interface_oracle|vllm|gemma-4-E2B-it|kimi-k2.6|cartesia|sonic-2": {
                                 "stack": {
@@ -121,6 +133,8 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
     assert "oracle_accept p50=30ms p90=45ms p95=50ms max=55ms" in output
     assert "oracle_token p50=180ms p90=220ms p95=240ms max=260ms" in output
     assert "barge_stop p50=28ms p90=42ms p95=48ms max=55ms" in output
+    assert "kame_routes total=12 oracle_avoided=5 oracle_required=7 avoidance=41.7%" in output
+    assert "local=4 defer=3 oracle_direct=4 reject_or_clarify=1" in output
     assert "stack kame_interface_oracle|vllm|gemma-4-E2B-it|kimi-k2.6|cartesia|sonic-2" in output
     assert "kame_audio p50=170ms p90=230ms p95=260ms max=300ms" in output
     assert "frontend=vllm/gemma-4-E2B-it oracle=kimi-k2.6 tts=cartesia/sonic-2" in output

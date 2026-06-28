@@ -74,6 +74,9 @@ KAME_LATENCY_REPORT_LABELS = (
     "barge_in_confirmed_to_playback_stopped",
 )
 
+KAME_ROUTE_LABELS = ("local", "defer", "oracle_direct", "reject_or_clarify")
+KAME_ORACLE_AVOIDING_ROUTES = frozenset({"local", "reject_or_clarify"})
+
 ALPHA_REQUIRED_TTS_TEXTS = (
     "Hello from Hermes.",
     "Can you hear me clearly?",
@@ -261,6 +264,7 @@ def summarize_realtime_voice_smoke_report_runs(
             for kind, kind_entries in sorted(by_kind.items())
         },
         "latency_ms": _latency_summary_for_entries(entries),
+        "kame_routes": _kame_route_summary(entries),
         "latency_by_stack": _latency_summary_by_stack(runs),
     }
 
@@ -326,8 +330,29 @@ def _latency_summary_by_stack(
             "runs": bucket["runs"],
             "report_labels": bucket["report_labels"],
             "latency_ms": _latency_summary_for_entries(bucket["entries"]),
+            "kame_routes": _kame_route_summary(bucket["entries"]),
         }
         for key, bucket in sorted(grouped.items())
+    }
+
+
+def _kame_route_summary(entries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    counts = {route: 0 for route in KAME_ROUTE_LABELS}
+    total = 0
+    for entry in entries:
+        route = str(entry.get("route") or "").strip().lower()
+        if route not in counts:
+            continue
+        counts[route] += 1
+        total += 1
+    oracle_avoided = sum(counts[route] for route in KAME_ORACLE_AVOIDING_ROUTES)
+    oracle_required = total - oracle_avoided
+    return {
+        "total": total,
+        "counts": counts,
+        "oracle_avoided": oracle_avoided,
+        "oracle_required": oracle_required,
+        "oracle_avoidance_rate": round(oracle_avoided / total, 4) if total else None,
     }
 
 

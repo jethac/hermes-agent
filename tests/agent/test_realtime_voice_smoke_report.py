@@ -612,14 +612,21 @@ def test_load_realtime_voice_smoke_report_round_trips_unicode(tmp_path):
 def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     path = tmp_path / "voice-smoke.json"
     report = _valid_alpha_report()
+    route_by_kind = {
+        "audio_session": iter(("local", "oracle_direct")),
+        "session_turn": iter(("defer", "reject_or_clarify")),
+    }
+    metric_added = False
     for entry in report:
-        if entry.get("kind") == "session_turn":
+        if entry.get("kind") in route_by_kind:
+            entry["route"] = next(route_by_kind[entry["kind"]])
+        if entry.get("kind") == "session_turn" and not metric_added:
             entry["metrics"] = {
                 "kame_final_transcript_to_interface_decision_ms": 27,
                 "kame_interface_decision_to_oracle_accepted_ms": 35,
                 "kame_oracle_accepted_to_first_token_ms": 120,
             }
-            break
+            metric_added = True
     path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
 
     assert realtime_voice_report_main([str(path), "--alpha"]) == 0
@@ -631,6 +638,8 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     assert "interface_decision_to_oracle_accepted: p50=35ms p90=35ms p95=35ms max=35ms n=1" in output
     assert "oracle_accepted_to_first_token: p50=120ms p90=120ms p95=120ms max=120ms n=1" in output
     assert "barge_in_ack: p50=45ms p90=45ms p95=45ms max=45ms n=1" in output
+    assert "kame_routes: total=4 oracle_avoided=2 oracle_required=2 avoidance=50.0%" in output
+    assert "local=1 defer=1 oracle_direct=1 reject_or_clarify=1" in output
     assert "stack unknown_engine|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model" in output
 
 
@@ -879,7 +888,13 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
     runs = []
     for index, partial_ms in enumerate((80, 90, 120)):
         report = _valid_alpha_report()
+        route_by_kind = {
+            "audio_session": iter(("local", "oracle_direct")),
+            "session_turn": iter(("defer", "reject_or_clarify")),
+        }
         for entry in report:
+            if entry.get("kind") in route_by_kind:
+                entry["route"] = next(route_by_kind[entry["kind"]])
             if entry.get("kind") == "audio_fixture":
                 entry["transcript_partial_ms"] = partial_ms
             if entry.get("kind") == "audio_session":
@@ -962,6 +977,18 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         "p95": 20,
         "max": 20,
     }
+    assert summary["kame_routes"] == {
+        "total": 12,
+        "counts": {
+            "local": 3,
+            "defer": 3,
+            "oracle_direct": 3,
+            "reject_or_clarify": 3,
+        },
+        "oracle_avoided": 6,
+        "oracle_required": 6,
+        "oracle_avoidance_rate": 0.5,
+    }
     stack_summary = summary["latency_by_stack"][
         "unknown_engine|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model"
     ]
@@ -984,6 +1011,8 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
     assert stack_summary["latency_ms"]["audio_to_partial_transcript"]["p90"] == 120
     assert stack_summary["latency_ms"]["oracle_accepted_to_first_token"]["p90"] == 122
     assert stack_summary["latency_ms"]["barge_in_confirmed_to_playback_stopped"]["p90"] == 20
+    assert stack_summary["kame_routes"]["oracle_avoided"] == 6
+    assert stack_summary["kame_routes"]["oracle_required"] == 6
 
 
 def test_realtime_voice_report_cli_returns_nonzero_for_failed_report(tmp_path, capsys):

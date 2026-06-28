@@ -188,6 +188,9 @@ def _realtime_voice_evidence_line(production: Mapping[str, Any]) -> str:
             ),
         ]
         parts.extend(part for part in metric_parts if part)
+    route_line = _realtime_voice_kame_route_summary_part(summary.get("kame_routes") if isinstance(summary, Mapping) else None)
+    if route_line:
+        parts.append(route_line)
     parts.extend(_realtime_voice_stack_latency_summary_parts(summary))
     return "; ".join(parts)
 
@@ -271,12 +274,48 @@ def _realtime_voice_stack_latency_summary_parts(summary: Any) -> list[str]:
     return parts
 
 
+def _realtime_voice_kame_route_summary_part(value: Any) -> str:
+    if not isinstance(value, Mapping):
+        return ""
+    total = _positive_int(value.get("total"))
+    if total <= 0:
+        return ""
+    counts = value.get("counts") if isinstance(value.get("counts"), Mapping) else {}
+    route_parts = [
+        f"{route}={_positive_int(counts.get(route))}"
+        for route in ("local", "defer", "oracle_direct", "reject_or_clarify")
+        if _positive_int(counts.get(route)) > 0
+    ]
+    oracle_avoided = _positive_int(value.get("oracle_avoided"))
+    oracle_required = _positive_int(value.get("oracle_required"))
+    rate = value.get("oracle_avoidance_rate")
+    try:
+        rate_text = f"{float(rate) * 100:.1f}%"
+    except (TypeError, ValueError):
+        rate_text = "unknown"
+    return (
+        f"kame_routes total={total} oracle_avoided={oracle_avoided} "
+        f"oracle_required={oracle_required} avoidance={rate_text} "
+        + " ".join(route_parts)
+    ).strip()
+
+
 def _stack_label(stack: Mapping[str, Any], provider_key: str, model_key: str, *, default: str) -> str:
     provider = str(stack.get(provider_key) or "").strip()
     model = str(stack.get(model_key) or "").strip()
     if provider and model:
         return f"{provider}/{model}"
     return provider or model or default
+
+
+def _positive_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0
 
 
 from hermes_constants import is_termux as _is_termux
