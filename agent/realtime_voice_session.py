@@ -44,9 +44,16 @@ class RealtimeVoiceTranscript:
 STALE_GENERATION_EVENT_TYPES = frozenset(
     {
         VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.ASSISTANT_AUDIO_CHUNK,
         VoiceEventType.ASSISTANT_AUDIO_END,
         VoiceEventType.PLAYBACK_STARTED,
         VoiceEventType.PLAYBACK_STOPPED,
+        VoiceEventType.INTERFACE_INTENT_FINAL,
+        VoiceEventType.INTERFACE_REPLY_LOCAL,
+        VoiceEventType.INTERFACE_REPLY_DEFER,
+        VoiceEventType.INTERFACE_ORACLE_REQUEST,
+        VoiceEventType.INTERFACE_ORACLE_CANCEL,
+        VoiceEventType.INTERFACE_COMMIT,
         VoiceEventType.ORACLE_ACCEPTED,
         VoiceEventType.ORACLE_TOOL_CALL,
         VoiceEventType.ORACLE_TOOL_RESULT,
