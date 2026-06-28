@@ -121,6 +121,8 @@ def _voice_status_frontend_state_line(value: Any) -> str:
     input_mode = str(value.get("interface_audio_input") or "").strip()
     input_source = str(value.get("interface_input_source") or "").strip()
     reflex_provider = str(value.get("reflex_provider") or "").strip()
+    route = str(value.get("route") or "").strip()
+    reflex_validation_error = str(value.get("reflex_validation_error") or "").strip()
     parts = []
     if status:
         parts.append(status)
@@ -138,6 +140,10 @@ def _voice_status_frontend_state_line(value: Any) -> str:
         parts.append(f"input_source={input_source}")
     if reflex_provider:
         parts.append(f"reflex={reflex_provider}")
+    if route:
+        parts.append(f"route={route}")
+    if reflex_validation_error:
+        parts.append(f"reflex_error={reflex_validation_error}")
     if value.get("interface_audio_input_fallback") is True:
         parts.append("fallback_input=yes")
     if not parts:

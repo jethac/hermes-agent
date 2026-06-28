@@ -494,6 +494,14 @@ def test_discord_realtime_event_records_kame_reflex_provenance():
             "reflex_provider": "vllm",
         },
     )
+    adapter._handle_realtime_voice_event(
+        111,
+        "interface.intent.final",
+        {
+            "route": "oracle_direct",
+            "reflex_validation_error": "invalid_json",
+        },
+    )
 
     status = adapter.get_voice_session_status(111)
 
@@ -505,6 +513,8 @@ def test_discord_realtime_event_records_kame_reflex_provenance():
         "vllm_audio_frontend": True,
         "interface_input_source": "native_audio",
         "reflex_provider": "vllm",
+        "route": "oracle_direct",
+        "reflex_validation_error": "invalid_json",
     }
 
 

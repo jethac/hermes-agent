@@ -1009,6 +1009,8 @@ class TestVoiceChannelCommands:
                     "interface_input_source": "native_audio",
                     "reflex_provider": "vllm",
                     "vllm_audio_frontend": True,
+                    "route": "oracle_direct",
+                    "reflex_validation_error": "invalid_json",
                 },
                 "last_realtime_event": "audio.output.chunk",
                 "latency_metrics_ms": {
@@ -1040,6 +1042,8 @@ class TestVoiceChannelCommands:
         assert "Frontend state: ready; audio_reflex_tts; vllm gemma-4-E2B-it; audio=native_audio; audio_reflex=healthy" in result
         assert "input_source=native_audio" in result
         assert "reflex=vllm" in result
+        assert "route=oracle_direct" in result
+        assert "reflex_error=invalid_json" in result
         assert "Fallback policy: legacy_voice" in result
         assert "Realtime audio queue: depth=3, dropped=2" in result
         assert "Realtime latency:" in result

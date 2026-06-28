@@ -163,6 +163,8 @@ def _discord_voice_frontend_state(value: Any) -> Dict[str, Any]:
         "frontend_model",
         "interface_input_source",
         "reflex_provider",
+        "route",
+        "reflex_validation_error",
     ):
         text = str(value.get(key) or "").strip()
         if text:
