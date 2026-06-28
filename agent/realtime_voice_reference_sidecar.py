@@ -323,6 +323,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._gemini_live_task: Optional[asyncio.Task[None]] = None
         self._cached_acknowledgement_audio: Optional[dict[str, Any]] = None
         self._active_playback_generations: set[Optional[int]] = set()
+        self._last_speech_lifecycle_event: Optional[dict[str, Any]] = None
         self._kame_feedback_events: list[dict[str, Any]] = []
         self._kame_feedback_events_by_generation: dict[int, list[dict[str, Any]]] = {}
         self._kame_last_interface_event: Optional[dict[str, Any]] = None
@@ -496,6 +497,10 @@ class ReferenceRealtimeVoiceSidecarSession:
                 )
             await self._drain_cancelled_tasks(cancelled_tasks)
             return
+        if event.type in {VoiceEventType.PLAYBACK_STARTED, VoiceEventType.PLAYBACK_STOPPED}:
+            self._track_playback_lifecycle_event(event.type, event.payload)
+            await self._forward_playback_lifecycle_event(event)
+            return
         if event.type in KAME_FEEDBACK_EVENT_TYPES:
             self._record_kame_feedback_event(event)
             return
@@ -519,6 +524,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                 )
             return
         if event.type in {VoiceEventType.SPEECH_START, VoiceEventType.SPEECH_ENERGY, VoiceEventType.SPEECH_END}:
+            self._record_speech_lifecycle_event(event)
             await self._forward_speech_lifecycle_event(event)
             return
         if event.type != VoiceEventType.AUDIO_INPUT_CHUNK:
@@ -554,6 +560,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             if self._audio_input_generation is not None and input_generation != self._audio_input_generation:
                 self._clear_audio_buffer()
             self._audio_input_generation = input_generation
+            self._clear_stale_speech_lifecycle_event(input_generation)
         if self._openai_realtime is not None:
             await self._send_openai_realtime_event(event)
             return
@@ -839,6 +846,12 @@ class ReferenceRealtimeVoiceSidecarSession:
     async def _forward_speech_lifecycle_event(self, event: VoiceEvent) -> None:
         if self._streaming_stt is not None:
             await self._send_streaming_stt_event(event)
+        if self._openai_realtime is not None:
+            await self._send_openai_realtime_event(event)
+        if self._gemini_live is not None:
+            await self._send_gemini_live_event(event)
+
+    async def _forward_playback_lifecycle_event(self, event: VoiceEvent) -> None:
         if self._openai_realtime is not None:
             await self._send_openai_realtime_event(event)
         if self._gemini_live is not None:
@@ -1515,7 +1528,9 @@ class ReferenceRealtimeVoiceSidecarSession:
                             "text": kame_reflex_instruction_text(
                                 routing_policy=routing_policy,
                                 asr_mode=asr_mode,
-                            ),
+                            )
+                            + "\n\n"
+                            + self._kame_live_session_context_text(),
                         },
                     ],
                 }
@@ -1787,6 +1802,50 @@ class ReferenceRealtimeVoiceSidecarSession:
                 self._active_playback_generations.clear()
             else:
                 self._active_playback_generations.discard(generation)
+
+    def _record_speech_lifecycle_event(self, event: VoiceEvent) -> None:
+        payload = event.payload if isinstance(event.payload, Mapping) else {}
+        record: dict[str, Any] = {"event": event.type.value}
+        for key in ("user_id", "input_generation", "rms", "duration_ms"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                record[key] = value.strip()
+            elif isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
+                record[key] = int(value) if float(value).is_integer() else float(value)
+        self._last_speech_lifecycle_event = record
+
+    def _clear_stale_speech_lifecycle_event(self, input_generation: int) -> None:
+        if not self._last_speech_lifecycle_event:
+            return
+        event_generation = _payload_int(self._last_speech_lifecycle_event.get("input_generation"))
+        if event_generation is not None and event_generation != input_generation:
+            self._last_speech_lifecycle_event = None
+
+    def _kame_live_session_context_text(self) -> str:
+        active_generations = [
+            str(generation)
+            for generation in sorted(
+                self._active_playback_generations,
+                key=lambda item: -1 if item is None else item,
+            )
+        ]
+        parts = [
+            "Live session context:",
+            f"playback_active={str(bool(self._active_playback_generations)).lower()}",
+            f"active_playback_generations={','.join(active_generations) if active_generations else 'none'}",
+        ]
+        if self._last_speech_lifecycle_event:
+            speech = self._last_speech_lifecycle_event
+            parts.append(f"last_speech_event={speech.get('event')}")
+            for key in ("user_id", "input_generation", "rms", "duration_ms"):
+                if key in speech:
+                    parts.append(f"last_speech_{key}={speech[key]}")
+        else:
+            parts.append("last_speech_event=none")
+        parts.append(
+            "If playback_active=true, treat the new user segment as interruption-sensitive and keep any local reply brief."
+        )
+        return " ".join(parts)
 
     async def _emit_shutdown_playback_finalizers(self) -> None:
         if self.config is None or not self._active_playback_generations:

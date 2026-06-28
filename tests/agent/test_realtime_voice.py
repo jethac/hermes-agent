@@ -6370,6 +6370,18 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
             }
         },
     )
+    sidecar._track_playback_lifecycle_event(
+        VoiceEventType.PLAYBACK_STARTED,
+        {"playback_generation": 7},
+    )
+    sidecar._record_speech_lifecycle_event(
+        VoiceEvent(
+            type=VoiceEventType.SPEECH_ENERGY,
+            session_id="voice-123",
+            sequence=1,
+            payload={"user_id": "42", "input_generation": 5, "rms": 512, "duration_ms": 140},
+        )
+    )
 
     payload = sidecar._understand_audio_sync(b"audio", VoiceAudioCodec.WEBM_OPUS)
 
@@ -6405,6 +6417,14 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     assert "allow_local_greetings=False" in prompt
     assert "local_confidence_threshold=0.82" in prompt
     assert "ASR evidence mode is on_escalation" in prompt
+    assert "Live session context:" in prompt
+    assert "playback_active=true" in prompt
+    assert "active_playback_generations=7" in prompt
+    assert "last_speech_event=speech.energy" in prompt
+    assert "last_speech_user_id=42" in prompt
+    assert "last_speech_input_generation=5" in prompt
+    assert "last_speech_rms=512" in prompt
+    assert "last_speech_duration_ms=140" in prompt
 
 
 def test_reference_sidecar_vllm_kame_audio_reflex_wraps_pcm16_as_wav(monkeypatch):
@@ -6454,6 +6474,26 @@ def test_reference_sidecar_vllm_kame_audio_reflex_wraps_pcm16_as_wav(monkeypatch
     assert wav[36:40] == b"data"
     assert int.from_bytes(wav[40:44], "little") == len(pcm)
     assert wav[44:] == pcm
+
+
+def test_reference_sidecar_drops_stale_speech_context_for_new_audio_generation():
+    sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+    sidecar._record_speech_lifecycle_event(
+        VoiceEvent(
+            type=VoiceEventType.SPEECH_ENERGY,
+            session_id="voice-123",
+            sequence=1,
+            payload={"input_generation": 5, "rms": 512},
+        )
+    )
+
+    assert "last_speech_input_generation=5" in sidecar._kame_live_session_context_text()
+
+    sidecar._clear_stale_speech_lifecycle_event(6)
+
+    context = sidecar._kame_live_session_context_text()
+    assert "last_speech_event=none" in context
+    assert "last_speech_input_generation=5" not in context
 
 
 def test_reference_sidecar_vllm_kame_audio_reflex_respects_provider_metrics_policy(monkeypatch):
@@ -7281,6 +7321,59 @@ def test_reference_sidecar_forwards_speech_lifecycle_to_active_frontends():
     ]
     assert forwarded[0][2] == {"user_id": "42", "input_generation": 5}
     assert forwarded[3][2] == {"rms": 512, "input_generation": 5}
+
+
+def test_reference_sidecar_tracks_and_forwards_transport_playback_lifecycle():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        sidecar.config = RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            frontend_provider="gemma4",
+            interface_audio_input="native_audio",
+        )
+        sidecar._openai_realtime = object()
+        sidecar._gemini_live = object()
+        forwarded = []
+
+        async def fake_send_openai_realtime_event(event):
+            forwarded.append(("openai", event.type, dict(event.payload)))
+            return True
+
+        async def fake_send_gemini_live_event(event):
+            forwarded.append(("gemini", event.type, dict(event.payload)))
+            return True
+
+        sidecar._send_openai_realtime_event = fake_send_openai_realtime_event
+        sidecar._send_gemini_live_event = fake_send_gemini_live_event
+
+        for sequence, event_type in [
+            (1, VoiceEventType.PLAYBACK_STARTED),
+            (2, VoiceEventType.PLAYBACK_STOPPED),
+        ]:
+            await sidecar.receive_event(
+                VoiceEvent(
+                    type=event_type,
+                    session_id="voice-123",
+                    sequence=sequence,
+                    payload={"playback_generation": 9},
+                )
+            )
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(anext(sidecar.events()), timeout=0.01)
+        return forwarded, set(sidecar._active_playback_generations)
+
+    forwarded, active_playback_generations = asyncio.run(run())
+
+    assert [(provider, event_type) for provider, event_type, _payload in forwarded] == [
+        ("openai", VoiceEventType.PLAYBACK_STARTED),
+        ("gemini", VoiceEventType.PLAYBACK_STARTED),
+        ("openai", VoiceEventType.PLAYBACK_STOPPED),
+        ("gemini", VoiceEventType.PLAYBACK_STOPPED),
+    ]
+    assert forwarded[0][2] == {"playback_generation": 9}
+    assert active_playback_generations == set()
 
 
 def test_reference_sidecar_kame_on_escalation_attaches_one_shot_asr_evidence(monkeypatch):
