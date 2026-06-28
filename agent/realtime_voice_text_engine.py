@@ -222,7 +222,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if hasattr(oracle, "interrupt"):
             oracle.interrupt("Realtime voice barge-in")  # type: ignore[attr-defined]
         self._clear_inbound_audio()
-        if cancellation_token and cancelled_metadata.get("kame_route") in {KameRoute.DEFER.value, KameRoute.ORACLE_DIRECT.value}:
+        cancelled_kame_oracle = bool(
+            cancellation_token
+            and cancelled_metadata.get("kame_route") in {KameRoute.DEFER.value, KameRoute.ORACLE_DIRECT.value}
+        )
+        if cancelled_kame_oracle:
             await self._emit(
                 VoiceEventType.INTERFACE_ORACLE_CANCEL,
                 {
@@ -243,6 +247,14 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     timestamp_ms=event.timestamp_ms,
                     payload=payload,
                 )
+            )
+        if cancelled_kame_oracle:
+            await self._emit_oracle_cancelled(
+                playback_generation=self._playback_generation,
+                cancelled_playback_generation=cancelled_generation,
+                metadata=cancelled_metadata,
+                reason=payload["reason"],
+                cancellation_token=cancellation_token,
             )
 
     async def _consume_sidecar_events(self) -> None:
@@ -1180,6 +1192,32 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             "error": sanitize_realtime_voice_error(error),
             "source": "hermes",
             "playback_generation": playback_generation,
+            **_kame_route_metrics_payload(metadata, oracle_called=True),
+        }
+        event = await self._emit(VoiceEventType.ORACLE_ERROR, payload)
+        if event is not None and self._sidecar is not None:
+            await self._send_sidecar_event(event)
+
+    async def _emit_oracle_cancelled(
+        self,
+        *,
+        playback_generation: int,
+        cancelled_playback_generation: int,
+        metadata: Mapping[str, Any],
+        reason: str,
+        cancellation_token: str,
+    ) -> None:
+        if not _is_kame_metadata(metadata):
+            return
+        payload = {
+            **_kame_interface_payload_from_metadata(metadata),
+            "reason": "oracle_cancelled",
+            "cancel_reason": reason or "client",
+            "error": "oracle request cancelled by realtime voice interruption",
+            "source": "hermes",
+            "playback_generation": playback_generation,
+            "cancelled_playback_generation": cancelled_playback_generation,
+            "cancellation_token": cancellation_token,
             **_kame_route_metrics_payload(metadata, oracle_called=True),
         }
         event = await self._emit(VoiceEventType.ORACLE_ERROR, payload)

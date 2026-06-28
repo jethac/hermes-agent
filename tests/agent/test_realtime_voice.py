@@ -806,7 +806,8 @@ def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
         monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
 
         oracle = SlowOracle()
-        engine = KameInterfaceOracleEngine(oracle=oracle)
+        sidecar = FakeSidecar()
+        engine = KameInterfaceOracleEngine(oracle=oracle, sidecar=sidecar)
         await engine.start(
             RealtimeVoiceSessionConfig(
                 session_id="voice-123",
@@ -814,6 +815,7 @@ def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
                 frontend_provider="gemma4",
                 frontend_model="gemma-4-E2B-it",
                 interface_audio_input="native_audio",
+                sidecar_base_url="http://voice.local:8765",
             )
         )
         await engine.receive_event(
@@ -850,6 +852,7 @@ def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
 
         cancel = await anext(engine.events())
         barge_in = await anext(engine.events())
+        oracle_error = await anext(engine.events())
         await engine.close()
 
         assert oracle.requests[0].cancellation_token == "voice-123:1:cancel"
@@ -865,7 +868,16 @@ def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
         assert barge_in.payload["cancelled_playback_generation"] == 1
         assert barge_in.payload["cancellation_token"] == "voice-123:1:cancel"
         assert barge_in.payload["backend_interrupt_requested"] is True
+        assert oracle_error.type == VoiceEventType.ORACLE_ERROR
+        assert oracle_error.payload["reason"] == "oracle_cancelled"
+        assert oracle_error.payload["cancel_reason"] == "user_speech"
+        assert oracle_error.payload["playback_generation"] == 2
+        assert oracle_error.payload["cancelled_playback_generation"] == 1
+        assert oracle_error.payload["cancellation_token"] == "voice-123:1:cancel"
+        assert oracle_error.payload["turn_id"] == "voice-123:1"
         assert oracle.interrupted is True
+        forwarded_oracle_error = next(event for event in sidecar.received if event.type == VoiceEventType.ORACLE_ERROR)
+        assert forwarded_oracle_error.payload == oracle_error.payload
         assert engine._cancellation_token_by_generation == {}
 
     asyncio.run(run())
