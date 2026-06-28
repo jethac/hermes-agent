@@ -1545,6 +1545,10 @@ def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
                     "intent": "Look this up.",
                     "route": "oracle_direct",
                     "intent_source": "reflex_audio",
+                    "asr_transcript": "look this up exactly",
+                    "asr_transcript_source": "asr",
+                    "interface_input_source": "native_audio",
+                    "reflex_provider": "vllm",
                     "end_of_utterance": True,
                 },
             )
@@ -1581,6 +1585,12 @@ def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
         assert cancel.payload["playback_generation"] == 2
         assert cancel.payload["cancelled_playback_generation"] == 1
         assert cancel.payload["cancellation_token"] == "voice-123:1:cancel"
+        assert cancel.payload["text"] == "look this up exactly"
+        assert cancel.payload["oracle_text_source"] == "asr"
+        assert cancel.payload["asr_transcript"] == "look this up exactly"
+        assert cancel.payload["asr_transcript_source"] == "asr"
+        assert cancel.payload["interface_input_source"] == "native_audio"
+        assert cancel.payload["reflex_provider"] == "vllm"
         assert barge_in.type == VoiceEventType.BARGE_IN
         assert barge_in.payload["reason"] == "user_speech"
         assert barge_in.payload["playback_generation"] == 2

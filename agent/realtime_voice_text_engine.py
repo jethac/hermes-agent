@@ -1867,15 +1867,24 @@ def _kame_defer_reply_payload_with_metrics(
 
 
 def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    oracle_text_source = str(metadata.get("kame_oracle_text_source") or "").strip()
+    transcript = str(metadata.get("kame_transcript") or "")
+    intent = str(metadata.get("kame_intent") or "")
+    asr_transcript = str(metadata.get("kame_asr_transcript") or "")
+    text = transcript or intent
+    if oracle_text_source.lower().startswith("asr") and asr_transcript:
+        text = asr_transcript
     payload: dict[str, Any] = {
         "turn_id": str(metadata.get("kame_turn_id") or ""),
         "route": str(metadata.get("kame_route") or ""),
-        "intent": str(metadata.get("kame_intent") or ""),
+        "intent": intent,
         "intent_source": str(metadata.get("kame_intent_source") or ""),
-        "text": str(metadata.get("kame_transcript") or metadata.get("kame_intent") or ""),
+        "text": text,
         "source": str(metadata.get("kame_source") or ""),
         "transcript_source": str(metadata.get("kame_transcript_source") or ""),
     }
+    if oracle_text_source:
+        payload["oracle_text_source"] = oracle_text_source
     if metadata.get("kame_user_id"):
         payload["user_id"] = str(metadata.get("kame_user_id"))
     if metadata.get("kame_route_confidence") is not None:
@@ -1899,6 +1908,10 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
         payload["cancellation_token"] = str(metadata.get("kame_cancellation_token"))
     if metadata.get("kame_reflex_validation_error"):
         payload["reflex_validation_error"] = str(metadata.get("kame_reflex_validation_error"))
+    if metadata.get("kame_interface_input_source"):
+        payload["interface_input_source"] = str(metadata.get("kame_interface_input_source"))
+    if metadata.get("kame_reflex_provider"):
+        payload["reflex_provider"] = str(metadata.get("kame_reflex_provider"))
     if isinstance(metadata.get("kame_requested_response_style"), Mapping):
         payload["requested_response_style"] = dict(metadata.get("kame_requested_response_style") or {})
     return {key: value for key, value in payload.items() if value != ""}
