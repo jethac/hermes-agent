@@ -5453,7 +5453,45 @@ def test_text_engine_file_tts_audio_chunk_includes_synthesis_metric(monkeypatch,
         event = await asyncio.wait_for(engine._events.get(), timeout=1)
         assert event.type == VoiceEventType.PLAYBACK_STOPPED
         assert event.payload["playback_generation"] == 1
+        event = await asyncio.wait_for(engine._events.get(), timeout=1)
+        assert event.type == VoiceEventType.ASSISTANT_AUDIO_END
+        assert event.payload["playback_generation"] == 1
         await engine.close()
+
+    asyncio.run(run())
+
+
+def test_session_marks_assistant_audio_end_generation_state():
+    class AudioEndEngine:
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            return None
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.ASSISTANT_AUDIO_END,
+                session_id="voice-123",
+                sequence=1,
+                payload={"playback_generation": 4},
+            )
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(RealtimeVoiceSessionConfig(session_id="voice-123"), engine=AudioEndEngine())
+        await session.start()
+
+        event = await anext(session.events())
+
+        assert event.type == VoiceEventType.ASSISTANT_AUDIO_END
+        assert event.payload["session_state"] == RealtimeVoiceSessionState.SPEAKING.value
+        assert session.state == RealtimeVoiceSessionState.SPEAKING
+        assert session.transcript.active_playback_generation == 4
+        assert session.durable_messages() == []
+        await session.close()
 
     asyncio.run(run())
 

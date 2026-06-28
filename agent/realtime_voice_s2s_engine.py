@@ -31,6 +31,7 @@ from agent.realtime_voice_oracle import HermesRealtimeOracle
 STALE_SIDECAR_GENERATION_EVENT_TYPES = frozenset(
     {
         VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.ASSISTANT_AUDIO_END,
         VoiceEventType.PLAYBACK_STARTED,
         VoiceEventType.PLAYBACK_STOPPED,
         VoiceEventType.ASSISTANT_COMMIT,
@@ -302,6 +303,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             VoiceEventType.ASSISTANT_COMMIT,
             VoiceEventType.BARGE_IN,
             VoiceEventType.SESSION_ERROR,
+            VoiceEventType.ASSISTANT_AUDIO_END,
             VoiceEventType.PLAYBACK_STOPPED,
         }:
             self._assistant_output_active = False
@@ -324,6 +326,7 @@ class NativeS2SSidecarEngine(RealtimeVoiceEngine):
             self._playback_generation = max(self._playback_generation, generation)
         elif event.type in {
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            VoiceEventType.ASSISTANT_AUDIO_END,
             VoiceEventType.PLAYBACK_STARTED,
             VoiceEventType.PLAYBACK_STOPPED,
             VoiceEventType.ASSISTANT_TEXT_PARTIAL,

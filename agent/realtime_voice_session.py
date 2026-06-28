@@ -44,6 +44,7 @@ class RealtimeVoiceTranscript:
 STALE_GENERATION_EVENT_TYPES = frozenset(
     {
         VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.ASSISTANT_AUDIO_END,
         VoiceEventType.PLAYBACK_STARTED,
         VoiceEventType.PLAYBACK_STOPPED,
         VoiceEventType.ORACLE_ACCEPTED,
@@ -187,6 +188,13 @@ class RealtimeVoiceSession:
                     return
                 self.transcript.active_playback_generation = generation
             self.state = RealtimeVoiceSessionState.SPEAKING
+        elif event.type == VoiceEventType.ASSISTANT_AUDIO_END:
+            generation = _payload_generation(event.payload)
+            if generation is not None:
+                if generation < self.transcript.active_playback_generation:
+                    return
+                self.transcript.active_playback_generation = generation
+            self.state = RealtimeVoiceSessionState.SPEAKING
         elif event.type == VoiceEventType.PLAYBACK_STARTED:
             generation = _payload_generation(event.payload)
             if generation is not None:
@@ -270,6 +278,7 @@ class RealtimeVoiceSession:
         if event.type in {
             VoiceEventType.ASSISTANT_TEXT_PARTIAL,
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            VoiceEventType.ASSISTANT_AUDIO_END,
             VoiceEventType.PLAYBACK_STARTED,
         }:
             return RealtimeVoiceSessionState.SPEAKING

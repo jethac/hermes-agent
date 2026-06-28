@@ -302,6 +302,15 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     payload.setdefault("playback_generation", self._playback_generation)
                     self._frontend_output_active = True
                     await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
+                elif event.type == VoiceEventType.ASSISTANT_AUDIO_END:
+                    payload = dict(event.payload)
+                    generation = _payload_generation(payload)
+                    if generation is not None and generation < self._playback_generation:
+                        continue
+                    if generation is not None:
+                        self._playback_generation = max(self._playback_generation, generation)
+                    payload.setdefault("playback_generation", self._playback_generation)
+                    await self._emit(VoiceEventType.ASSISTANT_AUDIO_END, payload)
                 elif event.type == VoiceEventType.PLAYBACK_STARTED:
                     payload = dict(event.payload)
                     generation = _payload_generation(payload)
@@ -1158,6 +1167,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 )
                 await self._emit(
                     VoiceEventType.PLAYBACK_STOPPED,
+                    {"playback_generation": playback_generation, **metadata},
+                )
+                await self._emit(
+                    VoiceEventType.ASSISTANT_AUDIO_END,
                     {"playback_generation": playback_generation, **metadata},
                 )
         finally:

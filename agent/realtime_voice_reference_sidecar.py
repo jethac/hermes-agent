@@ -693,7 +693,11 @@ class ReferenceRealtimeVoiceSidecarSession:
             async for event in self._streaming_tts.events():
                 if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
                     await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, dict(event.payload))
-                elif event.type in {VoiceEventType.PLAYBACK_STARTED, VoiceEventType.PLAYBACK_STOPPED}:
+                elif event.type in {
+                    VoiceEventType.ASSISTANT_AUDIO_END,
+                    VoiceEventType.PLAYBACK_STARTED,
+                    VoiceEventType.PLAYBACK_STOPPED,
+                }:
                     await self._emit(event.type, dict(event.payload))
                 elif event.type == VoiceEventType.FRONTEND_STATE:
                     payload = dict(event.payload)
@@ -721,6 +725,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                     VoiceEventType.TRANSCRIPT_PARTIAL,
                     VoiceEventType.TRANSCRIPT_FINAL,
                     VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                    VoiceEventType.ASSISTANT_AUDIO_END,
                     VoiceEventType.PLAYBACK_STARTED,
                     VoiceEventType.PLAYBACK_STOPPED,
                     VoiceEventType.FRONTEND_STATE,
@@ -750,6 +755,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                     VoiceEventType.TRANSCRIPT_PARTIAL,
                     VoiceEventType.TRANSCRIPT_FINAL,
                     VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                    VoiceEventType.ASSISTANT_AUDIO_END,
                     VoiceEventType.PLAYBACK_STARTED,
                     VoiceEventType.PLAYBACK_STOPPED,
                     VoiceEventType.FRONTEND_STATE,
@@ -1346,6 +1352,10 @@ class ReferenceRealtimeVoiceSidecarSession:
                         VoiceEventType.PLAYBACK_STOPPED,
                         {"playback_generation": playback_generation} if playback_generation is not None else {},
                     )
+                    await self._emit(
+                        VoiceEventType.ASSISTANT_AUDIO_END,
+                        {"playback_generation": playback_generation} if playback_generation is not None else {},
+                    )
             finally:
                 _unlink(file_path)
         except asyncio.CancelledError:
@@ -1409,6 +1419,10 @@ class ReferenceRealtimeVoiceSidecarSession:
         await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
         await self._emit(
             VoiceEventType.PLAYBACK_STOPPED,
+            {"playback_generation": playback_generation} if playback_generation is not None else {},
+        )
+        await self._emit(
+            VoiceEventType.ASSISTANT_AUDIO_END,
             {"playback_generation": playback_generation} if playback_generation is not None else {},
         )
         return True
