@@ -837,6 +837,7 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                     "input": "direct_audio",
                     "required_metrics": [
                         "speech_end_to_interface_decision_ms",
+                        "kame_interface_model_request_ms",
                         "speech_end_to_local_first_audio_ms",
                         "routing_accuracy",
                         "capability_honesty_rate",

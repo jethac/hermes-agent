@@ -63,6 +63,7 @@ def _passing_benchmark_evidence() -> list[dict]:
                     "input": "direct_audio",
                     "metrics": {
                         "speech_end_to_interface_decision_ms": 320,
+                        "kame_interface_model_request_ms": 240,
                         "speech_end_to_local_first_audio_ms": 480,
                         "routing_accuracy": 0.94,
                         "capability_honesty_rate": 0.99,
@@ -478,6 +479,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert evidence_template[0]["model"] == "gemma-4-E2B-it"
     assert evidence_template[0]["input"] == "direct_audio"
     assert evidence_template[0]["metrics"]["speech_end_to_interface_decision_ms"] is None
+    assert evidence_template[0]["metrics"]["kame_interface_model_request_ms"] is None
     smoke_entries = [entry for entry in evidence_template if entry.get("kind") == "kame_smoke_result"]
     assert [entry["name"] for entry in smoke_entries] == [
         "all_local_smoke",
