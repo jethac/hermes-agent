@@ -891,6 +891,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Emit assistant.caption.partial/final aliases alongside legacy assistant text events",
         "category": "voice",
     },
+    "voice.realtime.output_events.audio_aliases": {
+        "type": "boolean",
+        "description": "Emit assistant.audio.chunk aliases alongside legacy audio.output.chunk events",
+        "category": "voice",
+    },
     "voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms": {
         "type": "number",
         "description": "Target milliseconds from user audio to first partial transcript",
@@ -1157,6 +1162,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.output_events.caption_aliases": {
         "type": "boolean",
         "description": "Emit assistant.caption.partial/final aliases for Discord realtime voice sessions",
+        "category": "discord",
+    },
+    "discord.realtime_voice.output_events.audio_aliases": {
+        "type": "boolean",
+        "description": "Emit assistant.audio.chunk aliases for Discord realtime voice sessions",
         "category": "discord",
     },
     "discord.realtime_voice.routing.allow_local_greetings": {
@@ -13490,6 +13500,7 @@ def _realtime_voice_output_events_payload(realtime: Mapping[str, Any]) -> Dict[s
             raw.get("caption_aliases", caption_events.get("enabled")),
             default=False,
         ),
+        "audio_aliases": _truthy_config(raw.get("audio_aliases"), default=False),
     }
 
 

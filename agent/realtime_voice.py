@@ -59,6 +59,7 @@ class VoiceEventType(StrEnum):
     SPEECH_ENERGY = "speech.energy"
     SPEECH_END = "speech.end"
     AUDIO_OUTPUT_CHUNK = "audio.output.chunk"
+    ASSISTANT_AUDIO_CHUNK = "assistant.audio.chunk"
     ASSISTANT_AUDIO_END = "assistant.audio.end"
     PLAYBACK_STARTED = "playback.started"
     PLAYBACK_STOPPED = "playback.stopped"
@@ -106,6 +107,7 @@ SERVER_EVENT_TYPES = frozenset(
         VoiceEventType.SESSION_ERROR,
         VoiceEventType.SESSION_METRICS,
         VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.ASSISTANT_AUDIO_CHUNK,
         VoiceEventType.ASSISTANT_AUDIO_END,
         VoiceEventType.PLAYBACK_STARTED,
         VoiceEventType.PLAYBACK_STOPPED,

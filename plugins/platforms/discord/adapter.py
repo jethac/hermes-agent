@@ -3001,6 +3001,7 @@ class DiscordAdapter(BasePlatformAdapter):
             },
             "output_events": {
                 "caption_aliases": False,
+                "audio_aliases": False,
             },
         }
         try:

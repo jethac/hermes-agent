@@ -369,6 +369,12 @@ def test_event_validation_separates_client_and_server_events():
         sequence=7,
         payload={"metrics": {"kame_oracle_called": 1}, "playback_generation": 1},
     )
+    audio_alias_event = VoiceEvent(
+        type=VoiceEventType.ASSISTANT_AUDIO_CHUNK,
+        session_id="voice-123",
+        sequence=8,
+        payload={"audio_alias_for": VoiceEventType.AUDIO_OUTPUT_CHUNK.value, "playback_generation": 1},
+    )
 
     validate_client_event(audio_event)
     validate_client_event(speech_start_event)
@@ -377,6 +383,7 @@ def test_event_validation_separates_client_and_server_events():
     validate_server_event(interface_event)
     validate_server_event(oracle_event)
     validate_server_event(metrics_event)
+    validate_server_event(audio_alias_event)
 
     with pytest.raises(ValueError):
         validate_client_event(transcript_event)
@@ -386,6 +393,8 @@ def test_event_validation_separates_client_and_server_events():
         validate_client_event(oracle_event)
     with pytest.raises(ValueError):
         validate_client_event(metrics_event)
+    with pytest.raises(ValueError):
+        validate_client_event(audio_alias_event)
 
     with pytest.raises(ValueError):
         validate_server_event(audio_event)
@@ -608,6 +617,53 @@ def test_text_engine_emits_opt_in_caption_alias_events(monkeypatch):
         assert caption_final.payload["text"] == commit.payload["text"]
         assert caption_final.payload["caption_alias_for"] == VoiceEventType.ASSISTANT_COMMIT.value
         assert caption_final.payload["playback_generation"] == commit.payload["playback_generation"]
+
+    asyncio.run(run())
+
+
+def test_text_engine_emits_opt_in_audio_alias_events(monkeypatch):
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            await self._emit(
+                VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                {
+                    **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+                    "playback_generation": playback_generation,
+                },
+            )
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        engine = TextOracleTTSEngine(oracle=FakeOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                metadata={"output_events": {"audio_aliases": True}},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello audio aliases", "end_of_utterance": True},
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_AUDIO_CHUNK:
+                break
+
+        await engine.close()
+
+        audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
+        alias = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_AUDIO_CHUNK)
+        assert alias.payload["audio_alias_for"] == VoiceEventType.AUDIO_OUTPUT_CHUNK.value
+        assert alias.payload["playback_generation"] == audio.payload["playback_generation"]
+        assert alias.payload["data_b64"] == audio.payload["data_b64"]
+        assert alias.payload["codec"] == audio.payload["codec"]
 
     asyncio.run(run())
 

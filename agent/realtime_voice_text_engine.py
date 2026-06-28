@@ -1377,6 +1377,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         )
         await put_realtime_voice_event(self._events, event)
         await self._emit_caption_alias_if_needed(event)
+        await self._emit_audio_alias_if_needed(event)
         return event
 
     async def _emit_caption_alias_if_needed(self, event: VoiceEvent) -> None:
@@ -1400,6 +1401,23 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 **dict(event.payload),
                 "text": text,
                 "caption_alias_for": event.type.value,
+            },
+        )
+        await put_realtime_voice_event(self._events, alias)
+
+    async def _emit_audio_alias_if_needed(self, event: VoiceEvent) -> None:
+        if not _audio_alias_events_enabled(self.config):
+            return
+        if event.type != VoiceEventType.AUDIO_OUTPUT_CHUNK:
+            return
+        self._sequence += 1
+        alias = VoiceEvent(
+            type=VoiceEventType.ASSISTANT_AUDIO_CHUNK,
+            session_id=event.session_id,
+            sequence=self._sequence,
+            payload={
+                **dict(event.payload),
+                "audio_alias_for": event.type.value,
             },
         )
         await put_realtime_voice_event(self._events, alias)
@@ -1660,6 +1678,12 @@ def _caption_alias_events_enabled(config: Optional[RealtimeVoiceSessionConfig]) 
         return True
     caption_events = metadata.get("caption_events") if isinstance(metadata, Mapping) else {}
     return isinstance(caption_events, Mapping) and _metadata_bool(caption_events.get("enabled"), default=False)
+
+
+def _audio_alias_events_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
+    output_events = metadata.get("output_events") if isinstance(metadata, Mapping) else {}
+    return isinstance(output_events, Mapping) and _metadata_bool(output_events.get("audio_aliases"), default=False)
 
 
 def _nonnegative_int_metrics(metrics: Mapping[str, Any]) -> dict[str, int]:

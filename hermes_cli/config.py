@@ -2109,6 +2109,7 @@ DEFAULT_CONFIG = {
             },
             "output_events": {
                 "caption_aliases": False,
+                "audio_aliases": False,
             },
             "quality_targets_ms": {
                 "audio_to_partial_transcript_ms": 300,
@@ -2488,6 +2489,7 @@ DEFAULT_CONFIG = {
             },
             "output_events": {
                 "caption_aliases": False,
+                "audio_aliases": False,
             },
         },
     },
