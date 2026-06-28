@@ -1242,7 +1242,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                         payload["metrics"] = metrics
                 if input_generation is not None:
                     payload["input_generation"] = input_generation
-                await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
+                await self._emit(_final_understanding_event_type(self.config), payload)
         except asyncio.CancelledError:
             raise
         except KameAudioSegmentTooLongError as exc:
@@ -2370,6 +2370,12 @@ def _kame_reflex_payload_from_content(
 def _kame_payload_accepts_oracle_asr_evidence(payload: Mapping[str, Any]) -> bool:
     route = str(payload.get("route") or KameRoute.ORACLE_DIRECT.value).strip().lower()
     return route in {KameRoute.DEFER.value, KameRoute.ORACLE_DIRECT.value}
+
+
+def _final_understanding_event_type(config: Optional[RealtimeVoiceSessionConfig]) -> VoiceEventType:
+    if config is not None and config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        return VoiceEventType.INTERFACE_INTENT_FINAL
+    return VoiceEventType.TRANSCRIPT_FINAL
 
 
 def _apply_kame_routing_policy(

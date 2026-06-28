@@ -5768,13 +5768,13 @@ def test_reference_sidecar_labels_kame_local_stt_fallback_as_asr_evidence():
         seen = []
         async for event in sidecar.events():
             seen.append(event)
-            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+            if event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
                 await sidecar.close()
                 break
         return seen
 
     seen = asyncio.run(run())
-    final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+    final = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
     assert final.payload["text"] == "check deployment status"
     assert final.payload["intent"] == "check deployment status"
     assert final.payload["intent_source"] == "asr_fallback"
@@ -5829,7 +5829,7 @@ def test_reference_sidecar_falls_back_to_local_stt_when_kame_vllm_reflex_fails(m
         seen = []
         async for event in sidecar.events():
             seen.append(event)
-            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+            if event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
                 await sidecar.close()
                 break
         return seen
@@ -5845,7 +5845,7 @@ def test_reference_sidecar_falls_back_to_local_stt_when_kame_vllm_reflex_fails(m
         for event in seen
         if event.type == VoiceEventType.FRONTEND_STATE and event.payload.get("reason") == "kame_audio_reflex_failed"
     )
-    final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+    final = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
     assert ready.payload["status"] == "ready"
     assert ready.payload["provider"] == "vllm"
     assert ready.payload["model"] == "google/gemma-4-E2B-it"
@@ -7648,7 +7648,7 @@ def test_reference_sidecar_kame_on_escalation_attaches_one_shot_asr_evidence(mon
         seen = []
         async for event in sidecar.events():
             seen.append(event)
-            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+            if event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
                 break
 
         await sidecar.close()
@@ -7657,7 +7657,7 @@ def test_reference_sidecar_kame_on_escalation_attaches_one_shot_asr_evidence(mon
     seen = asyncio.run(run())
     final = seen[-1]
     assert VoiceEventType.TRANSCRIPT_PARTIAL not in [event.type for event in seen]
-    assert final.type == VoiceEventType.TRANSCRIPT_FINAL
+    assert final.type == VoiceEventType.INTERFACE_INTENT_FINAL
     assert final.payload["text"] == "reflex wording"
     assert final.payload["intent"] == "Reflex intent."
     assert final.payload["route"] == "oracle_direct"
@@ -7817,10 +7817,10 @@ def test_reference_sidecar_kame_local_route_skips_on_escalation_asr(monkeypatch)
         )
 
         async for event in sidecar.events():
-            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+            if event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
                 await sidecar.close()
                 return event
-        raise AssertionError("missing transcript final")
+        raise AssertionError("missing interface intent final")
 
     final = asyncio.run(run())
     assert final.payload["route"] == "local"
@@ -7884,12 +7884,12 @@ def test_reference_sidecar_kame_speculative_asr_does_not_drive_reflex(monkeypatc
         seen = []
         async for event in sidecar.events():
             seen.append(event)
-            if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+            if event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
                 break
 
         assert sent_to_asr
         final = seen[-1]
-        assert final.type == VoiceEventType.TRANSCRIPT_FINAL
+        assert final.type == VoiceEventType.INTERFACE_INTENT_FINAL
         assert final.payload["text"] == "reflex wording"
         assert final.payload["intent"] == "Reflex intent."
         assert final.payload["route"] == "local"
