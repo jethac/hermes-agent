@@ -2025,7 +2025,7 @@ DEFAULT_CONFIG = {
         "silence_duration": 3.0,      # Seconds of silence before auto-stop
         "realtime": {
             "enabled": False,
-            "engine": "text_oracle_tts",  # "text_oracle_tts" | "native_s2s_oracle"
+            "engine": "text_oracle_tts",  # "text_oracle_tts" | "native_s2s_oracle" | "kame_interface_oracle"
             "input_codec": "webm_opus",
             "output_codec": "opus",
             "input_buffer_limit_bytes": 8388608,
@@ -2038,6 +2038,9 @@ DEFAULT_CONFIG = {
             "require_live_like": False,
             "frontend_provider": "",
             "frontend_model": "",
+            "interface_audio_input": "auto",
+            "asr_mode": "on_escalation",
+            "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
             "sidecar_base_url": "",
             "sidecar_token_env": "HERMES_VOICE_SIDECAR_TOKEN",
             "spark_base_url": "",
@@ -2410,10 +2413,14 @@ DEFAULT_CONFIG = {
         # from voice.realtime when explicitly enabled here.
         "realtime_voice": {
             "enabled": False,
+            "engine": "text_oracle_tts",
             "sidecar_base_url": "",
             "sidecar_token": "",
             "frontend_provider": "",
             "frontend_model": "",
+            "interface_audio_input": "auto",
+            "asr_mode": "on_escalation",
+            "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
             "oracle_model": "",
             "tts_provider": "",
             "sidecar_connect_timeout_seconds": 10.0,

@@ -653,7 +653,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "voice.realtime.engine": {
         "type": "select",
         "description": "Realtime voice engine",
-        "options": ["text_oracle_tts", "native_s2s_oracle"],
+        "options": ["text_oracle_tts", "native_s2s_oracle", "kame_interface_oracle"],
         "category": "voice",
     },
     "voice.realtime.input_codec": {
@@ -706,6 +706,23 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "voice.realtime.require_live_like": {
         "type": "boolean",
         "description": "Require native S2S or streaming STT/TTS before realtime voice is considered available",
+        "category": "voice",
+    },
+    "voice.realtime.interface_audio_input": {
+        "type": "select",
+        "description": "How the KAME reflex receives user input",
+        "options": ["auto", "native_audio", "text_fallback"],
+        "category": "voice",
+    },
+    "voice.realtime.asr_mode": {
+        "type": "select",
+        "description": "ASR role in KAME realtime voice",
+        "options": ["disabled", "on_escalation", "speculative", "debug", "fallback"],
+        "category": "voice",
+    },
+    "voice.realtime.preferred_local_oracle_model": {
+        "type": "string",
+        "description": "Preferred local Hermes oracle model label for KAME realtime voice",
         "category": "voice",
     },
     "voice.realtime.production_evidence_report": {
@@ -14356,6 +14373,7 @@ def _realtime_voice_profile_home(profile: Optional[str]) -> str:
 def _realtime_voice_config_from_request(ws: WebSocket):
     """Build a realtime voice session config from profile config + query params."""
     from agent.realtime_voice import (
+        RealtimeVoiceASRMode,
         RealtimeVoiceEngineKind,
         RealtimeVoiceSessionConfig,
         VoiceAudioCodec,
@@ -14438,6 +14456,9 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         ),
         frontend_provider=str(realtime.get("frontend_provider") or "") or None,
         frontend_model=str(realtime.get("frontend_model") or "") or None,
+        interface_audio_input=str(realtime.get("interface_audio_input") or "") or None,
+        asr_mode=RealtimeVoiceASRMode(str(realtime.get("asr_mode") or RealtimeVoiceASRMode.ON_ESCALATION.value)),
+        preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or "") or None,
         oracle_model=str(realtime.get("oracle_model") or "") or None,
         tts_provider=str(realtime.get("tts_provider") or "") or None,
         sidecar_base_url=str(sidecar_base_url or "") or None,
@@ -14455,6 +14476,9 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "oracle_role": "hermes_backend_oracle",
             "frontend_provider": str(realtime.get("frontend_provider") or "") or None,
             "frontend_model": str(realtime.get("frontend_model") or "") or None,
+            "interface_audio_input": str(realtime.get("interface_audio_input") or "") or None,
+            "asr_mode": str(realtime.get("asr_mode") or "") or None,
+            "preferred_local_oracle_model": str(realtime.get("preferred_local_oracle_model") or "") or None,
             "oracle_model": str(realtime.get("oracle_model") or "") or None,
             "language_support": language_support,
             "quality_targets_ms": quality_targets_ms,

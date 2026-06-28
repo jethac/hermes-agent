@@ -26,6 +26,17 @@ class RealtimeVoiceEngineKind(StrEnum):
 
     TEXT_ORACLE_TTS = "text_oracle_tts"
     NATIVE_S2S_ORACLE = "native_s2s_oracle"
+    KAME_INTERFACE_ORACLE = "kame_interface_oracle"
+
+
+class RealtimeVoiceASRMode(StrEnum):
+    """ASR role in a KAME-style realtime voice session."""
+
+    DISABLED = "disabled"
+    ON_ESCALATION = "on_escalation"
+    SPECULATIVE = "speculative"
+    DEBUG = "debug"
+    FALLBACK = "fallback"
 
 
 class VoiceAudioCodec(StrEnum):
@@ -104,6 +115,9 @@ class RealtimeVoiceSessionConfig:
     input_buffer_limit_bytes: int = 8 * 1024 * 1024
     frontend_provider: Optional[str] = None
     frontend_model: Optional[str] = None
+    interface_audio_input: Optional[str] = None
+    asr_mode: RealtimeVoiceASRMode = RealtimeVoiceASRMode.ON_ESCALATION
+    preferred_local_oracle_model: Optional[str] = None
     oracle_model: Optional[str] = None
     tts_provider: Optional[str] = None
     sidecar_base_url: Optional[str] = None
@@ -134,6 +148,9 @@ class RealtimeVoiceSessionConfig:
             "input_buffer_limit_bytes": self.input_buffer_limit_bytes,
             "frontend_provider": self.frontend_provider,
             "frontend_model": self.frontend_model,
+            "interface_audio_input": self.interface_audio_input,
+            "asr_mode": self.asr_mode.value,
+            "preferred_local_oracle_model": self.preferred_local_oracle_model,
             "oracle_model": self.oracle_model,
             "tts_provider": self.tts_provider,
             "sidecar_base_url": sidecar_base_url,
@@ -159,6 +176,9 @@ class RealtimeVoiceSessionConfig:
             ),
             frontend_provider=_optional_str(payload.get("frontend_provider")),
             frontend_model=_optional_str(payload.get("frontend_model")),
+            interface_audio_input=_optional_str(payload.get("interface_audio_input")),
+            asr_mode=_asr_mode(payload.get("asr_mode")),
+            preferred_local_oracle_model=_optional_str(payload.get("preferred_local_oracle_model")),
             oracle_model=_optional_str(payload.get("oracle_model")),
             tts_provider=_optional_str(payload.get("tts_provider")),
             sidecar_base_url=_optional_str(payload.get("sidecar_base_url")),
@@ -447,6 +467,15 @@ def _optional_str(value: Any) -> Optional[str]:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _asr_mode(value: Any) -> RealtimeVoiceASRMode:
+    if value is None:
+        return RealtimeVoiceASRMode.ON_ESCALATION
+    try:
+        return RealtimeVoiceASRMode(str(value).strip().lower())
+    except ValueError:
+        return RealtimeVoiceASRMode.ON_ESCALATION
 
 
 def _mapping(value: Any) -> Dict[str, Any]:

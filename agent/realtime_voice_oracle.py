@@ -12,6 +12,7 @@ from agent.realtime_voice import (
     TRANSCRIPT_METADATA_VALUE_RE,
     RealtimeVoiceSessionConfig,
 )
+from agent.realtime_voice_kame import KameOracleRequest
 
 
 class HermesRealtimeOracle:
@@ -76,6 +77,12 @@ class HermesRealtimeOracle:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
+    async def stream_answer_for_request(self, request: KameOracleRequest) -> AsyncIterator[str]:
+        """Stream an answer for a structured KAME reflex-to-oracle request."""
+
+        async for delta in self.stream_answer_with_metadata(request.oracle_text, request.to_metadata()):
+            yield delta
+
     def interrupt(self, message: str = "Realtime voice turn interrupted") -> None:
         with self._active_lock:
             agent = self._active_agent
@@ -132,6 +139,9 @@ def _voice_oracle_prompt(transcript: str, metadata: Mapping[str, object]) -> str
             "\nPreserve the user's spoken language and script unless the user explicitly asks "
             f"for translation or a different language. Detected speech metadata: {language_context}."
         )
+    kame_context = _voice_kame_request_context(metadata)
+    if kame_context:
+        prompt += f"\n{kame_context}"
     return f"{prompt}\n\nUser said: {transcript}"
 
 
@@ -167,6 +177,39 @@ def _voice_architecture_context(metadata: Mapping[str, object]) -> str:
     )
 
 
+def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
+    if metadata.get("voice_architecture") != "kame_frontend_oracle":
+        return ""
+
+    intent = _metadata_text(metadata.get("kame_intent"))
+    transcript = _metadata_text(metadata.get("kame_transcript"))
+    transcript_source = _metadata_text(metadata.get("kame_transcript_source"))
+    intent_source = _metadata_text(metadata.get("kame_intent_source"))
+    interface_already_said = _metadata_text(metadata.get("kame_interface_already_said"))
+    summary = _metadata_text(metadata.get("kame_conversation_summary"))
+
+    parts = [
+        "KAME request: the realtime reflex has already handled live turn-taking "
+        "and is escalating this turn to the Hermes oracle.",
+    ]
+    if intent:
+        parts.append(f"Reflex interpreted intent ({intent_source or 'reflex'}): {intent}")
+    if transcript:
+        source_label = transcript_source or "transcript hypothesis"
+        parts.append(
+            f"Verbatim transcript evidence ({source_label}): {transcript}. "
+            "Use it for names, numbers, code identifiers, and tool arguments, but treat it as evidence rather than ground truth."
+        )
+    if interface_already_said:
+        parts.append(f"The voice reflex already told the user: {interface_already_said}")
+    if summary:
+        parts.append(f"Ephemeral live voice summary: {summary}")
+    max_sentences = _metadata_positive_int(metadata.get("max_spoken_sentences"))
+    if max_sentences is not None:
+        parts.append(f"Keep spoken output to at most {max_sentences} sentence(s) unless the task requires more.")
+    return " ".join(parts)
+
+
 def _voice_transport_context(metadata: Mapping[str, object]) -> str:
     transport = metadata.get("transport")
     if transport == "discord_voice":
@@ -182,6 +225,23 @@ def _voice_transport_context(metadata: Mapping[str, object]) -> str:
         "and your reply may be spoken back through that transport. Do not deny live "
         "voice capability unless the session state explicitly says voice is unavailable."
     )
+
+
+def _metadata_text(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.split())[:1000]
+
+
+def _metadata_positive_int(value: object) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.isdigit():
+        parsed = int(value)
+        return parsed if parsed > 0 else None
+    return None
 
 
 class NullRealtimeOracle:

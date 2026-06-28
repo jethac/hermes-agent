@@ -29,6 +29,8 @@ DEFAULT_OPENAI_REALTIME_VOICE = "marin"
 DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL = "gpt-realtime-whisper"
 DEFAULT_GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview"
 DEFAULT_GEMINI_LIVE_VOICE = "Puck"
+DEFAULT_KAME_REFLEX_MODEL = "gemma-4-E2B-it"
+DEFAULT_KAME_ORACLE_MODEL = "gemma-4-26B-A4B-it"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--preset",
-        choices=("generic", "deepgram", "elevenlabs", "cartesia", "openai", "gemini"),
+        choices=("generic", "deepgram", "elevenlabs", "cartesia", "openai", "gemini", "kame"),
         default="generic",
         help="Provider preset for common portable realtime voice stacks",
     )
@@ -121,6 +123,28 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable Gemini Live's KAME ask_hermes_oracle bridge tool",
     )
+    parser.add_argument(
+        "--kame-reflex-model",
+        default=DEFAULT_KAME_REFLEX_MODEL,
+        help="Reflex/interface model for --preset kame",
+    )
+    parser.add_argument(
+        "--kame-interface-audio-input",
+        default="auto",
+        choices=("auto", "native_audio", "text_fallback"),
+        help="How the KAME reflex receives user input",
+    )
+    parser.add_argument(
+        "--kame-asr-mode",
+        default="on_escalation",
+        choices=("disabled", "on_escalation", "speculative", "debug", "fallback"),
+        help="ASR role for --preset kame",
+    )
+    parser.add_argument(
+        "--kame-preferred-local-oracle-model",
+        default=DEFAULT_KAME_ORACLE_MODEL,
+        help="Preferred local Hermes oracle model label for --preset kame",
+    )
     parser.add_argument("--sidecar-host", default="127.0.0.1")
     parser.add_argument("--sidecar-port", type=int, default=8765)
     parser.add_argument(
@@ -172,6 +196,24 @@ def main(argv: list[str] | None = None) -> int:
                 api_key_env=args.gemini_live_api_key_env,
                 google_search=bool(args.gemini_live_google_search),
                 oracle_tool=not bool(args.disable_gemini_live_oracle_tool),
+                sidecar_host=args.sidecar_host,
+                sidecar_port=args.sidecar_port,
+                production_evidence_report=args.production_evidence_report,
+            )
+        elif args.preset == "kame":
+            profile = build_kame_realtime_voice_profile(
+                reflex_model=str(args.kame_reflex_model or DEFAULT_KAME_REFLEX_MODEL),
+                interface_audio_input=str(args.kame_interface_audio_input or "auto"),
+                asr_mode=str(args.kame_asr_mode or "on_escalation"),
+                preferred_local_oracle_model=str(
+                    args.kame_preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL
+                ),
+                streaming_stt_base_url=preset["streaming_stt_base_url"],
+                streaming_tts_base_url=preset["streaming_tts_base_url"],
+                streaming_stt_model=preset["streaming_stt_model"],
+                streaming_tts_model=preset["streaming_tts_model"],
+                streaming_stt_token_env=args.streaming_stt_token_env,
+                streaming_tts_token_env=args.streaming_tts_token_env,
                 sidecar_host=args.sidecar_host,
                 sidecar_port=args.sidecar_port,
                 production_evidence_report=args.production_evidence_report,
@@ -247,6 +289,10 @@ def main(argv: list[str] | None = None) -> int:
             print("  export GEMINI_API_KEY=...")
             print("  export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=...")
             print("  python -m hermes_cli.realtime_voice_sidecar --host 127.0.0.1 --port 8765")
+        elif args.preset == "kame":
+            print("  start the Gemma 4 E2B reflex runtime behind the realtime sidecar")
+            print("  python -m hermes_cli.realtime_voice_sidecar --host 127.0.0.1 --port 8765")
+            print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply")
         else:
             print("  python -m hermes_cli.realtime_voice_alpha_evidence --runs 3 --apply --start-bridge")
         live_provider_flag = "--require-gemini-live" if args.preset == "gemini" else "--require-openai-realtime"
@@ -329,6 +375,14 @@ def _profile_preset_values(args: argparse.Namespace) -> dict[str, str]:
             "streaming_tts_model": streaming_tts_model,
             "gemini_live_model": str(args.gemini_live_model or DEFAULT_GEMINI_LIVE_MODEL),
             "gemini_live_voice": str(args.gemini_live_voice or DEFAULT_GEMINI_LIVE_VOICE),
+        }
+
+    if args.preset == "kame":
+        return {
+            "streaming_stt_base_url": streaming_stt_base_url,
+            "streaming_tts_base_url": streaming_tts_base_url,
+            "streaming_stt_model": streaming_stt_model,
+            "streaming_tts_model": streaming_tts_model,
         }
 
     if args.preset == "elevenlabs":
@@ -575,6 +629,80 @@ def build_gemini_live_voice_profile(
     }
 
 
+def build_kame_realtime_voice_profile(
+    *,
+    reflex_model: str = DEFAULT_KAME_REFLEX_MODEL,
+    interface_audio_input: str = "auto",
+    asr_mode: str = "on_escalation",
+    preferred_local_oracle_model: str = DEFAULT_KAME_ORACLE_MODEL,
+    streaming_stt_base_url: str = "",
+    streaming_tts_base_url: str = "",
+    streaming_stt_model: str = DEFAULT_STREAMING_STT_MODEL,
+    streaming_tts_model: str = DEFAULT_STREAMING_TTS_MODEL,
+    streaming_stt_token_env: str = "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+    streaming_tts_token_env: str = "HERMES_STREAMING_STT_BRIDGE_TOKEN",
+    sidecar_host: str = "127.0.0.1",
+    sidecar_port: int = 8765,
+    production_evidence_report: str = DEFAULT_EVIDENCE_REPORT,
+) -> dict[str, Any]:
+    port = int(sidecar_port or 8765)
+    if port <= 0 or port > 65535:
+        raise ValueError("--sidecar-port must be between 1 and 65535")
+    audio_mode = str(interface_audio_input or "auto").strip() or "auto"
+    if audio_mode not in {"auto", "native_audio", "text_fallback"}:
+        raise ValueError("--kame-interface-audio-input must be auto, native_audio, or text_fallback")
+    asr = str(asr_mode or "on_escalation").strip() or "on_escalation"
+    if asr not in {"disabled", "on_escalation", "speculative", "debug", "fallback"}:
+        raise ValueError("--kame-asr-mode must be disabled, on_escalation, speculative, debug, or fallback")
+
+    return {
+        "enabled": True,
+        "engine": "kame_interface_oracle",
+        "input_codec": "webm_opus",
+        "output_codec": "opus",
+        "input_buffer_limit_bytes": 8 * 1024 * 1024,
+        "input_frame_ms": 100,
+        "silence_timeout_ms": 650,
+        "speech_level_threshold": 0.075,
+        "barge_in_min_speech_ms": 120,
+        "barge_in_min_rms": 350,
+        "pre_roll_ms": 300,
+        "require_live_like": True,
+        "frontend_provider": "gemma4",
+        "frontend_model": str(reflex_model or DEFAULT_KAME_REFLEX_MODEL),
+        "interface_audio_input": audio_mode,
+        "asr_mode": asr,
+        "preferred_local_oracle_model": str(preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL),
+        "sidecar_base_url": "",
+        "spark_base_url": "",
+        "sidecar_host": str(sidecar_host or "127.0.0.1"),
+        "sidecar_port": port,
+        "sidecar_autostart": True,
+        "sidecar_connect_timeout_seconds": 10.0,
+        "streaming_stt_base_url": _clean_url(streaming_stt_base_url),
+        "streaming_stt_model": str(streaming_stt_model or DEFAULT_STREAMING_STT_MODEL),
+        "streaming_stt_token_env": _clean_env_name(streaming_stt_token_env),
+        "streaming_tts_base_url": _clean_url(streaming_tts_base_url),
+        "streaming_tts_model": str(streaming_tts_model or DEFAULT_STREAMING_TTS_MODEL),
+        "streaming_tts_token_env": _clean_env_name(streaming_tts_token_env),
+        "production_languages": ["en", "ja"],
+        "production_scripts": ["Latn", "Jpan"],
+        "best_effort_languages": True,
+        "production_evidence_report": str(production_evidence_report or DEFAULT_EVIDENCE_REPORT),
+        "production_evidence_min_runs": 3,
+        "turn_acknowledgement": {
+            "enabled": True,
+            "text": "One moment.",
+        },
+        "quality_targets_ms": {
+            "audio_to_partial_transcript_ms": 300,
+            "final_transcript_to_first_text_ms": 500,
+            "final_transcript_to_first_audio_ms": 900,
+            "barge_in_ack_ms": 150,
+        },
+    }
+
+
 def apply_realtime_voice_profile(profile: Mapping[str, Any]) -> Path:
     from hermes_cli.config import get_config_path, read_raw_config, save_config
 
@@ -618,10 +746,14 @@ def merge_realtime_voice_profile(
     discord_rt.update(
         {
             "enabled": bool(profile.get("enabled")),
+            "engine": profile.get("engine"),
             "sidecar_base_url": sidecar_url,
             "sidecar_token_env": str(profile.get("sidecar_token_env") or "HERMES_VOICE_SIDECAR_TOKEN"),
             "frontend_provider": profile.get("frontend_provider"),
             "frontend_model": profile.get("frontend_model"),
+            "interface_audio_input": profile.get("interface_audio_input"),
+            "asr_mode": profile.get("asr_mode"),
+            "preferred_local_oracle_model": profile.get("preferred_local_oracle_model"),
             "sidecar_connect_timeout_seconds": profile.get("sidecar_connect_timeout_seconds", 10.0),
             "sidecar_close_timeout_seconds": profile.get("sidecar_close_timeout_seconds", 2.0),
         }

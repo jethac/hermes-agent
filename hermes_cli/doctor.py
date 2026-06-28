@@ -1062,7 +1062,7 @@ def _strip_none_values(value: Any) -> Any:
 
 
 def _realtime_voice_smoke_config():
-    from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceAudioCodec
+    from agent.realtime_voice import RealtimeVoiceASRMode, RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceAudioCodec
     from hermes_cli.web_server import (
         _positive_float_config,
         _positive_int_config,
@@ -1093,6 +1093,9 @@ def _realtime_voice_smoke_config():
         ),
         frontend_provider=str(realtime.get("frontend_provider") or "") or None,
         frontend_model=str(realtime.get("frontend_model") or "") or None,
+        interface_audio_input=str(realtime.get("interface_audio_input") or "") or None,
+        asr_mode=RealtimeVoiceASRMode(str(realtime.get("asr_mode") or RealtimeVoiceASRMode.ON_ESCALATION.value)),
+        preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or "") or None,
         oracle_model=str(realtime.get("oracle_model") or "") or None,
         tts_provider=str(realtime.get("tts_provider") or "") or None,
         sidecar_base_url=str(base_url or "") or None,
@@ -1109,6 +1112,9 @@ def _realtime_voice_smoke_config():
             "oracle_role": "hermes_backend_oracle",
             "frontend_provider": str(realtime.get("frontend_provider") or "") or None,
             "frontend_model": str(realtime.get("frontend_model") or "") or None,
+            "interface_audio_input": str(realtime.get("interface_audio_input") or "") or None,
+            "asr_mode": str(realtime.get("asr_mode") or "") or None,
+            "preferred_local_oracle_model": str(realtime.get("preferred_local_oracle_model") or "") or None,
             "oracle_model": str(realtime.get("oracle_model") or "") or None,
             "language_support": _realtime_voice_language_support_payload(realtime),
             "quality_targets_ms": _realtime_voice_quality_targets_payload(realtime),

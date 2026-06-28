@@ -25,6 +25,7 @@ from agent.realtime_voice import (
     transcript_metadata_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
+from agent.realtime_voice_kame import KameOracleRequest
 from agent.realtime_voice_oracle import HermesRealtimeOracle, NullRealtimeOracle
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, wants_realtime_sidecar
@@ -121,7 +122,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     },
                 )
                 return
-            await self._start_turn(transcript, metadata=transcript_metadata_from_payload(event.payload))
+            await self._start_turn(
+                transcript,
+                metadata=transcript_metadata_from_payload(event.payload),
+                oracle_payload=event.payload,
+            )
             return
 
         try:
@@ -235,6 +240,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                             text,
                             input_generation=_payload_input_generation(payload),
                             metadata=transcript_metadata_from_payload(payload),
+                            oracle_payload=payload,
                         )
                 elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
                     payload = dict(event.payload)
@@ -394,6 +400,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         *,
         input_generation: Optional[int] = None,
         metadata: Optional[dict] = None,
+        oracle_payload: Optional[Mapping[str, Any]] = None,
     ) -> None:
         if self._active_task and not self._active_task.done():
             self._active_task.cancel()
@@ -403,16 +410,66 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         else:
             self._playback_generation += 1
             generation = self._playback_generation
+        assistant_metadata = dict(metadata or {})
+        oracle_request = self._kame_oracle_request(
+            transcript,
+            generation,
+            oracle_payload=oracle_payload,
+            metadata=assistant_metadata,
+        )
+        if oracle_request is not None:
+            assistant_metadata.update(oracle_request.to_metadata())
         payload = {"text": transcript, "playback_generation": generation}
         if input_generation is not None:
             payload["input_generation"] = input_generation
-        if metadata:
-            payload.update(metadata)
+        if assistant_metadata:
+            payload.update(assistant_metadata)
         await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
-        self._assistant_metadata_by_generation[generation] = dict(metadata or {})
-        self._active_task = asyncio.create_task(self._answer_and_speak(transcript, generation, metadata or {}))
+        self._assistant_metadata_by_generation[generation] = assistant_metadata
+        self._active_task = asyncio.create_task(
+            self._answer_and_speak(
+                transcript,
+                generation,
+                assistant_metadata,
+                oracle_request=oracle_request,
+            )
+        )
 
-    async def _answer_and_speak(self, transcript: str, playback_generation: int, metadata: dict) -> None:
+    def _kame_oracle_request(
+        self,
+        transcript: str,
+        playback_generation: int,
+        *,
+        oracle_payload: Optional[Mapping[str, Any]],
+        metadata: Mapping[str, Any],
+    ) -> Optional[KameOracleRequest]:
+        config = self.config
+        if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+            return None
+        config_metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
+        source = str(config_metadata.get("transport") or "voice").strip() or "voice"
+        user_id = str(config_metadata.get("user_id") or "").strip() or None
+        payload: dict[str, Any] = {}
+        payload.update(metadata)
+        if oracle_payload is not None:
+            payload.update(dict(oracle_payload))
+        return KameOracleRequest.from_turn(
+            session_id=config.session_id,
+            turn_id=f"{config.session_id}:{playback_generation}",
+            source=source,
+            user_id=user_id,
+            payload=payload,
+            fallback_text=transcript,
+        )
+
+    async def _answer_and_speak(
+        self,
+        transcript: str,
+        playback_generation: int,
+        metadata: dict,
+        *,
+        oracle_request: Optional[KameOracleRequest] = None,
+    ) -> None:
         speak_tasks: List[asyncio.Task[None]] = []
         speak_chain: Optional[asyncio.Task[None]] = None
         assistant_metadata = dict(metadata)
@@ -479,7 +536,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             oracle = self._oracle or NullRealtimeOracle()
             answer = ""
             buffer = ""
-            async for delta in _stream_oracle_answer(oracle, transcript, assistant_metadata):
+            async for delta in _stream_oracle_answer(
+                oracle,
+                transcript,
+                assistant_metadata,
+                oracle_request=oracle_request,
+            ):
                 if playback_generation != self._playback_generation:
                     return
                 answer += delta
@@ -653,6 +715,20 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         )
 
 
+class KameInterfaceOracleEngine(TextOracleTTSEngine):
+    """KAME reflex + Hermes oracle engine.
+
+    This first implementation reuses the hardened text-oracle/TTS lifecycle while
+    changing the engine contract and oracle request shape. A Gemma E2B reflex
+    sidecar can now target this engine by emitting audio-derived intent fields
+    and optional oracle-verbatim ASR evidence in transcript final payloads.
+    """
+
+    @property
+    def kind(self) -> RealtimeVoiceEngineKind:
+        return RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
+
+
 def _mime_type_for_path(path: str) -> str:
     ext = os.path.splitext(path)[1].lower()
     return {
@@ -698,7 +774,19 @@ def _payload_input_generation(payload: dict) -> Optional[int]:
     return _payload_int(value)
 
 
-async def _stream_oracle_answer(oracle: object, transcript: str, metadata: dict) -> AsyncIterator[str]:
+async def _stream_oracle_answer(
+    oracle: object,
+    transcript: str,
+    metadata: dict,
+    *,
+    oracle_request: Optional[KameOracleRequest] = None,
+) -> AsyncIterator[str]:
+    request_stream = getattr(oracle, "stream_answer_for_request", None)
+    if oracle_request is not None and callable(request_stream):
+        async for delta in request_stream(oracle_request):  # type: ignore[misc]
+            yield delta
+        return
+
     metadata_stream = getattr(oracle, "stream_answer_with_metadata", None)
     if callable(metadata_stream):
         async for delta in metadata_stream(transcript, metadata):  # type: ignore[misc]

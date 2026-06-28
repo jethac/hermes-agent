@@ -244,6 +244,41 @@ def test_gemini_preset_accepts_explicit_model_voice_key_env_and_tools(capsys):
     assert realtime["gemini_live_oracle_tool"] is False
 
 
+def test_kame_preset_prints_reflex_oracle_profile(capsys):
+    result = realtime_voice_profile.main(["--preset", "kame"])
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["engine"] == "kame_interface_oracle"
+    assert realtime["frontend_provider"] == "gemma4"
+    assert realtime["frontend_model"] == "gemma-4-E2B-it"
+    assert realtime["interface_audio_input"] == "auto"
+    assert realtime["asr_mode"] == "on_escalation"
+    assert realtime["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+    assert realtime["sidecar_autostart"] is True
+    assert realtime["require_live_like"] is True
+
+
+def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
+    profile = realtime_voice_profile.build_kame_realtime_voice_profile(
+        reflex_model="gemma-4-E2B-it",
+        interface_audio_input="native_audio",
+        asr_mode="speculative",
+        preferred_local_oracle_model="gemma-4-26B-A4B-it",
+    )
+
+    merged = realtime_voice_profile.merge_realtime_voice_profile({}, profile)
+    discord_rt = merged["discord"]["realtime_voice"]
+
+    assert discord_rt["engine"] == "kame_interface_oracle"
+    assert discord_rt["frontend_provider"] == "gemma4"
+    assert discord_rt["frontend_model"] == "gemma-4-E2B-it"
+    assert discord_rt["interface_audio_input"] == "native_audio"
+    assert discord_rt["asr_mode"] == "speculative"
+    assert discord_rt["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+
+
 def test_merge_realtime_voice_profile_preserves_unrelated_config():
     existing = {
         "model": {"provider": "openrouter", "default": "gpt-5"},

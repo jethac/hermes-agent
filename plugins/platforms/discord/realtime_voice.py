@@ -16,6 +16,8 @@ from typing import Any, Callable, Optional
 
 from agent.realtime_voice import (
     AudioChunk,
+    RealtimeVoiceASRMode,
+    RealtimeVoiceEngineKind,
     RealtimeVoiceSessionConfig,
     VoiceAudioCodec,
     VoiceEvent,
@@ -122,8 +124,12 @@ class DiscordRealtimeVoiceSession:
         text_channel_id: Optional[int],
         sidecar_base_url: str,
         sidecar_token: Optional[str] = None,
+        engine: str = RealtimeVoiceEngineKind.TEXT_ORACLE_TTS.value,
         frontend_provider: Optional[str] = None,
         frontend_model: Optional[str] = None,
+        interface_audio_input: Optional[str] = None,
+        asr_mode: str = RealtimeVoiceASRMode.ON_ESCALATION.value,
+        preferred_local_oracle_model: Optional[str] = None,
         oracle_model: Optional[str] = None,
         tts_provider: Optional[str] = None,
         sidecar_connect_timeout_seconds: float = 10.0,
@@ -138,8 +144,12 @@ class DiscordRealtimeVoiceSession:
         self.text_channel_id = int(text_channel_id) if text_channel_id is not None else None
         self.sidecar_base_url = sidecar_base_url
         self.sidecar_token = sidecar_token
+        self.engine = engine
         self.frontend_provider = frontend_provider
         self.frontend_model = frontend_model
+        self.interface_audio_input = interface_audio_input
+        self.asr_mode = asr_mode
+        self.preferred_local_oracle_model = preferred_local_oracle_model
         self.oracle_model = oracle_model
         self.tts_provider = tts_provider
         self.sidecar_connect_timeout_seconds = sidecar_connect_timeout_seconds
@@ -161,12 +171,16 @@ class DiscordRealtimeVoiceSession:
     async def start(self) -> None:
         config = RealtimeVoiceSessionConfig(
             session_id=self.session_id,
+            engine=RealtimeVoiceEngineKind(str(self.engine or RealtimeVoiceEngineKind.TEXT_ORACLE_TTS.value)),
             input_codec=VoiceAudioCodec.PCM16,
             output_codec=VoiceAudioCodec.PCM16,
             sample_rate_hz=SIDECAR_SAMPLE_RATE,
             channels=SIDECAR_CHANNELS,
             frontend_provider=self.frontend_provider,
             frontend_model=self.frontend_model,
+            interface_audio_input=self.interface_audio_input,
+            asr_mode=RealtimeVoiceASRMode(str(self.asr_mode or RealtimeVoiceASRMode.ON_ESCALATION.value)),
+            preferred_local_oracle_model=self.preferred_local_oracle_model,
             oracle_model=self.oracle_model,
             tts_provider=self.tts_provider,
             sidecar_base_url=self.sidecar_base_url,
@@ -179,6 +193,9 @@ class DiscordRealtimeVoiceSession:
                 "oracle_role": "hermes_backend_oracle",
                 "frontend_provider": self.frontend_provider,
                 "frontend_model": self.frontend_model,
+                "interface_audio_input": self.interface_audio_input,
+                "asr_mode": self.asr_mode,
+                "preferred_local_oracle_model": self.preferred_local_oracle_model,
                 "oracle_model": self.oracle_model,
                 "guild_id": str(self.guild_id),
                 "voice_channel_id": str(self.voice_channel_id),

@@ -8,6 +8,7 @@ import pytest
 import agent.realtime_voice_reference_sidecar as reference_sidecar_module
 from agent.realtime_voice import (
     AudioChunk,
+    RealtimeVoiceASRMode,
     RealtimeVoiceEngineKind,
     RealtimeVoiceSessionConfig,
     VoiceAudioCodec,
@@ -20,6 +21,7 @@ from agent.realtime_voice import (
     validate_client_event,
     validate_server_event,
 )
+from agent.realtime_voice_kame import KameOracleRequest
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_reference_sidecar import (
     ReferenceRealtimeVoiceSidecarSession,
@@ -30,10 +32,10 @@ from agent.realtime_voice_reference_sidecar import (
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_oracle import _voice_oracle_prompt
-from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState
+from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState, create_realtime_voice_engine
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, sidecar_ws_url, wants_realtime_sidecar
-from agent.realtime_voice_text_engine import TextOracleTTSEngine, _take_speakable_chunk
+from agent.realtime_voice_text_engine import KameInterfaceOracleEngine, TextOracleTTSEngine, _take_speakable_chunk
 
 
 class FakeOracle:
@@ -153,6 +155,37 @@ def test_session_config_round_trips_wire_payload():
     assert restored.effective_sidecar_token == "secret-token"
     assert restored.input_buffer_limit_bytes == 4096
     assert restored.sidecar_connect_timeout_seconds == 3.5
+
+
+def test_session_config_round_trips_kame_fields():
+    config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        frontend_provider="gemma4",
+        frontend_model="gemma-4-E2B-it",
+        interface_audio_input="native_audio",
+        asr_mode=RealtimeVoiceASRMode.SPECULATIVE,
+        preferred_local_oracle_model="gemma-4-26B-A4B-it",
+    )
+
+    restored = RealtimeVoiceSessionConfig.from_wire(config.to_wire())
+
+    assert restored.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
+    assert restored.frontend_model == "gemma-4-E2B-it"
+    assert restored.interface_audio_input == "native_audio"
+    assert restored.asr_mode == RealtimeVoiceASRMode.SPECULATIVE
+    assert restored.preferred_local_oracle_model == "gemma-4-26B-A4B-it"
+
+
+def test_kame_engine_factory_uses_kame_interface_oracle_engine():
+    engine = create_realtime_voice_engine(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        )
+    )
+
+    assert isinstance(engine, KameInterfaceOracleEngine)
 
 
 def test_session_config_accepts_legacy_spark_sidecar_wire_payload():
@@ -475,6 +508,104 @@ def test_realtime_oracle_prompt_preserves_sanitized_speech_language_metadata():
     assert "script=Jpan" in prompt
     assert "voice.local" not in prompt
     assert "language_url" not in prompt
+
+
+def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
+    request = KameOracleRequest(
+        session_id="voice-123",
+        turn_id="turn-1",
+        source="discord_voice",
+        user_id="42",
+        intent="Find the note from yesterday's meeting.",
+        transcript="find the node from yesterday's meeting",
+        transcript_source="asr",
+        transcript_confidence=0.73,
+        interface_already_said="One moment.",
+        conversation_summary="The user is testing KAME voice.",
+    )
+
+    prompt = _voice_oracle_prompt(request.oracle_text, request.to_metadata())
+
+    assert "KAME request" in prompt
+    assert "Reflex interpreted intent (reflex_audio): Find the note" in prompt
+    assert "Verbatim transcript evidence (asr): find the node" in prompt
+    assert "tool arguments" in prompt
+    assert "The voice reflex already told the user: One moment." in prompt
+
+
+def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
+    class StructuredOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "Done."
+
+        async def stream_answer_with_metadata(self, transcript, metadata):
+            raise AssertionError("KAME engine should prefer stream_answer_for_request")
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = StructuredOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+                metadata={"transport": "discord_voice", "user_id": "42"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "find the node from yesterday's meeting",
+                    "intent": "Find the note from yesterday's meeting.",
+                    "intent_source": "reflex_audio",
+                    "transcript_source": "asr",
+                    "transcript_confidence": 0.73,
+                    "interface_already_said": "One moment.",
+                    "conversation_summary": "The user is testing KAME voice.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+        assert len(oracle.requests) == 1
+        request = oracle.requests[0]
+        assert request.intent == "Find the note from yesterday's meeting."
+        assert request.intent_source == "reflex_audio"
+        assert request.transcript == "find the node from yesterday's meeting"
+        assert request.transcript_source == "asr"
+        assert request.transcript_confidence == 0.73
+        assert request.source == "discord_voice"
+        assert request.user_id == "42"
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        assert final.payload["kame_intent"] == "Find the note from yesterday's meeting."
+        assert final.payload["kame_transcript"] == "find the node from yesterday's meeting"
+        assert spoken == ["Done."]
+
+    asyncio.run(run())
 
 
 def test_text_engine_speaks_stable_phrase_before_sentence_ends(monkeypatch):

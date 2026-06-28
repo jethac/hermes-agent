@@ -18,7 +18,7 @@ from agent.realtime_voice import (
     validate_server_event,
 )
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
-from agent.realtime_voice_text_engine import TextOracleTTSEngine
+from agent.realtime_voice_text_engine import KameInterfaceOracleEngine, TextOracleTTSEngine
 
 
 class RealtimeVoiceSessionState(StrEnum):
@@ -349,4 +349,6 @@ def _elapsed_ms(start: float, end: float) -> int:
 def create_realtime_voice_engine(config: RealtimeVoiceSessionConfig) -> RealtimeVoiceEngine:
     if config.engine == RealtimeVoiceEngineKind.NATIVE_S2S_ORACLE:
         return NativeS2SSidecarEngine()
+    if config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        return KameInterfaceOracleEngine()
     return TextOracleTTSEngine()

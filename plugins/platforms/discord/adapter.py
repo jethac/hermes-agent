@@ -2824,6 +2824,7 @@ class DiscordAdapter(BasePlatformAdapter):
         """
         defaults: Dict[str, Any] = {
             "enabled": False,
+            "engine": "text_oracle_tts",
             "sidecar_base_url": "",
             "sidecar_token": "",
             "sidecar_token_env": "",
@@ -2831,6 +2832,9 @@ class DiscordAdapter(BasePlatformAdapter):
             "sidecar_port": 8765,
             "frontend_provider": None,
             "frontend_model": None,
+            "interface_audio_input": None,
+            "asr_mode": "on_escalation",
+            "preferred_local_oracle_model": None,
             "oracle_model": None,
             "tts_provider": None,
             "sidecar_connect_timeout_seconds": 10.0,
@@ -3019,8 +3023,12 @@ class DiscordAdapter(BasePlatformAdapter):
             "voice_architecture": DISCORD_VOICE_ARCHITECTURE_KAME,
             "frontend_role": DISCORD_VOICE_FRONTEND_ROLE,
             "oracle_role": DISCORD_VOICE_ORACLE_ROLE,
+            "engine": str(cfg.get("engine") or "") or None,
             "frontend_provider": str(cfg.get("frontend_provider") or "") or None,
             "frontend_model": str(cfg.get("frontend_model") or "") or None,
+            "interface_audio_input": str(cfg.get("interface_audio_input") or "") or None,
+            "asr_mode": str(cfg.get("asr_mode") or "") or None,
+            "preferred_local_oracle_model": str(cfg.get("preferred_local_oracle_model") or "") or None,
             "oracle_model": str(cfg.get("oracle_model") or "") or None,
         }
 
@@ -3104,8 +3112,12 @@ class DiscordAdapter(BasePlatformAdapter):
             text_channel_id=self._voice_text_channels.get(guild_id),
             sidecar_base_url=sidecar_base_url,
             sidecar_token=str(cfg.get("sidecar_token") or "") or None,
+            engine=str(cfg.get("engine") or "text_oracle_tts"),
             frontend_provider=cfg.get("frontend_provider"),
             frontend_model=cfg.get("frontend_model"),
+            interface_audio_input=str(cfg.get("interface_audio_input") or "") or None,
+            asr_mode=str(cfg.get("asr_mode") or "on_escalation"),
+            preferred_local_oracle_model=str(cfg.get("preferred_local_oracle_model") or "") or None,
             oracle_model=cfg.get("oracle_model"),
             tts_provider=cfg.get("tts_provider"),
             sidecar_connect_timeout_seconds=float(cfg.get("sidecar_connect_timeout_seconds") or 10.0),
