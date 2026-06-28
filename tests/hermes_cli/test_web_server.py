@@ -10257,6 +10257,67 @@ class TestRealtimeVoiceWebSocket:
         assert "data_b64" not in header["payload"]
         assert audio == b"assistant-audio"
 
+    def test_websocket_session_stop_delivers_session_closed(self, monkeypatch):
+        import asyncio
+
+        from agent.realtime_voice import VoiceEvent, VoiceEventType
+        from starlette.websockets import WebSocketDisconnect
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {"voice": {"realtime": {"enabled": True, "engine": "text_oracle_tts"}}},
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {})
+        monkeypatch.setattr(self.ws_module, "_ensure_realtime_voice_sidecar", lambda realtime: None)
+
+        class FakeSession:
+            def __init__(self, config):
+                self.config = config
+                self._events = asyncio.Queue()
+
+            async def start(self):
+                return None
+
+            async def events(self):
+                while True:
+                    event = await self._events.get()
+                    if event is None:
+                        return
+                    yield event
+
+            async def receive_client_event(self, event):
+                if event.type == VoiceEventType.SESSION_STOP:
+                    await self._events.put(
+                        VoiceEvent(
+                            type=VoiceEventType.SESSION_CLOSED,
+                            session_id=self.config.session_id,
+                            sequence=1,
+                            payload={"reason": "closed"},
+                        )
+                    )
+                    await self._events.put(None)
+
+            async def close(self):
+                return None
+
+        monkeypatch.setattr("agent.realtime_voice_session.RealtimeVoiceSession", FakeSession)
+
+        with self.client.websocket_connect(self._url(session_id="voice-123")) as websocket:
+            websocket.send_json(
+                {
+                    "type": "session.stop",
+                    "session_id": "voice-123",
+                    "sequence": 1,
+                    "payload": {"reason": "client_leave"},
+                }
+            )
+            event = websocket.receive_json()
+            assert event["type"] == "session.closed"
+            assert event["payload"] == {"reason": "closed"}
+            with pytest.raises(WebSocketDisconnect):
+                websocket.receive_json()
+
     def test_websocket_closes_after_runtime_session_error(self, monkeypatch):
         from agent.realtime_voice import VoiceEvent, VoiceEventType
         from starlette.websockets import WebSocketDisconnect

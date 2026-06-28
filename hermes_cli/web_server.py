@@ -9,7 +9,7 @@ Usage:
     python -m hermes_cli.main web --port 8080
 """
 
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, suppress
 
 import asyncio
 import base64
@@ -16350,6 +16350,12 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
         while True:
             event = _realtime_voice_event_from_ws_message(await ws.receive())
             await session.receive_client_event(event)
+            if event.type.value in {"session.stop", "session.closed"}:
+                with suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(event_task, timeout=1.0)
+                with suppress(Exception):
+                    await ws.close(code=1000, reason="session stopped")
+                return
     except WebSocketDisconnect:
         pass
     except Exception as exc:
