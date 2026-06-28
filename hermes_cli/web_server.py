@@ -13494,6 +13494,17 @@ def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str
     frontend = payload.get("frontend") if isinstance(payload.get("frontend"), dict) else {}
     capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
     local = payload.get("local") if isinstance(payload.get("local"), dict) else {}
+    vllm_frontend = frontend.get("vllm_audio_frontend")
+    vllm_frontend_configured = (
+        vllm_frontend.get("configured") is True
+        if isinstance(vllm_frontend, dict)
+        else capabilities.get("vllm_audio_frontend_configured") is True
+    )
+    vllm_audio_frontend = (
+        vllm_frontend.get("healthy") is True
+        if isinstance(vllm_frontend, dict)
+        else capabilities.get("vllm_audio_frontend") is True
+    )
 
     result = {
         "ok": payload.get("ok") is True,
@@ -13514,7 +13525,7 @@ def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str
             "streaming_stt": capabilities.get("streaming_stt") is True,
             "tts": capabilities.get("tts") is True,
             "native_s2s": capabilities.get("native_s2s") is True,
-            "vllm_audio_frontend": capabilities.get("vllm_audio_frontend") is True,
+            "vllm_audio_frontend": vllm_audio_frontend,
             "input_languages": _sanitize_realtime_voice_health_metadata(
                 capabilities.get("input_languages", capabilities.get("languages"))
             ),
@@ -13534,6 +13545,8 @@ def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str
         result["capabilities"]["streaming_tts"] = capabilities.get("streaming_tts") is True
     if "streaming_tts_bridge" in capabilities:
         result["capabilities"]["streaming_tts_bridge"] = capabilities.get("streaming_tts_bridge") is True
+    if vllm_frontend_configured:
+        result["capabilities"]["vllm_audio_frontend_configured"] = True
 
     stt_bridge = frontend.get("streaming_stt_bridge")
     if isinstance(stt_bridge, dict):
@@ -13547,6 +13560,12 @@ def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str
             "configured": tts_bridge.get("configured") is True,
             "healthy": tts_bridge.get("healthy") is True,
             "model": str(tts_bridge.get("model") or "") or None,
+        }
+    if isinstance(vllm_frontend, dict):
+        result["frontend"]["vllm_audio_frontend"] = {
+            "configured": vllm_frontend.get("configured") is True,
+            "healthy": vllm_frontend.get("healthy") is True,
+            "model": str(vllm_frontend.get("model") or "") or None,
         }
     return result
 
