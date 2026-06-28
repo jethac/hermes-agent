@@ -24,7 +24,7 @@ import time
 from collections import defaultdict
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Any, Tuple
+from typing import Callable, Dict, List, Optional, Any, Tuple, Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +139,62 @@ def _discord_realtime_voice_fallback_policy(cfg: Dict[str, Any]) -> str:
     if policy in {"legacy_voice", "text_only", "fail_closed"}:
         return policy
     return "legacy_voice"
+
+
+def _discord_mapping_config(value: Any) -> Dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _discord_set_realtime_default(config: Dict[str, Any], key: str, value: Any) -> None:
+    existing = config.get(key)
+    if value is None or (existing is not None and not (isinstance(existing, str) and not existing.strip())):
+        return
+    if isinstance(value, str) and not value.strip():
+        return
+    config[key] = value
+
+
+def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, Any]:
+    config = dict(realtime) if isinstance(realtime, Mapping) else {}
+    interface = _discord_mapping_config(config.get("interface"))
+    oracle = _discord_mapping_config(config.get("oracle"))
+    asr = _discord_mapping_config(config.get("asr"))
+    tts = _discord_mapping_config(config.get("tts"))
+    barge_in = _discord_mapping_config(config.get("barge_in"))
+
+    _discord_set_realtime_default(config, "frontend_provider", interface.get("provider"))
+    _discord_set_realtime_default(config, "frontend_model", interface.get("model"))
+    _discord_set_realtime_default(config, "vllm_base_url", interface.get("base_url"))
+    _discord_set_realtime_default(config, "interface_audio_input", interface.get("audio_input"))
+    _discord_set_realtime_default(config, "asr_mode", interface.get("asr_mode"))
+
+    _discord_set_realtime_default(config, "preferred_local_oracle_model", oracle.get("preferred_local_model"))
+    _discord_set_realtime_default(config, "oracle_model", oracle.get("model"))
+    _discord_set_realtime_default(config, "max_spoken_sentences", oracle.get("max_spoken_sentences"))
+    if config.get("oracle_timeout_seconds") is None:
+        if oracle.get("timeout_seconds") is not None:
+            config["oracle_timeout_seconds"] = oracle.get("timeout_seconds")
+        elif oracle.get("timeout_ms") is not None:
+            try:
+                config["oracle_timeout_seconds"] = float(oracle.get("timeout_ms")) / 1000.0
+            except (TypeError, ValueError):
+                pass
+
+    _discord_set_realtime_default(config, "asr_provider", asr.get("provider"))
+    _discord_set_realtime_default(config, "asr_model", asr.get("model"))
+    _discord_set_realtime_default(config, "streaming_stt_base_url", asr.get("base_url"))
+    _discord_set_realtime_default(config, "streaming_stt_token_env", asr.get("token_env"))
+
+    _discord_set_realtime_default(config, "tts_provider", tts.get("provider"))
+    _discord_set_realtime_default(config, "tts_model", tts.get("model"))
+    _discord_set_realtime_default(config, "tts_voice", tts.get("voice"))
+    _discord_set_realtime_default(config, "streaming_tts_base_url", tts.get("base_url"))
+    _discord_set_realtime_default(config, "streaming_tts_token_env", tts.get("token_env"))
+
+    _discord_set_realtime_default(config, "barge_in_min_rms", barge_in.get("min_rms"))
+    _discord_set_realtime_default(config, "barge_in_min_speech_ms", barge_in.get("min_speech_ms"))
+    _discord_set_realtime_default(config, "barge_in_stop_playback_deadline_ms", barge_in.get("stop_playback_deadline_ms"))
+    return config
 
 
 def _join_realtime_voice_transcript_parts(parts: List[Any]) -> str:
@@ -2850,10 +2906,13 @@ class DiscordAdapter(BasePlatformAdapter):
             "sidecar_port": 8765,
             "frontend_provider": None,
             "frontend_model": None,
+            "vllm_base_url": None,
             "interface_audio_input": None,
             "asr_mode": "on_escalation",
             "asr_provider": None,
             "asr_model": None,
+            "streaming_stt_base_url": None,
+            "streaming_stt_token_env": None,
             "preferred_local_oracle_model": None,
             "oracle_model": None,
             "oracle_timeout_seconds": 60.0,
@@ -2861,6 +2920,8 @@ class DiscordAdapter(BasePlatformAdapter):
             "tts_provider": None,
             "tts_model": None,
             "tts_voice": None,
+            "streaming_tts_base_url": None,
+            "streaming_tts_token_env": None,
             "fallback_policy": "legacy_voice",
             "sidecar_connect_timeout_seconds": 10.0,
             "sidecar_close_timeout_seconds": 2.0,
@@ -2890,14 +2951,14 @@ class DiscordAdapter(BasePlatformAdapter):
             shared = (((cfg.get("voice") or {}).get("realtime") or {}) if isinstance(cfg, dict) else {})
             discord_rt = (((cfg.get("discord") or {}).get("realtime_voice") or {}) if isinstance(cfg, dict) else {})
             if isinstance(shared, dict):
-                for key, value in shared.items():
+                for key, value in _discord_normalize_realtime_voice_config(shared).items():
                     if key != "enabled" and key in defaults and value is not None:
                         if isinstance(defaults.get(key), dict) and isinstance(value, dict):
                             defaults[key] = {**defaults[key], **value}
                         else:
                             defaults[key] = value
             if isinstance(discord_rt, dict):
-                for key, value in discord_rt.items():
+                for key, value in _discord_normalize_realtime_voice_config(discord_rt).items():
                     if key in defaults and value is not None:
                         if isinstance(defaults.get(key), dict) and isinstance(value, dict):
                             defaults[key] = {**defaults[key], **value}

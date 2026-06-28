@@ -88,6 +88,80 @@ def test_discord_realtime_config_derives_reference_sidecar_and_env_token(monkeyp
     assert cfg["metrics"]["log_turn_spans"] is False
 
 
+def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatch):
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    monkeypatch.delenv("HERMES_REALTIME_VOICE_SIDECAR_URL", raising=False)
+    monkeypatch.delenv("HERMES_REALTIME_VOICE_SIDECAR_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {
+            "voice": {
+                "realtime": {
+                    "enabled": True,
+                    "engine": "kame_interface_oracle",
+                    "sidecar_host": "127.0.0.1",
+                    "sidecar_port": 8877,
+                    "sidecar_token_env": "CUSTOM_VOICE_TOKEN",
+                    "interface": {
+                        "provider": "openai_compatible",
+                        "base_url": "http://spark.local:8000/v1",
+                        "model": "gemma-4-E2B-it",
+                        "audio_input": "auto",
+                        "asr_mode": "on_escalation",
+                    },
+                    "oracle": {
+                        "preferred_local_model": "gemma-4-26B-A4B-it",
+                        "model": "configured-oracle",
+                        "timeout_ms": 12000,
+                        "max_spoken_sentences": 2,
+                    },
+                    "asr": {"provider": "nemotron", "model": "nemotron-speech"},
+                    "tts": {
+                        "provider": "cartesia",
+                        "model": "sonic-3.5",
+                        "voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+                    },
+                    "barge_in": {"min_rms": 410, "min_speech_ms": 130},
+                },
+            },
+            "discord": {
+                "realtime_voice": {
+                    "enabled": True,
+                    "interface": {
+                        "provider": "gemma4",
+                        "model": "discord-reflex",
+                    },
+                },
+            },
+        },
+    )
+    monkeypatch.setattr("hermes_cli.config.load_env", lambda: {"CUSTOM_VOICE_TOKEN": "secret-token"})
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    cfg = adapter._load_realtime_voice_config()
+
+    assert cfg["enabled"] is True
+    assert cfg["engine"] == "kame_interface_oracle"
+    assert cfg["sidecar_base_url"] == "http://127.0.0.1:8877"
+    assert cfg["sidecar_token"] == "secret-token"
+    assert cfg["frontend_provider"] == "gemma4"
+    assert cfg["frontend_model"] == "discord-reflex"
+    assert cfg["vllm_base_url"] == "http://spark.local:8000/v1"
+    assert cfg["interface_audio_input"] == "auto"
+    assert cfg["asr_mode"] == "on_escalation"
+    assert cfg["asr_provider"] == "nemotron"
+    assert cfg["asr_model"] == "nemotron-speech"
+    assert cfg["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+    assert cfg["oracle_model"] == "configured-oracle"
+    assert cfg["oracle_timeout_seconds"] == 12.0
+    assert cfg["tts_provider"] == "cartesia"
+    assert cfg["tts_model"] == "sonic-3.5"
+    assert cfg["tts_voice"] == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
+    assert cfg["barge_in_min_rms"] == 410
+    assert cfg["barge_in_min_speech_ms"] == 130
+
+
 @pytest.mark.asyncio
 async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     from agent.realtime_voice import VoiceEventType

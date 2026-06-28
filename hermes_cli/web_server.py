@@ -14134,32 +14134,159 @@ def _realtime_voice_config_dict() -> Dict[str, Any]:
     cfg = load_config()
     voice = cfg.get("voice") if isinstance(cfg, dict) else {}
     realtime = voice.get("realtime") if isinstance(voice, dict) else {}
-    return dict(realtime) if isinstance(realtime, dict) else {}
+    return _normalize_realtime_voice_config(realtime if isinstance(realtime, dict) else {})
+
+
+def _mapping_config(value: Any) -> Dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _realtime_voice_interface_config(realtime: Mapping[str, Any]) -> Dict[str, Any]:
+    return _mapping_config(realtime.get("interface") if isinstance(realtime, Mapping) else {})
+
+
+def _realtime_voice_oracle_config(realtime: Mapping[str, Any]) -> Dict[str, Any]:
+    return _mapping_config(realtime.get("oracle") if isinstance(realtime, Mapping) else {})
+
+
+def _realtime_voice_barge_in_config(realtime: Mapping[str, Any]) -> Dict[str, Any]:
+    return _mapping_config(realtime.get("barge_in") if isinstance(realtime, Mapping) else {})
+
+
+def _first_realtime_voice_config_value(
+    realtime: Mapping[str, Any],
+    *paths: tuple[str, ...],
+    default: Any = None,
+) -> Any:
+    if not isinstance(realtime, Mapping):
+        return default
+    for path in paths:
+        current: Any = realtime
+        for key in path:
+            if not isinstance(current, Mapping) or key not in current:
+                current = None
+                break
+            current = current.get(key)
+        if current is not None:
+            return current
+    return default
+
+
+def _set_realtime_voice_default(config: Dict[str, Any], key: str, value: Any) -> None:
+    existing = config.get(key)
+    if value is None or (existing is not None and not (isinstance(existing, str) and not existing.strip())):
+        return
+    if isinstance(value, str) and not value.strip():
+        return
+    config[key] = value
+
+
+def _normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return a flat runtime view of voice.realtime.
+
+    The GUI and older profiles use flat keys such as ``frontend_model`` while
+    the full KAME design documents nested ``interface``/``oracle``/``barge_in``
+    sections.  Keep flat keys authoritative for compatibility, and fill missing
+    flat runtime keys from the nested shape.
+    """
+    config = dict(realtime) if isinstance(realtime, Mapping) else {}
+    interface = _realtime_voice_interface_config(config)
+    oracle = _realtime_voice_oracle_config(config)
+    asr = _mapping_config(config.get("asr"))
+    tts = _mapping_config(config.get("tts"))
+    barge_in = _realtime_voice_barge_in_config(config)
+
+    _set_realtime_voice_default(config, "frontend_provider", interface.get("provider"))
+    _set_realtime_voice_default(config, "frontend_model", interface.get("model"))
+    _set_realtime_voice_default(config, "vllm_base_url", interface.get("base_url"))
+    _set_realtime_voice_default(config, "interface_audio_input", interface.get("audio_input"))
+    _set_realtime_voice_default(config, "asr_mode", interface.get("asr_mode"))
+
+    _set_realtime_voice_default(config, "preferred_local_oracle_model", oracle.get("preferred_local_model"))
+    _set_realtime_voice_default(config, "oracle_model", oracle.get("model"))
+    _set_realtime_voice_default(config, "max_spoken_sentences", oracle.get("max_spoken_sentences"))
+    if config.get("oracle_timeout_seconds") is None:
+        if oracle.get("timeout_seconds") is not None:
+            config["oracle_timeout_seconds"] = oracle.get("timeout_seconds")
+        elif oracle.get("timeout_ms") is not None:
+            config["oracle_timeout_seconds"] = _positive_float_config(oracle.get("timeout_ms"), default=60000.0) / 1000.0
+
+    _set_realtime_voice_default(config, "asr_provider", asr.get("provider"))
+    _set_realtime_voice_default(config, "asr_model", asr.get("model"))
+    _set_realtime_voice_default(config, "streaming_stt_base_url", asr.get("base_url"))
+    _set_realtime_voice_default(config, "streaming_stt_token_env", asr.get("token_env"))
+
+    _set_realtime_voice_default(config, "tts_provider", tts.get("provider"))
+    _set_realtime_voice_default(config, "tts_model", tts.get("model"))
+    _set_realtime_voice_default(config, "tts_voice", tts.get("voice"))
+    _set_realtime_voice_default(config, "streaming_tts_base_url", tts.get("base_url"))
+    _set_realtime_voice_default(config, "streaming_tts_token_env", tts.get("token_env"))
+
+    _set_realtime_voice_default(config, "barge_in_min_rms", barge_in.get("min_rms"))
+    _set_realtime_voice_default(config, "barge_in_min_speech_ms", barge_in.get("min_speech_ms"))
+    _set_realtime_voice_default(config, "barge_in_stop_playback_deadline_ms", barge_in.get("stop_playback_deadline_ms"))
+    return config
+
+
+def _realtime_voice_oracle_timeout_seconds(realtime: Mapping[str, Any]) -> float:
+    if _first_realtime_voice_config_value(realtime, ("oracle_timeout_seconds",)) is not None:
+        return _positive_float_config(realtime.get("oracle_timeout_seconds"), default=60.0)
+    if _first_realtime_voice_config_value(realtime, ("oracle", "timeout_seconds")) is not None:
+        return _positive_float_config(_first_realtime_voice_config_value(realtime, ("oracle", "timeout_seconds")), default=60.0)
+    timeout_ms = _first_realtime_voice_config_value(realtime, ("oracle", "timeout_ms"))
+    if timeout_ms is not None:
+        parsed_ms = _positive_float_config(timeout_ms, default=60000.0)
+        return parsed_ms / 1000.0
+    return 60.0
+
+
+def _realtime_voice_max_spoken_sentences(realtime: Mapping[str, Any]) -> int:
+    return _positive_int_config(
+        _first_realtime_voice_config_value(realtime, ("max_spoken_sentences",), ("oracle", "max_spoken_sentences")),
+        default=2,
+    )
 
 
 def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, Any]:
     realtime = _realtime_voice_config_dict()
     enabled = realtime.get("enabled") is True
     engine = str(realtime.get("engine") or "text_oracle_tts")
-    provider = str(realtime.get("frontend_provider") or "")
-    frontend_model = str(realtime.get("frontend_model") or "")
-    interface_audio_input = str(realtime.get("interface_audio_input") or "")
-    asr_mode = str(realtime.get("asr_mode") or "")
-    asr_provider = str(realtime.get("asr_provider") or "")
-    asr_model = str(realtime.get("asr_model") or realtime.get("streaming_stt_model") or "")
-    preferred_local_oracle_model = str(realtime.get("preferred_local_oracle_model") or "")
-    oracle_model = str(realtime.get("oracle_model") or "")
-    oracle_timeout_seconds = _positive_float_config(
-        realtime.get("oracle_timeout_seconds"),
-        default=60.0,
+    provider = str(_first_realtime_voice_config_value(realtime, ("frontend_provider",), ("interface", "provider"), default="") or "")
+    frontend_model = str(_first_realtime_voice_config_value(realtime, ("frontend_model",), ("interface", "model"), default="") or "")
+    interface_audio_input = str(
+        _first_realtime_voice_config_value(realtime, ("interface_audio_input",), ("interface", "audio_input"), default="") or ""
     )
-    max_spoken_sentences = _positive_int_config(
-        realtime.get("max_spoken_sentences"),
-        default=2,
+    asr_mode = str(_first_realtime_voice_config_value(realtime, ("asr_mode",), ("interface", "asr_mode"), default="") or "")
+    asr_provider = str(_first_realtime_voice_config_value(realtime, ("asr_provider",), ("asr", "provider"), default="") or "")
+    asr_model = str(
+        _first_realtime_voice_config_value(
+            realtime,
+            ("asr_model",),
+            ("asr", "model"),
+            ("streaming_stt_model",),
+            default="",
+        )
+        or ""
     )
-    tts_provider = str(realtime.get("tts_provider") or "")
-    tts_model = str(realtime.get("tts_model") or realtime.get("streaming_tts_model") or "")
-    tts_voice = str(realtime.get("tts_voice") or realtime.get("streaming_tts_voice") or "")
+    preferred_local_oracle_model = str(
+        _first_realtime_voice_config_value(
+            realtime,
+            ("preferred_local_oracle_model",),
+            ("oracle", "preferred_local_model"),
+            default="",
+        )
+        or ""
+    )
+    oracle_model = str(_first_realtime_voice_config_value(realtime, ("oracle_model",), ("oracle", "model"), default="") or "")
+    oracle_timeout_seconds = _realtime_voice_oracle_timeout_seconds(realtime)
+    max_spoken_sentences = _realtime_voice_max_spoken_sentences(realtime)
+    tts_provider = str(_first_realtime_voice_config_value(realtime, ("tts_provider",), ("tts", "provider"), default="") or "")
+    tts_model = str(
+        _first_realtime_voice_config_value(realtime, ("tts_model",), ("tts", "model"), ("streaming_tts_model",), default="") or ""
+    )
+    tts_voice = str(
+        _first_realtime_voice_config_value(realtime, ("tts_voice",), ("tts", "voice"), ("streaming_tts_voice",), default="") or ""
+    )
     fallback_policy = str(realtime.get("fallback_policy") or "legacy_voice")
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     language_support = _realtime_voice_language_support_payload(realtime)
@@ -14651,7 +14778,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     cfg = load_config()
     voice = cfg.get("voice") if isinstance(cfg, dict) else {}
     realtime = voice.get("realtime") if isinstance(voice, dict) else {}
-    realtime = realtime if isinstance(realtime, dict) else {}
+    realtime = _normalize_realtime_voice_config(realtime if isinstance(realtime, dict) else {})
 
     session_id = (
         ws.query_params.get("session_id")

@@ -6941,6 +6941,82 @@ class TestRealtimeVoiceWebSocket:
         assert readiness["launch_review"]["issues"] == []
         assert config.metadata["require_live_like"] is False
 
+    def test_config_accepts_documented_nested_kame_shape(self, monkeypatch):
+        class FakeWebSocket:
+            query_params = {"session_id": "voice-nested"}
+
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "kame_interface_oracle",
+                        "sidecar_base_url": "http://voice.local:8080",
+                        "sidecar_token_env": "HERMES_VOICE_SIDECAR_TOKEN",
+                        "interface": {
+                            "provider": "openai_compatible",
+                            "base_url": "http://spark.local:8000/v1",
+                            "model": "gemma-4-E2B-it",
+                            "audio_input": "auto",
+                            "asr_mode": "on_escalation",
+                        },
+                        "oracle": {
+                            "mode": "hermes_active_oracle",
+                            "preferred_local_model": "gemma-4-26B-A4B-it",
+                            "model": "configured-oracle",
+                            "timeout_ms": 12000,
+                            "max_spoken_sentences": 2,
+                        },
+                        "asr": {
+                            "provider": "nemotron",
+                            "model": "nemotron-speech",
+                            "base_url": "http://spark.local:9000",
+                        },
+                        "tts": {
+                            "provider": "cartesia",
+                            "model": "sonic-3.5",
+                            "voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+                            "base_url": "http://spark.local:9100",
+                        },
+                        "barge_in": {
+                            "min_rms": 410,
+                            "min_speech_ms": 130,
+                            "stop_playback_deadline_ms": 150,
+                        },
+                    }
+                }
+            },
+        )
+        monkeypatch.setattr(self.ws_module, "load_env", lambda: {"HERMES_VOICE_SIDECAR_TOKEN": "secret-token"})
+
+        config = self.ws_module._realtime_voice_config_from_request(FakeWebSocket())
+        status = self.ws_module._realtime_voice_status_payload(probe_health=False)
+
+        assert config.engine.value == "kame_interface_oracle"
+        assert config.frontend_provider == "openai_compatible"
+        assert config.frontend_model == "gemma-4-E2B-it"
+        assert config.interface_audio_input == "auto"
+        assert config.asr_mode.value == "on_escalation"
+        assert config.asr_provider == "nemotron"
+        assert config.asr_model == "nemotron-speech"
+        assert config.preferred_local_oracle_model == "gemma-4-26B-A4B-it"
+        assert config.oracle_model == "configured-oracle"
+        assert config.oracle_timeout_seconds == 12.0
+        assert config.tts_provider == "cartesia"
+        assert config.tts_model == "sonic-3.5"
+        assert config.tts_voice == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
+        assert config.metadata["frontend_provider"] == "openai_compatible"
+        assert config.metadata["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+        assert status["frontend_provider"] == "openai_compatible"
+        assert status["frontend_model"] == "gemma-4-E2B-it"
+        assert status["asr_provider"] == "nemotron"
+        assert status["tts_provider"] == "cartesia"
+        assert status["oracle_timeout_seconds"] == 12.0
+        assert status["barge_in_min_rms"] == 410
+        assert status["barge_in_min_speech_ms"] == 130
+
     def test_config_defaults_local_frontend_to_reference_sidecar(self, monkeypatch):
         class FakeWebSocket:
             query_params = {"session_id": "voice-local"}
