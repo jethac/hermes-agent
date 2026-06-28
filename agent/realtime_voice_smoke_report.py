@@ -1234,8 +1234,14 @@ def _validate_barge_in_entry(
     identifier = str(entry.get("text") or "barge_in")
     issues = _validate_common_ok(entry, kind="barge_in", identifier=identifier)
     events = _events(entry)
-    if "barge_in" not in events:
-        issues.append(RealtimeVoiceSmokeReportIssue("barge_in", "missing barge_in event", identifier))
+    if not {"barge_in.detected", "barge_in"}.intersection(events):
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "barge_in",
+                "missing barge_in.detected event",
+                identifier,
+            )
+        )
     audio_after_barge_in_bytes = _nonnegative_int(entry.get("audio_after_barge_in_bytes"))
     if audio_after_barge_in_bytes is None:
         issues.append(
@@ -1249,7 +1255,7 @@ def _validate_barge_in_entry(
         issues.append(
             RealtimeVoiceSmokeReportIssue(
                 "barge_in",
-                f"audio.output.chunk arrived after barge_in ({audio_after_barge_in_bytes} byte(s))",
+                f"audio.output.chunk arrived after barge_in.detected ({audio_after_barge_in_bytes} byte(s))",
                 identifier,
             )
         )

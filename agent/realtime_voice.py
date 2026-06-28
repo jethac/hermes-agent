@@ -84,7 +84,7 @@ class VoiceEventType(StrEnum):
     ASSISTANT_CAPTION_FINAL = "assistant.caption.final"
     ASSISTANT_TEXT_PARTIAL = "assistant.text.partial"
     ASSISTANT_COMMIT = "assistant.commit"
-    BARGE_IN = "barge_in"
+    BARGE_IN = "barge_in.detected"
     TOOL_PENDING = "tool.pending"
     TOOL_RESULT = "tool.result"
 
@@ -321,7 +321,7 @@ class VoiceEvent:
     @classmethod
     def from_wire(cls, data: Mapping[str, Any]) -> "VoiceEvent":
         return cls(
-            type=VoiceEventType(str(data["type"])),
+            type=voice_event_type_from_wire(data["type"]),
             session_id=str(data["session_id"]),
             sequence=int(data["sequence"]),
             timestamp_ms=int(data.get("timestamp_ms") or int(time.time() * 1000)),
@@ -520,6 +520,15 @@ def validate_client_event(event: VoiceEvent) -> None:
 def validate_server_event(event: VoiceEvent) -> None:
     if event.type not in SERVER_EVENT_TYPES:
         raise ValueError(f"{event.type.value!r} is not a server event")
+
+
+def voice_event_type_from_wire(value: Any) -> VoiceEventType:
+    """Parse event names, accepting legacy wire aliases."""
+
+    text = str(value)
+    if text == "barge_in":
+        return VoiceEventType.BARGE_IN
+    return VoiceEventType(text)
 
 
 def transcript_metadata_from_payload(payload: Mapping[str, Any]) -> Dict[str, str]:

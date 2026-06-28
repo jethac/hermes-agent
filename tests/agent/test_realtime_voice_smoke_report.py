@@ -165,7 +165,7 @@ def _valid_alpha_report():
                 "barge_in_ack_ms": 45,
                 "audio_after_barge_in_bytes": 0,
                 "target_ms": 150,
-                "events": ["frontend.state", "barge_in"],
+                "events": ["frontend.state", "barge_in.detected"],
                 "error": None,
             }
         )
@@ -680,11 +680,21 @@ def test_realtime_voice_alpha_report_rejects_barge_in_target_misses():
 def test_realtime_voice_alpha_report_rejects_audio_after_barge_in():
     report = _valid_alpha_report()
     report[-1]["audio_after_barge_in_bytes"] = 128
-    report[-1]["events"] = ["frontend.state", "barge_in", "audio.output.chunk"]
+    report[-1]["events"] = ["frontend.state", "barge_in.detected", "audio.output.chunk"]
 
     issues = validate_realtime_voice_alpha_report(report)
 
-    assert any("audio.output.chunk arrived after barge_in (128 byte(s))" in issue.format() for issue in issues)
+    assert any(
+        "audio.output.chunk arrived after barge_in.detected (128 byte(s))" in issue.format()
+        for issue in issues
+    )
+
+
+def test_realtime_voice_alpha_report_accepts_legacy_barge_in_event_name():
+    report = _valid_alpha_report()
+    report[-1]["events"] = ["frontend.state", "barge_in"]
+
+    assert validate_realtime_voice_alpha_report(report) == []
 
 
 def test_realtime_voice_alpha_report_requires_barge_in_audio_quiet_field():

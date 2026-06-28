@@ -485,6 +485,30 @@ def test_voice_event_round_trips_wire_payload():
     assert restored == event
 
 
+def test_barge_in_event_uses_contract_name_and_accepts_legacy_alias():
+    event = VoiceEvent(
+        type=VoiceEventType.BARGE_IN,
+        session_id="voice-123",
+        sequence=8,
+        timestamp_ms=123457,
+        payload={"reason": "user_speech"},
+    )
+
+    assert event.to_wire()["type"] == "barge_in.detected"
+
+    restored = VoiceEvent.from_wire(
+        {
+            "type": "barge_in",
+            "session_id": "voice-123",
+            "sequence": 8,
+            "timestamp_ms": 123457,
+            "payload": {"reason": "user_speech"},
+        }
+    )
+
+    assert restored == event
+
+
 def test_transcript_event_payload_keeps_sanitized_non_target_language_metadata():
     payload = transcript_event_payload_from_payload(
         {
