@@ -617,6 +617,7 @@ class VoiceReceiver:
         allowed_user_ids: Optional[set] = None,
         realtime_frame_callback: Optional[Callable[[int, bytes], None]] = None,
         realtime_speech_start_callback: Optional[Callable[[int], None]] = None,
+        realtime_speech_energy_callback: Optional[Callable[[int, int, float], None]] = None,
         realtime_speech_start_min_duration: float = 0.0,
         realtime_speech_start_min_rms: int = 0,
     ):
@@ -624,6 +625,7 @@ class VoiceReceiver:
         self._allowed_user_ids = allowed_user_ids or set()
         self._realtime_frame_callback = realtime_frame_callback
         self._realtime_speech_start_callback = realtime_speech_start_callback
+        self._realtime_speech_energy_callback = realtime_speech_energy_callback
         self._realtime_speech_start_min_duration = max(0.0, float(realtime_speech_start_min_duration))
         self._realtime_speech_start_min_rms = max(0, int(realtime_speech_start_min_rms))
         self._running = False
@@ -906,6 +908,11 @@ class VoiceReceiver:
                     self._realtime_speech_start_callback(realtime_user_id)
                 except Exception as cb_exc:
                     logger.debug("Discord realtime voice speech-start callback failed: %s", cb_exc)
+            if realtime_user_id and self._realtime_speech_energy_callback:
+                try:
+                    self._realtime_speech_energy_callback(realtime_user_id, pcm_rms, pcm_duration)
+                except Exception as cb_exc:
+                    logger.debug("Discord realtime voice speech-energy callback failed: %s", cb_exc)
             if realtime_user_id and self._realtime_frame_callback:
                 try:
                     self._realtime_frame_callback(realtime_user_id, pcm)
@@ -3111,6 +3118,28 @@ class DiscordAdapter(BasePlatformAdapter):
         task = asyncio.create_task(session.handle_speech_start(user_id=user_id))
         task.add_done_callback(self._log_realtime_voice_task_result)
 
+    def _schedule_realtime_voice_speech_energy(
+        self,
+        guild_id: int,
+        user_id: int,
+        rms: int,
+        duration_seconds: float,
+    ) -> None:
+        session = self._realtime_voice_sessions.get(guild_id)
+        if session is None:
+            return
+        handle = getattr(session, "handle_speech_energy", None)
+        if not callable(handle):
+            return
+        task = asyncio.create_task(
+            handle(
+                user_id=user_id,
+                rms=rms,
+                duration_seconds=duration_seconds,
+            )
+        )
+        task.add_done_callback(self._log_realtime_voice_task_result)
+
     def _schedule_realtime_voice_speech_end(self, guild_id: int, user_id: int) -> None:
         session = self._realtime_voice_sessions.get(guild_id)
         active = getattr(self, "_realtime_voice_active_speakers", None)
@@ -3775,11 +3804,21 @@ class DiscordAdapter(BasePlatformAdapter):
                         user_id,
                     )
 
+                def _realtime_speech_energy_callback(user_id: int, rms: int, duration_seconds: float) -> None:
+                    loop.call_soon_threadsafe(
+                        self._schedule_realtime_voice_speech_energy,
+                        guild_id,
+                        user_id,
+                        rms,
+                        duration_seconds,
+                    )
+
                 receiver = VoiceReceiver(
                     vc,
                     allowed_user_ids=self._allowed_user_ids,
                     realtime_frame_callback=_realtime_frame_callback,
                     realtime_speech_start_callback=_realtime_speech_start_callback,
+                    realtime_speech_energy_callback=_realtime_speech_energy_callback,
                     realtime_speech_start_min_duration=max(
                         0.0,
                         float(self._realtime_voice_cfg.get("barge_in_min_speech_ms") or 0) / 1000.0,

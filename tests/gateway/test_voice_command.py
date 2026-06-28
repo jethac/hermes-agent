@@ -1449,6 +1449,7 @@ class TestDiscordVoiceChannelMethods:
         fake_session.start = AsyncMock()
         fake_session.handle_pcm_frame = AsyncMock()
         fake_session.handle_speech_start = AsyncMock()
+        fake_session.handle_speech_energy = AsyncMock()
 
         mock_vc = MagicMock()
         mock_vc.is_connected.return_value = True
@@ -1469,13 +1470,20 @@ class TestDiscordVoiceChannelMethods:
             assert kwargs["realtime_speech_start_min_rms"] == 500
             frame_callback = kwargs["realtime_frame_callback"]
             speech_start_callback = kwargs["realtime_speech_start_callback"]
+            speech_energy_callback = kwargs["realtime_speech_energy_callback"]
             frame_callback(42, b"pcm")
             speech_start_callback(42)
+            speech_energy_callback(42, 512, 0.02)
             await asyncio.sleep(0)
             await asyncio.sleep(0)
 
         fake_session.handle_pcm_frame.assert_awaited_once_with(user_id=42, pcm48_stereo=b"pcm")
         fake_session.handle_speech_start.assert_awaited_once_with(user_id=42)
+        fake_session.handle_speech_energy.assert_awaited_once_with(
+            user_id=42,
+            rms=512,
+            duration_seconds=0.02,
+        )
         assert adapter._realtime_voice_active_speakers[(111, 42)] is True
 
     @pytest.mark.asyncio
@@ -1874,6 +1882,7 @@ class TestDiscordVoiceChannelMethods:
         adapter = self._make_adapter()
         fake_session = MagicMock()
         fake_session.handle_speech_start = AsyncMock()
+        fake_session.handle_speech_energy = AsyncMock()
         adapter._realtime_voice_sessions[111] = fake_session
 
         mock_vc = MagicMock()
@@ -1886,6 +1895,22 @@ class TestDiscordVoiceChannelMethods:
 
         mock_vc.stop.assert_called_once()
         fake_session.handle_speech_start.assert_awaited_once_with(user_id=42)
+
+    @pytest.mark.asyncio
+    async def test_realtime_speech_energy_forwards_to_session(self):
+        adapter = self._make_adapter()
+        fake_session = MagicMock()
+        fake_session.handle_speech_energy = AsyncMock()
+        adapter._realtime_voice_sessions[111] = fake_session
+
+        adapter._schedule_realtime_voice_speech_energy(111, 42, 512, 0.02)
+        await asyncio.sleep(0)
+
+        fake_session.handle_speech_energy.assert_awaited_once_with(
+            user_id=42,
+            rms=512,
+            duration_seconds=0.02,
+        )
 
     @pytest.mark.asyncio
     async def test_runtime_sidecar_degradation_removes_session_and_enables_legacy_voice_input(self):

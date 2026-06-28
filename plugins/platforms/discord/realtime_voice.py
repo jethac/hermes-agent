@@ -328,6 +328,33 @@ class DiscordRealtimeVoiceSession:
             },
         )
 
+    async def handle_speech_energy(
+        self,
+        *,
+        user_id: int | str,
+        rms: int | float,
+        duration_seconds: float,
+    ) -> None:
+        if self._closed or not self._started:
+            return
+        try:
+            rms_value = max(0, int(rms))
+        except (TypeError, ValueError):
+            rms_value = 0
+        try:
+            duration_ms = max(0, int(round(float(duration_seconds) * 1000)))
+        except (TypeError, ValueError):
+            duration_ms = 0
+        await self._send_event(
+            VoiceEventType.SPEECH_ENERGY,
+            {
+                "user_id": str(user_id),
+                "transport": "discord_voice",
+                "rms": rms_value,
+                "duration_ms": duration_ms,
+            },
+        )
+
     async def handle_speech_end(self, *, user_id: int | str) -> None:
         if self._closed or not self._started:
             return
