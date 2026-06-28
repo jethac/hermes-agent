@@ -1,8 +1,10 @@
 import asyncio
 import base64
+import io
 import json
 import time
 import types
+import urllib.error
 
 import pytest
 
@@ -6723,6 +6725,102 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     assert "last_speech_input_generation=5" in prompt
     assert "last_speech_rms=512" in prompt
     assert "last_speech_duration_ms=140" in prompt
+
+
+def test_reference_sidecar_vllm_kame_audio_reflex_falls_back_when_json_schema_unsupported(monkeypatch):
+    captured_bodies = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return (
+                b'{"choices":[{"message":{"content":"'
+                b'{\\"route\\":\\"oracle_direct\\",'
+                b'\\"intent\\":\\"Check status.\\",'
+                b'\\"text\\":\\"check status\\",'
+                b'\\"route_confidence\\":0.9}'
+                b'"}}]}'
+            )
+
+    def fake_urlopen(req, timeout):
+        captured_bodies.append(json.loads(req.data.decode("utf-8")))
+        if len(captured_bodies) == 1:
+            raise urllib.error.HTTPError(
+                req.full_url,
+                400,
+                "Bad Request",
+                {},
+                io.BytesIO(b"response_format json_schema is not supported"),
+            )
+        return FakeResponse()
+
+    monkeypatch.setattr("agent.realtime_voice_reference_sidecar.urllib.request.urlopen", fake_urlopen)
+
+    sidecar = ReferenceRealtimeVoiceSidecarSession(
+        ReferenceSidecarRuntimeConfig(
+            vllm_base_url="http://vllm.local:8000/v1",
+            vllm_model="google/gemma-4-E2B-it",
+            vllm_timeout_seconds=12,
+        )
+    )
+    sidecar.config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        interface_audio_input="native_audio",
+    )
+
+    payload = sidecar._understand_audio_sync(b"audio", VoiceAudioCodec.WEBM_OPUS)
+
+    assert len(captured_bodies) == 2
+    assert captured_bodies[0]["response_format"]["type"] == "json_schema"
+    assert captured_bodies[1]["response_format"] == {"type": "json_object"}
+    assert payload["text"] == "check status"
+    assert payload["intent"] == "Check status."
+    assert payload["route"] == "oracle_direct"
+    assert payload["route_confidence"] == 0.9
+    assert payload["reflex_response_format_fallback"] == "json_object"
+    assert payload["metrics"]["kame_interface_model_request_ms"] >= 0
+    assert payload["metrics"]["kame_interface_response_format_fallback"] == 1
+
+
+def test_reference_sidecar_vllm_kame_audio_reflex_does_not_retry_unrelated_http_errors(monkeypatch):
+    captured_bodies = []
+
+    def fake_urlopen(req, timeout):
+        captured_bodies.append(json.loads(req.data.decode("utf-8")))
+        raise urllib.error.HTTPError(
+            req.full_url,
+            401,
+            "Unauthorized",
+            {},
+            io.BytesIO(b"response_format json_schema is not supported"),
+        )
+
+    monkeypatch.setattr("agent.realtime_voice_reference_sidecar.urllib.request.urlopen", fake_urlopen)
+
+    sidecar = ReferenceRealtimeVoiceSidecarSession(
+        ReferenceSidecarRuntimeConfig(
+            vllm_base_url="http://vllm.local:8000/v1",
+            vllm_model="google/gemma-4-E2B-it",
+            vllm_timeout_seconds=12,
+        )
+    )
+    sidecar.config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        interface_audio_input="native_audio",
+    )
+
+    with pytest.raises(urllib.error.HTTPError):
+        sidecar._understand_kame_with_vllm(b"audio", VoiceAudioCodec.WEBM_OPUS)
+
+    assert len(captured_bodies) == 1
+    assert captured_bodies[0]["response_format"]["type"] == "json_schema"
 
 
 def test_reference_sidecar_vllm_kame_audio_reflex_wraps_pcm16_as_wav(monkeypatch):

@@ -18,6 +18,7 @@ import os
 import re
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, replace
 from typing import Any, AsyncIterator, Callable, Mapping, Optional
@@ -1638,23 +1639,30 @@ class ReferenceRealtimeVoiceSidecarSession:
         }
         payload["max_tokens"] = _interface_max_output_tokens(config)
         url = f"{self.runtime.vllm_base_url.rstrip('/')}/chat/completions"
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers=_vllm_request_headers(self.runtime, content_json=True),
-            method="POST",
-        )
         request_started_at = time.perf_counter()
-        with urllib.request.urlopen(req, timeout=_interface_timeout_seconds(config, self.runtime.vllm_timeout_seconds)) as response:
-            data = json.loads(response.read().decode("utf-8"))
+        response_format_fallback = ""
+        timeout = _interface_timeout_seconds(config, self.runtime.vllm_timeout_seconds)
+        try:
+            data = _post_vllm_chat_completion(self.runtime, url, payload, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            if not _vllm_rejected_json_schema_response_format(exc):
+                raise
+            fallback_payload = dict(payload)
+            fallback_payload["response_format"] = {"type": "json_object"}
+            data = _post_vllm_chat_completion(self.runtime, url, fallback_payload, timeout=timeout)
+            response_format_fallback = "json_object"
         request_ms = int(round((time.perf_counter() - request_started_at) * 1000))
         content = str(data["choices"][0]["message"].get("content") or "").strip()
         payload = _kame_reflex_payload_from_content(content, config=config)
         payload.setdefault("interface_input_source", "native_audio")
         payload.setdefault("reflex_provider", "vllm")
+        if response_format_fallback:
+            payload["reflex_response_format_fallback"] = response_format_fallback
         if _kame_provider_metrics_enabled(config):
             metrics = dict(payload.get("metrics")) if isinstance(payload.get("metrics"), Mapping) else {}
             metrics["kame_interface_model_request_ms"] = max(0, request_ms)
+            if response_format_fallback:
+                metrics["kame_interface_response_format_fallback"] = 1
             payload["metrics"] = metrics
         return payload
 
@@ -2190,6 +2198,48 @@ def _vllm_request_headers(
     if runtime.vllm_token:
         headers["Authorization"] = f"Bearer {runtime.vllm_token}"
     return headers
+
+
+def _post_vllm_chat_completion(
+    runtime: ReferenceSidecarRuntimeConfig,
+    url: str,
+    payload: Mapping[str, Any],
+    *,
+    timeout: float,
+) -> Mapping[str, Any]:
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=_vllm_request_headers(runtime, content_json=True),
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    return data if isinstance(data, Mapping) else {}
+
+
+def _vllm_rejected_json_schema_response_format(exc: urllib.error.HTTPError) -> bool:
+    if exc.code not in {400, 422}:
+        return False
+    detail = _http_error_text(exc).lower()
+    return "json_schema" in detail and (
+        "response_format" in detail
+        or "unsupported" in detail
+        or "not supported" in detail
+        or "schema" in detail
+    )
+
+
+def _http_error_text(exc: urllib.error.HTTPError) -> str:
+    try:
+        body = exc.read()
+    except Exception:
+        body = b""
+    try:
+        body_text = body.decode("utf-8", errors="replace") if isinstance(body, bytes) else str(body)
+    except Exception:
+        body_text = ""
+    return f"{exc.reason or ''} {body_text}".strip()
 
 
 async def _probe_vllm_health(runtime: ReferenceSidecarRuntimeConfig) -> Optional[Mapping[str, Any]]:
