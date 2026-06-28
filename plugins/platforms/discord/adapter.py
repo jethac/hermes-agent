@@ -70,6 +70,7 @@ class DiscordVoiceSessionState:
     asr_mode: Optional[str] = None
     asr_provider: Optional[str] = None
     asr_model: Optional[str] = None
+    preferred_local_oracle_model: Optional[str] = None
     oracle_model: Optional[str] = None
     oracle_timeout_seconds: float = 60.0
     max_spoken_sentences: int = 2
@@ -77,6 +78,7 @@ class DiscordVoiceSessionState:
     tts_model: Optional[str] = None
     tts_voice: Optional[str] = None
     fallback_policy: str = "legacy_voice"
+    routing: Dict[str, Any] = field(default_factory=dict)
     latency_metrics_ms: Dict[str, int] = field(default_factory=dict)
     quality_target_misses: List[Dict[str, Any]] = field(default_factory=list)
     updated_at: float = field(default_factory=time.monotonic)
@@ -3171,6 +3173,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "tts_model": str(cfg.get("tts_model") or "") or None,
             "tts_voice": str(cfg.get("tts_voice") or "") or None,
             "fallback_policy": _discord_realtime_voice_fallback_policy(cfg),
+            "routing": dict(cfg.get("routing")) if isinstance(cfg.get("routing"), dict) else {},
         }
 
     def _voice_playback_status(self, guild_id: int) -> Dict[str, Any]:
@@ -3235,6 +3238,10 @@ class DiscordAdapter(BasePlatformAdapter):
             "asr_mode": getattr(state, "asr_mode", None) or architecture["asr_mode"],
             "asr_provider": getattr(state, "asr_provider", None) or architecture["asr_provider"],
             "asr_model": getattr(state, "asr_model", None) or architecture["asr_model"],
+            "preferred_local_oracle_model": (
+                getattr(state, "preferred_local_oracle_model", None)
+                or architecture["preferred_local_oracle_model"]
+            ),
             "oracle_model": state.oracle_model or architecture["oracle_model"],
             "oracle_timeout_seconds": state.oracle_timeout_seconds or architecture["oracle_timeout_seconds"],
             "max_spoken_sentences": state.max_spoken_sentences or architecture["max_spoken_sentences"],
@@ -3242,6 +3249,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "tts_model": getattr(state, "tts_model", None) or architecture["tts_model"],
             "tts_voice": getattr(state, "tts_voice", None) or architecture["tts_voice"],
             "fallback_policy": getattr(state, "fallback_policy", None) or architecture["fallback_policy"],
+            "routing": dict(getattr(state, "routing", None) or architecture.get("routing") or {}),
             "latency_metrics_ms": dict(state.latency_metrics_ms),
             "quality_target_misses": [dict(item) for item in state.quality_target_misses],
             **playback,

@@ -1321,9 +1321,18 @@ class TestDiscordVoiceChannelMethods:
             "interface_temperature": 0.35,
             "interface_max_output_tokens": 96,
             "interface_timeout_seconds": 0.6,
+            "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
             "oracle_model": "deep-hermes",
             "oracle_timeout_seconds": 19,
             "max_spoken_sentences": 3,
+            "routing": {
+                "allow_local_greetings": True,
+                "allow_local_clarifications": False,
+                "require_oracle_for_tools": True,
+                "require_oracle_for_memory": True,
+                "require_oracle_for_files": True,
+                "local_confidence_threshold": 0.82,
+            },
         }
         adapter._reset_voice_timeout = MagicMock()
         fake_session = AsyncMock()
@@ -1351,9 +1360,18 @@ class TestDiscordVoiceChannelMethods:
         assert session_cls.call_args.kwargs["interface_temperature"] == 0.35
         assert session_cls.call_args.kwargs["interface_max_output_tokens"] == 96
         assert session_cls.call_args.kwargs["interface_timeout_seconds"] == 0.6
+        assert session_cls.call_args.kwargs["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
         assert session_cls.call_args.kwargs["oracle_model"] == "deep-hermes"
         assert session_cls.call_args.kwargs["oracle_timeout_seconds"] == 19.0
         assert session_cls.call_args.kwargs["max_spoken_sentences"] == 3
+        assert session_cls.call_args.kwargs["routing_policy"] == {
+            "allow_local_greetings": True,
+            "allow_local_clarifications": False,
+            "require_oracle_for_tools": True,
+            "require_oracle_for_memory": True,
+            "require_oracle_for_files": True,
+            "local_confidence_threshold": 0.82,
+        }
         status = adapter.get_voice_session_status(111)
         assert status["session_state"] == "ready"
         assert status["voice_architecture"] == "kame_frontend_oracle"
@@ -1364,9 +1382,18 @@ class TestDiscordVoiceChannelMethods:
         assert status["interface_temperature"] == 0.35
         assert status["interface_max_output_tokens"] == 96
         assert status["interface_timeout_seconds"] == 0.6
+        assert status["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
         assert status["oracle_model"] == "deep-hermes"
         assert status["oracle_timeout_seconds"] == 19.0
         assert status["max_spoken_sentences"] == 3
+        assert status["routing"] == {
+            "allow_local_greetings": True,
+            "allow_local_clarifications": False,
+            "require_oracle_for_tools": True,
+            "require_oracle_for_memory": True,
+            "require_oracle_for_files": True,
+            "local_confidence_threshold": 0.82,
+        }
 
     @pytest.mark.asyncio
     async def test_join_voice_channel_wires_realtime_frame_and_speech_start_callbacks(self):
