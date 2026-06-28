@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import threading
-from typing import AsyncIterator, Mapping, Optional
+from typing import Any, AsyncIterator, Mapping, Optional
 
 from agent.realtime_voice import (
     TRANSCRIPT_METADATA_KEYS,
@@ -77,7 +77,7 @@ class HermesRealtimeOracle:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
-    async def stream_answer_for_request(self, request: KameOracleRequest) -> AsyncIterator[str]:
+    async def stream_answer_for_request(self, request: KameOracleRequest) -> AsyncIterator[Any]:
         """Stream an answer for a structured KAME reflex-to-oracle request."""
 
         async for delta in self.stream_answer_with_metadata(request.oracle_text, request.to_metadata()):

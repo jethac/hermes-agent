@@ -1286,6 +1286,93 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_streams_oracle_tool_events_to_sidecar(monkeypatch):
+    class ToolEventOracle:
+        async def stream_answer_for_request(self, request):
+            yield {
+                "type": "oracle.tool_call",
+                "tool_name": "read_file",
+                "tool_call_id": "call-1",
+                "arguments": {"path": "pyproject.toml"},
+            }
+            yield {
+                "event": "tool_result",
+                "tool_name": "read_file",
+                "tool_call_id": "call-1",
+                "result": {"ok": True, "bytes": 42},
+            }
+            yield "I checked it."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        sidecar = FakeSidecar()
+        engine = KameInterfaceOracleEngine(oracle=ToolEventOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                sidecar_base_url="http://voice.local:8765",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "check the project file",
+                    "intent": "Check the project file.",
+                    "intent_source": "reflex_audio",
+                    "route": "oracle_direct",
+                    "end_of_utterance": True,
+                    "metrics": {"kame_speech_end_to_interface_decision_ms": 17},
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        tool_call = next(event for event in seen if event.type == VoiceEventType.ORACLE_TOOL_CALL)
+        tool_result = next(event for event in seen if event.type == VoiceEventType.ORACLE_TOOL_RESULT)
+        partial = next(event for event in seen if event.type == VoiceEventType.ORACLE_RESPONSE_PARTIAL)
+        final = next(event for event in seen if event.type == VoiceEventType.ORACLE_RESPONSE_FINAL)
+        forwarded_tool_call = next(event for event in sidecar.received if event.type == VoiceEventType.ORACLE_TOOL_CALL)
+        forwarded_tool_result = next(event for event in sidecar.received if event.type == VoiceEventType.ORACLE_TOOL_RESULT)
+
+        assert tool_call.payload["turn_id"] == "voice-123:1"
+        assert tool_call.payload["route"] == "oracle_direct"
+        assert tool_call.payload["tool_name"] == "read_file"
+        assert tool_call.payload["tool_call_id"] == "call-1"
+        assert tool_call.payload["arguments"] == {"path": "pyproject.toml"}
+        assert tool_call.payload["metrics"]["kame_oracle_called"] == 1
+        assert tool_call.payload["metrics"]["kame_speech_end_to_interface_decision_ms"] == 17
+        assert tool_result.payload["tool_name"] == "read_file"
+        assert tool_result.payload["tool_call_id"] == "call-1"
+        assert tool_result.payload["result"] == {"ok": True, "bytes": 42}
+        assert partial.payload["delta"] == "I checked it."
+        assert final.payload["text"] == "I checked it."
+        assert forwarded_tool_call.payload == tool_call.payload
+        assert forwarded_tool_result.payload == tool_result.payload
+        assert spoken == ["I checked it."]
+
+    asyncio.run(run())
+
+
 def test_kame_engine_corrects_oracle_voice_capability_denial(monkeypatch):
     class DenialOracle:
         async def stream_answer_for_request(self, request):

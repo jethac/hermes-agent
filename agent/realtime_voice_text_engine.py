@@ -801,7 +801,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     oracle_accepted_at,
                 )
                 sync_kame_timing_metrics()
-            async for delta in _stream_oracle_answer(
+            async for item in _stream_oracle_answer(
                 oracle,
                 transcript,
                 assistant_metadata,
@@ -810,6 +810,20 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             ):
                 if playback_generation != self._playback_generation:
                     return
+                if isinstance(item, Mapping):
+                    oracle_tool_event_type = _oracle_tool_event_type(item)
+                    if oracle_tool_event_type is not None:
+                        await self._emit_oracle_tool_event(
+                            event_type=oracle_tool_event_type,
+                            payload=item,
+                            playback_generation=playback_generation,
+                            metadata=assistant_metadata,
+                            metrics=kame_timing_metrics,
+                        )
+                        continue
+                delta = _oracle_stream_text_delta(item)
+                if not delta:
+                    continue
                 now = time.perf_counter()
                 if oracle_request is not None and oracle_first_token_at is None:
                     oracle_first_token_at = now
@@ -1272,6 +1286,28 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if event is not None and self._sidecar is not None:
             await self._send_sidecar_event(event)
 
+    async def _emit_oracle_tool_event(
+        self,
+        *,
+        event_type: VoiceEventType,
+        payload: Mapping[str, Any],
+        playback_generation: int,
+        metadata: Mapping[str, Any],
+        metrics: Optional[Mapping[str, int]] = None,
+    ) -> None:
+        if playback_generation != self._playback_generation or not _is_kame_metadata(metadata):
+            return
+        event_payload = {
+            **_kame_interface_payload_from_metadata(metadata),
+            **_oracle_tool_event_payload(payload),
+            "source": "hermes",
+            "playback_generation": playback_generation,
+            **_kame_route_metrics_payload(metadata, oracle_called=True, extra_metrics=metrics),
+        }
+        event = await self._emit(event_type, event_payload)
+        if event is not None and self._sidecar is not None:
+            await self._send_sidecar_event(event)
+
     async def _emit_oracle_error(
         self,
         playback_generation: int,
@@ -1726,7 +1762,7 @@ async def _stream_oracle_answer(
     *,
     oracle_request: Optional[KameOracleRequest] = None,
     timeout_seconds: float = 60.0,
-) -> AsyncIterator[str]:
+) -> AsyncIterator[Any]:
     request_stream = getattr(oracle, "stream_answer_for_request", None)
     if oracle_request is not None and callable(request_stream):
         async for delta in _with_next_timeout(
@@ -1752,7 +1788,7 @@ async def _stream_oracle_answer(
         yield delta
 
 
-async def _with_next_timeout(stream: AsyncIterator[str], *, timeout_seconds: float) -> AsyncIterator[str]:
+async def _with_next_timeout(stream: AsyncIterator[Any], *, timeout_seconds: float) -> AsyncIterator[Any]:
     timeout = max(0.001, float(timeout_seconds or 60.0))
     iterator = stream.__aiter__()
     while True:
@@ -1760,6 +1796,72 @@ async def _with_next_timeout(stream: AsyncIterator[str], *, timeout_seconds: flo
             yield await asyncio.wait_for(iterator.__anext__(), timeout=timeout)
         except StopAsyncIteration:
             return
+
+
+_ORACLE_TOOL_CALL_EVENT_NAMES = frozenset({"oracle.tool_call", "tool_call", "tool.call"})
+_ORACLE_TOOL_RESULT_EVENT_NAMES = frozenset({"oracle.tool_result", "tool_result", "tool.result"})
+
+
+def _oracle_tool_event_type(item: Mapping[str, Any]) -> Optional[VoiceEventType]:
+    raw_type = str(item.get("type") or item.get("event") or "").strip().lower()
+    if raw_type in _ORACLE_TOOL_CALL_EVENT_NAMES:
+        return VoiceEventType.ORACLE_TOOL_CALL
+    if raw_type in _ORACLE_TOOL_RESULT_EVENT_NAMES:
+        return VoiceEventType.ORACLE_TOOL_RESULT
+    return None
+
+
+def _oracle_stream_text_delta(item: Any) -> str:
+    if item is None:
+        return ""
+    if isinstance(item, str):
+        return item
+    if isinstance(item, bytes):
+        return item.decode("utf-8", errors="replace")
+    if isinstance(item, Mapping):
+        for key in ("delta", "text", "content"):
+            value = item.get(key)
+            if value is not None:
+                return str(value)
+        return ""
+    return str(item)
+
+
+def _oracle_tool_event_payload(item: Mapping[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, value in item.items():
+        normalized_key = str(key)
+        if normalized_key in {"type", "event"}:
+            continue
+        payload[normalized_key] = _realtime_json_safe(value)
+
+    function = item.get("function")
+    if isinstance(function, Mapping):
+        name = function.get("name")
+        arguments = function.get("arguments")
+        if name is not None and not payload.get("tool_name"):
+            payload["tool_name"] = str(name)
+        if arguments is not None and "arguments" not in payload:
+            payload["arguments"] = _realtime_json_safe(arguments)
+
+    if item.get("name") is not None and not payload.get("tool_name"):
+        payload["tool_name"] = str(item.get("name"))
+    for call_id_key in ("tool_call_id", "call_id", "id"):
+        if item.get(call_id_key) is not None and not payload.get("tool_call_id"):
+            payload["tool_call_id"] = str(item.get(call_id_key))
+    return payload
+
+
+def _realtime_json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, Mapping):
+        return {str(key): _realtime_json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_realtime_json_safe(item) for item in value]
+    return str(value)
 
 
 def _max_spoken_sentences(
