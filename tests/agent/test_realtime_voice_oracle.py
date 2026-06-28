@@ -37,3 +37,22 @@ def test_voice_oracle_prompt_includes_kame_frontend_backend_roles():
     assert "Hermes backend oracle" in prompt
     assert "deep-hermes" in prompt
     assert "Do not describe the frontend as a separate user-visible bot" in prompt
+
+
+def test_voice_oracle_prompt_includes_kame_brief_summary_policy():
+    prompt = _voice_oracle_prompt(
+        "Summarize the project state.",
+        {
+            "voice_architecture": "kame_frontend_oracle",
+            "kame_requested_response_style": {
+                "spoken": True,
+                "max_sentences": 2,
+                "policy": "brief_summary",
+                "allow_followup_offer": False,
+            },
+        },
+    )
+
+    assert "Summarize long oracle output for speech" in prompt
+    assert "at most 2 sentence(s)" in prompt
+    assert "Requested response style: spoken=true; policy=brief_summary" in prompt

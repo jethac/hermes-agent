@@ -147,6 +147,7 @@ TRANSCRIPT_METADATA_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 TRANSCRIPT_EVENT_NUMERIC_KEYS = ("confidence", "stability")
 TRANSCRIPT_EVENT_GENERATION_KEYS = ("input_generation", "playback_generation")
 REALTIME_VOICE_INTERFACE_AUDIO_INPUTS = frozenset({"auto", "native_audio", "text_fallback"})
+REALTIME_VOICE_RESPONSE_POLICIES = frozenset({"sentence_cap", "brief_summary", "full"})
 
 
 @dataclass(frozen=True)
@@ -219,7 +220,7 @@ class RealtimeVoiceSessionConfig:
             "oracle_model": self.oracle_model,
             "oracle_timeout_seconds": self.oracle_timeout_seconds,
             "max_spoken_sentences": self.max_spoken_sentences,
-            "voice_response_policy": self.voice_response_policy,
+            "voice_response_policy": normalize_realtime_voice_response_policy(self.voice_response_policy),
             "tts_provider": self.tts_provider,
             "tts_model": self.tts_model,
             "tts_voice": self.tts_voice,
@@ -281,7 +282,7 @@ class RealtimeVoiceSessionConfig:
                 payload.get("max_spoken_sentences"),
                 default=2,
             ),
-            voice_response_policy=_optional_str(payload.get("voice_response_policy")) or "sentence_cap",
+            voice_response_policy=normalize_realtime_voice_response_policy(payload.get("voice_response_policy")),
             tts_provider=_optional_str(payload.get("tts_provider")),
             tts_model=_optional_str(payload.get("tts_model")),
             tts_voice=_optional_str(payload.get("tts_voice")),
@@ -581,6 +582,11 @@ def normalize_realtime_voice_interface_audio_input(value: Any) -> Optional[str]:
     if not text:
         return None
     return text if text in REALTIME_VOICE_INTERFACE_AUDIO_INPUTS else "auto"
+
+
+def normalize_realtime_voice_response_policy(value: Any) -> str:
+    text = str(value or "").strip().lower().replace("-", "_")
+    return text if text in REALTIME_VOICE_RESPONSE_POLICIES else "sentence_cap"
 
 
 def _asr_mode(value: Any) -> RealtimeVoiceASRMode:

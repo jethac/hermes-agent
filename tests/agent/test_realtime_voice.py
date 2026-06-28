@@ -245,6 +245,24 @@ def test_session_config_normalizes_kame_interface_audio_input():
     assert invalid.to_wire()["interface_audio_input"] == "auto"
 
 
+def test_session_config_normalizes_kame_voice_response_policy():
+    restored = RealtimeVoiceSessionConfig.from_wire(
+        {
+            "session_id": "voice-123",
+            "engine": RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE.value,
+            "voice_response_policy": "brief-summary",
+        }
+    )
+    invalid = RealtimeVoiceSessionConfig(
+        session_id="voice-456",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        voice_response_policy="read-the-whole-internet",
+    )
+
+    assert restored.voice_response_policy == "brief_summary"
+    assert invalid.to_wire()["voice_response_policy"] == "sentence_cap"
+
+
 def test_session_config_bounds_kame_interface_max_audio_seconds():
     too_high = RealtimeVoiceSessionConfig.from_wire(
         {
