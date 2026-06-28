@@ -976,6 +976,20 @@ def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> li
         {"kind": "kame_smoke_result", "name": name, "ok": False, "notes": notes}
         for name, notes in REQUIRED_DGX_SPARK_SMOKES
     )
+    assumptions = matrix.get("model_assumptions") if isinstance(matrix.get("model_assumptions"), Mapping) else {}
+    for name, assumption in assumptions.items():
+        if not isinstance(assumption, Mapping) or assumption.get("required") is not True:
+            continue
+        template.append(
+            {
+                "kind": "kame_model_assumption_result",
+                "name": str(name),
+                "validated_by": str(assumption.get("validated_by") or ""),
+                "model": str(assumption.get("model") or "") or None,
+                "ok": False,
+                "notes": "Set ok=true only after this model/runtime assumption has been validated on the target DGX Spark.",
+            }
+        )
     return template
 
 
@@ -1002,6 +1016,8 @@ def validate_dgx_spark_benchmark_evidence(
     - ``kind=kame_benchmark_result`` with ``category`` (interface/oracle/speech),
       optional ``input``, ``role``, ``model``, ``adapter``, or ``asr_hypothesis``,
       and a ``metrics`` object.
+    - ``kind=kame_model_assumption_result`` with a required model assumption
+      ``name``, matching ``validated_by``, and ``ok=true``.
     - ``kind=kame_smoke_result`` with one of ``REQUIRED_DGX_SPARK_SMOKES``
       as ``name`` and ``ok=true``.
     """
@@ -1167,6 +1183,33 @@ def validate_dgx_spark_benchmark_evidence(
         issues.append(
             "local_asr_tts_benchmark_matrix: requires benchmark evidence for non-loopback local ASR and TTS adapters"
         )
+
+    required_assumptions = (
+        matrix.get("model_assumptions") if isinstance(matrix.get("model_assumptions"), Mapping) else {}
+    )
+    assumption_labels: list[str] = []
+    for name, assumption in required_assumptions.items():
+        if not isinstance(assumption, Mapping) or assumption.get("required") is not True:
+            continue
+        assumption_name = str(name)
+        validated_by = str(assumption.get("validated_by") or "").strip()
+        label = f"model_assumption:{assumption_name}"
+        assumption_labels.append(label)
+        ok = _has_passing_model_assumption(entries, assumption_name, validated_by)
+        coverage[label] = ok
+        if not ok:
+            issues.append(
+                f"{label}: missing passing model assumption result"
+                f"{f' validated_by={validated_by}' if validated_by else ''}"
+            )
+    coverage["model_assumptions_validated"] = bool(assumption_labels) and all(
+        coverage.get(label) is True for label in assumption_labels
+    )
+    if not coverage["model_assumptions_validated"]:
+        issues.append(
+            "model_assumptions_validated: requires passing evidence for every required model/runtime assumption"
+        )
+
     for smoke_name, _notes in REQUIRED_DGX_SPARK_SMOKES:
         ok = _has_passing_smoke(entries, smoke_name)
         coverage[smoke_name] = ok
@@ -1385,6 +1428,23 @@ def _has_passing_smoke(entries: list[Mapping[str, Any]], name: str) -> bool:
         if str(entry.get("kind") or "") != "kame_smoke_result":
             continue
         if str(entry.get("name") or "") == name and entry.get("ok") is True:
+            return True
+    return False
+
+
+def _has_passing_model_assumption(
+    entries: list[Mapping[str, Any]],
+    name: str,
+    validated_by: str = "",
+) -> bool:
+    for entry in entries:
+        if str(entry.get("kind") or "") != "kame_model_assumption_result":
+            continue
+        if str(entry.get("name") or "") != name:
+            continue
+        if validated_by and str(entry.get("validated_by") or "") != validated_by:
+            continue
+        if entry.get("ok") is True:
             return True
     return False
 

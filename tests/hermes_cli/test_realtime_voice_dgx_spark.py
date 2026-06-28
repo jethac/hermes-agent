@@ -86,8 +86,43 @@ def _passing_benchmark_evidence() -> list[dict]:
                 },
             ]
         )
+    assumption_entries = [
+        {
+            "kind": "kame_model_assumption_result",
+            "name": "interface_audio_input_supported",
+            "validated_by": "interface_audio_probe",
+            "model": "gemma-4-E2B-it",
+            "ok": True,
+        },
+        {
+            "kind": "kame_model_assumption_result",
+            "name": "interface_audio_is_segment_buffered",
+            "validated_by": "vad_endpoint_then_interface_audio_probe",
+            "ok": True,
+        },
+        {
+            "kind": "kame_model_assumption_result",
+            "name": "interface_audio_limit_seconds",
+            "validated_by": "manifest_and_vllm_limit_mm_per_prompt",
+            "ok": True,
+        },
+        {
+            "kind": "kame_model_assumption_result",
+            "name": "vllm_multimodal_audio_prompt_limit",
+            "validated_by": "compose_vllm_args",
+            "ok": True,
+        },
+        {
+            "kind": "kame_model_assumption_result",
+            "name": "oracle_authority",
+            "validated_by": "oracle_models_probe",
+            "model": "gemma-4-26B-A4B-it",
+            "ok": True,
+        },
+    ]
     return [
         *interface_entries,
+        *assumption_entries,
         {
             "kind": "kame_benchmark_result",
             "category": "oracle",
@@ -404,6 +439,19 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
         "barge_in_interruption_smoke",
     ]
     assert all(entry["ok"] is False for entry in smoke_entries)
+    assumption_entries = [
+        entry for entry in evidence_template if entry.get("kind") == "kame_model_assumption_result"
+    ]
+    assert [
+        (entry["name"], entry["validated_by"], entry["ok"])
+        for entry in assumption_entries
+    ] == [
+        ("interface_audio_input_supported", "interface_audio_probe", False),
+        ("interface_audio_is_segment_buffered", "vad_endpoint_then_interface_audio_probe", False),
+        ("interface_audio_limit_seconds", "manifest_and_vllm_limit_mm_per_prompt", False),
+        ("vllm_multimodal_audio_prompt_limit", "compose_vllm_args", False),
+        ("oracle_authority", "oracle_models_probe", False),
+    ]
 
 
 def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation(tmp_path):
@@ -777,6 +825,12 @@ def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_pat
     assert result["coverage"]["oracle_outcomes_with_and_without_asr_hypotheses"] is True
     assert result["coverage"]["oracle_verbatim_asr_latency_and_literal_accuracy"] is True
     assert result["coverage"]["local_asr_tts_benchmark_matrix"] is True
+    assert result["coverage"]["model_assumptions_validated"] is True
+    assert result["coverage"]["model_assumption:interface_audio_input_supported"] is True
+    assert result["coverage"]["model_assumption:interface_audio_is_segment_buffered"] is True
+    assert result["coverage"]["model_assumption:interface_audio_limit_seconds"] is True
+    assert result["coverage"]["model_assumption:vllm_multimodal_audio_prompt_limit"] is True
+    assert result["coverage"]["model_assumption:oracle_authority"] is True
     assert result["coverage"]["all_local_smoke"] is True
     assert result["coverage"]["cloud_fallback_smoke"] is True
     assert result["coverage"]["capability_honesty_smoke"] is True
@@ -805,6 +859,29 @@ def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):
         "requires direct_audio and stt_fallback results for every interface model"
     ) in result["issues"]
     assert "cloud_fallback_smoke: missing passing smoke result" in result["issues"]
+
+
+def test_benchmark_evidence_validator_requires_model_assumption_results(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence = [
+        entry
+        for entry in _passing_benchmark_evidence()
+        if entry.get("kind") != "kame_model_assumption_result"
+    ]
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["model_assumptions_validated"] is False
+    assert result["coverage"]["model_assumption:interface_audio_input_supported"] is False
+    assert (
+        "model_assumption:interface_audio_input_supported: "
+        "missing passing model assumption result validated_by=interface_audio_probe"
+    ) in result["issues"]
+    assert (
+        "model_assumptions_validated: "
+        "requires passing evidence for every required model/runtime assumption"
+    ) in result["issues"]
 
 
 def test_benchmark_evidence_validator_enforces_direct_audio_latency_targets(tmp_path):
