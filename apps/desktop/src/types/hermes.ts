@@ -99,7 +99,9 @@ export interface RealtimeVoiceProfileRequest {
   barge_in_min_speech_ms?: number
   barge_in_stop_playback_deadline_ms?: number
   enable_discord?: boolean
+  fallback_policy?: string
   google_search?: boolean
+  interface_base_url?: string
   interface_audio_input?: string
   interface_max_audio_seconds?: number
   local_confidence_threshold?: number

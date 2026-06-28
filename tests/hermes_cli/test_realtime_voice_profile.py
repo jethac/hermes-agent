@@ -389,6 +389,21 @@ def test_kame_preset_can_set_barge_in_thresholds(capsys):
     assert realtime["barge_in_stop_playback_deadline_ms"] == 140
 
 
+def test_kame_preset_can_set_fallback_policy(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--kame-fallback-policy",
+            "fail_closed",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    assert data["voice"]["realtime"]["fallback_policy"] == "fail_closed"
+
+
 def test_kame_preset_rejects_invalid_interface_max_audio_seconds(capsys):
     result = realtime_voice_profile.main(
         [

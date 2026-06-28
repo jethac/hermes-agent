@@ -1464,6 +1464,7 @@ class RealtimeVoiceProfileApply(BaseModel):
     oracle_base_url: str = ""
     oracle_provider_name: str = ""
     voice_response_policy: str = "sentence_cap"
+    fallback_policy: str = "legacy_voice"
     streaming_stt_base_url: str = ""
     streaming_tts_base_url: str = ""
     streaming_stt_model: str = ""
@@ -15220,6 +15221,7 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             asr_mode=body.asr_mode or "on_escalation",
             preferred_local_oracle_model=body.oracle_model or DEFAULT_KAME_ORACLE_MODEL,
             voice_response_policy=body.voice_response_policy or "sentence_cap",
+            fallback_policy=body.fallback_policy or "legacy_voice",
             oracle_base_url=body.oracle_base_url,
             oracle_provider_name=body.oracle_provider_name,
             streaming_stt_base_url=body.streaming_stt_base_url,

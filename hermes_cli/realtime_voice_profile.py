@@ -169,6 +169,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="How KAME should shape spoken oracle responses",
     )
     parser.add_argument(
+        "--kame-fallback-policy",
+        default="legacy_voice",
+        choices=("legacy_voice", "text_only", "fail_closed"),
+        help="How KAME should degrade when the realtime sidecar or reflex path is unavailable",
+    )
+    parser.add_argument(
         "--kame-barge-in-min-rms",
         type=int,
         default=350,
@@ -265,6 +271,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.kame_preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL
                 ),
                 voice_response_policy=str(args.kame_voice_response_policy or "sentence_cap"),
+                fallback_policy=str(args.kame_fallback_policy or "legacy_voice"),
                 oracle_base_url=str(args.kame_oracle_base_url or ""),
                 oracle_provider_name=str(
                     args.kame_oracle_provider_name or DEFAULT_KAME_ORACLE_PROVIDER_NAME
@@ -760,6 +767,7 @@ def build_kame_realtime_voice_profile(
     asr_mode: str = "on_escalation",
     preferred_local_oracle_model: str = DEFAULT_KAME_ORACLE_MODEL,
     voice_response_policy: str = "sentence_cap",
+    fallback_policy: str = "legacy_voice",
     oracle_base_url: str = "",
     oracle_provider_name: str = DEFAULT_KAME_ORACLE_PROVIDER_NAME,
     streaming_stt_base_url: str = "",
@@ -794,6 +802,9 @@ def build_kame_realtime_voice_profile(
     response_policy = str(voice_response_policy or "sentence_cap").strip().lower().replace("-", "_")
     if response_policy not in {"sentence_cap", "brief_summary", "full"}:
         raise ValueError("--kame-voice-response-policy must be sentence_cap, brief_summary, or full")
+    fallback = str(fallback_policy or "legacy_voice").strip().lower().replace("-", "_")
+    if fallback not in {"legacy_voice", "text_only", "fail_closed"}:
+        raise ValueError("--kame-fallback-policy must be legacy_voice, text_only, or fail_closed")
     try:
         max_audio_seconds = float(interface_max_audio_seconds)
     except (TypeError, ValueError):
@@ -861,7 +872,7 @@ def build_kame_realtime_voice_profile(
         "tts_provider": "streaming_tts",
         "tts_model": str(streaming_tts_model or DEFAULT_STREAMING_TTS_MODEL),
         "tts_voice": str(streaming_tts_voice or ""),
-        "fallback_policy": "legacy_voice",
+        "fallback_policy": fallback,
         "sidecar_base_url": "",
         "spark_base_url": "",
         "sidecar_host": str(sidecar_host or "127.0.0.1"),

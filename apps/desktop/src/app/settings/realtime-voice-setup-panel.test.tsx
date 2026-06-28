@@ -75,8 +75,10 @@ const config: HermesConfigRecord = {
       barge_in_stop_playback_deadline_ms: 140,
       enabled: true,
       engine: 'kame_interface_oracle',
+      fallback_policy: 'fail_closed',
       frontend_model: 'gemma-4-E2B-it',
       frontend_provider: 'gemma4',
+      interface_base_url: 'http://spark.local:8000/v1',
       interface_audio_input: 'native_audio',
       interface_max_audio_seconds: 24,
       oracle_base_url: 'http://spark.local:8000/v1',
@@ -123,8 +125,10 @@ describe('RealtimeVoiceSetupPanel', () => {
     render(<RealtimeVoiceSetupPanel config={config} onConfigChange={onConfigChange} />)
 
     expect(await screen.findByText('KAME Reflex / Oracle')).toBeTruthy()
+    expect(screen.getByText('Interface base URL')).toBeTruthy()
     expect(screen.getByText('Interface audio input')).toBeTruthy()
     expect(screen.getByText('ASR mode')).toBeTruthy()
+    expect(screen.getByText('Fallback policy')).toBeTruthy()
     expect(screen.getByText('TTS voice')).toBeTruthy()
     expect(screen.getByText('Barge-in RMS')).toBeTruthy()
     expect(screen.getByText('Local confidence')).toBeTruthy()
@@ -140,6 +144,8 @@ describe('RealtimeVoiceSetupPanel', () => {
         barge_in_min_rms: 420,
         barge_in_min_speech_ms: 160,
         barge_in_stop_playback_deadline_ms: 140,
+        fallback_policy: 'fail_closed',
+        interface_base_url: 'http://spark.local:8000/v1',
         interface_audio_input: 'native_audio',
         interface_max_audio_seconds: 24,
         local_confidence_threshold: 0.88,

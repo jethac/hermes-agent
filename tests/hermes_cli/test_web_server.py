@@ -7130,6 +7130,7 @@ class TestRealtimeVoiceWebSocket:
         body = self.ws_module.RealtimeVoiceProfileApply(
             preset="kame",
             model="gemma-4-E2B-it",
+            interface_base_url="http://spark.local:8000/v1",
             interface_audio_input="native_audio",
             interface_max_audio_seconds=18.0,
             asr_mode="on_escalation",
@@ -7137,6 +7138,7 @@ class TestRealtimeVoiceWebSocket:
             oracle_base_url="http://spark.local:8001/v1",
             oracle_provider_name="Spark Oracle",
             voice_response_policy="brief_summary",
+            fallback_policy="fail_closed",
             streaming_stt_base_url="http://spark.local:8767",
             streaming_tts_base_url="http://spark.local:8768",
             streaming_tts_voice="spark-voice-1",
@@ -7149,6 +7151,8 @@ class TestRealtimeVoiceWebSocket:
 
         assert profile["engine"] == "kame_interface_oracle"
         assert profile["frontend_model"] == "gemma-4-E2B-it"
+        assert profile["interface_base_url"] == "http://spark.local:8000/v1"
+        assert profile["vllm_base_url"] == "http://spark.local:8000/v1"
         assert profile["interface_audio_input"] == "native_audio"
         assert profile["interface_max_audio_seconds"] == 18.0
         assert profile["asr_mode"] == "on_escalation"
@@ -7157,6 +7161,7 @@ class TestRealtimeVoiceWebSocket:
         assert profile["oracle_model"] == "gemma-4-26B-A4B-it"
         assert profile["oracle_base_url"] == "http://spark.local:8001/v1"
         assert profile["voice_response_policy"] == "brief_summary"
+        assert profile["fallback_policy"] == "fail_closed"
         assert profile["streaming_stt_base_url"] == "http://spark.local:8767"
         assert profile["streaming_tts_base_url"] == "http://spark.local:8768"
         assert profile["streaming_tts_voice"] == "spark-voice-1"

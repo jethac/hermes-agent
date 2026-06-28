@@ -61,6 +61,7 @@ const PROVIDER_VOICES: Record<string, string[]> = {
 
 const KAME_AUDIO_INPUT_OPTIONS = ['auto', 'native_audio', 'text_fallback']
 const KAME_ASR_MODE_OPTIONS = ['disabled', 'on_escalation', 'speculative', 'debug', 'fallback']
+const KAME_FALLBACK_POLICY_OPTIONS = ['legacy_voice', 'text_only', 'fail_closed']
 const KAME_RESPONSE_POLICY_OPTIONS = ['sentence_cap', 'brief_summary', 'full']
 
 function statusTone(ok?: boolean | null) {
@@ -246,6 +247,11 @@ function KameControls({
     <div className="mt-2 grid gap-1 border-t border-border/60 pt-2">
       <div className="py-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">KAME Reflex / Oracle</div>
       <ListRow
+        action={textInput('voice.realtime.interface_base_url', 'http://127.0.0.1:8000/v1')}
+        description="OpenAI-compatible URL for the reflex/interface model."
+        title="Interface base URL"
+      />
+      <ListRow
         action={select('voice.realtime.interface_audio_input', 'native_audio', KAME_AUDIO_INPUT_OPTIONS)}
         description="How the reflex receives user turns."
         title="Interface audio input"
@@ -299,6 +305,11 @@ function KameControls({
         action={select('voice.realtime.voice_response_policy', 'sentence_cap', KAME_RESPONSE_POLICY_OPTIONS)}
         description="How long oracle answers are shaped for speech."
         title="Voice response"
+      />
+      <ListRow
+        action={select('voice.realtime.fallback_policy', 'legacy_voice', KAME_FALLBACK_POLICY_OPTIONS)}
+        description="How voice degrades if the KAME path cannot start."
+        title="Fallback policy"
       />
       <ListRow
         action={toggle('voice.realtime.routing.allow_local_greetings')}
@@ -476,6 +487,13 @@ export function RealtimeVoiceSetupPanel({
                 ''
             )
           : undefined,
+        interface_base_url: selectedIsKame
+          ? String(
+              getNested(config, 'voice.realtime.interface_base_url') ??
+                getNested(config, 'voice.realtime.vllm_base_url') ??
+                ''
+            )
+          : undefined,
         interface_audio_input: selectedIsKame
           ? String(getNested(config, 'voice.realtime.interface_audio_input') ?? 'native_audio') || 'native_audio'
           : undefined,
@@ -498,6 +516,9 @@ export function RealtimeVoiceSetupPanel({
           : undefined,
         voice_response_policy: selectedIsKame
           ? String(getNested(config, 'voice.realtime.voice_response_policy') ?? 'sentence_cap') || 'sentence_cap'
+          : undefined,
+        fallback_policy: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.fallback_policy') ?? 'legacy_voice') || 'legacy_voice'
           : undefined,
         allow_local_greetings: selectedIsKame
           ? Boolean(getNested(config, 'voice.realtime.routing.allow_local_greetings') ?? true)
