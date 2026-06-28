@@ -5330,13 +5330,78 @@ def test_reference_sidecar_reports_vllm_as_active_kame_reflex_with_asr_evidence_
 
     started, event = asyncio.run(run())
     assert started.type == VoiceEventType.SESSION_STARTED
+    assert started.payload["frontend_model"] == "configured-alias"
+    assert event.type == VoiceEventType.FRONTEND_STATE
+    assert event.payload["status"] == "ready"
+    assert event.payload["provider"] == "vllm"
+    assert event.payload["model"] == "configured-alias"
+    assert event.payload["streaming_stt"] is False
+    assert event.payload["vllm"] is True
+    assert event.payload["interface_audio_input"] == "native_audio"
+
+
+def test_reference_sidecar_uses_session_interface_endpoint_for_kame_reflex():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(vllm_base_url=None, vllm_model=None)
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="google/gemma-4-E2B-it",
+                interface_base_url="http://session-vllm.local:8000/v1",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+
+        started = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+        event = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+        runtime = sidecar.runtime
+        await sidecar.close()
+        return started, event, runtime
+
+    started, event, runtime = asyncio.run(run())
+    assert started.type == VoiceEventType.SESSION_STARTED
     assert event.type == VoiceEventType.FRONTEND_STATE
     assert event.payload["status"] == "ready"
     assert event.payload["provider"] == "vllm"
     assert event.payload["model"] == "google/gemma-4-E2B-it"
-    assert event.payload["streaming_stt"] is False
     assert event.payload["vllm"] is True
-    assert event.payload["interface_audio_input"] == "native_audio"
+    assert runtime.vllm_base_url == "http://session-vllm.local:8000/v1"
+    assert runtime.vllm_model == "google/gemma-4-E2B-it"
+
+
+def test_reference_sidecar_runtime_with_session_config_scopes_endpoint_fields():
+    runtime = ReferenceSidecarRuntimeConfig(
+        vllm_base_url="http://runtime-interface.local:8000/v1",
+        vllm_model="runtime-interface-model",
+        streaming_stt_base_url="http://runtime-asr.local:8767",
+        streaming_stt_model="runtime-asr-model",
+        streaming_tts_base_url="http://runtime-tts.local:8768",
+        streaming_tts_model="runtime-tts-model",
+    )
+    config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        interface_base_url="http://session-interface.local:8000/v1",
+        frontend_model="session-interface-model",
+        asr_base_url="http://session-asr.local:8767",
+        asr_model="session-asr-model",
+        tts_base_url="http://session-tts.local:8768",
+        tts_model="session-tts-model",
+    )
+
+    scoped = reference_sidecar_module._runtime_with_session_config(runtime, config)
+
+    assert scoped.vllm_base_url == "http://session-interface.local:8000/v1"
+    assert scoped.vllm_model == "session-interface-model"
+    assert scoped.streaming_stt_base_url == "http://session-asr.local:8767"
+    assert scoped.streaming_stt_model == "session-asr-model"
+    assert scoped.streaming_tts_base_url == "http://session-tts.local:8768"
+    assert scoped.streaming_tts_model == "session-tts-model"
+    assert runtime.vllm_base_url == "http://runtime-interface.local:8000/v1"
 
 
 def test_reference_sidecar_reports_kame_audio_reflex_fallback_without_vllm():

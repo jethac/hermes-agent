@@ -19,7 +19,7 @@ import re
 import tempfile
 import time
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, AsyncIterator, Callable, Mapping, Optional
 
 from starlette.requests import Request
@@ -155,6 +155,23 @@ class ReferenceSidecarRuntimeConfig:
     input_languages: tuple[str, ...] = ()
     output_languages: tuple[str, ...] = ()
     scripts: tuple[str, ...] = ()
+
+
+def _runtime_with_session_config(
+    runtime: ReferenceSidecarRuntimeConfig,
+    config: RealtimeVoiceSessionConfig,
+) -> ReferenceSidecarRuntimeConfig:
+    """Apply per-session endpoint/model choices to the reference sidecar runtime."""
+
+    return replace(
+        runtime,
+        vllm_base_url=config.interface_base_url or runtime.vllm_base_url,
+        vllm_model=config.frontend_model or runtime.vllm_model,
+        streaming_stt_base_url=config.asr_base_url or runtime.streaming_stt_base_url,
+        streaming_stt_model=config.asr_model or runtime.streaming_stt_model,
+        streaming_tts_base_url=config.tts_base_url or runtime.streaming_tts_base_url,
+        streaming_tts_model=config.tts_model or runtime.streaming_tts_model,
+    )
 
 
 def reference_sidecar_health_payload(
@@ -331,6 +348,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._kame_last_oracle_event: Optional[dict[str, Any]] = None
 
     async def start(self, config: RealtimeVoiceSessionConfig) -> None:
+        self.runtime = _runtime_with_session_config(self.runtime, config)
         self.config = config
         await self._emit(
             VoiceEventType.SESSION_STARTED,
