@@ -3491,8 +3491,13 @@ class DiscordAdapter(BasePlatformAdapter):
         metrics = _discord_voice_latency_metrics(payload.get("metrics"))
         misses = _discord_voice_quality_target_misses(payload.get("quality_target_misses"))
         updates: Dict[str, Any] = {"last_realtime_event": event_type}
-        if metrics:
-            updates["latency_metrics_ms"] = metrics
+        if metrics or event_type == "audio.output.chunk":
+            state = self._voice_state(guild_id)
+            merged_metrics = dict(state.latency_metrics_ms)
+            if event_type == "audio.output.chunk":
+                merged_metrics["audio_output_chunks"] = int(merged_metrics.get("audio_output_chunks", 0)) + 1
+            merged_metrics.update(metrics)
+            updates["latency_metrics_ms"] = merged_metrics
         if misses:
             updates["quality_target_misses"] = misses
             logger.warning(
@@ -3523,11 +3528,6 @@ class DiscordAdapter(BasePlatformAdapter):
             )
         elif not self._voice_state(guild_id).latency_metrics_ms.get("audio_output_chunks"):
             logger.info("Discord realtime voice first audio output chunk (guild=%d)", guild_id)
-        if event_type == "audio.output.chunk":
-            state = self._voice_state(guild_id)
-            state.latency_metrics_ms["audio_output_chunks"] = (
-                int(state.latency_metrics_ms.get("audio_output_chunks", 0)) + 1
-            )
         self._update_voice_state(guild_id, **updates)
         if event_type == "transcript.final":
             self._schedule_realtime_voice_transcript(guild_id, payload)

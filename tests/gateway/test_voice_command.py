@@ -1841,6 +1841,7 @@ class TestDiscordVoiceChannelMethods:
         }
         assert status["last_realtime_event"] == "audio.output.chunk"
         assert status["latency_metrics_ms"] == {
+            "audio_output_chunks": 1,
             "final_transcript_to_first_audio_ms": 812,
             "string_metric": 42,
         }
@@ -1851,6 +1852,25 @@ class TestDiscordVoiceChannelMethods:
                 "target_ms": 500,
             }
         ]
+
+        adapter._handle_realtime_voice_event(
+            111,
+            "barge_in.detected",
+            {
+                "metrics": {
+                    "barge_in_confirmed_to_playback_stopped_ms": 44,
+                },
+            },
+        )
+
+        status = adapter.get_voice_session_status(111)
+        assert status["last_realtime_event"] == "barge_in.detected"
+        assert status["latency_metrics_ms"] == {
+            "audio_output_chunks": 1,
+            "barge_in_confirmed_to_playback_stopped_ms": 44,
+            "final_transcript_to_first_audio_ms": 812,
+            "string_metric": 42,
+        }
 
         adapter._handle_realtime_voice_event(
             111,
