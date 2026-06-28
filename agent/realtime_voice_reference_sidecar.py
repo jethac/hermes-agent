@@ -223,6 +223,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._active_tasks: set[asyncio.Task[None]] = set()
         self._streaming_stt: Optional[RealtimeVoiceSidecarClient] = None
         self._streaming_stt_task: Optional[asyncio.Task[None]] = None
+        self._asr_hypotheses_by_generation: dict[int, dict[str, Any]] = {}
         self._streaming_tts: Optional[RealtimeVoiceSidecarClient] = None
         self._streaming_tts_task: Optional[asyncio.Task[None]] = None
         self._openai_realtime: Any = None
@@ -238,7 +239,12 @@ class ReferenceRealtimeVoiceSidecarSession:
             await self._start_openai_realtime(config)
         if requested_provider in {"gemini_live", "gemini"}:
             await self._start_gemini_live(config)
-        if self._openai_realtime is None and self._gemini_live is None and self.runtime.streaming_stt_base_url:
+        if (
+            self._openai_realtime is None
+            and self._gemini_live is None
+            and self.runtime.streaming_stt_base_url
+            and self._should_start_streaming_stt(config)
+        ):
             await self._start_streaming_stt(config)
         if self._openai_realtime is None and self._gemini_live is None and self.runtime.streaming_tts_base_url:
             await self._start_streaming_tts(config)
@@ -261,6 +267,8 @@ class ReferenceRealtimeVoiceSidecarSession:
                 "vllm": bool(self.runtime.vllm_base_url and self.runtime.vllm_model),
                 "local_stt": self.runtime.local_stt_enabled,
                 "local_tts": self.runtime.local_tts_enabled,
+                "asr_mode": config.asr_mode.value,
+                "interface_audio_input": config.interface_audio_input or "",
             },
         )
 
@@ -373,7 +381,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             await self._send_gemini_live_event(event)
             return
         if self._streaming_stt is not None:
-            if await self._send_streaming_stt_event(event):
+            if await self._send_streaming_stt_event(event) and self._streaming_stt_drives_reflex():
                 return
         if not await self._append_audio_chunk(chunk.data):
             return
@@ -617,6 +625,9 @@ class ReferenceRealtimeVoiceSidecarSession:
         try:
             async for event in self._streaming_stt.events():
                 if event.type in {VoiceEventType.TRANSCRIPT_PARTIAL, VoiceEventType.TRANSCRIPT_FINAL}:
+                    if self._suppress_streaming_stt_transcript_events():
+                        self._record_asr_hypothesis(event)
+                        continue
                     await self._emit(event.type, transcript_metadata_from_payload(event.payload) | {
                         "text": str(event.payload.get("text") or ""),
                         **_numeric_transcript_fields(event.payload),
@@ -826,6 +837,40 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._audio_bytes = 0
         self._audio_input_generation = None
 
+    def _should_start_streaming_stt(self, config: RealtimeVoiceSessionConfig) -> bool:
+        if config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+            return True
+        return config.asr_mode.value in {"fallback", "debug", "speculative"} or (
+            str(config.interface_audio_input or "") == "text_fallback"
+        )
+
+    def _streaming_stt_drives_reflex(self) -> bool:
+        config = self.config
+        if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+            return True
+        return config.asr_mode.value == "fallback" or str(config.interface_audio_input or "") == "text_fallback"
+
+    def _suppress_streaming_stt_transcript_events(self) -> bool:
+        config = self.config
+        if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+            return False
+        return not self._streaming_stt_drives_reflex()
+
+    def _record_asr_hypothesis(self, event: VoiceEvent) -> None:
+        if event.type != VoiceEventType.TRANSCRIPT_FINAL:
+            return
+        generation = _payload_input_generation(event.payload)
+        if generation is None:
+            return
+        text = str(event.payload.get("text") or "").strip()
+        if not text:
+            return
+        hypothesis: dict[str, Any] = {"transcript": text, "transcript_source": "asr"}
+        confidence = _bounded_confidence(event.payload.get("confidence"))
+        if confidence is not None:
+            hypothesis["transcript_confidence"] = confidence
+        self._asr_hypotheses_by_generation[generation] = hypothesis
+
     async def _transcribe(
         self,
         audio: bytes,
@@ -837,6 +882,12 @@ class ReferenceRealtimeVoiceSidecarSession:
             text = str(payload.get("text") or "").strip()
             if text:
                 if input_generation is not None:
+                    asr_hypothesis = self._asr_hypotheses_by_generation.pop(input_generation, None)
+                    if asr_hypothesis and self.config is not None and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+                        payload.setdefault("transcript", asr_hypothesis.get("transcript"))
+                        payload.setdefault("transcript_source", asr_hypothesis.get("transcript_source"))
+                        if "transcript_confidence" in asr_hypothesis:
+                            payload.setdefault("transcript_confidence", asr_hypothesis["transcript_confidence"])
                     payload["input_generation"] = input_generation
                 await self._emit(VoiceEventType.TRANSCRIPT_FINAL, payload)
         except asyncio.CancelledError:
