@@ -195,15 +195,18 @@ def test_session_config_round_trips_kame_fields():
         interface_timeout_seconds=0.6,
         interface_max_audio_seconds=12.0,
         interface_audio_input="native_audio",
+        interface_base_url="http://interface.local:8000/v1",
         asr_mode=RealtimeVoiceASRMode.SPECULATIVE,
         asr_provider="streaming_stt",
         asr_model="nemotron-speech",
+        asr_base_url="http://asr.local:8767",
         preferred_local_oracle_model="gemma-4-26B-A4B-it",
         max_spoken_sentences=4,
         voice_response_policy="full",
         tts_provider="streaming_tts",
         tts_model="sonic-3.5",
         tts_voice="voice-123",
+        tts_base_url="http://tts.local:8768",
         fallback_policy="fail_closed",
     )
 
@@ -216,15 +219,18 @@ def test_session_config_round_trips_kame_fields():
     assert restored.interface_timeout_seconds == 0.6
     assert restored.interface_max_audio_seconds == 12.0
     assert restored.interface_audio_input == "native_audio"
+    assert restored.interface_base_url == "http://interface.local:8000/v1"
     assert restored.asr_mode == RealtimeVoiceASRMode.SPECULATIVE
     assert restored.asr_provider == "streaming_stt"
     assert restored.asr_model == "nemotron-speech"
+    assert restored.asr_base_url == "http://asr.local:8767"
     assert restored.preferred_local_oracle_model == "gemma-4-26B-A4B-it"
     assert restored.max_spoken_sentences == 4
     assert restored.voice_response_policy == "full"
     assert restored.tts_provider == "streaming_tts"
     assert restored.tts_model == "sonic-3.5"
     assert restored.tts_voice == "voice-123"
+    assert restored.tts_base_url == "http://tts.local:8768"
     assert restored.fallback_policy == "fail_closed"
 
 

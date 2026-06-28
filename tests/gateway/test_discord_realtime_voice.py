@@ -285,10 +285,13 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.interface_max_output_tokens == 96
     assert sidecar.started_with.interface_timeout_seconds == 0.6
     assert sidecar.started_with.interface_max_audio_seconds == 14
+    assert sidecar.started_with.interface_base_url == "http://interface.local:8000/v1"
+    assert sidecar.started_with.asr_base_url == "http://asr.local:8767"
     assert sidecar.started_with.oracle_model == "deep-hermes"
     assert sidecar.started_with.oracle_timeout_seconds == 17.5
     assert sidecar.started_with.max_spoken_sentences == 3
     assert sidecar.started_with.voice_response_policy == "brief_summary"
+    assert sidecar.started_with.tts_base_url == "http://tts.local:8768"
     assert sidecar.started_with.metadata["voice_architecture"] == "kame_frontend_oracle"
     assert sidecar.started_with.metadata["frontend_role"] == "low_latency_voice_interface"
     assert sidecar.started_with.metadata["oracle_role"] == "hermes_backend_oracle"
