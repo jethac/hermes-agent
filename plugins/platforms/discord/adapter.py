@@ -250,6 +250,7 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
 
     _discord_set_realtime_default(config, "frontend_provider", interface.get("provider"))
     _discord_set_realtime_default(config, "frontend_model", interface.get("model"))
+    _discord_set_realtime_default(config, "frontend_model", config.get("vllm_model"))
     _discord_set_realtime_default(config, "interface_base_url", interface.get("base_url"))
     _discord_set_realtime_default(config, "interface_base_url", config.get("vllm_base_url"))
     _discord_set_realtime_default(config, "vllm_base_url", config.get("interface_base_url"))

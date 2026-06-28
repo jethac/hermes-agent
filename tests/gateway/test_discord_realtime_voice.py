@@ -236,6 +236,7 @@ def test_discord_realtime_config_maps_gui_streaming_model_aliases(monkeypatch):
                     "enabled": True,
                     "engine": "kame_interface_oracle",
                     "sidecar_base_url": "http://127.0.0.1:8765",
+                    "vllm_model": "google/gemma-4-E2B-it",
                     "streaming_stt_base_url": "http://127.0.0.1:8766",
                     "streaming_stt_model": "nemotron-speech-streaming-0.6b",
                     "streaming_tts_base_url": "http://127.0.0.1:8769",
@@ -255,6 +256,7 @@ def test_discord_realtime_config_maps_gui_streaming_model_aliases(monkeypatch):
     adapter = DiscordAdapter.__new__(DiscordAdapter)
     cfg = adapter._load_realtime_voice_config()
 
+    assert cfg["frontend_model"] == "google/gemma-4-E2B-it"
     assert cfg["asr_base_url"] == "http://127.0.0.1:8766"
     assert cfg["asr_model"] == "nemotron-speech-streaming-0.6b"
     assert cfg["tts_base_url"] == "http://127.0.0.1:8769"

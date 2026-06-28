@@ -14742,6 +14742,7 @@ def _normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, A
 
     _set_realtime_voice_default(config, "frontend_provider", interface.get("provider"))
     _set_realtime_voice_default(config, "frontend_model", interface.get("model"))
+    _set_realtime_voice_default(config, "frontend_model", config.get("vllm_model"))
     _set_realtime_voice_default(config, "interface_base_url", interface.get("base_url"))
     _set_realtime_voice_default(config, "interface_api_key_env", interface.get("api_key_env"))
     _set_realtime_voice_default(config, "interface_base_url", config.get("vllm_base_url"))
@@ -14773,6 +14774,7 @@ def _normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, A
 
     _set_realtime_voice_default(config, "asr_provider", asr.get("provider"))
     _set_realtime_voice_default(config, "asr_model", asr.get("model"))
+    _set_realtime_voice_default(config, "asr_model", config.get("streaming_stt_model"))
     _set_realtime_voice_default(config, "asr_base_url", asr.get("base_url"))
     _set_realtime_voice_default(config, "asr_base_url", config.get("streaming_stt_base_url"))
     _set_realtime_voice_default(config, "streaming_stt_base_url", config.get("asr_base_url"))
@@ -14781,7 +14783,9 @@ def _normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, A
 
     _set_realtime_voice_default(config, "tts_provider", tts.get("provider"))
     _set_realtime_voice_default(config, "tts_model", tts.get("model"))
+    _set_realtime_voice_default(config, "tts_model", config.get("streaming_tts_model"))
     _set_realtime_voice_default(config, "tts_voice", tts.get("voice"))
+    _set_realtime_voice_default(config, "tts_voice", config.get("streaming_tts_voice"))
     _set_realtime_voice_default(config, "tts_base_url", tts.get("base_url"))
     _set_realtime_voice_default(config, "tts_base_url", config.get("streaming_tts_base_url"))
     _set_realtime_voice_default(config, "streaming_tts_base_url", config.get("tts_base_url"))

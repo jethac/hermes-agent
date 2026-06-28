@@ -6867,6 +6867,45 @@ class TestRealtimeVoiceWebSocket:
         assert payload["discord"]["bot_token_present"] is True
         assert payload["discord"]["sidecar_base_url"] == "http://127.0.0.1:8765"
 
+    def test_realtime_voice_setup_normalizes_gui_kame_model_aliases(self, monkeypatch):
+        from hermes_cli.config import load_config, save_config
+
+        cfg = load_config()
+        cfg.setdefault("voice", {}).setdefault("realtime", {}).update(
+            {
+                "enabled": True,
+                "engine": "kame_interface_oracle",
+                "frontend_provider": "gemma4",
+                "interface_base_url": "http://spark.local:8000/v1",
+                "vllm_model": "google/gemma-4-E2B-it",
+                "streaming_stt_base_url": "http://127.0.0.1:8767",
+                "streaming_stt_model": "nemotron-speech-streaming-0.6b",
+                "streaming_tts_base_url": "http://127.0.0.1:8768",
+                "streaming_tts_model": "magpie-local-streaming-tts",
+                "streaming_tts_voice": "spark-voice-1",
+            }
+        )
+        save_config(cfg)
+        monkeypatch.setattr(self.ws_module, "_realtime_voice_sidecar_health_probe", lambda *_args, **_kwargs: (False, None))
+
+        response = self.client.get("/api/voice/realtime/setup")
+        assert response.status_code == 200
+        payload = response.json()
+        kame = next(provider for provider in payload["providers"] if provider["id"] == "kame")
+        nemotron = next(provider for provider in payload["providers"] if provider["id"] == "nemotron_speech")
+        magpie = next(provider for provider in payload["providers"] if provider["id"] == "magpie_tts")
+
+        assert payload["active_model"] == "google/gemma-4-E2B-it"
+        assert payload["status"]["frontend_model"] == "google/gemma-4-E2B-it"
+        assert kame["model"] == "google/gemma-4-E2B-it"
+        assert payload["config"]["interface"]["model"] == "google/gemma-4-E2B-it"
+        assert payload["config"]["asr"]["model"] == "nemotron-speech-streaming-0.6b"
+        assert payload["config"]["tts"]["model"] == "magpie-local-streaming-tts"
+        assert payload["config"]["tts"]["voice"] == "spark-voice-1"
+        assert nemotron["model"] == "nemotron-speech-streaming-0.6b"
+        assert magpie["model"] == "magpie-local-streaming-tts"
+        assert magpie["voice"] == "spark-voice-1"
+
     def test_realtime_voice_apply_profile_sets_provider_and_discord_overlay(self):
         response = self.client.post(
             "/api/voice/realtime/profile",
