@@ -35,6 +35,7 @@ def test_dgx_spark_eval_script_generates_full_kame_launch_pack():
     assert "DGX_SPARK_LOCAL_VOICE_STT_MODEL" in text
     assert "DGX_SPARK_LOCAL_VOICE_TTS_MODEL" in text
     assert "--preset nvidia_speech" in text
+    assert "--provider local_speech" in text
     assert "Full KAME stack pack: $KAME_STACK_DIR" in text
     assert "python -m hermes_cli.realtime_voice_oracle_probe" in text
     assert "--output \"$ARTIFACT_DIR/oracle-gemma4-probe.json\"" in text

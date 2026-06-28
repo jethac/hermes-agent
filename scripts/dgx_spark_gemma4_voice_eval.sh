@@ -189,6 +189,7 @@ if [[ -n "${DGX_SPARK_LOCAL_VOICE_BRIDGE_URL:-}" ]]; then
     --production-evidence-report "$ARTIFACT_DIR/local-speech-alpha"
   run env HERMES_HOME="$TRACK_C_HOME" uv run python -m hermes_cli.realtime_voice_alpha_evidence \
     --runs "${DGX_SPARK_EVAL_RUNS:-3}" \
+    --provider local_speech \
     --output-dir "$ARTIFACT_DIR/local-speech-alpha" \
     --prefix local-speech \
     --overwrite

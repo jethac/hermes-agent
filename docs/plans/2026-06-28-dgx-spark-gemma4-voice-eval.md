@@ -278,6 +278,7 @@ HERMES_HOME=<artifact-home> \
 HERMES_HOME=<artifact-home> \
   uv run python -m hermes_cli.realtime_voice_alpha_evidence \
   --runs 3 \
+  --provider local_speech \
   --output-dir <artifacts>/local-speech-alpha \
   --prefix local-speech \
   --overwrite
