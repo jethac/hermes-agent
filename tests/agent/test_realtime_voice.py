@@ -4712,6 +4712,43 @@ def test_reference_sidecar_health_uses_streaming_tts_bridge_language_evidence_ov
     assert english_only["capabilities"]["output_languages"] == ["en"]
 
 
+def test_reference_sidecar_health_verifies_vllm_audio_frontend_after_models_health():
+    runtime = ReferenceSidecarRuntimeConfig(
+        vllm_base_url="http://voice.local:8000/v1",
+        vllm_model="google/gemma-4-E2B-it",
+        local_stt_enabled=False,
+    )
+
+    unverified = reference_sidecar_health_payload(
+        runtime,
+        vllm_health_checked=True,
+        vllm_health={"data": [{"id": "different-model"}]},
+    )
+    verified = reference_sidecar_health_payload(
+        runtime,
+        vllm_health_checked=True,
+        vllm_health={"data": [{"id": "google/gemma-4-E2B-it"}]},
+    )
+
+    assert unverified["frontend"]["provider"] == "local"
+    assert unverified["frontend"]["vllm_audio_frontend"] == {
+        "configured": True,
+        "healthy": False,
+        "model": "google/gemma-4-E2B-it",
+    }
+    assert unverified["capabilities"]["vllm_audio_frontend"] is False
+    assert unverified["capabilities"]["vllm_audio_frontend_configured"] is True
+    assert unverified["capabilities"]["utterance_stt"] is False
+    assert verified["frontend"]["provider"] == "vllm"
+    assert verified["frontend"]["vllm_audio_frontend"] == {
+        "configured": True,
+        "healthy": True,
+        "model": "google/gemma-4-E2B-it",
+    }
+    assert verified["capabilities"]["vllm_audio_frontend"] is True
+    assert verified["capabilities"]["utterance_stt"] is True
+
+
 def test_reference_sidecar_health_payload_is_sanitized():
     payload = reference_sidecar_health_payload(
         ReferenceSidecarRuntimeConfig(
@@ -4731,6 +4768,11 @@ def test_reference_sidecar_health_payload_is_sanitized():
         "frontend": {
             "provider": "vllm",
             "model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+            "vllm_audio_frontend": {
+                "configured": True,
+                "healthy": True,
+                "model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+            },
             "languages": ["ja", "en-US", "ko"],
             "scripts": ["Jpan", "Latn"],
         },
@@ -4740,6 +4782,7 @@ def test_reference_sidecar_health_payload_is_sanitized():
             "tts": True,
             "native_s2s": False,
             "vllm_audio_frontend": True,
+            "vllm_audio_frontend_configured": True,
             "input_languages": ["ja", "en-US"],
             "output_languages": ["ja", "ko"],
             "scripts": ["Jpan", "Latn"],
@@ -5047,8 +5090,13 @@ def test_reference_sidecar_bridges_streaming_tts_audio(monkeypatch):
     asyncio.run(run())
 
 
-def test_reference_sidecar_health_requires_bearer_token():
+def test_reference_sidecar_health_requires_bearer_token(monkeypatch):
     from fastapi.testclient import TestClient
+
+    async def fake_probe_vllm_health(runtime):
+        return {"data": [{"id": "google/gemma-4-E4B-it-qat-w4a16-ct"}]}
+
+    monkeypatch.setattr(reference_sidecar_module, "_probe_vllm_health", fake_probe_vllm_health)
 
     client = TestClient(
         create_reference_sidecar_app(

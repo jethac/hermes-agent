@@ -92,10 +92,15 @@ class ReferenceSidecarRuntimeConfig:
 def reference_sidecar_health_payload(
     runtime: ReferenceSidecarRuntimeConfig,
     *,
+    vllm_health: Optional[Mapping[str, Any]] = None,
+    vllm_health_checked: bool = False,
     streaming_stt_health: Optional[Mapping[str, Any]] = None,
     streaming_tts_health: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
-    vllm_enabled = bool(runtime.vllm_base_url and runtime.vllm_model)
+    vllm_configured = bool(runtime.vllm_base_url and runtime.vllm_model)
+    vllm_enabled = vllm_configured and (
+        not vllm_health_checked or _health_supports_vllm_model(vllm_health, runtime.vllm_model)
+    )
     streaming_stt_configured = bool(runtime.streaming_stt_base_url)
     streaming_stt_ready = _health_supports_streaming_stt(streaming_stt_health)
     streaming_tts_configured = bool(runtime.streaming_tts_base_url)
@@ -157,6 +162,13 @@ def reference_sidecar_health_payload(
             "configured": True,
             "healthy": streaming_tts_ready,
             "model": runtime.streaming_tts_model or "",
+        }
+    if vllm_configured:
+        payload["capabilities"]["vllm_audio_frontend_configured"] = True
+        payload["frontend"]["vllm_audio_frontend"] = {
+            "configured": True,
+            "healthy": vllm_enabled,
+            "model": runtime.vllm_model or "",
         }
     if tts_model_languages:
         payload["frontend"]["tts_model_languages"] = tts_model_languages
@@ -1467,10 +1479,13 @@ def create_reference_sidecar_app(runtime: Optional[ReferenceSidecarRuntimeConfig
     async def health(request: Request):
         if not _authorized(request.headers, runtime.auth_token):
             raise HTTPException(status_code=401, detail="unauthorized")
+        vllm_health = await _probe_vllm_health(runtime)
         streaming_stt_health = await _probe_streaming_stt_health(runtime)
         streaming_tts_health = await _probe_streaming_tts_health(runtime)
         return reference_sidecar_health_payload(
             runtime,
+            vllm_health=vllm_health,
+            vllm_health_checked=bool(runtime.vllm_base_url and runtime.vllm_model),
             streaming_stt_health=streaming_stt_health,
             streaming_tts_health=streaming_tts_health,
         )
@@ -1598,6 +1613,12 @@ def _authorized(headers: Mapping[str, str], token: Optional[str]) -> bool:
     return headers.get("authorization") == f"Bearer {token}"
 
 
+async def _probe_vllm_health(runtime: ReferenceSidecarRuntimeConfig) -> Optional[Mapping[str, Any]]:
+    if not runtime.vllm_base_url or not runtime.vllm_model:
+        return None
+    return await asyncio.to_thread(_probe_vllm_health_sync, runtime)
+
+
 async def _probe_streaming_stt_health(runtime: ReferenceSidecarRuntimeConfig) -> Optional[Mapping[str, Any]]:
     if not runtime.streaming_stt_base_url:
         return None
@@ -1646,6 +1667,38 @@ def _probe_streaming_tts_health_sync(runtime: ReferenceSidecarRuntimeConfig) -> 
     except Exception:
         return None
     return data if isinstance(data, Mapping) else None
+
+
+def _probe_vllm_health_sync(runtime: ReferenceSidecarRuntimeConfig) -> Optional[Mapping[str, Any]]:
+    if not runtime.vllm_base_url or not runtime.vllm_model:
+        return None
+    url = f"{runtime.vllm_base_url.rstrip('/')}/models"
+    request = urllib.request.Request(url, headers={"Accept": "application/json"}, method="GET")
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=min(max(0.1, float(runtime.vllm_timeout_seconds or 1.0)), 2.0),
+        ) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, Mapping) else None
+
+
+def _health_supports_vllm_model(health: Optional[Mapping[str, Any]], model: Optional[str]) -> bool:
+    if not isinstance(health, Mapping):
+        return False
+    expected = str(model or "").strip()
+    data = health.get("data")
+    if not isinstance(data, list):
+        return False
+    for item in data:
+        if not isinstance(item, Mapping):
+            continue
+        model_id = str(item.get("id") or item.get("root") or "").strip()
+        if expected and model_id == expected:
+            return True
+    return False
 
 
 def _health_supports_streaming_stt(health: Optional[Mapping[str, Any]]) -> bool:
