@@ -13,6 +13,7 @@ from typing import Any, AsyncIterator, List, Mapping, Optional
 
 from agent.realtime_voice import (
     AudioChunk,
+    RealtimeVoiceASRMode,
     RealtimeVoiceEngine,
     RealtimeVoiceEngineKind,
     RealtimeVoiceSessionConfig,
@@ -616,6 +617,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         payload.update(metadata)
         if oracle_payload is not None:
             payload.update(dict(oracle_payload))
+        if config.asr_mode == RealtimeVoiceASRMode.DISABLED:
+            for key in (
+                "asr_transcript",
+                "asr_transcript_source",
+                "asr_transcript_confidence",
+                "oracle_verbatim_transcript",
+                "oracle_verbatim_transcript_source",
+                "oracle_verbatim_transcript_confidence",
+            ):
+                payload.pop(key, None)
         if cancellation_token:
             payload.setdefault("cancellation_token", cancellation_token)
         payload.setdefault("voice_response_policy", _voice_response_policy(config))

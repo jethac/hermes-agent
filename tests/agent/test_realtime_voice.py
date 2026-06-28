@@ -921,6 +921,76 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_drops_asr_evidence_when_asr_mode_disabled(monkeypatch):
+    class StructuredOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "Done."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = StructuredOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.DISABLED,
+                metadata={"transport": "discord_voice", "user_id": "42"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "text": "reflex wording",
+                    "intent": "Reflex intent.",
+                    "intent_source": "reflex_audio",
+                    "route": "oracle_direct",
+                    "transcript": "reflex wording",
+                    "transcript_source": "reflex_audio",
+                    "asr_transcript": "literal ASR should not be used",
+                    "asr_transcript_source": "asr",
+                    "asr_transcript_confidence": 0.99,
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+        assert len(oracle.requests) == 1
+        request = oracle.requests[0]
+        assert request.asr_transcript == ""
+        assert request.asr_transcript_source == ""
+        assert request.asr_transcript_confidence is None
+        assert request.oracle_text == "reflex wording"
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
+        oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
+        assert "kame_asr_transcript" not in final.payload
+        assert "asr_transcript" not in intent.payload
+        assert "asr_transcript" not in oracle_request.payload
+        assert oracle_request.payload["text"] == "reflex wording"
+
+    asyncio.run(run())
+
+
 def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
     class StructuredOracle:
         def __init__(self):
