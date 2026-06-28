@@ -573,6 +573,7 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     assert "Verbatim transcript evidence (asr): find the node" in prompt
     assert "tool arguments" in prompt
     assert "The voice reflex already told the user: One moment." in prompt
+    assert "Requested response style: spoken=true; avoid automatic follow-up offers." in prompt
 
 
 def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
@@ -643,6 +644,11 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.transcript_confidence == 0.73
         assert request.source == "discord_voice"
         assert request.user_id == "42"
+        assert request.requested_response_style == {
+            "spoken": True,
+            "max_sentences": 2,
+            "allow_followup_offer": False,
+        }
         assert request.cancellation_token == "voice-123:1:cancel"
         final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
         intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
@@ -658,6 +664,11 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert intent.payload["cancellation_token"] == "voice-123:1:cancel"
         assert oracle_request.payload["turn_id"] == "voice-123:1"
         assert oracle_request.payload["text"] == "find the node from yesterday's meeting"
+        assert oracle_request.payload["requested_response_style"] == {
+            "spoken": True,
+            "max_sentences": 2,
+            "allow_followup_offer": False,
+        }
         assert oracle_request.payload["cancellation_token"] == "voice-123:1:cancel"
         assert interface_commit.payload["text"] == "Done."
         assert interface_commit.payload["cancellation_token"] == "voice-123:1:cancel"
@@ -914,6 +925,7 @@ def test_kame_engine_caps_oracle_speech_to_configured_sentence_budget(monkeypatc
         partials = [event.payload["text"] for event in seen if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL]
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         assert oracle.requests[0].max_spoken_sentences == 2
+        assert oracle.requests[0].requested_response_style["max_sentences"] == 2
         assert partials == ["First sentence.", "Second sentence."]
         assert spoken == ["First sentence.", "Second sentence."]
         assert commit.payload["text"] == "First sentence. Second sentence."

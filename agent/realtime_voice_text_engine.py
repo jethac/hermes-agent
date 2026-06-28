@@ -1234,6 +1234,7 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         "playback_generation": playback_generation,
         "source": request.source,
         "transcript_source": request.transcript_source,
+        "requested_response_style": dict(request.requested_response_style),
     }
     if request.user_id:
         payload["user_id"] = request.user_id
@@ -1268,6 +1269,8 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
         payload["transcript_confidence"] = metadata.get("kame_transcript_confidence")
     if metadata.get("kame_cancellation_token"):
         payload["cancellation_token"] = str(metadata.get("kame_cancellation_token"))
+    if isinstance(metadata.get("kame_requested_response_style"), Mapping):
+        payload["requested_response_style"] = dict(metadata.get("kame_requested_response_style") or {})
     return {key: value for key, value in payload.items() if value != ""}
 
 

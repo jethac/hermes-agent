@@ -187,6 +187,7 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     intent_source = _metadata_text(metadata.get("kame_intent_source"))
     interface_already_said = _metadata_text(metadata.get("kame_interface_already_said"))
     summary = _metadata_text(metadata.get("kame_conversation_summary"))
+    response_style = _metadata_response_style(metadata.get("kame_requested_response_style"))
 
     parts = [
         "KAME request: the realtime reflex has already handled live turn-taking "
@@ -204,9 +205,13 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
         parts.append(f"The voice reflex already told the user: {interface_already_said}")
     if summary:
         parts.append(f"Ephemeral live voice summary: {summary}")
-    max_sentences = _metadata_positive_int(metadata.get("max_spoken_sentences"))
+    max_sentences = response_style.get("max_sentences") or _metadata_positive_int(metadata.get("max_spoken_sentences"))
     if max_sentences is not None:
         parts.append(f"Keep spoken output to at most {max_sentences} sentence(s) unless the task requires more.")
+    if response_style:
+        spoken = "true" if response_style.get("spoken", True) else "false"
+        followups = "allowed" if response_style.get("allow_followup_offer") else "avoid automatic follow-up offers"
+        parts.append(f"Requested response style: spoken={spoken}; {followups}.")
     return " ".join(parts)
 
 
@@ -242,6 +247,22 @@ def _metadata_positive_int(value: object) -> Optional[int]:
         parsed = int(value)
         return parsed if parsed > 0 else None
     return None
+
+
+def _metadata_response_style(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        return {}
+    style: dict[str, object] = {}
+    spoken = value.get("spoken")
+    if isinstance(spoken, bool):
+        style["spoken"] = spoken
+    max_sentences = _metadata_positive_int(value.get("max_sentences"))
+    if max_sentences is not None:
+        style["max_sentences"] = max_sentences
+    followups = value.get("allow_followup_offer")
+    if isinstance(followups, bool):
+        style["allow_followup_offer"] = followups
+    return style
 
 
 class NullRealtimeOracle:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Mapping, Optional
 
@@ -126,6 +126,7 @@ class KameOracleRequest:
     interface_already_said: str = ""
     conversation_summary: str = ""
     max_spoken_sentences: int = 2
+    requested_response_style: Mapping[str, Any] = field(default_factory=dict)
     cancellation_token: str = ""
 
     @property
@@ -135,6 +136,10 @@ class KameOracleRequest:
         return (self.transcript or self.intent).strip()
 
     def to_metadata(self) -> dict[str, Any]:
+        response_style = _response_style(
+            self.requested_response_style,
+            max_sentences=self.max_spoken_sentences,
+        )
         metadata: dict[str, Any] = {
             "voice_architecture": "kame_frontend_oracle",
             "kame_turn_id": self.turn_id,
@@ -148,6 +153,7 @@ class KameOracleRequest:
             "kame_mode": self.mode,
             "kame_urgency": self.urgency,
             "max_spoken_sentences": self.max_spoken_sentences,
+            "kame_requested_response_style": response_style,
         }
         if self.user_id:
             metadata["kame_user_id"] = self.user_id
@@ -186,6 +192,13 @@ class KameOracleRequest:
             or _optional_text(payload.get("clarification"))
             or _optional_text(payload.get("interface_reply"))
         )
+        requested_response_style = _response_style(
+            payload.get("requested_response_style"),
+            max_sentences=_positive_int(
+                payload.get("max_spoken_sentences"),
+                default=default_max_spoken_sentences,
+            ),
+        )
         return cls(
             session_id=session_id,
             turn_id=_optional_text(payload.get("turn_id")) or turn_id,
@@ -203,9 +216,12 @@ class KameOracleRequest:
             interface_already_said=_optional_text(payload.get("interface_already_said")) or "",
             conversation_summary=_optional_text(payload.get("conversation_summary")) or "",
             max_spoken_sentences=_positive_int(
-                payload.get("max_spoken_sentences"),
+                payload.get("max_spoken_sentences")
+                if payload.get("max_spoken_sentences") is not None
+                else requested_response_style.get("max_sentences"),
                 default=default_max_spoken_sentences,
             ),
+            requested_response_style=requested_response_style,
             cancellation_token=_optional_text(payload.get("cancellation_token")) or "",
         )
 
@@ -253,3 +269,24 @@ def _positive_int(value: Any, *, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
+
+
+def _response_style(value: Any, *, max_sentences: int) -> dict[str, Any]:
+    raw = dict(value) if isinstance(value, Mapping) else {}
+    return {
+        "spoken": _bool(raw.get("spoken"), default=True),
+        "max_sentences": _positive_int(raw.get("max_sentences"), default=max_sentences),
+        "allow_followup_offer": _bool(raw.get("allow_followup_offer"), default=False),
+    }
+
+
+def _bool(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return default
