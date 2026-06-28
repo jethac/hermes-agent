@@ -722,6 +722,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_KAME_INTERFACE_MODEL:={roles["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
 : "${{HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS:={roles["interface"]["max_audio_seconds"]}}}"
+: "${{HERMES_KAME_ASR_MODE:={manifest["engine"]["asr_mode"]}}}"
 : "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={roles["oracle"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={roles["asr"]["base_url"]}}}"
@@ -756,7 +757,7 @@ cd "$HERMES_REPO_DIR"
   --tts-model "$HERMES_VOICE_STREAMING_TTS_MODEL" \\
   --tts-module "$HERMES_DGX_SPARK_TTS_MODULE" \\
   --tts-adapter "$HERMES_DGX_SPARK_TTS_ADAPTER" \\
-  --asr-mode {manifest["engine"]["asr_mode"]} \\
+  --asr-mode "$HERMES_KAME_ASR_MODE" \\
   --vllm-image {manifest["images"]["vllm"]} \\
   --hermes-image {manifest["images"]["hermes"]} \\
   --model-cache-dir {manifest["volumes"]["model_cache_dir"]} \\
@@ -781,6 +782,7 @@ fi
 : "${{HERMES_KAME_INTERFACE_MODEL:={roles["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
 : "${{HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS:={roles["interface"]["max_audio_seconds"]}}}"
+: "${{HERMES_KAME_ASR_MODE:={manifest["engine"]["asr_mode"]}}}"
 : "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
 : "${{HERMES_KAME_ORACLE_BASE_URL:={roles["oracle"]["base_url"]}}}"
 : "${{HERMES_VOICE_STREAMING_STT_BASE_URL:={roles["asr"]["base_url"]}}}"
@@ -815,7 +817,7 @@ cd "$HERMES_REPO_DIR"
   --tts-model "$HERMES_VOICE_STREAMING_TTS_MODEL" \\
   --tts-module "$HERMES_DGX_SPARK_TTS_MODULE" \\
   --tts-adapter "$HERMES_DGX_SPARK_TTS_ADAPTER" \\
-  --asr-mode {manifest["engine"]["asr_mode"]} \\
+  --asr-mode "$HERMES_KAME_ASR_MODE" \\
   --vllm-image {manifest["images"]["vllm"]} \\
   --hermes-image {manifest["images"]["hermes"]} \\
   --model-cache-dir {manifest["volumes"]["model_cache_dir"]} \\

@@ -422,6 +422,8 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in preflight
     assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in preflight
     assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in preflight
+    assert ': "${HERMES_KAME_ASR_MODE:=on_escalation}"' in preflight
+    assert "--asr-mode \"$HERMES_KAME_ASR_MODE\"" in preflight
     assert "--asr-module \"$HERMES_DGX_SPARK_ASR_MODULE\"" in preflight
     assert "--asr-adapter \"$HERMES_DGX_SPARK_ASR_ADAPTER\"" in preflight
     assert "--tts-module \"$HERMES_DGX_SPARK_TTS_MODULE\"" in preflight
@@ -432,6 +434,8 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in validate_benchmark
     assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in validate_benchmark
     assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in validate_benchmark
+    assert ': "${HERMES_KAME_ASR_MODE:=on_escalation}"' in validate_benchmark
+    assert "--asr-mode \"$HERMES_KAME_ASR_MODE\"" in validate_benchmark
     assert "--asr-model \"$HERMES_VOICE_STREAMING_STT_MODEL\"" in validate_benchmark
     assert "--tts-model \"$HERMES_VOICE_STREAMING_TTS_MODEL\"" in validate_benchmark
     assert [
