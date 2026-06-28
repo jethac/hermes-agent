@@ -3170,10 +3170,26 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.pre_roll_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.require_live_like"]["type"] == "boolean"
         assert "streaming STT/TTS" in CONFIG_SCHEMA["voice.realtime.require_live_like"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.frontend_provider"]["type"] == "string"
+        assert "interface provider" in CONFIG_SCHEMA["voice.realtime.frontend_provider"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.frontend_model"]["type"] == "string"
+        assert "interface model" in CONFIG_SCHEMA["voice.realtime.frontend_model"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.vllm_base_url"]["type"] == "string"
+        assert "vLLM base URL" in CONFIG_SCHEMA["voice.realtime.vllm_base_url"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.vllm_model"]["type"] == "string"
+        assert "audio reflex model" in CONFIG_SCHEMA["voice.realtime.vllm_model"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.oracle_timeout_seconds"]["type"] == "number"
         assert "oracle voice response" in CONFIG_SCHEMA["voice.realtime.oracle_timeout_seconds"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.max_spoken_sentences"]["type"] == "number"
         assert "Maximum spoken sentences" in CONFIG_SCHEMA["voice.realtime.max_spoken_sentences"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.asr_provider"]["type"] == "string"
+        assert "oracle-verbatim evidence" in CONFIG_SCHEMA["voice.realtime.asr_provider"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.asr_model"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.tts_provider"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.tts_model"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.tts_voice"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.fallback_policy"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.fallback_policy"]["options"] == ["legacy_voice", "text_only", "fail_closed"]
         assert CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["type"] == "string"
         assert "smoke report" in CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.production_evidence_min_runs"]["type"] == "number"
@@ -3199,6 +3215,7 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.openai_realtime_base_url"]["type"] == "string"
         assert CONFIG_SCHEMA["voice.realtime.openai_realtime_voice"]["type"] == "string"
         assert CONFIG_SCHEMA["voice.realtime.openai_realtime_transcription_model"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.streaming_tts_voice"]["type"] == "string"
         assert CONFIG_SCHEMA["voice.realtime.gemini_live_api_key_env"]["type"] == "string"
         assert "secrets stay outside config" in CONFIG_SCHEMA["voice.realtime.gemini_live_api_key_env"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.gemini_live_base_url"]["type"] == "string"
@@ -6820,9 +6837,15 @@ class TestRealtimeVoiceWebSocket:
                         "engine": "text_oracle_tts",
                         "frontend_provider": "gemma",
                         "frontend_model": "gemma-4-e4b",
+                        "asr_provider": "streaming_stt",
+                        "asr_model": "nemotron-speech",
                         "oracle_model": "deep-hermes",
                         "oracle_timeout_seconds": 18,
                         "max_spoken_sentences": 3,
+                        "tts_provider": "cartesia",
+                        "tts_model": "sonic-3.5",
+                        "tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+                        "fallback_policy": "fail_closed",
                         "sidecar_base_url": "http://voice.local:8080",
                         "sidecar_token_env": "HERMES_VOICE_SIDECAR_TOKEN",
                         "sidecar_connect_timeout_seconds": 2.5,
@@ -6840,9 +6863,15 @@ class TestRealtimeVoiceWebSocket:
         assert config.session_id == "voice-123"
         assert config.frontend_provider == "gemma"
         assert config.frontend_model == "gemma-4-e4b"
+        assert config.asr_provider == "streaming_stt"
+        assert config.asr_model == "nemotron-speech"
         assert config.oracle_model == "deep-hermes"
         assert config.oracle_timeout_seconds == 18.0
         assert config.max_spoken_sentences == 3
+        assert config.tts_provider == "cartesia"
+        assert config.tts_model == "sonic-3.5"
+        assert config.tts_voice == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
+        assert config.fallback_policy == "fail_closed"
         assert config.sidecar_base_url == "http://voice.local:8080"
         assert config.sidecar_token == "secret-token"
         assert config.sidecar_connect_timeout_seconds == 2.5
@@ -6854,9 +6883,15 @@ class TestRealtimeVoiceWebSocket:
         assert config.metadata["oracle_role"] == "hermes_backend_oracle"
         assert config.metadata["frontend_provider"] == "gemma"
         assert config.metadata["frontend_model"] == "gemma-4-e4b"
+        assert config.metadata["asr_provider"] == "streaming_stt"
+        assert config.metadata["asr_model"] == "nemotron-speech"
         assert config.metadata["oracle_model"] == "deep-hermes"
         assert config.metadata["oracle_timeout_seconds"] == 18.0
         assert config.metadata["max_spoken_sentences"] == 3
+        assert config.metadata["tts_provider"] == "cartesia"
+        assert config.metadata["tts_model"] == "sonic-3.5"
+        assert config.metadata["tts_voice"] == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
+        assert config.metadata["fallback_policy"] == "fail_closed"
         assert config.metadata["language_support"] == {
             "production_languages": ["en", "ja"],
             "production_scripts": ["Latn", "Jpan"],
@@ -7417,9 +7452,15 @@ class TestRealtimeVoiceWebSocket:
                         "frontend_model": "gemma-4-E2B-it",
                         "interface_audio_input": "native_audio",
                         "asr_mode": "on_escalation",
+                        "asr_provider": "streaming_stt",
+                        "asr_model": "nemotron-speech",
                         "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
                         "oracle_timeout_seconds": 42,
                         "max_spoken_sentences": 4,
+                        "tts_provider": "cartesia",
+                        "tts_model": "sonic-3.5",
+                        "tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+                        "fallback_policy": "legacy_voice",
                         "require_live_like": True,
                         "sidecar_base_url": "http://voice.example.test:8765",
                     }
@@ -7434,9 +7475,15 @@ class TestRealtimeVoiceWebSocket:
         assert body["unavailable_reason"] is None
         assert body["interface_audio_input"] == "native_audio"
         assert body["asr_mode"] == "on_escalation"
+        assert body["asr_provider"] == "streaming_stt"
+        assert body["asr_model"] == "nemotron-speech"
         assert body["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
         assert body["oracle_timeout_seconds"] == 42.0
         assert body["max_spoken_sentences"] == 4
+        assert body["tts_provider"] == "cartesia"
+        assert body["tts_model"] == "sonic-3.5"
+        assert body["tts_voice"] == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
+        assert body["fallback_policy"] == "legacy_voice"
         assert body["conversation_quality"]["mode"] == "kame_reflex"
         assert body["conversation_quality"]["reason"] == "audio_reflex_tts"
         assert body["conversation_quality"]["live_like"] is True
@@ -7461,9 +7508,15 @@ class TestRealtimeVoiceWebSocket:
             "audio_reflex": True,
             "asr_mode": "on_escalation",
             "interface_audio_input": "native_audio",
+            "asr_provider": "streaming_stt",
+            "asr_model": "nemotron-speech",
             "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
             "oracle_timeout_seconds": 42.0,
             "max_spoken_sentences": 4,
+            "tts_provider": "cartesia",
+            "tts_model": "sonic-3.5",
+            "tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+            "fallback_policy": "legacy_voice",
             "routing": body["routing"],
             "metrics": body["metrics"],
         }

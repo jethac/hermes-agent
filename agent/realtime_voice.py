@@ -117,11 +117,16 @@ class RealtimeVoiceSessionConfig:
     frontend_model: Optional[str] = None
     interface_audio_input: Optional[str] = None
     asr_mode: RealtimeVoiceASRMode = RealtimeVoiceASRMode.ON_ESCALATION
+    asr_provider: Optional[str] = None
+    asr_model: Optional[str] = None
     preferred_local_oracle_model: Optional[str] = None
     oracle_model: Optional[str] = None
     oracle_timeout_seconds: float = 60.0
     max_spoken_sentences: int = 2
     tts_provider: Optional[str] = None
+    tts_model: Optional[str] = None
+    tts_voice: Optional[str] = None
+    fallback_policy: Optional[str] = None
     sidecar_base_url: Optional[str] = None
     sidecar_token: Optional[str] = None
     sidecar_connect_timeout_seconds: float = 10.0
@@ -152,11 +157,16 @@ class RealtimeVoiceSessionConfig:
             "frontend_model": self.frontend_model,
             "interface_audio_input": self.interface_audio_input,
             "asr_mode": self.asr_mode.value,
+            "asr_provider": self.asr_provider,
+            "asr_model": self.asr_model,
             "preferred_local_oracle_model": self.preferred_local_oracle_model,
             "oracle_model": self.oracle_model,
             "oracle_timeout_seconds": self.oracle_timeout_seconds,
             "max_spoken_sentences": self.max_spoken_sentences,
             "tts_provider": self.tts_provider,
+            "tts_model": self.tts_model,
+            "tts_voice": self.tts_voice,
+            "fallback_policy": self.fallback_policy,
             "sidecar_base_url": sidecar_base_url,
             "sidecar_token": sidecar_token,
             "sidecar_connect_timeout_seconds": self.sidecar_connect_timeout_seconds,
@@ -182,6 +192,8 @@ class RealtimeVoiceSessionConfig:
             frontend_model=_optional_str(payload.get("frontend_model")),
             interface_audio_input=_optional_str(payload.get("interface_audio_input")),
             asr_mode=_asr_mode(payload.get("asr_mode")),
+            asr_provider=_optional_str(payload.get("asr_provider")),
+            asr_model=_optional_str(payload.get("asr_model")),
             preferred_local_oracle_model=_optional_str(payload.get("preferred_local_oracle_model")),
             oracle_model=_optional_str(payload.get("oracle_model")),
             oracle_timeout_seconds=_positive_float(
@@ -193,6 +205,9 @@ class RealtimeVoiceSessionConfig:
                 default=2,
             ),
             tts_provider=_optional_str(payload.get("tts_provider")),
+            tts_model=_optional_str(payload.get("tts_model")),
+            tts_voice=_optional_str(payload.get("tts_voice")),
+            fallback_policy=_optional_str(payload.get("fallback_policy")),
             sidecar_base_url=_optional_str(payload.get("sidecar_base_url")),
             sidecar_token=_optional_str(payload.get("sidecar_token")),
             sidecar_connect_timeout_seconds=_positive_float(

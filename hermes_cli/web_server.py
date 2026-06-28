@@ -708,6 +708,16 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Require native S2S or streaming STT/TTS before realtime voice is considered available",
         "category": "voice",
     },
+    "voice.realtime.frontend_provider": {
+        "type": "string",
+        "description": "Low-latency realtime interface provider",
+        "category": "voice",
+    },
+    "voice.realtime.frontend_model": {
+        "type": "string",
+        "description": "Low-latency realtime interface model",
+        "category": "voice",
+    },
     "voice.realtime.interface_audio_input": {
         "type": "select",
         "description": "How the KAME reflex receives user input",
@@ -718,6 +728,16 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "type": "select",
         "description": "ASR role in KAME realtime voice",
         "options": ["disabled", "on_escalation", "speculative", "debug", "fallback"],
+        "category": "voice",
+    },
+    "voice.realtime.asr_provider": {
+        "type": "string",
+        "description": "ASR provider used for oracle-verbatim evidence or text fallback",
+        "category": "voice",
+    },
+    "voice.realtime.asr_model": {
+        "type": "string",
+        "description": "ASR model used for oracle-verbatim evidence or text fallback",
         "category": "voice",
     },
     "voice.realtime.preferred_local_oracle_model": {
@@ -733,6 +753,27 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "voice.realtime.max_spoken_sentences": {
         "type": "number",
         "description": "Maximum spoken sentences for KAME oracle voice responses",
+        "category": "voice",
+    },
+    "voice.realtime.tts_provider": {
+        "type": "string",
+        "description": "TTS provider used for KAME spoken output",
+        "category": "voice",
+    },
+    "voice.realtime.tts_model": {
+        "type": "string",
+        "description": "TTS model used for KAME spoken output",
+        "category": "voice",
+    },
+    "voice.realtime.tts_voice": {
+        "type": "string",
+        "description": "TTS voice identifier used for KAME spoken output",
+        "category": "voice",
+    },
+    "voice.realtime.fallback_policy": {
+        "type": "select",
+        "description": "Fallback behavior when the KAME realtime sidecar or local stack is unavailable",
+        "options": ["legacy_voice", "text_only", "fail_closed"],
         "category": "voice",
     },
     "voice.realtime.production_evidence_report": {
@@ -865,6 +906,16 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Seconds to wait while closing a realtime voice sidecar session",
         "category": "voice",
     },
+    "voice.realtime.vllm_base_url": {
+        "type": "string",
+        "description": "OpenAI-compatible vLLM base URL for a local KAME audio reflex",
+        "category": "voice",
+    },
+    "voice.realtime.vllm_model": {
+        "type": "string",
+        "description": "Local KAME audio reflex model served by vLLM",
+        "category": "voice",
+    },
     "voice.realtime.streaming_stt_base_url": {
         "type": "string",
         "description": "Optional compatible streaming STT bridge URL used by the managed reference sidecar",
@@ -888,6 +939,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "voice.realtime.streaming_tts_model": {
         "type": "string",
         "description": "Optional streaming TTS bridge model name for diagnostics",
+        "category": "voice",
+    },
+    "voice.realtime.streaming_tts_voice": {
+        "type": "string",
+        "description": "Optional streaming TTS bridge voice identifier for diagnostics",
         "category": "voice",
     },
     "voice.realtime.streaming_tts_token_env": {
@@ -13751,8 +13807,14 @@ def _realtime_voice_current_evidence_manifest(
     frontend_model: str,
     interface_audio_input: str = "",
     asr_mode: str = "",
+    asr_provider: str = "",
+    asr_model: str = "",
     preferred_local_oracle_model: str = "",
     max_spoken_sentences: int = 2,
+    tts_provider: str = "",
+    tts_model: str = "",
+    tts_voice: str = "",
+    fallback_policy: str = "",
     routing_policy: Optional[Mapping[str, Any]] = None,
     metrics_policy: Optional[Mapping[str, Any]] = None,
     sidecar_mode: str = "",
@@ -13767,8 +13829,14 @@ def _realtime_voice_current_evidence_manifest(
         "frontend_model": str(frontend_model or ""),
         "interface_audio_input": str(interface_audio_input or ""),
         "asr_mode": str(asr_mode or ""),
+        "asr_provider": str(asr_provider or ""),
+        "asr_model": str(asr_model or ""),
         "preferred_local_oracle_model": str(preferred_local_oracle_model or ""),
         "max_spoken_sentences": int(max_spoken_sentences or 2),
+        "tts_provider": str(tts_provider or ""),
+        "tts_model": str(tts_model or ""),
+        "tts_voice": str(tts_voice or ""),
+        "fallback_policy": str(fallback_policy or ""),
         "routing": dict(routing_policy) if isinstance(routing_policy, Mapping) else {},
         "metrics": dict(metrics_policy) if isinstance(metrics_policy, Mapping) else {},
         "conversation_quality": {
@@ -14077,6 +14145,8 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     frontend_model = str(realtime.get("frontend_model") or "")
     interface_audio_input = str(realtime.get("interface_audio_input") or "")
     asr_mode = str(realtime.get("asr_mode") or "")
+    asr_provider = str(realtime.get("asr_provider") or "")
+    asr_model = str(realtime.get("asr_model") or realtime.get("streaming_stt_model") or "")
     preferred_local_oracle_model = str(realtime.get("preferred_local_oracle_model") or "")
     oracle_model = str(realtime.get("oracle_model") or "")
     oracle_timeout_seconds = _positive_float_config(
@@ -14087,6 +14157,10 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         realtime.get("max_spoken_sentences"),
         default=2,
     )
+    tts_provider = str(realtime.get("tts_provider") or "")
+    tts_model = str(realtime.get("tts_model") or realtime.get("streaming_tts_model") or "")
+    tts_voice = str(realtime.get("tts_voice") or realtime.get("streaming_tts_voice") or "")
+    fallback_policy = str(realtime.get("fallback_policy") or "legacy_voice")
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     language_support = _realtime_voice_language_support_payload(realtime)
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
@@ -14129,8 +14203,14 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         frontend_model=frontend_model,
         interface_audio_input=interface_audio_input,
         asr_mode=asr_mode,
+        asr_provider=asr_provider,
+        asr_model=asr_model,
         preferred_local_oracle_model=preferred_local_oracle_model,
         max_spoken_sentences=max_spoken_sentences,
+        tts_provider=tts_provider,
+        tts_model=tts_model,
+        tts_voice=tts_voice,
+        fallback_policy=fallback_policy,
         routing_policy=routing_policy,
         metrics_policy=metrics_policy,
         sidecar_mode=sidecar_mode,
@@ -14229,10 +14309,16 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "frontend_model": frontend_model or None,
         "interface_audio_input": interface_audio_input or None,
         "asr_mode": asr_mode or None,
+        "asr_provider": asr_provider or None,
+        "asr_model": asr_model or None,
         "preferred_local_oracle_model": preferred_local_oracle_model or None,
         "oracle_model": oracle_model or None,
         "oracle_timeout_seconds": oracle_timeout_seconds,
         "max_spoken_sentences": max_spoken_sentences,
+        "tts_provider": tts_provider or None,
+        "tts_model": tts_model or None,
+        "tts_voice": tts_voice or None,
+        "fallback_policy": fallback_policy,
         "language_support": language_support,
         "quality_targets_ms": quality_targets_ms,
         "routing": routing_policy,
@@ -14261,9 +14347,15 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "audio_reflex": conversation_quality.get("kame_reflex") is True,
             "asr_mode": asr_mode or None,
             "interface_audio_input": interface_audio_input or None,
+            "asr_provider": asr_provider or None,
+            "asr_model": asr_model or None,
             "preferred_local_oracle_model": preferred_local_oracle_model or None,
             "oracle_timeout_seconds": oracle_timeout_seconds,
             "max_spoken_sentences": max_spoken_sentences,
+            "tts_provider": tts_provider or None,
+            "tts_model": tts_model or None,
+            "tts_voice": tts_voice or None,
+            "fallback_policy": fallback_policy,
             "routing": routing_policy,
             "metrics": metrics_policy,
         },
@@ -14508,6 +14600,8 @@ def _apply_realtime_voice_profile_body(body: RealtimeVoiceProfileApply, profile:
                 "frontend_model": realtime.get("frontend_model") or "",
                 "interface_audio_input": realtime.get("interface_audio_input") or "",
                 "asr_mode": realtime.get("asr_mode") or "on_escalation",
+                "asr_provider": realtime.get("asr_provider") or "",
+                "asr_model": realtime.get("asr_model") or "",
                 "preferred_local_oracle_model": realtime.get("preferred_local_oracle_model") or "",
                 "oracle_timeout_seconds": _positive_float_config(
                     realtime.get("oracle_timeout_seconds"),
@@ -14517,6 +14611,10 @@ def _apply_realtime_voice_profile_body(body: RealtimeVoiceProfileApply, profile:
                     realtime.get("max_spoken_sentences"),
                     default=2,
                 ),
+                "tts_provider": realtime.get("tts_provider") or "",
+                "tts_model": realtime.get("tts_model") or "",
+                "tts_voice": realtime.get("tts_voice") or "",
+                "fallback_policy": realtime.get("fallback_policy") or "legacy_voice",
                 "routing": dict(realtime.get("routing") if isinstance(realtime.get("routing"), dict) else {}),
                 "metrics": dict(realtime.get("metrics") if isinstance(realtime.get("metrics"), dict) else {}),
             }
@@ -14571,6 +14669,12 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
     routing_policy = _realtime_voice_routing_policy_payload(realtime)
     metrics_policy = _realtime_voice_metrics_policy_payload(realtime)
+    asr_provider = str(realtime.get("asr_provider") or "")
+    asr_model = str(realtime.get("asr_model") or realtime.get("streaming_stt_model") or "")
+    tts_provider = str(realtime.get("tts_provider") or "")
+    tts_model = str(realtime.get("tts_model") or realtime.get("streaming_tts_model") or "")
+    tts_voice = str(realtime.get("tts_voice") or realtime.get("streaming_tts_voice") or "")
+    fallback_policy = str(realtime.get("fallback_policy") or "legacy_voice")
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     evidence_configured = bool(
         str(
@@ -14596,8 +14700,14 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         frontend_model=str(realtime.get("frontend_model") or ""),
         interface_audio_input=str(realtime.get("interface_audio_input") or ""),
         asr_mode=str(realtime.get("asr_mode") or ""),
+        asr_provider=asr_provider,
+        asr_model=asr_model,
         preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or ""),
         max_spoken_sentences=_positive_int_config(realtime.get("max_spoken_sentences"), default=2),
+        tts_provider=tts_provider,
+        tts_model=tts_model,
+        tts_voice=tts_voice,
+        fallback_policy=fallback_policy,
         routing_policy=routing_policy,
         metrics_policy=metrics_policy,
         sidecar_mode=_realtime_voice_sidecar_mode(realtime, sidecar_base_url),
@@ -14637,6 +14747,8 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         frontend_model=str(realtime.get("frontend_model") or "") or None,
         interface_audio_input=str(realtime.get("interface_audio_input") or "") or None,
         asr_mode=RealtimeVoiceASRMode(str(realtime.get("asr_mode") or RealtimeVoiceASRMode.ON_ESCALATION.value)),
+        asr_provider=asr_provider or None,
+        asr_model=asr_model or None,
         preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or "") or None,
         oracle_model=str(realtime.get("oracle_model") or "") or None,
         oracle_timeout_seconds=_positive_float_config(
@@ -14647,7 +14759,10 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             realtime.get("max_spoken_sentences"),
             default=2,
         ),
-        tts_provider=str(realtime.get("tts_provider") or "") or None,
+        tts_provider=tts_provider or None,
+        tts_model=tts_model or None,
+        tts_voice=tts_voice or None,
+        fallback_policy=fallback_policy or None,
         sidecar_base_url=str(sidecar_base_url or "") or None,
         sidecar_token=str(sidecar_token or "") or None,
         sidecar_connect_timeout_seconds=_positive_float_config(
@@ -14665,6 +14780,8 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "frontend_model": str(realtime.get("frontend_model") or "") or None,
             "interface_audio_input": str(realtime.get("interface_audio_input") or "") or None,
             "asr_mode": str(realtime.get("asr_mode") or "") or None,
+            "asr_provider": asr_provider or None,
+            "asr_model": asr_model or None,
             "preferred_local_oracle_model": str(realtime.get("preferred_local_oracle_model") or "") or None,
             "oracle_model": str(realtime.get("oracle_model") or "") or None,
             "oracle_timeout_seconds": _positive_float_config(
@@ -14675,6 +14792,10 @@ def _realtime_voice_config_from_request(ws: WebSocket):
                 realtime.get("max_spoken_sentences"),
                 default=2,
             ),
+            "tts_provider": tts_provider or None,
+            "tts_model": tts_model or None,
+            "tts_voice": tts_voice or None,
+            "fallback_policy": fallback_policy,
             "language_support": language_support,
             "quality_targets_ms": quality_targets_ms,
             "routing": routing_policy,

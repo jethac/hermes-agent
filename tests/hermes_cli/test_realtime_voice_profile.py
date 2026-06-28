@@ -255,9 +255,15 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["frontend_model"] == "gemma-4-E2B-it"
     assert realtime["interface_audio_input"] == "auto"
     assert realtime["asr_mode"] == "on_escalation"
+    assert realtime["asr_provider"] == "streaming_stt"
+    assert realtime["asr_model"] == "portable-streaming-asr"
     assert realtime["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
     assert realtime["oracle_timeout_seconds"] == 60.0
     assert realtime["max_spoken_sentences"] == 2
+    assert realtime["tts_provider"] == "streaming_tts"
+    assert realtime["tts_model"] == "portable-streaming-voice"
+    assert realtime["tts_voice"] == ""
+    assert realtime["fallback_policy"] == "legacy_voice"
     assert realtime["sidecar_autostart"] is True
     assert realtime["require_live_like"] is True
     assert realtime["routing"] == {
@@ -291,9 +297,15 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["frontend_model"] == "gemma-4-E2B-it"
     assert discord_rt["interface_audio_input"] == "native_audio"
     assert discord_rt["asr_mode"] == "speculative"
+    assert discord_rt["asr_provider"] == "streaming_stt"
+    assert discord_rt["asr_model"] == "portable-streaming-asr"
     assert discord_rt["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
     assert discord_rt["oracle_timeout_seconds"] == 60.0
     assert discord_rt["max_spoken_sentences"] == 2
+    assert discord_rt["tts_provider"] == "streaming_tts"
+    assert discord_rt["tts_model"] == "portable-streaming-voice"
+    assert discord_rt["tts_voice"] == ""
+    assert discord_rt["fallback_policy"] == "legacy_voice"
     assert discord_rt["routing"]["require_oracle_for_tools"] is True
     assert discord_rt["metrics"]["log_turn_spans"] is True
 

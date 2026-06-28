@@ -140,9 +140,14 @@ def test_session_config_round_trips_wire_payload():
         input_buffer_limit_bytes=4096,
         frontend_provider="gemma",
         frontend_model="gemma-4-e4b",
+        asr_provider="streaming_stt",
+        asr_model="nemotron-speech",
         oracle_model="configured-hermes-model",
         oracle_timeout_seconds=12.5,
         tts_provider="edge",
+        tts_model="sonic-3.5",
+        tts_voice="voice-123",
+        fallback_policy="legacy_voice",
         sidecar_base_url="http://voice.local:8080",
         sidecar_token="secret-token",
         sidecar_connect_timeout_seconds=3.5,
@@ -169,8 +174,14 @@ def test_session_config_round_trips_kame_fields():
         frontend_model="gemma-4-E2B-it",
         interface_audio_input="native_audio",
         asr_mode=RealtimeVoiceASRMode.SPECULATIVE,
+        asr_provider="streaming_stt",
+        asr_model="nemotron-speech",
         preferred_local_oracle_model="gemma-4-26B-A4B-it",
         max_spoken_sentences=4,
+        tts_provider="streaming_tts",
+        tts_model="sonic-3.5",
+        tts_voice="voice-123",
+        fallback_policy="fail_closed",
     )
 
     restored = RealtimeVoiceSessionConfig.from_wire(config.to_wire())
@@ -179,8 +190,14 @@ def test_session_config_round_trips_kame_fields():
     assert restored.frontend_model == "gemma-4-E2B-it"
     assert restored.interface_audio_input == "native_audio"
     assert restored.asr_mode == RealtimeVoiceASRMode.SPECULATIVE
+    assert restored.asr_provider == "streaming_stt"
+    assert restored.asr_model == "nemotron-speech"
     assert restored.preferred_local_oracle_model == "gemma-4-26B-A4B-it"
     assert restored.max_spoken_sentences == 4
+    assert restored.tts_provider == "streaming_tts"
+    assert restored.tts_model == "sonic-3.5"
+    assert restored.tts_voice == "voice-123"
+    assert restored.fallback_policy == "fail_closed"
 
 
 def test_kame_engine_factory_uses_kame_interface_oracle_engine():
