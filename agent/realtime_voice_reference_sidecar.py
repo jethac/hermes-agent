@@ -48,6 +48,30 @@ from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient
 TranscribeFn = Callable[[str], Mapping[str, Any]]
 SynthesizeFn = Callable[..., Any]
 REFERENCE_SIDECAR_CLOSE_DRAIN_TIMEOUT_SECONDS = 1.0
+PROVIDER_FORWARDED_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.TRANSCRIPT_PARTIAL,
+        VoiceEventType.TRANSCRIPT_FINAL,
+        VoiceEventType.AUDIO_OUTPUT_CHUNK,
+        VoiceEventType.ASSISTANT_AUDIO_END,
+        VoiceEventType.PLAYBACK_STARTED,
+        VoiceEventType.PLAYBACK_STOPPED,
+        VoiceEventType.FRONTEND_STATE,
+        VoiceEventType.INTERFACE_INTENT_PARTIAL,
+        VoiceEventType.ORACLE_ACCEPTED,
+        VoiceEventType.ORACLE_HINT,
+        VoiceEventType.ORACLE_TOOL_CALL,
+        VoiceEventType.ORACLE_TOOL_RESULT,
+        VoiceEventType.ORACLE_RESPONSE_PARTIAL,
+        VoiceEventType.ORACLE_RESPONSE_FINAL,
+        VoiceEventType.ORACLE_ERROR,
+        VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+        VoiceEventType.ASSISTANT_COMMIT,
+        VoiceEventType.BARGE_IN,
+        VoiceEventType.TOOL_PENDING,
+        VoiceEventType.TOOL_RESULT,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -733,19 +757,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             return
         try:
             async for event in self._openai_realtime.events():
-                if event.type in {
-                    VoiceEventType.TRANSCRIPT_PARTIAL,
-                    VoiceEventType.TRANSCRIPT_FINAL,
-                    VoiceEventType.AUDIO_OUTPUT_CHUNK,
-                    VoiceEventType.ASSISTANT_AUDIO_END,
-                    VoiceEventType.PLAYBACK_STARTED,
-                    VoiceEventType.PLAYBACK_STOPPED,
-                    VoiceEventType.FRONTEND_STATE,
-                    VoiceEventType.INTERFACE_INTENT_PARTIAL,
-                    VoiceEventType.ASSISTANT_TEXT_PARTIAL,
-                    VoiceEventType.ASSISTANT_COMMIT,
-                    VoiceEventType.BARGE_IN,
-                }:
+                if event.type in PROVIDER_FORWARDED_EVENT_TYPES:
                     await self._emit(event.type, dict(event.payload))
                 elif event.type == VoiceEventType.SESSION_ERROR:
                     await self._disable_openai_realtime(
@@ -763,22 +775,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             return
         try:
             async for event in self._gemini_live.events():
-                if event.type in {
-                    VoiceEventType.TRANSCRIPT_PARTIAL,
-                    VoiceEventType.TRANSCRIPT_FINAL,
-                    VoiceEventType.AUDIO_OUTPUT_CHUNK,
-                    VoiceEventType.ASSISTANT_AUDIO_END,
-                    VoiceEventType.PLAYBACK_STARTED,
-                    VoiceEventType.PLAYBACK_STOPPED,
-                    VoiceEventType.FRONTEND_STATE,
-                    VoiceEventType.INTERFACE_INTENT_PARTIAL,
-                    VoiceEventType.ORACLE_HINT,
-                    VoiceEventType.ASSISTANT_TEXT_PARTIAL,
-                    VoiceEventType.ASSISTANT_COMMIT,
-                    VoiceEventType.BARGE_IN,
-                    VoiceEventType.TOOL_PENDING,
-                    VoiceEventType.TOOL_RESULT,
-                }:
+                if event.type in PROVIDER_FORWARDED_EVENT_TYPES:
                     await self._emit(event.type, dict(event.payload))
                 elif event.type == VoiceEventType.SESSION_ERROR:
                     await self._disable_gemini_live(

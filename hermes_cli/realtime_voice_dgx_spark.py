@@ -797,8 +797,8 @@ def validate_dgx_spark_benchmark_evidence(
     Expected evidence entries are intentionally simple JSON objects:
     - ``kind=kame_benchmark_result`` with ``category`` (interface/oracle/speech),
       optional ``input``, ``role``, or ``asr_hypothesis``, and a ``metrics`` object.
-    - ``kind=kame_smoke_result`` with ``name`` (all_local_smoke/cloud_fallback_smoke)
-      and ``ok=true``.
+    - ``kind=kame_smoke_result`` with one of ``REQUIRED_DGX_SPARK_SMOKES``
+      as ``name`` and ``ok=true``.
     """
 
     issues: list[str] = []

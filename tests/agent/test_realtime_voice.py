@@ -3445,6 +3445,74 @@ def test_reference_sidecar_echoes_barge_in_generation():
     asyncio.run(run())
 
 
+def test_reference_sidecar_forwards_provider_kame_oracle_events():
+    class Provider:
+        def __init__(self, events):
+            self._events = events
+
+        async def events(self):
+            for event in self._events:
+                yield event
+
+    async def collect_forwarded(provider_attr: str, consume_method: str):
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+        started = await asyncio.wait_for(sidecar._events.get(), timeout=1)
+        assert started.type == VoiceEventType.FRONTEND_STATE
+        source_events = [
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_ACCEPTED,
+                session_id="voice-123",
+                sequence=1,
+                payload={"turn_id": "turn-1", "playback_generation": 3},
+            ),
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_TOOL_CALL,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "turn_id": "turn-1",
+                    "tool_name": "read_file",
+                    "tool_call_id": "call-1",
+                    "playback_generation": 3,
+                },
+            ),
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_TOOL_RESULT,
+                session_id="voice-123",
+                sequence=3,
+                payload={
+                    "turn_id": "turn-1",
+                    "tool_name": "read_file",
+                    "tool_call_id": "call-1",
+                    "result": "ok",
+                    "playback_generation": 3,
+                },
+            ),
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_RESPONSE_FINAL,
+                session_id="voice-123",
+                sequence=4,
+                payload={"turn_id": "turn-1", "text": "Done.", "playback_generation": 3},
+            ),
+        ]
+        setattr(sidecar, provider_attr, Provider(source_events))
+
+        await getattr(sidecar, consume_method)()
+
+        forwarded = []
+        for _ in source_events:
+            forwarded.append(await asyncio.wait_for(sidecar._events.get(), timeout=1))
+        assert [event.type for event in forwarded] == [event.type for event in source_events]
+        assert [event.payload for event in forwarded] == [event.payload for event in source_events]
+
+    async def run():
+        await collect_forwarded("_openai_realtime", "_consume_openai_realtime_events")
+        await collect_forwarded("_gemini_live", "_consume_gemini_live_events")
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_barge_in_ack_is_not_blocked_by_slow_streaming_bridge(
     monkeypatch,
 ):
