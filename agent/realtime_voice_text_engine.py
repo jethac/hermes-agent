@@ -1365,7 +1365,33 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             payload=payload,
         )
         await put_realtime_voice_event(self._events, event)
+        await self._emit_caption_alias_if_needed(event)
         return event
+
+    async def _emit_caption_alias_if_needed(self, event: VoiceEvent) -> None:
+        if not _caption_alias_events_enabled(self.config):
+            return
+        if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+            alias_type = VoiceEventType.ASSISTANT_CAPTION_PARTIAL
+        elif event.type == VoiceEventType.ASSISTANT_COMMIT and event.payload.get("interrupted") is not True:
+            alias_type = VoiceEventType.ASSISTANT_CAPTION_FINAL
+        else:
+            return
+        text = str(event.payload.get("text") or "").strip()
+        if not text:
+            return
+        self._sequence += 1
+        alias = VoiceEvent(
+            type=alias_type,
+            session_id=event.session_id,
+            sequence=self._sequence,
+            payload={
+                **dict(event.payload),
+                "text": text,
+                "caption_alias_for": event.type.value,
+            },
+        )
+        await put_realtime_voice_event(self._events, alias)
 
 
 class KameInterfaceOracleEngine(TextOracleTTSEngine):
@@ -1604,6 +1630,15 @@ def _kame_metrics_policy_enabled(config: Optional[RealtimeVoiceSessionConfig]) -
     if not isinstance(metrics, Mapping):
         return True
     return _metadata_bool(metrics.get("enabled"), default=True)
+
+
+def _caption_alias_events_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
+    output_events = metadata.get("output_events") if isinstance(metadata, Mapping) else {}
+    if isinstance(output_events, Mapping) and _metadata_bool(output_events.get("caption_aliases"), default=False):
+        return True
+    caption_events = metadata.get("caption_events") if isinstance(metadata, Mapping) else {}
+    return isinstance(caption_events, Mapping) and _metadata_bool(caption_events.get("enabled"), default=False)
 
 
 def _nonnegative_int_metrics(metrics: Mapping[str, Any]) -> dict[str, int]:

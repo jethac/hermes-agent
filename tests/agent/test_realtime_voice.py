@@ -566,6 +566,51 @@ def test_text_engine_accepts_transcript_payload_and_emits_oracle_text(monkeypatc
     asyncio.run(run())
 
 
+def test_text_engine_emits_opt_in_caption_alias_events(monkeypatch):
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        engine = TextOracleTTSEngine(oracle=FakeOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                metadata={"output_events": {"caption_aliases": True}},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "hello captions", "end_of_utterance": True},
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_CAPTION_FINAL:
+                break
+
+        await engine.close()
+
+        partial = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL)
+        caption_partial = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_CAPTION_PARTIAL)
+        commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        caption_final = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_CAPTION_FINAL)
+        assert caption_partial.payload["text"] == partial.payload["text"]
+        assert caption_partial.payload["caption_alias_for"] == VoiceEventType.ASSISTANT_TEXT_PARTIAL.value
+        assert caption_partial.payload["playback_generation"] == partial.payload["playback_generation"]
+        assert caption_final.payload["text"] == commit.payload["text"]
+        assert caption_final.payload["caption_alias_for"] == VoiceEventType.ASSISTANT_COMMIT.value
+        assert caption_final.payload["playback_generation"] == commit.payload["playback_generation"]
+
+    asyncio.run(run())
+
+
 def test_realtime_oracle_prompt_preserves_sanitized_speech_language_metadata():
     prompt = _voice_oracle_prompt(
         "こんにちは",
@@ -5648,6 +5693,49 @@ def test_session_adds_turn_state_to_realtime_events(monkeypatch):
         assert states[VoiceEventType.TRANSCRIPT_FINAL] == RealtimeVoiceSessionState.ASSISTANT_PENDING.value
         assert states[VoiceEventType.ASSISTANT_TEXT_PARTIAL] == RealtimeVoiceSessionState.SPEAKING.value
         assert states[VoiceEventType.ASSISTANT_COMMIT] == RealtimeVoiceSessionState.LISTENING.value
+        await session.close()
+
+    asyncio.run(run())
+
+
+def test_session_treats_caption_events_as_ephemeral_state():
+    class CaptionEngine:
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            return None
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.ASSISTANT_CAPTION_PARTIAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={"text": "Draft caption.", "playback_generation": 2},
+            )
+            yield VoiceEvent(
+                type=VoiceEventType.ASSISTANT_CAPTION_FINAL,
+                session_id="voice-123",
+                sequence=2,
+                payload={"text": "Final caption.", "playback_generation": 2},
+            )
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(RealtimeVoiceSessionConfig(session_id="voice-123"), engine=CaptionEngine())
+        await session.start()
+
+        events = session.events()
+        partial = await anext(events)
+        final = await anext(events)
+
+        assert partial.payload["session_state"] == RealtimeVoiceSessionState.SPEAKING.value
+        assert final.payload["session_state"] == RealtimeVoiceSessionState.LISTENING.value
+        assert session.state == RealtimeVoiceSessionState.LISTENING
+        assert session.transcript.active_playback_generation == 2
+        assert session.durable_messages() == []
         await session.close()
 
     asyncio.run(run())

@@ -53,6 +53,8 @@ STALE_GENERATION_EVENT_TYPES = frozenset(
         VoiceEventType.ORACLE_ERROR,
         VoiceEventType.SESSION_METRICS,
         VoiceEventType.ASSISTANT_COMMIT,
+        VoiceEventType.ASSISTANT_CAPTION_FINAL,
+        VoiceEventType.ASSISTANT_CAPTION_PARTIAL,
         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
         VoiceEventType.TRANSCRIPT_FINAL,
     }
@@ -181,6 +183,13 @@ class RealtimeVoiceSession:
                 event.payload,
             )
             self.state = RealtimeVoiceSessionState.SPEAKING
+        elif event.type == VoiceEventType.ASSISTANT_CAPTION_PARTIAL:
+            generation = _payload_generation(event.payload)
+            if generation is not None:
+                if generation < self.transcript.active_playback_generation:
+                    return
+                self.transcript.active_playback_generation = generation
+            self.state = RealtimeVoiceSessionState.SPEAKING
         elif event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
             generation = _payload_generation(event.payload)
             if generation is not None:
@@ -220,6 +229,11 @@ class RealtimeVoiceSession:
                 if text:
                     self.transcript.committed_assistant_segments.append(text)
                 self.transcript.assistant_draft = ""
+            self.state = RealtimeVoiceSessionState.LISTENING
+        elif event.type == VoiceEventType.ASSISTANT_CAPTION_FINAL:
+            generation = _payload_generation(event.payload)
+            if generation is not None and generation < self.transcript.active_playback_generation:
+                return
             self.state = RealtimeVoiceSessionState.LISTENING
         elif event.type == VoiceEventType.BARGE_IN:
             generation = _payload_generation(event.payload)
@@ -276,6 +290,7 @@ class RealtimeVoiceSession:
         if event.type == VoiceEventType.TRANSCRIPT_FINAL:
             return RealtimeVoiceSessionState.ASSISTANT_PENDING
         if event.type in {
+            VoiceEventType.ASSISTANT_CAPTION_PARTIAL,
             VoiceEventType.ASSISTANT_TEXT_PARTIAL,
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
             VoiceEventType.ASSISTANT_AUDIO_END,
@@ -283,6 +298,7 @@ class RealtimeVoiceSession:
         }:
             return RealtimeVoiceSessionState.SPEAKING
         if event.type in {
+            VoiceEventType.ASSISTANT_CAPTION_FINAL,
             VoiceEventType.ASSISTANT_COMMIT,
             VoiceEventType.BARGE_IN,
             VoiceEventType.PLAYBACK_STOPPED,

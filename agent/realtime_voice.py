@@ -79,6 +79,8 @@ class VoiceEventType(StrEnum):
     ORACLE_RESPONSE_FINAL = "oracle.response.final"
     ORACLE_ERROR = "oracle.error"
     ORACLE_HINT = "oracle.hint"
+    ASSISTANT_CAPTION_PARTIAL = "assistant.caption.partial"
+    ASSISTANT_CAPTION_FINAL = "assistant.caption.final"
     ASSISTANT_TEXT_PARTIAL = "assistant.text.partial"
     ASSISTANT_COMMIT = "assistant.commit"
     BARGE_IN = "barge_in"
@@ -124,6 +126,8 @@ SERVER_EVENT_TYPES = frozenset(
         VoiceEventType.ORACLE_RESPONSE_FINAL,
         VoiceEventType.ORACLE_ERROR,
         VoiceEventType.ORACLE_HINT,
+        VoiceEventType.ASSISTANT_CAPTION_PARTIAL,
+        VoiceEventType.ASSISTANT_CAPTION_FINAL,
         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
         VoiceEventType.ASSISTANT_COMMIT,
         VoiceEventType.BARGE_IN,
