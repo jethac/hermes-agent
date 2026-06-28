@@ -62,9 +62,14 @@ def _passing_benchmark_evidence() -> list[dict]:
                     "model": model,
                     "input": "direct_audio",
                     "metrics": {
+                        "sample_count": 40,
                         "speech_end_to_interface_decision_ms": 320,
+                        "speech_end_to_interface_decision_p50_ms": 320,
+                        "speech_end_to_interface_decision_p90_ms": 430,
                         "kame_interface_model_request_ms": 240,
                         "speech_end_to_local_first_audio_ms": 480,
+                        "speech_end_to_local_first_audio_p50_ms": 480,
+                        "speech_end_to_local_first_audio_p90_ms": 780,
                         "routing_accuracy": 0.94,
                         "capability_honesty_rate": 0.99,
                         "local_route_precision": 0.93,
@@ -77,8 +82,13 @@ def _passing_benchmark_evidence() -> list[dict]:
                     "model": model,
                     "input": "stt_fallback",
                     "metrics": {
+                        "sample_count": 40,
                         "speech_end_to_transcript_ms": 190,
+                        "speech_end_to_transcript_p50_ms": 190,
+                        "speech_end_to_transcript_p90_ms": 260,
                         "transcript_to_interface_decision_ms": 280,
+                        "transcript_to_interface_decision_p50_ms": 280,
+                        "transcript_to_interface_decision_p90_ms": 390,
                         "routing_accuracy": 0.91,
                         "capability_honesty_rate": 0.98,
                         "local_route_precision": 0.9,
@@ -128,10 +138,13 @@ def _passing_benchmark_evidence() -> list[dict]:
             "kind": "kame_benchmark_result",
             "category": "oracle",
             "metrics": {
+                "sample_count": 40,
                 "oracle_request_to_accepted_ms": 40,
                 "oracle_accepted_to_first_token_ms": 780,
                 "oracle_first_token_to_first_tts_audio_ms": 180,
                 "first_tts_audio_to_playback_start_ms": 40,
+                "oracle_request_to_first_audio_p50_ms": 1040,
+                "oracle_request_to_first_audio_p90_ms": 1900,
             },
         },
         {
@@ -162,7 +175,10 @@ def _passing_benchmark_evidence() -> list[dict]:
             "adapter": PRODUCTION_ASR_ADAPTER,
             "protocol_smoke_only": False,
             "metrics": {
+                "sample_count": 40,
                 "speech_end_to_asr_final_ms": 110,
+                "speech_end_to_asr_final_p50_ms": 110,
+                "speech_end_to_asr_final_p90_ms": 180,
                 "literal_accuracy_names_numbers_code": 0.88,
             },
         },
@@ -174,8 +190,13 @@ def _passing_benchmark_evidence() -> list[dict]:
             "adapter": PRODUCTION_TTS_ADAPTER,
             "protocol_smoke_only": False,
             "metrics": {
+                "sample_count": 40,
                 "tts_request_to_first_audio_ms": 160,
+                "tts_request_to_first_audio_p50_ms": 160,
+                "tts_request_to_first_audio_p90_ms": 240,
                 "tts_request_to_audio_end_ms": 620,
+                "tts_request_to_audio_end_p50_ms": 620,
+                "tts_request_to_audio_end_p90_ms": 820,
             },
         },
         {
@@ -516,8 +537,12 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert evidence_template[0]["category"] == "interface"
     assert evidence_template[0]["model"] == "gemma-4-E2B-it"
     assert evidence_template[0]["input"] == "direct_audio"
+    assert evidence_template[0]["metrics"]["sample_count"] is None
     assert evidence_template[0]["metrics"]["speech_end_to_interface_decision_ms"] is None
+    assert evidence_template[0]["metrics"]["speech_end_to_interface_decision_p50_ms"] is None
+    assert evidence_template[0]["metrics"]["speech_end_to_interface_decision_p90_ms"] is None
     assert evidence_template[0]["metrics"]["kame_interface_model_request_ms"] is None
+    assert evidence_template[0]["metrics"]["speech_end_to_local_first_audio_p90_ms"] is None
     comparison_entries = [
         entry for entry in evidence_template if entry.get("kind") == "kame_comparison_result"
     ]
@@ -1044,6 +1069,7 @@ def test_benchmark_evidence_validator_enforces_direct_audio_latency_targets(tmp_
     for entry in evidence:
         if entry.get("category") == "interface" and entry.get("input") == "direct_audio":
             entry["metrics"]["speech_end_to_interface_decision_ms"] = 501
+            entry["metrics"]["speech_end_to_interface_decision_p90_ms"] = 520
 
     result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
 
@@ -1052,6 +1078,10 @@ def test_benchmark_evidence_validator_enforces_direct_audio_latency_targets(tmp_
     assert (
         "interface:gemma-4-E2B-it:direct_audio: "
         "speech_end_to_interface_decision_ms 501 exceeds target 500"
+    ) in result["issues"]
+    assert (
+        "interface:gemma-4-E2B-it:direct_audio: "
+        "speech_end_to_interface_decision_p90_ms 520 exceeds target 500"
     ) in result["issues"]
     assert (
         "interface_direct_audio_latency: "
@@ -1068,12 +1098,14 @@ def test_benchmark_evidence_validator_enforces_oracle_latency_target(tmp_path):
             entry["metrics"]["oracle_accepted_to_first_token_ms"] = 2800
             entry["metrics"]["oracle_first_token_to_first_tts_audio_ms"] = 250
             entry["metrics"]["first_tts_audio_to_playback_start_ms"] = 40
+            entry["metrics"]["oracle_request_to_first_audio_p90_ms"] = 3200
 
     result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
 
     assert result["ok"] is False
     assert result["coverage"]["oracle_simple_first_audio_latency"] is False
     assert "oracle:local: oracle first audio total 3130 exceeds target 3000" in result["issues"]
+    assert "oracle:local: oracle_request_to_first_audio_p90_ms 3200 exceeds target 3000" in result["issues"]
     assert (
         "oracle_simple_first_audio_latency: "
         "requires oracle_request_to_accepted_ms, oracle_accepted_to_first_token_ms, "

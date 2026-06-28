@@ -856,9 +856,14 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                     "model": model,
                     "input": "direct_audio",
                     "required_metrics": [
+                        "sample_count",
                         "speech_end_to_interface_decision_ms",
+                        "speech_end_to_interface_decision_p50_ms",
+                        "speech_end_to_interface_decision_p90_ms",
                         "kame_interface_model_request_ms",
                         "speech_end_to_local_first_audio_ms",
+                        "speech_end_to_local_first_audio_p50_ms",
+                        "speech_end_to_local_first_audio_p90_ms",
                         "routing_accuracy",
                         "capability_honesty_rate",
                         "local_route_precision",
@@ -869,8 +874,13 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                     "model": model,
                     "input": "stt_fallback",
                     "required_metrics": [
+                        "sample_count",
                         "speech_end_to_transcript_ms",
+                        "speech_end_to_transcript_p50_ms",
+                        "speech_end_to_transcript_p90_ms",
                         "transcript_to_interface_decision_ms",
+                        "transcript_to_interface_decision_p50_ms",
+                        "transcript_to_interface_decision_p90_ms",
                         "routing_accuracy",
                         "capability_honesty_rate",
                         "local_route_precision",
@@ -889,10 +899,13 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                 {
                     "model": roles["oracle"]["preferred_local_model"],
                     "required_metrics": [
+                        "sample_count",
                         "oracle_request_to_accepted_ms",
                         "oracle_accepted_to_first_token_ms",
                         "oracle_first_token_to_first_tts_audio_ms",
                         "first_tts_audio_to_playback_start_ms",
+                        "oracle_request_to_first_audio_p50_ms",
+                        "oracle_request_to_first_audio_p90_ms",
                     ],
                 }
             ],
@@ -925,7 +938,10 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                     "module": roles["asr"]["module"],
                     "protocol_smoke_only": roles["asr"].get("protocol_smoke_only") is True,
                     "required_metrics": [
+                        "sample_count",
                         "speech_end_to_asr_final_ms",
+                        "speech_end_to_asr_final_p50_ms",
+                        "speech_end_to_asr_final_p90_ms",
                         "literal_accuracy_names_numbers_code",
                     ],
                 },
@@ -936,8 +952,13 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                     "module": roles["tts"]["module"],
                     "protocol_smoke_only": roles["tts"].get("protocol_smoke_only") is True,
                     "required_metrics": [
+                        "sample_count",
                         "tts_request_to_first_audio_ms",
+                        "tts_request_to_first_audio_p50_ms",
+                        "tts_request_to_first_audio_p90_ms",
                         "tts_request_to_audio_end_ms",
+                        "tts_request_to_audio_end_p50_ms",
+                        "tts_request_to_audio_end_p90_ms",
                     ],
                 },
             ],
@@ -1577,6 +1598,8 @@ def _valid_metric_value(metric_name: str, value: Any) -> bool:
         return False
     if not parsed >= 0:
         return False
+    if metric_name == "sample_count":
+        return parsed >= 1
     if "accuracy" in metric_name or metric_name.endswith("_rate"):
         return parsed <= 1.0
     return True
@@ -1600,12 +1623,28 @@ def _interface_direct_audio_latency_issues(
         issues.append(
             f"{label}: speech_end_to_interface_decision_ms {decision_ms:g} exceeds target {decision_target_ms:g}"
         )
+    decision_p90_ms = _metric_float(metrics.get("speech_end_to_interface_decision_p90_ms"))
+    if decision_p90_ms is None:
+        issues.append(f"{label}: missing valid speech_end_to_interface_decision_p90_ms")
+    elif decision_p90_ms > decision_target_ms:
+        issues.append(
+            f"{label}: speech_end_to_interface_decision_p90_ms {decision_p90_ms:g} "
+            f"exceeds target {decision_target_ms:g}"
+        )
     first_audio_ms = _metric_float(metrics.get("speech_end_to_local_first_audio_ms"))
     if first_audio_ms is None:
         issues.append(f"{label}: missing valid speech_end_to_local_first_audio_ms")
     elif first_audio_ms > first_audio_target_ms:
         issues.append(
             f"{label}: speech_end_to_local_first_audio_ms {first_audio_ms:g} exceeds target {first_audio_target_ms:g}"
+        )
+    first_audio_p90_ms = _metric_float(metrics.get("speech_end_to_local_first_audio_p90_ms"))
+    if first_audio_p90_ms is None:
+        issues.append(f"{label}: missing valid speech_end_to_local_first_audio_p90_ms")
+    elif first_audio_p90_ms > first_audio_target_ms:
+        issues.append(
+            f"{label}: speech_end_to_local_first_audio_p90_ms {first_audio_p90_ms:g} "
+            f"exceeds target {first_audio_target_ms:g}"
         )
     return issues
 
@@ -1653,6 +1692,14 @@ def _oracle_first_audio_latency_issues(
         )
     if total > first_audio_target_ms:
         issues.append(f"{label}: oracle first audio total {total:g} exceeds target {first_audio_target_ms:g}")
+    first_audio_p90_ms = _metric_float(metrics.get("oracle_request_to_first_audio_p90_ms"))
+    if first_audio_p90_ms is None:
+        issues.append(f"{label}: missing valid oracle_request_to_first_audio_p90_ms")
+    elif first_audio_p90_ms > first_audio_target_ms:
+        issues.append(
+            f"{label}: oracle_request_to_first_audio_p90_ms {first_audio_p90_ms:g} "
+            f"exceeds target {first_audio_target_ms:g}"
+        )
     return issues
 
 
