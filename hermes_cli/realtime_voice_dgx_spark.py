@@ -830,6 +830,7 @@ def preflight_dgx_spark_stack(
         "sidecar_health": probe_json_endpoint(
             roles["sidecar"]["health_url"],
             timeout_seconds=timeout_seconds,
+            expected_fields=_sidecar_expected_health_fields(roles),
         ),
     }
     if roles["asr"].get("health_url"):
@@ -853,6 +854,7 @@ def probe_json_endpoint(
     *,
     timeout_seconds: float,
     expected_model: str | None = None,
+    expected_fields: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
@@ -869,12 +871,15 @@ def probe_json_endpoint(
     model_ok = True
     if expected_model:
         model_ok = _models_payload_contains(payload, expected_model)
+    field_misses = _expected_field_misses(payload, expected_fields or {})
     return {
-        "ok": 200 <= int(status) < 300 and model_ok,
+        "ok": 200 <= int(status) < 300 and model_ok and not field_misses,
         "url": url,
         "status": status,
         "expected_model": expected_model,
         "model_found": model_ok if expected_model else None,
+        "expected_fields": dict(expected_fields or {}),
+        "field_misses": field_misses,
     }
 
 
@@ -894,6 +899,37 @@ def _models_payload_contains(payload: Mapping[str, Any], expected_model: str) ->
         if isinstance(item, Mapping) and item.get("id") == expected_model:
             return True
     return False
+
+
+def _sidecar_expected_health_fields(roles: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    expected: dict[str, Any] = {
+        "capabilities.vllm_audio_frontend": True,
+        "capabilities.tts": True,
+        "capabilities.streaming_tts_bridge": True,
+        "frontend.streaming_tts_bridge.healthy": True,
+    }
+    if str(roles.get("asr", {}).get("mode") or "") != "disabled":
+        expected["capabilities.streaming_stt_bridge"] = True
+        expected["frontend.streaming_stt_bridge.healthy"] = True
+    return expected
+
+
+def _expected_field_misses(payload: Mapping[str, Any], expected_fields: Mapping[str, Any]) -> list[dict[str, Any]]:
+    misses: list[dict[str, Any]] = []
+    for path, expected in expected_fields.items():
+        found, actual = _payload_path_value(payload, str(path))
+        if not found or actual != expected:
+            misses.append({"path": str(path), "expected": expected, "actual": actual if found else None})
+    return misses
+
+
+def _payload_path_value(payload: Mapping[str, Any], path: str) -> tuple[bool, Any]:
+    current: Any = payload
+    for part in path.split("."):
+        if not isinstance(current, Mapping) or part not in current:
+            return False, None
+        current = current[part]
+    return True, current
 
 
 def _roles(manifest: Mapping[str, Any]) -> Mapping[str, Mapping[str, Any]]:

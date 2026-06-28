@@ -232,6 +232,22 @@ def test_preflight_checks_openai_models_and_health_urls(monkeypatch, tmp_path):
             return _Response({"data": [{"id": "gemma-4-E2B-it"}]})
         if request.full_url.endswith("/models") and ":8001" in request.full_url:
             return _Response({"data": [{"id": "gemma-4-26B-A4B-it"}]})
+        if request.full_url.endswith("/health") and ":8765" in request.full_url:
+            return _Response(
+                {
+                    "ok": True,
+                    "capabilities": {
+                        "vllm_audio_frontend": True,
+                        "tts": True,
+                        "streaming_stt_bridge": True,
+                        "streaming_tts_bridge": True,
+                    },
+                    "frontend": {
+                        "streaming_stt_bridge": {"healthy": True},
+                        "streaming_tts_bridge": {"healthy": True},
+                    },
+                }
+            )
         return _Response({"ok": True})
 
     monkeypatch.setattr(realtime_voice_dgx_spark.urllib.request, "urlopen", fake_urlopen)
@@ -247,6 +263,64 @@ def test_preflight_checks_openai_models_and_health_urls(monkeypatch, tmp_path):
     assert "http://spark.local:8765/health" in seen_urls
     assert "http://spark.local:8767/health" in seen_urls
     assert "http://spark.local:8768/health" in seen_urls
+    assert preflight["checks"]["sidecar_health"]["field_misses"] == []
+
+
+def test_preflight_fails_when_sidecar_lacks_kame_reflex_capability(monkeypatch, tmp_path):
+    manifest = _manifest(tmp_path)
+
+    class _Response:
+        status = 200
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return None
+
+        def read(self):
+            return json.dumps(self._payload).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        if request.full_url.endswith("/models") and ":8000" in request.full_url:
+            return _Response({"data": [{"id": "gemma-4-E2B-it"}]})
+        if request.full_url.endswith("/models") and ":8001" in request.full_url:
+            return _Response({"data": [{"id": "gemma-4-26B-A4B-it"}]})
+        if request.full_url.endswith("/health") and ":8765" in request.full_url:
+            return _Response(
+                {
+                    "ok": True,
+                    "capabilities": {
+                        "vllm_audio_frontend": False,
+                        "tts": True,
+                        "streaming_stt_bridge": True,
+                        "streaming_tts_bridge": True,
+                    },
+                    "frontend": {
+                        "streaming_stt_bridge": {"healthy": True},
+                        "streaming_tts_bridge": {"healthy": True},
+                    },
+                }
+            )
+        return _Response({"ok": True})
+
+    monkeypatch.setattr(realtime_voice_dgx_spark.urllib.request, "urlopen", fake_urlopen)
+
+    preflight = realtime_voice_dgx_spark.preflight_dgx_spark_stack(
+        manifest,
+        timeout_seconds=0.1,
+    )
+
+    assert preflight["ok"] is False
+    assert preflight["checks"]["sidecar_health"]["ok"] is False
+    assert {
+        "path": "capabilities.vllm_audio_frontend",
+        "expected": True,
+        "actual": False,
+    } in preflight["checks"]["sidecar_health"]["field_misses"]
 
 
 def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_path):
