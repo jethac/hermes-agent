@@ -58,6 +58,7 @@ run uv run python -m py_compile \
   hermes_cli/realtime_voice_profile.py \
   hermes_cli/realtime_voice_alpha_evidence.py \
   hermes_cli/realtime_voice_dgx_spark.py \
+  hermes_cli/realtime_voice_dgx_report.py \
   hermes_cli/realtime_voice_oracle_probe.py \
   hermes_cli/realtime_voice_cartesia_bridge.py \
   hermes_cli/web_server.py \
@@ -215,6 +216,17 @@ else
   record_skip "track 0 KAME benchmark evidence validation" "set DGX_SPARK_KAME_BENCHMARK_EVIDENCE to a filled benchmark evidence JSON"
 fi
 
+note "Recommendation report"
+if run uv run python -m hermes_cli.realtime_voice_dgx_report \
+  --artifact-dir "$ARTIFACT_DIR" \
+  --output "$ARTIFACT_DIR/recommendation.json" \
+  --markdown-output "$ARTIFACT_DIR/recommendation.md"
+then
+  record_pass "DGX Spark KAME recommendation report"
+else
+  record_fail "DGX Spark KAME recommendation report" "Recommendation report generation failed"
+fi
+
 cat >> "$SUMMARY" <<EOF
 
 Finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -230,6 +242,8 @@ Finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 - Cartesia alpha: $ARTIFACT_DIR/cartesia-alpha
 - Loopback alpha: $ARTIFACT_DIR/loopback-alpha
 - Local speech alpha: $ARTIFACT_DIR/local-speech-alpha
+- Recommendation JSON: $ARTIFACT_DIR/recommendation.json
+- Recommendation Markdown: $ARTIFACT_DIR/recommendation.md
 EOF
 
 note "Summary"
