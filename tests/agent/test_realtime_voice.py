@@ -2977,6 +2977,67 @@ def test_text_engine_drops_stale_sidecar_transcript_after_new_input(monkeypatch)
     asyncio.run(run())
 
 
+def test_text_engine_drops_duplicate_sidecar_final_for_completed_input_generation(monkeypatch):
+    class ManualSidecar(FakeSidecar):
+        async def send_event(self, event):
+            self.received.append(event)
+
+    class CountingOracle:
+        def __init__(self):
+            self.calls = []
+
+        async def stream_answer(self, transcript: str):
+            self.calls.append(transcript)
+            yield f"Answering: {transcript}."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        sidecar = ManualSidecar()
+        oracle = CountingOracle()
+        engine = TextOracleTTSEngine(oracle=oracle, sidecar=sidecar)
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123", sidecar_base_url="http://voice.local"))
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                },
+            )
+        )
+        generation = sidecar.received[-1].payload["input_generation"]
+        for sequence in (1, 2):
+            await sidecar._events.put(
+                VoiceEvent(
+                    type=VoiceEventType.TRANSCRIPT_FINAL,
+                    session_id="voice-123",
+                    sequence=sequence,
+                    payload={"text": "duplicate transcript", "input_generation": generation},
+                )
+            )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                await engine.close()
+                break
+
+        final_events = [event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL]
+        assert [event.payload["text"] for event in final_events] == ["duplicate transcript"]
+        assert [event.payload["input_generation"] for event in final_events] == [generation]
+        assert oracle.calls == ["duplicate transcript"]
+
+    asyncio.run(run())
+
+
 def test_text_engine_reports_sidecar_start_failure_as_frontend_fallback():
     closed = {"value": False}
 

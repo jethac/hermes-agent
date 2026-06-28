@@ -58,6 +58,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._pending_turn_generation: Optional[int] = None
         self._input_generation = 0
         self._input_generation_active = False
+        self._completed_input_generations: set[int] = set()
         self._frontend_output_active = False
         self._assistant_metadata_by_generation: dict[int, dict] = {}
         self._cancellation_token_by_generation: dict[int, str] = {}
@@ -326,6 +327,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         continue
                     text = str(payload.get("text") or "").strip()
                     if text:
+                        self._mark_sidecar_input_completed(payload)
                         await self._start_turn(
                             text,
                             input_generation=_payload_input_generation(payload),
@@ -504,7 +506,20 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
 
     def _is_stale_sidecar_input(self, payload: dict) -> bool:
         generation = _payload_input_generation(payload)
-        return generation is not None and generation < self._input_generation
+        return generation is not None and (
+            generation < self._input_generation or generation in self._completed_input_generations
+        )
+
+    def _mark_sidecar_input_completed(self, payload: Mapping[str, Any]) -> None:
+        generation = _payload_input_generation(dict(payload))
+        if generation is None:
+            return
+        self._completed_input_generations.add(generation)
+        if len(self._completed_input_generations) <= 256:
+            return
+        stale_count = len(self._completed_input_generations) - 256
+        for old_generation in sorted(self._completed_input_generations)[:stale_count]:
+            self._completed_input_generations.discard(old_generation)
 
     async def _append_inbound_audio(self, data: bytes) -> bool:
         config = self.config
