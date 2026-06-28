@@ -24,6 +24,14 @@ def build_parser() -> argparse.ArgumentParser:
         or os.environ.get("HERMES_VOICE_VLLM_MODEL", ""),
     )
     parser.add_argument(
+        "--interface-token",
+        default=os.environ.get("HERMES_KAME_INTERFACE_API_KEY")
+        or os.environ.get("HERMES_KAME_INTERFACE_TOKEN")
+        or os.environ.get("HERMES_VOICE_VLLM_API_KEY")
+        or os.environ.get("HERMES_VOICE_VLLM_TOKEN", ""),
+        help="Bearer token for the KAME interface/reflex OpenAI-compatible endpoint",
+    )
+    parser.add_argument(
         "--streaming-stt-base-url",
         default=os.environ.get("HERMES_VOICE_STREAMING_STT_BASE_URL", ""),
         help="Optional compatible streaming STT bridge base URL",
@@ -104,6 +112,9 @@ def main(argv: list[str] | None = None) -> None:
     if args.vllm_model:
         os.environ["HERMES_KAME_INTERFACE_MODEL"] = args.vllm_model
         os.environ["HERMES_VOICE_VLLM_MODEL"] = args.vllm_model
+    if args.interface_token:
+        os.environ["HERMES_KAME_INTERFACE_API_KEY"] = args.interface_token
+        os.environ["HERMES_VOICE_VLLM_TOKEN"] = args.interface_token
     if args.streaming_stt_base_url:
         os.environ["HERMES_VOICE_STREAMING_STT_BASE_URL"] = args.streaming_stt_base_url
     if args.streaming_stt_model:
