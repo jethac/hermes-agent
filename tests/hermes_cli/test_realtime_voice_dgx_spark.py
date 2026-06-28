@@ -177,7 +177,16 @@ def _passing_benchmark_evidence() -> list[dict]:
                 "tts_request_to_audio_end_ms": 620,
             },
         },
-        {"kind": "kame_smoke_result", "name": "all_local_smoke", "ok": True},
+        {
+            "kind": "kame_smoke_result",
+            "name": "all_local_smoke",
+            "ok": True,
+            "local_turns": 2,
+            "local_turn_oracle_calls": 0,
+            "oracle_bound_turns": 4,
+            "oracle_bound_oracle_calls": 4,
+            "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
+        },
         {"kind": "kame_smoke_result", "name": "cloud_fallback_smoke", "ok": True},
         {"kind": "kame_smoke_result", "name": "capability_honesty_smoke", "ok": True},
         {"kind": "kame_smoke_result", "name": "barge_in_interruption_smoke", "ok": True},
@@ -440,6 +449,11 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
         "barge_in_interruption_smoke",
     ]
     assert all(entry["ok"] is False for entry in smoke_entries)
+    assert smoke_entries[0]["local_turns"] is None
+    assert smoke_entries[0]["local_turn_oracle_calls"] is None
+    assert smoke_entries[0]["oracle_bound_turns"] is None
+    assert smoke_entries[0]["oracle_bound_oracle_calls"] is None
+    assert smoke_entries[0]["oracle_authority_routes"] == []
     assumption_entries = [
         entry for entry in evidence_template if entry.get("kind") == "kame_model_assumption_result"
     ]
@@ -860,6 +874,25 @@ def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):
         "requires direct_audio and stt_fallback results for every interface model"
     ) in result["issues"]
     assert "cloud_fallback_smoke: missing passing smoke result" in result["issues"]
+
+
+def test_benchmark_evidence_validator_requires_local_bypass_and_oracle_authority_smoke(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence = _passing_benchmark_evidence()
+    for entry in evidence:
+        if entry.get("kind") == "kame_smoke_result" and entry.get("name") == "all_local_smoke":
+            entry["local_turn_oracle_calls"] = 1
+            entry["oracle_authority_routes"] = ["tools"]
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["all_local_smoke"] is False
+    assert "all_local_smoke: requires local_turn_oracle_calls == 0" in result["issues"]
+    assert (
+        "all_local_smoke: oracle_authority_routes missing files,memory,project_context"
+        in result["issues"]
+    )
 
 
 def test_benchmark_evidence_validator_requires_model_assumption_results(tmp_path):

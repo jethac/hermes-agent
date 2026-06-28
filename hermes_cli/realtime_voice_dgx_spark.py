@@ -36,7 +36,11 @@ DEFAULT_HERMES_IMAGE = "ghcr.io/astral-sh/uv:python3.12-bookworm-slim"
 REQUIRED_DGX_SPARK_SMOKES: tuple[tuple[str, str], ...] = (
     (
         "all_local_smoke",
-        "Set ok=true only after Discord or loopback voice proves local interface, oracle, ASR, TTS, and sidecar are all healthy.",
+        (
+            "Set ok=true only after Discord or loopback voice proves local interface, oracle, ASR, TTS, "
+            "and sidecar are all healthy; local turns bypass the oracle; and authority-sensitive turns "
+            "still route through the oracle."
+        ),
     ),
     (
         "cloud_fallback_smoke",
@@ -975,10 +979,19 @@ def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> li
             }
         )
 
-    template.extend(
-        {"kind": "kame_smoke_result", "name": name, "ok": False, "notes": notes}
-        for name, notes in REQUIRED_DGX_SPARK_SMOKES
-    )
+    for name, notes in REQUIRED_DGX_SPARK_SMOKES:
+        entry = {"kind": "kame_smoke_result", "name": name, "ok": False, "notes": notes}
+        if name == "all_local_smoke":
+            entry.update(
+                {
+                    "local_turns": None,
+                    "local_turn_oracle_calls": None,
+                    "oracle_bound_turns": None,
+                    "oracle_bound_oracle_calls": None,
+                    "oracle_authority_routes": [],
+                }
+            )
+        template.append(entry)
     assumptions = matrix.get("model_assumptions") if isinstance(matrix.get("model_assumptions"), Mapping) else {}
     for name, assumption in assumptions.items():
         if not isinstance(assumption, Mapping) or assumption.get("required") is not True:
@@ -1225,10 +1238,9 @@ def validate_dgx_spark_benchmark_evidence(
         )
 
     for smoke_name, _notes in REQUIRED_DGX_SPARK_SMOKES:
-        ok = _has_passing_smoke(entries, smoke_name)
-        coverage[smoke_name] = ok
-        if not ok:
-            issues.append(f"{smoke_name}: missing passing smoke result")
+        smoke_issues = _passing_smoke_issues(entries, smoke_name)
+        coverage[smoke_name] = not smoke_issues
+        issues.extend(smoke_issues)
 
     return {
         "ok": not issues,
@@ -1454,13 +1466,50 @@ def _metric_float(value: Any) -> float | None:
     return parsed
 
 
-def _has_passing_smoke(entries: list[Mapping[str, Any]], name: str) -> bool:
+def _passing_smoke_issues(entries: list[Mapping[str, Any]], name: str) -> list[str]:
+    entry = _passing_smoke_entry(entries, name)
+    if entry is None:
+        return [f"{name}: missing passing smoke result"]
+    if name == "all_local_smoke":
+        return _all_local_smoke_issues(entry)
+    return []
+
+
+def _passing_smoke_entry(entries: list[Mapping[str, Any]], name: str) -> Mapping[str, Any] | None:
     for entry in entries:
         if str(entry.get("kind") or "") != "kame_smoke_result":
             continue
         if str(entry.get("name") or "") == name and entry.get("ok") is True:
-            return True
-    return False
+            return entry
+    return None
+
+
+def _all_local_smoke_issues(entry: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    local_turns = _metric_float(entry.get("local_turns"))
+    local_oracle_calls = _metric_float(entry.get("local_turn_oracle_calls"))
+    oracle_bound_turns = _metric_float(entry.get("oracle_bound_turns"))
+    oracle_bound_calls = _metric_float(entry.get("oracle_bound_oracle_calls"))
+    if local_turns is None or local_turns < 1:
+        issues.append("all_local_smoke: requires local_turns >= 1")
+    if local_oracle_calls is None or local_oracle_calls != 0:
+        issues.append("all_local_smoke: requires local_turn_oracle_calls == 0")
+    if oracle_bound_turns is None or oracle_bound_turns < 1:
+        issues.append("all_local_smoke: requires oracle_bound_turns >= 1")
+    if oracle_bound_calls is None or oracle_bound_calls < oracle_bound_turns:
+        issues.append("all_local_smoke: requires oracle_bound_oracle_calls >= oracle_bound_turns")
+    authority_routes = entry.get("oracle_authority_routes")
+    if not isinstance(authority_routes, list):
+        issues.append("all_local_smoke: requires oracle_authority_routes list")
+    else:
+        covered = {str(route or "").strip() for route in authority_routes}
+        required = {"tools", "files", "memory", "project_context"}
+        missing = sorted(required.difference(covered))
+        if missing:
+            issues.append(
+                "all_local_smoke: oracle_authority_routes missing " + ",".join(missing)
+            )
+    return issues
 
 
 def _has_passing_model_assumption(
