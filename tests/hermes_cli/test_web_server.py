@@ -3167,6 +3167,7 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.speech_level_threshold"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.barge_in_min_speech_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.barge_in_min_rms"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.barge_in_stop_playback_deadline_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.pre_roll_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.require_live_like"]["type"] == "boolean"
         assert "streaming STT/TTS" in CONFIG_SCHEMA["voice.realtime.require_live_like"]["description"]
@@ -7016,6 +7017,7 @@ class TestRealtimeVoiceWebSocket:
         assert status["oracle_timeout_seconds"] == 12.0
         assert status["barge_in_min_rms"] == 410
         assert status["barge_in_min_speech_ms"] == 130
+        assert status["barge_in_stop_playback_deadline_ms"] == 150
 
     def test_config_defaults_local_frontend_to_reference_sidecar(self, monkeypatch):
         class FakeWebSocket:
@@ -7299,6 +7301,7 @@ class TestRealtimeVoiceWebSocket:
         assert body["speech_level_threshold"] == 0.075
         assert body["barge_in_min_speech_ms"] == 120
         assert body["barge_in_min_rms"] == 350
+        assert body["barge_in_stop_playback_deadline_ms"] == 150
         assert body["pre_roll_ms"] == 300
         assert body["language_support"] == {
             "production_languages": ["en", "ja"],
@@ -8618,6 +8621,7 @@ class TestRealtimeVoiceWebSocket:
                         "speech_level_threshold": 2,
                         "barge_in_min_speech_ms": 5,
                         "barge_in_min_rms": 40_000,
+                        "barge_in_stop_playback_deadline_ms": 5_000,
                         "pre_roll_ms": 5_000,
                     }
                 }
@@ -8631,6 +8635,7 @@ class TestRealtimeVoiceWebSocket:
         assert body["speech_level_threshold"] == 1.0
         assert body["barge_in_min_speech_ms"] == 40
         assert body["barge_in_min_rms"] == 32767
+        assert body["barge_in_stop_playback_deadline_ms"] == 1000
         assert body["pre_roll_ms"] == 1000
 
     def test_status_reports_remote_unhealthy_sidecar_unavailable_and_redacted(self, monkeypatch):

@@ -2034,6 +2034,7 @@ DEFAULT_CONFIG = {
             "speech_level_threshold": 0.075,
             "barge_in_min_speech_ms": 120,
             "barge_in_min_rms": 350,
+            "barge_in_stop_playback_deadline_ms": 150,
             "pre_roll_ms": 300,
             "require_live_like": False,
             "frontend_provider": "",

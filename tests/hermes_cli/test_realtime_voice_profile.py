@@ -24,6 +24,7 @@ def test_live_like_profile_contains_portable_streaming_bridge_config():
     assert profile["production_scripts"] == ["Latn", "Jpan"]
     assert profile["best_effort_languages"] is True
     assert profile["barge_in_min_rms"] == 350
+    assert profile["barge_in_stop_playback_deadline_ms"] == 150
     assert profile["quality_targets_ms"]["audio_to_partial_transcript_ms"] == 300
     assert profile["production_evidence_min_runs"] == 3
 
@@ -266,6 +267,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["fallback_policy"] == "legacy_voice"
     assert realtime["sidecar_autostart"] is True
     assert realtime["require_live_like"] is True
+    assert realtime["barge_in_stop_playback_deadline_ms"] == 150
     assert realtime["routing"] == {
         "allow_local_greetings": True,
         "allow_local_clarifications": True,
@@ -302,6 +304,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
     assert discord_rt["oracle_timeout_seconds"] == 60.0
     assert discord_rt["max_spoken_sentences"] == 2
+    assert discord_rt["barge_in_stop_playback_deadline_ms"] == 150
     assert discord_rt["tts_provider"] == "streaming_tts"
     assert discord_rt["tts_model"] == "portable-streaming-voice"
     assert discord_rt["tts_voice"] == ""
@@ -524,6 +527,7 @@ def test_cartesia_preset_apply_prints_bridge_next_steps(monkeypatch, tmp_path, c
     assert realtime["streaming_stt_base_url"] == "http://127.0.0.1:8769"
     assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8769"
     assert realtime["barge_in_min_rms"] == 350
+    assert realtime["barge_in_stop_playback_deadline_ms"] == 150
     output = capsys.readouterr().out
     assert "realtime_voice_cartesia_bridge --generate-token" in output
     assert "realtime_voice_cartesia_bridge --check --strict --production-en-ja" in output
@@ -547,6 +551,7 @@ def test_openai_preset_apply_prints_live_evidence_next_steps(monkeypatch, tmp_pa
     realtime = saved["config"]["voice"]["realtime"]
     assert realtime["frontend_provider"] == "openai_realtime"
     assert realtime["barge_in_min_rms"] == 350
+    assert realtime["barge_in_stop_playback_deadline_ms"] == 150
     output = capsys.readouterr().out
     assert "export OPENAI_API_KEY=..." in output
     assert "export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=..." in output
@@ -569,6 +574,7 @@ def test_gemini_preset_apply_prints_live_evidence_next_steps(monkeypatch, tmp_pa
     realtime = saved["config"]["voice"]["realtime"]
     assert realtime["frontend_provider"] == "gemini_live"
     assert realtime["barge_in_min_rms"] == 350
+    assert realtime["barge_in_stop_playback_deadline_ms"] == 150
     output = capsys.readouterr().out
     assert "export GEMINI_API_KEY=..." in output
     assert "export DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... DISCORD_VOICE_CHANNEL_ID=..." in output

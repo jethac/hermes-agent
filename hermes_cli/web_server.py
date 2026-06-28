@@ -698,6 +698,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Minimum 16-bit PCM RMS amplitude required before Discord voice barge-in",
         "category": "voice",
     },
+    "voice.realtime.barge_in_stop_playback_deadline_ms": {
+        "type": "number",
+        "description": "Maximum milliseconds allowed to stop assistant playback after confirmed barge-in",
+        "category": "voice",
+    },
     "voice.realtime.pre_roll_ms": {
         "type": "number",
         "description": "Milliseconds of local microphone pre-roll kept before speech starts",
@@ -14422,6 +14427,12 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             default=350,
             minimum=0,
             maximum=32767,
+        ),
+        "barge_in_stop_playback_deadline_ms": _bounded_int_config(
+            realtime.get("barge_in_stop_playback_deadline_ms"),
+            default=150,
+            minimum=20,
+            maximum=1000,
         ),
         "pre_roll_ms": _bounded_nonnegative_int_config(
             realtime.get("pre_roll_ms"),
