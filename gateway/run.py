@@ -12215,10 +12215,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     voice_status = {}
             session_mode = voice_status.get("mode")
             fallback_reason = voice_status.get("fallback_reason")
+            if session_mode == "text_only_fallback":
+                self._voice_mode[self._voice_key(event.source.platform, event.source.chat_id)] = "off"
+                self._save_voice_modes()
+                self._set_adapter_auto_tts_disabled(adapter, event.source.chat_id, disabled=True)
             if session_mode == "realtime_active":
                 mode_line = "Realtime voice is active."
             elif session_mode == "degraded_no_sidecar":
                 mode_line = "Voice is connected in legacy fallback mode."
+            elif session_mode == "text_only_fallback":
+                mode_line = "Realtime voice is unavailable; I'll respond in text here."
             elif session_mode == "legacy_voice_active":
                 mode_line = "Voice is connected in legacy mode."
             else:

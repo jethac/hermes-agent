@@ -1546,6 +1546,77 @@ class TestDiscordVoiceChannelMethods:
         assert "sidecar_start_failed" in status["fallback_reason"]
 
     @pytest.mark.asyncio
+    async def test_join_voice_channel_uses_text_only_policy_when_realtime_sidecar_start_fails(self):
+        adapter = self._make_adapter()
+        adapter._realtime_voice_cfg = {
+            "enabled": True,
+            "sidecar_base_url": "http://127.0.0.1:8766",
+            "fallback_policy": "text_only",
+        }
+        adapter._reset_voice_timeout = MagicMock()
+        fake_session = AsyncMock()
+        fake_session.start = AsyncMock(side_effect=RuntimeError("sidecar unavailable"))
+
+        mock_vc = MagicMock()
+        mock_vc.is_connected.return_value = True
+        mock_vc.channel.id = 222
+        mock_channel = MagicMock()
+        mock_channel.id = 222
+        mock_channel.guild.id = 111
+        mock_channel.connect = AsyncMock(return_value=mock_vc)
+
+        with patch("plugins.platforms.discord.adapter.DISCORD_AVAILABLE", True), \
+             patch("plugins.platforms.discord.adapter.VoiceReceiver") as receiver_cls, \
+             patch("plugins.platforms.discord.adapter.DiscordRealtimeVoiceSession", return_value=fake_session):
+            receiver_cls.return_value.start = MagicMock()
+            ok = await adapter.join_voice_channel(mock_channel)
+
+        assert ok is True
+        status = adapter.get_voice_session_status(111)
+        assert status["mode"] == "text_only_fallback"
+        assert status["session_state"] == "degraded"
+        assert status["fallback_policy"] == "text_only"
+        assert "sidecar_start_failed" in status["fallback_reason"]
+        assert adapter._should_process_legacy_voice_input(111) is False
+
+    @pytest.mark.asyncio
+    async def test_join_voice_channel_fail_closed_policy_tears_down_when_realtime_sidecar_start_fails(self):
+        adapter = self._make_adapter()
+        adapter._realtime_voice_cfg = {
+            "enabled": True,
+            "sidecar_base_url": "http://127.0.0.1:8766",
+            "fallback_policy": "fail_closed",
+        }
+        adapter._reset_voice_timeout = MagicMock()
+        fake_session = AsyncMock()
+        fake_session.start = AsyncMock(side_effect=RuntimeError("sidecar unavailable"))
+
+        mock_vc = MagicMock()
+        mock_vc.is_connected.return_value = True
+        mock_vc.is_playing.return_value = False
+        mock_vc.disconnect = AsyncMock()
+        mock_vc.channel.id = 222
+        mock_channel = MagicMock()
+        mock_channel.id = 222
+        mock_channel.guild.id = 111
+        mock_channel.connect = AsyncMock(return_value=mock_vc)
+
+        with patch("plugins.platforms.discord.adapter.DISCORD_AVAILABLE", True), \
+             patch("plugins.platforms.discord.adapter.VoiceReceiver") as receiver_cls, \
+             patch("plugins.platforms.discord.adapter.DiscordRealtimeVoiceSession", return_value=fake_session):
+            receiver_cls.return_value.start = MagicMock()
+            ok = await adapter.join_voice_channel(mock_channel)
+
+        assert ok is False
+        assert 111 not in adapter._voice_clients
+        mock_vc.disconnect.assert_awaited_once()
+        status = adapter.get_voice_session_status(111)
+        assert status["mode"] == "failed"
+        assert status["session_state"] == "closed"
+        assert status["fallback_policy"] == "fail_closed"
+        assert "sidecar_start_failed" in status["fallback_reason"]
+
+    @pytest.mark.asyncio
     async def test_join_voice_channel_degrades_when_realtime_sidecar_url_missing(self):
         adapter = self._make_adapter()
         adapter._realtime_voice_cfg = {

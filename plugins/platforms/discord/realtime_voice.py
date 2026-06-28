@@ -129,11 +129,16 @@ class DiscordRealtimeVoiceSession:
         frontend_model: Optional[str] = None,
         interface_audio_input: Optional[str] = None,
         asr_mode: str = RealtimeVoiceASRMode.ON_ESCALATION.value,
+        asr_provider: Optional[str] = None,
+        asr_model: Optional[str] = None,
         preferred_local_oracle_model: Optional[str] = None,
         oracle_model: Optional[str] = None,
         oracle_timeout_seconds: float = 60.0,
         max_spoken_sentences: int = 2,
         tts_provider: Optional[str] = None,
+        tts_model: Optional[str] = None,
+        tts_voice: Optional[str] = None,
+        fallback_policy: Optional[str] = None,
         sidecar_connect_timeout_seconds: float = 10.0,
         turn_acknowledgement: Optional[dict] = None,
         routing_policy: Optional[dict] = None,
@@ -153,11 +158,16 @@ class DiscordRealtimeVoiceSession:
         self.frontend_model = frontend_model
         self.interface_audio_input = interface_audio_input
         self.asr_mode = asr_mode
+        self.asr_provider = asr_provider
+        self.asr_model = asr_model
         self.preferred_local_oracle_model = preferred_local_oracle_model
         self.oracle_model = oracle_model
         self.oracle_timeout_seconds = oracle_timeout_seconds
         self.max_spoken_sentences = max_spoken_sentences
         self.tts_provider = tts_provider
+        self.tts_model = tts_model
+        self.tts_voice = tts_voice
+        self.fallback_policy = fallback_policy
         self.sidecar_connect_timeout_seconds = sidecar_connect_timeout_seconds
         self.turn_acknowledgement = dict(turn_acknowledgement or {})
         self.routing_policy = dict(routing_policy or {})
@@ -188,11 +198,16 @@ class DiscordRealtimeVoiceSession:
             frontend_model=self.frontend_model,
             interface_audio_input=self.interface_audio_input,
             asr_mode=RealtimeVoiceASRMode(str(self.asr_mode or RealtimeVoiceASRMode.ON_ESCALATION.value)),
+            asr_provider=self.asr_provider,
+            asr_model=self.asr_model,
             preferred_local_oracle_model=self.preferred_local_oracle_model,
             oracle_model=self.oracle_model,
             oracle_timeout_seconds=self.oracle_timeout_seconds,
             max_spoken_sentences=self.max_spoken_sentences,
             tts_provider=self.tts_provider,
+            tts_model=self.tts_model,
+            tts_voice=self.tts_voice,
+            fallback_policy=self.fallback_policy,
             sidecar_base_url=self.sidecar_base_url,
             sidecar_token=self.sidecar_token,
             sidecar_connect_timeout_seconds=self.sidecar_connect_timeout_seconds,
@@ -205,10 +220,16 @@ class DiscordRealtimeVoiceSession:
                 "frontend_model": self.frontend_model,
                 "interface_audio_input": self.interface_audio_input,
                 "asr_mode": self.asr_mode,
+                "asr_provider": self.asr_provider,
+                "asr_model": self.asr_model,
                 "preferred_local_oracle_model": self.preferred_local_oracle_model,
                 "oracle_model": self.oracle_model,
                 "oracle_timeout_seconds": self.oracle_timeout_seconds,
                 "max_spoken_sentences": self.max_spoken_sentences,
+                "tts_provider": self.tts_provider,
+                "tts_model": self.tts_model,
+                "tts_voice": self.tts_voice,
+                "fallback_policy": self.fallback_policy,
                 "guild_id": str(self.guild_id),
                 "voice_channel_id": str(self.voice_channel_id),
                 "text_channel_id": str(self.text_channel_id) if self.text_channel_id is not None else None,

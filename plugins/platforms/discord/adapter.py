@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 DISCORD_VOICE_MODE_REALTIME = "realtime_active"
 DISCORD_VOICE_MODE_LEGACY = "legacy_voice_active"
 DISCORD_VOICE_MODE_DEGRADED = "degraded_no_sidecar"
+DISCORD_VOICE_MODE_TEXT_ONLY = "text_only_fallback"
 DISCORD_VOICE_MODE_FAILED = "failed"
 DISCORD_VOICE_SESSION_INACTIVE = "inactive"
 DISCORD_VOICE_SESSION_CONNECTING = "connecting"
@@ -123,6 +124,13 @@ def _discord_voice_nonnegative_int(value: Any) -> Optional[int]:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+def _discord_realtime_voice_fallback_policy(cfg: Dict[str, Any]) -> str:
+    policy = str((cfg or {}).get("fallback_policy") or "legacy_voice").strip().lower()
+    if policy in {"legacy_voice", "text_only", "fail_closed"}:
+        return policy
+    return "legacy_voice"
 
 
 def _join_realtime_voice_transcript_parts(parts: List[Any]) -> str:
@@ -2836,11 +2844,16 @@ class DiscordAdapter(BasePlatformAdapter):
             "frontend_model": None,
             "interface_audio_input": None,
             "asr_mode": "on_escalation",
+            "asr_provider": None,
+            "asr_model": None,
             "preferred_local_oracle_model": None,
             "oracle_model": None,
             "oracle_timeout_seconds": 60.0,
             "max_spoken_sentences": 2,
             "tts_provider": None,
+            "tts_model": None,
+            "tts_voice": None,
+            "fallback_policy": "legacy_voice",
             "sidecar_connect_timeout_seconds": 10.0,
             "sidecar_close_timeout_seconds": 2.0,
             "barge_in_min_speech_ms": 120,
@@ -3011,6 +3024,8 @@ class DiscordAdapter(BasePlatformAdapter):
         states = getattr(self, "_voice_session_states", {}) or {}
         state = states.get(guild_id)
         if state is not None:
+            if state.mode == DISCORD_VOICE_MODE_TEXT_ONLY:
+                return False
             return state.mode != DISCORD_VOICE_MODE_REALTIME
         return not bool(getattr(self, "_realtime_voice_sessions", {}).get(guild_id))
 
@@ -3051,10 +3066,16 @@ class DiscordAdapter(BasePlatformAdapter):
             "frontend_model": str(cfg.get("frontend_model") or "") or None,
             "interface_audio_input": str(cfg.get("interface_audio_input") or "") or None,
             "asr_mode": str(cfg.get("asr_mode") or "") or None,
+            "asr_provider": str(cfg.get("asr_provider") or "") or None,
+            "asr_model": str(cfg.get("asr_model") or "") or None,
             "preferred_local_oracle_model": str(cfg.get("preferred_local_oracle_model") or "") or None,
             "oracle_model": str(cfg.get("oracle_model") or "") or None,
             "oracle_timeout_seconds": float(cfg.get("oracle_timeout_seconds") or 60.0),
             "max_spoken_sentences": int(cfg.get("max_spoken_sentences") or 2),
+            "tts_provider": str(cfg.get("tts_provider") or "") or None,
+            "tts_model": str(cfg.get("tts_model") or "") or None,
+            "tts_voice": str(cfg.get("tts_voice") or "") or None,
+            "fallback_policy": _discord_realtime_voice_fallback_policy(cfg),
         }
 
     def _voice_playback_status(self, guild_id: int) -> Dict[str, Any]:
@@ -3112,9 +3133,17 @@ class DiscordAdapter(BasePlatformAdapter):
             "oracle_role": state.oracle_role or architecture["oracle_role"],
             "frontend_provider": state.frontend_provider or architecture["frontend_provider"],
             "frontend_model": state.frontend_model or architecture["frontend_model"],
+            "interface_audio_input": getattr(state, "interface_audio_input", None) or architecture["interface_audio_input"],
+            "asr_mode": getattr(state, "asr_mode", None) or architecture["asr_mode"],
+            "asr_provider": getattr(state, "asr_provider", None) or architecture["asr_provider"],
+            "asr_model": getattr(state, "asr_model", None) or architecture["asr_model"],
             "oracle_model": state.oracle_model or architecture["oracle_model"],
             "oracle_timeout_seconds": state.oracle_timeout_seconds or architecture["oracle_timeout_seconds"],
             "max_spoken_sentences": state.max_spoken_sentences or architecture["max_spoken_sentences"],
+            "tts_provider": getattr(state, "tts_provider", None) or architecture["tts_provider"],
+            "tts_model": getattr(state, "tts_model", None) or architecture["tts_model"],
+            "tts_voice": getattr(state, "tts_voice", None) or architecture["tts_voice"],
+            "fallback_policy": getattr(state, "fallback_policy", None) or architecture["fallback_policy"],
             "latency_metrics_ms": dict(state.latency_metrics_ms),
             "quality_target_misses": [dict(item) for item in state.quality_target_misses],
             **playback,
@@ -3144,11 +3173,16 @@ class DiscordAdapter(BasePlatformAdapter):
             frontend_model=cfg.get("frontend_model"),
             interface_audio_input=str(cfg.get("interface_audio_input") or "") or None,
             asr_mode=str(cfg.get("asr_mode") or "on_escalation"),
+            asr_provider=str(cfg.get("asr_provider") or "") or None,
+            asr_model=str(cfg.get("asr_model") or "") or None,
             preferred_local_oracle_model=str(cfg.get("preferred_local_oracle_model") or "") or None,
             oracle_model=cfg.get("oracle_model"),
             oracle_timeout_seconds=float(cfg.get("oracle_timeout_seconds") or 60.0),
             max_spoken_sentences=int(cfg.get("max_spoken_sentences") or 2),
             tts_provider=cfg.get("tts_provider"),
+            tts_model=str(cfg.get("tts_model") or "") or None,
+            tts_voice=str(cfg.get("tts_voice") or "") or None,
+            fallback_policy=_discord_realtime_voice_fallback_policy(cfg),
             sidecar_connect_timeout_seconds=float(cfg.get("sidecar_connect_timeout_seconds") or 10.0),
             turn_acknowledgement=cfg.get("turn_acknowledgement") if isinstance(cfg.get("turn_acknowledgement"), dict) else {},
             routing_policy=cfg.get("routing") if isinstance(cfg.get("routing"), dict) else {},
@@ -3426,6 +3460,48 @@ class DiscordAdapter(BasePlatformAdapter):
         mixers = getattr(self, "_voice_mixers", None)
         return bool(mixers) and mixers.get(guild_id) is not None
 
+    async def _fail_closed_realtime_voice_join(self, guild_id: int, vc: Any, reason: str) -> None:
+        """Tear down a voice join when realtime voice is configured fail-closed."""
+        realtime_session = getattr(self, "_realtime_voice_sessions", {}).pop(guild_id, None)
+        if realtime_session is not None:
+            try:
+                await self._close_realtime_voice_session(realtime_session)
+            except Exception as exc:
+                logger.debug("Discord realtime fail-closed session cleanup failed: %s", exc)
+        receiver = getattr(self, "_voice_receivers", {}).pop(guild_id, None)
+        if receiver is not None:
+            try:
+                receiver.stop()
+            except Exception:
+                pass
+        listen_task = getattr(self, "_voice_listen_tasks", {}).pop(guild_id, None)
+        if listen_task is not None:
+            listen_task.cancel()
+        if getattr(self, "_voice_mixers", None) is not None:
+            self._voice_mixers.pop(guild_id, None)
+        self._voice_clients.pop(guild_id, None)
+        if vc is not None:
+            try:
+                if vc.is_connected() and vc.is_playing():
+                    vc.stop()
+            except Exception:
+                pass
+            try:
+                if vc.is_connected():
+                    await vc.disconnect()
+            except Exception as exc:
+                logger.debug("Discord realtime fail-closed disconnect failed: %s", exc)
+        self._update_voice_state(
+            guild_id,
+            mode=DISCORD_VOICE_MODE_FAILED,
+            session_state=DISCORD_VOICE_SESSION_CLOSED,
+            mixer_installed=False,
+            receiver_running=False,
+            sidecar_running=False,
+            fallback_reason=reason,
+            fallback_policy="fail_closed",
+        )
+
     async def join_voice_channel(self, channel) -> bool:
         """Join a Discord voice channel. Returns True on success."""
         if not self._client or not DISCORD_AVAILABLE:
@@ -3531,12 +3607,21 @@ class DiscordAdapter(BasePlatformAdapter):
             if realtime_enabled and not getattr(self, "_voice_mixers", {}).get(guild_id):
                 state = self.get_voice_session_status(guild_id)
                 reason = state.get("fallback_reason") or "mixer_unavailable"
+                policy = _discord_realtime_voice_fallback_policy(self._realtime_voice_cfg)
+                if policy == "fail_closed":
+                    await self._fail_closed_realtime_voice_join(guild_id, vc, str(reason))
+                    return False
                 self._update_voice_state(
                     guild_id,
-                    mode=DISCORD_VOICE_MODE_DEGRADED,
+                    mode=(
+                        DISCORD_VOICE_MODE_TEXT_ONLY
+                        if policy == "text_only"
+                        else DISCORD_VOICE_MODE_DEGRADED
+                    ),
                     session_state=DISCORD_VOICE_SESSION_DEGRADED,
                     sidecar_running=False,
                     fallback_reason=reason,
+                    fallback_policy=policy,
                 )
             elif realtime_enabled:
                 try:
@@ -3555,12 +3640,22 @@ class DiscordAdapter(BasePlatformAdapter):
                     )
                 except Exception as e:
                     logger.warning("Discord realtime voice session failed to start: %s", e)
+                    policy = _discord_realtime_voice_fallback_policy(self._realtime_voice_cfg)
+                    fallback_reason = f"sidecar_start_failed: {e}"
+                    if policy == "fail_closed":
+                        await self._fail_closed_realtime_voice_join(guild_id, vc, fallback_reason)
+                        return False
                     self._update_voice_state(
                         guild_id,
-                        mode=DISCORD_VOICE_MODE_DEGRADED,
+                        mode=(
+                            DISCORD_VOICE_MODE_TEXT_ONLY
+                            if policy == "text_only"
+                            else DISCORD_VOICE_MODE_DEGRADED
+                        ),
                         session_state=DISCORD_VOICE_SESSION_DEGRADED,
                         sidecar_running=False,
-                        fallback_reason=f"sidecar_start_failed: {e}",
+                        fallback_reason=fallback_reason,
+                        fallback_policy=policy,
                     )
             else:
                 self._update_voice_state(guild_id, session_state=DISCORD_VOICE_SESSION_READY)
