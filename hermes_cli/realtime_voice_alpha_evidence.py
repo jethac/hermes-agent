@@ -860,6 +860,28 @@ def _print_summary(runs: list[tuple[str, list[dict[str, Any]]]]) -> None:
             f"p90={metric.get('p90')}ms p95={metric.get('p95')}ms "
             f"max={metric.get('max')}ms n={metric.get('count')}"
         )
+    latency_by_stack = summary.get("latency_by_stack")
+    if isinstance(latency_by_stack, dict):
+        for stack_key, stack_summary in sorted(latency_by_stack.items()):
+            if not isinstance(stack_summary, dict):
+                continue
+            stack = stack_summary.get("stack") if isinstance(stack_summary.get("stack"), dict) else {}
+            stack_latency = stack_summary.get("latency_ms") if isinstance(stack_summary.get("latency_ms"), dict) else {}
+            print(
+                "  stack "
+                f"{stack_key}: frontend={stack.get('frontend_provider') or 'unknown'}/"
+                f"{stack.get('frontend_model') or 'unknown'} "
+                f"oracle={stack.get('preferred_local_oracle_model') or stack.get('oracle_model') or 'unknown'} "
+                f"tts={stack.get('tts_provider') or 'unknown'}/{stack.get('tts_model') or 'unknown'}"
+            )
+            for label, metric in sorted(stack_latency.items()):
+                if not isinstance(metric, dict) or not metric.get("count"):
+                    continue
+                print(
+                    f"    {label}: p50={metric.get('p50')}ms "
+                    f"p90={metric.get('p90')}ms p95={metric.get('p95')}ms "
+                    f"max={metric.get('max')}ms n={metric.get('count')}"
+                )
 
 
 if __name__ == "__main__":

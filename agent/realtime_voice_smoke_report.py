@@ -226,28 +226,69 @@ def summarize_realtime_voice_smoke_report_runs(
             }
             for kind, kind_entries in sorted(by_kind.items())
         },
-        "latency_ms": {
-            "audio_to_partial_transcript": _latency_summary(
-                entry.get("transcript_partial_ms")
-                for entry in [*by_kind.get("audio_fixture", []), *by_kind.get("audio_session", [])]
-            ),
-            "final_transcript_to_first_text": _latency_summary(
-                entry.get("first_text_ms")
-                for entry in [*by_kind.get("session_turn", []), *by_kind.get("audio_session", [])]
-            ),
-            "final_transcript_to_first_audio": _latency_summary(
-                entry.get("first_audio_ms")
-                for entry in [
-                    *by_kind.get("session_turn", []),
-                    *by_kind.get("audio_session", []),
-                    *by_kind.get("tts", []),
-                ]
-            ),
-            "barge_in_ack": _latency_summary(
-                entry.get("barge_in_ack_ms")
-                for entry in by_kind.get("barge_in", [])
-            ),
-        },
+        "latency_ms": _latency_summary_for_entries(entries),
+        "latency_by_stack": _latency_summary_by_stack(runs),
+    }
+
+
+def _latency_summary_for_entries(entries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    by_kind = _entries_by_kind(entries)
+    return {
+        "audio_to_partial_transcript": _latency_summary(
+            entry.get("transcript_partial_ms")
+            for entry in [*by_kind.get("audio_fixture", []), *by_kind.get("audio_session", [])]
+        ),
+        "final_transcript_to_first_text": _latency_summary(
+            entry.get("first_text_ms")
+            for entry in [*by_kind.get("session_turn", []), *by_kind.get("audio_session", [])]
+        ),
+        "final_transcript_to_first_audio": _latency_summary(
+            entry.get("first_audio_ms")
+            for entry in [
+                *by_kind.get("session_turn", []),
+                *by_kind.get("audio_session", []),
+                *by_kind.get("tts", []),
+            ]
+        ),
+        "barge_in_ack": _latency_summary(
+            entry.get("barge_in_ack_ms")
+            for entry in by_kind.get("barge_in", [])
+        ),
+    }
+
+
+def _latency_summary_by_stack(
+    runs: Sequence[tuple[str, Sequence[Mapping[str, Any]]]],
+) -> dict[str, Any]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for label, report_entries in runs:
+        manifest = _first_entry_by_kind(report_entries, "manifest") or {}
+        stack = _manifest_stack_summary(manifest)
+        key = _stack_summary_key(stack)
+        bucket = grouped.setdefault(
+            key,
+            {
+                "stack": stack,
+                "runs": 0,
+                "entries": [],
+                "report_labels": [],
+            },
+        )
+        bucket["runs"] += 1
+        bucket["report_labels"].append(str(label))
+        bucket["entries"].extend(
+            entry
+            for entry in report_entries
+            if str(entry.get("kind") or "") != "manifest"
+        )
+    return {
+        key: {
+            "stack": bucket["stack"],
+            "runs": bucket["runs"],
+            "report_labels": bucket["report_labels"],
+            "latency_ms": _latency_summary_for_entries(bucket["entries"]),
+        }
+        for key, bucket in sorted(grouped.items())
     }
 
 
@@ -602,6 +643,43 @@ def realtime_voice_alpha_manifest_fingerprint(entry: Mapping[str, Any]) -> tuple
         tuple(sorted(_primary_language_set(capabilities.get("output_languages", [])))),
         tuple(sorted(_primary_language_set(frontend.get("tts_model_languages", [])))),
     )
+
+
+def _manifest_stack_summary(entry: Mapping[str, Any]) -> dict[str, str]:
+    sidecar = entry.get("sidecar") if isinstance(entry.get("sidecar"), Mapping) else {}
+    health = sidecar.get("health") if isinstance(sidecar.get("health"), Mapping) else {}
+    frontend = health.get("frontend") if isinstance(health.get("frontend"), Mapping) else {}
+    return {
+        "engine": str(entry.get("engine") or ""),
+        "frontend_provider": str(entry.get("frontend_provider") or frontend.get("provider") or ""),
+        "frontend_model": str(entry.get("frontend_model") or frontend.get("model") or ""),
+        "interface_audio_input": str(entry.get("interface_audio_input") or ""),
+        "asr_mode": str(entry.get("asr_mode") or ""),
+        "asr_provider": str(entry.get("asr_provider") or ""),
+        "asr_model": str(entry.get("asr_model") or ""),
+        "oracle_model": str(entry.get("oracle_model") or ""),
+        "preferred_local_oracle_model": str(entry.get("preferred_local_oracle_model") or ""),
+        "tts_provider": str(entry.get("tts_provider") or ""),
+        "tts_model": str(entry.get("tts_model") or ""),
+        "tts_voice": str(entry.get("tts_voice") or ""),
+    }
+
+
+def _stack_summary_key(stack: Mapping[str, str]) -> str:
+    parts = [
+        stack.get("engine") or "unknown_engine",
+        stack.get("frontend_provider") or "unknown_frontend",
+        stack.get("frontend_model") or "unknown_model",
+        stack.get("preferred_local_oracle_model") or stack.get("oracle_model") or "unknown_oracle",
+        stack.get("tts_provider") or "unknown_tts",
+        stack.get("tts_model") or "unknown_tts_model",
+    ]
+    return "|".join(_slug_token(part) for part in parts)
+
+
+def _slug_token(value: str) -> str:
+    token = re.sub(r"[^A-Za-z0-9._:-]+", "_", str(value or "").strip())
+    return token.strip("_") or "unknown"
 
 
 def _validate_required_entries(

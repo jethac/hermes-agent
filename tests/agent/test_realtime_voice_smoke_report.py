@@ -582,6 +582,7 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     assert "audio_to_partial_transcript: p50=90ms p90=90ms p95=90ms max=90ms n=6" in output
     assert "final_transcript_to_first_text: p50=90ms p90=90ms p95=90ms max=90ms n=4" in output
     assert "barge_in_ack: p50=45ms p90=45ms p95=45ms max=45ms n=1" in output
+    assert "stack unknown_engine|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model" in output
 
 
 def test_realtime_voice_report_cli_enforces_minimum_alpha_runs(tmp_path, capsys):
@@ -857,6 +858,26 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         "p95": 90,
         "max": 90,
     }
+    stack_summary = summary["latency_by_stack"][
+        "unknown_engine|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model"
+    ]
+    assert stack_summary["runs"] == 3
+    assert len(stack_summary["report_labels"]) == 3
+    assert stack_summary["stack"] == {
+        "engine": "",
+        "frontend_provider": "",
+        "frontend_model": "",
+        "interface_audio_input": "",
+        "asr_mode": "",
+        "asr_provider": "",
+        "asr_model": "",
+        "oracle_model": "",
+        "preferred_local_oracle_model": "",
+        "tts_provider": "",
+        "tts_model": "",
+        "tts_voice": "",
+    }
+    assert stack_summary["latency_ms"]["audio_to_partial_transcript"]["p90"] == 120
 
 
 def test_realtime_voice_report_cli_returns_nonzero_for_failed_report(tmp_path, capsys):
