@@ -900,6 +900,34 @@ class TestVoiceChannelCommands:
         assert "sidecar_start_failed: unavailable" in result
 
     @pytest.mark.asyncio
+    async def test_join_success_reports_text_only_fallback_without_voice_claim(self, runner):
+        """Text-only fallback should not claim Hermes can speak or listen in voice."""
+        mock_channel = MagicMock()
+        mock_channel.name = "General"
+        mock_adapter = AsyncMock()
+        mock_adapter.join_voice_channel = AsyncMock(return_value=True)
+        mock_adapter.get_user_voice_channel = AsyncMock(return_value=mock_channel)
+        mock_adapter.get_voice_session_status = MagicMock(return_value={
+            "mode": "text_only_fallback",
+            "fallback_reason": "sidecar_start_failed: unavailable",
+        })
+        mock_adapter._voice_text_channels = {}
+        mock_adapter._voice_sources = {}
+        mock_adapter._voice_input_callback = None
+        event = self._make_discord_event()
+        event.source.chat_type = "group"
+        event.source.chat_name = "Hermes Server / #general"
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_channel_join(event)
+
+        assert "Realtime voice is unavailable" in result
+        assert "I'll keep replying in text here" in result
+        assert "I'll speak my replies and listen to you" not in result
+        assert "sidecar_start_failed: unavailable" in result
+        assert runner._voice_mode["discord:123"] == "off"
+
+    @pytest.mark.asyncio
     async def test_join_failure(self, runner):
         """Failed join returns permissions error."""
         mock_channel = MagicMock()
@@ -3174,6 +3202,34 @@ class TestVoiceChannelAwareness:
         ctx = adapter.get_voice_channel_context(111)
 
         assert "degraded legacy voice fallback" in ctx
+        assert "Voice degradation reason: sidecar_start_failed: unavailable" in ctx
+
+    def test_context_describes_text_only_fallback_without_voice_capability(self):
+        adapter = self._make_adapter()
+        vc = MagicMock()
+        vc.is_connected.return_value = True
+        user_a = self._make_member(1001, "Alice")
+        vc.channel.name = "chat-room"
+        vc.channel.members = [user_a]
+        adapter._voice_clients[111] = vc
+        adapter._update_voice_state(
+            111,
+            mode="text_only_fallback",
+            receiver_running=True,
+            mixer_installed=True,
+            sidecar_running=False,
+            fallback_reason="sidecar_start_failed: unavailable",
+            fallback_policy="text_only",
+        )
+
+        ctx = adapter.get_voice_channel_context(111)
+
+        assert "text-only fallback" in ctx
+        assert "Listening: no" in ctx
+        assert "Speaking into channel: no" in ctx
+        assert "Realtime voice is unavailable" in ctx
+        assert "text only" in ctx
+        assert "should not claim it is hearing or speaking" in ctx
         assert "Voice degradation reason: sidecar_start_failed: unavailable" in ctx
 
     def test_context_empty_when_not_connected(self):

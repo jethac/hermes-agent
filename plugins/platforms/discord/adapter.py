@@ -4152,14 +4152,20 @@ class DiscordAdapter(BasePlatformAdapter):
         session = info.get("voice_session") or {}
         mode = session.get("mode") or DISCORD_VOICE_MODE_LEGACY
         fallback_reason = session.get("fallback_reason")
-        can_listen = bool(session.get("receiver_running"))
-        can_speak = bool(session.get("mixer_installed") or self.is_in_voice_channel(guild_id))
+        text_only_fallback = mode == DISCORD_VOICE_MODE_TEXT_ONLY
+        can_listen = bool(session.get("receiver_running")) and not text_only_fallback
+        can_speak = (
+            bool(session.get("mixer_installed") or self.is_in_voice_channel(guild_id))
+            and not text_only_fallback
+        )
         if mode == DISCORD_VOICE_MODE_REALTIME:
             mode_label = "realtime live voice"
         elif mode == DISCORD_VOICE_MODE_DEGRADED:
             mode_label = "degraded legacy voice fallback"
         elif mode == DISCORD_VOICE_MODE_LEGACY:
             mode_label = "legacy voice"
+        elif mode == DISCORD_VOICE_MODE_TEXT_ONLY:
+            mode_label = "text-only fallback"
         else:
             mode_label = "voice unavailable"
 
@@ -4178,6 +4184,11 @@ class DiscordAdapter(BasePlatformAdapter):
             ),
             "Use concise spoken replies; avoid markdown-heavy formatting in voice responses.",
         ]
+        if text_only_fallback:
+            parts.append(
+                "Realtime voice is unavailable; Hermes will continue in text only "
+                "and should not claim it is hearing or speaking in this voice channel."
+            )
         if fallback_reason:
             parts.append(f"Voice degradation reason: {fallback_reason}")
         if mode == DISCORD_VOICE_MODE_REALTIME:

@@ -12231,10 +12231,20 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 mode_line = "Voice is connected."
             if fallback_reason:
                 mode_line = f"{mode_line} Fallback reason: {fallback_reason}"
+            if session_mode == "text_only_fallback":
+                voice_instruction = (
+                    "I'll keep replying in text here until realtime voice is available. "
+                    "Use /voice status for details or /voice leave to disconnect."
+                )
+            else:
+                voice_instruction = (
+                    "I'll speak my replies and listen to you. "
+                    "Use /voice status for details or /voice leave to disconnect."
+                )
             return (
                 f"Joined voice channel **{voice_channel.name}**.\n"
                 f"{mode_line}\n"
-                f"I'll speak my replies and listen to you. Use /voice status for details or /voice leave to disconnect."
+                f"{voice_instruction}"
             )
         # Join failed — clear callback
         adapter._voice_input_callback = None
