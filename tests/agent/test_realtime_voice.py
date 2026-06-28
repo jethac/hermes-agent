@@ -806,6 +806,7 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
         assert request.interface_already_said == "One moment."
 
         defer = next(event for event in seen if event.type == VoiceEventType.INTERFACE_REPLY_DEFER)
+        oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
         acknowledgement = next(
             event
             for event in seen
@@ -814,6 +815,11 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         assert defer.payload["route"] == "defer"
         assert defer.payload["interface_already_said"] == "One moment."
+        assert oracle_request.payload["route"] == "defer"
+        assert oracle_request.payload["turn_id"] == "voice-123:1"
+        assert oracle_request.payload["interface_already_said"] == "One moment."
+        assert oracle_request.payload["intent"] == "Check the deployment status."
+        assert oracle_request.payload["text"] == "check the deployment status"
         assert acknowledgement.payload["text"] == "One moment."
         assert acknowledgement.payload["kame_interface_already_said"] == "One moment."
         assert commit.payload["text"] == "The deployment is healthy."

@@ -541,15 +541,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             )
             return
         if oracle_request is not None:
-            interface_event_type = (
-                VoiceEventType.INTERFACE_REPLY_DEFER
-                if oracle_request.route == KameRoute.DEFER
-                else VoiceEventType.INTERFACE_ORACLE_REQUEST
-            )
-            await self._emit(
-                interface_event_type,
-                _kame_interface_payload_with_metrics(oracle_request, generation, assistant_metadata),
-            )
+            interface_payload = _kame_interface_payload_with_metrics(oracle_request, generation, assistant_metadata)
+            if oracle_request.route == KameRoute.DEFER:
+                await self._emit(VoiceEventType.INTERFACE_REPLY_DEFER, interface_payload)
+            await self._emit(VoiceEventType.INTERFACE_ORACLE_REQUEST, interface_payload)
         self._active_task = asyncio.create_task(
             self._answer_and_speak(
                 transcript,
