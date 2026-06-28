@@ -3307,6 +3307,8 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_max_output_tokens"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_max_audio_seconds"]["type"] == "number"
+        assert CONFIG_SCHEMA["discord.realtime_voice.interface_api_key_env"]["type"] == "string"
+        assert "secrets stay outside config" in CONFIG_SCHEMA["discord.realtime_voice.interface_api_key_env"]["description"]
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_audio_input"]["type"] == "select"
         assert CONFIG_SCHEMA["discord.realtime_voice.interface_audio_input"]["options"] == [
             "auto",

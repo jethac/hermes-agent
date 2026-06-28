@@ -1183,6 +1183,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Maximum native-audio segment seconds sent to the Discord KAME interface model",
         "category": "discord",
     },
+    "discord.realtime_voice.interface_api_key_env": {
+        "type": "string",
+        "description": "Environment variable containing the Discord KAME interface/reflex endpoint bearer token; secrets stay outside config",
+        "category": "discord",
+    },
     "discord.realtime_voice.interface_audio_input": {
         "type": "select",
         "description": "How the Discord KAME reflex receives user input",
