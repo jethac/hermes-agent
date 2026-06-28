@@ -378,6 +378,10 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
     interface_internal_url = "http://kame-interface-vllm:8000/v1"
     asr_internal_url = "http://kame-asr-bridge:8767"
     tts_internal_url = "http://kame-tts-bridge:8768"
+    asr_bridge_env = _render_dgx_spark_local_speech_bridge_env(asr)
+    tts_bridge_env = _render_dgx_spark_local_speech_bridge_env(tts)
+    asr_bridge_args = _render_dgx_spark_local_speech_bridge_args(asr, model_env="HERMES_VOICE_STREAMING_STT_MODEL")
+    tts_bridge_args = _render_dgx_spark_local_speech_bridge_args(tts, model_env="HERMES_VOICE_STREAMING_TTS_MODEL")
     return f"""services:
   kame-interface-vllm:
     image: ${{HERMES_DGX_SPARK_VLLM_IMAGE:-{images.get("vllm", DEFAULT_VLLM_IMAGE)}}}
@@ -483,6 +487,7 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       HERMES_HOME: /root/.hermes
       HERMES_DGX_SPARK_ASR_ADAPTER: {asr["adapter"]}
       HERMES_VOICE_STREAMING_STT_MODEL: {asr["model"]}
+{asr_bridge_env.rstrip()}
     command:
       - uv
       - run
@@ -495,6 +500,7 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - 0.0.0.0
       - --port
       - "8767"
+{asr_bridge_args.rstrip()}
       - --production-en-ja
 
   kame-tts-bridge:
@@ -509,6 +515,7 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       HERMES_HOME: /root/.hermes
       HERMES_DGX_SPARK_TTS_ADAPTER: {tts["adapter"]}
       HERMES_VOICE_STREAMING_TTS_MODEL: {tts["model"]}
+{tts_bridge_env.rstrip()}
     command:
       - uv
       - run
@@ -521,6 +528,7 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - 0.0.0.0
       - --port
       - "8768"
+{tts_bridge_args.rstrip()}
       - --production-en-ja
 """
 
@@ -529,6 +537,14 @@ def render_dgx_spark_env_example(manifest: Mapping[str, Any]) -> str:
     roles = _roles(manifest)
     images = dict(manifest.get("images") or {})
     volumes = dict(manifest.get("volumes") or {})
+    speech_env = "\n".join(
+        part
+        for part in (
+            _render_dgx_spark_local_speech_bridge_env_example(roles["asr"]),
+            _render_dgx_spark_local_speech_bridge_env_example(roles["tts"]),
+        )
+        if part
+    )
     return f"""# DGX Spark KAME realtime voice stack.
 # This file intentionally contains no API keys or bearer tokens.
 HERMES_DGX_SPARK_VLLM_IMAGE={images.get("vllm", DEFAULT_VLLM_IMAGE)}
@@ -554,7 +570,55 @@ HERMES_VOICE_STREAMING_TTS_BASE_URL={roles["tts"]["base_url"]}
 HERMES_VOICE_STREAMING_TTS_MODEL={roles["tts"]["model"]}
 HERMES_DGX_SPARK_TTS_MODULE={roles["tts"]["module"]}
 HERMES_DGX_SPARK_TTS_ADAPTER={roles["tts"]["adapter"]}
+{speech_env}
 """
+
+
+def _render_dgx_spark_local_speech_bridge_env(speech_role: Mapping[str, Any]) -> str:
+    prefix = _local_speech_bridge_env_prefix(speech_role)
+    if not prefix:
+        return ""
+    return (
+        f"      {prefix}_UPSTREAM_BASE_URL: ${{{prefix}_UPSTREAM_BASE_URL:-}}\n"
+        f"      {prefix}_UPSTREAM_TOKEN: ${{{prefix}_UPSTREAM_TOKEN:-}}\n"
+    )
+
+
+def _render_dgx_spark_local_speech_bridge_args(
+    speech_role: Mapping[str, Any],
+    *,
+    model_env: str,
+) -> str:
+    prefix = _local_speech_bridge_env_prefix(speech_role)
+    if not prefix:
+        return ""
+    return (
+        "      - --model\n"
+        f"      - ${{{model_env}:-{speech_role['model']}}}\n"
+        "      - --upstream-base-url\n"
+        f"      - ${{{prefix}_UPSTREAM_BASE_URL:-}}\n"
+        "      - --upstream-token\n"
+        f"      - ${{{prefix}_UPSTREAM_TOKEN:-}}\n"
+    )
+
+
+def _render_dgx_spark_local_speech_bridge_env_example(speech_role: Mapping[str, Any]) -> str:
+    prefix = _local_speech_bridge_env_prefix(speech_role)
+    if not prefix:
+        return ""
+    return (
+        f"{prefix}_UPSTREAM_BASE_URL=\n"
+        f"{prefix}_UPSTREAM_TOKEN=\n"
+    )
+
+
+def _local_speech_bridge_env_prefix(speech_role: Mapping[str, Any]) -> str:
+    module = str(speech_role.get("module") or "")
+    if module == "hermes_cli.realtime_voice_nemotron_speech_bridge":
+        return "HERMES_NEMOTRON_SPEECH"
+    if module == "hermes_cli.realtime_voice_magpie_tts_bridge":
+        return "HERMES_MAGPIE_TTS"
+    return ""
 
 
 def render_dgx_spark_launch_script(manifest: Mapping[str, Any]) -> str:

@@ -217,6 +217,29 @@ def test_rendered_compose_has_reflex_oracle_and_sidecar_without_secret_material(
     assert "sk_" not in compose
 
 
+def test_rendered_compose_wires_production_speech_bridge_upstreams(tmp_path):
+    manifest = _manifest(tmp_path, production_speech=True)
+    compose = realtime_voice_dgx_spark.render_dgx_spark_compose(manifest)
+    env_example = realtime_voice_dgx_spark.render_dgx_spark_env_example(manifest)
+
+    assert PRODUCTION_ASR_MODULE in compose
+    assert PRODUCTION_TTS_MODULE in compose
+    assert "HERMES_VOICE_STREAMING_STT_MODEL: nemotron-speech-streaming-0.6b" in compose
+    assert "HERMES_VOICE_STREAMING_TTS_MODEL: magpie-local-streaming-tts" in compose
+    assert "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL: ${HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL:-}" in compose
+    assert "HERMES_NEMOTRON_SPEECH_UPSTREAM_TOKEN: ${HERMES_NEMOTRON_SPEECH_UPSTREAM_TOKEN:-}" in compose
+    assert "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL: ${HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL:-}" in compose
+    assert "HERMES_MAGPIE_TTS_UPSTREAM_TOKEN: ${HERMES_MAGPIE_TTS_UPSTREAM_TOKEN:-}" in compose
+    assert "      - ${HERMES_VOICE_STREAMING_STT_MODEL:-nemotron-speech-streaming-0.6b}" in compose
+    assert "      - ${HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL:-}" in compose
+    assert "      - ${HERMES_VOICE_STREAMING_TTS_MODEL:-magpie-local-streaming-tts}" in compose
+    assert "      - ${HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL:-}" in compose
+    assert "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL=" in env_example
+    assert "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL=" in env_example
+    assert "sk_" not in compose
+    assert "sk_" not in env_example
+
+
 def test_manifest_clamps_interface_max_audio_seconds(tmp_path):
     high = realtime_voice_dgx_spark.build_dgx_spark_stack_manifest(
         repo_dir=tmp_path / "repo",
