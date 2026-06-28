@@ -189,6 +189,7 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     intent_source = _metadata_text(metadata.get("kame_intent_source"))
     route = _metadata_text(metadata.get("kame_route"))
     route_confidence = _metadata_float(metadata.get("kame_route_confidence"))
+    reflex_validation_error = _metadata_text(metadata.get("kame_reflex_validation_error"))
     interface_already_said = _metadata_text(metadata.get("kame_interface_already_said"))
     summary = _metadata_text(metadata.get("kame_conversation_summary"))
     response_style = _metadata_response_style(metadata.get("kame_requested_response_style"))
@@ -204,6 +205,8 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
             parts.append(f"Reflex route: {route}.")
         else:
             parts.append(f"Reflex route: {route} (confidence {route_confidence:.2f}).")
+    if reflex_validation_error:
+        parts.append(f"Reflex route override: {reflex_validation_error}.")
     transcript_source_is_asr = transcript_source.lower().startswith("asr")
     if transcript and not transcript_source_is_asr:
         parts.append(f"Reflex transcript hypothesis ({transcript_source or 'reflex_audio'}): {transcript}")

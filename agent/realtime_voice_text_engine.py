@@ -593,6 +593,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             payload=payload,
             fallback_text=transcript,
             default_max_spoken_sentences=_max_spoken_sentences(config),
+            routing_policy=_kame_routing_policy(config),
         )
         if request.route == KameRoute.DEFER and not request.interface_already_said:
             acknowledgement = _turn_acknowledgement_text(config)
@@ -1510,6 +1511,8 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         payload["interface_already_said"] = request.interface_already_said
     if request.cancellation_token:
         payload["cancellation_token"] = request.cancellation_token
+    if request.reflex_validation_error:
+        payload["reflex_validation_error"] = request.reflex_validation_error
     return payload
 
 
@@ -1556,9 +1559,17 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
         payload["interface_already_said"] = str(metadata.get("kame_interface_already_said"))
     if metadata.get("kame_cancellation_token"):
         payload["cancellation_token"] = str(metadata.get("kame_cancellation_token"))
+    if metadata.get("kame_reflex_validation_error"):
+        payload["reflex_validation_error"] = str(metadata.get("kame_reflex_validation_error"))
     if isinstance(metadata.get("kame_requested_response_style"), Mapping):
         payload["requested_response_style"] = dict(metadata.get("kame_requested_response_style") or {})
     return {key: value for key, value in payload.items() if value != ""}
+
+
+def _kame_routing_policy(config: Optional[RealtimeVoiceSessionConfig]) -> Mapping[str, Any]:
+    metadata = config.metadata if config is not None and isinstance(config.metadata, Mapping) else {}
+    routing = metadata.get("routing") if isinstance(metadata, Mapping) else {}
+    return routing if isinstance(routing, Mapping) else {}
 
 
 def _kame_interface_partial_payload_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:

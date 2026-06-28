@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+import re
 from typing import Any, Mapping, Optional
 
 
@@ -33,6 +34,47 @@ KAME_VOICE_DENIAL_PATTERNS = (
     "no ability to join",
     "no ability to speak",
 )
+KAME_TOOL_OR_TASK_TERMS = frozenset(
+    {
+        "call",
+        "command",
+        "commit",
+        "deploy",
+        "execute",
+        "grep",
+        "install",
+        "pytest",
+        "push",
+        "rebase",
+        "restart",
+        "run",
+        "search",
+        "shell",
+        "tool",
+    }
+)
+KAME_FILE_OR_PROJECT_TERMS = frozenset(
+    {
+        "branch",
+        "code",
+        "config",
+        "directory",
+        "diff",
+        "file",
+        "folder",
+        "function",
+        "github",
+        "issue",
+        "log",
+        "pr",
+        "project",
+        "repo",
+        "repository",
+        "source",
+        "workspace",
+    }
+)
+KAME_MEMORY_TERMS = frozenset({"forget", "memory", "recall", "remember", "save"})
 
 
 @dataclass(frozen=True)
@@ -138,6 +180,7 @@ class KameOracleRequest:
     max_spoken_sentences: int = 2
     requested_response_style: Mapping[str, Any] = field(default_factory=dict)
     cancellation_token: str = ""
+    reflex_validation_error: str = ""
 
     @property
     def oracle_text(self) -> str:
@@ -182,6 +225,8 @@ class KameOracleRequest:
             metadata["kame_conversation_summary"] = self.conversation_summary
         if self.cancellation_token:
             metadata["kame_cancellation_token"] = self.cancellation_token
+        if self.reflex_validation_error:
+            metadata["kame_reflex_validation_error"] = self.reflex_validation_error
         return metadata
 
     @classmethod
@@ -195,9 +240,11 @@ class KameOracleRequest:
         payload: Mapping[str, Any],
         fallback_text: str,
         default_max_spoken_sentences: int = 2,
+        routing_policy: Optional[Mapping[str, Any]] = None,
     ) -> "KameOracleRequest":
         """Build a KAME oracle request from a reflex/ASR event payload."""
 
+        payload = apply_kame_routing_policy(payload, routing_policy)
         intent = _optional_text(payload.get("intent")) or _optional_text(payload.get("text")) or fallback_text
         transcript = _optional_text(payload.get("transcript")) or ""
         transcript_source = _optional_text(payload.get("transcript_source"))
@@ -265,7 +312,87 @@ class KameOracleRequest:
             ),
             requested_response_style=requested_response_style,
             cancellation_token=_optional_text(payload.get("cancellation_token")) or "",
+            reflex_validation_error=_optional_text(payload.get("reflex_validation_error")) or "",
         )
+
+
+def apply_kame_routing_policy(
+    payload: Mapping[str, Any],
+    routing_policy: Optional[Mapping[str, Any]] = None,
+) -> dict[str, Any]:
+    """Apply Hermes authority gates to a reflex routing payload.
+
+    This is intentionally independent of ``RealtimeVoiceSessionConfig`` so both
+    the reference sidecar and alternate sidecars feeding the Hermes KAME engine
+    get the same local-route safety behavior.
+    """
+
+    routed = dict(payload)
+    route = _optional_text(routed.get("route")).lower()
+    if route not in {KameRoute.LOCAL.value, KameRoute.REJECT_OR_CLARIFY.value}:
+        return routed
+    routing = routing_policy if isinstance(routing_policy, Mapping) else {}
+    if route == KameRoute.LOCAL.value:
+        required_reason = kame_oracle_required_reason(routed, routing)
+        if required_reason:
+            return downgrade_kame_local_route(routed, reason=required_reason)
+    if route == KameRoute.REJECT_OR_CLARIFY.value and not _bool(
+        routing.get("allow_local_clarifications"),
+        default=True,
+    ):
+        return downgrade_kame_local_route(routed, reason="local_clarifications_disabled")
+    confidence = _confidence(
+        routed.get("route_confidence") if routed.get("route_confidence") is not None else routed.get("confidence")
+    )
+    if confidence is None:
+        return routed
+    threshold = _bounded_float(routing.get("local_confidence_threshold"), default=0.75)
+    if confidence >= threshold:
+        return routed
+    return downgrade_kame_local_route(routed, reason="local_confidence_below_threshold")
+
+
+def downgrade_kame_local_route(payload: Mapping[str, Any], *, reason: str) -> dict[str, Any]:
+    routed = dict(payload)
+    routed["route"] = KameRoute.ORACLE_DIRECT.value
+    routed.pop("local_reply", None)
+    existing_error = _optional_text(routed.get("reflex_validation_error"))
+    routed["reflex_validation_error"] = ",".join(
+        part for part in (existing_error, reason) if part
+    )
+    return routed
+
+
+def kame_oracle_required_reason(
+    payload: Mapping[str, Any],
+    routing_policy: Optional[Mapping[str, Any]] = None,
+) -> str:
+    routing = routing_policy if isinstance(routing_policy, Mapping) else {}
+    terms = _policy_terms(payload)
+    if (
+        _bool(routing.get("require_oracle_for_tools"), default=True)
+        and terms.intersection(KAME_TOOL_OR_TASK_TERMS)
+    ):
+        return "oracle_required_for_tools"
+    if (
+        _bool(routing.get("require_oracle_for_files"), default=True)
+        and terms.intersection(KAME_FILE_OR_PROJECT_TERMS)
+    ):
+        return "oracle_required_for_files"
+    if (
+        _bool(routing.get("require_oracle_for_memory"), default=True)
+        and terms.intersection(KAME_MEMORY_TERMS)
+    ):
+        return "oracle_required_for_memory"
+    return ""
+
+
+def _policy_terms(payload: Mapping[str, Any]) -> set[str]:
+    text = " ".join(
+        str(payload.get(key) or "")
+        for key in ("text", "transcript", "intent")
+    ).lower()
+    return set(re.findall(r"[a-z][a-z0-9_-]*", text))
 
 
 def _optional_text(value: Any) -> str:
@@ -311,6 +438,16 @@ def _positive_int(value: Any, *, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
+
+
+def _bounded_float(value: Any, *, default: float) -> float:
+    if isinstance(value, bool) or value is None:
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, min(1.0, parsed))
 
 
 def _response_style(value: Any, *, max_sentences: int) -> dict[str, Any]:

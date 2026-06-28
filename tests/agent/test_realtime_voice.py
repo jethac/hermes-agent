@@ -649,6 +649,7 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
         asr_transcript_confidence=0.68,
         interface_already_said="One moment.",
         conversation_summary="The user is testing KAME voice.",
+        reflex_validation_error="oracle_required_for_files",
     )
 
     prompt = _voice_oracle_prompt(request.oracle_text, request.to_metadata())
@@ -656,6 +657,7 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     assert "KAME request" in prompt
     assert "Reflex interpreted intent (reflex_audio): Find the note" in prompt
     assert "Reflex route: oracle_direct (confidence 0.81)." in prompt
+    assert "Reflex route override: oracle_required_for_files." in prompt
     assert "Reflex transcript hypothesis (reflex_audio): find the note" in prompt
     assert "Verbatim ASR evidence (asr): find the node" in prompt
     assert "tool arguments" in prompt
@@ -870,6 +872,87 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
         assert acknowledgement.payload["kame_interface_already_said"] == "One moment."
         assert commit.payload["text"] == "The deployment is healthy."
         assert spoken == ["One moment.", "The deployment is healthy."]
+
+    asyncio.run(run())
+
+
+def test_kame_engine_enforces_oracle_required_routing_for_local_payloads(monkeypatch):
+    class StructuredOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "I will check the project config."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = StructuredOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                metadata={
+                    "transport": "discord_voice",
+                    "routing": {
+                        "require_oracle_for_tools": True,
+                        "require_oracle_for_memory": True,
+                        "require_oracle_for_files": True,
+                        "local_confidence_threshold": 0.75,
+                    },
+                },
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "check the project config file",
+                    "intent": "Check the project config file.",
+                    "intent_source": "reflex_audio",
+                    "route": "local",
+                    "route_confidence": 0.97,
+                    "local_reply": "The config file looks fine.",
+                    "transcript_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        assert len(oracle.requests) == 1
+        request = oracle.requests[0]
+        assert request.route == KameRoute.ORACLE_DIRECT
+        assert request.local_reply == ""
+        assert request.reflex_validation_error == "oracle_required_for_files"
+        intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
+        oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        assert not any(event.type == VoiceEventType.INTERFACE_REPLY_LOCAL for event in seen)
+        assert intent.payload["route"] == "oracle_direct"
+        assert intent.payload["reflex_validation_error"] == "oracle_required_for_files"
+        assert "local_reply" not in intent.payload
+        assert oracle_request.payload["route"] == "oracle_direct"
+        assert oracle_request.payload["reflex_validation_error"] == "oracle_required_for_files"
+        assert final.payload["kame_reflex_validation_error"] == "oracle_required_for_files"
+        assert spoken == ["I will check the project config."]
 
     asyncio.run(run())
 
