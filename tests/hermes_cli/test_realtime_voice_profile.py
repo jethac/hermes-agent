@@ -411,7 +411,7 @@ def test_kame_preset_can_print_local_oracle_provider_profile(capsys):
     realtime = data["voice"]["realtime"]
     assert realtime["oracle_provider"] == "custom"
     assert realtime["oracle_provider_name"] == "Spark Oracle"
-    assert realtime["oracle_model"] == "gemma-4-26B-A4B-it"
+    assert "oracle_model" not in realtime
     assert realtime["oracle_base_url"] == "http://spark.local:8001/v1"
     assert realtime["oracle_api_mode"] == "chat_completions"
 
@@ -722,7 +722,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["oracle_provider"] == "custom"
     assert discord_rt["oracle_provider_name"] == "Spark Oracle"
     assert discord_rt["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
-    assert discord_rt["oracle_model"] == "gemma-4-26B-A4B-it"
+    assert discord_rt["oracle_model"] is None
     assert discord_rt["oracle_base_url"] == "http://spark.local:8001/v1"
     assert discord_rt["oracle_api_mode"] == "chat_completions"
     assert discord_rt["oracle_timeout_seconds"] == 42.0
@@ -767,7 +767,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
         "provider": "custom",
         "provider_name": "Spark Oracle",
         "preferred_local_model": "gemma-4-26B-A4B-it",
-        "model": "gemma-4-26B-A4B-it",
+        "model": "",
         "base_url": "http://spark.local:8001/v1",
         "api_mode": "chat_completions",
         "timeout_ms": 42000,
@@ -781,7 +781,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     }
 
 
-def test_kame_profile_merge_can_point_hermes_oracle_at_local_vllm():
+def test_kame_profile_merge_registers_local_oracle_without_changing_active_model():
     existing = {
         "model": {"provider": "openrouter", "default": "gpt-5"},
         "custom_providers": [
@@ -800,19 +800,13 @@ def test_kame_profile_merge_can_point_hermes_oracle_at_local_vllm():
 
     merged = realtime_voice_profile.merge_realtime_voice_profile(existing, profile)
 
-    assert merged["model"] == {
-        "provider": "custom",
-        "default": "gemma-4-26B-A4B-it",
-        "name": "gemma-4-26B-A4B-it",
-        "base_url": "http://spark.local:8001/v1",
-        "api_mode": "chat_completions",
-    }
+    assert merged["model"] == existing["model"]
     assert merged["voice"]["realtime"]["oracle"] == {
         "mode": "local_openai_compatible",
         "provider": "custom",
         "provider_name": "Spark Oracle",
         "preferred_local_model": "gemma-4-26B-A4B-it",
-        "model": "gemma-4-26B-A4B-it",
+        "model": "",
         "base_url": "http://spark.local:8001/v1",
         "api_mode": "chat_completions",
         "timeout_ms": 60000,

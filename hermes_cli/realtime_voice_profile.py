@@ -1264,7 +1264,6 @@ def build_kame_realtime_voice_profile(
                     oracle_provider_name or DEFAULT_KAME_ORACLE_PROVIDER_NAME
                 ).strip()
                 or DEFAULT_KAME_ORACLE_PROVIDER_NAME,
-                "oracle_model": oracle_model,
                 "oracle_base_url": oracle_url,
                 "oracle_api_mode": oracle_api,
             }
@@ -1363,7 +1362,7 @@ def merge_realtime_voice_profile(
         discord_rt.update(copy.deepcopy(_kame_nested_config(profile)))
     discord["realtime_voice"] = discord_rt
     updated["discord"] = discord
-    _merge_kame_oracle_model_config(updated, profile)
+    _merge_kame_oracle_provider_config(updated, profile)
     return updated
 
 
@@ -1472,8 +1471,13 @@ def _positive_float_or_default(value: Any, default: float) -> float:
     return parsed if parsed > 0 else default
 
 
-def _merge_kame_oracle_model_config(updated: dict[str, Any], profile: Mapping[str, Any]) -> None:
-    """Point Hermes' oracle at the local KAME endpoint only when explicitly requested."""
+def _merge_kame_oracle_provider_config(updated: dict[str, Any], profile: Mapping[str, Any]) -> None:
+    """Register the local KAME oracle endpoint without changing Hermes' active model.
+
+    Hermes' existing model config and /model flow remain authoritative. A DGX
+    KAME launch profile may add the local endpoint as a selectable custom
+    provider, but it must not silently rewrite model.default.
+    """
 
     if str(profile.get("engine") or "") != "kame_interface_oracle":
         return
@@ -1491,22 +1495,6 @@ def _merge_kame_oracle_model_config(updated: dict[str, Any], profile: Mapping[st
         str(profile.get("oracle_api_mode") or "chat_completions").strip()
         or "chat_completions"
     )
-
-    model_cfg = updated.get("model")
-    if not isinstance(model_cfg, dict):
-        model_cfg = {"default": str(model_cfg)} if model_cfg else {}
-    else:
-        model_cfg = copy.deepcopy(model_cfg)
-    model_cfg.update(
-        {
-            "provider": str(profile.get("oracle_provider") or "custom").strip() or "custom",
-            "default": oracle_model,
-            "name": oracle_model,
-            "base_url": oracle_base_url,
-            "api_mode": oracle_api_mode,
-        }
-    )
-    updated["model"] = model_cfg
 
     provider_name = str(
         profile.get("oracle_provider_name") or DEFAULT_KAME_ORACLE_PROVIDER_NAME

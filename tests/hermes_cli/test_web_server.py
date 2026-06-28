@@ -7430,7 +7430,8 @@ class TestRealtimeVoiceWebSocket:
         assert profile["asr_provider"] == "nemotron_speech"
         assert profile["oracle_provider"] == "custom"
         assert profile["oracle_provider_name"] == "Spark Oracle"
-        assert profile["oracle_model"] == "gemma-4-26B-A4B-it"
+        assert profile["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+        assert "oracle_model" not in profile
         assert profile["oracle_base_url"] == "http://spark.local:8001/v1"
         assert profile["oracle_api_mode"] == "chat_completions"
         assert profile["oracle_timeout_seconds"] == 42.0
@@ -8214,6 +8215,7 @@ class TestRealtimeVoiceWebSocket:
             "interface_audio_input": "native_audio",
             "asr_provider": "streaming_stt",
             "asr_model": "nemotron-speech",
+            "asr_base_url": None,
             "oracle_provider": None,
             "oracle_provider_name": None,
             "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
@@ -8226,6 +8228,7 @@ class TestRealtimeVoiceWebSocket:
             "tts_provider": "cartesia",
             "tts_model": "sonic-3.5",
             "tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+            "tts_base_url": None,
             "fallback_policy": "legacy_voice",
             "routing": body["routing"],
             "metrics": body["metrics"],
