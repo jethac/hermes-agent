@@ -726,9 +726,11 @@ def build_realtime_voice_live_like_profile(
         "sidecar_connect_timeout_seconds": 10.0,
         "vllm_base_url": "",
         "vllm_model": "",
+        "asr_base_url": stt_url,
         "streaming_stt_base_url": stt_url,
         "streaming_stt_model": str(streaming_stt_model or DEFAULT_STREAMING_STT_MODEL),
         "streaming_stt_token_env": _clean_env_name(streaming_stt_token_env),
+        "tts_base_url": tts_url,
         "streaming_tts_base_url": tts_url,
         "streaming_tts_model": str(streaming_tts_model or DEFAULT_STREAMING_TTS_MODEL),
         "streaming_tts_voice": str(streaming_tts_voice or ""),
@@ -1047,6 +1049,8 @@ def build_kame_realtime_voice_profile(
 
     interface_url = _clean_url(interface_base_url)
     oracle_url = _clean_url(oracle_base_url)
+    asr_url = _clean_url(streaming_stt_base_url)
+    tts_url = _clean_url(streaming_tts_base_url)
     oracle_model = str(preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL)
     reflex_model_label = str(reflex_model or DEFAULT_KAME_REFLEX_MODEL)
     served_vllm_model = str(vllm_model or reflex_model_label)
@@ -1080,6 +1084,7 @@ def build_kame_realtime_voice_profile(
         "asr_mode": asr,
         "asr_provider": str(asr_provider or "streaming_stt"),
         "asr_model": str(streaming_stt_model or DEFAULT_STREAMING_STT_MODEL),
+        "asr_base_url": asr_url,
         "preferred_local_oracle_model": oracle_model,
         "oracle_provider": str(oracle_provider or ""),
         "oracle_api_mode": oracle_api,
@@ -1089,6 +1094,7 @@ def build_kame_realtime_voice_profile(
         "tts_provider": str(tts_provider or "streaming_tts"),
         "tts_model": tts_model_label,
         "tts_voice": tts_voice_label,
+        "tts_base_url": tts_url,
         "fallback_policy": fallback,
         "sidecar_base_url": "",
         "spark_base_url": "",
@@ -1096,10 +1102,10 @@ def build_kame_realtime_voice_profile(
         "sidecar_port": port,
         "sidecar_autostart": True,
         "sidecar_connect_timeout_seconds": 10.0,
-        "streaming_stt_base_url": _clean_url(streaming_stt_base_url),
+        "streaming_stt_base_url": asr_url,
         "streaming_stt_model": str(streaming_stt_model or DEFAULT_STREAMING_STT_MODEL),
         "streaming_stt_token_env": _clean_env_name(streaming_stt_token_env),
-        "streaming_tts_base_url": _clean_url(streaming_tts_base_url),
+        "streaming_tts_base_url": tts_url,
         "streaming_tts_model": str(streaming_tts_model or tts_model_label),
         "streaming_tts_voice": str(streaming_tts_voice or tts_voice_label),
         "streaming_tts_token_env": _clean_env_name(streaming_tts_token_env),
@@ -1231,8 +1237,8 @@ def _kame_nested_config(profile: Mapping[str, Any]) -> dict[str, Any]:
     timeout_seconds = _positive_float_or_default(profile.get("interface_timeout_seconds"), 0.8)
     oracle_timeout_seconds = _positive_float_or_default(profile.get("oracle_timeout_seconds"), 60.0)
     interface_base_url = profile.get("interface_base_url") or profile.get("vllm_base_url") or ""
-    streaming_stt_base_url = profile.get("streaming_stt_base_url") or ""
-    streaming_tts_base_url = profile.get("streaming_tts_base_url") or ""
+    streaming_stt_base_url = profile.get("asr_base_url") or profile.get("streaming_stt_base_url") or ""
+    streaming_tts_base_url = profile.get("tts_base_url") or profile.get("streaming_tts_base_url") or ""
     oracle_base_url = profile.get("oracle_base_url") or ""
     return {
         "interface": {

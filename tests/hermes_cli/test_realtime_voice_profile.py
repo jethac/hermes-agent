@@ -17,7 +17,9 @@ def test_live_like_profile_contains_portable_streaming_bridge_config():
     assert profile["require_live_like"] is True
     assert profile["sidecar_autostart"] is True
     assert profile["streaming_stt_base_url"] == "http://streaming-stt.local:9000"
+    assert profile["asr_base_url"] == "http://streaming-stt.local:9000"
     assert profile["streaming_tts_base_url"] == "http://streaming-tts.local:9001"
+    assert profile["tts_base_url"] == "http://streaming-tts.local:9001"
     assert profile["streaming_stt_token_env"] == "HERMES_STREAMING_STT_BRIDGE_TOKEN"
     assert profile["streaming_tts_token_env"] == "HERMES_STREAMING_TTS_BRIDGE_TOKEN"
     assert profile["production_languages"] == ["en", "ja"]
@@ -308,6 +310,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["asr_mode"] == "on_escalation"
     assert realtime["asr_provider"] == "streaming_stt"
     assert realtime["asr_model"] == "portable-streaming-asr"
+    assert realtime["asr_base_url"] == ""
     assert realtime["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
     assert realtime["oracle_timeout_seconds"] == 60.0
     assert realtime["max_spoken_sentences"] == 2
@@ -315,6 +318,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["tts_provider"] == "streaming_tts"
     assert realtime["tts_model"] == "portable-streaming-voice"
     assert realtime["tts_voice"] == ""
+    assert realtime["tts_base_url"] == ""
     assert realtime["fallback_policy"] == "legacy_voice"
     assert realtime["sidecar_autostart"] is True
     assert realtime["require_live_like"] is True

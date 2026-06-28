@@ -770,6 +770,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "ASR model used for oracle-verbatim evidence or text fallback",
         "category": "voice",
     },
+    "voice.realtime.asr_base_url": {
+        "type": "string",
+        "description": "Base URL for the KAME ASR evidence or text-fallback service; mirrors streaming_stt_base_url",
+        "category": "voice",
+    },
     "voice.realtime.oracle_provider": {
         "type": "string",
         "description": "Hermes oracle provider override for KAME realtime voice",
@@ -830,6 +835,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "voice.realtime.tts_voice": {
         "type": "string",
         "description": "TTS voice identifier used for KAME spoken output",
+        "category": "voice",
+    },
+    "voice.realtime.tts_base_url": {
+        "type": "string",
+        "description": "Base URL for the KAME TTS service; mirrors streaming_tts_base_url",
         "category": "voice",
     },
     "voice.realtime.fallback_policy": {
@@ -1550,7 +1560,9 @@ class RealtimeVoiceProfileApply(BaseModel):
     voice_response_policy: str = "sentence_cap"
     fallback_policy: str = "legacy_voice"
     streaming_stt_base_url: str = ""
+    asr_base_url: str = ""
     streaming_tts_base_url: str = ""
+    tts_base_url: str = ""
     streaming_stt_model: str = ""
     streaming_stt_token_env: str = ""
     tts_provider: str = "streaming_tts"
@@ -14246,6 +14258,7 @@ def _realtime_voice_current_evidence_manifest(
     asr_mode: str = "",
     asr_provider: str = "",
     asr_model: str = "",
+    asr_base_url: str = "",
     oracle_provider: str = "",
     oracle_provider_name: str = "",
     preferred_local_oracle_model: str = "",
@@ -14257,6 +14270,7 @@ def _realtime_voice_current_evidence_manifest(
     tts_provider: str = "",
     tts_model: str = "",
     tts_voice: str = "",
+    tts_base_url: str = "",
     fallback_policy: str = "",
     routing_policy: Optional[Mapping[str, Any]] = None,
     metrics_policy: Optional[Mapping[str, Any]] = None,
@@ -14279,6 +14293,7 @@ def _realtime_voice_current_evidence_manifest(
         "asr_mode": str(asr_mode or ""),
         "asr_provider": str(asr_provider or ""),
         "asr_model": str(asr_model or ""),
+        "asr_base_url": _redact_realtime_voice_url(str(asr_base_url or "")) if asr_base_url else "",
         "oracle_provider": str(oracle_provider or ""),
         "oracle_provider_name": str(oracle_provider_name or ""),
         "preferred_local_oracle_model": str(preferred_local_oracle_model or ""),
@@ -14290,6 +14305,7 @@ def _realtime_voice_current_evidence_manifest(
         "tts_provider": str(tts_provider or ""),
         "tts_model": str(tts_model or ""),
         "tts_voice": str(tts_voice or ""),
+        "tts_base_url": _redact_realtime_voice_url(str(tts_base_url or "")) if tts_base_url else "",
         "fallback_policy": str(fallback_policy or ""),
         "routing": dict(routing_policy) if isinstance(routing_policy, Mapping) else {},
         "metrics": dict(metrics_policy) if isinstance(metrics_policy, Mapping) else {},
@@ -14711,12 +14727,18 @@ def _normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, A
 
     _set_realtime_voice_default(config, "asr_provider", asr.get("provider"))
     _set_realtime_voice_default(config, "asr_model", asr.get("model"))
+    _set_realtime_voice_default(config, "asr_base_url", asr.get("base_url"))
+    _set_realtime_voice_default(config, "asr_base_url", config.get("streaming_stt_base_url"))
+    _set_realtime_voice_default(config, "streaming_stt_base_url", config.get("asr_base_url"))
     _set_realtime_voice_default(config, "streaming_stt_base_url", asr.get("base_url"))
     _set_realtime_voice_default(config, "streaming_stt_token_env", asr.get("token_env"))
 
     _set_realtime_voice_default(config, "tts_provider", tts.get("provider"))
     _set_realtime_voice_default(config, "tts_model", tts.get("model"))
     _set_realtime_voice_default(config, "tts_voice", tts.get("voice"))
+    _set_realtime_voice_default(config, "tts_base_url", tts.get("base_url"))
+    _set_realtime_voice_default(config, "tts_base_url", config.get("streaming_tts_base_url"))
+    _set_realtime_voice_default(config, "streaming_tts_base_url", config.get("tts_base_url"))
     _set_realtime_voice_default(config, "streaming_tts_base_url", tts.get("base_url"))
     _set_realtime_voice_default(config, "streaming_tts_token_env", tts.get("token_env"))
 
@@ -14837,6 +14859,16 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         )
         or ""
     )
+    asr_base_url = str(
+        _first_realtime_voice_config_value(
+            realtime,
+            ("asr_base_url",),
+            ("streaming_stt_base_url",),
+            ("asr", "base_url"),
+            default="",
+        )
+        or ""
+    )
     preferred_local_oracle_model = str(
         _first_realtime_voice_config_value(
             realtime,
@@ -14865,6 +14897,16 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     )
     tts_voice = str(
         _first_realtime_voice_config_value(realtime, ("tts_voice",), ("tts", "voice"), ("streaming_tts_voice",), default="") or ""
+    )
+    tts_base_url = str(
+        _first_realtime_voice_config_value(
+            realtime,
+            ("tts_base_url",),
+            ("streaming_tts_base_url",),
+            ("tts", "base_url"),
+            default="",
+        )
+        or ""
     )
     fallback_policy = str(realtime.get("fallback_policy") or "legacy_voice")
     expected_kame_reflex_model = _realtime_voice_kame_vllm_model(realtime) or frontend_model
@@ -14920,6 +14962,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         asr_mode=asr_mode,
         asr_provider=asr_provider,
         asr_model=asr_model,
+        asr_base_url=asr_base_url,
         oracle_provider=oracle_provider,
         oracle_provider_name=oracle_provider_name,
         preferred_local_oracle_model=preferred_local_oracle_model,
@@ -14931,6 +14974,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         tts_provider=tts_provider,
         tts_model=tts_model,
         tts_voice=tts_voice,
+        tts_base_url=tts_base_url,
         fallback_policy=fallback_policy,
         routing_policy=routing_policy,
         metrics_policy=metrics_policy,
@@ -15045,6 +15089,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "asr_mode": asr_mode or None,
         "asr_provider": asr_provider or None,
         "asr_model": asr_model or None,
+        "asr_base_url": _redact_realtime_voice_url(asr_base_url) if asr_base_url else None,
         "oracle_provider": oracle_provider or None,
         "oracle_provider_name": oracle_provider_name or None,
         "preferred_local_oracle_model": preferred_local_oracle_model or None,
@@ -15057,6 +15102,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "tts_provider": tts_provider or None,
         "tts_model": tts_model or None,
         "tts_voice": tts_voice or None,
+        "tts_base_url": _redact_realtime_voice_url(tts_base_url) if tts_base_url else None,
         "fallback_policy": fallback_policy,
         "language_support": language_support,
         "quality_targets_ms": quality_targets_ms,
@@ -15096,6 +15142,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "interface_audio_input": interface_audio_input or None,
             "asr_provider": asr_provider or None,
             "asr_model": asr_model or None,
+            "asr_base_url": _redact_realtime_voice_url(asr_base_url) if asr_base_url else None,
             "oracle_provider": oracle_provider or None,
             "oracle_provider_name": oracle_provider_name or None,
             "preferred_local_oracle_model": preferred_local_oracle_model or None,
@@ -15108,6 +15155,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "tts_provider": tts_provider or None,
             "tts_model": tts_model or None,
             "tts_voice": tts_voice or None,
+            "tts_base_url": _redact_realtime_voice_url(tts_base_url) if tts_base_url else None,
             "fallback_policy": fallback_policy,
             "routing": routing_policy,
             "metrics": metrics_policy,
@@ -15478,6 +15526,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
     )
 
     preset = str(body.preset or "").strip().lower()
+    requested_stt_base_url = body.asr_base_url or body.streaming_stt_base_url
+    requested_tts_base_url = body.tts_base_url or body.streaming_tts_base_url
     if preset in {"openai", "openai_realtime"}:
         return build_openai_realtime_voice_profile(
             model=body.model or DEFAULT_OPENAI_REALTIME_MODEL,
@@ -15519,8 +15569,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             fallback_policy=body.fallback_policy or "legacy_voice",
             oracle_base_url=body.oracle_base_url,
             oracle_provider_name=body.oracle_provider_name,
-            streaming_stt_base_url=body.streaming_stt_base_url,
-            streaming_tts_base_url=body.streaming_tts_base_url,
+            streaming_stt_base_url=requested_stt_base_url,
+            streaming_tts_base_url=requested_tts_base_url,
             streaming_stt_model=body.streaming_stt_model or "portable-streaming-asr",
             streaming_tts_model=body.streaming_tts_model or "portable-streaming-voice",
             streaming_tts_voice=body.streaming_tts_voice or body.voice,
@@ -15541,8 +15591,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
         )
     if preset == "elevenlabs":
         return build_realtime_voice_live_like_profile(
-            streaming_stt_base_url=body.streaming_stt_base_url or "http://127.0.0.1:8767",
-            streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8767",
+            streaming_stt_base_url=requested_stt_base_url or "http://127.0.0.1:8767",
+            streaming_tts_base_url=requested_tts_base_url or requested_stt_base_url or "http://127.0.0.1:8767",
             streaming_stt_model=body.streaming_stt_model or DEFAULT_ELEVENLABS_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or DEFAULT_ELEVENLABS_TTS_MODEL,
             streaming_tts_voice=body.streaming_tts_voice or body.voice,
@@ -15551,8 +15601,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
         )
     if preset == "deepgram":
         return build_realtime_voice_live_like_profile(
-            streaming_stt_base_url=body.streaming_stt_base_url or "http://127.0.0.1:8766",
-            streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8766",
+            streaming_stt_base_url=requested_stt_base_url or "http://127.0.0.1:8766",
+            streaming_tts_base_url=requested_tts_base_url or requested_stt_base_url or "http://127.0.0.1:8766",
             streaming_stt_model=body.streaming_stt_model or DEFAULT_DEEPGRAM_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or DEFAULT_DEEPGRAM_TTS_MODEL,
             streaming_tts_voice=body.streaming_tts_voice or body.voice,
@@ -15561,8 +15611,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
         )
     if preset == "cartesia":
         return build_realtime_voice_live_like_profile(
-            streaming_stt_base_url=body.streaming_stt_base_url or "http://127.0.0.1:8769",
-            streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8769",
+            streaming_stt_base_url=requested_stt_base_url or "http://127.0.0.1:8769",
+            streaming_tts_base_url=requested_tts_base_url or requested_stt_base_url or "http://127.0.0.1:8769",
             streaming_stt_model=body.streaming_stt_model or DEFAULT_CARTESIA_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or body.model or DEFAULT_CARTESIA_TTS_MODEL,
             streaming_tts_voice=body.streaming_tts_voice or body.voice,
@@ -15571,8 +15621,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
         )
     if preset == "nvidia_speech":
         return build_realtime_voice_live_like_profile(
-            streaming_stt_base_url=body.streaming_stt_base_url or DEFAULT_NVIDIA_SPEECH_STT_BRIDGE_BASE_URL,
-            streaming_tts_base_url=body.streaming_tts_base_url or DEFAULT_NVIDIA_SPEECH_TTS_BRIDGE_BASE_URL,
+            streaming_stt_base_url=requested_stt_base_url or DEFAULT_NVIDIA_SPEECH_STT_BRIDGE_BASE_URL,
+            streaming_tts_base_url=requested_tts_base_url or DEFAULT_NVIDIA_SPEECH_TTS_BRIDGE_BASE_URL,
             streaming_stt_model=body.streaming_stt_model or DEFAULT_NVIDIA_SPEECH_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or body.model or DEFAULT_NVIDIA_SPEECH_TTS_MODEL,
             streaming_tts_voice=body.streaming_tts_voice or body.voice,
@@ -15581,8 +15631,8 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
         )
     if preset == "reference":
         return build_realtime_voice_live_like_profile(
-            streaming_stt_base_url=body.streaming_stt_base_url,
-            streaming_tts_base_url=body.streaming_tts_base_url,
+            streaming_stt_base_url=requested_stt_base_url,
+            streaming_tts_base_url=requested_tts_base_url,
             streaming_stt_model=body.streaming_stt_model or "portable-streaming-asr",
             streaming_tts_model=body.streaming_tts_model or "portable-streaming-voice",
             streaming_tts_voice=body.streaming_tts_voice or body.voice,
@@ -15697,6 +15747,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     interface_base_url = str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "")
     asr_provider = str(realtime.get("asr_provider") or "")
     asr_model = str(realtime.get("asr_model") or realtime.get("streaming_stt_model") or "")
+    asr_base_url = str(realtime.get("asr_base_url") or realtime.get("streaming_stt_base_url") or "")
     oracle_provider = str(realtime.get("oracle_provider") or "")
     oracle_provider_name = str(realtime.get("oracle_provider_name") or "")
     oracle_model = str(realtime.get("oracle_model") or "")
@@ -15706,6 +15757,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     tts_provider = str(realtime.get("tts_provider") or "")
     tts_model = str(realtime.get("tts_model") or realtime.get("streaming_tts_model") or "")
     tts_voice = str(realtime.get("tts_voice") or realtime.get("streaming_tts_voice") or "")
+    tts_base_url = str(realtime.get("tts_base_url") or realtime.get("streaming_tts_base_url") or "")
     fallback_policy = str(realtime.get("fallback_policy") or "legacy_voice")
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     evidence_configured = bool(
@@ -15759,6 +15811,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         asr_mode=str(realtime.get("asr_mode") or ""),
         asr_provider=asr_provider,
         asr_model=asr_model,
+        asr_base_url=asr_base_url,
         oracle_provider=oracle_provider,
         oracle_provider_name=oracle_provider_name,
         preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or ""),
@@ -15770,6 +15823,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         tts_provider=tts_provider,
         tts_model=tts_model,
         tts_voice=tts_voice,
+        tts_base_url=tts_base_url,
         fallback_policy=fallback_policy,
         routing_policy=routing_policy,
         metrics_policy=metrics_policy,
@@ -15891,6 +15945,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "asr_mode": str(realtime.get("asr_mode") or "") or None,
             "asr_provider": asr_provider or None,
             "asr_model": asr_model or None,
+            "asr_base_url": _redact_realtime_voice_url(asr_base_url) if asr_base_url else None,
             "oracle_provider": oracle_provider or None,
             "oracle_provider_name": oracle_provider_name or None,
             "preferred_local_oracle_model": str(realtime.get("preferred_local_oracle_model") or "") or None,
@@ -15909,6 +15964,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "tts_provider": tts_provider or None,
             "tts_model": tts_model or None,
             "tts_voice": tts_voice or None,
+            "tts_base_url": _redact_realtime_voice_url(tts_base_url) if tts_base_url else None,
             "fallback_policy": fallback_policy,
             "language_support": language_support,
             "quality_targets_ms": quality_targets_ms,

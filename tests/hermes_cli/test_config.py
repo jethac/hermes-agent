@@ -108,6 +108,8 @@ class TestLoadConfigDefaults:
             assert config["voice"]["realtime"]["gemini_live_voice"] == "Puck"
             assert config["voice"]["realtime"]["gemini_live_google_search"] is False
             assert config["voice"]["realtime"]["gemini_live_oracle_tool"] is True
+            assert config["voice"]["realtime"]["asr_base_url"] == ""
+            assert config["voice"]["realtime"]["tts_base_url"] == ""
             assert config["voice"]["realtime"]["quality_targets_ms"] == {
                 "audio_to_partial_transcript_ms": 300,
                 "final_transcript_to_first_text_ms": 500,

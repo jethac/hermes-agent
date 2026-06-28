@@ -3200,9 +3200,13 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.asr_provider"]["type"] == "string"
         assert "oracle-verbatim evidence" in CONFIG_SCHEMA["voice.realtime.asr_provider"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.asr_model"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.asr_base_url"]["type"] == "string"
+        assert "KAME ASR" in CONFIG_SCHEMA["voice.realtime.asr_base_url"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.tts_provider"]["type"] == "string"
         assert CONFIG_SCHEMA["voice.realtime.tts_model"]["type"] == "string"
         assert CONFIG_SCHEMA["voice.realtime.tts_voice"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.tts_base_url"]["type"] == "string"
+        assert "KAME TTS" in CONFIG_SCHEMA["voice.realtime.tts_base_url"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.fallback_policy"]["type"] == "select"
         assert CONFIG_SCHEMA["voice.realtime.fallback_policy"]["options"] == ["legacy_voice", "text_only", "fail_closed"]
         assert CONFIG_SCHEMA["voice.realtime.production_evidence_report"]["type"] == "string"
@@ -7272,9 +7276,9 @@ class TestRealtimeVoiceWebSocket:
             oracle_provider_name="Spark Oracle",
             voice_response_policy="brief_summary",
             fallback_policy="fail_closed",
-            streaming_stt_base_url="http://spark.local:8767",
+            asr_base_url="http://spark.local:8767",
             streaming_stt_token_env="SPARK_STT_TOKEN",
-            streaming_tts_base_url="http://spark.local:8768",
+            tts_base_url="http://spark.local:8768",
             tts_provider="magpie_tts",
             tts_model="magpie-local-streaming-tts",
             tts_voice="spark-voice-1",
@@ -7314,8 +7318,10 @@ class TestRealtimeVoiceWebSocket:
         assert profile["fallback_policy"] == "fail_closed"
         assert profile["tts_provider"] == "magpie_tts"
         assert profile["tts_model"] == "magpie-local-streaming-tts"
+        assert profile["asr_base_url"] == "http://spark.local:8767"
         assert profile["streaming_stt_base_url"] == "http://spark.local:8767"
         assert profile["streaming_stt_token_env"] == "SPARK_STT_TOKEN"
+        assert profile["tts_base_url"] == "http://spark.local:8768"
         assert profile["streaming_tts_base_url"] == "http://spark.local:8768"
         assert profile["streaming_tts_token_env"] == "SPARK_TTS_TOKEN"
         assert profile["streaming_tts_voice"] == "spark-voice-1"
@@ -7411,6 +7417,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.asr_mode.value == "on_escalation"
         assert config.asr_provider == "nemotron"
         assert config.asr_model == "nemotron-speech"
+        assert config.metadata["asr_base_url"] == "http://spark.local:9000"
         assert config.preferred_local_oracle_model == "gemma-4-26B-A4B-it"
         assert config.oracle_model == "configured-oracle"
         assert config.oracle_timeout_seconds == 12.0
@@ -7418,6 +7425,7 @@ class TestRealtimeVoiceWebSocket:
         assert config.tts_provider == "cartesia"
         assert config.tts_model == "sonic-3.5"
         assert config.tts_voice == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
+        assert config.metadata["tts_base_url"] == "http://spark.local:9100"
         assert config.metadata["frontend_provider"] == "openai_compatible"
         assert config.metadata["interface_temperature"] == 0.3
         assert config.metadata["interface_max_output_tokens"] == 96
@@ -7445,7 +7453,11 @@ class TestRealtimeVoiceWebSocket:
         assert status["kame"]["interface_api_key_present"] is True
         assert "secret-interface-token" not in json.dumps(status)
         assert status["asr_provider"] == "nemotron"
+        assert status["asr_base_url"] == "http://spark.local:9000"
+        assert status["kame"]["asr_base_url"] == "http://spark.local:9000"
         assert status["tts_provider"] == "cartesia"
+        assert status["tts_base_url"] == "http://spark.local:9100"
+        assert status["kame"]["tts_base_url"] == "http://spark.local:9100"
         assert status["oracle_provider"] == "custom"
         assert status["oracle_provider_name"] == "Spark Oracle"
         assert status["oracle_model"] == "configured-oracle"
