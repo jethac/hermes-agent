@@ -146,6 +146,7 @@ TRANSCRIPT_METADATA_KEYS = ("language", "locale", "script")
 TRANSCRIPT_METADATA_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 TRANSCRIPT_EVENT_NUMERIC_KEYS = ("confidence", "stability")
 TRANSCRIPT_EVENT_GENERATION_KEYS = ("input_generation", "playback_generation")
+REALTIME_VOICE_INTERFACE_AUDIO_INPUTS = frozenset({"auto", "native_audio", "text_fallback"})
 
 
 @dataclass(frozen=True)
@@ -210,7 +211,7 @@ class RealtimeVoiceSessionConfig:
             "interface_max_output_tokens": self.interface_max_output_tokens,
             "interface_timeout_seconds": self.interface_timeout_seconds,
             "interface_max_audio_seconds": self.interface_max_audio_seconds,
-            "interface_audio_input": self.interface_audio_input,
+            "interface_audio_input": normalize_realtime_voice_interface_audio_input(self.interface_audio_input),
             "asr_mode": self.asr_mode.value,
             "asr_provider": self.asr_provider,
             "asr_model": self.asr_model,
@@ -266,7 +267,7 @@ class RealtimeVoiceSessionConfig:
                 minimum=1.0,
                 maximum=30.0,
             ),
-            interface_audio_input=_optional_str(payload.get("interface_audio_input")),
+            interface_audio_input=normalize_realtime_voice_interface_audio_input(payload.get("interface_audio_input")),
             asr_mode=_asr_mode(payload.get("asr_mode")),
             asr_provider=_optional_str(payload.get("asr_provider")),
             asr_model=_optional_str(payload.get("asr_model")),
@@ -571,6 +572,15 @@ def _optional_str(value: Any) -> Optional[str]:
         return None
     text = str(value).strip()
     return text or None
+
+
+def normalize_realtime_voice_interface_audio_input(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip().lower().replace("-", "_")
+    if not text:
+        return None
+    return text if text in REALTIME_VOICE_INTERFACE_AUDIO_INPUTS else "auto"
 
 
 def _asr_mode(value: Any) -> RealtimeVoiceASRMode:

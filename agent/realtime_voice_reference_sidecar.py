@@ -37,6 +37,7 @@ from agent.realtime_voice import (
     binary_audio_frame_from_event,
     create_realtime_voice_event_queue,
     event_from_binary_audio_frame,
+    normalize_realtime_voice_interface_audio_input,
     put_realtime_voice_event,
     realtime_voice_session_contract_payload,
     transcript_metadata_from_payload,
@@ -316,9 +317,13 @@ class ReferenceRealtimeVoiceSidecarSession:
             await self._start_streaming_tts(config)
         await self._prepare_acknowledgement_audio(config)
         fallback_reason = self._kame_audio_reflex_fallback_reason(config)
+        text_fallback_requested = _interface_audio_input(config) == "text_fallback"
         streaming_stt_drives_reflex = self._streaming_stt is not None and self._streaming_stt_drives_reflex()
         local_stt_drives_reflex = bool(
-            fallback_reason and self.runtime.local_stt_enabled and self._kame_stt_reflex_fallback_allowed(config)
+            (fallback_reason or text_fallback_requested)
+            and self._streaming_stt is None
+            and self.runtime.local_stt_enabled
+            and self._kame_stt_reflex_fallback_allowed(config)
         )
         provider = (
             "openai_realtime"
@@ -340,7 +345,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             "local_stt": self.runtime.local_stt_enabled,
             "local_tts": self.runtime.local_tts_enabled,
             "asr_mode": config.asr_mode.value,
-            "interface_audio_input": config.interface_audio_input or "",
+            "interface_audio_input": _interface_audio_input(config),
         }
         if fallback_reason:
             payload.update(
@@ -355,8 +360,18 @@ class ReferenceRealtimeVoiceSidecarSession:
                     {
                         "intent_source": "asr_fallback",
                         "transcript_source": "asr",
-                    }
-                )
+                }
+            )
+        elif local_stt_drives_reflex:
+            payload.update(
+                {
+                    "reason": "kame_text_fallback_requested",
+                    "requested_provider": config.frontend_provider or "",
+                    "fallback_provider": provider,
+                    "intent_source": "asr_fallback",
+                    "transcript_source": "asr",
+                }
+            )
         await self._emit(
             VoiceEventType.FRONTEND_STATE,
             payload,
@@ -950,14 +965,14 @@ class ReferenceRealtimeVoiceSidecarSession:
         if config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
             return True
         return config.asr_mode.value in {"fallback", "debug", "speculative"} or (
-            str(config.interface_audio_input or "") == "text_fallback"
+            _interface_audio_input(config) == "text_fallback"
         )
 
     def _streaming_stt_drives_reflex(self) -> bool:
         config = self.config
         if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
             return True
-        return config.asr_mode.value == "fallback" or str(config.interface_audio_input or "") == "text_fallback"
+        return config.asr_mode.value == "fallback" or _interface_audio_input(config) == "text_fallback"
 
     def _suppress_streaming_stt_transcript_events(self) -> bool:
         config = self.config
@@ -1186,8 +1201,6 @@ class ReferenceRealtimeVoiceSidecarSession:
                     fallback_error=sanitize_realtime_voice_error(exc),
                 )
         if self.config is not None and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
-            if self.runtime.vllm_base_url and self.runtime.vllm_model:
-                return {"text": self._transcribe_with_vllm(audio, codec)}
             if not self._kame_stt_reflex_fallback_allowed():
                 raise RuntimeError("KAME audio reflex unavailable and ASR reflex fallback is disabled")
             if not self.runtime.local_stt_enabled:
@@ -1248,7 +1261,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             config is not None
             and config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
             and bool(self.runtime.vllm_base_url and self.runtime.vllm_model)
-            and str(config.interface_audio_input or "auto") != "text_fallback"
+            and _interface_audio_input(config) != "text_fallback"
         )
 
     def _uses_kame_local_stt_fallback(self) -> bool:
@@ -1258,7 +1271,10 @@ class ReferenceRealtimeVoiceSidecarSession:
             and config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
             and self._openai_realtime is None
             and self._gemini_live is None
-            and not bool(self.runtime.vllm_base_url and self.runtime.vllm_model)
+            and (
+                not bool(self.runtime.vllm_base_url and self.runtime.vllm_model)
+                or _interface_audio_input(config) == "text_fallback"
+            )
             and self._kame_stt_reflex_fallback_allowed(config)
         )
 
@@ -1266,13 +1282,15 @@ class ReferenceRealtimeVoiceSidecarSession:
         config = config or self.config
         if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
             return False
-        interface_audio_input = str(config.interface_audio_input or "").strip().lower()
+        interface_audio_input = _interface_audio_input(config)
         return config.asr_mode.value == "fallback" or interface_audio_input == "text_fallback"
 
     def _kame_audio_reflex_fallback_reason(self, config: RealtimeVoiceSessionConfig) -> str:
         if config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
             return ""
         if self._openai_realtime is not None or self._gemini_live is not None:
+            return ""
+        if _interface_audio_input(config) == "text_fallback":
             return ""
         if self.runtime.vllm_base_url and self.runtime.vllm_model:
             return ""
@@ -1988,6 +2006,12 @@ def _payload_generation(payload: Mapping[str, Any]) -> Optional[int]:
 def _payload_input_generation(payload: Mapping[str, Any]) -> Optional[int]:
     value = payload.get("input_generation")
     return _payload_int(value)
+
+
+def _interface_audio_input(config: Optional[RealtimeVoiceSessionConfig]) -> str:
+    if config is None:
+        return "auto"
+    return normalize_realtime_voice_interface_audio_input(config.interface_audio_input) or "auto"
 
 
 def _turn_acknowledgement_text(config: RealtimeVoiceSessionConfig) -> str:
