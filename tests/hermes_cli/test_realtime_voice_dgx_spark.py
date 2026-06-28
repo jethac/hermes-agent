@@ -147,6 +147,7 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     assert manifest["roles"]["tts"]["default_adapter"] == "loopback_smoke_bridge"
     assert manifest["roles"]["tts"]["production_replacement"] == "local_streaming_tts"
     assert "all_local_smoke" in manifest["evidence_required"]
+    assert "oracle_simple_first_audio_latency" in manifest["evidence_required"]
     assert "capability_honesty_smoke" in manifest["evidence_required"]
     assert "barge_in_interruption_smoke" in manifest["evidence_required"]
 
@@ -575,6 +576,7 @@ def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_pat
     assert result["ok"] is True
     assert result["issues"] == []
     assert result["coverage"]["interface_direct_audio_latency"] is True
+    assert result["coverage"]["oracle_simple_first_audio_latency"] is True
     assert result["coverage"]["interface_candidate_model_matrix"] is True
     assert result["coverage"]["interface_direct_audio_vs_stt_fallback"] is True
     assert result["coverage"]["oracle_outcomes_with_and_without_asr_hypotheses"] is True
@@ -629,6 +631,26 @@ def test_benchmark_evidence_validator_enforces_direct_audio_latency_targets(tmp_
         "interface_direct_audio_latency: "
         "requires direct_audio speech_end_to_interface_decision_ms and "
         "speech_end_to_local_first_audio_ms within configured targets"
+    ) in result["issues"]
+
+
+def test_benchmark_evidence_validator_enforces_oracle_latency_target(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path))
+    evidence = _passing_benchmark_evidence()
+    for entry in evidence:
+        if entry.get("category") == "oracle":
+            entry["metrics"]["oracle_accepted_to_first_token_ms"] = 2800
+            entry["metrics"]["oracle_first_token_to_first_audio_ms"] = 250
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["oracle_simple_first_audio_latency"] is False
+    assert "oracle:local: oracle first audio total 3090 exceeds target 3000" in result["issues"]
+    assert (
+        "oracle_simple_first_audio_latency: "
+        "requires oracle_request_to_accepted_ms, oracle_accepted_to_first_token_ms, "
+        "and oracle_first_token_to_first_audio_ms total within configured target"
     ) in result["issues"]
 
 

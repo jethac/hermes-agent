@@ -287,6 +287,7 @@ def build_dgx_spark_stack_manifest(
         },
         "evidence_required": [
             "interface_direct_audio_latency",
+            "oracle_simple_first_audio_latency",
             "interface_candidate_model_matrix",
             "interface_direct_audio_vs_stt_fallback",
             "oracle_verbatim_asr_latency_and_literal_accuracy",
@@ -830,7 +831,9 @@ def validate_dgx_spark_benchmark_evidence(
     quality_targets = matrix.get("acceptance_targets_ms") if isinstance(matrix.get("acceptance_targets_ms"), Mapping) else {}
     interface_decision_target_ms = _positive_metric_target(quality_targets.get("local_ack_first_audio"), default=500.0)
     interface_first_audio_target_ms = _positive_metric_target(quality_targets.get("local_reply_first_audio"), default=1000.0)
+    oracle_first_audio_target_ms = _positive_metric_target(quality_targets.get("simple_oracle_first_audio"), default=3000.0)
     direct_audio_latency_ok = True
+    oracle_latency_ok = True
     interface_candidates = candidates.get("interface") if isinstance(candidates.get("interface"), list) else []
     interface_models: set[str] = set()
     for candidate in interface_candidates:
@@ -900,8 +903,24 @@ def validate_dgx_spark_benchmark_evidence(
         coverage[label] = match is not None
         if match is None:
             issues.append(f"{label}: missing benchmark result")
+            oracle_latency_ok = False
             continue
         issues.extend(_missing_metric_issues(label, match, candidate.get("required_metrics")))
+        latency_issues = _oracle_first_audio_latency_issues(
+            label,
+            match,
+            first_audio_target_ms=oracle_first_audio_target_ms,
+        )
+        if latency_issues:
+            oracle_latency_ok = False
+            issues.extend(latency_issues)
+    coverage["oracle_simple_first_audio_latency"] = bool(oracle_candidates) and oracle_latency_ok
+    if not coverage["oracle_simple_first_audio_latency"]:
+        issues.append(
+            "oracle_simple_first_audio_latency: "
+            "requires oracle_request_to_accepted_ms, oracle_accepted_to_first_token_ms, "
+            "and oracle_first_token_to_first_audio_ms total within configured target"
+        )
 
     oracle_outcome_candidates = (
         candidates.get("oracle_outcome") if isinstance(candidates.get("oracle_outcome"), list) else []
@@ -1084,6 +1103,35 @@ def _interface_direct_audio_latency_issues(
         issues.append(
             f"{label}: speech_end_to_local_first_audio_ms {first_audio_ms:g} exceeds target {first_audio_target_ms:g}"
         )
+    return issues
+
+
+def _oracle_first_audio_latency_issues(
+    label: str,
+    entry: Mapping[str, Any],
+    *,
+    first_audio_target_ms: float,
+) -> list[str]:
+    metrics = entry.get("metrics")
+    if not isinstance(metrics, Mapping):
+        return [f"{label}: missing metrics object"]
+    metric_names = (
+        "oracle_request_to_accepted_ms",
+        "oracle_accepted_to_first_token_ms",
+        "oracle_first_token_to_first_audio_ms",
+    )
+    total = 0.0
+    issues: list[str] = []
+    for metric_name in metric_names:
+        value = _metric_float(metrics.get(metric_name))
+        if value is None:
+            issues.append(f"{label}: missing valid {metric_name}")
+        else:
+            total += value
+    if issues:
+        return issues
+    if total > first_audio_target_ms:
+        issues.append(f"{label}: oracle first audio total {total:g} exceeds target {first_audio_target_ms:g}")
     return issues
 
 
