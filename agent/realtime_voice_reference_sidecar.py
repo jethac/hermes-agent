@@ -534,10 +534,11 @@ class ReferenceRealtimeVoiceSidecarSession:
             speech_boundary_at = time.perf_counter()
             self._clear_audio_buffer()
             if audio:
-                payload = {"text": "", "stability": 0.1}
-                if audio_input_generation is not None:
-                    payload["input_generation"] = audio_input_generation
-                await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, payload)
+                if _allow_kame_transcript_events(self.config):
+                    payload = {"text": "", "stability": 0.1}
+                    if audio_input_generation is not None:
+                        payload["input_generation"] = audio_input_generation
+                    await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, payload)
                 self._track_task(
                     asyncio.create_task(
                         self._transcribe(

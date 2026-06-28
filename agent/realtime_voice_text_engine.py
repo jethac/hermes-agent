@@ -172,7 +172,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             audio = b"".join(self._inbound_audio)
             self._clear_inbound_audio()
             if audio:
-                await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, {"text": "", "stability": 0.1})
+                if _allow_kame_transcript_events(self.config):
+                    await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, {"text": "", "stability": 0.1})
                 self._active_task = asyncio.create_task(self._transcribe_and_answer(audio, chunk.codec))
 
     async def events(self) -> AsyncIterator[VoiceEvent]:

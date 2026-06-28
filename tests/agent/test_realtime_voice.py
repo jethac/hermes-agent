@@ -3300,6 +3300,49 @@ def test_text_engine_falls_back_to_local_stt_when_sidecar_send_fails(monkeypatch
     asyncio.run(run())
 
 
+def test_kame_text_engine_suppresses_blank_audio_partial_in_normal_mode(monkeypatch):
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_transcribe_sync", lambda self, audio, codec: "local transcript")
+
+        engine = KameInterfaceOracleEngine(oracle=FakeOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                await engine.close()
+                break
+
+        assert VoiceEventType.TRANSCRIPT_PARTIAL not in [event.type for event in seen]
+        final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+        assert final.payload["text"] == "local transcript"
+
+    asyncio.run(run())
+
+
 def test_text_engine_closes_sidecar_when_sidecar_tts_fails(monkeypatch, tmp_path):
     class FailingSpeakSidecar(FakeSidecar):
         async def speak(self, event):
@@ -6472,6 +6515,7 @@ def test_reference_sidecar_kame_on_escalation_attaches_one_shot_asr_evidence(mon
 
     seen = asyncio.run(run())
     final = seen[-1]
+    assert VoiceEventType.TRANSCRIPT_PARTIAL not in [event.type for event in seen]
     assert final.type == VoiceEventType.TRANSCRIPT_FINAL
     assert final.payload["text"] == "reflex wording"
     assert final.payload["intent"] == "Reflex intent."
