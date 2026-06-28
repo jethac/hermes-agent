@@ -82,13 +82,21 @@ const config: HermesConfigRecord = {
       interface_base_url: 'http://spark.local:8000/v1',
       interface_audio_input: 'native_audio',
       interface_max_audio_seconds: 24,
+      interface_max_output_tokens: 96,
+      interface_temperature: 0.3,
+      interface_timeout_seconds: 0.7,
       metrics: {
         enabled: true,
         log_provider_spans: false,
         log_turn_spans: true
       },
       oracle_base_url: 'http://spark.local:8000/v1',
+      oracle_api_mode: 'chat_completions',
       oracle_model: 'gemma-4-26B-A4B-it',
+      oracle_provider: 'custom',
+      oracle_provider_name: 'Spark Oracle',
+      oracle_timeout_seconds: 42,
+      max_spoken_sentences: 3,
       routing: {
         allow_local_clarifications: false,
         allow_local_greetings: false,
@@ -103,6 +111,9 @@ const config: HermesConfigRecord = {
       streaming_tts_model: 'sonic-3.5',
       streaming_tts_voice: '5ee9feff-1265-424a-9d7f-8e4d431a12c7',
       tts_provider: 'cartesia',
+      tts_model: 'sonic-3.5',
+      tts_voice: '5ee9feff-1265-424a-9d7f-8e4d431a12c7',
+      vllm_model: 'google/gemma-4-E2B-it',
       voice_response_policy: 'brief_summary'
     }
   }
@@ -134,12 +145,22 @@ describe('RealtimeVoiceSetupPanel', () => {
     expect(await screen.findByText('KAME Reflex / Oracle')).toBeTruthy()
     expect(screen.getByText('Interface base URL')).toBeTruthy()
     expect(screen.getByText('Interface provider')).toBeTruthy()
+    expect(screen.getByText('Served reflex model')).toBeTruthy()
+    expect(screen.getByText('Interface temperature')).toBeTruthy()
+    expect(screen.getByText('Interface token limit')).toBeTruthy()
+    expect(screen.getByText('Interface timeout')).toBeTruthy()
     expect(screen.getByText('Interface audio input')).toBeTruthy()
     expect(screen.getByText('ASR mode')).toBeTruthy()
     expect(screen.getByText('ASR provider')).toBeTruthy()
     expect(screen.getByText('Fallback policy')).toBeTruthy()
     expect(screen.getByText('TTS voice')).toBeTruthy()
+    expect(screen.getByText('TTS bridge voice')).toBeTruthy()
     expect(screen.getByText('TTS provider')).toBeTruthy()
+    expect(screen.getByText('Oracle provider')).toBeTruthy()
+    expect(screen.getByText('Oracle provider name')).toBeTruthy()
+    expect(screen.getByText('Oracle API mode')).toBeTruthy()
+    expect(screen.getByText('Oracle timeout')).toBeTruthy()
+    expect(screen.getByText('Spoken sentence cap')).toBeTruthy()
     expect(screen.getByText('Barge-in RMS')).toBeTruthy()
     expect(screen.getByText('Local confidence')).toBeTruthy()
     expect(screen.getByText('Metrics enabled')).toBeTruthy()
@@ -163,12 +184,20 @@ describe('RealtimeVoiceSetupPanel', () => {
         interface_provider: 'gemma4',
         interface_audio_input: 'native_audio',
         interface_max_audio_seconds: 24,
+        interface_max_output_tokens: 96,
+        interface_temperature: 0.3,
+        interface_timeout_seconds: 0.7,
         local_confidence_threshold: 0.88,
+        max_spoken_sentences: 3,
         metrics_enabled: true,
         metrics_log_provider_spans: false,
         metrics_log_turn_spans: true,
         oracle_base_url: 'http://spark.local:8000/v1',
+        oracle_api_mode: 'chat_completions',
         oracle_model: 'gemma-4-26B-A4B-it',
+        oracle_provider: 'custom',
+        oracle_provider_name: 'Spark Oracle',
+        oracle_timeout_seconds: 42,
         preset: 'kame',
         require_oracle_for_files: true,
         require_oracle_for_memory: true,
@@ -179,6 +208,9 @@ describe('RealtimeVoiceSetupPanel', () => {
         streaming_tts_model: 'sonic-3.5',
         streaming_tts_voice: '5ee9feff-1265-424a-9d7f-8e4d431a12c7',
         tts_provider: 'cartesia',
+        tts_model: 'sonic-3.5',
+        tts_voice: '5ee9feff-1265-424a-9d7f-8e4d431a12c7',
+        vllm_model: 'google/gemma-4-E2B-it',
         voice_response_policy: 'brief_summary'
       })
     )

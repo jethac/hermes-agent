@@ -103,7 +103,10 @@ export interface RealtimeVoiceProfileRequest {
   google_search?: boolean
   interface_base_url?: string
   interface_audio_input?: string
+  interface_max_output_tokens?: number
   interface_provider?: string
+  interface_temperature?: number
+  interface_timeout_seconds?: number
   interface_max_audio_seconds?: number
   local_confidence_threshold?: number
   metrics_enabled?: boolean
@@ -111,8 +114,12 @@ export interface RealtimeVoiceProfileRequest {
   metrics_log_turn_spans?: boolean
   model?: string
   oracle_base_url?: string
+  oracle_api_mode?: string
   oracle_model?: string
+  oracle_provider?: string
   oracle_provider_name?: string
+  oracle_timeout_seconds?: number
+  max_spoken_sentences?: number
   oracle_tool?: boolean
   preset: string
   require_oracle_for_files?: boolean
@@ -126,6 +133,9 @@ export interface RealtimeVoiceProfileRequest {
   streaming_tts_model?: string
   streaming_tts_voice?: string
   tts_provider?: string
+  tts_model?: string
+  tts_voice?: string
+  vllm_model?: string
   voice_response_policy?: string
   voice?: string
 }

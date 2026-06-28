@@ -549,9 +549,17 @@ def test_kame_preset_rejects_invalid_interface_max_audio_seconds(capsys):
 def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     profile = realtime_voice_profile.build_kame_realtime_voice_profile(
         reflex_model="gemma-4-E2B-it",
+        vllm_model="google/gemma-4-E2B-it",
+        interface_temperature=0.3,
+        interface_max_output_tokens=96,
+        interface_timeout_seconds=0.7,
         interface_audio_input="native_audio",
         asr_mode="speculative",
         preferred_local_oracle_model="gemma-4-26B-A4B-it",
+        oracle_timeout_seconds=42,
+        max_spoken_sentences=3,
+        tts_model="magpie-local-streaming-tts",
+        tts_voice="spark-voice-1",
     )
 
     merged = realtime_voice_profile.merge_realtime_voice_profile({}, profile)
@@ -560,22 +568,22 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["engine"] == "kame_interface_oracle"
     assert discord_rt["frontend_provider"] == "gemma4"
     assert discord_rt["frontend_model"] == "gemma-4-E2B-it"
-    assert discord_rt["interface_temperature"] == 0.2
-    assert discord_rt["interface_max_output_tokens"] == 160
-    assert discord_rt["interface_timeout_seconds"] == 0.8
+    assert discord_rt["interface_temperature"] == 0.3
+    assert discord_rt["interface_max_output_tokens"] == 96
+    assert discord_rt["interface_timeout_seconds"] == 0.7
     assert discord_rt["interface_max_audio_seconds"] == 30.0
     assert discord_rt["interface_audio_input"] == "native_audio"
     assert discord_rt["asr_mode"] == "speculative"
     assert discord_rt["asr_provider"] == "streaming_stt"
     assert discord_rt["asr_model"] == "portable-streaming-asr"
     assert discord_rt["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
-    assert discord_rt["oracle_timeout_seconds"] == 60.0
-    assert discord_rt["max_spoken_sentences"] == 2
+    assert discord_rt["oracle_timeout_seconds"] == 42.0
+    assert discord_rt["max_spoken_sentences"] == 3
     assert discord_rt["voice_response_policy"] == "sentence_cap"
     assert discord_rt["barge_in_stop_playback_deadline_ms"] == 150
     assert discord_rt["tts_provider"] == "streaming_tts"
-    assert discord_rt["tts_model"] == "portable-streaming-voice"
-    assert discord_rt["tts_voice"] == ""
+    assert discord_rt["tts_model"] == "magpie-local-streaming-tts"
+    assert discord_rt["tts_voice"] == "spark-voice-1"
     assert discord_rt["fallback_policy"] == "legacy_voice"
     assert discord_rt["routing"]["require_oracle_for_tools"] is True
     assert discord_rt["metrics"]["log_turn_spans"] is True
@@ -583,9 +591,9 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
         "provider": "gemma4",
         "base_url": "",
         "model": "gemma-4-E2B-it",
-        "temperature": 0.2,
-        "max_output_tokens": 160,
-        "timeout_ms": 800,
+        "temperature": 0.3,
+        "max_output_tokens": 96,
+        "timeout_ms": 700,
         "max_audio_seconds": 30.0,
         "audio_input": "native_audio",
         "asr_mode": "speculative",
@@ -598,8 +606,8 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
         "model": "",
         "base_url": "",
         "api_mode": "chat_completions",
-        "timeout_ms": 60000,
-        "max_spoken_sentences": 2,
+        "timeout_ms": 42000,
+        "max_spoken_sentences": 3,
         "voice_response_policy": "sentence_cap",
     }
     assert discord_rt["barge_in"] == {

@@ -6813,9 +6813,17 @@ class TestRealtimeVoiceWebSocket:
             json={
                 "preset": "kame",
                 "model": "gemma-4-E2B-it",
+                "vllm_model": "google/gemma-4-E2B-it",
                 "interface_base_url": "http://spark.local:8000/v1",
+                "interface_temperature": 0.3,
+                "interface_max_output_tokens": 96,
+                "interface_timeout_seconds": 0.7,
                 "interface_audio_input": "native_audio",
                 "asr_mode": "on_escalation",
+                "oracle_provider": "custom",
+                "oracle_api_mode": "chat_completions",
+                "oracle_timeout_seconds": 42,
+                "max_spoken_sentences": 3,
                 "allow_local_greetings": False,
                 "allow_local_clarifications": False,
                 "require_oracle_for_tools": True,
@@ -6824,6 +6832,8 @@ class TestRealtimeVoiceWebSocket:
                 "local_confidence_threshold": 0.88,
                 "streaming_tts_model": "magpie-local-streaming-tts",
                 "streaming_tts_voice": "spark-voice-1",
+                "tts_model": "magpie-local-streaming-tts",
+                "tts_voice": "spark-voice-1",
                 "streaming_stt_token_env": "KAME_STT_TOKEN",
                 "streaming_tts_token_env": "KAME_TTS_TOKEN",
                 "enable_discord": True,
@@ -6845,6 +6855,14 @@ class TestRealtimeVoiceWebSocket:
         assert realtime["frontend_provider"] == "gemma4"
         assert realtime["interface_base_url"] == "http://spark.local:8000/v1"
         assert realtime["vllm_base_url"] == "http://spark.local:8000/v1"
+        assert realtime["vllm_model"] == "google/gemma-4-E2B-it"
+        assert realtime["interface_temperature"] == 0.3
+        assert realtime["interface_max_output_tokens"] == 96
+        assert realtime["interface_timeout_seconds"] == 0.7
+        assert realtime["oracle_provider"] == "custom"
+        assert realtime["oracle_api_mode"] == "chat_completions"
+        assert realtime["oracle_timeout_seconds"] == 42.0
+        assert realtime["max_spoken_sentences"] == 3
         assert realtime["tts_model"] == "magpie-local-streaming-tts"
         assert realtime["tts_voice"] == "spark-voice-1"
         assert realtime["streaming_tts_voice"] == "spark-voice-1"
@@ -6853,6 +6871,11 @@ class TestRealtimeVoiceWebSocket:
         assert realtime["routing"] == expected_routing
         assert discord["enabled"] is True
         assert discord["interface_base_url"] == "http://spark.local:8000/v1"
+        assert discord["interface_temperature"] == 0.3
+        assert discord["interface_max_output_tokens"] == 96
+        assert discord["interface_timeout_seconds"] == 0.7
+        assert discord["oracle_timeout_seconds"] == 42.0
+        assert discord["max_spoken_sentences"] == 3
         assert discord["tts_voice"] == "spark-voice-1"
         assert discord["routing"] == expected_routing
 
@@ -7215,14 +7238,22 @@ class TestRealtimeVoiceWebSocket:
         body = self.ws_module.RealtimeVoiceProfileApply(
             preset="kame",
             model="gemma-4-E2B-it",
+            vllm_model="google/gemma-4-E2B-it",
             interface_provider="openai_compatible",
             interface_base_url="http://spark.local:8000/v1",
+            interface_temperature=0.3,
+            interface_max_output_tokens=96,
+            interface_timeout_seconds=0.7,
             interface_audio_input="native_audio",
             interface_max_audio_seconds=18.0,
             asr_mode="on_escalation",
             asr_provider="nemotron_speech",
+            oracle_provider="custom",
             oracle_model="gemma-4-26B-A4B-it",
             oracle_base_url="http://spark.local:8001/v1",
+            oracle_api_mode="chat_completions",
+            oracle_timeout_seconds=42,
+            max_spoken_sentences=3,
             oracle_provider_name="Spark Oracle",
             voice_response_policy="brief_summary",
             fallback_policy="fail_closed",
@@ -7230,6 +7261,8 @@ class TestRealtimeVoiceWebSocket:
             streaming_stt_token_env="SPARK_STT_TOKEN",
             streaming_tts_base_url="http://spark.local:8768",
             tts_provider="magpie_tts",
+            tts_model="magpie-local-streaming-tts",
+            tts_voice="spark-voice-1",
             streaming_tts_voice="spark-voice-1",
             streaming_tts_token_env="SPARK_TTS_TOKEN",
             barge_in_min_rms=420,
@@ -7245,8 +7278,12 @@ class TestRealtimeVoiceWebSocket:
         assert profile["engine"] == "kame_interface_oracle"
         assert profile["frontend_provider"] == "openai_compatible"
         assert profile["frontend_model"] == "gemma-4-E2B-it"
+        assert profile["vllm_model"] == "google/gemma-4-E2B-it"
         assert profile["interface_base_url"] == "http://spark.local:8000/v1"
         assert profile["vllm_base_url"] == "http://spark.local:8000/v1"
+        assert profile["interface_temperature"] == 0.3
+        assert profile["interface_max_output_tokens"] == 96
+        assert profile["interface_timeout_seconds"] == 0.7
         assert profile["interface_audio_input"] == "native_audio"
         assert profile["interface_max_audio_seconds"] == 18.0
         assert profile["asr_mode"] == "on_escalation"
@@ -7255,9 +7292,13 @@ class TestRealtimeVoiceWebSocket:
         assert profile["oracle_provider_name"] == "Spark Oracle"
         assert profile["oracle_model"] == "gemma-4-26B-A4B-it"
         assert profile["oracle_base_url"] == "http://spark.local:8001/v1"
+        assert profile["oracle_api_mode"] == "chat_completions"
+        assert profile["oracle_timeout_seconds"] == 42.0
+        assert profile["max_spoken_sentences"] == 3
         assert profile["voice_response_policy"] == "brief_summary"
         assert profile["fallback_policy"] == "fail_closed"
         assert profile["tts_provider"] == "magpie_tts"
+        assert profile["tts_model"] == "magpie-local-streaming-tts"
         assert profile["streaming_stt_base_url"] == "http://spark.local:8767"
         assert profile["streaming_stt_token_env"] == "SPARK_STT_TOKEN"
         assert profile["streaming_tts_base_url"] == "http://spark.local:8768"

@@ -62,6 +62,7 @@ const PROVIDER_VOICES: Record<string, string[]> = {
 const KAME_AUDIO_INPUT_OPTIONS = ['auto', 'native_audio', 'text_fallback']
 const KAME_ASR_MODE_OPTIONS = ['disabled', 'on_escalation', 'speculative', 'debug', 'fallback']
 const KAME_FALLBACK_POLICY_OPTIONS = ['legacy_voice', 'text_only', 'fail_closed']
+const KAME_ORACLE_API_OPTIONS = ['chat_completions', 'anthropic_messages', 'codex_responses']
 const KAME_RESPONSE_POLICY_OPTIONS = ['sentence_cap', 'brief_summary', 'full']
 
 function statusTone(ok?: boolean | null) {
@@ -254,9 +255,29 @@ function KameControls({
         title="Interface base URL"
       />
       <ListRow
+        action={textInput('voice.realtime.vllm_model', 'gemma-4-E2B-it')}
+        description="Exact model served by the local audio-reflex vLLM endpoint."
+        title="Served reflex model"
+      />
+      <ListRow
         action={textInput('voice.realtime.frontend_provider', 'gemma4')}
         description="Provider label for the reflex/interface model."
         title="Interface provider"
+      />
+      <ListRow
+        action={numberInput('voice.realtime.interface_temperature', 0.2, 0, 2, 0.1)}
+        description="Sampling temperature for reflex routing decisions."
+        title="Interface temperature"
+      />
+      <ListRow
+        action={numberInput('voice.realtime.interface_max_output_tokens', 160, 1, 4096, 1)}
+        description="Maximum tokens for one reflex routing decision."
+        title="Interface token limit"
+      />
+      <ListRow
+        action={numberInput('voice.realtime.interface_timeout_seconds', 0.8, 0.1, undefined, 0.1)}
+        description="Seconds to wait for the reflex before fallback or failure."
+        title="Interface timeout"
       />
       <ListRow
         action={select('voice.realtime.interface_audio_input', 'native_audio', KAME_AUDIO_INPUT_OPTIONS)}
@@ -299,14 +320,24 @@ function KameControls({
         title="TTS provider"
       />
       <ListRow
-        action={textInput('voice.realtime.streaming_tts_model', 'portable-streaming-voice')}
-        description="TTS model name sent to the bridge."
+        action={textInput('voice.realtime.tts_model', 'portable-streaming-voice')}
+        description="TTS model used for spoken output."
         title="TTS model"
       />
       <ListRow
-        action={textInput('voice.realtime.streaming_tts_voice', 'voice-id')}
-        description="Voice identifier sent to the TTS bridge."
+        action={textInput('voice.realtime.tts_voice', 'voice-id')}
+        description="Voice identifier used for spoken output."
         title="TTS voice"
+      />
+      <ListRow
+        action={textInput('voice.realtime.streaming_tts_model', 'portable-streaming-voice')}
+        description="Model name sent to the streaming TTS bridge."
+        title="TTS bridge model"
+      />
+      <ListRow
+        action={textInput('voice.realtime.streaming_tts_voice', 'voice-id')}
+        description="Voice identifier sent to the streaming TTS bridge."
+        title="TTS bridge voice"
       />
       <ListRow
         action={textInput('voice.realtime.oracle_model', 'gemma-4-26B-A4B-it')}
@@ -314,9 +345,34 @@ function KameControls({
         title="Oracle model"
       />
       <ListRow
+        action={textInput('voice.realtime.oracle_provider', 'custom')}
+        description="Provider slug for a local oracle override."
+        title="Oracle provider"
+      />
+      <ListRow
+        action={textInput('voice.realtime.oracle_provider_name', 'Spark Oracle')}
+        description="Display name for the local oracle provider."
+        title="Oracle provider name"
+      />
+      <ListRow
         action={textInput('voice.realtime.oracle_base_url', 'http://spark.local:8000/v1')}
         description="OpenAI-compatible URL for a local oracle override."
         title="Oracle base URL"
+      />
+      <ListRow
+        action={select('voice.realtime.oracle_api_mode', 'chat_completions', KAME_ORACLE_API_OPTIONS)}
+        description="Wire protocol for the local oracle override."
+        title="Oracle API mode"
+      />
+      <ListRow
+        action={numberInput('voice.realtime.oracle_timeout_seconds', 60, 1, undefined, 1)}
+        description="Seconds to wait for an oracle response."
+        title="Oracle timeout"
+      />
+      <ListRow
+        action={numberInput('voice.realtime.max_spoken_sentences', 2, 1, 12, 1)}
+        description="Maximum sentences in spoken oracle responses."
+        title="Spoken sentence cap"
       />
       <ListRow
         action={select('voice.realtime.voice_response_policy', 'sentence_cap', KAME_RESPONSE_POLICY_OPTIONS)}
@@ -526,8 +582,20 @@ export function RealtimeVoiceSetupPanel({
                 ''
             )
           : undefined,
+        vllm_model: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.vllm_model') ?? model ?? '')
+          : undefined,
         interface_provider: selectedIsKame
           ? String(getNested(config, 'voice.realtime.frontend_provider') ?? 'gemma4') || 'gemma4'
+          : undefined,
+        interface_temperature: selectedIsKame
+          ? Number(getNested(config, 'voice.realtime.interface_temperature') ?? 0.2)
+          : undefined,
+        interface_max_output_tokens: selectedIsKame
+          ? Number(getNested(config, 'voice.realtime.interface_max_output_tokens') ?? 160)
+          : undefined,
+        interface_timeout_seconds: selectedIsKame
+          ? Number(getNested(config, 'voice.realtime.interface_timeout_seconds') ?? 0.8)
           : undefined,
         interface_audio_input: selectedIsKame
           ? String(getNested(config, 'voice.realtime.interface_audio_input') ?? 'native_audio') || 'native_audio'
@@ -548,7 +616,17 @@ export function RealtimeVoiceSetupPanel({
                 ''
             )
           : undefined,
+        oracle_provider: selectedIsKame ? String(getNested(config, 'voice.realtime.oracle_provider') ?? '') : undefined,
         oracle_base_url: selectedIsKame ? String(getNested(config, 'voice.realtime.oracle_base_url') ?? '') : undefined,
+        oracle_api_mode: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.oracle_api_mode') ?? 'chat_completions') || 'chat_completions'
+          : undefined,
+        oracle_timeout_seconds: selectedIsKame
+          ? Number(getNested(config, 'voice.realtime.oracle_timeout_seconds') ?? 60)
+          : undefined,
+        max_spoken_sentences: selectedIsKame
+          ? Number(getNested(config, 'voice.realtime.max_spoken_sentences') ?? 2)
+          : undefined,
         oracle_provider_name: selectedIsKame
           ? String(getNested(config, 'voice.realtime.oracle_provider_name') ?? '')
           : undefined,
@@ -560,6 +638,12 @@ export function RealtimeVoiceSetupPanel({
           : undefined,
         tts_provider: selectedIsKame
           ? String(getNested(config, 'voice.realtime.tts_provider') ?? 'streaming_tts') || 'streaming_tts'
+          : undefined,
+        tts_model: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.tts_model') ?? getNested(config, 'voice.realtime.streaming_tts_model') ?? '')
+          : undefined,
+        tts_voice: selectedIsKame
+          ? String(getNested(config, 'voice.realtime.tts_voice') ?? getNested(config, 'voice.realtime.streaming_tts_voice') ?? '')
           : undefined,
         allow_local_greetings: selectedIsKame
           ? Boolean(getNested(config, 'voice.realtime.routing.allow_local_greetings') ?? true)

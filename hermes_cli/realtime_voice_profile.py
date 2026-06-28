@@ -914,14 +914,24 @@ def build_kame_realtime_voice_profile(
     *,
     reflex_provider: str = "gemma4",
     reflex_model: str = DEFAULT_KAME_REFLEX_MODEL,
+    vllm_model: str = "",
     interface_base_url: str = "",
+    interface_temperature: float = 0.2,
+    interface_max_output_tokens: int = 160,
+    interface_timeout_seconds: float = 0.8,
     interface_audio_input: str = "auto",
     interface_max_audio_seconds: float = 30.0,
     asr_mode: str = "on_escalation",
     asr_provider: str = "streaming_stt",
     preferred_local_oracle_model: str = DEFAULT_KAME_ORACLE_MODEL,
+    oracle_provider: str = "",
+    oracle_api_mode: str = "chat_completions",
+    oracle_timeout_seconds: float = 60.0,
+    max_spoken_sentences: int = 2,
     voice_response_policy: str = "sentence_cap",
     tts_provider: str = "streaming_tts",
+    tts_model: str = "",
+    tts_voice: str = "",
     fallback_policy: str = "legacy_voice",
     oracle_base_url: str = "",
     oracle_provider_name: str = DEFAULT_KAME_ORACLE_PROVIDER_NAME,
@@ -970,6 +980,39 @@ def build_kame_realtime_voice_profile(
     if max_audio_seconds < 1.0 or max_audio_seconds > 30.0:
         raise ValueError("--kame-interface-max-audio-seconds must be between 1 and 30")
     try:
+        temperature = float(interface_temperature)
+    except (TypeError, ValueError):
+        raise ValueError("--kame-interface-temperature must be a number")
+    if temperature < 0.0 or temperature > 2.0:
+        raise ValueError("--kame-interface-temperature must be between 0 and 2")
+    try:
+        max_output_tokens = int(interface_max_output_tokens)
+    except (TypeError, ValueError):
+        raise ValueError("--kame-interface-max-output-tokens must be a positive integer")
+    if max_output_tokens <= 0:
+        raise ValueError("--kame-interface-max-output-tokens must be a positive integer")
+    try:
+        timeout_seconds = float(interface_timeout_seconds)
+    except (TypeError, ValueError):
+        raise ValueError("--kame-interface-timeout-seconds must be a positive number")
+    if timeout_seconds <= 0:
+        raise ValueError("--kame-interface-timeout-seconds must be a positive number")
+    try:
+        oracle_timeout = float(oracle_timeout_seconds)
+    except (TypeError, ValueError):
+        raise ValueError("--kame-oracle-timeout-seconds must be a positive number")
+    if oracle_timeout <= 0:
+        raise ValueError("--kame-oracle-timeout-seconds must be a positive number")
+    try:
+        spoken_sentences = int(max_spoken_sentences)
+    except (TypeError, ValueError):
+        raise ValueError("--kame-max-spoken-sentences must be a positive integer")
+    if spoken_sentences <= 0:
+        raise ValueError("--kame-max-spoken-sentences must be a positive integer")
+    oracle_api = str(oracle_api_mode or "chat_completions").strip().lower()
+    if oracle_api not in {"chat_completions", "anthropic_messages", "codex_responses"}:
+        raise ValueError("--kame-oracle-api-mode must be chat_completions, anthropic_messages, or codex_responses")
+    try:
         confidence_threshold = float(local_confidence_threshold)
     except (TypeError, ValueError):
         raise ValueError("--kame-local-confidence-threshold must be a number")
@@ -997,6 +1040,10 @@ def build_kame_realtime_voice_profile(
     interface_url = _clean_url(interface_base_url)
     oracle_url = _clean_url(oracle_base_url)
     oracle_model = str(preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL)
+    reflex_model_label = str(reflex_model or DEFAULT_KAME_REFLEX_MODEL)
+    served_vllm_model = str(vllm_model or reflex_model_label)
+    tts_model_label = str(tts_model or streaming_tts_model or DEFAULT_STREAMING_TTS_MODEL)
+    tts_voice_label = str(tts_voice or streaming_tts_voice or "")
     profile = {
         "enabled": True,
         "engine": "kame_interface_oracle",
@@ -1012,25 +1059,27 @@ def build_kame_realtime_voice_profile(
         "pre_roll_ms": 300,
         "require_live_like": True,
         "frontend_provider": str(reflex_provider or "gemma4"),
-        "frontend_model": str(reflex_model or DEFAULT_KAME_REFLEX_MODEL),
+        "frontend_model": reflex_model_label,
         "interface_base_url": interface_url,
         "vllm_base_url": interface_url,
-        "vllm_model": str(reflex_model or DEFAULT_KAME_REFLEX_MODEL),
-        "interface_temperature": 0.2,
-        "interface_max_output_tokens": 160,
-        "interface_timeout_seconds": 0.8,
+        "vllm_model": served_vllm_model,
+        "interface_temperature": temperature,
+        "interface_max_output_tokens": max_output_tokens,
+        "interface_timeout_seconds": timeout_seconds,
         "interface_max_audio_seconds": max_audio_seconds,
         "interface_audio_input": audio_mode,
         "asr_mode": asr,
         "asr_provider": str(asr_provider or "streaming_stt"),
         "asr_model": str(streaming_stt_model or DEFAULT_STREAMING_STT_MODEL),
         "preferred_local_oracle_model": oracle_model,
-        "oracle_timeout_seconds": 60.0,
-        "max_spoken_sentences": 2,
+        "oracle_provider": str(oracle_provider or ""),
+        "oracle_api_mode": oracle_api,
+        "oracle_timeout_seconds": oracle_timeout,
+        "max_spoken_sentences": spoken_sentences,
         "voice_response_policy": response_policy,
         "tts_provider": str(tts_provider or "streaming_tts"),
-        "tts_model": str(streaming_tts_model or DEFAULT_STREAMING_TTS_MODEL),
-        "tts_voice": str(streaming_tts_voice or ""),
+        "tts_model": tts_model_label,
+        "tts_voice": tts_voice_label,
         "fallback_policy": fallback,
         "sidecar_base_url": "",
         "spark_base_url": "",
@@ -1042,8 +1091,8 @@ def build_kame_realtime_voice_profile(
         "streaming_stt_model": str(streaming_stt_model or DEFAULT_STREAMING_STT_MODEL),
         "streaming_stt_token_env": _clean_env_name(streaming_stt_token_env),
         "streaming_tts_base_url": _clean_url(streaming_tts_base_url),
-        "streaming_tts_model": str(streaming_tts_model or DEFAULT_STREAMING_TTS_MODEL),
-        "streaming_tts_voice": str(streaming_tts_voice or ""),
+        "streaming_tts_model": str(streaming_tts_model or tts_model_label),
+        "streaming_tts_voice": str(streaming_tts_voice or tts_voice_label),
         "streaming_tts_token_env": _clean_env_name(streaming_tts_token_env),
         "production_languages": ["en", "ja"],
         "production_scripts": ["Latn", "Jpan"],
@@ -1072,14 +1121,14 @@ def build_kame_realtime_voice_profile(
     if oracle_url:
         profile.update(
             {
-                "oracle_provider": "custom",
+                "oracle_provider": str(oracle_provider or "custom").strip() or "custom",
                 "oracle_provider_name": str(
                     oracle_provider_name or DEFAULT_KAME_ORACLE_PROVIDER_NAME
                 ).strip()
                 or DEFAULT_KAME_ORACLE_PROVIDER_NAME,
                 "oracle_model": oracle_model,
                 "oracle_base_url": oracle_url,
-                "oracle_api_mode": "chat_completions",
+                "oracle_api_mode": oracle_api,
             }
         )
     profile.update(_kame_nested_config(profile))
