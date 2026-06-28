@@ -1581,6 +1581,16 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
                 VoiceEventType.ORACLE_RESPONSE_FINAL,
             }
         ]
+        forwarded_interface_events = [
+            event
+            for event in sidecar.received
+            if event.type
+            in {
+                VoiceEventType.INTERFACE_INTENT_FINAL,
+                VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                VoiceEventType.INTERFACE_COMMIT,
+            }
+        ]
         assert [event.type for event in oracle_events] == [
             VoiceEventType.ORACLE_ACCEPTED,
             VoiceEventType.ORACLE_RESPONSE_PARTIAL,
@@ -1615,6 +1625,15 @@ def test_kame_engine_streams_oracle_hints_to_sidecar(monkeypatch):
         assert commit.payload["metrics"]["kame_oracle_first_token_to_first_spoken_text_ms"] >= 0
         assert [event.payload for event in forwarded] == [event.payload for event in hints]
         assert [event.payload for event in forwarded_oracle_events] == [event.payload for event in oracle_events]
+        assert [event.type for event in forwarded_interface_events] == [
+            VoiceEventType.INTERFACE_INTENT_FINAL,
+            VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            VoiceEventType.INTERFACE_COMMIT,
+        ]
+        assert forwarded_interface_events[0].payload == intent.payload
+        assert forwarded_interface_events[1].payload["turn_id"] == "voice-123:1"
+        assert forwarded_interface_events[1].payload["route"] == "oracle_direct"
+        assert forwarded_interface_events[2].payload["text"] == "Looking now."
         assert spoken == ["Looking now."]
 
     asyncio.run(run())
@@ -2163,6 +2182,89 @@ def test_kame_engine_local_route_speaks_without_oracle(monkeypatch):
         assert commit.payload["metrics"]["kame_oracle_called"] == 0
         assert commit.payload["metrics"]["kame_oracle_bypassed"] == 1
         assert spoken == ["Yes, I can hear you."]
+
+    asyncio.run(run())
+
+
+def test_kame_engine_forwards_local_interface_events_to_sidecar(monkeypatch):
+    class UnexpectedOracle:
+        async def stream_answer_for_request(self, request):
+            raise AssertionError("local KAME route must not call oracle")
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        sidecar = FakeSidecar()
+        engine = KameInterfaceOracleEngine(oracle=UnexpectedOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                sidecar_base_url="http://voice.local:8765",
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "can you hear me",
+                    "intent": "The user is checking whether Hermes can hear them.",
+                    "route": "local",
+                    "route_confidence": 0.95,
+                    "local_reply": "Yes, I can hear you.",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        emitted_interface_events = [
+            event
+            for event in seen
+            if event.type
+            in {
+                VoiceEventType.INTERFACE_INTENT_FINAL,
+                VoiceEventType.INTERFACE_REPLY_LOCAL,
+                VoiceEventType.INTERFACE_COMMIT,
+            }
+        ]
+        forwarded_interface_events = [
+            event
+            for event in sidecar.received
+            if event.type
+            in {
+                VoiceEventType.INTERFACE_INTENT_FINAL,
+                VoiceEventType.INTERFACE_REPLY_LOCAL,
+                VoiceEventType.INTERFACE_COMMIT,
+            }
+        ]
+
+        assert [event.type for event in emitted_interface_events] == [
+            VoiceEventType.INTERFACE_INTENT_FINAL,
+            VoiceEventType.INTERFACE_REPLY_LOCAL,
+            VoiceEventType.INTERFACE_COMMIT,
+        ]
+        assert [event.payload for event in forwarded_interface_events] == [
+            event.payload for event in emitted_interface_events
+        ]
+        assert forwarded_interface_events[1].payload["text"] == "Yes, I can hear you."
+        assert forwarded_interface_events[2].payload["local_reply"] is True
 
     asyncio.run(run())
 

@@ -651,11 +651,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 generation,
                 assistant_metadata,
             )
-            await self._emit(VoiceEventType.INTERFACE_INTENT_FINAL, interface_payload)
+            await self._emit_interface_event(VoiceEventType.INTERFACE_INTENT_FINAL, interface_payload)
         local_reply = _kame_local_reply(oracle_request)
         if local_reply:
             if oracle_request is not None:
-                await self._emit(
+                await self._emit_interface_event(
                     VoiceEventType.INTERFACE_REPLY_LOCAL,
                     {
                         **_kame_interface_payload_with_metrics(oracle_request, generation, assistant_metadata),
@@ -669,11 +669,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if oracle_request is not None:
             interface_payload = _kame_interface_payload_with_metrics(oracle_request, generation, assistant_metadata)
             if oracle_request.route == KameRoute.DEFER:
-                await self._emit(
+                await self._emit_interface_event(
                     VoiceEventType.INTERFACE_REPLY_DEFER,
                     _kame_defer_reply_payload_with_metrics(oracle_request, generation, assistant_metadata),
                 )
-            await self._emit(VoiceEventType.INTERFACE_ORACLE_REQUEST, interface_payload)
+            await self._emit_interface_event(VoiceEventType.INTERFACE_ORACLE_REQUEST, interface_payload)
         self._active_task = asyncio.create_task(
             self._answer_and_speak(
                 transcript,
@@ -1229,7 +1229,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
     ) -> None:
         if not _is_kame_metadata(metadata):
             return
-        await self._emit(
+        await self._emit_interface_event(
             VoiceEventType.INTERFACE_COMMIT,
             {
                 **_kame_interface_payload_from_metadata(metadata),
@@ -1239,6 +1239,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             },
         )
         self._record_kame_committed_turn(metadata, text)
+
+    async def _emit_interface_event(self, event_type: VoiceEventType, payload: dict[str, Any]) -> Optional[VoiceEvent]:
+        event = await self._emit(event_type, payload)
+        if event is not None and self._sidecar is not None:
+            await self._send_sidecar_event(event)
+        return event
 
     def _record_kame_committed_turn(self, metadata: Mapping[str, Any], assistant_text: str) -> None:
         if not _is_kame_metadata(metadata):
