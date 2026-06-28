@@ -435,6 +435,23 @@ def test_kame_preset_can_set_interface_base_url(capsys):
     assert realtime["vllm_base_url"] == "http://spark.local:8000/v1"
 
 
+def test_kame_preset_can_set_interface_api_key_env(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--kame-interface-api-key-env",
+            "CUSTOM_KAME_INTERFACE_TOKEN",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["interface_api_key_env"] == "CUSTOM_KAME_INTERFACE_TOKEN"
+    assert realtime["interface"]["api_key_env"] == "CUSTOM_KAME_INTERFACE_TOKEN"
+
+
 def test_kame_preset_can_set_streaming_tts_voice(capsys):
     result = realtime_voice_profile.main(
         [

@@ -279,6 +279,7 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     assert manifest["roles"]["interface"]["candidate_models"][1]["priority"] == "comparison"
     assert manifest["roles"]["interface"]["limit_mm_per_prompt"] == {"audio": 1}
     assert manifest["roles"]["interface"]["max_audio_seconds"] == 30.0
+    assert manifest["roles"]["interface"]["api_key_env"] == "HERMES_KAME_INTERFACE_API_KEY"
     assert manifest["roles"]["oracle"]["preferred_local_model"] == "gemma-4-26B-A4B-it"
     assert manifest["roles"]["asr"]["role"] == "oracle_verbatim_evidence"
     assert manifest["roles"]["asr"]["adapter"] == "loopback_smoke_bridge"
@@ -313,7 +314,9 @@ def test_rendered_compose_has_reflex_oracle_and_sidecar_without_secret_material(
     assert '{"audio":1}' in compose
     assert "HERMES_VOICE_STREAMING_STT_BASE_URL" in compose
     assert "HERMES_KAME_INTERFACE_BASE_URL: http://kame-interface-vllm:8000/v1" in compose
+    assert "HERMES_KAME_INTERFACE_API_KEY: ${HERMES_KAME_INTERFACE_API_KEY:-}" in compose
     assert "HERMES_VOICE_VLLM_BASE_URL: http://kame-interface-vllm:8000/v1" in compose
+    assert "HERMES_VOICE_VLLM_TOKEN: ${HERMES_KAME_INTERFACE_API_KEY:-}" in compose
     assert "HERMES_VOICE_STREAMING_STT_BASE_URL: http://kame-asr-bridge:8767" in compose
     assert "HERMES_VOICE_STREAMING_TTS_BASE_URL: http://kame-tts-bridge:8768" in compose
     assert "      - http://kame-interface-vllm:8000/v1" in compose
@@ -329,7 +332,7 @@ def test_rendered_compose_has_reflex_oracle_and_sidecar_without_secret_material(
     assert "HERMES_DGX_SPARK_ASR_ADAPTER: loopback_smoke_bridge" in compose
     assert "HERMES_DGX_SPARK_TTS_ADAPTER: loopback_smoke_bridge" in compose
     assert "hermes_cli.realtime_voice_loopback_bridge" in compose
-    assert "API_KEY" not in compose
+    assert "interface-secret-token" not in compose
     assert "sk_" not in compose
 
 
@@ -445,6 +448,8 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert manifest["roles"]["interface"]["max_audio_seconds"] == 30.0
     assert manifest["engine"]["max_spoken_sentences"] == 2
     assert "HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS=30.0" in env_example
+    assert "HERMES_KAME_INTERFACE_API_KEY_ENV=HERMES_KAME_INTERFACE_API_KEY" in env_example
+    assert "HERMES_KAME_INTERFACE_API_KEY=" in env_example
     assert "HERMES_KAME_MAX_SPOKEN_SENTENCES=2" in env_example
     assert "HERMES_DGX_SPARK_ASR_ADAPTER=loopback_smoke_bridge" in env_example
     assert "HERMES_DGX_SPARK_TTS_ADAPTER=loopback_smoke_bridge" in env_example
@@ -453,8 +458,10 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "HERMES_DGX_SPARK_APPLY_PROFILE" in launch
     assert "hermes_cli.realtime_voice_profile --preset kame --apply" in launch
     assert ': "${HERMES_KAME_INTERFACE_MODEL:=gemma-4-E2B-it}"' in launch
+    assert ': "${HERMES_KAME_INTERFACE_API_KEY_ENV:=HERMES_KAME_INTERFACE_API_KEY}"' in launch
     assert ': "${HERMES_KAME_ORACLE_MODEL:=gemma-4-26B-A4B-it}"' in launch
     assert '--kame-reflex-model "$HERMES_KAME_INTERFACE_MODEL"' in launch
+    assert '--kame-interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV"' in launch
     assert "--kame-interface-audio-input native_audio" in launch
     assert '--kame-interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL"' in launch
     assert '--kame-interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS"' in launch
@@ -470,6 +477,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--check" in preflight
     assert "--output-dir \"$SCRIPT_DIR\"" in preflight
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in preflight
+    assert "--interface-api-key-env \"$HERMES_KAME_INTERFACE_API_KEY_ENV\"" in preflight
     assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in preflight
     assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in preflight
     assert ': "${HERMES_KAME_ASR_MODE:=on_escalation}"' in preflight
@@ -482,6 +490,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "usage: $0 /path/to/benchmark-evidence.json" in validate_benchmark
     assert "--benchmark-evidence \"$1\"" in validate_benchmark
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in validate_benchmark
+    assert "--interface-api-key-env \"$HERMES_KAME_INTERFACE_API_KEY_ENV\"" in validate_benchmark
     assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in validate_benchmark
     assert "--oracle-model \"$HERMES_KAME_ORACLE_MODEL\"" in validate_benchmark
     assert ': "${HERMES_KAME_ASR_MODE:=on_escalation}"' in validate_benchmark
@@ -614,6 +623,7 @@ def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation
 def test_preflight_checks_openai_models_and_health_urls(monkeypatch, tmp_path):
     manifest = _manifest(tmp_path)
     seen_urls: list[str] = []
+    seen_auth: dict[str, str | None] = {}
 
     class _Response:
         status = 200
@@ -632,6 +642,7 @@ def test_preflight_checks_openai_models_and_health_urls(monkeypatch, tmp_path):
 
     def fake_urlopen(request, timeout):
         seen_urls.append(request.full_url)
+        seen_auth[request.full_url] = request.get_header("Authorization")
         if request.full_url.endswith("/models") and ":8000" in request.full_url:
             return _Response({"data": [{"id": "gemma-4-E2B-it"}]})
         if request.full_url.endswith("/chat/completions") and ":8000" in request.full_url:
@@ -678,6 +689,7 @@ def test_preflight_checks_openai_models_and_health_urls(monkeypatch, tmp_path):
             )
         return _Response({"ok": True})
 
+    monkeypatch.setenv("HERMES_KAME_INTERFACE_API_KEY", "interface-secret-token")
     monkeypatch.setattr(realtime_voice_dgx_spark.urllib.request, "urlopen", fake_urlopen)
 
     preflight = realtime_voice_dgx_spark.preflight_dgx_spark_stack(
@@ -692,6 +704,11 @@ def test_preflight_checks_openai_models_and_health_urls(monkeypatch, tmp_path):
     assert "http://spark.local:8765/health" in seen_urls
     assert "http://spark.local:8767/health" in seen_urls
     assert "http://spark.local:8768/health" in seen_urls
+    assert seen_auth["http://spark.local:8000/v1/models"] == "Bearer interface-secret-token"
+    assert seen_auth["http://spark.local:8000/v1/chat/completions"] == "Bearer interface-secret-token"
+    assert seen_auth["http://spark.local:8001/v1/models"] is None
+    assert seen_auth["http://spark.local:8765/health"] is None
+    assert "interface-secret-token" not in json.dumps(preflight)
     assert preflight["checks"]["interface_audio_probe"]["ok"] is True
     assert preflight["checks"]["interface_audio_probe"]["audio_prompt"] is True
     assert preflight["checks"]["sidecar_health"]["field_misses"] == []

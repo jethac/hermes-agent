@@ -84,6 +84,7 @@ if run uv run python -m hermes_cli.realtime_voice_dgx_spark \
   --hermes-home "${DGX_SPARK_HERMES_HOME:-$HOME/.hermes}" \
   --interface-base-url "${DGX_SPARK_INTERFACE_BASE_URL:-http://spark.local:8000/v1}" \
   --interface-model "${DGX_SPARK_INTERFACE_MODEL:-gemma-4-E2B-it}" \
+  --interface-api-key-env "${DGX_SPARK_INTERFACE_API_KEY_ENV:-HERMES_KAME_INTERFACE_API_KEY}" \
   --interface-max-audio-seconds "${DGX_SPARK_INTERFACE_MAX_AUDIO_SECONDS:-30}" \
   --interface-context-tokens "${DGX_SPARK_INTERFACE_CONTEXT_TOKENS:-8192}" \
   --interface-gpu-memory-utilization "${DGX_SPARK_INTERFACE_GPU_MEMORY_UTILIZATION:-0.18}" \

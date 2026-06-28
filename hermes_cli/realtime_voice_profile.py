@@ -183,6 +183,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="OpenAI-compatible base URL for the KAME reflex/interface model",
     )
     parser.add_argument(
+        "--kame-interface-api-key-env",
+        default="HERMES_KAME_INTERFACE_API_KEY",
+        help="Environment variable containing the KAME reflex/interface endpoint bearer token",
+    )
+    parser.add_argument(
         "--kame-interface-max-audio-seconds",
         type=float,
         default=30.0,
@@ -327,6 +332,7 @@ def main(argv: list[str] | None = None) -> int:
                 reflex_provider=str(args.kame_interface_provider or "gemma4"),
                 reflex_model=str(args.kame_reflex_model or DEFAULT_KAME_REFLEX_MODEL),
                 interface_base_url=str(args.kame_interface_base_url or ""),
+                interface_api_key_env=str(args.kame_interface_api_key_env or "HERMES_KAME_INTERFACE_API_KEY"),
                 interface_audio_input=str(args.kame_interface_audio_input or "auto"),
                 interface_max_audio_seconds=float(args.kame_interface_max_audio_seconds or 30.0),
                 asr_mode=str(args.kame_asr_mode or "on_escalation"),

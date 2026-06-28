@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 import sys
 import urllib.error
 import urllib.parse
@@ -19,6 +20,7 @@ DEFAULT_OUTPUT_DIR = "./artifacts/realtime-voice-dgx-spark"
 DEFAULT_INTERFACE_BASE_URL = "http://127.0.0.1:8000/v1"
 DEFAULT_INTERFACE_MODEL = "gemma-4-E2B-it"
 DEFAULT_INTERFACE_CANDIDATE_MODELS = ("gemma-4-E2B-it", "gemma-4-E4B-it")
+DEFAULT_INTERFACE_API_KEY_ENV = "HERMES_KAME_INTERFACE_API_KEY"
 DEFAULT_INTERFACE_MAX_AUDIO_SECONDS = 30.0
 DEFAULT_ORACLE_BASE_URL = "http://127.0.0.1:8001/v1"
 DEFAULT_ORACLE_MODEL = "gemma-4-26B-A4B-it"
@@ -74,6 +76,11 @@ def add_dgx_spark_arguments(parser: argparse.ArgumentParser) -> argparse.Argumen
     parser.add_argument("--interface-base-url", default=DEFAULT_INTERFACE_BASE_URL)
     parser.add_argument("--interface-model", default=DEFAULT_INTERFACE_MODEL)
     parser.add_argument(
+        "--interface-api-key-env",
+        default=DEFAULT_INTERFACE_API_KEY_ENV,
+        help="Environment variable containing the KAME interface endpoint bearer token; generated files never store the value",
+    )
+    parser.add_argument(
         "--interface-candidate-model",
         action="append",
         default=None,
@@ -127,6 +134,7 @@ def run_from_args(args: argparse.Namespace) -> int:
         hermes_home=Path(args.hermes_home).expanduser(),
         interface_base_url=str(args.interface_base_url),
         interface_model=str(args.interface_model),
+        interface_api_key_env=str(args.interface_api_key_env),
         interface_candidate_models=args.interface_candidate_model,
         interface_context_tokens=int(args.interface_context_tokens),
         interface_gpu_memory_utilization=float(args.interface_gpu_memory_utilization),
@@ -184,6 +192,7 @@ def build_dgx_spark_stack_manifest(
     hermes_home: Path,
     interface_base_url: str,
     interface_model: str,
+    interface_api_key_env: str = DEFAULT_INTERFACE_API_KEY_ENV,
     interface_candidate_models: list[str] | tuple[str, ...] | None = None,
     interface_context_tokens: int = 8192,
     interface_gpu_memory_utilization: float = 0.18,
@@ -281,6 +290,7 @@ def build_dgx_spark_stack_manifest(
                     for candidate_model in interface_candidates
                 ],
                 "base_url": interface_base_url,
+                "api_key_env": _clean_env_name(interface_api_key_env, default=DEFAULT_INTERFACE_API_KEY_ENV),
                 "models_url": interface_models_url,
                 "max_model_len": interface_context_tokens,
                 "gpu_memory_utilization": interface_gpu_memory_utilization,
@@ -480,7 +490,9 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
     environment:
       HERMES_HOME: /root/.hermes
       HERMES_KAME_INTERFACE_BASE_URL: {interface_internal_url}
+      HERMES_KAME_INTERFACE_API_KEY: ${{{interface["api_key_env"]}:-}}
       HERMES_VOICE_VLLM_BASE_URL: {interface_internal_url}
+      HERMES_VOICE_VLLM_TOKEN: ${{{interface["api_key_env"]}:-}}
       HERMES_VOICE_VLLM_MODEL: ${{HERMES_KAME_INTERFACE_MODEL:-{interface["model"]}}}
       HERMES_VOICE_STREAMING_STT_BASE_URL: {asr_internal_url}
       HERMES_VOICE_STREAMING_STT_MODEL: ${{HERMES_VOICE_STREAMING_STT_MODEL:-{asr["model"]}}}
@@ -593,6 +605,8 @@ HERMES_HOME={manifest["hermes_home"]}
 
 HERMES_KAME_INTERFACE_MODEL={roles["interface"]["model"]}
 HERMES_KAME_INTERFACE_BASE_URL={roles["interface"]["base_url"]}
+HERMES_KAME_INTERFACE_API_KEY_ENV={roles["interface"]["api_key_env"]}
+{roles["interface"]["api_key_env"]}=
 HERMES_KAME_INTERFACE_AUDIO_INPUT=native_audio
 HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS={roles["interface"]["max_audio_seconds"]}
 HERMES_KAME_ASR_MODE={manifest["engine"]["asr_mode"]}
@@ -673,6 +687,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_PYTHON:=python}}"
 : "${{HERMES_KAME_INTERFACE_MODEL:={manifest["roles"]["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={manifest["roles"]["interface"]["base_url"]}}}"
+: "${{HERMES_KAME_INTERFACE_API_KEY_ENV:={manifest["roles"]["interface"]["api_key_env"]}}}"
 : "${{HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS:={manifest["roles"]["interface"]["max_audio_seconds"]}}}"
 : "${{HERMES_KAME_ASR_MODE:={manifest["engine"]["asr_mode"]}}}"
 : "${{HERMES_KAME_ORACLE_MODEL:={manifest["roles"]["oracle"]["preferred_local_model"]}}}"
@@ -687,6 +702,7 @@ if [ "${{HERMES_DGX_SPARK_APPLY_PROFILE:-1}}" != "0" ]; then
     "$HERMES_PYTHON" -m hermes_cli.realtime_voice_profile --preset kame --apply \\
       --kame-reflex-model "$HERMES_KAME_INTERFACE_MODEL" \\
       --kame-interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL" \\
+      --kame-interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV" \\
       --kame-interface-audio-input native_audio \\
       --kame-interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS" \\
       --kame-asr-mode "$HERMES_KAME_ASR_MODE" \\
@@ -721,6 +737,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${{HERMES_PYTHON:=python}}"
 : "${{HERMES_KAME_INTERFACE_MODEL:={roles["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
+: "${{HERMES_KAME_INTERFACE_API_KEY_ENV:={roles["interface"]["api_key_env"]}}}"
 : "${{HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS:={roles["interface"]["max_audio_seconds"]}}}"
 : "${{HERMES_KAME_ASR_MODE:={manifest["engine"]["asr_mode"]}}}"
 : "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
@@ -741,6 +758,7 @@ cd "$HERMES_REPO_DIR"
   --hermes-home "$HERMES_HOME" \\
   --interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL" \\
   --interface-model "$HERMES_KAME_INTERFACE_MODEL" \\
+  --interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV" \\
   --interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS" \\
   --interface-context-tokens {roles["interface"]["max_model_len"]} \\
   --interface-gpu-memory-utilization {roles["interface"]["gpu_memory_utilization"]} \\
@@ -781,6 +799,7 @@ fi
 : "${{HERMES_PYTHON:=python}}"
 : "${{HERMES_KAME_INTERFACE_MODEL:={roles["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
+: "${{HERMES_KAME_INTERFACE_API_KEY_ENV:={roles["interface"]["api_key_env"]}}}"
 : "${{HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS:={roles["interface"]["max_audio_seconds"]}}}"
 : "${{HERMES_KAME_ASR_MODE:={manifest["engine"]["asr_mode"]}}}"
 : "${{HERMES_KAME_ORACLE_MODEL:={roles["oracle"]["preferred_local_model"]}}}"
@@ -801,6 +820,7 @@ cd "$HERMES_REPO_DIR"
   --hermes-home "$HERMES_HOME" \\
   --interface-base-url "$HERMES_KAME_INTERFACE_BASE_URL" \\
   --interface-model "$HERMES_KAME_INTERFACE_MODEL" \\
+  --interface-api-key-env "$HERMES_KAME_INTERFACE_API_KEY_ENV" \\
   --interface-max-audio-seconds "$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS" \\
   --interface-context-tokens {roles["interface"]["max_model_len"]} \\
   --interface-gpu-memory-utilization {roles["interface"]["gpu_memory_utilization"]} \\
@@ -1436,6 +1456,26 @@ def _clean_nonempty(value: Any, *, default: str) -> str:
     return normalized or default
 
 
+def _clean_env_name(value: Any, *, default: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return default
+    if normalized[0].isdigit() or not normalized.replace("_", "").isalnum():
+        return default
+    return normalized
+
+
+def _env_bearer_token(env_name: str, *fallback_env_names: str) -> str:
+    for candidate in (env_name, *fallback_env_names):
+        name = _clean_env_name(candidate, default="")
+        if not name:
+            continue
+        value = str(os.environ.get(name) or "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _python_module_name(value: Any, *, default: str) -> str:
     normalized = _clean_nonempty(value, default=default)
     if not all(part.isidentifier() for part in normalized.split(".")):
@@ -1793,16 +1833,22 @@ def preflight_dgx_spark_stack(
     timeout_seconds: float = 2.0,
 ) -> dict[str, Any]:
     roles = _roles(manifest)
+    interface_bearer_token = _env_bearer_token(
+        str(roles["interface"].get("api_key_env") or DEFAULT_INTERFACE_API_KEY_ENV),
+        "HERMES_VOICE_VLLM_TOKEN",
+    )
     checks = {
         "interface_models": probe_json_endpoint(
             roles["interface"]["models_url"],
             timeout_seconds=timeout_seconds,
             expected_model=roles["interface"]["model"],
+            bearer_token=interface_bearer_token,
         ),
         "interface_audio_probe": probe_openai_audio_chat_completion(
             roles["interface"]["base_url"],
             model=roles["interface"]["model"],
             timeout_seconds=timeout_seconds,
+            bearer_token=interface_bearer_token,
         ),
         "oracle_models": probe_json_endpoint(
             roles["oracle"]["models_url"],
@@ -1836,6 +1882,7 @@ def probe_openai_audio_chat_completion(
     *,
     model: str,
     timeout_seconds: float,
+    bearer_token: str = "",
 ) -> dict[str, Any]:
     """Probe that the interface endpoint accepts audio prompts and emits KAME JSON."""
 
@@ -1855,10 +1902,13 @@ def probe_openai_audio_chat_completion(
         "max_tokens": 80,
         "response_format": {"type": "json_object"},
     }
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Accept": "application/json", "Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:
@@ -1890,8 +1940,12 @@ def probe_json_endpoint(
     timeout_seconds: float,
     expected_model: str | None = None,
     expected_fields: Mapping[str, Any] | None = None,
+    bearer_token: str = "",
 ) -> dict[str, Any]:
-    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    headers = {"Accept": "application/json"}
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
+    request = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             status = getattr(response, "status", 200)
