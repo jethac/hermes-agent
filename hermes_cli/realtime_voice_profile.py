@@ -1131,6 +1131,10 @@ def build_kame_realtime_voice_profile(
             "log_turn_spans": bool(metrics_log_turn_spans),
             "log_provider_spans": bool(metrics_log_provider_spans),
         },
+        "output_events": {
+            "caption_aliases": False,
+            "audio_aliases": False,
+        },
         "quality_targets_ms": dict(KAME_QUALITY_TARGETS_MS),
     }
     if oracle_url:
@@ -1240,6 +1244,37 @@ def _kame_nested_config(profile: Mapping[str, Any]) -> dict[str, Any]:
     streaming_stt_base_url = profile.get("asr_base_url") or profile.get("streaming_stt_base_url") or ""
     streaming_tts_base_url = profile.get("tts_base_url") or profile.get("streaming_tts_base_url") or ""
     oracle_base_url = profile.get("oracle_base_url") or ""
+    turn_acknowledgement = _mapping_or_default(
+        profile.get("turn_acknowledgement"),
+        {"enabled": True, "text": "One moment."},
+    )
+    routing = _mapping_or_default(
+        profile.get("routing"),
+        {
+            "allow_local_greetings": True,
+            "allow_local_clarifications": True,
+            "require_oracle_for_tools": True,
+            "require_oracle_for_memory": True,
+            "require_oracle_for_files": True,
+            "local_confidence_threshold": 0.75,
+        },
+    )
+    metrics = _mapping_or_default(
+        profile.get("metrics"),
+        {
+            "enabled": True,
+            "log_turn_spans": True,
+            "log_provider_spans": True,
+        },
+    )
+    output_events = _mapping_or_default(
+        profile.get("output_events"),
+        {
+            "caption_aliases": False,
+            "audio_aliases": False,
+        },
+    )
+    quality_targets_ms = _mapping_or_default(profile.get("quality_targets_ms"), KAME_QUALITY_TARGETS_MS)
     return {
         "interface": {
             "provider": profile.get("frontend_provider") or "",
@@ -1283,7 +1318,18 @@ def _kame_nested_config(profile: Mapping[str, Any]) -> dict[str, Any]:
             "min_speech_ms": profile.get("barge_in_min_speech_ms", 120),
             "stop_playback_deadline_ms": profile.get("barge_in_stop_playback_deadline_ms", 150),
         },
+        "turn_acknowledgement": turn_acknowledgement,
+        "routing": routing,
+        "metrics": metrics,
+        "output_events": output_events,
+        "quality_targets_ms": quality_targets_ms,
     }
+
+
+def _mapping_or_default(value: Any, default: Mapping[str, Any]) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return copy.deepcopy(dict(value))
+    return copy.deepcopy(dict(default))
 
 
 def _positive_float_or_default(value: Any, default: float) -> float:

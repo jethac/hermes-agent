@@ -336,6 +336,14 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
         "log_turn_spans": True,
         "log_provider_spans": True,
     }
+    assert realtime["turn_acknowledgement"] == {
+        "enabled": True,
+        "text": "One moment.",
+    }
+    assert realtime["output_events"] == {
+        "caption_aliases": False,
+        "audio_aliases": False,
+    }
     assert realtime["interface"] == {
         "provider": "gemma4",
         "base_url": "",
@@ -614,6 +622,16 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["fallback_policy"] == "legacy_voice"
     assert discord_rt["routing"]["require_oracle_for_tools"] is True
     assert discord_rt["metrics"]["log_turn_spans"] is True
+    assert discord_rt["turn_acknowledgement"] == {
+        "enabled": True,
+        "text": "One moment.",
+    }
+    assert discord_rt["output_events"] == {
+        "caption_aliases": False,
+        "audio_aliases": False,
+    }
+    assert discord_rt["quality_targets_ms"]["kame_speech_end_to_interface_decision_ms"] == 500
+    assert discord_rt["quality_targets_ms"]["barge_in_confirmed_to_playback_stopped_ms"] == 150
     assert discord_rt["interface"] == {
         "provider": "gemma4",
         "base_url": "",
