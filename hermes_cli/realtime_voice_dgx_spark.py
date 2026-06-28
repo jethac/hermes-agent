@@ -332,6 +332,9 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
     tts = roles["tts"]
     images = dict(manifest.get("images") or {})
     volumes = dict(manifest.get("volumes") or {})
+    interface_internal_url = "http://kame-interface-vllm:8000/v1"
+    asr_internal_url = "http://kame-asr-bridge:8767"
+    tts_internal_url = "http://kame-tts-bridge:8768"
     return f"""services:
   kame-interface-vllm:
     image: ${{HERMES_DGX_SPARK_VLLM_IMAGE:-{images.get("vllm", DEFAULT_VLLM_IMAGE)}}}
@@ -394,11 +397,11 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - ${{HERMES_HOME:-{manifest["hermes_home"]}}}:/root/.hermes
     environment:
       HERMES_HOME: /root/.hermes
-      HERMES_VOICE_VLLM_BASE_URL: {interface["base_url"]}
+      HERMES_VOICE_VLLM_BASE_URL: {interface_internal_url}
       HERMES_VOICE_VLLM_MODEL: {interface["model"]}
-      HERMES_VOICE_STREAMING_STT_BASE_URL: {asr["base_url"]}
+      HERMES_VOICE_STREAMING_STT_BASE_URL: {asr_internal_url}
       HERMES_VOICE_STREAMING_STT_MODEL: ${{HERMES_VOICE_STREAMING_STT_MODEL:-oracle-verbatim-asr}}
-      HERMES_VOICE_STREAMING_TTS_BASE_URL: {tts["base_url"]}
+      HERMES_VOICE_STREAMING_TTS_BASE_URL: {tts_internal_url}
       HERMES_VOICE_STREAMING_TTS_MODEL: ${{HERMES_VOICE_STREAMING_TTS_MODEL:-local-streaming-tts}}
     command:
       - uv
@@ -413,15 +416,15 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - --port
       - "8765"
       - --vllm-base-url
-      - {interface["base_url"]}
+      - {interface_internal_url}
       - --vllm-model
       - {interface["model"]}
       - --streaming-stt-base-url
-      - {asr["base_url"]}
+      - {asr_internal_url}
       - --streaming-stt-model
       - ${{HERMES_VOICE_STREAMING_STT_MODEL:-oracle-verbatim-asr}}
       - --streaming-tts-base-url
-      - {tts["base_url"]}
+      - {tts_internal_url}
       - --streaming-tts-model
       - ${{HERMES_VOICE_STREAMING_TTS_MODEL:-local-streaming-tts}}
 
