@@ -277,6 +277,21 @@ else
   record_skip "track C local DGX speech bridge" "set DGX_SPARK_LOCAL_VOICE_BRIDGE_URL"
 fi
 
+note "Track 0 evidence validation"
+if [[ -n "${DGX_SPARK_KAME_BENCHMARK_EVIDENCE:-}" ]]; then
+  if [[ -x "$KAME_STACK_DIR/validate-benchmark-evidence.sh" ]]; then
+    if run "$KAME_STACK_DIR/validate-benchmark-evidence.sh" "$DGX_SPARK_KAME_BENCHMARK_EVIDENCE"; then
+      record_pass "track 0 KAME benchmark evidence validation"
+    else
+      record_fail "track 0 KAME benchmark evidence validation" "Benchmark evidence did not satisfy KAME launch-pack gates"
+    fi
+  else
+    record_fail "track 0 KAME benchmark evidence validation" "KAME benchmark validator is missing or not executable"
+  fi
+else
+  record_skip "track 0 KAME benchmark evidence validation" "set DGX_SPARK_KAME_BENCHMARK_EVIDENCE to a filled benchmark evidence JSON"
+fi
+
 cat >> "$SUMMARY" <<EOF
 
 Finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -285,6 +300,9 @@ Finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 - Log: $LOG
 - Full KAME stack pack: $KAME_STACK_DIR
+- KAME benchmark matrix: $KAME_STACK_DIR/benchmark-matrix.json
+- KAME benchmark evidence template: $KAME_STACK_DIR/benchmark-evidence-template.json
+- KAME benchmark validator: $KAME_STACK_DIR/validate-benchmark-evidence.sh
 - Oracle probe: $ARTIFACT_DIR/oracle-gemma4-probe.json
 - Cartesia alpha: $ARTIFACT_DIR/cartesia-alpha
 - Loopback alpha: $ARTIFACT_DIR/loopback-alpha

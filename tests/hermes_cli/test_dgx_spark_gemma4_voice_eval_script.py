@@ -17,6 +17,12 @@ def test_dgx_spark_eval_script_generates_full_kame_launch_pack():
     assert "--interface-base-url" in text
     assert "--interface-max-audio-seconds" in text
     assert "DGX_SPARK_INTERFACE_MAX_AUDIO_SECONDS" in text
+    assert "DGX_SPARK_KAME_BENCHMARK_EVIDENCE" in text
+    assert '"$KAME_STACK_DIR/validate-benchmark-evidence.sh" "$DGX_SPARK_KAME_BENCHMARK_EVIDENCE"' in text
+    assert "track 0 KAME benchmark evidence validation" in text
+    assert "KAME benchmark matrix: $KAME_STACK_DIR/benchmark-matrix.json" in text
+    assert "KAME benchmark evidence template: $KAME_STACK_DIR/benchmark-evidence-template.json" in text
+    assert "KAME benchmark validator: $KAME_STACK_DIR/validate-benchmark-evidence.sh" in text
     assert "--oracle-base-url" in text
     assert "--asr-base-url" in text
     assert "--asr-model" in text
