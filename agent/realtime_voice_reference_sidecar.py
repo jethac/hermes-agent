@@ -1675,7 +1675,11 @@ def create_reference_sidecar_app(runtime: Optional[ReferenceSidecarRuntimeConfig
 def runtime_config_from_env() -> ReferenceSidecarRuntimeConfig:
     language_fallback = os.environ.get("HERMES_VOICE_LANGUAGES") or ""
     return ReferenceSidecarRuntimeConfig(
-        vllm_base_url=os.environ.get("HERMES_VOICE_VLLM_BASE_URL") or None,
+        vllm_base_url=(
+            os.environ.get("HERMES_KAME_INTERFACE_BASE_URL")
+            or os.environ.get("HERMES_VOICE_VLLM_BASE_URL")
+            or None
+        ),
         vllm_model=os.environ.get("HERMES_VOICE_VLLM_MODEL") or None,
         vllm_timeout_seconds=float(os.environ.get("HERMES_VOICE_VLLM_TIMEOUT_SECONDS") or 60),
         streaming_stt_base_url=os.environ.get("HERMES_VOICE_STREAMING_STT_BASE_URL") or None,

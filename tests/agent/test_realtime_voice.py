@@ -5940,6 +5940,9 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     monkeypatch.setenv("HERMES_VOICE_INPUT_LANGUAGES", "ja en-US JA")
     monkeypatch.setenv("HERMES_VOICE_OUTPUT_LANGUAGES", "ja,ko token=secret")
     monkeypatch.setenv("HERMES_VOICE_SCRIPTS", "Jpan Latn bad/script")
+    monkeypatch.setenv("HERMES_KAME_INTERFACE_BASE_URL", "http://interface.local:8000/v1")
+    monkeypatch.setenv("HERMES_VOICE_VLLM_BASE_URL", "http://legacy.local:8000/v1")
+    monkeypatch.setenv("HERMES_VOICE_VLLM_MODEL", "gemma-4-E2B-it")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_BASE_URL", "http://streaming-stt.local:9000")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_MODEL", "portable-streaming-asr")
     monkeypatch.setenv("HERMES_VOICE_STREAMING_STT_TOKEN", "secret-token")
@@ -5961,6 +5964,8 @@ def test_reference_sidecar_runtime_reads_language_metadata_from_env(monkeypatch)
     assert runtime.input_languages == ("ja", "en-US")
     assert runtime.output_languages == ("ja", "ko")
     assert runtime.scripts == ("Jpan", "Latn")
+    assert runtime.vllm_base_url == "http://interface.local:8000/v1"
+    assert runtime.vllm_model == "gemma-4-E2B-it"
     assert runtime.streaming_stt_base_url == "http://streaming-stt.local:9000"
     assert runtime.streaming_stt_model == "portable-streaming-asr"
     assert runtime.streaming_stt_token == "secret-token"
