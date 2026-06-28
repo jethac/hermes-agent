@@ -133,6 +133,29 @@ KAME_REFLEX_DECISION_JSON_SCHEMA: dict[str, Any] = {
         },
     },
 }
+KAME_REFLEX_ALLOWED_KEYS = frozenset(KAME_REFLEX_DECISION_JSON_SCHEMA["properties"])
+KAME_DIRECT_TOOL_AUTHORITY_KEYS = frozenset(
+    {
+        "arguments",
+        "function",
+        "function_call",
+        "function_calls",
+        "function_name",
+        "mcp",
+        "mcp_call",
+        "mcp_server",
+        "mcp_tool",
+        "tool",
+        "tool_call",
+        "tool_call_id",
+        "tool_calls",
+        "tool_name",
+        "write_file",
+        "write_memory",
+        "memory_write",
+        "memory_update",
+    }
+)
 
 
 def kame_reflex_decision_json_schema() -> dict[str, Any]:
@@ -171,7 +194,8 @@ def kame_reflex_instruction_text(
         "or speak through the live voice interface. For can-you-hear-me checks, use route=local "
         "and a brief affirmative local_reply. Only use local for greetings, repeats, "
         "can-you-hear-me checks, or low-risk conversational glue. Use oracle_direct for tools, "
-        "files, memory, projects, or any nontrivial answer."
+        "files, memory, projects, or any nontrivial answer. The reflex has no direct tool, MCP, "
+        "filesystem, or memory-write authority; do not include tool/function call fields."
         f"{routing_text} ASR evidence mode is {asr_mode}; do not rely on external tools. "
         f"{preflight_text}JSON schema: {schema_json}. Do not add markdown or commentary."
     )
@@ -200,6 +224,11 @@ def kame_reflex_schema_issues(payload: Mapping[str, Any]) -> list[str]:
                 issues.append("route_confidence must be between 0 and 1")
     if route in {KameRoute.LOCAL.value, KameRoute.REJECT_OR_CLARIFY.value} and "local_reply" not in payload:
         issues.append("local_reply is required for local or reject_or_clarify")
+    for key in payload:
+        if str(key) not in KAME_REFLEX_ALLOWED_KEYS:
+            issues.append(f"unexpected key {key}")
+    if kame_payload_requests_direct_tool_authority(payload):
+        issues.append("direct tool authority is not allowed for the reflex")
     transcript_confidence = payload.get("transcript_confidence")
     if transcript_confidence is not None:
         if isinstance(transcript_confidence, bool):
@@ -249,6 +278,10 @@ class KameReflexDecision:
         if raw_route and raw_route not in KAME_REFLEX_ROUTES:
             validation_errors.append("invalid_route")
         route = _route(raw_route)
+        if kame_payload_requests_direct_tool_authority(payload):
+            validation_errors.append("direct_tool_authority_not_allowed")
+            route = KameRoute.ORACLE_DIRECT
+            local_reply = ""
         if route in {KameRoute.LOCAL, KameRoute.REJECT_OR_CLARIFY} and not local_reply:
             validation_errors.append("missing_local_reply")
             route = KameRoute.ORACLE_DIRECT
@@ -493,6 +526,11 @@ def apply_kame_routing_policy(
     """
 
     routed = dict(payload)
+    if kame_payload_requests_direct_tool_authority(routed):
+        return downgrade_kame_local_route(
+            _without_direct_tool_authority_fields(routed),
+            reason="direct_tool_authority_not_allowed",
+        )
     route = _optional_text(routed.get("route")).lower()
     if route not in {KameRoute.LOCAL.value, KameRoute.REJECT_OR_CLARIFY.value}:
         return routed
@@ -556,6 +594,38 @@ def kame_oracle_required_reason(
 
 def kame_is_greeting_or_hear_me_check(payload: Mapping[str, Any]) -> bool:
     return bool(_policy_terms(payload).intersection(KAME_GREETING_OR_HEAR_ME_TERMS))
+
+
+def kame_payload_requests_direct_tool_authority(payload: Mapping[str, Any]) -> bool:
+    """Return whether a reflex payload tries to carry direct tool authority.
+
+    The interface model can route to Hermes's oracle, but the design keeps all
+    tool, MCP, filesystem, and memory authority in the oracle layer. These keys
+    are therefore treated as an explicit contract violation even if the model
+    selected ``defer`` or ``oracle_direct``.
+    """
+
+    return any(_is_direct_tool_authority_key(key) for key in payload)
+
+
+def _without_direct_tool_authority_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        str(key): value
+        for key, value in payload.items()
+        if not _is_direct_tool_authority_key(key)
+    }
+
+
+def _is_direct_tool_authority_key(key: Any) -> bool:
+    normalized = str(key or "").strip().lower().replace("-", "_")
+    if normalized in KAME_DIRECT_TOOL_AUTHORITY_KEYS:
+        return True
+    return (
+        normalized.endswith("_tool_call")
+        or normalized.endswith("_tool_calls")
+        or normalized.endswith("_function_call")
+        or normalized.endswith("_function_calls")
+    )
 
 
 def _policy_terms(payload: Mapping[str, Any]) -> set[str]:

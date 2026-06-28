@@ -6209,6 +6209,61 @@ def test_kame_reflex_decision_rejects_invalid_local_schema():
     assert invalid_route.validation_errors == ("invalid_route",)
 
 
+def test_kame_reflex_decision_rejects_direct_tool_authority():
+    issues = kame_reflex_schema_issues(
+        {
+            "route": "defer",
+            "intent": "The user wants Hermes to inspect a file.",
+            "text": "read pyproject.toml",
+            "route_confidence": 0.88,
+            "tool_calls": [{"name": "read_file", "arguments": {"path": "pyproject.toml"}}],
+        }
+    )
+    decision = KameReflexDecision.from_payload(
+        {
+            "route": "defer",
+            "intent": "The user wants Hermes to inspect a file.",
+            "text": "read pyproject.toml",
+            "route_confidence": 0.88,
+            "tool_calls": [{"name": "read_file", "arguments": {"path": "pyproject.toml"}}],
+            "local_reply": "I'll read it now.",
+        }
+    )
+
+    assert "unexpected key tool_calls" in issues
+    assert "direct tool authority is not allowed for the reflex" in issues
+    assert decision.route == KameRoute.ORACLE_DIRECT
+    assert decision.local_reply == ""
+    assert decision.validation_errors == ("direct_tool_authority_not_allowed",)
+
+
+def test_kame_oracle_request_strips_direct_tool_authority_fields():
+    request = KameOracleRequest.from_turn(
+        session_id="voice-123",
+        turn_id="voice-123:1",
+        source="discord_voice",
+        user_id="jetha",
+        payload={
+            "route": "local",
+            "intent": "The user wants Hermes to read a project file.",
+            "text": "read pyproject.toml",
+            "route_confidence": 0.96,
+            "local_reply": "I'll read it now.",
+            "tool_name": "read_file",
+            "arguments": {"path": "pyproject.toml"},
+        },
+        fallback_text="read pyproject.toml",
+    )
+
+    metadata = request.to_metadata()
+    assert request.route == KameRoute.ORACLE_DIRECT
+    assert request.local_reply == ""
+    assert request.reflex_validation_error == "direct_tool_authority_not_allowed"
+    assert metadata["kame_reflex_validation_error"] == "direct_tool_authority_not_allowed"
+    assert "tool_name" not in metadata
+    assert "arguments" not in metadata
+
+
 def test_reference_sidecar_kame_reflex_never_speaks_voice_denial_locally():
     payload = reference_sidecar_module._kame_reflex_payload_from_content(
         json.dumps(
@@ -6224,6 +6279,26 @@ def test_reference_sidecar_kame_reflex_never_speaks_voice_denial_locally():
     assert payload["route"] == "oracle_direct"
     assert "local_reply" not in payload
     assert payload["reflex_validation_error"] == "voice_capability_denial"
+
+
+def test_reference_sidecar_kame_reflex_never_forwards_direct_tool_payloads():
+    payload = reference_sidecar_module._kame_reflex_payload_from_content(
+        json.dumps(
+            {
+                "route": "local",
+                "intent": "The user wants Hermes to read a project file.",
+                "text": "read pyproject.toml",
+                "route_confidence": 0.97,
+                "local_reply": "I'll read it now.",
+                "tool_calls": [{"name": "read_file", "arguments": {"path": "pyproject.toml"}}],
+            }
+        )
+    )
+
+    assert payload["route"] == "oracle_direct"
+    assert "local_reply" not in payload
+    assert "tool_calls" not in payload
+    assert payload["reflex_validation_error"] == "direct_tool_authority_not_allowed"
 
 
 def test_reference_sidecar_kame_local_route_respects_confidence_threshold():
