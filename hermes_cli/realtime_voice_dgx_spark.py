@@ -35,6 +35,7 @@ DEFAULT_ASR_ADAPTER = "loopback_smoke_bridge"
 DEFAULT_TTS_ADAPTER = "loopback_smoke_bridge"
 DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:latest"
 DEFAULT_HERMES_IMAGE = "ghcr.io/astral-sh/uv:python3.12-bookworm-slim"
+DEFAULT_SCRIPT_PYTHON = "python3"
 REQUIRED_DGX_SPARK_SMOKES: tuple[tuple[str, str], ...] = (
     (
         "all_local_smoke",
@@ -602,6 +603,7 @@ HERMES_DGX_SPARK_HERMES_IMAGE={images.get("hermes", DEFAULT_HERMES_IMAGE)}
 HERMES_DGX_SPARK_MODEL_CACHE={volumes.get("model_cache_dir", "${HOME}/.cache/huggingface")}
 HERMES_REPO_DIR={manifest["repo_dir"]}
 HERMES_HOME={manifest["hermes_home"]}
+HERMES_PYTHON={DEFAULT_SCRIPT_PYTHON}
 
 HERMES_KAME_INTERFACE_MODEL={roles["interface"]["model"]}
 HERMES_KAME_INTERFACE_BASE_URL={roles["interface"]["base_url"]}
@@ -684,7 +686,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 : "${{HERMES_REPO_DIR:={manifest["repo_dir"]}}}"
 : "${{HERMES_HOME:={manifest["hermes_home"]}}}"
-: "${{HERMES_PYTHON:=python}}"
+: "${{HERMES_PYTHON:={DEFAULT_SCRIPT_PYTHON}}}"
 : "${{HERMES_KAME_INTERFACE_MODEL:={manifest["roles"]["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={manifest["roles"]["interface"]["base_url"]}}}"
 : "${{HERMES_KAME_INTERFACE_API_KEY_ENV:={manifest["roles"]["interface"]["api_key_env"]}}}"
@@ -734,7 +736,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 : "${{HERMES_REPO_DIR:={manifest["repo_dir"]}}}"
 : "${{HERMES_HOME:={manifest["hermes_home"]}}}"
-: "${{HERMES_PYTHON:=python}}"
+: "${{HERMES_PYTHON:={DEFAULT_SCRIPT_PYTHON}}}"
 : "${{HERMES_KAME_INTERFACE_MODEL:={roles["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
 : "${{HERMES_KAME_INTERFACE_API_KEY_ENV:={roles["interface"]["api_key_env"]}}}"
@@ -796,7 +798,7 @@ fi
 
 : "${{HERMES_REPO_DIR:={manifest["repo_dir"]}}}"
 : "${{HERMES_HOME:={manifest["hermes_home"]}}}"
-: "${{HERMES_PYTHON:=python}}"
+: "${{HERMES_PYTHON:={DEFAULT_SCRIPT_PYTHON}}}"
 : "${{HERMES_KAME_INTERFACE_MODEL:={roles["interface"]["model"]}}}"
 : "${{HERMES_KAME_INTERFACE_BASE_URL:={roles["interface"]["base_url"]}}}"
 : "${{HERMES_KAME_INTERFACE_API_KEY_ENV:={roles["interface"]["api_key_env"]}}}"

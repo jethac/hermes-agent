@@ -471,6 +471,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS=30.0" in env_example
     assert "HERMES_KAME_INTERFACE_API_KEY_ENV=HERMES_KAME_INTERFACE_API_KEY" in env_example
     assert "HERMES_KAME_INTERFACE_API_KEY=" in env_example
+    assert "HERMES_PYTHON=python3" in env_example
     assert "HERMES_KAME_MAX_SPOKEN_SENTENCES=2" in env_example
     assert "HERMES_DGX_SPARK_ASR_ADAPTER=loopback_smoke_bridge" in env_example
     assert "HERMES_DGX_SPARK_TTS_ADAPTER=loopback_smoke_bridge" in env_example
@@ -478,6 +479,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "- ${HERMES_KAME_INTERFACE_MODEL:-gemma-4-E2B-it}" in compose
     assert "HERMES_DGX_SPARK_APPLY_PROFILE" in launch
     assert "hermes_cli.realtime_voice_profile --preset kame --apply" in launch
+    assert ': "${HERMES_PYTHON:=python3}"' in launch
     assert ': "${HERMES_KAME_INTERFACE_MODEL:=gemma-4-E2B-it}"' in launch
     assert ': "${HERMES_KAME_INTERFACE_API_KEY_ENV:=HERMES_KAME_INTERFACE_API_KEY}"' in launch
     assert ': "${HERMES_KAME_ORACLE_MODEL:=gemma-4-26B-A4B-it}"' in launch
@@ -497,6 +499,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "docker compose --env-file .env.example -f compose.yaml up" in launch
     assert "--check" in preflight
     assert "--output-dir \"$SCRIPT_DIR\"" in preflight
+    assert ': "${HERMES_PYTHON:=python3}"' in preflight
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in preflight
     assert "--interface-api-key-env \"$HERMES_KAME_INTERFACE_API_KEY_ENV\"" in preflight
     assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in preflight
@@ -510,6 +513,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--sidecar-base-url http://spark.local:8765" in preflight
     assert "usage: $0 /path/to/benchmark-evidence.json" in validate_benchmark
     assert "--benchmark-evidence \"$1\"" in validate_benchmark
+    assert ': "${HERMES_PYTHON:=python3}"' in validate_benchmark
     assert "--interface-model \"$HERMES_KAME_INTERFACE_MODEL\"" in validate_benchmark
     assert "--interface-api-key-env \"$HERMES_KAME_INTERFACE_API_KEY_ENV\"" in validate_benchmark
     assert "--interface-max-audio-seconds \"$HERMES_KAME_INTERFACE_MAX_AUDIO_SECONDS\"" in validate_benchmark
