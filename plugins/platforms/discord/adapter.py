@@ -164,6 +164,7 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
     asr = _discord_mapping_config(config.get("asr"))
     tts = _discord_mapping_config(config.get("tts"))
     barge_in = _discord_mapping_config(config.get("barge_in"))
+    output_events = _discord_mapping_config(config.get("output_events"))
 
     _discord_set_realtime_default(config, "frontend_provider", interface.get("provider"))
     _discord_set_realtime_default(config, "frontend_model", interface.get("model"))
@@ -207,6 +208,8 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
     _discord_set_realtime_default(config, "barge_in_min_rms", barge_in.get("min_rms"))
     _discord_set_realtime_default(config, "barge_in_min_speech_ms", barge_in.get("min_speech_ms"))
     _discord_set_realtime_default(config, "barge_in_stop_playback_deadline_ms", barge_in.get("stop_playback_deadline_ms"))
+    if output_events and not isinstance(config.get("output_events"), Mapping):
+        config["output_events"] = dict(output_events)
     return config
 
 
@@ -2961,6 +2964,9 @@ class DiscordAdapter(BasePlatformAdapter):
                 "log_turn_spans": True,
                 "log_provider_spans": True,
             },
+            "output_events": {
+                "caption_aliases": False,
+            },
         }
         try:
             from hermes_cli.config import read_raw_config
@@ -3282,6 +3288,7 @@ class DiscordAdapter(BasePlatformAdapter):
             turn_acknowledgement=cfg.get("turn_acknowledgement") if isinstance(cfg.get("turn_acknowledgement"), dict) else {},
             routing_policy=cfg.get("routing") if isinstance(cfg.get("routing"), dict) else {},
             metrics_policy=cfg.get("metrics") if isinstance(cfg.get("metrics"), dict) else {},
+            output_events=cfg.get("output_events") if isinstance(cfg.get("output_events"), dict) else {},
             barge_in_stop_playback_deadline_ms=int(cfg.get("barge_in_stop_playback_deadline_ms") or 150),
             mixer=getattr(self, "_voice_mixers", {}).get(guild_id),
             degraded_callback=lambda reason, error: self._handle_realtime_voice_degraded(

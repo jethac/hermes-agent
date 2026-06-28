@@ -886,6 +886,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Log realtime voice provider latency spans",
         "category": "voice",
     },
+    "voice.realtime.output_events.caption_aliases": {
+        "type": "boolean",
+        "description": "Emit assistant.caption.partial/final aliases alongside legacy assistant text events",
+        "category": "voice",
+    },
     "voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms": {
         "type": "number",
         "description": "Target milliseconds from user audio to first partial transcript",
@@ -1074,6 +1079,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.sidecar_close_timeout_seconds": {
         "type": "number",
         "description": "Seconds to wait while closing a Discord realtime sidecar session",
+        "category": "discord",
+    },
+    "discord.realtime_voice.output_events.caption_aliases": {
+        "type": "boolean",
+        "description": "Emit assistant.caption.partial/final aliases for Discord realtime voice sessions",
         "category": "discord",
     },
     "display.skin": {
@@ -13365,6 +13375,21 @@ def _realtime_voice_metrics_policy_payload(realtime: Mapping[str, Any]) -> Dict[
     }
 
 
+def _realtime_voice_output_events_payload(realtime: Mapping[str, Any]) -> Dict[str, Any]:
+    raw = realtime.get("output_events") if isinstance(realtime, Mapping) else {}
+    if not isinstance(raw, Mapping):
+        raw = {}
+    caption_events = realtime.get("caption_events") if isinstance(realtime, Mapping) else {}
+    if not isinstance(caption_events, Mapping):
+        caption_events = {}
+    return {
+        "caption_aliases": _truthy_config(
+            raw.get("caption_aliases", caption_events.get("enabled")),
+            default=False,
+        ),
+    }
+
+
 def _sanitize_realtime_voice_sidecar_health(payload: Dict[str, Any]) -> Dict[str, Any]:
     frontend = payload.get("frontend") if isinstance(payload.get("frontend"), dict) else {}
     capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
@@ -14342,6 +14367,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
     routing_policy = _realtime_voice_routing_policy_payload(realtime)
     metrics_policy = _realtime_voice_metrics_policy_payload(realtime)
+    output_events_policy = _realtime_voice_output_events_payload(realtime)
     base_url = _realtime_voice_sidecar_base_url(realtime)
     connect_timeout_seconds = _positive_float_config(
         realtime.get("sidecar_connect_timeout_seconds"),
@@ -14508,6 +14534,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "quality_targets_ms": quality_targets_ms,
         "routing": routing_policy,
         "metrics": metrics_policy,
+        "output_events": output_events_policy,
         "conversation_quality": conversation_quality,
         "production_readiness": production_readiness,
         "require_live_like": require_live_like,
@@ -14857,6 +14884,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     quality_targets_ms = _realtime_voice_quality_targets_payload(realtime)
     routing_policy = _realtime_voice_routing_policy_payload(realtime)
     metrics_policy = _realtime_voice_metrics_policy_payload(realtime)
+    output_events_policy = _realtime_voice_output_events_payload(realtime)
     asr_provider = str(realtime.get("asr_provider") or "")
     asr_model = str(realtime.get("asr_model") or realtime.get("streaming_stt_model") or "")
     tts_provider = str(realtime.get("tts_provider") or "")
@@ -15020,6 +15048,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "quality_targets_ms": quality_targets_ms,
             "routing": routing_policy,
             "metrics": metrics_policy,
+            "output_events": output_events_policy,
             "turn_acknowledgement": _realtime_voice_turn_acknowledgement_payload(realtime),
             "conversation_quality": conversation_quality,
             "production_readiness": production_readiness,

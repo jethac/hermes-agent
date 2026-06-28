@@ -148,6 +148,7 @@ class DiscordRealtimeVoiceSession:
         turn_acknowledgement: Optional[dict] = None,
         routing_policy: Optional[dict] = None,
         metrics_policy: Optional[dict] = None,
+        output_events: Optional[dict] = None,
         barge_in_stop_playback_deadline_ms: int = DEFAULT_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS,
         sidecar: Any = None,
         mixer: Any = None,
@@ -181,6 +182,7 @@ class DiscordRealtimeVoiceSession:
         self.turn_acknowledgement = dict(turn_acknowledgement or {})
         self.routing_policy = dict(routing_policy or {})
         self.metrics_policy = dict(metrics_policy or {})
+        self.output_events = dict(output_events or {})
         try:
             self.barge_in_stop_playback_deadline_ms = max(0, int(barge_in_stop_playback_deadline_ms))
         except (TypeError, ValueError):
@@ -255,6 +257,7 @@ class DiscordRealtimeVoiceSession:
                 "turn_acknowledgement": dict(self.turn_acknowledgement),
                 "routing": dict(self.routing_policy),
                 "metrics": dict(self.metrics_policy),
+                "output_events": dict(self.output_events),
                 "barge_in": {
                     "stop_playback_deadline_ms": self.barge_in_stop_playback_deadline_ms,
                 },

@@ -3211,6 +3211,7 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.metrics.enabled"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.metrics.log_turn_spans"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.metrics.log_provider_spans"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.output_events.caption_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.final_transcript_to_first_audio_ms"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.sidecar_close_timeout_seconds"]["type"] == "number"
@@ -3244,6 +3245,7 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.max_spoken_sentences"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.sidecar_connect_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.sidecar_close_timeout_seconds"]["type"] == "number"
+        assert CONFIG_SCHEMA["discord.realtime_voice.output_events.caption_aliases"]["type"] == "boolean"
 
     def test_empty_prefix_produces_correct_keys(self):
         from hermes_cli.web_server import _build_schema_from_config
@@ -6856,6 +6858,7 @@ class TestRealtimeVoiceWebSocket:
                         "input_buffer_limit_bytes": 4096,
                         "input_frame_ms": 80,
                         "silence_timeout_ms": 700,
+                        "output_events": {"caption_aliases": True},
                     }
                 }
             },
@@ -6912,6 +6915,7 @@ class TestRealtimeVoiceWebSocket:
             "enabled": False,
             "text": "One moment.",
         }
+        assert config.metadata["output_events"] == {"caption_aliases": True}
         assert config.metadata["conversation_quality"] == {
             "mode": "unverified_sidecar",
             "reason": "sidecar_unverified",
@@ -7333,6 +7337,7 @@ class TestRealtimeVoiceWebSocket:
             "final_transcript_to_first_audio_ms": 900,
             "barge_in_ack_ms": 150,
         }
+        assert body["output_events"] == {"caption_aliases": False}
         assert body["require_live_like"] is False
         assert body["sidecar"]["mode"] == "managed_loopback"
         assert body["sidecar"]["autostart"] is True

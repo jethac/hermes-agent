@@ -207,6 +207,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
             "local_confidence_threshold": 0.8,
         },
         metrics_policy={"enabled": True, "log_turn_spans": True, "log_provider_spans": False},
+        output_events={"caption_aliases": True},
     )
 
     await session.start()
@@ -255,6 +256,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         "log_turn_spans": True,
         "log_provider_spans": False,
     }
+    assert sidecar.started_with.metadata["output_events"] == {"caption_aliases": True}
     assert sidecar.started_with.metadata["barge_in"] == {
         "stop_playback_deadline_ms": 95,
     }

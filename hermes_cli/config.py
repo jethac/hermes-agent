@@ -2107,6 +2107,9 @@ DEFAULT_CONFIG = {
                 "log_turn_spans": True,
                 "log_provider_spans": True,
             },
+            "output_events": {
+                "caption_aliases": False,
+            },
             "quality_targets_ms": {
                 "audio_to_partial_transcript_ms": 300,
                 "final_transcript_to_first_text_ms": 500,
@@ -2476,6 +2479,9 @@ DEFAULT_CONFIG = {
                 "enabled": True,
                 "log_turn_spans": True,
                 "log_provider_spans": True,
+            },
+            "output_events": {
+                "caption_aliases": False,
             },
         },
     },
