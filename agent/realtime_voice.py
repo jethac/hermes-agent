@@ -53,6 +53,7 @@ class VoiceEventType(StrEnum):
     SESSION_STARTED = "session.started"
     SESSION_CLOSED = "session.closed"
     SESSION_ERROR = "session.error"
+    SESSION_METRICS = "session.metrics"
     AUDIO_INPUT_CHUNK = "audio.input.chunk"
     SPEECH_START = "speech.start"
     SPEECH_ENERGY = "speech.energy"
@@ -100,6 +101,7 @@ SERVER_EVENT_TYPES = frozenset(
         VoiceEventType.SESSION_STARTED,
         VoiceEventType.SESSION_CLOSED,
         VoiceEventType.SESSION_ERROR,
+        VoiceEventType.SESSION_METRICS,
         VoiceEventType.AUDIO_OUTPUT_CHUNK,
         VoiceEventType.PLAYBACK_STARTED,
         VoiceEventType.PLAYBACK_STOPPED,

@@ -636,6 +636,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     text=plan.committed_text,
                     local_reply=True,
                 )
+                await self._emit_session_metrics(
+                    playback_generation,
+                    metadata,
+                    oracle_called=False,
+                    outcome="local_commit",
+                    local_reply=True,
+                )
                 await self._emit(
                     VoiceEventType.ASSISTANT_COMMIT,
                     {
@@ -912,6 +919,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     assistant_metadata,
                     text=plan.committed_text,
                 )
+                await self._emit_session_metrics(
+                    playback_generation,
+                    assistant_metadata,
+                    oracle_called=True,
+                    outcome="oracle_commit",
+                    extra_metrics=kame_timing_metrics,
+                )
                 await self._emit(
                     VoiceEventType.ASSISTANT_COMMIT,
                     {
@@ -1002,6 +1016,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             )
         if playback_generation == self._playback_generation:
             await self._emit_interface_commit(playback_generation, metadata, text=status_text)
+            await self._emit_session_metrics(
+                playback_generation,
+                metadata,
+                oracle_called=True,
+                outcome="oracle_timeout_status",
+            )
             await self._emit(VoiceEventType.ASSISTANT_COMMIT, payload)
 
     async def _emit_interface_commit(
@@ -1197,6 +1217,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         event = await self._emit(VoiceEventType.ORACLE_ERROR, payload)
         if event is not None and self._sidecar is not None:
             await self._send_sidecar_event(event)
+        await self._emit_session_metrics(
+            playback_generation,
+            metadata,
+            oracle_called=True,
+            outcome=f"oracle_error:{reason}",
+        )
 
     async def _emit_oracle_cancelled(
         self,
@@ -1221,6 +1247,45 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             **_kame_route_metrics_payload(metadata, oracle_called=True),
         }
         event = await self._emit(VoiceEventType.ORACLE_ERROR, payload)
+        if event is not None and self._sidecar is not None:
+            await self._send_sidecar_event(event)
+        await self._emit_session_metrics(
+            playback_generation,
+            metadata,
+            oracle_called=True,
+            outcome="oracle_cancelled",
+        )
+
+    async def _emit_session_metrics(
+        self,
+        playback_generation: int,
+        metadata: Mapping[str, Any],
+        *,
+        oracle_called: bool,
+        outcome: str,
+        extra_metrics: Optional[Mapping[str, int]] = None,
+        local_reply: bool = False,
+    ) -> None:
+        if playback_generation != self._playback_generation or not _is_kame_metadata(metadata):
+            return
+        if not _kame_metrics_policy_enabled(self.config):
+            return
+        metrics = _kame_route_metrics(
+            metadata,
+            oracle_called=oracle_called,
+            extra_metrics=extra_metrics,
+        )
+        if not metrics:
+            return
+        payload = {
+            **_kame_interface_payload_from_metadata(metadata),
+            "playback_generation": playback_generation,
+            "outcome": outcome,
+            "oracle_called": bool(oracle_called),
+            "local_reply": bool(local_reply),
+            "metrics": metrics,
+        }
+        event = await self._emit(VoiceEventType.SESSION_METRICS, payload)
         if event is not None and self._sidecar is not None:
             await self._send_sidecar_event(event)
 
@@ -1452,6 +1517,16 @@ def _kame_route_metrics(
     if extra_metrics:
         metrics.update(_nonnegative_int_metrics(extra_metrics))
     return metrics
+
+
+def _kame_metrics_policy_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        return False
+    metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
+    metrics = metadata.get("metrics") if isinstance(metadata, Mapping) else {}
+    if not isinstance(metrics, Mapping):
+        return True
+    return _metadata_bool(metrics.get("enabled"), default=True)
 
 
 def _nonnegative_int_metrics(metrics: Mapping[str, Any]) -> dict[str, int]:

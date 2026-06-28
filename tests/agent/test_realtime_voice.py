@@ -362,6 +362,12 @@ def test_event_validation_separates_client_and_server_events():
         sequence=6,
         payload={"delta": "Hello", "playback_generation": 1},
     )
+    metrics_event = VoiceEvent(
+        type=VoiceEventType.SESSION_METRICS,
+        session_id="voice-123",
+        sequence=7,
+        payload={"metrics": {"kame_oracle_called": 1}, "playback_generation": 1},
+    )
 
     validate_client_event(audio_event)
     validate_client_event(speech_start_event)
@@ -369,6 +375,7 @@ def test_event_validation_separates_client_and_server_events():
     validate_server_event(transcript_event)
     validate_server_event(interface_event)
     validate_server_event(oracle_event)
+    validate_server_event(metrics_event)
 
     with pytest.raises(ValueError):
         validate_client_event(transcript_event)
@@ -376,6 +383,8 @@ def test_event_validation_separates_client_and_server_events():
         validate_client_event(interface_event)
     with pytest.raises(ValueError):
         validate_client_event(oracle_event)
+    with pytest.raises(ValueError):
+        validate_client_event(metrics_event)
 
     with pytest.raises(ValueError):
         validate_server_event(audio_event)
@@ -691,6 +700,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
         oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
         interface_commit = next(event for event in seen if event.type == VoiceEventType.INTERFACE_COMMIT)
+        session_metrics = next(event for event in seen if event.type == VoiceEventType.SESSION_METRICS)
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         assert final.payload["kame_intent"] == "Find the note from yesterday's meeting."
         assert final.payload["kame_route"] == "oracle_direct"
@@ -714,6 +724,11 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert oracle_request.payload["cancellation_token"] == "voice-123:1:cancel"
         assert interface_commit.payload["text"] == "Done."
         assert interface_commit.payload["cancellation_token"] == "voice-123:1:cancel"
+        assert session_metrics.payload["outcome"] == "oracle_commit"
+        assert session_metrics.payload["oracle_called"] is True
+        assert session_metrics.payload["turn_id"] == "voice-123:1"
+        assert session_metrics.payload["metrics"]["kame_oracle_called"] == 1
+        assert session_metrics.payload["metrics"]["kame_oracle_bypassed"] == 0
         assert commit.payload["kame_cancellation_token"] == "voice-123:1:cancel"
         assert commit.payload["metrics"]["kame_oracle_called"] == 1
         assert commit.payload["metrics"]["kame_oracle_bypassed"] == 0
@@ -1180,6 +1195,7 @@ def test_kame_engine_local_route_speaks_without_oracle(monkeypatch):
         interface_reply = next(event for event in seen if event.type == VoiceEventType.INTERFACE_REPLY_LOCAL)
         interface_commit = next(event for event in seen if event.type == VoiceEventType.INTERFACE_COMMIT)
         partial = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL)
+        session_metrics = next(event for event in seen if event.type == VoiceEventType.SESSION_METRICS)
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         assert not any(event.type == VoiceEventType.ORACLE_HINT for event in seen)
         assert not any(event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST for event in seen)
@@ -1190,11 +1206,63 @@ def test_kame_engine_local_route_speaks_without_oracle(monkeypatch):
         assert interface_commit.payload["local_reply"] is True
         assert interface_commit.payload["text"] == "Yes, I can hear you."
         assert partial.payload["local_reply"] is True
+        assert session_metrics.payload["outcome"] == "local_commit"
+        assert session_metrics.payload["oracle_called"] is False
+        assert session_metrics.payload["local_reply"] is True
+        assert session_metrics.payload["metrics"]["kame_oracle_called"] == 0
+        assert session_metrics.payload["metrics"]["kame_oracle_bypassed"] == 1
         assert commit.payload["local_reply"] is True
         assert commit.payload["text"] == "Yes, I can hear you."
         assert commit.payload["metrics"]["kame_oracle_called"] == 0
         assert commit.payload["metrics"]["kame_oracle_bypassed"] == 1
         assert spoken == ["Yes, I can hear you."]
+
+    asyncio.run(run())
+
+
+def test_kame_engine_respects_metrics_policy_disabled(monkeypatch):
+    class UnexpectedOracle:
+        async def stream_answer_for_request(self, request):
+            raise AssertionError("local KAME route must not call oracle")
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        engine = KameInterfaceOracleEngine(oracle=UnexpectedOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                metadata={"metrics": {"enabled": False}},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "can you hear me",
+                    "intent": "The user is checking whether Hermes can hear them.",
+                    "route": "local",
+                    "local_reply": "Yes, I can hear you.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+        assert not any(event.type == VoiceEventType.SESSION_METRICS for event in seen)
+        assert any(event.type == VoiceEventType.ASSISTANT_COMMIT for event in seen)
 
     asyncio.run(run())
 
