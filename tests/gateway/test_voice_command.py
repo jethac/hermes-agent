@@ -3242,6 +3242,34 @@ class TestVoiceChannelAwareness:
         assert "Hermes backend oracle handles reasoning" in ctx
         assert "deep-hermes" in ctx
 
+    def test_context_includes_realtime_voice_provider_failure_state(self):
+        adapter = self._make_adapter()
+        vc = MagicMock()
+        vc.is_connected.return_value = True
+        user_a = self._make_member(1001, "Alice")
+        vc.channel.name = "chat-room"
+        vc.channel.members = [user_a]
+        adapter._voice_clients[111] = vc
+        adapter._update_voice_state(
+            111,
+            mode="realtime_active",
+            receiver_running=True,
+            mixer_installed=True,
+            sidecar_running=True,
+            frontend_state={
+                "status": "degraded",
+                "reason": "tts_unavailable",
+                "streaming_tts": False,
+                "local_tts": False,
+            },
+        )
+
+        ctx = adapter.get_voice_channel_context(111)
+
+        assert "Realtime voice frontend state: degraded; tts_unavailable" in ctx
+        assert "streaming_tts=off" in ctx
+        assert "local_tts=off" in ctx
+
     def test_context_includes_degraded_voice_reason(self):
         adapter = self._make_adapter()
         vc = MagicMock()

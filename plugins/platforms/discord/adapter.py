@@ -191,6 +191,31 @@ def _discord_voice_frontend_state(value: Any) -> Dict[str, Any]:
     return state
 
 
+def _discord_voice_provider_context(value: Any) -> str:
+    if not isinstance(value, dict) or not value:
+        return ""
+    parts: list[str] = []
+    for key in ("status", "reason"):
+        text = str(value.get(key) or "").strip()
+        if text:
+            parts.append(text[:160])
+    for key in (
+        "streaming_stt",
+        "local_stt",
+        "asr",
+        "streaming_tts",
+        "local_tts",
+        "tts",
+        "vllm_audio_frontend",
+        "interface_audio_input_fallback",
+    ):
+        if key in value and isinstance(value.get(key), bool):
+            parts.append(f"{key}={'on' if value[key] else 'off'}")
+    if not parts:
+        return ""
+    return f"Realtime voice frontend state: {'; '.join(parts)}."
+
+
 def _discord_realtime_voice_fallback_policy(cfg: Dict[str, Any]) -> str:
     policy = str((cfg or {}).get("fallback_policy") or "legacy_voice").strip().lower()
     if policy in {"legacy_voice", "text_only", "fail_closed"}:
@@ -4265,6 +4290,9 @@ class DiscordAdapter(BasePlatformAdapter):
                 f"turn-taking, and spoken output{frontend_suffix}; "
                 f"the Hermes backend oracle handles reasoning, tools, memory, and durable work ({oracle_label})."
             )
+        provider_context = _discord_voice_provider_context(session.get("frontend_state"))
+        if provider_context:
+            parts.append(provider_context)
         for m in info["members"]:
             status = " (speaking)" if m["is_speaking"] else ""
             parts.append(f"  - {m['display_name']}{status}")
