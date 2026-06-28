@@ -127,6 +127,12 @@ def _passing_benchmark_evidence() -> list[dict]:
         },
         {
             "kind": "kame_model_assumption_result",
+            "name": "vllm_oracle_text_only_multimodal_limit",
+            "validated_by": "compose_vllm_args",
+            "ok": True,
+        },
+        {
+            "kind": "kame_model_assumption_result",
             "name": "oracle_authority",
             "validated_by": "oracle_models_probe",
             "model": "gemma-4-26B-A4B-it",
@@ -291,7 +297,14 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
         "required": True,
         "validated_by": "manifest_and_vllm_limit_mm_per_prompt",
     }
-    assert manifest["model_assumptions"]["vllm_multimodal_audio_prompt_limit"]["limit_mm_per_prompt"] == {"audio": 1}
+    assert manifest["model_assumptions"]["vllm_multimodal_audio_prompt_limit"]["limit_mm_per_prompt"] == {
+        "image": 0,
+        "audio": 1,
+    }
+    assert manifest["model_assumptions"]["vllm_oracle_text_only_multimodal_limit"]["limit_mm_per_prompt"] == {
+        "image": 0,
+        "audio": 0,
+    }
     assert manifest["model_assumptions"]["oracle_authority"]["model"] == "gemma-4-26B-A4B-it"
     assert manifest["roles"]["interface"]["provider"] == "gemma4"
     assert manifest["roles"]["interface"]["implementation"] == "openai_compatible_vllm"
@@ -302,10 +315,11 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     ]
     assert manifest["roles"]["interface"]["candidate_models"][0]["priority"] == "default"
     assert manifest["roles"]["interface"]["candidate_models"][1]["priority"] == "comparison"
-    assert manifest["roles"]["interface"]["limit_mm_per_prompt"] == {"audio": 1}
+    assert manifest["roles"]["interface"]["limit_mm_per_prompt"] == {"image": 0, "audio": 1}
     assert manifest["roles"]["interface"]["max_audio_seconds"] == 30.0
     assert manifest["roles"]["interface"]["api_key_env"] == "HERMES_KAME_INTERFACE_API_KEY"
     assert manifest["roles"]["oracle"]["preferred_local_model"] == "gemma-4-26B-A4B-it"
+    assert manifest["roles"]["oracle"]["limit_mm_per_prompt"] == {"image": 0, "audio": 0}
     assert manifest["roles"]["asr"]["role"] == "oracle_verbatim_evidence"
     assert manifest["roles"]["asr"]["provider"] == "streaming_stt"
     assert manifest["roles"]["asr"]["adapter"] == "loopback_smoke_bridge"
@@ -338,7 +352,8 @@ def test_rendered_compose_has_reflex_oracle_and_sidecar_without_secret_material(
     assert "gemma-4-E2B-it" in compose
     assert "gemma-4-26B-A4B-it" in compose
     assert "--limit-mm-per-prompt" in compose
-    assert '{"audio":1}' in compose
+    assert '{"audio":1,"image":0}' in compose
+    assert '{"audio":0,"image":0}' in compose
     assert "HERMES_VOICE_STREAMING_STT_BASE_URL" in compose
     assert "HERMES_KAME_INTERFACE_BASE_URL: http://kame-interface-vllm:8000/v1" in compose
     assert "HERMES_KAME_INTERFACE_PROVIDER: gemma4" in compose
@@ -689,6 +704,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
         ("interface_audio_is_segment_buffered", "vad_endpoint_then_interface_audio_probe", False),
         ("interface_audio_limit_seconds", "manifest_and_vllm_limit_mm_per_prompt", False),
         ("vllm_multimodal_audio_prompt_limit", "compose_vllm_args", False),
+        ("vllm_oracle_text_only_multimodal_limit", "compose_vllm_args", False),
         ("oracle_authority", "oracle_models_probe", False),
     ]
 
@@ -1085,6 +1101,7 @@ def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_pat
     assert result["coverage"]["model_assumption:interface_audio_is_segment_buffered"] is True
     assert result["coverage"]["model_assumption:interface_audio_limit_seconds"] is True
     assert result["coverage"]["model_assumption:vllm_multimodal_audio_prompt_limit"] is True
+    assert result["coverage"]["model_assumption:vllm_oracle_text_only_multimodal_limit"] is True
     assert result["coverage"]["model_assumption:oracle_authority"] is True
     assert result["coverage"]["all_local_smoke"] is True
     assert result["coverage"]["cloud_fallback_smoke"] is True

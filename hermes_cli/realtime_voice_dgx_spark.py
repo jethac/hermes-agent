@@ -23,8 +23,10 @@ DEFAULT_INTERFACE_MODEL = "gemma-4-E2B-it"
 DEFAULT_INTERFACE_CANDIDATE_MODELS = ("gemma-4-E2B-it", "gemma-4-E4B-it")
 DEFAULT_INTERFACE_API_KEY_ENV = "HERMES_KAME_INTERFACE_API_KEY"
 DEFAULT_INTERFACE_MAX_AUDIO_SECONDS = 30.0
+DEFAULT_INTERFACE_LIMIT_MM_PER_PROMPT = {"image": 0, "audio": 1}
 DEFAULT_ORACLE_BASE_URL = "http://127.0.0.1:8001/v1"
 DEFAULT_ORACLE_MODEL = "gemma-4-26B-A4B-it"
+DEFAULT_ORACLE_LIMIT_MM_PER_PROMPT = {"image": 0, "audio": 0}
 DEFAULT_SIDECAR_BASE_URL = "http://127.0.0.1:8765"
 DEFAULT_ASR_BASE_URL = "http://127.0.0.1:8767"
 DEFAULT_TTS_BASE_URL = "http://127.0.0.1:8768"
@@ -368,9 +370,15 @@ def build_dgx_spark_stack_manifest(
                 "validated_by": "manifest_and_vllm_limit_mm_per_prompt",
             },
             "vllm_multimodal_audio_prompt_limit": {
-                "limit_mm_per_prompt": {"audio": 1},
+                "limit_mm_per_prompt": dict(DEFAULT_INTERFACE_LIMIT_MM_PER_PROMPT),
                 "required": True,
                 "validated_by": "compose_vllm_args",
+            },
+            "vllm_oracle_text_only_multimodal_limit": {
+                "limit_mm_per_prompt": dict(DEFAULT_ORACLE_LIMIT_MM_PER_PROMPT),
+                "required": True,
+                "validated_by": "compose_vllm_args",
+                "description": "Oracle vLLM disables unused multimodal profiling so memory stays reserved for text-oracle work.",
             },
             "oracle_authority": {
                 "model": oracle_model,
@@ -406,7 +414,7 @@ def build_dgx_spark_stack_manifest(
                 "max_output_tokens": int(interface_max_output_tokens),
                 "timeout_seconds": float(interface_timeout_seconds),
                 "audio_input": "native_audio",
-                "limit_mm_per_prompt": {"audio": 1},
+                "limit_mm_per_prompt": dict(DEFAULT_INTERFACE_LIMIT_MM_PER_PROMPT),
                 "routing": ["local", "defer", "oracle_direct", "reject_or_clarify"],
             },
             "oracle": {
@@ -417,6 +425,7 @@ def build_dgx_spark_stack_manifest(
                 "max_model_len": oracle_context_tokens,
                 "gpu_memory_utilization": oracle_gpu_memory_utilization,
                 "timeout_seconds": float(oracle_timeout_seconds),
+                "limit_mm_per_prompt": dict(DEFAULT_ORACLE_LIMIT_MM_PER_PROMPT),
                 "authority": ["tools", "memory", "files", "project_context"],
             },
             "sidecar": {
@@ -558,6 +567,8 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
     tts_bridge_env = _render_dgx_spark_local_speech_bridge_env(tts)
     asr_bridge_args = _render_dgx_spark_local_speech_bridge_args(asr, model_env="HERMES_VOICE_STREAMING_STT_MODEL")
     tts_bridge_args = _render_dgx_spark_local_speech_bridge_args(tts, model_env="HERMES_VOICE_STREAMING_TTS_MODEL")
+    interface_mm_limit = _compact_json_value(interface.get("limit_mm_per_prompt") or DEFAULT_INTERFACE_LIMIT_MM_PER_PROMPT)
+    oracle_mm_limit = _compact_json_value(oracle.get("limit_mm_per_prompt") or DEFAULT_ORACLE_LIMIT_MM_PER_PROMPT)
     return f"""services:
   kame-interface-vllm:
     image: ${{HERMES_DGX_SPARK_VLLM_IMAGE:-{images.get("vllm", DEFAULT_VLLM_IMAGE)}}}
@@ -581,7 +592,7 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - --gpu-memory-utilization
       - "{interface["gpu_memory_utilization"]}"
       - --limit-mm-per-prompt
-      - '{{"audio":1}}'
+      - '{interface_mm_limit}'
 
   kame-oracle-vllm:
     image: ${{HERMES_DGX_SPARK_VLLM_IMAGE:-{images.get("vllm", DEFAULT_VLLM_IMAGE)}}}
@@ -604,6 +615,8 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - "{oracle["max_model_len"]}"
       - --gpu-memory-utilization
       - "{oracle["gpu_memory_utilization"]}"
+      - --limit-mm-per-prompt
+      - '{oracle_mm_limit}'
 
   hermes-realtime-sidecar:
     image: ${{HERMES_DGX_SPARK_HERMES_IMAGE:-{images.get("hermes", DEFAULT_HERMES_IMAGE)}}}
@@ -2470,6 +2483,10 @@ def _env_bool(value: Any) -> str:
 
 def _json(payload: Mapping[str, Any]) -> str:
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def _compact_json_value(payload: Any) -> str:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
 if __name__ == "__main__":
