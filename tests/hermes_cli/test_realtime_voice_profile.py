@@ -329,6 +329,27 @@ def test_kame_preset_can_override_interface_max_audio_seconds(capsys):
     assert data["voice"]["realtime"]["interface_max_audio_seconds"] == 12.0
 
 
+def test_kame_preset_can_set_streaming_tts_voice(capsys):
+    result = realtime_voice_profile.main(
+        [
+            "--preset",
+            "kame",
+            "--streaming-tts-model",
+            "magpie-local-streaming-tts",
+            "--streaming-tts-voice",
+            "spark-voice-1",
+        ]
+    )
+
+    assert result == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    realtime = data["voice"]["realtime"]
+    assert realtime["tts_model"] == "magpie-local-streaming-tts"
+    assert realtime["streaming_tts_model"] == "magpie-local-streaming-tts"
+    assert realtime["tts_voice"] == "spark-voice-1"
+    assert realtime["streaming_tts_voice"] == "spark-voice-1"
+
+
 def test_kame_preset_rejects_invalid_interface_max_audio_seconds(capsys):
     result = realtime_voice_profile.main(
         [

@@ -1462,6 +1462,7 @@ class RealtimeVoiceProfileApply(BaseModel):
     streaming_tts_base_url: str = ""
     streaming_stt_model: str = ""
     streaming_tts_model: str = ""
+    streaming_tts_voice: str = ""
     allow_local_greetings: bool = True
     allow_local_clarifications: bool = True
     require_oracle_for_tools: bool = True
@@ -15192,6 +15193,7 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_tts_base_url=body.streaming_tts_base_url,
             streaming_stt_model=body.streaming_stt_model or "portable-streaming-asr",
             streaming_tts_model=body.streaming_tts_model or "portable-streaming-voice",
+            streaming_tts_voice=body.streaming_tts_voice or body.voice,
             allow_local_greetings=body.allow_local_greetings,
             allow_local_clarifications=body.allow_local_clarifications,
             require_oracle_for_tools=body.require_oracle_for_tools,
@@ -15205,6 +15207,7 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8767",
             streaming_stt_model=body.streaming_stt_model or DEFAULT_ELEVENLABS_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or DEFAULT_ELEVENLABS_TTS_MODEL,
+            streaming_tts_voice=body.streaming_tts_voice or body.voice,
         )
     if preset == "deepgram":
         return build_realtime_voice_live_like_profile(
@@ -15212,6 +15215,7 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8766",
             streaming_stt_model=body.streaming_stt_model or DEFAULT_DEEPGRAM_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or DEFAULT_DEEPGRAM_TTS_MODEL,
+            streaming_tts_voice=body.streaming_tts_voice or body.voice,
         )
     if preset == "cartesia":
         return build_realtime_voice_live_like_profile(
@@ -15219,6 +15223,7 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_tts_base_url=body.streaming_tts_base_url or body.streaming_stt_base_url or "http://127.0.0.1:8769",
             streaming_stt_model=body.streaming_stt_model or DEFAULT_CARTESIA_STT_MODEL,
             streaming_tts_model=body.streaming_tts_model or body.model or DEFAULT_CARTESIA_TTS_MODEL,
+            streaming_tts_voice=body.streaming_tts_voice or body.voice,
         )
     if preset == "reference":
         return build_realtime_voice_live_like_profile(
@@ -15226,6 +15231,7 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             streaming_tts_base_url=body.streaming_tts_base_url,
             streaming_stt_model=body.streaming_stt_model or "portable-streaming-asr",
             streaming_tts_model=body.streaming_tts_model or "portable-streaming-voice",
+            streaming_tts_voice=body.streaming_tts_voice or body.voice,
         )
     raise HTTPException(status_code=400, detail=f"unknown realtime voice preset: {body.preset}")
 

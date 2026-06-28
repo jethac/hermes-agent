@@ -6772,6 +6772,8 @@ class TestRealtimeVoiceWebSocket:
                 "require_oracle_for_memory": True,
                 "require_oracle_for_files": True,
                 "local_confidence_threshold": 0.88,
+                "streaming_tts_model": "magpie-local-streaming-tts",
+                "streaming_tts_voice": "spark-voice-1",
                 "enable_discord": True,
             },
         )
@@ -6789,8 +6791,12 @@ class TestRealtimeVoiceWebSocket:
         }
         assert realtime["engine"] == "kame_interface_oracle"
         assert realtime["frontend_provider"] == "gemma4"
+        assert realtime["tts_model"] == "magpie-local-streaming-tts"
+        assert realtime["tts_voice"] == "spark-voice-1"
+        assert realtime["streaming_tts_voice"] == "spark-voice-1"
         assert realtime["routing"] == expected_routing
         assert discord["enabled"] is True
+        assert discord["tts_voice"] == "spark-voice-1"
         assert discord["routing"] == expected_routing
 
     def test_realtime_voice_apply_cartesia_profile_sets_bridge_models(self):
@@ -6802,6 +6808,7 @@ class TestRealtimeVoiceWebSocket:
                 "streaming_tts_base_url": "http://127.0.0.1:8769",
                 "streaming_stt_model": "ink-2",
                 "streaming_tts_model": "sonic-3.5",
+                "streaming_tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
             },
         )
         assert response.status_code == 200
@@ -6812,6 +6819,7 @@ class TestRealtimeVoiceWebSocket:
         assert realtime["streaming_tts_base_url"] == "http://127.0.0.1:8769"
         assert realtime["streaming_stt_model"] == "ink-2"
         assert realtime["streaming_tts_model"] == "sonic-3.5"
+        assert realtime["streaming_tts_voice"] == "5ee9feff-1265-424a-9d7f-8e4d431a12c7"
 
     def test_realtime_voice_smoke_route_runs_evidence_collector(self, monkeypatch, tmp_path):
         from hermes_cli.config import load_config, save_config
