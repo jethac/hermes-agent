@@ -444,6 +444,7 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - ${{HERMES_HOME:-{manifest["hermes_home"]}}}:/root/.hermes
     environment:
       HERMES_HOME: /root/.hermes
+      HERMES_KAME_INTERFACE_BASE_URL: {interface_internal_url}
       HERMES_VOICE_VLLM_BASE_URL: {interface_internal_url}
       HERMES_VOICE_VLLM_MODEL: {interface["model"]}
       HERMES_VOICE_STREAMING_STT_BASE_URL: {asr_internal_url}
@@ -462,6 +463,8 @@ def render_dgx_spark_compose(manifest: Mapping[str, Any]) -> str:
       - 0.0.0.0
       - --port
       - "8765"
+      - --interface-base-url
+      - {interface_internal_url}
       - --vllm-base-url
       - {interface_internal_url}
       - --vllm-model

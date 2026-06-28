@@ -9270,6 +9270,7 @@ class TestRealtimeVoiceWebSocket:
         )
 
         assert command[:3] == [self.ws_module.sys.executable, "-m", "hermes_cli.realtime_voice_sidecar"]
+        assert "--interface-base-url" in command
         assert "--vllm-base-url" in command
         assert "http://interface.example.test:8000/v1" in command
         assert "--vllm-model" in command
@@ -9289,6 +9290,7 @@ class TestRealtimeVoiceWebSocket:
                 "vllm_base_url": "http://legacy-vllm.example.test:8000/v1",
             }
         )
+        assert "--interface-base-url" in legacy_command
         assert "http://legacy-vllm.example.test:8000/v1" in legacy_command
 
     def test_sidecar_command_includes_streaming_stt_bridge_args_without_token(self):
@@ -9739,6 +9741,7 @@ class TestRealtimeVoiceWebSocket:
 
         command, kwargs = calls["popen"]
         assert command[:3] == [self.ws_module.sys.executable, "-m", "hermes_cli.realtime_voice_sidecar"]
+        assert "--interface-base-url" in command
         assert "--vllm-base-url" in command
         assert "http://interface.example.test:8000/v1" in command
         assert "http://legacy-vllm.example.test:8000/v1" not in command
@@ -9746,6 +9749,7 @@ class TestRealtimeVoiceWebSocket:
         assert all(req.headers["Authorization"] == "Bearer secret-token" for req in calls["requests"])
         assert kwargs["env"]["CUSTOM_VOICE_TOKEN"] == "secret-token"
         assert kwargs["env"]["HERMES_VOICE_SIDECAR_TOKEN"] == "secret-token"
+        assert kwargs["env"]["HERMES_KAME_INTERFACE_BASE_URL"] == "http://interface.example.test:8000/v1"
         assert kwargs["env"]["HERMES_VOICE_VLLM_BASE_URL"] == "http://interface.example.test:8000/v1"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_BASE_URL"] == "http://streaming-stt.local:9000"
         assert kwargs["env"]["HERMES_VOICE_STREAMING_STT_MODEL"] == "portable-streaming-asr"

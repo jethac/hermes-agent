@@ -199,13 +199,16 @@ def test_rendered_compose_has_reflex_oracle_and_sidecar_without_secret_material(
     assert "--limit-mm-per-prompt" in compose
     assert '{"audio":1}' in compose
     assert "HERMES_VOICE_STREAMING_STT_BASE_URL" in compose
+    assert "HERMES_KAME_INTERFACE_BASE_URL: http://kame-interface-vllm:8000/v1" in compose
     assert "HERMES_VOICE_VLLM_BASE_URL: http://kame-interface-vllm:8000/v1" in compose
     assert "HERMES_VOICE_STREAMING_STT_BASE_URL: http://kame-asr-bridge:8767" in compose
     assert "HERMES_VOICE_STREAMING_TTS_BASE_URL: http://kame-tts-bridge:8768" in compose
     assert "      - http://kame-interface-vllm:8000/v1" in compose
+    assert "      - --interface-base-url" in compose
     assert "      - http://kame-asr-bridge:8767" in compose
     assert "      - http://kame-tts-bridge:8768" in compose
     assert "HERMES_VOICE_VLLM_BASE_URL: http://spark.local:8000/v1" not in compose
+    assert "HERMES_KAME_INTERFACE_BASE_URL: http://spark.local:8000/v1" not in compose
     assert "HERMES_VOICE_STREAMING_STT_BASE_URL: http://spark.local:8767" not in compose
     assert "HERMES_VOICE_STREAMING_TTS_BASE_URL: http://spark.local:8768" not in compose
     assert "oracle-verbatim-asr" in compose

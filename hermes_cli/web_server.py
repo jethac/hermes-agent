@@ -14169,10 +14169,11 @@ def _realtime_voice_sidecar_command(realtime: Dict[str, Any]) -> List[str]:
         sidecar_port,
     ]
 
-    vllm_base_url = str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "").strip()
+    interface_base_url = str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "").strip()
     vllm_model = str(realtime.get("vllm_model") or "").strip()
-    if vllm_base_url:
-        cmd.extend(["--vllm-base-url", vllm_base_url])
+    if interface_base_url:
+        cmd.extend(["--interface-base-url", interface_base_url])
+        cmd.extend(["--vllm-base-url", interface_base_url])
     if vllm_model:
         cmd.extend(["--vllm-model", vllm_model])
     streaming_stt_base_url = str(realtime.get("streaming_stt_base_url") or "").strip()
@@ -14274,10 +14275,11 @@ def _spawn_realtime_voice_sidecar(realtime: Dict[str, Any], env_on_disk: Dict[st
     sidecar_token = _realtime_voice_sidecar_token(realtime, env_on_disk)
     if sidecar_token:
         child_env["HERMES_VOICE_SIDECAR_TOKEN"] = sidecar_token
-    vllm_base_url = str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "").strip()
+    interface_base_url = str(realtime.get("interface_base_url") or realtime.get("vllm_base_url") or "").strip()
     vllm_model = str(realtime.get("vllm_model") or "").strip()
-    if vllm_base_url:
-        child_env["HERMES_VOICE_VLLM_BASE_URL"] = vllm_base_url
+    if interface_base_url:
+        child_env["HERMES_KAME_INTERFACE_BASE_URL"] = interface_base_url
+        child_env["HERMES_VOICE_VLLM_BASE_URL"] = interface_base_url
     if vllm_model:
         child_env["HERMES_VOICE_VLLM_MODEL"] = vllm_model
     streaming_stt_base_url = str(realtime.get("streaming_stt_base_url") or "").strip()
