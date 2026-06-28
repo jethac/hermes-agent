@@ -117,7 +117,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if event.type == VoiceEventType.BARGE_IN:
             await self._interrupt_active_turn(event, reason=str(event.payload.get("reason") or "client"))
             return
-        if event.type == VoiceEventType.SESSION_CLOSED:
+        if event.type in {VoiceEventType.SESSION_STOP, VoiceEventType.SESSION_CLOSED}:
             await self._close(sidecar_stop_event=event)
             return
         if event.type in {VoiceEventType.SPEECH_START, VoiceEventType.SPEECH_ENERGY, VoiceEventType.SPEECH_END}:

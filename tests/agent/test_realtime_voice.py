@@ -476,12 +476,19 @@ def test_event_validation_separates_client_and_server_events():
         sequence=10,
         payload={"playback_generation": 1},
     )
+    session_stop_event = VoiceEvent(
+        type=VoiceEventType.SESSION_STOP,
+        session_id="voice-123",
+        sequence=11,
+        payload={"reason": "client_leave"},
+    )
 
     validate_client_event(audio_event)
     validate_client_event(speech_start_event)
     validate_client_event(speech_end_event)
     validate_client_event(playback_started_event)
     validate_client_event(playback_stopped_event)
+    validate_client_event(session_stop_event)
     validate_server_event(transcript_event)
     validate_server_event(interface_event)
     validate_server_event(oracle_event)
@@ -503,6 +510,8 @@ def test_event_validation_separates_client_and_server_events():
 
     with pytest.raises(ValueError):
         validate_server_event(audio_event)
+    with pytest.raises(ValueError):
+        validate_server_event(session_stop_event)
 
 
 def test_voice_event_round_trips_wire_payload():
@@ -4463,6 +4472,38 @@ def test_text_engine_forwards_client_session_close_to_sidecar():
     asyncio.run(run())
 
 
+def test_text_engine_accepts_session_stop_and_emits_session_closed():
+    async def run():
+        sidecar = FakeSidecar()
+        engine = TextOracleTTSEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                sidecar_base_url="http://voice.local",
+            )
+        )
+        assert (await anext(engine.events())).type == VoiceEventType.SESSION_STARTED
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.SESSION_STOP,
+                session_id="voice-123",
+                sequence=9,
+                payload={"reason": "client_leave"},
+            )
+        )
+
+        assert sidecar.closed is True
+        assert sidecar.received[-1].type == VoiceEventType.SESSION_STOP
+        assert sidecar.received[-1].sequence == 9
+        assert sidecar.received[-1].payload == {"reason": "client_leave"}
+        closed = await anext(engine.events())
+        assert closed.type == VoiceEventType.SESSION_CLOSED
+        assert closed.payload == {"reason": "closed"}
+
+    asyncio.run(run())
+
+
 def test_text_engine_auto_barge_in_on_new_speech_while_frontend_output_active():
     class ManualSidecar(FakeSidecar):
         async def send_event(self, event):
@@ -6259,6 +6300,34 @@ def test_reference_sidecar_suppresses_worker_events_after_close():
             VoiceEventType.SESSION_CLOSED,
         ]
         assert all(event.payload.get("text") != "late transcript" for event in seen)
+
+    asyncio.run(run())
+
+
+def test_reference_sidecar_accepts_session_stop_event():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(RealtimeVoiceSessionConfig(session_id="voice-123", frontend_provider="local"))
+
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.SESSION_STOP,
+                session_id="voice-123",
+                sequence=1,
+                payload={"reason": "client_leave"},
+            )
+        )
+
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+
+        assert [event.type for event in seen] == [
+            VoiceEventType.SESSION_STARTED,
+            VoiceEventType.FRONTEND_STATE,
+            VoiceEventType.SESSION_CLOSED,
+        ]
+        assert seen[-1].payload == {"reason": "closed"}
 
     asyncio.run(run())
 

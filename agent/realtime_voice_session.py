@@ -159,7 +159,7 @@ class RealtimeVoiceSession:
             if self.transcript.assistant_draft:
                 self.transcript.interrupted_assistant_segments.append(self.transcript.assistant_draft)
                 self.transcript.assistant_draft = ""
-        elif event.type == VoiceEventType.SESSION_CLOSED:
+        elif event.type in {VoiceEventType.SESSION_STOP, VoiceEventType.SESSION_CLOSED}:
             self.state = RealtimeVoiceSessionState.CLOSING
         await self.engine.receive_event(event)
 

@@ -51,6 +51,7 @@ class VoiceEventType(StrEnum):
     """Typed event names shared by browser, Hermes, and model sidecars."""
 
     SESSION_STARTED = "session.started"
+    SESSION_STOP = "session.stop"
     SESSION_CLOSED = "session.closed"
     SESSION_ERROR = "session.error"
     SESSION_METRICS = "session.metrics"
@@ -98,6 +99,7 @@ CLIENT_EVENT_TYPES = frozenset(
         VoiceEventType.PLAYBACK_STARTED,
         VoiceEventType.PLAYBACK_STOPPED,
         VoiceEventType.BARGE_IN,
+        VoiceEventType.SESSION_STOP,
         VoiceEventType.SESSION_CLOSED,
     }
 )

@@ -490,7 +490,7 @@ class ReferenceRealtimeVoiceSidecarSession:
     async def receive_event(self, event: VoiceEvent) -> None:
         if self._closed:
             return
-        if event.type == VoiceEventType.SESSION_CLOSED:
+        if event.type in {VoiceEventType.SESSION_STOP, VoiceEventType.SESSION_CLOSED}:
             await self.close()
             return
         if event.type == VoiceEventType.BARGE_IN:
