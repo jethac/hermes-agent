@@ -63,6 +63,7 @@ class DiscordVoiceSessionState:
     oracle_role: str = DISCORD_VOICE_ORACLE_ROLE
     frontend_provider: Optional[str] = None
     frontend_model: Optional[str] = None
+    interface_base_url: Optional[str] = None
     interface_temperature: float = 0.2
     interface_max_output_tokens: int = 160
     interface_timeout_seconds: float = 0.8
@@ -71,6 +72,7 @@ class DiscordVoiceSessionState:
     asr_mode: Optional[str] = None
     asr_provider: Optional[str] = None
     asr_model: Optional[str] = None
+    asr_base_url: Optional[str] = None
     oracle_provider: Optional[str] = None
     oracle_provider_name: Optional[str] = None
     preferred_local_oracle_model: Optional[str] = None
@@ -83,6 +85,7 @@ class DiscordVoiceSessionState:
     tts_provider: Optional[str] = None
     tts_model: Optional[str] = None
     tts_voice: Optional[str] = None
+    tts_base_url: Optional[str] = None
     fallback_policy: str = "legacy_voice"
     routing: Dict[str, Any] = field(default_factory=dict)
     latency_metrics_ms: Dict[str, int] = field(default_factory=dict)
@@ -3288,6 +3291,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "engine": str(cfg.get("engine") or "") or None,
             "frontend_provider": str(cfg.get("frontend_provider") or "") or None,
             "frontend_model": str(cfg.get("frontend_model") or "") or None,
+            "interface_base_url": str(cfg.get("interface_base_url") or cfg.get("vllm_base_url") or "") or None,
             "interface_temperature": float(cfg.get("interface_temperature") or 0.2),
             "interface_max_output_tokens": int(cfg.get("interface_max_output_tokens") or 160),
             "interface_timeout_seconds": float(cfg.get("interface_timeout_seconds") or 0.8),
@@ -3296,6 +3300,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "asr_mode": str(cfg.get("asr_mode") or "") or None,
             "asr_provider": str(cfg.get("asr_provider") or "") or None,
             "asr_model": str(cfg.get("asr_model") or "") or None,
+            "asr_base_url": str(cfg.get("asr_base_url") or cfg.get("streaming_stt_base_url") or "") or None,
             "oracle_provider": str(cfg.get("oracle_provider") or "") or None,
             "oracle_provider_name": str(cfg.get("oracle_provider_name") or "") or None,
             "preferred_local_oracle_model": str(cfg.get("preferred_local_oracle_model") or "") or None,
@@ -3308,6 +3313,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "tts_provider": str(cfg.get("tts_provider") or "") or None,
             "tts_model": str(cfg.get("tts_model") or "") or None,
             "tts_voice": str(cfg.get("tts_voice") or "") or None,
+            "tts_base_url": str(cfg.get("tts_base_url") or cfg.get("streaming_tts_base_url") or "") or None,
             "fallback_policy": _discord_realtime_voice_fallback_policy(cfg),
             "routing": dict(cfg.get("routing")) if isinstance(cfg.get("routing"), dict) else {},
         }
@@ -3368,6 +3374,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "oracle_role": state.oracle_role or architecture["oracle_role"],
             "frontend_provider": state.frontend_provider or architecture["frontend_provider"],
             "frontend_model": state.frontend_model or architecture["frontend_model"],
+            "interface_base_url": getattr(state, "interface_base_url", None) or architecture["interface_base_url"],
             "interface_temperature": state.interface_temperature or architecture["interface_temperature"],
             "interface_max_output_tokens": state.interface_max_output_tokens or architecture["interface_max_output_tokens"],
             "interface_timeout_seconds": state.interface_timeout_seconds or architecture["interface_timeout_seconds"],
@@ -3378,6 +3385,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "asr_mode": getattr(state, "asr_mode", None) or architecture["asr_mode"],
             "asr_provider": getattr(state, "asr_provider", None) or architecture["asr_provider"],
             "asr_model": getattr(state, "asr_model", None) or architecture["asr_model"],
+            "asr_base_url": getattr(state, "asr_base_url", None) or architecture["asr_base_url"],
             "oracle_provider": getattr(state, "oracle_provider", None) or architecture["oracle_provider"],
             "oracle_provider_name": (
                 getattr(state, "oracle_provider_name", None)
@@ -3396,6 +3404,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "tts_provider": getattr(state, "tts_provider", None) or architecture["tts_provider"],
             "tts_model": getattr(state, "tts_model", None) or architecture["tts_model"],
             "tts_voice": getattr(state, "tts_voice", None) or architecture["tts_voice"],
+            "tts_base_url": getattr(state, "tts_base_url", None) or architecture["tts_base_url"],
             "fallback_policy": getattr(state, "fallback_policy", None) or architecture["fallback_policy"],
             "routing": dict(getattr(state, "routing", None) or architecture.get("routing") or {}),
             "latency_metrics_ms": dict(state.latency_metrics_ms),
@@ -3426,6 +3435,7 @@ class DiscordAdapter(BasePlatformAdapter):
             engine=str(cfg.get("engine") or "text_oracle_tts"),
             frontend_provider=cfg.get("frontend_provider"),
             frontend_model=cfg.get("frontend_model"),
+            interface_base_url=str(cfg.get("interface_base_url") or cfg.get("vllm_base_url") or "") or None,
             interface_temperature=float(cfg.get("interface_temperature") or 0.2),
             interface_max_output_tokens=int(cfg.get("interface_max_output_tokens") or 160),
             interface_timeout_seconds=float(cfg.get("interface_timeout_seconds") or 0.8),
@@ -3434,6 +3444,7 @@ class DiscordAdapter(BasePlatformAdapter):
             asr_mode=str(cfg.get("asr_mode") or "on_escalation"),
             asr_provider=str(cfg.get("asr_provider") or "") or None,
             asr_model=str(cfg.get("asr_model") or "") or None,
+            asr_base_url=str(cfg.get("asr_base_url") or cfg.get("streaming_stt_base_url") or "") or None,
             preferred_local_oracle_model=str(cfg.get("preferred_local_oracle_model") or "") or None,
             oracle_model=cfg.get("oracle_model"),
             oracle_timeout_seconds=float(cfg.get("oracle_timeout_seconds") or 60.0),
@@ -3442,6 +3453,7 @@ class DiscordAdapter(BasePlatformAdapter):
             tts_provider=cfg.get("tts_provider"),
             tts_model=str(cfg.get("tts_model") or "") or None,
             tts_voice=str(cfg.get("tts_voice") or "") or None,
+            tts_base_url=str(cfg.get("tts_base_url") or cfg.get("streaming_tts_base_url") or "") or None,
             fallback_policy=_discord_realtime_voice_fallback_policy(cfg),
             sidecar_connect_timeout_seconds=float(cfg.get("sidecar_connect_timeout_seconds") or 10.0),
             turn_acknowledgement=cfg.get("turn_acknowledgement") if isinstance(cfg.get("turn_acknowledgement"), dict) else {},

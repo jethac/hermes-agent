@@ -1373,14 +1373,17 @@ class TestDiscordVoiceChannelMethods:
             "sidecar_base_url": "http://127.0.0.1:8766",
             "frontend_provider": "elevenlabs",
             "frontend_model": "realtime-voice",
+            "interface_base_url": "http://interface.local:8000/v1",
             "interface_temperature": 0.35,
             "interface_max_output_tokens": 96,
             "interface_timeout_seconds": 0.6,
             "interface_max_audio_seconds": 14,
+            "asr_base_url": "http://asr.local:8767",
             "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
             "oracle_model": "deep-hermes",
             "oracle_timeout_seconds": 19,
             "max_spoken_sentences": 3,
+            "tts_base_url": "http://tts.local:8768",
             "routing": {
                 "allow_local_greetings": True,
                 "allow_local_clarifications": False,
@@ -1413,14 +1416,17 @@ class TestDiscordVoiceChannelMethods:
         fake_session.start.assert_awaited_once()
         assert session_cls.call_args.kwargs["frontend_provider"] == "elevenlabs"
         assert session_cls.call_args.kwargs["frontend_model"] == "realtime-voice"
+        assert session_cls.call_args.kwargs["interface_base_url"] == "http://interface.local:8000/v1"
         assert session_cls.call_args.kwargs["interface_temperature"] == 0.35
         assert session_cls.call_args.kwargs["interface_max_output_tokens"] == 96
         assert session_cls.call_args.kwargs["interface_timeout_seconds"] == 0.6
         assert session_cls.call_args.kwargs["interface_max_audio_seconds"] == 14.0
+        assert session_cls.call_args.kwargs["asr_base_url"] == "http://asr.local:8767"
         assert session_cls.call_args.kwargs["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
         assert session_cls.call_args.kwargs["oracle_model"] == "deep-hermes"
         assert session_cls.call_args.kwargs["oracle_timeout_seconds"] == 19.0
         assert session_cls.call_args.kwargs["max_spoken_sentences"] == 3
+        assert session_cls.call_args.kwargs["tts_base_url"] == "http://tts.local:8768"
         assert session_cls.call_args.kwargs["routing_policy"] == {
             "allow_local_greetings": True,
             "allow_local_clarifications": False,
@@ -1436,14 +1442,17 @@ class TestDiscordVoiceChannelMethods:
         assert status["oracle_role"] == "hermes_backend_oracle"
         assert status["frontend_provider"] == "elevenlabs"
         assert status["frontend_model"] == "realtime-voice"
+        assert status["interface_base_url"] == "http://interface.local:8000/v1"
         assert status["interface_temperature"] == 0.35
         assert status["interface_max_output_tokens"] == 96
         assert status["interface_timeout_seconds"] == 0.6
         assert status["interface_max_audio_seconds"] == 14.0
+        assert status["asr_base_url"] == "http://asr.local:8767"
         assert status["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
         assert status["oracle_model"] == "deep-hermes"
         assert status["oracle_timeout_seconds"] == 19.0
         assert status["max_spoken_sentences"] == 3
+        assert status["tts_base_url"] == "http://tts.local:8768"
         assert status["routing"] == {
             "allow_local_greetings": True,
             "allow_local_clarifications": False,

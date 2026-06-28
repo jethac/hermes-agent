@@ -130,6 +130,7 @@ class DiscordRealtimeVoiceSession:
         engine: str = RealtimeVoiceEngineKind.TEXT_ORACLE_TTS.value,
         frontend_provider: Optional[str] = None,
         frontend_model: Optional[str] = None,
+        interface_base_url: Optional[str] = None,
         interface_temperature: float = 0.2,
         interface_max_output_tokens: int = 160,
         interface_timeout_seconds: float = 0.8,
@@ -138,6 +139,7 @@ class DiscordRealtimeVoiceSession:
         asr_mode: str = RealtimeVoiceASRMode.ON_ESCALATION.value,
         asr_provider: Optional[str] = None,
         asr_model: Optional[str] = None,
+        asr_base_url: Optional[str] = None,
         preferred_local_oracle_model: Optional[str] = None,
         oracle_model: Optional[str] = None,
         oracle_timeout_seconds: float = 60.0,
@@ -146,6 +148,7 @@ class DiscordRealtimeVoiceSession:
         tts_provider: Optional[str] = None,
         tts_model: Optional[str] = None,
         tts_voice: Optional[str] = None,
+        tts_base_url: Optional[str] = None,
         fallback_policy: Optional[str] = None,
         sidecar_connect_timeout_seconds: float = 10.0,
         turn_acknowledgement: Optional[dict] = None,
@@ -166,6 +169,7 @@ class DiscordRealtimeVoiceSession:
         self.engine = engine
         self.frontend_provider = frontend_provider
         self.frontend_model = frontend_model
+        self.interface_base_url = interface_base_url
         self.interface_temperature = interface_temperature
         self.interface_max_output_tokens = interface_max_output_tokens
         self.interface_timeout_seconds = interface_timeout_seconds
@@ -174,6 +178,7 @@ class DiscordRealtimeVoiceSession:
         self.asr_mode = asr_mode
         self.asr_provider = asr_provider
         self.asr_model = asr_model
+        self.asr_base_url = asr_base_url
         self.preferred_local_oracle_model = preferred_local_oracle_model
         self.oracle_model = oracle_model
         self.oracle_timeout_seconds = oracle_timeout_seconds
@@ -182,6 +187,7 @@ class DiscordRealtimeVoiceSession:
         self.tts_provider = tts_provider
         self.tts_model = tts_model
         self.tts_voice = tts_voice
+        self.tts_base_url = tts_base_url
         self.fallback_policy = fallback_policy
         self.sidecar_connect_timeout_seconds = sidecar_connect_timeout_seconds
         self.turn_acknowledgement = dict(turn_acknowledgement or {})
@@ -245,6 +251,7 @@ class DiscordRealtimeVoiceSession:
                 "oracle_role": "hermes_backend_oracle",
                 "frontend_provider": self.frontend_provider,
                 "frontend_model": self.frontend_model,
+                "interface_base_url": self.interface_base_url,
                 "interface_temperature": self.interface_temperature,
                 "interface_max_output_tokens": self.interface_max_output_tokens,
                 "interface_timeout_seconds": self.interface_timeout_seconds,
@@ -253,6 +260,7 @@ class DiscordRealtimeVoiceSession:
                 "asr_mode": self.asr_mode,
                 "asr_provider": self.asr_provider,
                 "asr_model": self.asr_model,
+                "asr_base_url": self.asr_base_url,
                 "preferred_local_oracle_model": self.preferred_local_oracle_model,
                 "oracle_model": self.oracle_model,
                 "oracle_timeout_seconds": self.oracle_timeout_seconds,
@@ -261,6 +269,7 @@ class DiscordRealtimeVoiceSession:
                 "tts_provider": self.tts_provider,
                 "tts_model": self.tts_model,
                 "tts_voice": self.tts_voice,
+                "tts_base_url": self.tts_base_url,
                 "fallback_policy": self.fallback_policy,
                 "guild_id": str(self.guild_id),
                 "voice_channel_id": str(self.voice_channel_id),

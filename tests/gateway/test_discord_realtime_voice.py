@@ -233,14 +233,17 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         sidecar_base_url="http://127.0.0.1:8766",
         frontend_provider="elevenlabs",
         frontend_model="realtime-voice",
+        interface_base_url="http://interface.local:8000/v1",
         interface_temperature=0.35,
         interface_max_output_tokens=96,
         interface_timeout_seconds=0.6,
         interface_max_audio_seconds=14,
+        asr_base_url="http://asr.local:8767",
         oracle_model="deep-hermes",
         oracle_timeout_seconds=17.5,
         max_spoken_sentences=3,
         voice_response_policy="brief_summary",
+        tts_base_url="http://tts.local:8768",
         barge_in_stop_playback_deadline_ms=95,
         sidecar_connect_timeout_seconds=0.5,
         turn_acknowledgement={"enabled": True, "text": "One moment."},
@@ -281,14 +284,17 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.metadata["oracle_role"] == "hermes_backend_oracle"
     assert sidecar.started_with.metadata["frontend_provider"] == "elevenlabs"
     assert sidecar.started_with.metadata["frontend_model"] == "realtime-voice"
+    assert sidecar.started_with.metadata["interface_base_url"] == "http://interface.local:8000/v1"
     assert sidecar.started_with.metadata["interface_temperature"] == 0.35
     assert sidecar.started_with.metadata["interface_max_output_tokens"] == 96
     assert sidecar.started_with.metadata["interface_timeout_seconds"] == 0.6
     assert sidecar.started_with.metadata["interface_max_audio_seconds"] == 14
+    assert sidecar.started_with.metadata["asr_base_url"] == "http://asr.local:8767"
     assert sidecar.started_with.metadata["oracle_model"] == "deep-hermes"
     assert sidecar.started_with.metadata["oracle_timeout_seconds"] == 17.5
     assert sidecar.started_with.metadata["max_spoken_sentences"] == 3
     assert sidecar.started_with.metadata["voice_response_policy"] == "brief_summary"
+    assert sidecar.started_with.metadata["tts_base_url"] == "http://tts.local:8768"
     assert sidecar.started_with.metadata["turn_acknowledgement"] == {
         "enabled": True,
         "text": "One moment.",
