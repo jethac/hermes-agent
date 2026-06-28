@@ -857,7 +857,8 @@ def _print_summary(runs: list[tuple[str, list[dict[str, Any]]]]) -> None:
             continue
         print(
             f"  {label}: p50={metric.get('p50')}ms "
-            f"p95={metric.get('p95')}ms max={metric.get('max')}ms n={metric.get('count')}"
+            f"p90={metric.get('p90')}ms p95={metric.get('p95')}ms "
+            f"max={metric.get('max')}ms n={metric.get('count')}"
         )
 
 

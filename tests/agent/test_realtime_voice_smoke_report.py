@@ -579,9 +579,9 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     assert realtime_voice_report_main([str(path), "--alpha"]) == 0
     output = capsys.readouterr().out
     assert "Realtime voice smoke report OK" in output
-    assert "audio_to_partial_transcript: p50=90ms p95=90ms max=90ms n=6" in output
-    assert "final_transcript_to_first_text: p50=90ms p95=90ms max=90ms n=4" in output
-    assert "barge_in_ack: p50=45ms p95=45ms max=45ms n=1" in output
+    assert "audio_to_partial_transcript: p50=90ms p90=90ms p95=90ms max=90ms n=6" in output
+    assert "final_transcript_to_first_text: p50=90ms p90=90ms p95=90ms max=90ms n=4" in output
+    assert "barge_in_ack: p50=45ms p90=45ms p95=45ms max=45ms n=1" in output
 
 
 def test_realtime_voice_report_cli_enforces_minimum_alpha_runs(tmp_path, capsys):
@@ -846,12 +846,14 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
     assert summary["latency_ms"]["audio_to_partial_transcript"] == {
         "count": 18,
         "p50": 90,
+        "p90": 120,
         "p95": 120,
         "max": 120,
     }
     assert summary["latency_ms"]["final_transcript_to_first_text"] == {
         "count": 12,
         "p50": 90,
+        "p90": 90,
         "p95": 90,
         "max": 90,
     }

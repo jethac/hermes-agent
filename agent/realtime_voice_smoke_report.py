@@ -1069,10 +1069,11 @@ def _nonnegative_int(value: Any) -> int | None:
 def _latency_summary(values: Iterable[Any]) -> dict[str, Any]:
     parsed = sorted(value for value in (_nonnegative_int(item) for item in values) if value is not None)
     if not parsed:
-        return {"count": 0, "p50": None, "p95": None, "max": None}
+        return {"count": 0, "p50": None, "p90": None, "p95": None, "max": None}
     return {
         "count": len(parsed),
         "p50": _percentile_nearest_rank(parsed, 50),
+        "p90": _percentile_nearest_rank(parsed, 90),
         "p95": _percentile_nearest_rank(parsed, 95),
         "max": parsed[-1],
     }

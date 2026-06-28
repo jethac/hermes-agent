@@ -126,7 +126,8 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             print(
                 f"  {label}: p50={metric.get('p50')}ms "
-                f"p95={metric.get('p95')}ms max={metric.get('max')}ms n={metric.get('count')}"
+                f"p90={metric.get('p90')}ms p95={metric.get('p95')}ms "
+                f"max={metric.get('max')}ms n={metric.get('count')}"
             )
         if args.apply_production_evidence:
             from hermes_cli.realtime_voice_alpha_evidence import (
