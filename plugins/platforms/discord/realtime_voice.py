@@ -468,7 +468,12 @@ class DiscordRealtimeVoiceSession:
                 self.barge_in_stop_playback_deadline_ms,
             )
         finally:
-            result["playback_stop_ms"] = int(round((loop.time() - started) * 1000))
+            playback_stop_ms = int(round((loop.time() - started) * 1000))
+            result["playback_stop_ms"] = playback_stop_ms
+            result["barge_in_confirmed_to_playback_stopped_ms"] = playback_stop_ms
+            result["metrics"] = {
+                "barge_in_confirmed_to_playback_stopped_ms": playback_stop_ms,
+            }
         return result
 
     async def _call_mixer_stop(self, stop: Callable[[], Any]) -> None:

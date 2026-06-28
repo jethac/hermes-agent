@@ -424,6 +424,11 @@ async def test_discord_realtime_session_barge_in_stops_mixer_and_notifies_sideca
     assert sidecar.sent[-1].payload["playback_active"] is True
     assert sidecar.sent[-1].payload["playback_stop_attempted"] is True
     assert sidecar.sent[-1].payload["playback_stop_deadline_ms"] == 150
+    assert sidecar.sent[-1].payload["barge_in_confirmed_to_playback_stopped_ms"] >= 0
+    assert (
+        sidecar.sent[-1].payload["metrics"]["barge_in_confirmed_to_playback_stopped_ms"]
+        == sidecar.sent[-1].payload["barge_in_confirmed_to_playback_stopped_ms"]
+    )
 
 
 @pytest.mark.asyncio
@@ -460,6 +465,11 @@ async def test_discord_realtime_session_barge_in_bounds_slow_mixer_stop():
     assert sidecar.sent[-1].payload["playback_stop_attempted"] is True
     assert sidecar.sent[-1].payload["playback_stop_timed_out"] is True
     assert sidecar.sent[-1].payload["playback_stop_deadline_ms"] == 25
+    assert sidecar.sent[-1].payload["barge_in_confirmed_to_playback_stopped_ms"] >= 25
+    assert (
+        sidecar.sent[-1].payload["metrics"]["barge_in_confirmed_to_playback_stopped_ms"]
+        == sidecar.sent[-1].payload["barge_in_confirmed_to_playback_stopped_ms"]
+    )
 
 
 @pytest.mark.asyncio
