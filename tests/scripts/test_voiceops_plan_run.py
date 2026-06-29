@@ -188,7 +188,7 @@ def _write_preflight_evidence(root: Path) -> Path:
         )
         section = {
             **payload,
-            "source_artifact": f"../sources/{source_path.name}",
+            "source_artifact": f"sources/{source_path.name}",
             "source_artifact_kind": "redacted_setup_evidence",
             "source_artifact_sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
             "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
@@ -790,9 +790,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     ]
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["source_artifacts_must_exist"] is True
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["source_artifact_sha256_must_match"] is True
-    assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["manifest_report_resolution"].endswith(
-        "process cwd is never used"
-    )
+    assert "process cwd fallback are rejected" in gates["spend_and_provisioning_preflight"]["evidence_contract"][
+        "manifest_report_resolution"
+    ]
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["example_only_accepted"] is False
     assert (
         gates["spend_and_provisioning_preflight"]["evidence_contract"][

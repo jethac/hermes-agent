@@ -159,6 +159,7 @@ def _readonly_discovery_redacted_sha256(payload: dict[str, object]) -> str:
 
 
 def _write_preflight_evidence(tmp_path: Path, payload: dict[str, object] | None = None) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     payload = payload or _complete_preflight_evidence()
     for section_name in ("stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback"):
         section = payload.get(section_name)
@@ -721,7 +722,7 @@ def test_write_probe_artifacts(tmp_path):
         "stripe_projects"
     ]
     stripe_section = json.loads(stripe_section_path.read_text(encoding="utf-8"))["stripe_projects"]
-    stripe_source_path = stripe_section_path.parent / stripe_section["source_artifact"]
+    stripe_source_path = preflight_scaffold_manifest_path.parent / stripe_section["source_artifact"]
     stripe_source = json.loads(stripe_source_path.read_text(encoding="utf-8"))
     assert stripe_source["redacted"] is True
     assert hashlib.sha256(stripe_source_path.read_bytes()).hexdigest() == stripe_section["source_artifact_sha256"]
@@ -1152,7 +1153,7 @@ def test_refresh_preflight_manifest_source_sha256_updates_section_files(tmp_path
         section_path = manifest_path.parent / report_path
         section_payload = json.loads(section_path.read_text(encoding="utf-8"))
         section = section_payload[section_name]
-        source_path = section_path.parent / section["source_artifact"]
+        source_path = manifest_path.parent / section["source_artifact"]
         source_path.write_text(
             json.dumps(
                 {
@@ -1169,7 +1170,7 @@ def test_refresh_preflight_manifest_source_sha256_updates_section_files(tmp_path
     section_path = manifest_path.parent / manifest["reports"]["stripe_projects"]
     section_payload = json.loads(section_path.read_text(encoding="utf-8"))
     section = section_payload["stripe_projects"]
-    source_path = section_path.parent / section["source_artifact"]
+    source_path = manifest_path.parent / section["source_artifact"]
 
     before = load_preflight_evidence(manifest_path)
     result = refresh_preflight_source_hashes(manifest_path)
@@ -1256,7 +1257,7 @@ def test_refresh_preflight_manifest_source_sha256_refuses_wrong_source_section(t
     section_path = manifest_path.parent / manifest["reports"]["stripe_projects"]
     section_payload = json.loads(section_path.read_text(encoding="utf-8"))
     section = section_payload["stripe_projects"]
-    source_path = section_path.parent / section["source_artifact"]
+    source_path = manifest_path.parent / section["source_artifact"]
     source_path.write_text(
         json.dumps(
             {
@@ -1456,6 +1457,126 @@ def test_preflight_evidence_manifest_does_not_fallback_to_basename(tmp_path):
     assert "stripe_link.account_ref" in loaded["missing_fields"]
 
 
+def test_preflight_evidence_manifest_rejects_absolute_report_path(tmp_path):
+    section_path = tmp_path / "stripe-link.json"
+    section_path.write_text(
+        json.dumps(
+            {
+                "account_ref": "stripe-link-account-ref-demo",
+                "approval_capability_confirmed": True,
+                "max_approved_cents": 20_000,
+                "currency": "usd",
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "preflight-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+                "reports": {"stripe_link": str(section_path)},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_preflight_evidence(manifest_path)
+
+    assert "preflight_evidence_manifest:stripe_link:report_path:absolute_path_not_allowed" in loaded[
+        "validation_issues"
+    ]
+    assert "stripe_link.account_ref" in loaded["missing_fields"]
+
+
+def test_preflight_evidence_manifest_rejects_parent_escape_report_path(tmp_path):
+    manifest_dir = tmp_path / "manifest"
+    manifest_dir.mkdir()
+    outside_path = tmp_path / "stripe-link.json"
+    outside_path.write_text(
+        json.dumps(
+            {
+                "account_ref": "stripe-link-account-ref-demo",
+                "approval_capability_confirmed": True,
+                "max_approved_cents": 20_000,
+                "currency": "usd",
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest_path = manifest_dir / "preflight-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+                "reports": {"stripe_link": "../stripe-link.json"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_preflight_evidence(manifest_path)
+
+    assert "preflight_evidence_manifest:stripe_link:report_path:parent_traversal_not_allowed" in loaded[
+        "validation_issues"
+    ]
+    assert "stripe_link.account_ref" in loaded["missing_fields"]
+
+
+def test_preflight_evidence_rejects_source_artifact_path_escape(tmp_path):
+    payload = _complete_preflight_evidence()
+    payload["stripe_projects"]["source_artifact"] = "../stripe-projects-source.json"
+    evidence_path = _write_preflight_evidence(tmp_path / "evidence", payload)
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "stripe_projects.source_artifact:parent_traversal_not_allowed" in loaded["validation_issues"]
+
+
+def test_refresh_preflight_source_hashes_refuses_source_artifact_escape(tmp_path):
+    payload = _complete_preflight_evidence()
+    payload["stripe_projects"]["source_artifact"] = "../stripe-projects-source.json"
+    evidence_path = _write_preflight_evidence(tmp_path / "evidence", payload)
+    before = evidence_path.read_text(encoding="utf-8")
+
+    result = refresh_preflight_source_hashes(evidence_path)
+
+    assert result["ok"] is False
+    assert "stripe_projects.source_artifact:parent_traversal_not_allowed" in result["issues"]
+    assert evidence_path.read_text(encoding="utf-8") == before
+
+
+def test_preflight_evidence_rejects_source_artifact_symlink_escape(tmp_path):
+    evidence_dir = tmp_path / "evidence"
+    outside_source = tmp_path / "outside-source.json"
+    outside_source.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+                "section": "stripe_projects",
+                "redacted": True,
+                "redaction_policy": "references only; no raw secrets, tokens, cards, or full phone numbers",
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    sources_dir = evidence_dir / "sources"
+    sources_dir.mkdir(parents=True)
+    (sources_dir / "stripe-projects-source.json").symlink_to(outside_source)
+    payload = _complete_preflight_evidence()
+    payload["stripe_projects"]["source_artifact"] = "sources/stripe-projects-source.json"
+    payload["stripe_projects"]["source_artifact_sha256"] = hashlib.sha256(outside_source.read_bytes()).hexdigest()
+    payload["stripe_projects"]["collector_attestation"]["redacted_artifact_sha256"] = payload["stripe_projects"][
+        "source_artifact_sha256"
+    ]
+    evidence_path = _write_preflight_evidence(evidence_dir, payload)
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "stripe_projects.source_artifact:path_escape_not_allowed" in loaded["validation_issues"]
+
+
 def test_preflight_evidence_manifest_rejects_example_or_invalid_sections(tmp_path):
     bad_section = tmp_path / "stripe-projects.json"
     bad_section.write_text("[]", encoding="utf-8")
@@ -1465,7 +1586,7 @@ def test_preflight_evidence_manifest_rejects_example_or_invalid_sections(tmp_pat
             {
                 **build_preflight_evidence_manifest_example(),
                 "reports": {
-                    "stripe_projects": str(bad_section),
+                    "stripe_projects": bad_section.name,
                     "stripe_link": "missing-link.json",
                     "unknown": "ignored.json",
                 },

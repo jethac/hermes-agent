@@ -274,6 +274,7 @@ PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS = [
 ]
 PREFLIGHT_EVIDENCE_SECTIONS = ("stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback")
 PREFLIGHT_SOURCE_ARTIFACT_KIND = "redacted_setup_evidence"
+PREFLIGHT_SOURCE_ARTIFACT_BASE_FIELD = "_voiceops_source_artifact_base_path"
 PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256 = "0" * 64
 COLLECTOR_ATTESTATION_REQUIRED_FIELDS = (
     "collector_name",
@@ -679,7 +680,7 @@ def write_preflight_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
         }
         _write_json(source_path, source_payload)
         section["example_only"] = True
-        section["source_artifact"] = f"../sources/{source_path.name}"
+        section["source_artifact"] = f"sources/{source_path.name}"
         section["source_artifact_kind"] = PREFLIGHT_SOURCE_ARTIFACT_KIND
         source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
         section["source_artifact_sha256"] = source_sha256
@@ -931,8 +932,12 @@ def _expand_preflight_evidence_manifest(path: Path, payload: Mapping[str, Any]) 
         if not report_path_text:
             issues.append(f"preflight_evidence_manifest:{section_name}:empty_report_path")
             continue
+        path_issues = _relative_artifact_ref_issues(report_path_text, base_path=path)
+        if path_issues:
+            issues.extend(f"preflight_evidence_manifest:{section_name}:report_path:{issue}" for issue in path_issues)
+            continue
         report_path = _resolve_manifest_report_path(path, report_path_text)
-        loaded, report_issues = _load_preflight_manifest_report(report_path, section_name)
+        loaded, report_issues = _load_preflight_manifest_report(report_path, section_name, source_base_path=path)
         issues.extend(f"preflight_evidence_manifest:{section_name}:{issue}" for issue in report_issues)
         if loaded is not None:
             expanded[section_name] = loaded
@@ -940,13 +945,41 @@ def _expand_preflight_evidence_manifest(path: Path, payload: Mapping[str, Any]) 
 
 
 def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) -> Path:
-    report_path = Path(report_path_text).expanduser()
-    if report_path.is_absolute():
-        return report_path
     return manifest_path.parent / report_path_text
 
 
-def _load_preflight_manifest_report(path: Path, section_name: str) -> tuple[Mapping[str, Any] | None, list[str]]:
+def _relative_artifact_ref_issues(ref_text: str, *, base_path: Path) -> list[str]:
+    issues: list[str] = []
+    ref = str(ref_text or "").strip()
+    if not ref:
+        return ["empty"]
+    if ref.startswith("~"):
+        issues.append("user_home_not_allowed")
+    ref_path = Path(ref)
+    if ref_path.is_absolute():
+        issues.append("absolute_path_not_allowed")
+    if ".." in ref_path.parts:
+        issues.append("parent_traversal_not_allowed")
+    if issues:
+        return sorted(set(issues))
+    base_dir = base_path.expanduser().resolve(strict=False).parent
+    candidate = base_dir / ref
+    try:
+        resolved_candidate = candidate.resolve(strict=True)
+    except OSError:
+        resolved_candidate = candidate.resolve(strict=False)
+    resolved_base = base_dir.resolve(strict=False)
+    if resolved_candidate != resolved_base and resolved_base not in resolved_candidate.parents:
+        issues.append("path_escape_not_allowed")
+    return sorted(set(issues))
+
+
+def _load_preflight_manifest_report(
+    path: Path,
+    section_name: str,
+    *,
+    source_base_path: Path | None = None,
+) -> tuple[Mapping[str, Any] | None, list[str]]:
     resolved = path.expanduser().resolve(strict=False)
     if resolved == FORBIDDEN_ENV_ROOT or FORBIDDEN_ENV_ROOT in resolved.parents:
         raise ValueError(f"refusing to inspect forbidden Hermes worktree path: {resolved}")
@@ -963,20 +996,18 @@ def _load_preflight_manifest_report(path: Path, section_name: str) -> tuple[Mapp
         issues.append("example_only evidence is not accepted")
     section = payload.get(section_name)
     if isinstance(section, Mapping):
-        section = _with_preflight_section_source_artifact(section, path)
+        section = _with_preflight_section_source_artifact(section, source_base_path or path)
         if "example_only" in section:
             issues.append("example_only evidence is not accepted")
         return section, issues
-    return _with_preflight_section_source_artifact(payload, path), issues
+    return _with_preflight_section_source_artifact(payload, source_base_path or path), issues
 
 
 def _with_preflight_section_source_artifact(section: Mapping[str, Any], path: Path) -> dict[str, Any]:
     section_copy = dict(section)
     source_artifact = str(section_copy.get("source_artifact") or "").strip()
     if source_artifact:
-        source_path = Path(source_artifact).expanduser()
-        if not source_path.is_absolute():
-            section_copy["source_artifact"] = str((path.parent / source_artifact).resolve(strict=False))
+        section_copy[PREFLIGHT_SOURCE_ARTIFACT_BASE_FIELD] = str(path)
     return section_copy
 
 
@@ -1036,7 +1067,12 @@ def _source_artifact_issues(payload: Mapping[str, Any], evidence_path: Path) -> 
             continue
         if source_kind != PREFLIGHT_SOURCE_ARTIFACT_KIND:
             issues.append(f"{section_name}.source_artifact_kind: invalid")
-        source_path = _resolve_source_artifact_path(source_artifact, evidence_path)
+        source_base_path = Path(str(section.get(PREFLIGHT_SOURCE_ARTIFACT_BASE_FIELD) or evidence_path))
+        source_path_issues = _relative_artifact_ref_issues(source_artifact, base_path=source_base_path)
+        if source_path_issues:
+            issues.extend(f"{section_name}.source_artifact:{issue}" for issue in source_path_issues)
+            continue
+        source_path = _resolve_source_artifact_path(source_artifact, source_base_path)
         if not source_path.exists():
             issues.append(f"{section_name}.source_artifact: artifact not found")
             issues.append(f"{section_name}.source_artifact: artifact not found at {source_path.resolve(strict=False)}")
@@ -1066,9 +1102,6 @@ def _source_artifact_issues(payload: Mapping[str, Any], evidence_path: Path) -> 
 
 
 def _resolve_source_artifact_path(source_artifact: str, evidence_path: Path) -> Path:
-    source_path = Path(source_artifact).expanduser()
-    if source_path.is_absolute():
-        return source_path
     return evidence_path.parent / source_artifact
 
 
@@ -1077,6 +1110,7 @@ def _refresh_preflight_section_hashes(
     evidence_path: Path,
     *,
     allowed_section: str | None = None,
+    source_base_path: Path | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     updates: list[dict[str, Any]] = []
     issues: list[str] = []
@@ -1098,7 +1132,12 @@ def _refresh_preflight_section_hashes(
         if not source_artifact:
             issues.append(f"{section_name}.source_artifact: missing")
             continue
-        source_path = _resolve_source_artifact_path(source_artifact, evidence_path)
+        source_ref_base = source_base_path or evidence_path
+        source_path_issues = _relative_artifact_ref_issues(source_artifact, base_path=source_ref_base)
+        if source_path_issues:
+            issues.extend(f"{section_name}.source_artifact:{issue}" for issue in source_path_issues)
+            continue
+        source_path = _resolve_source_artifact_path(source_artifact, source_ref_base)
         if not source_path.exists():
             issues.append(f"{section_name}.source_artifact: artifact not found")
             issues.append(f"{section_name}.source_artifact: artifact not found at {source_path.resolve(strict=False)}")
@@ -1139,7 +1178,12 @@ def _refresh_preflight_section_hashes(
     return updates, issues
 
 
-def _refresh_preflight_hashes_in_file(path: Path, *, allowed_section: str | None = None) -> tuple[list[dict[str, Any]], list[str]]:
+def _refresh_preflight_hashes_in_file(
+    path: Path,
+    *,
+    allowed_section: str | None = None,
+    source_base_path: Path | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -1148,7 +1192,14 @@ def _refresh_preflight_hashes_in_file(path: Path, *, allowed_section: str | None
         return [], [f"{path}: JSON parse failed: {exc.msg}"]
     if not isinstance(payload, MutableMapping):
         return [], [f"{path}: root must be an object"]
-    updates, issues = _refresh_preflight_section_hashes(payload, path, allowed_section=allowed_section)
+    updates, issues = _refresh_preflight_section_hashes(
+        payload,
+        path,
+        allowed_section=allowed_section,
+        source_base_path=source_base_path,
+    )
+    if issues:
+        return [], issues
     if updates:
         _write_json(path, payload)
     return updates, issues
@@ -1202,8 +1253,16 @@ def refresh_preflight_source_hashes(path: Path) -> dict[str, Any]:
             if not report_path_text:
                 issues.append(f"preflight_evidence_manifest:{section_name}:empty_report_path")
                 continue
+            path_issues = _relative_artifact_ref_issues(report_path_text, base_path=path)
+            if path_issues:
+                issues.extend(f"preflight_evidence_manifest:{section_name}:report_path:{issue}" for issue in path_issues)
+                continue
             report_path = _resolve_manifest_report_path(path, report_path_text)
-            file_updates, file_issues = _refresh_preflight_hashes_in_file(report_path, allowed_section=section_name)
+            file_updates, file_issues = _refresh_preflight_hashes_in_file(
+                report_path,
+                allowed_section=section_name,
+                source_base_path=path,
+            )
             updates.extend(file_updates)
             issues.extend(f"preflight_evidence_manifest:{section_name}:{issue}" for issue in file_issues)
     else:
@@ -1211,7 +1270,9 @@ def refresh_preflight_source_hashes(path: Path) -> dict[str, Any]:
             issues.append("target root must be mutable")
         else:
             updates, issues = _refresh_preflight_section_hashes(payload, path)
-            if updates:
+            if issues:
+                updates = []
+            elif updates:
                 _write_json(path, payload)
 
     return {
@@ -2403,8 +2464,8 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "source_artifacts_must_exist": True,
             "source_artifact_sha256_must_match": True,
             "source_artifacts_must_be_redacted_json": True,
-            "source_artifact_resolution": "absolute paths or paths relative to the supplied evidence/manifest file",
-            "manifest_report_resolution": "absolute paths or paths relative to the supplied manifest file; process cwd is never used",
+            "source_artifact_resolution": "package-contained paths relative to the supplied evidence/manifest file; absolute paths, user-home expansion, parent traversal, symlink escapes, and process cwd fallback are rejected",
+            "manifest_report_resolution": "package-contained paths relative to the supplied manifest file; absolute paths, user-home expansion, parent traversal, symlink escapes, and process cwd fallback are rejected",
             "example_only_accepted": False,
             "secret_like_values_accepted": False,
             "full_phone_numbers_accepted": False,
