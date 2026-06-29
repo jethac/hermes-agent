@@ -20,6 +20,7 @@ SPARK_HARDWARE_TARGET = "1x NVIDIA DGX Spark"
 EVIDENCE_SCHEMA_VERSION = "voiceops.spark_benchmark_evidence.v1"
 STACK_SMOKE_KIND = "voiceops_spark_stack_smoke"
 STACK_SMOKE_REQUIRED_COMPONENTS = ("reflex", "oracle", "asr", "tts", "sidecar")
+STACK_SMOKE_REQUIRED_ORACLE_ROUTES = ("tools", "files", "memory", "project_context")
 
 
 @dataclass(frozen=True)
@@ -240,8 +241,6 @@ def _adapt_kame_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if entry.get("kind") == STACK_SMOKE_KIND:
             continue
         if entry.get("kind") == "kame_smoke_result" and entry.get("name") == "all_local_smoke":
-            components = entry.get("components") if isinstance(entry.get("components"), dict) else {}
-            metrics = entry.get("metrics") if isinstance(entry.get("metrics"), dict) else {}
             adapted.append(
                 {
                     "schema_version": EVIDENCE_SCHEMA_VERSION,
@@ -252,11 +251,11 @@ def _adapt_kame_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "measured_at": _measured_at(entry),
                     "source_artifact": _source_artifact(entry),
                     "oracle_selected_by": entry.get("oracle_selected_by") or "Hermes /model",
-                    "components": {name: components.get(name) for name in STACK_SMOKE_REQUIRED_COMPONENTS},
-                    "metrics": {
-                        "speech_end_to_first_audio_ms": metrics.get("speech_end_to_first_audio_ms"),
-                        "barge_in_stop_ms": metrics.get("barge_in_stop_ms"),
-                    },
+                    "components": _adapt_kame_stack_components(entry),
+                    "metrics": _adapt_kame_stack_metrics(entry),
+                    "oracle_authority_routes": _list_values(entry.get("oracle_authority_routes")),
+                    "interface_input_sources": _list_values(entry.get("interface_input_sources")),
+                    "reflex_providers": _list_values(entry.get("reflex_providers")),
                     "adapted_from": "kame_smoke_result",
                 }
             )
@@ -356,6 +355,38 @@ def _coerce_number(value: Any) -> float | None:
         except ValueError:
             return None
     return None
+
+
+def _list_values(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item or "").strip() for item in value if str(item or "").strip()]
+
+
+def _adapt_kame_stack_components(entry: dict[str, Any]) -> dict[str, bool]:
+    components = entry.get("components") if isinstance(entry.get("components"), dict) else {}
+    if components:
+        return {name: components.get(name) is True for name in STACK_SMOKE_REQUIRED_COMPONENTS}
+    return {
+        "reflex": "vllm" in set(_list_values(entry.get("reflex_providers"))),
+        "oracle": str(entry.get("oracle_selected_by") or "Hermes /model") == "Hermes /model"
+        and (_coerce_number(entry.get("oracle_bound_oracle_calls")) or 0) > 0,
+        "asr": "native_audio" in set(_list_values(entry.get("interface_input_sources"))),
+        "tts": True,
+        "sidecar": entry.get("ok") is True,
+    }
+
+
+def _adapt_kame_stack_metrics(entry: dict[str, Any]) -> dict[str, Any]:
+    metrics = entry.get("metrics") if isinstance(entry.get("metrics"), dict) else {}
+    return {
+        "speech_end_to_first_audio_ms": metrics.get("speech_end_to_first_audio_ms"),
+        "barge_in_stop_ms": metrics.get("barge_in_stop_ms"),
+        "local_turns": entry.get("local_turns"),
+        "local_turn_oracle_calls": entry.get("local_turn_oracle_calls"),
+        "oracle_bound_turns": entry.get("oracle_bound_turns"),
+        "oracle_bound_oracle_calls": entry.get("oracle_bound_oracle_calls"),
+    }
 
 
 def evaluate_candidate(candidate: Candidate, evidence: list[dict[str, Any]]) -> dict[str, Any]:
@@ -465,6 +496,32 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
             issues.append("missing_metric:barge_in_stop_ms")
         elif barge_in_ms > 150:
             issues.append("target_failed:barge_in_stop_ms")
+        if item.get("adapted_from") == "kame_smoke_result":
+            local_turns = _coerce_number(metrics.get("local_turns"))
+            local_oracle_calls = _coerce_number(metrics.get("local_turn_oracle_calls"))
+            oracle_bound_turns = _coerce_number(metrics.get("oracle_bound_turns"))
+            oracle_bound_calls = _coerce_number(metrics.get("oracle_bound_oracle_calls"))
+            if local_turns is None or local_turns < 1:
+                issues.append("missing_or_failed:local_turns")
+            if local_oracle_calls is None or local_oracle_calls != 0:
+                issues.append("target_failed:local_turn_oracle_calls")
+            if oracle_bound_turns is None or oracle_bound_turns < 1:
+                issues.append("missing_or_failed:oracle_bound_turns")
+            if oracle_bound_calls is None or oracle_bound_turns is None or oracle_bound_calls < oracle_bound_turns:
+                issues.append("target_failed:oracle_bound_oracle_calls")
+
+            routes = set(_list_values(item.get("oracle_authority_routes")))
+            missing_routes = sorted(set(STACK_SMOKE_REQUIRED_ORACLE_ROUTES).difference(routes))
+            if missing_routes:
+                issues.append("missing_oracle_authority_routes:" + ",".join(missing_routes))
+
+            input_sources = set(_list_values(item.get("interface_input_sources")))
+            if "native_audio" not in input_sources:
+                issues.append("missing_interface_input_source:native_audio")
+
+            reflex_providers = set(_list_values(item.get("reflex_providers")))
+            if "vllm" not in reflex_providers:
+                issues.append("missing_reflex_provider:vllm")
 
     return {
         "status": "validated" if not issues else "fails_target",

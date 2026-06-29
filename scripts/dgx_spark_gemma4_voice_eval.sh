@@ -209,6 +209,28 @@ if [[ -n "${DGX_SPARK_KAME_BENCHMARK_EVIDENCE:-}" ]]; then
   if [[ -x "$KAME_STACK_DIR/validate-benchmark-evidence.sh" ]]; then
     if run "$KAME_STACK_DIR/validate-benchmark-evidence.sh" "$DGX_SPARK_KAME_BENCHMARK_EVIDENCE"; then
       record_pass "track 0 KAME benchmark evidence validation"
+      VOICEOPS_MATRIX_DIR="$ARTIFACT_DIR/voiceops-spark-matrix"
+      if run uv run python scripts/voiceops_spark_matrix.py \
+        --output-dir "$VOICEOPS_MATRIX_DIR" \
+        --evidence "$DGX_SPARK_KAME_BENCHMARK_EVIDENCE"
+      then
+        record_pass "track 0 VoiceOps Spark matrix verdict generated"
+        if run uv run python - "$VOICEOPS_MATRIX_DIR/spark-model-matrix.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+raise SystemExit(0 if payload.get("ready_for_one_spark_demo") is True else 1)
+PY
+        then
+          record_pass "track 0 VoiceOps one-Spark readiness verdict"
+        else
+          record_fail "track 0 VoiceOps one-Spark readiness verdict" "Matrix parsed the evidence but did not mark ready_for_one_spark_demo=true"
+        fi
+      else
+        record_fail "track 0 VoiceOps Spark matrix verdict" "VoiceOps matrix could not parse or write the benchmark evidence verdict"
+      fi
     else
       record_fail "track 0 KAME benchmark evidence validation" "Benchmark evidence did not satisfy KAME launch-pack gates"
     fi
@@ -241,6 +263,8 @@ Finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 - KAME benchmark matrix: $KAME_STACK_DIR/benchmark-matrix.json
 - KAME benchmark evidence template: $KAME_STACK_DIR/benchmark-evidence-template.json
 - KAME benchmark validator: $KAME_STACK_DIR/validate-benchmark-evidence.sh
+- VoiceOps Spark matrix: $ARTIFACT_DIR/voiceops-spark-matrix/spark-model-matrix.json
+- VoiceOps Spark matrix markdown: $ARTIFACT_DIR/voiceops-spark-matrix/spark-model-matrix.md
 - Oracle probe: $ARTIFACT_DIR/oracle-probe.json
 - Cartesia alpha: $ARTIFACT_DIR/cartesia-alpha
 - Loopback alpha: $ARTIFACT_DIR/loopback-alpha

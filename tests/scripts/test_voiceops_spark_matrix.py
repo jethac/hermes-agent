@@ -277,14 +277,13 @@ def test_spark_matrix_adapts_kame_benchmark_evidence_with_provenance(tmp_path):
                     "kind": "kame_smoke_result",
                     "name": "all_local_smoke",
                     "ok": True,
-                    "oracle_selected_by": "Hermes /model",
-                    "components": {
-                        "reflex": True,
-                        "oracle": True,
-                        "asr": True,
-                        "tts": True,
-                        "sidecar": True,
-                    },
+                    "local_turns": 2,
+                    "local_turn_oracle_calls": 0,
+                    "oracle_bound_turns": 4,
+                    "oracle_bound_oracle_calls": 4,
+                    "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
+                    "interface_input_sources": ["native_audio"],
+                    "reflex_providers": ["vllm"],
                     "metrics": {
                         "speech_end_to_first_audio_ms": 900,
                         "barge_in_stop_ms": 90,
@@ -304,6 +303,98 @@ def test_spark_matrix_adapts_kame_benchmark_evidence_with_provenance(tmp_path):
     assert evaluations["tts-magpie-local"]["status"] == "validated"
     assert matrix["stack_smoke"]["status"] == "validated"
     assert matrix["ready_for_one_spark_demo"] is True
+
+
+def test_spark_matrix_rejects_kame_smoke_without_reflex_bypass_and_oracle_authority(tmp_path):
+    evidence_path = tmp_path / "kame-evidence.json"
+    common = {
+        "hardware": "1x DGX Spark",
+        "verified": True,
+        "measured_at": "2026-06-29T00:00:00Z",
+        "source_artifact": "artifacts/kame/raw.json",
+    }
+    passing_entries = [
+        {
+            **common,
+            "kind": "kame_benchmark_result",
+            "category": "interface",
+            "model": "gemma-4-E2B-it",
+            "metrics": {
+                "kame_interface_model_request_ms": 220,
+                "speech_end_to_interface_decision_p90_ms": 600,
+                "steady_state_memory_gb": 18,
+            },
+        },
+        {
+            **common,
+            "kind": "kame_benchmark_result",
+            "category": "oracle",
+            "model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+            "metrics": {
+                "decode_tok_s": 24,
+                "prefill_tok_s": 3100,
+                "oracle_accepted_to_first_token_ms": 1200,
+                "steady_state_memory_gb": 92,
+            },
+        },
+        {
+            **common,
+            "kind": "kame_benchmark_result",
+            "category": "speech",
+            "role": "oracle_verbatim_asr",
+            "model": "Nemotron Speech streaming",
+            "metrics": {
+                "speech_end_to_asr_final_ms": 80,
+                "speech_end_to_asr_final_p90_ms": 150,
+                "literal_accuracy_names_numbers_code": 0.9,
+            },
+        },
+        {
+            **common,
+            "kind": "kame_benchmark_result",
+            "category": "speech",
+            "role": "tts",
+            "model": "Magpie local TTS",
+            "metrics": {
+                "tts_request_to_first_audio_ms": 180,
+                "underrun_count": 0,
+            },
+        },
+    ]
+    evidence_path.write_text(
+        json.dumps(
+            passing_entries
+            + [
+                {
+                    **common,
+                    "kind": "kame_smoke_result",
+                    "name": "all_local_smoke",
+                    "ok": True,
+                    "local_turns": 2,
+                    "local_turn_oracle_calls": 1,
+                    "oracle_bound_turns": 4,
+                    "oracle_bound_oracle_calls": 4,
+                    "oracle_authority_routes": ["tools"],
+                    "interface_input_sources": ["streaming_stt"],
+                    "reflex_providers": ["local_stt"],
+                    "metrics": {
+                        "speech_end_to_first_audio_ms": 900,
+                        "barge_in_stop_ms": 90,
+                    },
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "target_failed:local_turn_oracle_calls" in matrix["stack_smoke"]["issues"]
+    assert "missing_oracle_authority_routes:files,memory,project_context" in matrix["stack_smoke"]["issues"]
+    assert "missing_interface_input_source:native_audio" in matrix["stack_smoke"]["issues"]
+    assert "missing_reflex_provider:vllm" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
 
 
 def test_spark_matrix_cli_smoke(tmp_path):
