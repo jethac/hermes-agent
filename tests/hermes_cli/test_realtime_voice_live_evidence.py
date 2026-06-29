@@ -32,6 +32,12 @@ def test_live_evidence_collects_loopback_and_readiness_reports(monkeypatch, tmp_
     assert result.issues == []
     assert (tmp_path / "discord-loopback.json").is_file()
     assert (tmp_path / "discord-live-probe.json").is_file()
+    loopback = json.loads((tmp_path / "discord-loopback.json").read_text(encoding="utf-8"))
+    live_probe = json.loads((tmp_path / "discord-live-probe.json").read_text(encoding="utf-8"))
+    assert loopback["kind"] == "discord_loopback"
+    assert loopback["source_artifact"] == str(tmp_path / "discord-loopback.json")
+    assert live_probe["kind"] == "discord_live_probe"
+    assert live_probe["source_artifact"] == str(tmp_path / "discord-live-probe.json")
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["schema_version"] == "voiceops.realtime_voice_live_evidence_manifest.v1"
     assert manifest["ok"] is True

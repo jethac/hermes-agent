@@ -373,10 +373,9 @@ def _expand_live_evidence_manifest(path: Path, payload: Mapping[str, Any]) -> tu
 
 def _with_manifest_report_provenance(payload: Mapping[str, Any], report_path: Path) -> dict[str, Any]:
     enriched = dict(payload)
-    source_artifact = str(report_path)
+    source_artifact = str(report_path.resolve())
     previous_source_artifact = str(enriched.get("source_artifact") or "")
-    if not previous_source_artifact or previous_source_artifact in LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS:
-        enriched["source_artifact"] = source_artifact
+    enriched["source_artifact"] = source_artifact
     provenance = {"wrapper_artifact": source_artifact}
     if previous_source_artifact:
         provenance["reported_source_artifact"] = previous_source_artifact

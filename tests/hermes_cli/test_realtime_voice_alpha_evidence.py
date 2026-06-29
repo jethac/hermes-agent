@@ -840,6 +840,7 @@ def test_alpha_evidence_runner_can_start_local_speech_bridge_pair(monkeypatch, t
             env_on_disk={
                 "HERMES_STREAMING_STT_BRIDGE_TOKEN": "secret-token",
                 "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL": "http://127.0.0.1:9101",
+                "HERMES_MAGPIE_TTS_BRIDGE_TOKEN": "secret-token",
                 "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL": "http://127.0.0.1:9102",
             },
         ),
@@ -895,6 +896,7 @@ def test_alpha_evidence_runner_can_start_local_speech_bridge_pair(monkeypatch, t
             {
                 "HERMES_STREAMING_STT_BRIDGE_TOKEN": "secret-token",
                 "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL": "http://127.0.0.1:9101",
+                "HERMES_MAGPIE_TTS_BRIDGE_TOKEN": "secret-token",
                 "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL": "http://127.0.0.1:9102",
             },
         ),
@@ -905,6 +907,7 @@ def test_alpha_evidence_runner_can_start_local_speech_bridge_pair(monkeypatch, t
             {
                 "HERMES_STREAMING_STT_BRIDGE_TOKEN": "secret-token",
                 "HERMES_NEMOTRON_SPEECH_UPSTREAM_BASE_URL": "http://127.0.0.1:9101",
+                "HERMES_MAGPIE_TTS_BRIDGE_TOKEN": "secret-token",
                 "HERMES_MAGPIE_TTS_UPSTREAM_BASE_URL": "http://127.0.0.1:9102",
             },
         ),

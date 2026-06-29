@@ -86,14 +86,20 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
 
     loopback_report = output_dir / "discord-loopback.json"
     loopback_result = await _run_discord_loopback_smoke()
-    _write_json(loopback_report, asdict(loopback_result))
+    _write_json(
+        loopback_report,
+        _with_report_identity(asdict(loopback_result), kind="discord_loopback", report_path=loopback_report),
+    )
     reports["discord_loopback"] = str(loopback_report)
     if not getattr(loopback_result, "ok", False):
         issues.append(f"discord_loopback: {getattr(loopback_result, 'error', '') or 'failed'}")
 
     live_report = output_dir / "discord-live-probe.json"
     live_result = await _run_discord_live_probe(args)
-    _write_json(live_report, asdict(live_result))
+    _write_json(
+        live_report,
+        _with_report_identity(asdict(live_result), kind="discord_live_probe", report_path=live_report),
+    )
     reports["discord_live_probe"] = str(live_report)
     if args.require_live_discord and not getattr(live_result, "ok", False):
         issues.append(f"discord_live_probe: {getattr(live_result, 'error', '') or 'failed'}")
@@ -128,6 +134,13 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
     )
     _write_json(output_dir / "manifest.json", asdict(result))
     return result
+
+
+def _with_report_identity(payload: dict[str, Any], *, kind: str, report_path: Path) -> dict[str, Any]:
+    enriched = dict(payload)
+    enriched.setdefault("kind", kind)
+    enriched.setdefault("source_artifact", str(report_path))
+    return enriched
 
 
 def _attach_optional_evidence_report(

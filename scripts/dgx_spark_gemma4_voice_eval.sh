@@ -74,11 +74,7 @@ record_pass "local repo validation"
 
 note "Track 0: full KAME DGX Spark launch pack"
 KAME_STACK_DIR="$ARTIFACT_DIR/kame-stack"
-KAME_CHECK_ARGS=()
-if [[ "${DGX_SPARK_KAME_CHECK:-0}" == "1" ]]; then
-  KAME_CHECK_ARGS+=(--check --timeout "${DGX_SPARK_KAME_CHECK_TIMEOUT_SECONDS:-2}")
-fi
-if run uv run python -m hermes_cli.realtime_voice_dgx_spark \
+KAME_CMD=(uv run python -m hermes_cli.realtime_voice_dgx_spark
   --output-dir "$KAME_STACK_DIR" \
   --repo-dir "$ROOT" \
   --hermes-home "${DGX_SPARK_HERMES_HOME:-$HOME/.hermes}" \
@@ -104,8 +100,11 @@ if run uv run python -m hermes_cli.realtime_voice_dgx_spark \
   --asr-mode "${DGX_SPARK_ASR_MODE:-on_escalation}" \
   --vllm-image "${DGX_SPARK_VLLM_IMAGE:-vllm/vllm-openai:gemma4-cu130}" \
   --hermes-image "${DGX_SPARK_HERMES_IMAGE:-ghcr.io/astral-sh/uv:python3.12-bookworm-slim}" \
-  --model-cache-dir "${DGX_SPARK_MODEL_CACHE_DIR:-${HOME}/.cache/huggingface}" \
-  "${KAME_CHECK_ARGS[@]}"
+  --model-cache-dir "${DGX_SPARK_MODEL_CACHE_DIR:-${HOME}/.cache/huggingface}")
+if [[ "${DGX_SPARK_KAME_CHECK:-0}" == "1" ]]; then
+  KAME_CMD+=(--check --timeout "${DGX_SPARK_KAME_CHECK_TIMEOUT_SECONDS:-2}")
+fi
+if run "${KAME_CMD[@]}"
 then
   if [[ "${DGX_SPARK_KAME_CHECK:-0}" == "1" ]]; then
     record_pass "track 0 full KAME DGX Spark launch pack and preflight"
