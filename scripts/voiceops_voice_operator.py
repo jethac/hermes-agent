@@ -202,6 +202,8 @@ def _collector_attestation_issues(
     section_name: str,
     *,
     expected_redacted_sha256: str | None = None,
+    expected_parent_manifest_sha256: str | None = None,
+    expected_parent_manifest_sha256_values: list[str] | None = None,
 ) -> list[str]:
     attestation = section.get("collector_attestation") or section.get("collector_provenance")
     if not isinstance(attestation, Mapping):
@@ -233,6 +235,20 @@ def _collector_attestation_issues(
         and redacted_sha256 != expected_redacted_sha256
     ):
         issues.append(f"{section_name}:collector_attestation_redacted_sha256_mismatch")
+    parent_sha256 = str(attestation.get("parent_manifest_sha256") or "").strip().lower()
+    expected_parent_values = {
+        str(value or "").strip().lower()
+        for value in (expected_parent_manifest_sha256_values or [])
+        if _valid_sha256(value)
+    }
+    if expected_parent_manifest_sha256 and _valid_sha256(expected_parent_manifest_sha256):
+        expected_parent_values.add(expected_parent_manifest_sha256)
+    if (
+        expected_parent_values
+        and _valid_sha256(parent_sha256)
+        and parent_sha256 not in expected_parent_values
+    ):
+        issues.append(f"{section_name}:collector_attestation_parent_manifest_sha256_mismatch")
     return issues
 
 
@@ -704,6 +720,11 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             discord_probe,
             "discord_live_probe",
             expected_redacted_sha256=discord_source_sha256,
+            expected_parent_manifest_sha256_values=_parent_manifest_sha256_values(
+                discord_probe,
+                discord_source_sha256,
+                paths or [],
+            ),
         )
     )
     for key in LIVE_EVIDENCE_REQUIRED_DISCORD_BOOLS:
@@ -749,6 +770,11 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             sidecar,
             "sidecar_session",
             expected_redacted_sha256=sidecar_source_sha256,
+            expected_parent_manifest_sha256_values=_parent_manifest_sha256_values(
+                sidecar,
+                sidecar_source_sha256,
+                paths or [],
+            ),
         )
     )
     for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS:
@@ -794,6 +820,11 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             live_turn,
             "live_turn",
             expected_redacted_sha256=live_turn_source_sha256,
+            expected_parent_manifest_sha256_values=_parent_manifest_sha256_values(
+                live_turn,
+                live_turn_source_sha256,
+                paths or [],
+            ),
         )
     )
     for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS:
@@ -900,6 +931,27 @@ def _redacted_source_artifact_sha256(source_path: Path) -> str:
         canonical = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(canonical).hexdigest()
     return hashlib.sha256(source_bytes).hexdigest()
+
+
+def _parent_manifest_sha256_values(
+    section: Mapping[str, Any],
+    source_sha256: str | None,
+    evidence_paths: list[Path],
+) -> list[str]:
+    values: list[str] = []
+    if source_sha256:
+        values.append(source_sha256)
+    provenance = section.get("provenance")
+    if isinstance(provenance, Mapping):
+        reported_source = str(provenance.get("reported_source_artifact") or "").strip()
+        if reported_source:
+            reported_path = _resolve_source_artifact_path(reported_source, evidence_paths)
+            if reported_path is not None:
+                try:
+                    values.append(_redacted_source_artifact_sha256(reported_path))
+                except OSError:
+                    pass
+    return values
 
 
 def _source_artifact_candidate_paths(source_artifact: Any, evidence_paths: list[Path]) -> list[str]:

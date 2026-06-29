@@ -55,6 +55,7 @@ def _write_live_section(path: Path, section_name: str, payload: dict) -> Path:
     payload_sha256 = _live_payload_sha256(payload)
     payload["collector_attestation"]["raw_artifact_sha256"] = payload_sha256
     payload["collector_attestation"]["redacted_artifact_sha256"] = payload_sha256
+    payload["collector_attestation"]["parent_manifest_sha256"] = payload_sha256
     return _write_json(path, payload)
 
 

@@ -84,6 +84,7 @@ def _attest_section(section: dict, section_name: str) -> dict:
     payload_sha256 = _payload_sha256(section)
     section["collector_attestation"]["raw_artifact_sha256"] = payload_sha256
     section["collector_attestation"]["redacted_artifact_sha256"] = payload_sha256
+    section["collector_attestation"]["parent_manifest_sha256"] = payload_sha256
     return section
 
 
@@ -447,6 +448,18 @@ def test_live_evidence_rejects_stale_source_artifact_attestation_hash(tmp_path):
     live_evidence = validate_live_probe_evidence(evidence)
 
     assert "discord_live_probe:collector_attestation_redacted_sha256_mismatch" in live_evidence["issues"]
+
+
+def test_live_evidence_rejects_fake_parent_manifest_attestation_hash(tmp_path):
+    evidence = _complete_live_evidence()
+    source_path = tmp_path / "discord-live-probe.json"
+    evidence["discord_live_probe"]["source_artifact"] = str(source_path)
+    _write_attested_section(source_path, evidence["discord_live_probe"], "discord_live_probe")
+    evidence["discord_live_probe"]["collector_attestation"]["parent_manifest_sha256"] = "d" * 64
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "discord_live_probe:collector_attestation_parent_manifest_sha256_mismatch" in live_evidence["issues"]
 
 
 def test_live_evidence_rejects_complete_hand_authored_sections_without_collector_attestation(tmp_path):
@@ -971,6 +984,7 @@ def test_voice_operator_manifest_nested_report_source_artifacts_resolve_relative
     for section_name in ("discord_live_probe", "sidecar_session", "live_turn"):
         evidence[section_name]["collector_attestation"]["raw_artifact_sha256"] = raw_payload_sha256
         evidence[section_name]["collector_attestation"]["redacted_artifact_sha256"] = raw_payload_sha256
+        evidence[section_name]["collector_attestation"]["parent_manifest_sha256"] = raw_payload_sha256
     combined_path = report_dir / "combined.json"
     combined_path.write_text(json.dumps(evidence), encoding="utf-8")
     manifest_path = tmp_path / "manifest.json"

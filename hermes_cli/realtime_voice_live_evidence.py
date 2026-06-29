@@ -672,7 +672,7 @@ def _with_collector_attestation(
         "finished_at": timestamp,
         "raw_artifact_sha256": payload_sha256,
         "redacted_artifact_sha256": payload_sha256,
-        "parent_manifest_sha256": parent_manifest_sha256 or ("0" * 64),
+        "parent_manifest_sha256": parent_manifest_sha256 or payload_sha256,
     }
     return enriched
 

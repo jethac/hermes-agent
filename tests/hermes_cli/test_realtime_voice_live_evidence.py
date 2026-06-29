@@ -61,6 +61,7 @@ def _write_json(path, payload):
             payload_sha256 = hashlib.sha256(raw).hexdigest()
             attestation["raw_artifact_sha256"] = payload_sha256
             attestation["redacted_artifact_sha256"] = payload_sha256
+            attestation["parent_manifest_sha256"] = payload_sha256
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
@@ -559,6 +560,47 @@ def test_live_evidence_audit_only_reports_invalid_evidence_without_writing(monke
     assert payload["artifact_writes"] is False
     assert "live_evidence_validation:live_turn:barge_in_stop_ms_over_target" in payload["issues"]
     assert "live_turn" in payload["strict_validation"]["missing_gates"]
+    assert not output_dir.exists()
+
+
+def test_live_evidence_audit_only_rejects_fake_parent_manifest_hash(monkeypatch, tmp_path, capsys):
+    async def unexpected_loopback():
+        raise AssertionError("loopback probe should not run in audit-only mode")
+
+    async def unexpected_live(_args):
+        raise AssertionError("live Discord probe should not run in audit-only mode")
+
+    discord_path = _write_json(tmp_path / "discord-live-probe.json", _complete_discord_probe())
+    sidecar_path = _write_json(tmp_path / "sidecar-session.json", _complete_sidecar_session())
+    live_turn = _complete_live_turn()
+    live_turn_path = _write_json(tmp_path / "live-turn.json", live_turn)
+    live_turn["collector_attestation"]["parent_manifest_sha256"] = "d" * 64
+    live_turn_path.write_text(json.dumps(live_turn), encoding="utf-8")
+    output_dir = tmp_path / "bundle"
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", unexpected_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", unexpected_live)
+
+    exit_code = realtime_voice_live_evidence.main(
+        [
+            "--output-dir",
+            str(output_dir),
+            "--audit-only",
+            "--discord-live-probe-evidence",
+            str(discord_path),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+            "--live-turn-evidence",
+            str(live_turn_path),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert (
+        "live_evidence_validation:live_turn:collector_attestation_parent_manifest_sha256_mismatch"
+        in payload["issues"]
+    )
     assert not output_dir.exists()
 
 
