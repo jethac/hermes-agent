@@ -553,6 +553,7 @@ Already present:
 - oracle-verbatim ASR lane for escalated turns
 - ephemeral versus durable transcript policy at the session boundary
 - oracle hint streaming back to live interface providers
+- explicit KAME provenance for native-audio and STT-fed fallback interface turns
 - DGX Spark launch/profile generation for interface, oracle, ASR, and TTS targets
 - benchmark matrix templates for local interface and speech candidates
 - GUI coverage for KAME interface, ASR, TTS, routing, barge-in, fallback, and local provider target settings

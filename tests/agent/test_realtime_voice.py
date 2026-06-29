@@ -976,6 +976,8 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
         interface_already_said="One moment.",
         conversation_summary="The user is testing KAME voice.",
         reflex_validation_error="oracle_required_for_files",
+        interface_input_source="local_stt",
+        interface_audio_input_fallback=True,
     )
 
     prompt = _voice_oracle_prompt(request.oracle_text, request.to_metadata())
@@ -983,6 +985,7 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     assert "KAME request" in prompt
     assert "Reflex interpreted intent (reflex_audio): Find the note" in prompt
     assert "Reflex route: oracle_direct (confidence 0.81)." in prompt
+    assert "The audio-native reflex was unavailable; this turn used local_stt as the interface fallback." in prompt
     assert "Reflex route override: oracle_required_for_files." in prompt
     assert "Reflex transcript hypothesis (reflex_audio): find the note" in prompt
     assert "Verbatim ASR evidence (asr): find the node" in prompt
@@ -1011,6 +1014,34 @@ def test_kame_oracle_request_accepts_transport_and_speaker_aliases():
 
     assert request.source == "discord_voice"
     assert request.user_id == "turn-speaker"
+
+
+def test_kame_oracle_request_preserves_interface_audio_input_fallback_flag():
+    request = KameOracleRequest.from_turn(
+        session_id="voice-123",
+        turn_id="turn-1",
+        source="voice",
+        user_id="session-user",
+        payload={
+            "intent": "Check deployment status.",
+            "text": "check deployment status",
+            "route": "oracle_direct",
+            "transcript": "check deployment status",
+            "transcript_source": "asr",
+            "asr_transcript": "check deployment status",
+            "asr_transcript_source": "asr",
+            "interface_audio_input_fallback": True,
+            "interface_input_source": "local_stt",
+            "reflex_provider": "local_stt",
+        },
+        fallback_text="check status",
+    )
+
+    metadata = request.to_metadata()
+    assert request.interface_audio_input_fallback is True
+    assert metadata["kame_interface_audio_input_fallback"] is True
+    assert metadata["kame_interface_input_source"] == "local_stt"
+    assert metadata["kame_reflex_provider"] == "local_stt"
 
 
 def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
@@ -4172,6 +4203,87 @@ def test_kame_text_engine_suppresses_blank_audio_partial_in_normal_mode(monkeypa
         assert final.payload["text"] == "local transcript"
 
     asyncio.run(run())
+
+
+def test_kame_text_engine_labels_local_stt_as_interface_fallback(monkeypatch):
+    class StructuredOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "Checked."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_transcribe_sync", lambda self, audio, codec: "local transcript")
+
+        oracle = StructuredOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.WEBM_OPUS, data=b"audio").to_payload(),
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                await engine.close()
+                break
+        return seen, oracle.requests
+
+    seen, requests = asyncio.run(run())
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.intent == "local transcript"
+    assert request.intent_source == "asr_fallback"
+    assert request.route == KameRoute.ORACLE_DIRECT
+    assert request.transcript == "local transcript"
+    assert request.transcript_source == "asr"
+    assert request.asr_transcript == "local transcript"
+    assert request.asr_transcript_source == "asr"
+    assert request.interface_audio_input_fallback is True
+    assert request.interface_input_source == "local_stt"
+    assert request.reflex_provider == "local_stt"
+
+    final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
+    intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
+    oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
+    session_metrics = next(event for event in seen if event.type == VoiceEventType.SESSION_METRICS)
+
+    assert final.payload["text"] == "local transcript"
+    assert final.payload["intent_source"] == "asr_fallback"
+    assert final.payload["interface_audio_input_fallback"] is True
+    assert final.payload["interface_input_source"] == "local_stt"
+    assert final.payload["reflex_provider"] == "local_stt"
+    assert final.payload["kame_interface_audio_input_fallback"] is True
+    assert final.payload["kame_interface_input_source"] == "local_stt"
+    assert final.payload["kame_reflex_provider"] == "local_stt"
+
+    for event in (intent, oracle_request, session_metrics):
+        assert event.payload["intent_source"] == "asr_fallback"
+        assert event.payload["interface_audio_input_fallback"] is True
+        assert event.payload["interface_input_source"] == "local_stt"
+        assert event.payload["reflex_provider"] == "local_stt"
 
 
 def test_text_engine_closes_sidecar_when_sidecar_tts_fails(monkeypatch, tmp_path):

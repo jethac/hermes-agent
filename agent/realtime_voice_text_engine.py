@@ -616,7 +616,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         try:
             transcript = await asyncio.to_thread(self._transcribe_sync, audio, codec)
             if transcript:
-                await self._start_turn(transcript)
+                fallback_payload = _kame_local_stt_fallback_payload(self.config, transcript)
+                await self._start_turn(
+                    transcript,
+                    metadata=fallback_payload,
+                    oracle_payload=fallback_payload,
+                )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -1888,6 +1893,8 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         payload["reflex_validation_error"] = request.reflex_validation_error
     if request.interface_input_source:
         payload["interface_input_source"] = request.interface_input_source
+    if request.interface_audio_input_fallback:
+        payload["interface_audio_input_fallback"] = True
     if request.reflex_provider:
         payload["reflex_provider"] = request.reflex_provider
     return payload
@@ -1972,6 +1979,8 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
         payload["reflex_validation_error"] = str(metadata.get("kame_reflex_validation_error"))
     if metadata.get("kame_interface_input_source"):
         payload["interface_input_source"] = str(metadata.get("kame_interface_input_source"))
+    if metadata.get("kame_interface_audio_input_fallback") is True:
+        payload["interface_audio_input_fallback"] = True
     if metadata.get("kame_reflex_provider"):
         payload["reflex_provider"] = str(metadata.get("kame_reflex_provider"))
     input_generation = _payload_input_generation(dict(metadata))
@@ -2022,6 +2031,31 @@ def _kame_final_turn_text_from_payload(payload: Mapping[str, Any]) -> str:
         if text:
             return text
     return ""
+
+
+def _kame_local_stt_fallback_payload(
+    config: Optional[RealtimeVoiceSessionConfig],
+    transcript: str,
+) -> dict[str, Any]:
+    if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        return {}
+    text = str(transcript or "").strip()
+    if not text:
+        return {}
+    return {
+        "text": text,
+        "intent": text,
+        "intent_source": "asr_fallback",
+        "route": KameRoute.ORACLE_DIRECT.value,
+        "transcript": text,
+        "transcript_source": "asr",
+        "asr_transcript": text,
+        "asr_transcript_source": "asr",
+        "interface_audio_input_fallback": True,
+        "interface_input_source": "local_stt",
+        "reflex_provider": "local_stt",
+        "reflex_validation_error": "audio_reflex_unavailable_local_stt_fallback",
+    }
 
 
 def _is_kame_metadata(metadata: Mapping[str, Any]) -> bool:

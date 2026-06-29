@@ -353,6 +353,7 @@ class KameOracleRequest:
     cancellation_token: str = ""
     reflex_validation_error: str = ""
     interface_input_source: str = ""
+    interface_audio_input_fallback: bool = False
     reflex_provider: str = ""
 
     @property
@@ -418,6 +419,8 @@ class KameOracleRequest:
             metadata["kame_reflex_validation_error"] = self.reflex_validation_error
         if self.interface_input_source:
             metadata["kame_interface_input_source"] = self.interface_input_source
+        if self.interface_audio_input_fallback:
+            metadata["kame_interface_audio_input_fallback"] = True
         if self.reflex_provider:
             metadata["kame_reflex_provider"] = self.reflex_provider
         return metadata
@@ -514,6 +517,7 @@ class KameOracleRequest:
             cancellation_token=_optional_text(payload.get("cancellation_token")) or "",
             reflex_validation_error=_optional_text(payload.get("reflex_validation_error")) or "",
             interface_input_source=_optional_text(payload.get("interface_input_source")) or "",
+            interface_audio_input_fallback=_bool(payload.get("interface_audio_input_fallback"), default=False),
             reflex_provider=_optional_text(payload.get("reflex_provider")) or "",
         )
 

@@ -191,6 +191,8 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     interface_already_said = _metadata_text(metadata.get("kame_interface_already_said"))
     summary = _metadata_text(metadata.get("kame_conversation_summary"))
     oracle_text_source = _metadata_text(metadata.get("kame_oracle_text_source"))
+    interface_input_source = _metadata_text(metadata.get("kame_interface_input_source"))
+    interface_audio_input_fallback = metadata.get("kame_interface_audio_input_fallback") is True
     response_style = _metadata_response_style(metadata.get("kame_requested_response_style"))
 
     parts = [
@@ -204,6 +206,11 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
             parts.append(f"Reflex route: {route}.")
         else:
             parts.append(f"Reflex route: {route} (confidence {route_confidence:.2f}).")
+    if interface_audio_input_fallback:
+        source_label = interface_input_source or "ASR fallback"
+        parts.append(
+            f"The audio-native reflex was unavailable; this turn used {source_label} as the interface fallback."
+        )
     if reflex_validation_error:
         parts.append(f"Reflex route override: {reflex_validation_error}.")
     transcript_source_is_asr = transcript_source.lower().startswith("asr")
