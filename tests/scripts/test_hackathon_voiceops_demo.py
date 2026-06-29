@@ -114,6 +114,14 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "local_spark_stack_matrix",
     ]
     assert payload["recording_readiness"]["spark_local_evidence_status"] == "target_selected_needs_benchmark_evidence"
+    assert payload["recording_readiness"]["spark_local_readiness"] is False
+    assert payload["recording_readiness"]["spark_benchmark_required"] is True
+    assert payload["recording_readiness"]["spark_readiness_source"] == (
+        "voiceops_spark_matrix.ready_for_one_spark_demo"
+    )
+    assert readiness["spark_local_readiness"] is False
+    assert readiness["spark_benchmark_required"] is True
+    assert readiness["spark_readiness_source"] == "voiceops_spark_matrix.ready_for_one_spark_demo"
     assert payload["recording_readiness"]["required_failures"] == []
     assert payload["recording_readiness"]["artifact_required_failures"] == []
     assert payload["recording_readiness"]["all_required_check_failures"] == [
@@ -489,6 +497,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "read-only-discovery.json" in Path(paths["dashboard"]).read_text(encoding="utf-8")
     dashboard = Path(paths["dashboard"]).read_text(encoding="utf-8")
     assert "static dry-run package" in dashboard
+    assert "Static package ready" in dashboard
+    assert "Live/Spark gaps" in dashboard
+    assert "Artifact failures" not in dashboard
     assert "Spark target selected, live evidence pending" in dashboard
     assert "Nemotron 3 Super" in dashboard
     assert "KAME Reflex Ack" in dashboard
@@ -581,7 +592,42 @@ def test_voiceops_demo_closure_and_handoff_track_plan_run_contracts(tmp_path):
         assert isinstance(demo_phase["blocked_by_current_environment"], dict)
 
 
-def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned_model():
+def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned_model(tmp_path):
+    hosted_super_args = parse_args(["--active-model", "Nemotron 3 Super via hosted provider"])
+    hosted_super_demo = build_demo(hosted_super_args)
+    hosted_paths = write_demo(tmp_path / "hosted-super", hosted_super_demo)
+    hosted_super_ready = build_readiness_report(
+        hosted_super_demo,
+        env={
+            **_discord_live_env(),
+            "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+            "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
+        },
+        which=lambda command: f"/usr/local/bin/{command}" if command in {"stripe", "link-cli"} else None,
+    )
+
+    assert hosted_super_demo["sponsor_stack"]["hermes_active_model"]["path"] == "hosted_nemotron_3_super_fallback"
+    assert hosted_super_demo["sponsor_stack"]["hermes_active_model"]["spark_local"] is False
+    assert hosted_super_demo["sponsor_stack"]["hermes_active_model"]["fallback_used"] is True
+    assert hosted_super_demo["sponsor_stack"]["nemotron_3_super"]["selection"] == "not selected"
+    assert hosted_super_demo["sponsor_stack"]["nemotron_3_ultra_hosted_fallback"]["selection"].startswith(
+        "Nemotron 3 Super"
+    )
+    assert "nemotron_3_super_spark_or_labeled_hosted_fallback" not in hosted_super_ready["required_failures"]
+    assert hosted_super_ready["spark_local_evidence_status"] == "hosted_or_nonlocal_path_not_spark_evidence"
+    assert hosted_super_ready["spark_local_readiness"] is False
+    assert hosted_super_ready["spark_benchmark_required"] is True
+    assert hosted_super_ready["spark_readiness_source"] == "voiceops_spark_matrix.ready_for_one_spark_demo"
+    for key in ("markdown", "recording_runbook", "submission_writeup", "dashboard"):
+        text = Path(hosted_paths[key]).read_text(encoding="utf-8")
+        assert "Hosted fallback selected, Spark-local evidence pending" in text
+        assert "Spark target selected, live evidence pending" not in text
+        assert "target appliance is one DGX Spark running" not in text
+        assert "Spark-powered Hermes operator" not in text
+    demo_script = Path(hosted_paths["demo_script"]).read_text(encoding="utf-8")
+    assert "clearly labeled hosted fallback today" in demo_script
+    assert "Spark-powered Hermes operator" not in demo_script
+
     ultra_args = parse_args(["--active-model", "Nemotron 3 Ultra via hosted Nous provider"])
     ultra_demo = build_demo(ultra_args)
     ultra_ready = build_readiness_report(
@@ -600,6 +646,8 @@ def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned
     assert ultra_demo["sponsor_stack"]["nemotron_3_ultra_hosted_fallback"]["selection"].startswith("Nemotron 3 Ultra")
     assert "nemotron_3_super_spark_or_labeled_hosted_fallback" not in ultra_ready["required_failures"]
     assert ultra_ready["spark_local_evidence_status"] == "hosted_or_nonlocal_path_not_spark_evidence"
+    assert ultra_ready["spark_local_readiness"] is False
+    assert ultra_ready["spark_benchmark_required"] is True
     assert ultra_ready["live_demo_ready"] is False
 
     kimi_args = parse_args(["--active-model", "Kimi K2.6"])
@@ -725,6 +773,9 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
         "local_spark_stack_matrix",
     ]
     assert ready["spark_local_evidence_status"] == "target_selected_needs_benchmark_evidence"
+    assert ready["spark_local_readiness"] is False
+    assert ready["spark_benchmark_required"] is True
+    assert ready["spark_readiness_source"] == "voiceops_spark_matrix.ready_for_one_spark_demo"
     assert ready["required_failures"] == []
     assert ready["artifact_required_failures"] == []
     assert ready["live_prerequisite_failures"] == []

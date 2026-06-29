@@ -118,6 +118,8 @@ def test_package_audit_rejects_live_dashboard_claim_with_open_gates(tmp_path):
     dashboard = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-dashboard.html"
     dashboard.write_text(
         dashboard.read_text(encoding="utf-8")
+        .replace("Static package ready", "Static ready")
+        .replace("Live/Spark gaps", "Artifact failures")
         .replace("scripted_static_ack_until_live_voice_evidence", "live_voice_ready")
         .replace("needs_live_probe", "live_probe_complete"),
         encoding="utf-8",
@@ -126,8 +128,72 @@ def test_package_audit_rejects_live_dashboard_claim_with_open_gates(tmp_path):
     report = audit_package(artifact_root)
 
     assert report["ok"] is False
+    assert "dashboard:missing_non_live_token:Static package ready" in report["issues"]
+    assert "dashboard:missing_non_live_token:Live/Spark gaps" in report["issues"]
     assert "dashboard:missing_non_live_token:scripted_static_ack_until_live_voice_evidence" in report["issues"]
     assert "dashboard:missing_non_live_token:needs_live_probe" in report["issues"]
+
+
+def test_package_audit_rejects_spark_readiness_claim_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    demo_path = artifact_root / "hackathon-voiceops-demo" / "current" / "voiceops-demo.json"
+    demo = json.loads(demo_path.read_text(encoding="utf-8"))
+    active_model = demo["sponsor_stack"]["hermes_active_model"]
+    active_model["active_model"] = "Nemotron 3 Super via hosted provider"
+    active_model["spark_local"] = True
+    active_model["fallback_used"] = True
+    demo["recording_readiness"]["spark_local_readiness"] = True
+    demo["recording_readiness"]["spark_benchmark_required"] = False
+    demo["recording_readiness"]["spark_readiness_source"] = "manual_override"
+    _write_json(demo_path, demo)
+
+    readiness_path = artifact_root / "hackathon-voiceops-demo" / "current" / "readiness-report.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["spark_local_readiness"] = True
+    readiness["spark_benchmark_required"] = False
+    readiness["spark_readiness_source"] = "manual_override"
+    readiness["live_demo_missing_evidence"] = [
+        item for item in readiness["live_demo_missing_evidence"] if item != "local_spark_stack_matrix"
+    ]
+    _write_json(readiness_path, readiness)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "spark_model_claim:spark_local_true_for_hosted_model" in report["issues"]
+    assert "spark_model_claim:fallback_used_but_spark_local_true" in report["issues"]
+    assert "spark_model_claim:spark_local_readiness_mismatch" in report["issues"]
+    assert "spark_model_claim:spark_benchmark_required_mismatch" in report["issues"]
+    assert "spark_model_claim:readiness_source_mismatch" in report["issues"]
+    assert "spark_model_claim:missing_m4_live_evidence_gap" in report["issues"]
+
+
+def test_package_audit_rejects_hosted_fallback_public_copy_overclaim(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    demo_path = artifact_root / "hackathon-voiceops-demo" / "current" / "voiceops-demo.json"
+    demo = json.loads(demo_path.read_text(encoding="utf-8"))
+    active_model = demo["sponsor_stack"]["hermes_active_model"]
+    active_model["active_model"] = "Nemotron 3 Super via hosted provider"
+    active_model["path"] = "hosted_nemotron_3_super_fallback"
+    active_model["status"] = "hosted_fallback"
+    active_model["label"] = "Hosted Nemotron 3 Super /model fallback"
+    active_model["spark_local"] = False
+    active_model["fallback_used"] = True
+    active_model["evidence_status"] = "hosted_fallback_not_spark_local_evidence"
+    demo["recording_readiness"]["spark_local_evidence_status"] = "hosted_or_nonlocal_path_not_spark_evidence"
+    _write_json(demo_path, demo)
+
+    readiness_path = artifact_root / "hackathon-voiceops-demo" / "current" / "readiness-report.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["spark_local_evidence_status"] = "hosted_or_nonlocal_path_not_spark_evidence"
+    _write_json(readiness_path, readiness)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "dashboard:contradicts_active_model_path" in report["issues"]
+    assert "dashboard:missing_non_live_token:Hosted fallback selected, Spark-local evidence pending" in report["issues"]
+    assert "spark_public_copy:contradicts_active_model_path" in report["issues"]
 
 
 def test_package_audit_rejects_nemoclaw_operator_contract_mismatch(tmp_path):
@@ -379,7 +445,7 @@ def test_package_audit_rejects_public_recording_copy_drift(tmp_path):
 
     assert report["ok"] is False
     assert "demo_markdown:missing_static_dry_run_status" in report["issues"]
-    assert "recording_runbook_markdown:missing_spark_target_evidence_boundary" in report["issues"]
+    assert "recording_runbook_markdown:missing_spark_evidence_boundary" in report["issues"]
     assert "submission_writeup_markdown:missing_spend_gate" in report["issues"]
 
 

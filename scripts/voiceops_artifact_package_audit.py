@@ -29,6 +29,8 @@ EXPECTED_HANDOFF_PHASES = (
     (2, "spend_and_provisioning_preflight"),
     (3, "local_spark_stack"),
 )
+LOCAL_MODEL_MARKERS = ("local", "dgx", "spark", "localhost", "127.0.0.1", "vllm")
+HOSTED_MODEL_MARKERS = ("hosted", "cloud", "provider", "remote", "api", "nous")
 EXPECTED_PACKAGE_ARTIFACTS = (
     "hackathon-voiceops-demo/current/audit-ledger.jsonl",
     "hackathon-voiceops-demo/current/demo-script.md",
@@ -221,6 +223,7 @@ def _audit_static_readiness(
     *,
     demo: Mapping[str, Any],
     readiness: Mapping[str, Any],
+    spark_matrix: Mapping[str, Any],
     demo_closure: Mapping[str, Any],
     plan_closure: Mapping[str, Any],
     operator_state: Mapping[str, Any],
@@ -247,9 +250,27 @@ def _audit_static_readiness(
                 issues.append("operator_state:active_for_demo_without_static_recording_scope")
             if not voice_surface.get("fallback_reason"):
                 issues.append("operator_state:active_for_demo_without_visible_fallback_reason")
+        sponsor_stack = demo.get("sponsor_stack") if isinstance(demo.get("sponsor_stack"), Mapping) else {}
+        active_path = (
+            sponsor_stack.get("hermes_active_model")
+            if isinstance(sponsor_stack.get("hermes_active_model"), Mapping)
+            else {}
+        )
+        spark_boundary = (
+            "Spark target selected, live evidence pending"
+            if active_path.get("spark_local") is True
+            else "Hosted fallback selected, Spark-local evidence pending"
+        )
+        rejected_spark_boundary = (
+            "Hosted fallback selected, Spark-local evidence pending"
+            if active_path.get("spark_local") is True
+            else "Spark target selected, live evidence pending"
+        )
         required_dashboard_tokens = [
             "static dry-run package",
-            "Spark target selected, live evidence pending",
+            "Static package ready",
+            "Live/Spark gaps",
+            spark_boundary,
             "scripted_static_ack_until_live_voice_evidence",
             "needs_live_probe",
             "needs_setup",
@@ -258,11 +279,63 @@ def _audit_static_readiness(
         for token in required_dashboard_tokens:
             if token not in dashboard_html:
                 issues.append(f"dashboard:missing_non_live_token:{token}")
+        if rejected_spark_boundary in dashboard_html:
+            issues.append("dashboard:contradicts_active_model_path")
 
     demo_gate_ids = {str(gate.get("gate_id")) for gate in demo_closure.get("gates", []) if isinstance(gate, Mapping)}
     plan_gate_ids = {str(gate.get("gate_id")) for gate in plan_closure.get("gates", []) if isinstance(gate, Mapping)}
     if demo_gate_ids != plan_gate_ids:
         issues.append("closure:gates_mismatch_between_demo_and_plan")
+    _audit_spark_model_claims(demo=demo, readiness=readiness, spark_matrix=spark_matrix, issues=issues)
+
+
+def _audit_spark_model_claims(
+    *,
+    demo: Mapping[str, Any],
+    readiness: Mapping[str, Any],
+    spark_matrix: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    recording_readiness = demo.get("recording_readiness") if isinstance(demo.get("recording_readiness"), Mapping) else {}
+    sponsor_stack = demo.get("sponsor_stack") if isinstance(demo.get("sponsor_stack"), Mapping) else {}
+    active_path = (
+        sponsor_stack.get("hermes_active_model")
+        if isinstance(sponsor_stack.get("hermes_active_model"), Mapping)
+        else {}
+    )
+    active_model = str(active_path.get("active_model") or "").lower()
+    spark_local = active_path.get("spark_local")
+    hosted_marker_present = any(marker in active_model for marker in HOSTED_MODEL_MARKERS)
+    local_marker_present = any(marker in active_model for marker in LOCAL_MODEL_MARKERS)
+    if spark_local is True and hosted_marker_present:
+        issues.append("spark_model_claim:spark_local_true_for_hosted_model")
+    if spark_local is True and not local_marker_present:
+        issues.append("spark_model_claim:spark_local_true_without_local_marker")
+    if active_path.get("fallback_used") is True and spark_local is True:
+        issues.append("spark_model_claim:fallback_used_but_spark_local_true")
+    expected_status = (
+        "target_selected_needs_benchmark_evidence"
+        if spark_local is True
+        else "hosted_or_nonlocal_path_not_spark_evidence"
+    )
+    if readiness.get("spark_local_evidence_status") != expected_status:
+        issues.append("spark_model_claim:readiness_status_mismatch")
+    for key in ("spark_local_readiness", "spark_benchmark_required", "spark_readiness_source"):
+        if recording_readiness.get(key) != readiness.get(key):
+            issues.append(f"spark_model_claim:demo_{key}_mismatch")
+    if not spark_matrix:
+        return
+    matrix_ready = spark_matrix.get("ready_for_one_spark_demo") is True
+    if readiness.get("spark_local_readiness") is not matrix_ready:
+        issues.append("spark_model_claim:spark_local_readiness_mismatch")
+    expected_benchmark_required = not matrix_ready
+    if readiness.get("spark_benchmark_required") is not expected_benchmark_required:
+        issues.append("spark_model_claim:spark_benchmark_required_mismatch")
+    if readiness.get("spark_readiness_source") != "voiceops_spark_matrix.ready_for_one_spark_demo":
+        issues.append("spark_model_claim:readiness_source_mismatch")
+    missing_evidence = readiness.get("live_demo_missing_evidence") or []
+    if matrix_ready is False and "local_spark_stack_matrix" not in missing_evidence:
+        issues.append("spark_model_claim:missing_m4_live_evidence_gap")
 
 
 def _audit_action_consistency(
@@ -586,6 +659,7 @@ def _reject_markdown_tokens(label: str, markdown: str, tokens: Mapping[str, str]
 
 def _audit_markdown_consistency(
     *,
+    spark_local_target_selected: bool,
     demo_markdown: str,
     recording_runbook_markdown: str,
     submission_writeup_markdown: str,
@@ -596,12 +670,22 @@ def _audit_markdown_consistency(
     channel_review_markdown: str,
     issues: list[str],
 ) -> None:
+    spark_boundary = (
+        "Spark target selected, live evidence pending"
+        if spark_local_target_selected
+        else "Hosted fallback selected, Spark-local evidence pending"
+    )
+    rejected_spark_boundary = (
+        "Hosted fallback selected, Spark-local evidence pending"
+        if spark_local_target_selected
+        else "Spark target selected, live evidence pending"
+    )
     _require_markdown_tokens(
         "demo_markdown",
         demo_markdown,
         {
             "missing_static_dry_run_status": "static dry-run package",
-            "missing_spark_target_evidence_boundary": "Spark target selected, live evidence pending",
+            "missing_spark_evidence_boundary": spark_boundary,
             "missing_approval_gate": "spend/provisioning gated by approval",
         },
         issues,
@@ -611,7 +695,7 @@ def _audit_markdown_consistency(
         recording_runbook_markdown,
         {
             "missing_static_dry_run_status": "static dry-run VoiceOps package",
-            "missing_spark_target_evidence_boundary": "Spark target selected, live evidence pending",
+            "missing_spark_evidence_boundary": spark_boundary,
             "missing_secret_policy": "Do not show terminal panes or files that contain secrets",
         },
         issues,
@@ -621,7 +705,7 @@ def _audit_markdown_consistency(
         submission_writeup_markdown,
         {
             "missing_static_dry_run_status": "static dry-run package",
-            "missing_spark_target_evidence_boundary": "Spark target selected, live evidence pending",
+            "missing_spark_evidence_boundary": spark_boundary,
             "missing_spend_gate": "Spend gated by approval",
         },
         issues,
@@ -687,6 +771,16 @@ def _audit_markdown_consistency(
         issues,
     )
     _reject_markdown_tokens(
+        "spark_public_copy",
+        "\n".join([demo_markdown, recording_runbook_markdown, submission_writeup_markdown, demo_handoff_markdown]),
+        {
+            "contradicts_active_model_path": rejected_spark_boundary,
+            "claims_running_spark_appliance_without_evidence": "target appliance is one DGX Spark running",
+            "claims_spark_powered_operator_without_evidence": "Spark-powered Hermes operator",
+        },
+        issues,
+    )
+    _reject_markdown_tokens(
         "channel_policy_review_markdown",
         channel_review_markdown,
         {
@@ -705,6 +799,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     demo_dir = artifact_root / "hackathon-voiceops-demo" / "current"
     plan_dir = artifact_root / "voiceops-plan" / "current"
     channel_dir = artifact_root / "voiceops-channel-policy" / "current"
+    spark_dir = artifact_root / "voiceops-spark-matrix" / "current"
 
     demo = _read_json(demo_dir / "voiceops-demo.json", issues, "voiceops_demo")
     demo_markdown = _read_text(demo_dir / "voiceops-demo.md", issues, "voiceops_demo_markdown")
@@ -726,6 +821,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     plan_closure_markdown = _read_text(plan_dir / "readiness-closure-index.md", issues, "plan_closure_markdown")
     plan_handoff = _read_json(plan_dir / "operator-handoff.json", issues, "operator_handoff")
     plan_handoff_markdown = _read_text(plan_dir / "operator-handoff.md", issues, "operator_handoff_markdown")
+    spark_matrix = _read_json(spark_dir / "spark-model-matrix.json", issues, "spark_matrix")
     channel_policy = _read_json(channel_dir / "channel-policy.json", issues, "channel_policy")
     channel_review = _read_json(channel_dir / "channel-policy-review.json", issues, "channel_policy_review")
     channel_policy_markdown = _read_text(channel_dir / "channel-policy.md", issues, "channel_policy_markdown")
@@ -740,10 +836,18 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         _read_text(demo_dir / "stripe-actions-dry-run.sh", issues, "stripe_actions"),
         issues,
     )
+    sponsor_stack = demo.get("sponsor_stack") if isinstance(demo.get("sponsor_stack"), Mapping) else {}
+    active_path = (
+        sponsor_stack.get("hermes_active_model")
+        if isinstance(sponsor_stack.get("hermes_active_model"), Mapping)
+        else {}
+    )
+    spark_local_target_selected = active_path.get("spark_local") is True
 
     _audit_static_readiness(
         demo=demo,
         readiness=readiness,
+        spark_matrix=spark_matrix,
         demo_closure=demo_closure,
         plan_closure=plan_closure,
         operator_state=operator_state,
@@ -769,6 +873,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     )
     _audit_channel_policy(channel_policy, channel_review, issues)
     _audit_markdown_consistency(
+        spark_local_target_selected=spark_local_target_selected,
         demo_markdown=demo_markdown,
         recording_runbook_markdown=recording_runbook_markdown,
         submission_writeup_markdown=submission_writeup_markdown,

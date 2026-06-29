@@ -109,6 +109,8 @@ LIVE_PREREQUISITE_CHECK_IDS = {
     "nemoclaw_boundary",
     "phone_handoff",
 }
+LOCAL_MODEL_MARKERS = ("local", "dgx", "spark", "localhost", "127.0.0.1", "vllm")
+HOSTED_MODEL_MARKERS = ("hosted", "cloud", "provider", "remote", "api", "nous")
 REQUIRED_DISCORD_LIVE_ENV_KEYS = (
     "DISCORD_BOT_TOKEN",
     "DISCORD_GUILD_ID",
@@ -921,7 +923,9 @@ def _active_model_path(active_model: str) -> dict[str, Any]:
     normalized = active_model.lower()
     is_super = "nemotron" in normalized and "super" in normalized
     is_ultra = "nemotron" in normalized and "ultra" in normalized
-    if is_super:
+    hosted_marker_present = any(marker in normalized for marker in HOSTED_MODEL_MARKERS)
+    local_marker_present = any(marker in normalized for marker in LOCAL_MODEL_MARKERS)
+    if is_super and local_marker_present and not hosted_marker_present:
         return {
             "active_model": active_model,
             "selected_by": "Hermes /model",
@@ -932,6 +936,18 @@ def _active_model_path(active_model: str) -> dict[str, Any]:
             "spark_local": True,
             "fallback_used": False,
             "evidence_status": "target_selected_needs_benchmark_evidence",
+        }
+    if is_super:
+        return {
+            "active_model": active_model,
+            "selected_by": "Hermes /model",
+            "path": "hosted_nemotron_3_super_fallback",
+            "status": "hosted_fallback",
+            "recording_ready": True,
+            "label": "Hosted Nemotron 3 Super /model fallback",
+            "spark_local": False,
+            "fallback_used": True,
+            "evidence_status": "hosted_fallback_not_spark_local_evidence",
         }
     if is_ultra:
         return {
@@ -971,7 +987,7 @@ def _sponsor_stack(active_model: str) -> dict[str, Any]:
             "role": "clearly labeled hosted /model fallback when the local Nemotron 3 Super Spark path is unavailable or still under benchmark",
             "selection": (
                 active_model
-                if active_path["path"] == "hosted_nemotron_3_ultra_fallback"
+                if active_path["path"] in {"hosted_nemotron_3_super_fallback", "hosted_nemotron_3_ultra_fallback"}
                 else "Hosted /model fallback available if the local Nemotron 3 Super path is unavailable"
             ),
             "note": "Fallback is still selected through Hermes' normal /model flow, not a VoiceOps-specific model setting.",
@@ -1804,6 +1820,7 @@ def build_readiness_report(
         if active_path["spark_local"]
         else "hosted_or_nonlocal_path_not_spark_evidence"
     )
+    spark_local_readiness = False
     return {
         "generated_at": _utc_now(),
         "schema_version": "voiceops.recording_readiness_report.v1",
@@ -1823,6 +1840,9 @@ def build_readiness_report(
             "local_spark_stack_matrix",
         ],
         "spark_local_evidence_status": spark_local_evidence_status,
+        "spark_local_readiness": spark_local_readiness,
+        "spark_benchmark_required": True,
+        "spark_readiness_source": "voiceops_spark_matrix.ready_for_one_spark_demo",
         "required_failures": artifact_required_failures,
         "env_sources": env_sources,
         "checks": check_dicts,
@@ -1833,6 +1853,9 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
     actions = _ops_actions(args.budget_cents)
     approval_total = sum(action.estimated_cents for action in actions if action.requires_approval and action.status == "queued")
     ready_total = sum(action.estimated_cents for action in actions if action.status in {"queued", "ready"})
+    sponsor_stack = _sponsor_stack(args.active_model)
+    spark_stack = _spark_stack(args.active_model, args.reflex_model)
+    spark_boundary = _spark_evidence_boundary_from_path(sponsor_stack["hermes_active_model"])
     policy = SpendPolicy(
         name="household-business-daily-ops",
         limit_cents=args.budget_cents,
@@ -1847,13 +1870,13 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
             "request": args.request,
             "operator": "Hermes VoiceOps",
             "submission_theme": (
-                "static dry-run package: Spark target selected, live evidence pending; "
+                f"static dry-run package: {spark_boundary}; "
                 "give Hermes a Discord voice budget, queue Stripe Skills VoIP provisioning, "
                 "and preserve context for phone handoff"
             ),
         },
-        "sponsor_stack": _sponsor_stack(args.active_model),
-        "spark_stack": _spark_stack(args.active_model, args.reflex_model),
+        "sponsor_stack": sponsor_stack,
+        "spark_stack": spark_stack,
         "kame_reflex_ack": _kame_reflex_ack_trace(),
         "voice_surfaces": [asdict(surface) for surface in _surface_matrix()],
         "spend_policy": asdict(policy),
@@ -1867,6 +1890,36 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _spark_evidence_boundary_from_path(active_path: Mapping[str, Any]) -> str:
+    if active_path.get("spark_local") is True:
+        return "Spark target selected, live evidence pending"
+    return "Hosted fallback selected, Spark-local evidence pending"
+
+
+def _spark_evidence_boundary(demo: Mapping[str, Any]) -> str:
+    sponsor_stack = demo.get("sponsor_stack") if isinstance(demo.get("sponsor_stack"), Mapping) else {}
+    active_path = (
+        sponsor_stack.get("hermes_active_model")
+        if isinstance(sponsor_stack.get("hermes_active_model"), Mapping)
+        else {}
+    )
+    return _spark_evidence_boundary_from_path(active_path)
+
+
+def _serious_planning_path(demo: Mapping[str, Any]) -> str:
+    sponsor_stack = demo.get("sponsor_stack") if isinstance(demo.get("sponsor_stack"), Mapping) else {}
+    active_path = (
+        sponsor_stack.get("hermes_active_model")
+        if isinstance(sponsor_stack.get("hermes_active_model"), Mapping)
+        else {}
+    )
+    if active_path.get("spark_local") is True:
+        selection = sponsor_stack.get("nemotron_3_super", {}).get("selection", "Nemotron 3 Super")
+        return f"{selection} is the visible serious planning path."
+    label = active_path.get("label") or active_path.get("active_model") or "Hosted /model fallback"
+    return f"{label} is the visible fallback planning path; it does not count as Spark-local readiness proof."
+
+
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -1877,13 +1930,14 @@ def _write_jsonl(path: Path, events: Iterable[dict[str, Any]]) -> None:
 
 def _markdown(demo: dict[str, Any]) -> str:
     totals = demo["totals"]
+    spark_boundary = _spark_evidence_boundary(demo)
     lines = [
         f"# {demo['demo']['name']}",
         "",
         "## One-line pitch",
         "",
         "Hermes VoiceOps turns a DGX Spark into a local-first operator for a household and business, with Discord voice as the intended live front door and WhatsApp/phone as approval-gated follow-on paths.",
-        "This package is a static dry-run package: Spark target selected, live evidence pending, and spend/provisioning gated by approval.",
+        f"This package is a static dry-run package: {spark_boundary}, and spend/provisioning gated by approval.",
         "",
         "## Sponsor stack",
         "",
@@ -1959,6 +2013,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
     policy = demo["spend_policy"]
     approval_cents = demo["totals"]["approval_required_cents"]
     closure = _demo_closure_summary()
+    spark_boundary = _spark_evidence_boundary(demo)
     lines = [
         "# Hermes VoiceOps Submission Writeup",
         "",
@@ -1969,7 +2024,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         "## What The Demo Shows",
         "",
         "- Discord voice is the intended live front door; live proof requires the separate Discord evidence gate.",
-        f"- {demo['sponsor_stack']['nemotron_3_super']['selection']} is the visible serious planning path.",
+        f"- {_serious_planning_path(demo)}",
         "- Hosted fallback: clearly labeled provider through Hermes /model, only if the local Nemotron 3 Super Spark path is unavailable.",
         "- NemoClaw-format dry-run packet frames billable and network-capable actions before execution, with a local static validation artifact.",
         "- Stripe Skills provide the dry-run spend and provisioning queue until preflight and approval receipts exist.",
@@ -2011,7 +2066,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         "",
         "## Submission Tweet",
         "",
-        "Hermes VoiceOps: static dry-run package, Spark target selected, live evidence pending. I give Hermes a Discord voice budget; it builds a NemoClaw-safe plan, queues Stripe Skills VoIP provisioning, and preserves context for phone handoff. Spend gated by approval. @NousResearch",
+        f"Hermes VoiceOps: static dry-run package, {spark_boundary}. I give Hermes a Discord voice budget; it builds a NemoClaw-safe plan, queues Stripe Skills VoIP provisioning, and preserves context for phone handoff. Spend gated by approval. @NousResearch",
         "",
     ]
     return "\n".join(lines)
@@ -2021,6 +2076,12 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
     failures = readiness["required_failures"]
     live_prerequisite_failures = readiness["live_prerequisite_failures"]
     closure = _demo_closure_summary()
+    spark_boundary = _spark_evidence_boundary(demo)
+    spark_story = (
+        "Spark story: show or state that the target appliance is one DGX Spark intended to run the reflex, speech stack, and preferred local model path once benchmark evidence passes."
+        if demo["sponsor_stack"]["hermes_active_model"]["spark_local"]
+        else "Spark story: show or state that this recording uses a clearly labeled hosted /model fallback while Spark-local evidence remains pending."
+    )
     fallback = (
         "Use the static dashboard plus generated dry-run packets; narrate the missing artifact checks directly."
         if failures
@@ -2033,7 +2094,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "",
         "## Goal",
         "",
-        "Record a 1-3 minute hackathon video showing a static dry-run VoiceOps package: Spark target selected, live evidence pending, Discord voice budget in, Stripe Skills provisioning plan, NemoClaw safety boundary, and phone handoff context preserved.",
+        f"Record a 1-3 minute hackathon video showing a static dry-run VoiceOps package: {spark_boundary}, Discord voice budget in, Stripe Skills provisioning plan, NemoClaw safety boundary, and phone handoff context preserved.",
         "",
         "## Regenerate Artifacts",
         "",
@@ -2078,7 +2139,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "4. NemoClaw boundary: show `nemoclaw-action-packet.json`, `nemoclaw-action-packet.validation.json`, or the dashboard NemoClaw section before any billable/network-capable action.",
         "5. Stripe Skills: show queued Stripe Projects VoIP provisioning and Link-gated service-credit spend in `stripe-actions-dry-run.sh` or the dashboard approval queue.",
         "6. Phone handoff: show `phone-context.json` and narrate that the same Discord context is preserved for the outbound call.",
-        "7. Spark story: show or state that the target appliance is one DGX Spark running the reflex, speech stack, and preferred local model path.",
+        f"7. {spark_story}",
         "",
         "## If Live Voice Is Not Ready",
         "",
@@ -2105,7 +2166,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "",
         "## Tweet Draft",
         "",
-        "Hermes VoiceOps: static dry-run package, Spark target selected, live evidence pending. I give Hermes a Discord voice budget; it builds a NemoClaw-safe plan, queues Stripe Skills VoIP provisioning, and preserves context for phone handoff. Spend gated by approval. @NousResearch",
+        f"Hermes VoiceOps: static dry-run package, {spark_boundary}. I give Hermes a Discord voice budget; it builds a NemoClaw-safe plan, queues Stripe Skills VoIP provisioning, and preserves context for phone handoff. Spend gated by approval. @NousResearch",
         "",
     ]
     return "\n".join(lines)
@@ -2187,7 +2248,8 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
     approval_cents = demo["totals"]["approval_required_cents"]
     limit_cents = max(int(demo["spend_policy"]["limit_cents"] or 0), 1)
     approval_percent = min(100, int(round((approval_cents / limit_cents) * 100)))
-    readiness_label = "Static ready" if readiness["static_recording_ready"] else "Needs setup"
+    readiness_label = "Static package ready" if readiness["static_recording_ready"] else "Needs setup"
+    live_spark_gap_count = len(readiness["live_demo_missing_evidence"])
     held_actions = [action for action in demo["ops_actions"] if action["status"] == "held-budget"]
     pending_rows = []
     for approval in operator_state["pending_approvals"]:
@@ -2444,7 +2506,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
     <section class="metrics">
       <div class="metric"><small>Budget</small><strong>{_h(_dollars(demo['spend_policy']['limit_cents']))}</strong></div>
       <div class="metric"><small>Approval queued</small><strong>{_h(_dollars(approval_cents))}</strong><div class="bar"><span></span></div></div>
-      <div class="metric"><small>Artifact failures</small><strong>{_h(len(readiness['required_failures']))}</strong></div>
+      <div class="metric"><small>Live/Spark gaps</small><strong>{_h(live_spark_gap_count)}</strong></div>
       <div class="metric"><small>Audit events</small><strong>{_h(len(demo['audit_events']))}</strong></div>
     </section>
 
@@ -2583,6 +2645,11 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
 
 
 def _demo_script(demo: dict[str, Any]) -> str:
+    close_line = (
+        "This is one Spark-targeted Hermes operator carrying context across Discord, a planned post-approval Stripe-provisioned VoIP path, WhatsApp, and phone."
+        if demo["sponsor_stack"]["hermes_active_model"]["spark_local"]
+        else "This is one Hermes operator using a clearly labeled hosted fallback today while carrying context across Discord, a planned post-approval Stripe-provisioned VoIP path, WhatsApp, and phone."
+    )
     return "\n".join(
         [
             "# Demo Script",
@@ -2605,7 +2672,7 @@ def _demo_script(demo: dict[str, Any]) -> str:
             "",
             "Close:",
             "",
-            "  This is one Spark-powered Hermes operator carrying context across Discord, a planned post-approval Stripe-provisioned VoIP path, WhatsApp, and phone.",
+            f"  {close_line}",
             "",
         ]
     )
@@ -2676,6 +2743,9 @@ def _demo_package(
         "live_prerequisite_failures": readiness["live_prerequisite_failures"],
         "all_required_check_failures": readiness["all_required_check_failures"],
         "spark_local_evidence_status": readiness["spark_local_evidence_status"],
+        "spark_local_readiness": readiness["spark_local_readiness"],
+        "spark_benchmark_required": readiness["spark_benchmark_required"],
+        "spark_readiness_source": readiness["spark_readiness_source"],
         "required_failures": readiness["required_failures"],
     }
     payload["readiness_closure"] = _demo_closure_summary()
