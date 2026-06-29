@@ -7,6 +7,45 @@ from pathlib import Path
 from scripts.voiceops_spark_matrix import build_matrix, parse_args, write_matrix
 
 
+def _base_evidence(candidate_id: str, *, model: str, locality: str = "local_spark") -> dict:
+    return {
+        "schema_version": "voiceops.spark_benchmark_evidence.v1",
+        "candidate_id": candidate_id,
+        "hardware": "1x NVIDIA DGX Spark" if locality == "local_spark" else "hosted",
+        "locality": locality,
+        "model": model,
+        "engine": "test engine",
+        "verified": True,
+        "measured_at": "2026-06-29T00:00:00Z",
+        "source_artifact": "artifacts/test/raw.json",
+        "metrics": {},
+    }
+
+
+def _stack_smoke() -> dict:
+    return {
+        "schema_version": "voiceops.spark_benchmark_evidence.v1",
+        "kind": "voiceops_spark_stack_smoke",
+        "hardware": "1x NVIDIA DGX Spark",
+        "locality": "local_spark",
+        "verified": True,
+        "measured_at": "2026-06-29T00:00:00Z",
+        "source_artifact": "artifacts/test/stack-smoke.json",
+        "oracle_selected_by": "Hermes /model",
+        "components": {
+            "reflex": True,
+            "oracle": True,
+            "asr": True,
+            "tts": True,
+            "sidecar": True,
+        },
+        "metrics": {
+            "speech_end_to_first_audio_ms": 900,
+            "barge_in_stop_ms": 90,
+        },
+    }
+
+
 def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     matrix = build_matrix()
     paths = write_matrix(tmp_path, matrix)
@@ -35,8 +74,12 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert oracle_candidates["oracle-nemotron3-ultra-hosted"]["locality"] == "hosted"
     assert set(paths) == {"json", "markdown", "evidence_template"}
     assert "VoiceOps DGX Spark Model Matrix" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "all_local_stack_smoke: needs_evidence" in Path(paths["markdown"]).read_text(encoding="utf-8")
     template = json.loads(Path(paths["evidence_template"]).read_text(encoding="utf-8"))
     assert template["evidence"][0]["verified"] is False
+    assert template["evidence"][0]["schema_version"] == "voiceops.spark_benchmark_evidence.v1"
+    assert template["evidence"][0]["model"]
+    assert template["evidence"][-1]["kind"] == "voiceops_spark_stack_smoke"
     assert "replace null metrics" in template["evidence"][0]["notes"]
 
 
@@ -47,17 +90,11 @@ def test_spark_matrix_validates_matching_evidence(tmp_path):
             {
                 "evidence": [
                     {
-                        "candidate_id": "reflex-gemma4-e2b",
-                        "verified": True,
-                        "metrics": {
-                            "first_token_ms": 700,
-                            "intent_latency_ms": 1100,
-                            "steady_state_memory_gb": 20,
-                        },
+                        **_base_evidence("reflex-gemma4-e2b", model="Gemma 4 E2B audio-native"),
+                        "metrics": {"first_token_ms": 700, "intent_latency_ms": 1100, "steady_state_memory_gb": 20},
                     },
                     {
-                        "candidate_id": "oracle-nemotron3-super-local",
-                        "verified": True,
+                        **_base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super"),
                         "metrics": {
                             "decode_tok_s": 24,
                             "prefill_tok_s": 3100,
@@ -66,22 +103,14 @@ def test_spark_matrix_validates_matching_evidence(tmp_path):
                         },
                     },
                     {
-                        "candidate_id": "asr-nemotron-speech",
-                        "verified": True,
-                        "metrics": {
-                            "asr_delta_ms": 30,
-                            "final_transcript_ms": 600,
-                            "word_error_rate": 0.08,
-                        },
+                        **_base_evidence("asr-nemotron-speech", model="Nemotron Speech streaming"),
+                        "metrics": {"asr_delta_ms": 30, "final_transcript_ms": 600, "word_error_rate": 0.08},
                     },
                     {
-                        "candidate_id": "tts-magpie-local",
-                        "verified": True,
-                        "metrics": {
-                            "tts_first_audio_ms": 200,
-                            "underrun_count": 0,
-                        },
+                        **_base_evidence("tts-magpie-local", model="Magpie local TTS"),
+                        "metrics": {"tts_first_audio_ms": 200, "underrun_count": 0},
                     },
+                    _stack_smoke(),
                 ]
             }
         ),
@@ -96,6 +125,7 @@ def test_spark_matrix_validates_matching_evidence(tmp_path):
     assert evaluations["oracle-nemotron3-super-local"]["status"] == "validated"
     assert evaluations["asr-nemotron-speech"]["status"] == "validated"
     assert evaluations["tts-magpie-local"]["status"] == "validated"
+    assert matrix["stack_smoke"]["status"] == "validated"
 
 
 def test_spark_matrix_fails_unverified_or_slow_evidence(tmp_path):
@@ -103,8 +133,15 @@ def test_spark_matrix_fails_unverified_or_slow_evidence(tmp_path):
     evidence_path.write_text(
         json.dumps(
             {
+                "schema_version": "voiceops.spark_benchmark_evidence.v1",
                 "candidate_id": "oracle-nemotron3-super-local",
+                "hardware": "1x NVIDIA DGX Spark",
+                "locality": "local_spark",
+                "model": "Gemma 4 26B-A4B",
+                "engine": "test engine",
                 "verified": False,
+                "measured_at": "2026-06-29T00:00:00Z",
+                "source_artifact": "artifacts/test/raw.json",
                 "metrics": {
                     "decode_tok_s": 10,
                     "prefill_tok_s": 1000,
@@ -121,6 +158,7 @@ def test_spark_matrix_fails_unverified_or_slow_evidence(tmp_path):
 
     assert evaluation["status"] == "fails_target"
     assert "evidence_not_verified" in evaluation["issues"]
+    assert "model_mismatch" in evaluation["issues"]
     assert "target_failed:decode_tok_s" in evaluation["issues"]
     assert matrix["role_status"]["oracle"] == "needs_evidence"
 
@@ -130,8 +168,15 @@ def test_spark_matrix_hosted_ultra_does_not_validate_local_oracle_role(tmp_path)
     evidence_path.write_text(
         json.dumps(
             {
+                "schema_version": "voiceops.spark_benchmark_evidence.v1",
                 "candidate_id": "oracle-nemotron3-ultra-hosted",
+                "hardware": "hosted",
+                "locality": "hosted",
+                "model": "Nemotron 3 Ultra",
+                "engine": "hosted provider",
                 "verified": True,
+                "measured_at": "2026-06-29T00:00:00Z",
+                "source_artifact": "artifacts/test/hosted.json",
                 "metrics": {
                     "first_token_ms": 900,
                     "tool_plan_quality": 5,
@@ -147,6 +192,118 @@ def test_spark_matrix_hosted_ultra_does_not_validate_local_oracle_role(tmp_path)
     assert evaluations["oracle-nemotron3-ultra-hosted"]["status"] == "validated"
     assert matrix["role_status"]["oracle"] == "needs_evidence"
     assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_rejects_unproven_all_local_stack_smoke(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    incomplete = _stack_smoke()
+    incomplete["components"]["tts"] = False
+    incomplete["metrics"]["barge_in_stop_ms"] = 300
+    evidence_path.write_text(json.dumps({"evidence": [incomplete]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "missing_components:tts" in matrix["stack_smoke"]["issues"]
+    assert "target_failed:barge_in_stop_ms" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_adapts_kame_benchmark_evidence_with_provenance(tmp_path):
+    evidence_path = tmp_path / "kame-evidence.json"
+    common = {
+        "hardware": "1x DGX Spark",
+        "verified": True,
+        "measured_at": "2026-06-29T00:00:00Z",
+        "source_artifact": "artifacts/kame/raw.json",
+    }
+    evidence_path.write_text(
+        json.dumps(
+            [
+                {
+                    **common,
+                    "kind": "kame_model_assumption_result",
+                    "name": "oracle_authority",
+                    "model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+                    "ok": True,
+                },
+                {
+                    **common,
+                    "kind": "kame_benchmark_result",
+                    "category": "interface",
+                    "model": "gemma-4-E2B-it",
+                    "metrics": {
+                        "kame_interface_model_request_ms": 220,
+                        "speech_end_to_interface_decision_p90_ms": 600,
+                        "steady_state_memory_gb": 18,
+                    },
+                },
+                {
+                    **common,
+                    "kind": "kame_benchmark_result",
+                    "category": "oracle",
+                    "metrics": {
+                        "decode_tok_s": 24,
+                        "prefill_tok_s": 3100,
+                        "oracle_accepted_to_first_token_ms": 1200,
+                        "steady_state_memory_gb": 92,
+                    },
+                },
+                {
+                    **common,
+                    "kind": "kame_benchmark_result",
+                    "category": "speech",
+                    "role": "oracle_verbatim_asr",
+                    "model": "Nemotron Speech streaming",
+                    "metrics": {
+                        "speech_end_to_asr_final_ms": 80,
+                        "speech_end_to_asr_final_p90_ms": 150,
+                        "literal_accuracy_names_numbers_code": 0.9,
+                    },
+                },
+                {
+                    **common,
+                    "kind": "kame_benchmark_result",
+                    "category": "speech",
+                    "role": "tts",
+                    "model": "Magpie local TTS",
+                    "metrics": {
+                        "tts_request_to_first_audio_ms": 180,
+                        "underrun_count": 0,
+                    },
+                },
+                {
+                    **common,
+                    "kind": "kame_smoke_result",
+                    "name": "all_local_smoke",
+                    "ok": True,
+                    "oracle_selected_by": "Hermes /model",
+                    "components": {
+                        "reflex": True,
+                        "oracle": True,
+                        "asr": True,
+                        "tts": True,
+                        "sidecar": True,
+                    },
+                    "metrics": {
+                        "speech_end_to_first_audio_ms": 900,
+                        "barge_in_stop_ms": 90,
+                    },
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    matrix = build_matrix([evidence_path])
+    evaluations = {evaluation["candidate_id"]: evaluation for evaluation in matrix["evaluations"]}
+
+    assert evaluations["reflex-gemma4-e2b"]["status"] == "validated"
+    assert evaluations["oracle-nemotron3-super-local"]["status"] == "validated"
+    assert evaluations["asr-nemotron-speech"]["status"] == "validated"
+    assert evaluations["tts-magpie-local"]["status"] == "validated"
+    assert matrix["stack_smoke"]["status"] == "validated"
+    assert matrix["ready_for_one_spark_demo"] is True
 
 
 def test_spark_matrix_cli_smoke(tmp_path):

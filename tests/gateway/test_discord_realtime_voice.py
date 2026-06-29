@@ -117,7 +117,7 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
                     "oracle": {
                         "provider": "custom",
                         "provider_name": "Spark Oracle",
-                        "preferred_local_model": "gemma-4-26B-A4B-it",
+                        "preferred_local_model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
                         "model": "configured-oracle",
                         "base_url": "http://spark.local:8001/v1",
                         "api_mode": "chat_completions",
@@ -197,7 +197,7 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["streaming_stt_base_url"] == "http://discord.local:8767"
     assert cfg["oracle_provider"] == "custom"
     assert cfg["oracle_provider_name"] == "Spark Oracle"
-    assert cfg["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+    assert cfg["preferred_local_oracle_model"] == "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
     assert "oracle_model" not in cfg
     assert cfg["oracle_base_url"] == "http://spark.local:8001/v1"
     assert cfg["oracle_api_mode"] == "chat_completions"

@@ -380,7 +380,7 @@ The command writes:
 - `spark-model-matrix.md`
 - `spark-benchmark-evidence-template.json`
 
-When benchmark evidence exists, pass it with repeated `--evidence path/to/evidence.json` arguments. Until measured evidence is supplied, the matrix must mark local Spark roles as needing evidence rather than claiming readiness.
+When benchmark evidence exists, pass it with repeated `--evidence path/to/evidence.json` arguments. The matrix accepts its native `voiceops.spark_benchmark_evidence.v1` records and adapts the generated KAME DGX Spark benchmark evidence shape when provenance is present. Local readiness requires more than role metrics: evidence must identify the hardware/locality, model, measurement time, source artifact, verification state, and an all-local stack smoke proving reflex, oracle, ASR, TTS, and sidecar ran together on one DGX Spark. Until measured evidence is supplied, the matrix must mark local Spark roles as needing evidence rather than claiming readiness.
 
 ## Milestone 5: Operator Dashboard
 

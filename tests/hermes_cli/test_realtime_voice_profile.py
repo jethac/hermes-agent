@@ -311,7 +311,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["asr_provider"] == "streaming_stt"
     assert realtime["asr_model"] == "portable-streaming-asr"
     assert realtime["asr_base_url"] == ""
-    assert realtime["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+    assert realtime["preferred_local_oracle_model"] == "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
     assert realtime["oracle_timeout_seconds"] == 60.0
     assert realtime["max_spoken_sentences"] == 2
     assert realtime["voice_response_policy"] == "sentence_cap"
@@ -360,7 +360,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
         "mode": "hermes_active_oracle",
         "provider": "",
         "provider_name": "",
-        "preferred_local_model": "gemma-4-26B-A4B-it",
+        "preferred_local_model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
         "base_url": "",
         "api_mode": "chat_completions",
         "timeout_ms": 60000,
@@ -688,7 +688,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
         oracle_api_mode="chat_completions",
         oracle_base_url="http://spark.local:8001/v1",
         oracle_provider_name="Spark Oracle",
-        preferred_local_oracle_model="gemma-4-26B-A4B-it",
+        preferred_local_oracle_model="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
         oracle_timeout_seconds=42,
         max_spoken_sentences=3,
         tts_model="magpie-local-streaming-tts",
@@ -720,7 +720,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["streaming_stt_token_env"] == "CUSTOM_STT_TOKEN"
     assert discord_rt["oracle_provider"] == "custom"
     assert discord_rt["oracle_provider_name"] == "Spark Oracle"
-    assert discord_rt["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+    assert discord_rt["preferred_local_oracle_model"] == "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
     assert "oracle_model" not in discord_rt
     assert discord_rt["oracle_base_url"] == "http://spark.local:8001/v1"
     assert discord_rt["oracle_api_mode"] == "chat_completions"
@@ -765,7 +765,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
         "mode": "local_openai_compatible",
         "provider": "custom",
         "provider_name": "Spark Oracle",
-        "preferred_local_model": "gemma-4-26B-A4B-it",
+        "preferred_local_model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
         "base_url": "http://spark.local:8001/v1",
         "api_mode": "chat_completions",
         "timeout_ms": 42000,
@@ -791,7 +791,7 @@ def test_kame_profile_merge_registers_local_oracle_without_changing_active_model
         ],
     }
     profile = realtime_voice_profile.build_kame_realtime_voice_profile(
-        preferred_local_oracle_model="gemma-4-26B-A4B-it",
+        preferred_local_oracle_model="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
         oracle_base_url="http://spark.local:8001/v1/",
         oracle_provider_name="Spark Oracle",
     )
@@ -803,7 +803,7 @@ def test_kame_profile_merge_registers_local_oracle_without_changing_active_model
         "mode": "local_openai_compatible",
         "provider": "custom",
         "provider_name": "Spark Oracle",
-        "preferred_local_model": "gemma-4-26B-A4B-it",
+        "preferred_local_model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
         "base_url": "http://spark.local:8001/v1",
         "api_mode": "chat_completions",
         "timeout_ms": 60000,
@@ -819,7 +819,7 @@ def test_kame_profile_merge_registers_local_oracle_without_changing_active_model
         {
             "name": "Spark Oracle",
             "base_url": "http://spark.local:8001/v1",
-            "model": "gemma-4-26B-A4B-it",
+            "model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
             "api_mode": "chat_completions",
         },
     ]

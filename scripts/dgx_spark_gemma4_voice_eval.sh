@@ -89,7 +89,7 @@ if run uv run python -m hermes_cli.realtime_voice_dgx_spark \
   --interface-context-tokens "${DGX_SPARK_INTERFACE_CONTEXT_TOKENS:-8192}" \
   --interface-gpu-memory-utilization "${DGX_SPARK_INTERFACE_GPU_MEMORY_UTILIZATION:-0.18}" \
   --oracle-base-url "${DGX_SPARK_ORACLE_BASE_URL:-http://spark.local:8001/v1}" \
-  --oracle-model "${DGX_SPARK_ORACLE_MODEL:-gemma-4-26B-A4B-it}" \
+  --oracle-model "${DGX_SPARK_KAME_ORACLE_MODEL:-nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4}" \
   --oracle-context-tokens "${DGX_SPARK_ORACLE_CONTEXT_TOKENS:-32768}" \
   --oracle-gpu-memory-utilization "${DGX_SPARK_ORACLE_GPU_MEMORY_UTILIZATION:-0.62}" \
   --sidecar-base-url "${DGX_SPARK_SIDECAR_BASE_URL:-http://spark.local:8765}" \
@@ -116,19 +116,20 @@ else
   record_fail "track 0 full KAME DGX Spark launch pack" "KAME stack artifact generation or preflight failed"
 fi
 
-note "Track A: Gemma 4 oracle probe"
-if [[ -n "${DGX_SPARK_ORACLE_BASE_URL:-}" && -n "${DGX_SPARK_ORACLE_MODEL:-}" ]]; then
+note "Track A: configured oracle probe"
+ORACLE_PROBE_MODEL="${DGX_SPARK_ORACLE_MODEL:-${DGX_SPARK_KAME_ORACLE_MODEL:-nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4}}"
+if [[ -n "${DGX_SPARK_ORACLE_BASE_URL:-}" && -n "$ORACLE_PROBE_MODEL" ]]; then
   if run uv run python -m hermes_cli.realtime_voice_oracle_probe \
-    --output "$ARTIFACT_DIR/oracle-gemma4-probe.json" \
+    --output "$ARTIFACT_DIR/oracle-probe.json" \
     --base-url "$DGX_SPARK_ORACLE_BASE_URL" \
-    --model "$DGX_SPARK_ORACLE_MODEL"
+    --model "$ORACLE_PROBE_MODEL"
   then
-    record_pass "track A gemma4 oracle probe"
+    record_pass "track A configured oracle probe"
   else
-    record_fail "track A gemma4 oracle probe" "OpenAI-compatible oracle probe failed"
+    record_fail "track A configured oracle probe" "OpenAI-compatible oracle probe failed"
   fi
 else
-  record_skip "track A gemma4 oracle probe" "set DGX_SPARK_ORACLE_BASE_URL and DGX_SPARK_ORACLE_MODEL"
+  record_skip "track A configured oracle probe" "set DGX_SPARK_ORACLE_BASE_URL"
 fi
 
 note "Track B: Cartesia cloud voice bridge baseline"
@@ -240,7 +241,7 @@ Finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 - KAME benchmark matrix: $KAME_STACK_DIR/benchmark-matrix.json
 - KAME benchmark evidence template: $KAME_STACK_DIR/benchmark-evidence-template.json
 - KAME benchmark validator: $KAME_STACK_DIR/validate-benchmark-evidence.sh
-- Oracle probe: $ARTIFACT_DIR/oracle-gemma4-probe.json
+- Oracle probe: $ARTIFACT_DIR/oracle-probe.json
 - Cartesia alpha: $ARTIFACT_DIR/cartesia-alpha
 - Loopback alpha: $ARTIFACT_DIR/loopback-alpha
 - Local speech alpha: $ARTIFACT_DIR/local-speech-alpha
