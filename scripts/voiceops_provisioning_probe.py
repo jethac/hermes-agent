@@ -2361,6 +2361,9 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "read_only_discovery_schema_version": "voiceops.milestone2.read_only_discovery.v1",
             "read_only_discovery_grants_approval": False,
             "post_approval_receipts_schema_version": POST_APPROVAL_RECEIPTS_SCHEMA_VERSION,
+            "post_approval_collector_attestation_required": True,
+            "post_approval_collector_attestation_redacted_sha256_must_match": True,
+            "post_approval_collector_attestation_required_fields": list(COLLECTOR_ATTESTATION_REQUIRED_FIELDS),
             "post_approval_linkage_ids_must_be_unique": [
                 "credential_locations[].credential_ref_id",
                 "rollback_receipts[].rollback_ref",
@@ -3190,6 +3193,7 @@ def build_post_approval_receipts_template(plan: Mapping[str, Any]) -> dict[str, 
     return {
         "schema_version": POST_APPROVAL_RECEIPTS_SCHEMA_VERSION,
         "redaction_policy": "references and redacted summaries only; no raw credentials, tokens, card data, or full phone numbers",
+        "collector_attestation": None,
         "receipts": [],
         "credential_locations": [],
         "rollback_receipts": [],
@@ -3274,6 +3278,10 @@ def build_post_approval_receipts_example(plan: Mapping[str, Any]) -> dict[str, A
                 "operator_next_step": "Replace this example with real redacted post-approval evidence.",
             }
         )
+    example["collector_attestation"] = _example_collector_attestation(
+        section_name="post_approval_receipts",
+        redacted_sha256="0" * 64,
+    )
     return example
 
 
@@ -3364,6 +3372,13 @@ def _post_approval_receipt_secret_issues(payload: Mapping[str, Any]) -> list[str
     return issues
 
 
+def _post_approval_receipts_redacted_sha256(payload: Mapping[str, Any]) -> str:
+    attested_payload = dict(payload)
+    attested_payload.pop("collector_attestation", None)
+    encoded = json.dumps(attested_payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _duplicate_nonempty_field_values(items: Iterable[Any], field: str) -> list[str]:
     values = [
         str(item.get(field) or "")
@@ -3379,6 +3394,13 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
         issues.append("post_approval_receipts:missing_or_invalid_schema_version")
     issues.extend(f"post_approval_receipts:{issue}" for issue in _example_only_presence_issues(payload))
     issues.extend(f"post_approval_receipts:{issue}" for issue in _post_approval_receipt_secret_issues(payload))
+    issues.extend(
+        _collector_attestation_issues(
+            payload,
+            section_name="post_approval_receipts",
+            expected_redacted_sha256=_post_approval_receipts_redacted_sha256(payload),
+        )
+    )
 
     receipts = payload.get("receipts")
     credential_locations = payload.get("credential_locations")

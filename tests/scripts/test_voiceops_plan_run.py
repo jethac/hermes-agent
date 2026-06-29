@@ -216,68 +216,75 @@ def _write_post_approval_receipts(root: Path) -> Path:
         for step in plan["execution_steps"]
         if step.get("requires_approval") is True
     }
-    return _write_json(
-        root / "post-approval-receipts.json",
-        {
-            "schema_version": "voiceops.milestone2.post_approval_receipts.v1",
-            "redaction_policy": "references only",
-            "receipts": [
-                {
-                    "receipt_id": f"receipt-{action['action_id']}-001",
-                    "action_id": action["action_id"],
-                    "approval_id": action["approval_id"],
-                    "provider": action["provider"],
-                    "status": "executed",
-                    "approved_by": "operator-ref-demo",
-                    "approved_at": "2026-06-29T00:00:00Z",
-                    "executed_at": "2026-06-29T00:00:30Z",
-                    "command_sha256": action["command_sha256"],
-                    "amount_cents": estimates.get(action["action_id"], 0),
-                    "currency": "usd",
-                    "approval_artifact": action["approval_artifact"],
-                    "external_reference": f"provider-resource-ref-{action['action_id']}",
-                    "credential_location_ref": action["credential_location_ref"],
-                    "rollback_ref": action["rollback_ref"],
-                    "audit_event_id": f"audit-{action['action_id']}-001",
-                }
-                for action in actions
-            ],
-            "credential_locations": [
-                {
-                    "credential_ref_id": action["credential_location_ref"],
-                    "provider": action["provider"],
-                    "service_id": f"provider-resource-ref-{action['action_id']}",
-                    "storage_backend": "provider_managed",
-                    "secret_name_or_path": f"credential-location-ref-{action['action_id']}",
-                    "created_by_action_id": action["action_id"],
-                    "rotation_due": "2026-09-29T00:00:00Z",
-                }
-                for action in actions
-                if action["credential_location_required"]
-            ],
-            "rollback_receipts": [
-                {
-                    "rollback_ref": action["rollback_ref"],
-                    "status": "not_run",
-                    "owner_ref": "operator-ref-demo",
-                    "notes": "No rollback run.",
-                }
-                for action in actions
-            ],
-            "audit_events": [
-                {
-                    "audit_event_id": f"audit-{action['action_id']}-001",
-                    "action_id": action["action_id"],
-                    "receipt_id": f"receipt-{action['action_id']}-001",
-                    "status": "executed",
-                    "provider": action["provider"],
-                    "artifact_ref": "post-approval-receipts.json",
-                    "operator_next_step": "Review provider dashboard and rollback window.",
-                }
-                for action in actions
-            ],
-        },
+    payload = {
+        "schema_version": "voiceops.milestone2.post_approval_receipts.v1",
+        "redaction_policy": "references only",
+        "receipts": [
+            {
+                "receipt_id": f"receipt-{action['action_id']}-001",
+                "action_id": action["action_id"],
+                "approval_id": action["approval_id"],
+                "provider": action["provider"],
+                "status": "executed",
+                "approved_by": "operator-ref-demo",
+                "approved_at": "2026-06-29T00:00:00Z",
+                "executed_at": "2026-06-29T00:00:30Z",
+                "command_sha256": action["command_sha256"],
+                "amount_cents": estimates.get(action["action_id"], 0),
+                "currency": "usd",
+                "approval_artifact": action["approval_artifact"],
+                "external_reference": f"provider-resource-ref-{action['action_id']}",
+                "credential_location_ref": action["credential_location_ref"],
+                "rollback_ref": action["rollback_ref"],
+                "audit_event_id": f"audit-{action['action_id']}-001",
+            }
+            for action in actions
+        ],
+        "credential_locations": [
+            {
+                "credential_ref_id": action["credential_location_ref"],
+                "provider": action["provider"],
+                "service_id": f"provider-resource-ref-{action['action_id']}",
+                "storage_backend": "provider_managed",
+                "secret_name_or_path": f"credential-location-ref-{action['action_id']}",
+                "created_by_action_id": action["action_id"],
+                "rotation_due": "2026-09-29T00:00:00Z",
+            }
+            for action in actions
+            if action["credential_location_required"]
+        ],
+        "rollback_receipts": [
+            {
+                "rollback_ref": action["rollback_ref"],
+                "status": "not_run",
+                "owner_ref": "operator-ref-demo",
+                "notes": "No rollback run.",
+            }
+            for action in actions
+        ],
+        "audit_events": [
+            {
+                "audit_event_id": f"audit-{action['action_id']}-001",
+                "action_id": action["action_id"],
+                "receipt_id": f"receipt-{action['action_id']}-001",
+                "status": "executed",
+                "provider": action["provider"],
+                "artifact_ref": "post-approval-receipts.json",
+                "operator_next_step": "Review provider dashboard and rollback window.",
+            }
+            for action in actions
+        ],
+    }
+    attested_payload = dict(payload)
+    attested_payload.pop("collector_attestation", None)
+    redacted_sha256 = hashlib.sha256(
+        json.dumps(attested_payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+    payload["collector_attestation"] = _collector_attestation(
+        "post_approval_receipts",
+        redacted_sha256=redacted_sha256,
     )
+    return _write_json(root / "post-approval-receipts.json", payload)
 
 
 def _write_readonly_discovery_evidence(root: Path) -> Path:
@@ -1014,6 +1021,20 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert provisioning_gate["evidence_contract"]["nemoclaw_action_packet_validation_executes_commands"] is False
     assert "voiceops.milestone2.post_approval_receipts.v1" == provisioning_gate["evidence_contract"][
         "post_approval_receipts_schema_version"
+    ]
+    assert provisioning_gate["evidence_contract"]["post_approval_collector_attestation_required"] is True
+    assert provisioning_gate["evidence_contract"]["post_approval_collector_attestation_redacted_sha256_must_match"] is True
+    assert provisioning_gate["evidence_contract"]["post_approval_collector_attestation_required_fields"] == [
+        "collector_name",
+        "collector_version",
+        "run_id",
+        "command_argv",
+        "git_commit",
+        "started_at",
+        "finished_at",
+        "raw_artifact_sha256",
+        "redacted_artifact_sha256",
+        "parent_manifest_sha256",
     ]
     assert provisioning_gate["evidence_contract"]["post_approval_linkage_ids_must_be_unique"] == [
         "credential_locations[].credential_ref_id",

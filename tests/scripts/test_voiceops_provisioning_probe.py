@@ -135,6 +135,21 @@ def _test_collector_attestation(section_name: str, redacted_sha256: str) -> dict
     }
 
 
+def _post_approval_redacted_sha256(payload: dict[str, object]) -> str:
+    attested_payload = dict(payload)
+    attested_payload.pop("collector_attestation", None)
+    encoded = json.dumps(attested_payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _with_post_approval_attestation(payload: dict[str, object]) -> dict[str, object]:
+    payload["collector_attestation"] = _test_collector_attestation(
+        "post_approval_receipts",
+        _post_approval_redacted_sha256(payload),
+    )
+    return payload
+
+
 def _write_preflight_evidence(tmp_path: Path, payload: dict[str, object] | None = None) -> Path:
     payload = payload or _complete_preflight_evidence()
     for section_name in ("stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback"):
@@ -614,6 +629,22 @@ def test_write_probe_artifacts(tmp_path):
     assert setup_closure["evidence_contract"]["post_approval_receipts_schema_version"] == (
         "voiceops.milestone2.post_approval_receipts.v1"
     )
+    assert setup_closure["evidence_contract"]["post_approval_collector_attestation_required"] is True
+    assert setup_closure["evidence_contract"][
+        "post_approval_collector_attestation_redacted_sha256_must_match"
+    ] is True
+    assert setup_closure["evidence_contract"]["post_approval_collector_attestation_required_fields"] == [
+        "collector_name",
+        "collector_version",
+        "run_id",
+        "command_argv",
+        "git_commit",
+        "started_at",
+        "finished_at",
+        "raw_artifact_sha256",
+        "redacted_artifact_sha256",
+        "parent_manifest_sha256",
+    ]
     assert setup_closure["evidence_contract"]["post_approval_linkage_ids_must_be_unique"] == [
         "credential_locations[].credential_ref_id",
         "rollback_receipts[].rollback_ref",
@@ -1575,6 +1606,7 @@ def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_pat
             for action in actions
         ],
     }
+    payload = _with_post_approval_attestation(payload)
     receipt_path = tmp_path / "post-approval-receipts.json"
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -1639,6 +1671,7 @@ def test_post_approval_receipts_validate_held_denied_skipped_without_execution_a
             for action, status in zip(plan["approval_required_actions"], statuses, strict=True)
         ],
     }
+    payload = _with_post_approval_attestation(payload)
 
     loaded = validate_post_approval_receipts(payload, plan)
 
@@ -1649,6 +1682,37 @@ def test_post_approval_receipts_validate_held_denied_skipped_without_execution_a
     assert loaded["rollback_receipt_count"] == 0
     assert loaded["audit_event_count"] == 4
     assert loaded["ledger_rows"][0]["status"] == "held"
+
+
+def test_post_approval_receipts_reject_missing_collector_attestation():
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    payload = build_post_approval_receipts_example(plan)
+    payload.pop("example_only")
+    payload.pop("collector_attestation")
+
+    loaded = validate_post_approval_receipts(payload, plan)
+
+    assert loaded["status"] == "invalid"
+    assert "post_approval_receipts.collector_attestation: missing" in loaded["validation_issues"]
+    assert loaded["ledger_rows"] == []
+
+
+def test_post_approval_receipts_reject_stale_collector_attestation():
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    payload = build_post_approval_receipts_example(plan)
+    payload.pop("example_only")
+    payload = _with_post_approval_attestation(payload)
+    payload["receipts"][0]["external_reference"] = "provider-resource-ref-after-attestation"
+
+    loaded = validate_post_approval_receipts(payload, plan)
+
+    assert loaded["status"] == "invalid"
+    assert "post_approval_receipts.collector_attestation.redacted_artifact_sha256: mismatch" in loaded[
+        "validation_issues"
+    ]
+    assert loaded["ledger_rows"] == []
 
 
 def test_post_approval_receipts_reject_duplicate_linkage_ids():
