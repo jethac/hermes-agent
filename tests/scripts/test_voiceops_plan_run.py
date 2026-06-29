@@ -46,6 +46,21 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "mppx_or_fallback" in blockers["provisioning_cli"]["missing"]
     assert blockers["spark_host"]["required_hardware"] == "1x NVIDIA DGX Spark"
     assert blockers["spark_host"]["blocks_artifact_generation"] is False
+    handoff = summary["closure_index"]["operator_handoff"]
+    assert handoff["schema_version"] == "voiceops.operator_handoff.v1"
+    assert handoff["changes_readiness_by_itself"] is False
+    assert handoff["final_success_signal"] == "readiness_gaps is [] and closure_status is complete"
+    assert [phase["phase_id"] for phase in handoff["phases"]] == [
+        "live_discord_voice",
+        "spend_and_provisioning_preflight",
+        "local_spark_stack",
+    ]
+    assert handoff["phases"][0]["can_run_here_now"] is False
+    assert "sidecar-session.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
+    assert "python -m hermes_cli.realtime_voice_live_evidence" in handoff["phases"][0]["commands"][0]
+    assert "provisioning-preflight-evidence.manifest.json" in json.dumps(handoff["phases"][1])
+    assert "scripts/dgx_spark_gemma4_voice_eval.sh" in handoff["phases"][2]["commands"]
+    assert "path/to/spark-benchmark-evidence.json" in handoff["final_reindex_command"]
     gates = {gate["gate_id"]: gate for gate in summary["closure_index"]["gates"]}
     assert set(gates) == {
         "live_discord_voice_operator",
@@ -183,9 +198,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "Readiness Closure" in markdown
     assert "Current Environment" in markdown
     assert "Current Environment Blockers" in markdown
+    assert "Operator Handoff" in markdown
     assert "VoiceOps Readiness Closure Index" in closure_markdown
     assert "presence booleans only" in closure_markdown
     assert "Diagnostic only" in closure_markdown
+    assert "voiceops.operator_handoff.v1" in closure_markdown
+    assert "Final reindex command" in closure_markdown
     assert "live_discord_voice_operator" in closure_markdown
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in closure_markdown
     assert "python -m hermes_cli.realtime_voice_live_evidence" in closure_markdown

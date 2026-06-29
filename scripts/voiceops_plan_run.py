@@ -191,6 +191,101 @@ def _build_current_environment_blockers(environment: dict[str, Any]) -> dict[str
     }
 
 
+def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any]) -> dict[str, Any]:
+    gate_by_id = {str(gate.get("gate_id")): gate for gate in gates}
+    live_gate = gate_by_id["live_discord_voice_operator"]
+    provisioning_gate = gate_by_id["spend_and_provisioning_preflight"]
+    spark_gate = gate_by_id["local_spark_stack_matrix"]
+    return {
+        "schema_version": "voiceops.operator_handoff.v1",
+        "purpose": "Ordered external-evidence collection sequence for closing VoiceOps readiness without hand-editing the index.",
+        "diagnostic_blockers_ref": "current_environment_blockers",
+        "changes_readiness_by_itself": False,
+        "secret_policy": "Operators supply secrets only through local env/config files or provider CLIs; never paste secret values into artifacts.",
+        "phases": [
+            {
+                "phase_id": "live_discord_voice",
+                "gate_id": live_gate["gate_id"],
+                "can_run_here_now": blockers.get("discord_env", {}).get("missing_env_keys") == [],
+                "required_inputs": [
+                    "Discord bot token and channel env/config presence",
+                    "running realtime voice sidecar",
+                    "sidecar-session.json",
+                    "live-turn.json",
+                ],
+                "commands": [
+                    live_gate["collection_commands"]["collect_live_manifest"],
+                    live_gate["collection_commands"]["ingest_live_manifest"],
+                    live_gate["rerun_command"],
+                ],
+                "expected_artifacts": [
+                    "artifacts/realtime-voice-evidence/live-current/manifest.json",
+                    "artifacts/realtime-voice-evidence/live-current/discord-live-probe.json",
+                    "artifacts/realtime-voice-evidence/live-current/sidecar-session.json",
+                    "artifacts/realtime-voice-evidence/live-current/live-turn.json",
+                ],
+                "success_check": live_gate["completion_signal"],
+                "must_not": live_gate["operator_must_not"],
+            },
+            {
+                "phase_id": "spend_and_provisioning_preflight",
+                "gate_id": provisioning_gate["gate_id"],
+                "can_run_here_now": blockers.get("provisioning_cli", {}).get("missing") == [],
+                "required_inputs": [
+                    ".env or local CLI auth for Stripe/Link/MPP/phone provider",
+                    "redacted preflight evidence JSON or manifest",
+                    "redacted source artifacts with matching SHA-256",
+                ],
+                "commands": [
+                    provisioning_gate["collection_commands"]["presence_only"],
+                    provisioning_gate["collection_commands"]["bounded_version_help"],
+                    provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
+                    provisioning_gate["rerun_commands"]["plan_index_manifest"],
+                ],
+                "expected_artifacts": [
+                    "artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
+                    "artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json",
+                    "artifacts/voiceops-provisioning/current/provisioning-readiness.json",
+                ],
+                "success_check": provisioning_gate["completion_signal"],
+                "must_not": provisioning_gate["operator_must_not"],
+            },
+            {
+                "phase_id": "local_spark_stack",
+                "gate_id": spark_gate["gate_id"],
+                "can_run_here_now": blockers.get("spark_host", {}).get("blocks_local_collection_here") is False,
+                "required_inputs": [
+                    "1x NVIDIA DGX Spark host",
+                    "local KAME launch pack or equivalent services",
+                    "filled voiceops.spark_benchmark_evidence.v1 JSON",
+                    "readable benchmark source artifacts",
+                ],
+                "commands": [
+                    spark_gate["collection_commands"]["dgx_eval"],
+                    spark_gate["collection_commands"]["with_evidence"],
+                    spark_gate["collection_commands"]["plan_index"],
+                ],
+                "expected_artifacts": [
+                    "artifacts/dgx-spark-gemma4-voice-eval/current/kame-stack",
+                    "path/to/spark-benchmark-evidence.json",
+                    "artifacts/voiceops-spark-matrix/current/spark-model-matrix.json",
+                ],
+                "success_check": spark_gate["completion_signal"],
+                "must_not": spark_gate["operator_must_not"],
+            },
+        ],
+        "final_reindex_command": (
+            "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+            "--output-dir artifacts/voiceops-plan/current "
+            "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json "
+            "--env-file .env "
+            "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json "
+            "--evidence path/to/spark-benchmark-evidence.json"
+        ),
+        "final_success_signal": "readiness_gaps is [] and closure_status is complete",
+    }
+
+
 def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
     results = summary["results"]
     voice = _result_by_milestone(results, "milestone_1_real_voice_operator")
@@ -476,6 +571,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "current_environment": current_environment.get("spark", {}),
         },
     ]
+    blockers = _build_current_environment_blockers(current_environment)
     return {
         "schema_version": "voiceops.closure_index.v1",
         "artifact_id": "voiceops-plan-readiness-closure",
@@ -492,7 +588,8 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
         },
         "readiness_gaps": summary["readiness_gaps"],
         "current_environment": current_environment,
-        "current_environment_blockers": _build_current_environment_blockers(current_environment),
+        "current_environment_blockers": blockers,
+        "operator_handoff": _build_operator_handoff(gates, blockers),
         "closure_status": "needs_external_evidence" if summary["readiness_gaps"] else "complete",
         "remaining_gates": gates,
         "gates": gates,
@@ -720,6 +817,10 @@ def _markdown(summary: dict[str, Any]) -> str:
         "",
         _environment_blockers_markdown(summary.get("closure_index", {}).get("current_environment_blockers", {})),
         "",
+        "## Operator Handoff",
+        "",
+        _operator_handoff_markdown(summary.get("closure_index", {}).get("operator_handoff", {})),
+        "",
         "## Milestones",
         "",
     ]
@@ -805,6 +906,10 @@ def _closure_markdown(closure: dict[str, Any]) -> str:
         "",
         _environment_blockers_markdown(closure.get("current_environment_blockers", {})),
         "",
+        "## Operator Handoff",
+        "",
+        _operator_handoff_markdown(closure.get("operator_handoff", {})),
+        "",
         "## Gates",
         "",
     ]
@@ -878,6 +983,39 @@ def _environment_blockers_markdown(blockers: dict[str, Any]) -> str:
             lines.append(f"- {section_name}:")
             for key, value in sorted(section.items()):
                 lines.append(f"  - `{key}`: `{value}`")
+    return "\n".join(lines)
+
+
+def _operator_handoff_markdown(handoff: dict[str, Any]) -> str:
+    if not handoff:
+        return "- Not captured"
+    lines = [
+        f"- Schema: `{handoff.get('schema_version')}`",
+        f"- Purpose: {handoff.get('purpose')}",
+        f"- Changes readiness by itself: {handoff.get('changes_readiness_by_itself')}",
+        f"- Secret policy: {handoff.get('secret_policy')}",
+    ]
+    phases = handoff.get("phases")
+    if isinstance(phases, list):
+        for phase in phases:
+            if not isinstance(phase, dict):
+                continue
+            lines.extend(
+                [
+                    f"### {phase.get('phase_id')}",
+                    f"- Gate: `{phase.get('gate_id')}`",
+                    f"- Can run here now: {phase.get('can_run_here_now')}",
+                    f"- Success check: {phase.get('success_check')}",
+                ]
+            )
+            for label in ("required_inputs", "expected_artifacts", "commands", "must_not"):
+                items = phase.get(label)
+                if isinstance(items, list):
+                    lines.append(f"- {label}:")
+                    for item in items:
+                        lines.append(f"  - `{item}`" if label in {"commands", "expected_artifacts"} else f"  - {item}")
+    lines.append(f"- Final reindex command: `{handoff.get('final_reindex_command')}`")
+    lines.append(f"- Final success signal: {handoff.get('final_success_signal')}")
     return "\n".join(lines)
 
 
