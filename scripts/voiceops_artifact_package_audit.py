@@ -136,6 +136,9 @@ EXPECTED_PACKAGE_ARTIFACTS = (
     "voiceops-voice-operator/current/voice-operator-readiness.json",
     "voiceops-voice-operator/current/voice-operator-readiness.md",
 )
+AUDITED_PACKAGE_DIRS = tuple(
+    sorted({"/".join(relative_path.split("/")[:2]) for relative_path in EXPECTED_PACKAGE_ARTIFACTS})
+)
 
 
 def _read_json(path: Path, issues: list[str], label: str) -> dict[str, Any]:
@@ -196,6 +199,21 @@ def _audit_expected_package_artifacts(artifact_root: Path, issues: list[str]) ->
                 issues.append(f"{label}:empty")
         checked_artifacts.append(str(path))
     return checked_artifacts
+
+
+def _audit_no_unexpected_package_artifacts(
+    artifact_root: Path,
+    checked_artifacts: list[str],
+    issues: list[str],
+) -> None:
+    expected_paths = {Path(path).resolve(strict=False) for path in checked_artifacts}
+    for relative_dir in AUDITED_PACKAGE_DIRS:
+        directory = artifact_root / relative_dir
+        if not directory.exists():
+            continue
+        for path in sorted(item for item in directory.rglob("*") if item.is_file()):
+            if path.resolve(strict=False) not in expected_paths:
+                issues.append(f"package_artifact:unexpected:{_artifact_label(artifact_root, path)}")
 
 
 def _audit_no_secret_like_values(artifact_root: Path, checked_artifacts: list[str], issues: list[str]) -> None:
@@ -884,6 +902,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     issues: list[str] = []
     warnings: list[str] = []
     checked_artifacts = _audit_expected_package_artifacts(artifact_root, issues)
+    _audit_no_unexpected_package_artifacts(artifact_root, checked_artifacts, issues)
     _audit_no_secret_like_values(artifact_root, checked_artifacts, issues)
     demo_dir = artifact_root / "hackathon-voiceops-demo" / "current"
     plan_dir = artifact_root / "voiceops-plan" / "current"

@@ -92,6 +92,17 @@ def test_package_audit_rejects_missing_promised_runbook(tmp_path):
     ) in report["issues"]
 
 
+def test_package_audit_rejects_unexpected_package_artifact(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    stale_path = artifact_root / "hackathon-voiceops-demo" / "current" / "stale-live-claim.json"
+    stale_path.write_text(json.dumps({"claim": "live_ready"}) + "\n", encoding="utf-8")
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "package_artifact:unexpected:hackathon-voiceops-demo/current/stale-live-claim.json" in report["issues"]
+
+
 def test_package_audit_rejects_malformed_promised_scaffold_json(tmp_path):
     artifact_root = _generate_package(tmp_path)
     scaffold_path = (
