@@ -1167,6 +1167,55 @@ def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_pat
     assert "+15551234567" not in json.dumps(loaded)
 
 
+def test_post_approval_receipts_validate_held_denied_skipped_without_execution_artifacts():
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    statuses = ["held", "denied", "skipped", "held"]
+    payload = {
+        "schema_version": "voiceops.milestone2.post_approval_receipts.v1",
+        "redaction_policy": "references only",
+        "receipts": [
+            {
+                "receipt_id": f"receipt-{action['action_id']}-decision",
+                "action_id": action["action_id"],
+                "approval_id": action["approval_id"],
+                "provider": action["provider"],
+                "status": status,
+                "approved_by": "operator-ref-demo",
+                "approved_at": "2026-06-29T00:00:00Z",
+                "command_sha256": action["command_sha256"],
+                "approval_artifact": action["approval_artifact"],
+                "audit_event_id": f"audit-{action['action_id']}-decision",
+            }
+            for action, status in zip(plan["approval_required_actions"], statuses, strict=True)
+        ],
+        "credential_locations": [],
+        "rollback_receipts": [],
+        "audit_events": [
+            {
+                "audit_event_id": f"audit-{action['action_id']}-decision",
+                "action_id": action["action_id"],
+                "receipt_id": f"receipt-{action['action_id']}-decision",
+                "status": status,
+                "provider": action["provider"],
+                "artifact_ref": "post-approval-receipts.json",
+                "operator_next_step": "No external action executed; review or re-approve later.",
+            }
+            for action, status in zip(plan["approval_required_actions"], statuses, strict=True)
+        ],
+    }
+
+    loaded = validate_post_approval_receipts(payload, plan)
+
+    assert loaded["status"] == "valid"
+    assert loaded["validation_issues"] == []
+    assert loaded["receipt_count"] == 4
+    assert loaded["credential_location_count"] == 0
+    assert loaded["rollback_receipt_count"] == 0
+    assert loaded["audit_event_count"] == 4
+    assert loaded["ledger_rows"][0]["status"] == "held"
+
+
 def test_post_approval_receipts_reject_examples_secrets_and_mismatches():
     report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
     plan = build_milestone2_execution_plan(report)
@@ -1220,6 +1269,43 @@ def test_post_approval_receipts_reject_examples_secrets_and_mismatches():
     assert any("secret-like value" in issue for issue in bad_result["validation_issues"])
     assert any("forbidden_raw_field" in issue for issue in bad_result["validation_issues"])
     assert bad_result["ledger_rows"] == []
+
+
+def test_invalid_supplied_post_approval_receipts_block_top_level_readiness(tmp_path):
+    receipt_path = tmp_path / "post-approval-receipts.json"
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone2.post_approval_receipts.v1",
+                "redaction_policy": "references only",
+                "receipts": [],
+                "credential_locations": [],
+                "rollback_receipts": [],
+                "audit_events": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = build_probe_report(
+        env={
+            "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+            "TWILIO_ACCOUNT_SID": "AC123456789abcdef",
+        },
+        env_files=[],
+        preflight_evidence_path=_write_preflight_evidence(tmp_path),
+        post_approval_receipts_path=receipt_path,
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx", "twilio"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+    )
+
+    assert report["preflight_evidence_loaded"] is True
+    assert report["post_approval_receipts"]["loaded"] is True
+    assert report["post_approval_receipts"]["status"] == "invalid"
+    assert report["ready"] is False
+    assert report["status"] == "needs_setup"
+    assert "post_approval_receipts_valid" in report["required_failures"]
+    assert report["area_status"]["post_approval_receipts"] == "fail"
 
 
 def test_probe_loads_env_file_key_presence_without_values(tmp_path):

@@ -28,6 +28,8 @@ FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
 PREFLIGHT_EVIDENCE_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence.v1"
 PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence_manifest.v1"
 POST_APPROVAL_RECEIPTS_SCHEMA_VERSION = "voiceops.milestone2.post_approval_receipts.v1"
+POST_APPROVAL_RECEIPT_STATUSES = {"executed", "failed", "held", "denied", "skipped", "rolled_back"}
+POST_APPROVAL_NON_EXECUTED_STATUSES = {"held", "denied", "skipped"}
 PREFLIGHT_REDACTED_SOURCE_SCHEMA_VERSION = "voiceops.milestone2.redacted_source_artifact.v1"
 
 BLOCKED_CAPABILITIES = [
@@ -1599,6 +1601,14 @@ def build_probe_report(
     }
     execution_plan = build_milestone2_execution_plan(report)
     report["post_approval_receipts"] = load_post_approval_receipts(post_approval_receipts_path, execution_plan)
+    if report["post_approval_receipts"]["loaded"] and report["post_approval_receipts"]["status"] != "valid":
+        report["ready"] = False
+        report["status"] = "needs_setup"
+        if "post_approval_receipts_valid" not in report["required_failures"]:
+            report["required_failures"].append("post_approval_receipts_valid")
+        report["area_status"]["post_approval_receipts"] = "fail"
+    elif report["post_approval_receipts"]["loaded"]:
+        report["area_status"]["post_approval_receipts"] = "pass"
     return report
 
 
@@ -2758,6 +2768,14 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
     spend_currency = str(plan.get("spend_policy", {}).get("currency") or "")
     budget_cap_cents = plan.get("spend_policy", {}).get("budget_cap_cents")
     required_receipt_fields = set(plan["receipt_schema"]["required_fields"])
+    non_executed_optional_receipt_fields = {
+        "amount_cents",
+        "credential_location_ref",
+        "currency",
+        "executed_at",
+        "external_reference",
+        "rollback_ref",
+    }
     required_credential_fields = set(plan["credential_location_schema"]["required_fields"])
     forbidden_credential_fields = set(plan["credential_location_schema"]["forbidden_fields"])
     credential_by_ref = {
@@ -2789,7 +2807,11 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
         if action_id:
             receipt_action_ids.append(action_id)
         action = actions.get(action_id)
-        missing = sorted(field for field in required_receipt_fields if field not in receipt)
+        status = str(receipt.get("status") or "")
+        status_required_fields = required_receipt_fields
+        if status in POST_APPROVAL_NON_EXECUTED_STATUSES:
+            status_required_fields = required_receipt_fields.difference(non_executed_optional_receipt_fields)
+        missing = sorted(field for field in status_required_fields if field not in receipt)
         if missing:
             issues.append(f"post_approval_receipts:{receipt_id or index}:missing_fields:{','.join(missing)}")
         if action is None:
@@ -2803,13 +2825,26 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
             issues.append(f"post_approval_receipts:{receipt_id}:provider_mismatch")
         if receipt.get("approval_artifact") != action["approval_artifact"]:
             issues.append(f"post_approval_receipts:{receipt_id}:approval_artifact_mismatch")
-        if receipt.get("rollback_ref") != action["rollback_ref"]:
+        should_validate_rollback_ref = status not in POST_APPROVAL_NON_EXECUTED_STATUSES or "rollback_ref" in receipt
+        if should_validate_rollback_ref and receipt.get("rollback_ref") != action["rollback_ref"]:
             issues.append(f"post_approval_receipts:{receipt_id}:rollback_ref_mismatch")
-        if receipt.get("credential_location_ref") != action.get("credential_location_ref"):
+        should_validate_credential_ref = (
+            status not in POST_APPROVAL_NON_EXECUTED_STATUSES or "credential_location_ref" in receipt
+        )
+        if should_validate_credential_ref and receipt.get("credential_location_ref") != action.get(
+            "credential_location_ref"
+        ):
             issues.append(f"post_approval_receipts:{receipt_id}:credential_location_ref_mismatch")
-        if action.get("credential_location_required") and str(receipt.get("credential_location_ref") or "") not in credential_by_ref:
+        if (
+            status not in POST_APPROVAL_NON_EXECUTED_STATUSES
+            and action.get("credential_location_required")
+            and str(receipt.get("credential_location_ref") or "") not in credential_by_ref
+        ):
             issues.append(f"post_approval_receipts:{receipt_id}:missing_credential_location")
-        if str(receipt.get("rollback_ref") or "") not in rollback_refs:
+        if (
+            status not in POST_APPROVAL_NON_EXECUTED_STATUSES
+            and str(receipt.get("rollback_ref") or "") not in rollback_refs
+        ):
             issues.append(f"post_approval_receipts:{receipt_id}:missing_rollback_receipt")
         audit_id = str(receipt.get("audit_event_id") or "")
         audit_event = audit_by_id.get(audit_id)
@@ -2824,26 +2859,36 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
                 issues.append(f"post_approval_receipts:{receipt_id}:audit_status_mismatch")
             if audit_event.get("provider") != action["provider"]:
                 issues.append(f"post_approval_receipts:{receipt_id}:audit_provider_mismatch")
-        status = str(receipt.get("status") or "")
-        if status not in {"executed", "failed", "held", "denied", "skipped", "rolled_back"}:
+        if status not in POST_APPROVAL_RECEIPT_STATUSES:
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_status")
         approved_at = _parse_preflight_timestamp(receipt.get("approved_at"))
-        executed_at = _parse_preflight_timestamp(receipt.get("executed_at"))
+        executed_at_value = receipt.get("executed_at")
+        executed_at = _parse_preflight_timestamp(executed_at_value)
         if approved_at is None:
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_approved_at")
-        if executed_at is None:
+        if status not in POST_APPROVAL_NON_EXECUTED_STATUSES and executed_at is None:
+            issues.append(f"post_approval_receipts:{receipt_id}:invalid_executed_at")
+        if (
+            status in POST_APPROVAL_NON_EXECUTED_STATUSES
+            and executed_at_value not in {None, ""}
+            and executed_at is None
+        ):
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_executed_at")
         if approved_at is not None and executed_at is not None and approved_at > executed_at:
             issues.append(f"post_approval_receipts:{receipt_id}:approved_after_executed")
         amount = receipt.get("amount_cents")
-        if not isinstance(amount, int) or amount < 0:
+        if amount is None and status in POST_APPROVAL_NON_EXECUTED_STATUSES:
+            pass
+        elif not isinstance(amount, int) or amount < 0:
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_amount_cents")
         else:
             total_amount_cents += amount
             estimate = action_estimates.get(action_id)
             if isinstance(estimate, int) and amount > estimate:
                 issues.append(f"post_approval_receipts:{receipt_id}:amount_exceeds_estimate")
-        if str(receipt.get("currency") or "") != spend_currency:
+        if (status not in POST_APPROVAL_NON_EXECUTED_STATUSES or "currency" in receipt) and str(
+            receipt.get("currency") or ""
+        ) != spend_currency:
             issues.append(f"post_approval_receipts:{receipt_id}:currency_mismatch")
         ledger_rows.append(
             {
