@@ -1359,6 +1359,34 @@ def test_post_approval_receipts_validate_held_denied_skipped_without_execution_a
     assert loaded["ledger_rows"][0]["status"] == "held"
 
 
+def test_post_approval_receipts_reject_duplicate_linkage_ids():
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    payload = build_post_approval_receipts_example(plan)
+    payload.pop("example_only")
+
+    duplicate_credential_ref = payload["credential_locations"][0]["credential_ref_id"]
+    duplicate_rollback_ref = payload["rollback_receipts"][0]["rollback_ref"]
+    duplicate_audit_event_id = payload["audit_events"][0]["audit_event_id"]
+    payload["credential_locations"].append(dict(payload["credential_locations"][0]))
+    payload["rollback_receipts"].append(dict(payload["rollback_receipts"][0]))
+    payload["audit_events"].append(dict(payload["audit_events"][0]))
+
+    loaded = validate_post_approval_receipts(payload, plan)
+
+    assert loaded["status"] == "invalid"
+    assert (
+        f"post_approval_receipts:duplicate_credential_refs:{duplicate_credential_ref}"
+        in loaded["validation_issues"]
+    )
+    assert f"post_approval_receipts:duplicate_rollback_refs:{duplicate_rollback_ref}" in loaded["validation_issues"]
+    assert (
+        f"post_approval_receipts:duplicate_audit_event_ids:{duplicate_audit_event_id}"
+        in loaded["validation_issues"]
+    )
+    assert loaded["ledger_rows"] == []
+
+
 def test_post_approval_receipts_reject_examples_secrets_and_mismatches():
     report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
     plan = build_milestone2_execution_plan(report)

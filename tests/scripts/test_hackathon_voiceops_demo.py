@@ -190,7 +190,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     )
     assert "derive_from_realtime_voice_report" in operator_handoff["phases"][0]["command_safety"]
     assert "production realtime voice sidecar session evidence" in operator_handoff["phases"][0]["required_inputs"]
-    assert operator_handoff["phases"][1]["command_safety"]["read_only_discovery"].startswith("allowlisted")
+    assert operator_handoff["phases"][1]["command_safety"]["read_only_discovery"] == (
+        "network_possible_allowlisted_read_only"
+    )
     assert "local_spark_stack_matrix" in operator_handoff["phases"][2]["blocked_by_current_package"]
     assert any("oracle_model" in item for item in operator_handoff["phases"][2]["must_not"])
     assert "--voice-live-evidence" in operator_handoff["final_reindex_command"]
@@ -441,6 +443,40 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "live_discord_voice_operator" in closure_markdown
     assert "spend_and_provisioning_preflight" in closure_markdown
     assert "local_spark_stack_matrix" in closure_markdown
+
+
+def test_voiceops_demo_closure_and_handoff_track_plan_run_contracts(tmp_path):
+    from scripts.voiceops_plan_run import build_plan_run
+
+    demo_dir = tmp_path / "demo"
+    plan_dir = tmp_path / "plan"
+    artifact_root = tmp_path / "artifacts"
+    args = parse_args(["--output-dir", str(demo_dir)])
+    demo = build_demo(args)
+    paths = write_demo(demo_dir, demo)
+
+    demo_closure = json.loads(Path(paths["readiness_closure_summary_json"]).read_text(encoding="utf-8"))
+    demo_handoff = json.loads(Path(paths["operator_handoff_preview_json"]).read_text(encoding="utf-8"))
+    plan = build_plan_run(artifact_root=artifact_root, output_dir=plan_dir, env={})
+    plan_closure = plan["closure_index"]
+
+    demo_gates = {gate["gate_id"]: gate for gate in demo_closure["gates"]}
+    plan_gates = {gate["gate_id"]: gate for gate in plan_closure["gates"]}
+    assert set(demo_gates) == set(plan_gates)
+    for gate_id, plan_gate in plan_gates.items():
+        demo_gate = demo_gates[gate_id]
+        assert demo_gate["collection_commands"] == plan_gate["collection_commands"]
+        assert demo_gate["completion_signal"] == plan_gate["completion_signal"]
+        assert demo_gate["evidence_contract"] == plan_gate["evidence_contract"]
+
+    demo_phases = {phase["phase_id"]: phase for phase in demo_handoff["phases"]}
+    plan_phases = {phase["phase_id"]: phase for phase in plan_closure["operator_handoff"]["phases"]}
+    assert set(demo_phases) == set(plan_phases)
+    for phase_id, plan_phase in plan_phases.items():
+        demo_phase = demo_phases[phase_id]
+        assert demo_phase["commands"] == plan_phase["commands"]
+        assert demo_phase["expected_artifacts"] == plan_phase["expected_artifacts"]
+        assert demo_phase["success_check"] == plan_phase["success_check"]
 
 
 def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned_model():

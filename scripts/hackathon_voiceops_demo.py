@@ -144,6 +144,7 @@ def _demo_closure_summary() -> dict[str, Any]:
             },
             "expected_artifacts": [
                 "artifacts/realtime-voice-evidence/live-current/manifest.json",
+                "artifacts/realtime-voice-evidence/live-current/discord-live-probe.json",
                 "artifacts/realtime-voice-evidence/live-current/sidecar-session.json",
                 "artifacts/realtime-voice-evidence/live-current/live-turn.json",
                 "artifacts/realtime-voice-evidence/live-current/sidecar-session.from-realtime-report.json",
@@ -159,10 +160,34 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "expanded_evidence_schema_version": "voiceops.milestone1.live_voice_evidence.v1",
                 "required_sections": ["discord_live_probe", "sidecar_session", "live_turn"],
                 "required_section_refs": ["source_artifact", "section"],
+                "required_discord_latency_metrics_ms": [
+                    "connect_ms",
+                    "playback_observed_ms",
+                    "inbound_observed_ms",
+                    "disconnect_ms",
+                ],
+                "required_sidecar_fields": [
+                    "sidecar_running",
+                    "sidecar_healthy",
+                    "session_started",
+                    "session_closed",
+                    "fallback_mode_visible",
+                    "fallback_reason",
+                    "sidecar_mode",
+                    "healthcheck_observed",
+                    "provider_transport_observed",
+                    "session_id_redacted",
+                    "shutdown_bounded",
+                    "shutdown_timed_out",
+                ],
                 "required_sidecar_mode": "production",
-                "doctor_report_derivation_overclaims_production": False,
+                "required_sidecar_latency_metrics_ms": ["session_start_ms", "shutdown_ms"],
+                "template_source_artifacts_accepted": False,
+                "unverified_source_artifacts_accepted": False,
                 "source_artifacts_must_exist": True,
                 "example_only_accepted": False,
+                "realtime_voice_report_derivation_schema_version": "voiceops.realtime_voice_report_derivation.v1",
+                "doctor_report_derivation_overclaims_production": False,
             },
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
@@ -202,10 +227,20 @@ def _demo_closure_summary() -> dict[str, Any]:
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-readonly-discovery"
                 ),
+                "ingest_preflight_evidence": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
+                    "--preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json"
+                ),
                 "ingest_preflight_manifest": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
                     "--preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
+                ),
+                "refresh_preflight_source_hashes": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--refresh-preflight-source-hashes "
+                    "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
                 ),
                 "validate_post_approval_receipts": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
@@ -215,23 +250,70 @@ def _demo_closure_summary() -> dict[str, Any]:
             },
             "expected_artifacts": [
                 "artifacts/voiceops-provisioning/current/read-only-discovery.json",
+                "artifacts/voiceops-provisioning/current/read-only-discovery.md",
                 "artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json",
                 "artifacts/voiceops-provisioning/current/audit-ledger.read-only-discovery.jsonl",
+                "artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
                 "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
+                "artifacts/voiceops-provisioning/current/post-approval-receipts.template.json",
+                "artifacts/voiceops-provisioning/current/post-approval-receipts.example.json",
+                "artifacts/voiceops-provisioning/current/post-approval-receipts-scaffold/post-approval-receipts.json",
+                "artifacts/voiceops-provisioning/current/post-approval-receipts.json",
                 "artifacts/voiceops-provisioning/current/post-approval-receipts.validation.json",
                 "artifacts/voiceops-provisioning/current/audit-ledger.post-approval.jsonl",
+                "artifacts/voiceops-provisioning/current/provisioning-readiness.json",
             ],
-            "completion_signal": "required_failures becomes [] and milestone status becomes ready",
+            "completion_signal": (
+                "required_failures becomes []; read_only_discovery_status is pass; milestone status becomes ready; if post-approval receipts are "
+                "supplied, post_approval_receipts_status is valid, post_approval_receipts_validation_issues is [], "
+                "receipt_count covers all expected approval-required actions, and audit-ledger.post-approval.jsonl is populated"
+            ),
             "evidence_contract": {
                 "preflight_schema_version": "voiceops.milestone2.preflight_evidence.v1",
                 "manifest_schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
-                "read_only_discovery_schema_version": "voiceops.milestone2.read_only_discovery.v1",
-                "read_only_discovery_grants_approval": False,
-                "post_approval_receipts_schema_version": "voiceops.milestone2.post_approval_receipts.v1",
                 "required_sections": ["stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback"],
                 "required_section_field": "source_artifact",
+                "required_section_provenance_fields": [
+                    "source_artifact_kind",
+                    "source_artifact_sha256",
+                    "source_artifact_redacted_at",
+                ],
+                "source_artifact_kind": "redacted_setup_evidence",
                 "source_artifacts_must_exist": True,
+                "source_artifact_sha256_must_match": True,
+                "source_artifacts_must_be_redacted_json": True,
+                "source_artifact_resolution": "absolute paths or paths relative to the supplied evidence/manifest file",
+                "manifest_report_resolution": "absolute paths or paths relative to the supplied manifest file; process cwd is never used",
                 "example_only_accepted": False,
+                "secret_like_values_accepted": False,
+                "full_phone_numbers_accepted": False,
+                "read_only_discovery_schema_version": "voiceops.milestone2.read_only_discovery.v1",
+                "read_only_discovery_grants_approval": False,
+                "read_only_discovery_required_for_live_provisioning_approval": True,
+                "read_only_discovery_required_status": "pass",
+                "read_only_discovery_auth_context": "isolated_home",
+                "read_only_discovery_proves_existing_local_auth": False,
+                "post_approval_receipts_schema_version": "voiceops.milestone2.post_approval_receipts.v1",
+            },
+            "rerun_commands": {
+                "plan_index_dry_audit": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current --dry-audit"
+                ),
+                "plan_index_command_probes": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current --env-file .env --run-command-probes"
+                ),
+                "plan_index_read_only_discovery": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current --env-file .env --run-readonly-discovery"
+                ),
+                "plan_index_manifest_and_post_approval_receipts": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
+                    "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json"
+                ),
             },
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
@@ -269,10 +351,13 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "dgx_eval": "scripts/dgx_spark_gemma4_voice_eval.sh",
             },
             "expected_artifacts": [
+                "artifacts/dgx-spark-gemma4-voice-eval/current/kame-stack",
                 "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json",
                 "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/asr-nemotron-speech-raw.json",
                 "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/tts-magpie-local-raw.json",
                 "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/all-local-stack-smoke-raw.json",
+                "artifacts/voiceops-spark-matrix/current/spark-operator-runbook.md",
+                "path/to/spark-benchmark-evidence.json",
                 "artifacts/voiceops-spark-matrix/current/spark-model-matrix.json",
                 "artifacts/voiceops-spark-matrix/current/spark-matrix-closure-plan.md",
             ],
@@ -282,12 +367,20 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "required_locality_for_one_spark": "local_spark",
                 "required_hardware": "1x NVIDIA DGX Spark",
                 "required_oracle_selection": "Hermes /model",
+                "required_oracle_authority_routes": ["tools", "files", "memory", "project_context"],
+                "preferred_local_oracle_candidate_id": "oracle-nemotron3-super-local",
+                "preferred_local_oracle_model": "Nemotron 3 Super",
+                "non_counting_fallback_oracle_models": ["Nemotron 3 Ultra"],
                 "required_stack_components": ["reflex", "oracle", "asr", "tts", "sidecar"],
-                "required_stack_routing": ["oracle_authority_routes", "interface_input_sources", "reflex_providers"],
+                "source_artifacts_must_exist": True,
+                "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",
+                "source_artifact_readable": True,
+                "source_artifact_sha256_must_match": True,
                 "hosted_fallback_counts_for_one_spark_readiness": False,
+                "example_only_accepted": False,
+                "scaffold_is_example_only": True,
                 "loopback_smoke_bridge_counts_for_local_speech_readiness": False,
                 "local_speech_requires_production_provider": True,
-                "example_only_accepted": False,
             },
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
@@ -430,20 +523,28 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                 ],
                 "first_safe_command": provisioning_gate["collection_commands"]["presence_only"],
                 "commands": [
+                    provisioning_gate["rerun_commands"]["plan_index_dry_audit"],
                     provisioning_gate["collection_commands"]["presence_only"],
                     provisioning_gate["collection_commands"]["bounded_version_help"],
+                    provisioning_gate["rerun_commands"]["plan_index_command_probes"],
                     provisioning_gate["collection_commands"]["read_only_discovery"],
+                    provisioning_gate["rerun_commands"]["plan_index_read_only_discovery"],
+                    provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"],
                     provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
                     provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
-                    provisioning_gate["rerun_command"],
+                    provisioning_gate["rerun_commands"]["plan_index_manifest_and_post_approval_receipts"],
                 ],
                 "command_safety": {
+                    "plan_index_dry_audit": "no_write_no_network_no_probe_audit",
                     "presence_only": "offline_presence_only",
-                    "bounded_version_help": "local_subprocess_only_no_live_spend",
-                    "read_only_discovery": "allowlisted_display_only_network_possible_no_approval",
-                    "ingest_preflight_manifest": "local_redacted_evidence_validation_only",
-                    "validate_post_approval_receipts": "local_receipt_validation_only_no_provider_commands",
-                    "plan_reindex": "local_reindex_only",
+                    "bounded_version_help": "local_subprocess_only_no_network_intent",
+                    "plan_index_command_probes": "local_subprocess_only_no_network_intent",
+                    "read_only_discovery": "network_possible_allowlisted_read_only",
+                    "plan_index_read_only_discovery": "network_possible_allowlisted_read_only",
+                    "refresh_preflight_source_hashes": "local_file_hashing_only",
+                    "ingest_preflight_manifest": "local_file_validation_only",
+                    "validate_post_approval_receipts": "post_approval_local_validation_only",
+                    "plan_index_manifest_and_post_approval_receipts": "local_reindex_only",
                 },
                 "required_inputs": [
                     "Stripe Projects and Link CLI setup",
@@ -483,7 +584,11 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "local ASR/TTS evidence",
                     "all-local stack smoke with KAME routing metrics",
                 ],
-                "expected_artifacts": spark_gate["expected_artifacts"],
+                "expected_artifacts": [
+                    artifact
+                    for artifact in spark_gate["expected_artifacts"]
+                    if not artifact.endswith("spark-matrix-closure-plan.md")
+                ],
                 "success_check": spark_gate["completion_signal"],
                 "must_not": [
                     "count hosted fallback models as Spark-local readiness proof",
@@ -1970,7 +2075,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
     closure_items = []
     for gate in closure["gates"]:
         command_labels = ", ".join(sorted((gate.get("collection_commands") or {}).keys()))
-        artifact_labels = ", ".join(str(artifact) for artifact in gate.get("expected_artifacts", [])[:3])
+        artifact_labels = ", ".join(str(artifact) for artifact in gate.get("expected_artifacts", []))
         closure_items.append(
             "<li>"
             f"<span class=\"pill {_status_class(gate['status'])}\">{_h(gate['status'])}</span>"

@@ -2922,6 +2922,15 @@ def _post_approval_receipt_secret_issues(payload: Mapping[str, Any]) -> list[str
     return issues
 
 
+def _duplicate_nonempty_field_values(items: Iterable[Any], field: str) -> list[str]:
+    values = [
+        str(item.get(field) or "")
+        for item in items
+        if isinstance(item, Mapping) and str(item.get(field) or "")
+    ]
+    return sorted(value for value in set(values) if values.count(value) > 1)
+
+
 def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[str, Any]) -> dict[str, Any]:
     issues: list[str] = []
     if str(payload.get("schema_version") or "") != POST_APPROVAL_RECEIPTS_SCHEMA_VERSION:
@@ -2966,6 +2975,15 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
     }
     required_credential_fields = set(plan["credential_location_schema"]["required_fields"])
     forbidden_credential_fields = set(plan["credential_location_schema"]["forbidden_fields"])
+    duplicate_credential_refs = _duplicate_nonempty_field_values(credential_locations, "credential_ref_id")
+    duplicate_rollback_refs = _duplicate_nonempty_field_values(rollback_receipts, "rollback_ref")
+    duplicate_audit_event_ids = _duplicate_nonempty_field_values(audit_events, "audit_event_id")
+    if duplicate_credential_refs:
+        issues.append(f"post_approval_receipts:duplicate_credential_refs:{','.join(duplicate_credential_refs)}")
+    if duplicate_rollback_refs:
+        issues.append(f"post_approval_receipts:duplicate_rollback_refs:{','.join(duplicate_rollback_refs)}")
+    if duplicate_audit_event_ids:
+        issues.append(f"post_approval_receipts:duplicate_audit_event_ids:{','.join(duplicate_audit_event_ids)}")
     credential_by_ref = {
         str(item.get("credential_ref_id") or ""): item
         for item in credential_locations

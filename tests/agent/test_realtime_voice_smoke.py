@@ -279,7 +279,7 @@ def test_kame_audio_smoke_captures_reflex_route_without_partial_transcript(monke
             while not any(event.type == VoiceEventType.AUDIO_INPUT_CHUNK for event in sent):
                 await asyncio.sleep(0)
             yield VoiceEvent(
-                type=VoiceEventType.TRANSCRIPT_FINAL,
+                type=VoiceEventType.INTERFACE_INTENT_FINAL,
                 session_id=self.config.session_id,
                 sequence=2,
                 payload={
