@@ -16,6 +16,7 @@ from typing import Any
 class RealtimeVoiceLiveEvidenceResult:
     ok: bool
     output_dir: str
+    schema_version: str = "voiceops.realtime_voice_live_evidence_manifest.v1"
     require_live_discord: bool = False
     require_openai_realtime: bool = False
     require_gemini_live: bool = False

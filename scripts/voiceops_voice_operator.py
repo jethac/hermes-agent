@@ -24,6 +24,8 @@ from hermes_cli.discord_realtime_voice_smoke import run_discord_realtime_voice_s
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-voice-operator/current")
 DISCORD_FRAME_BYTES = 3840
 SIDECAR_FRAME_BYTES = 640
+LIVE_EVIDENCE_SCHEMA_VERSION = "voiceops.milestone1.live_voice_evidence.v1"
+LIVE_EVIDENCE_MANIFEST_SCHEMA_VERSION = "voiceops.realtime_voice_live_evidence_manifest.v1"
 
 REQUIRED_EVENTS = {
     "transcript.partial",
@@ -112,7 +114,7 @@ def _looks_secret_or_phone(value: Any) -> bool:
 
 def build_live_probe_evidence_template() -> dict[str, Any]:
     return {
-        "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+        "schema_version": LIVE_EVIDENCE_SCHEMA_VERSION,
         "redaction_policy": "references and booleans only; no Discord tokens, provider tokens, full phone numbers, or raw transcripts with secrets",
         "discord_live_probe": {
             "source_artifact": "discord-live-probe.json",
@@ -275,8 +277,15 @@ def _expand_live_evidence_manifest(path: Path, payload: Mapping[str, Any]) -> tu
     if not isinstance(reports, Mapping):
         return payload, []
 
-    expanded: dict[str, Any] = {}
+    expanded: dict[str, Any] = {"schema_version": LIVE_EVIDENCE_SCHEMA_VERSION}
+    if payload.get("example_only") is True:
+        expanded["example_only"] = True
     issues: list[str] = []
+    manifest_schema = str(payload.get("schema_version") or "")
+    if not manifest_schema:
+        issues.append("live_evidence_manifest:missing_schema_version")
+    elif manifest_schema != LIVE_EVIDENCE_MANIFEST_SCHEMA_VERSION:
+        issues.append("live_evidence_manifest:invalid_schema_version")
     for report_name, report_path_value in reports.items():
         report_path_text = str(report_path_value or "").strip()
         if not report_path_text:
@@ -288,8 +297,35 @@ def _expand_live_evidence_manifest(path: Path, payload: Mapping[str, Any]) -> tu
             issues.extend(f"live_evidence_manifest:{report_name}:{issue}" for issue in loaded["issues"])
         report_payload = loaded.get("payload")
         if isinstance(report_payload, Mapping):
+            report_payload = _with_manifest_report_provenance(report_payload, report_path)
+            if report_payload.get("example_only") is True:
+                issues.append(f"live_evidence_manifest:{report_name}:example_only_evidence_not_accepted")
+                expanded["example_only"] = True
             _merge_live_evidence_payload(expanded, report_payload)
     return expanded if expanded else payload, issues
+
+
+def _with_manifest_report_provenance(payload: Mapping[str, Any], report_path: Path) -> dict[str, Any]:
+    enriched = dict(payload)
+    source_artifact = str(report_path)
+    previous_source_artifact = str(enriched.get("source_artifact") or "")
+    enriched["source_artifact"] = source_artifact
+    provenance = {"source_artifact": source_artifact}
+    if previous_source_artifact and previous_source_artifact != source_artifact:
+        provenance["reported_source_artifact"] = previous_source_artifact
+    enriched["provenance"] = provenance
+    for section_name in ("discord_live_probe", "sidecar_session", "live_turn"):
+        section = enriched.get(section_name)
+        if isinstance(section, Mapping):
+            section_copy = dict(section)
+            previous_section_source = str(section_copy.get("source_artifact") or "")
+            section_copy["source_artifact"] = source_artifact
+            section_provenance = {"source_artifact": source_artifact, "section": section_name}
+            if previous_section_source and previous_section_source != source_artifact:
+                section_provenance["reported_source_artifact"] = previous_section_source
+            section_copy["provenance"] = section_provenance
+            enriched[section_name] = section_copy
+    return enriched
 
 
 def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) -> Path:
@@ -306,6 +342,10 @@ def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) ->
 
 
 def _merge_live_evidence_payload(target: dict[str, Any], payload: Mapping[str, Any]) -> None:
+    if payload.get("example_only") is True:
+        target["example_only"] = True
+    if "schema_version" in payload and "schema_version" not in target:
+        target["schema_version"] = payload.get("schema_version")
     discord_probe = _discord_probe_section(payload)
     if discord_probe:
         target["discord_live_probe"] = dict(discord_probe)
@@ -338,6 +378,8 @@ def _discord_probe_section(payload: Mapping[str, Any]) -> Mapping[str, Any]:
 
 def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path] | None = None) -> dict[str, Any]:
     issues: list[str] = []
+    if str(payload.get("schema_version") or "") != LIVE_EVIDENCE_SCHEMA_VERSION:
+        issues.append("missing_schema_version")
     if payload.get("example_only") is True:
         issues.append("example_only_evidence_not_accepted")
     redaction_issues: list[str] = []
@@ -348,6 +390,12 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         issues.extend(redaction_issues)
 
     discord_probe = _discord_probe_section(payload)
+    if not str(discord_probe.get("source_artifact") or "").strip():
+        issues.append("discord_live_probe:missing_source_artifact")
+    elif paths and not _source_artifact_exists(discord_probe.get("source_artifact"), paths):
+        issues.append("discord_live_probe:source_artifact_not_found")
+    if discord_probe.get("example_only") is True:
+        issues.append("discord_live_probe:example_only_evidence_not_accepted")
     for key in LIVE_EVIDENCE_REQUIRED_DISCORD_BOOLS:
         if discord_probe.get(key) is not True:
             issues.append(f"discord_live_probe:{key}_not_true")
@@ -364,11 +412,23 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         issues.append("discord_live_probe:inbound_not_observed")
 
     sidecar = payload.get("sidecar_session") if isinstance(payload.get("sidecar_session"), Mapping) else {}
+    if not str(sidecar.get("source_artifact") or "").strip():
+        issues.append("sidecar_session:missing_source_artifact")
+    elif paths and not _source_artifact_exists(sidecar.get("source_artifact"), paths):
+        issues.append("sidecar_session:source_artifact_not_found")
+    if sidecar.get("example_only") is True:
+        issues.append("sidecar_session:example_only_evidence_not_accepted")
     for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS:
         if sidecar.get(key) is not True:
             issues.append(f"sidecar_session:{key}_not_true")
 
     live_turn = payload.get("live_turn") if isinstance(payload.get("live_turn"), Mapping) else {}
+    if not str(live_turn.get("source_artifact") or "").strip():
+        issues.append("live_turn:missing_source_artifact")
+    elif paths and not _source_artifact_exists(live_turn.get("source_artifact"), paths):
+        issues.append("live_turn:source_artifact_not_found")
+    if live_turn.get("example_only") is True:
+        issues.append("live_turn:example_only_evidence_not_accepted")
     for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS:
         if live_turn.get(key) is not True:
             issues.append(f"live_turn:{key}_not_true")
@@ -390,6 +450,11 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         "overall_status": "live_evidence_supplied_not_readiness_claim" if not issues else "partial_live_evidence",
         "issues": sorted(set(issues)),
         "redaction_policy": "references_only",
+        "section_refs": {
+            "discord_live_probe": _section_ref(discord_probe, "discord_live_probe"),
+            "sidecar_session": _section_ref(sidecar, "sidecar_session"),
+            "live_turn": _section_ref(live_turn, "live_turn"),
+        },
         "discord_live_probe": {
             "ok": discord_probe.get("ok") is True,
             "join_ok": all(discord_probe.get(key) is True for key in ("connect_perm", "speak_perm", "connected", "opus_loaded", "disconnected")),
@@ -411,6 +476,25 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             "barge_in_stop_ms": barge_in_ms,
         },
     }
+
+
+def _section_ref(section: Mapping[str, Any], section_name: str) -> dict[str, str]:
+    return {
+        "source_artifact": str(section.get("source_artifact") or ""),
+        "section": section_name,
+    }
+
+
+def _source_artifact_exists(source_artifact: Any, evidence_paths: list[Path]) -> bool:
+    source_text = str(source_artifact or "").strip()
+    if not source_text:
+        return False
+    source_path = Path(source_text).expanduser()
+    if source_path.is_absolute():
+        return source_path.exists()
+    if source_path.exists():
+        return True
+    return any((path.parent / source_text).exists() for path in evidence_paths)
 
 
 def _walk_live_evidence_strings(value: Any, prefix: str = "") -> list[tuple[str, str]]:

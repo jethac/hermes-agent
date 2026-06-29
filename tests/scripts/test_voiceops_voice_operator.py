@@ -55,6 +55,49 @@ def _smoke_payload() -> dict:
     }
 
 
+def _complete_live_evidence() -> dict:
+    evidence = build_live_probe_evidence_template()
+    evidence["discord_live_probe"].update(
+        {
+            "ok": True,
+            "connect_perm": True,
+            "speak_perm": True,
+            "connected": True,
+            "opus_loaded": True,
+            "accepted_audio_source": True,
+            "played": True,
+            "playing_during_probe": True,
+            "receiver_started": True,
+            "receiver_frames": 12,
+            "receiver_speech_start": 1,
+            "inbound_observed": True,
+            "disconnected": True,
+            "require_inbound": True,
+        }
+    )
+    evidence["sidecar_session"].update(
+        {
+            "sidecar_running": True,
+            "sidecar_healthy": True,
+            "session_started": True,
+            "session_closed": True,
+            "fallback_mode_visible": True,
+        }
+    )
+    evidence["live_turn"].update(
+        {
+            "transcript_observed": True,
+            "assistant_audio_observed": True,
+            "barge_in_observed": True,
+            "spoken_reply_short": True,
+            "no_voice_denial_observed": True,
+            "speech_end_to_first_audio_ms": 900,
+            "barge_in_stop_ms": 90,
+        }
+    )
+    return evidence
+
+
 def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     report = build_voice_operator_report(_smoke_payload())
 
@@ -192,6 +235,10 @@ def test_live_evidence_classifies_partial_discord_probe_without_inbound():
     assert result["discord_live_probe"]["join_ok"] is True
     assert result["discord_live_probe"]["playback_ok"] is True
     assert result["discord_live_probe"]["inbound_observed"] is False
+    assert "missing_schema_version" in result["issues"]
+    assert "discord_live_probe:missing_source_artifact" in result["issues"]
+    assert "sidecar_session:missing_source_artifact" in result["issues"]
+    assert "live_turn:missing_source_artifact" in result["issues"]
     assert "discord_live_probe:inbound_not_observed" in result["issues"]
 
 
@@ -203,45 +250,7 @@ def test_live_evidence_example_is_not_accepted_as_proof():
 
 
 def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing_safety_mode():
-    evidence = build_live_probe_evidence_template()
-    evidence["discord_live_probe"].update(
-        {
-            "ok": True,
-            "connect_perm": True,
-            "speak_perm": True,
-            "connected": True,
-            "opus_loaded": True,
-            "accepted_audio_source": True,
-            "played": True,
-            "playing_during_probe": True,
-            "receiver_started": True,
-            "receiver_frames": 12,
-            "receiver_speech_start": 1,
-            "inbound_observed": True,
-            "disconnected": True,
-            "require_inbound": True,
-        }
-    )
-    evidence["sidecar_session"].update(
-        {
-            "sidecar_running": True,
-            "sidecar_healthy": True,
-            "session_started": True,
-            "session_closed": True,
-            "fallback_mode_visible": True,
-        }
-    )
-    evidence["live_turn"].update(
-        {
-            "transcript_observed": True,
-            "assistant_audio_observed": True,
-            "barge_in_observed": True,
-            "spoken_reply_short": True,
-            "no_voice_denial_observed": True,
-            "speech_end_to_first_audio_ms": 900,
-            "barge_in_stop_ms": 90,
-        }
-    )
+    evidence = _complete_live_evidence()
     live_evidence = validate_live_probe_evidence(evidence)
     report = build_voice_operator_report(_smoke_payload(), live_evidence=live_evidence)
 
@@ -252,6 +261,19 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     assert report["live_evidence"]["overall_status"] == "live_evidence_supplied_not_readiness_claim"
     assert report["live_probe_required_for_completion"]["missing_gates"] == []
     assert report["proofs"]["live_evidence"]["ok"] is True
+
+
+def test_voice_operator_rejects_loaded_evidence_with_missing_source_artifact_files(tmp_path):
+    evidence = _complete_live_evidence()
+    evidence_path = tmp_path / "live-evidence.json"
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    live_evidence = _load_live_evidence([evidence_path])
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "discord_live_probe:source_artifact_not_found" in live_evidence["issues"]
+    assert "sidecar_session:source_artifact_not_found" in live_evidence["issues"]
+    assert "live_turn:source_artifact_not_found" in live_evidence["issues"]
 
 
 def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
@@ -295,6 +317,7 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
     manifest_path.write_text(
         json.dumps(
             {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
                 "ok": True,
                 "reports": {
                     "discord_live_probe": "discord-live-probe.json",
@@ -312,8 +335,267 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
     assert live_evidence["overall_status"] == "live_evidence_supplied_not_readiness_claim"
     assert live_evidence["issues"] == []
     assert live_evidence["discord_live_probe"]["join_ok"] is True
+    assert live_evidence["section_refs"] == {
+        "discord_live_probe": {
+            "source_artifact": str(tmp_path / "discord-live-probe.json"),
+            "section": "discord_live_probe",
+        },
+        "sidecar_session": {
+            "source_artifact": str(tmp_path / "sidecar-session.json"),
+            "section": "sidecar_session",
+        },
+        "live_turn": {
+            "source_artifact": str(tmp_path / "live-turn.json"),
+            "section": "live_turn",
+        },
+    }
     assert report["live_probe_required_for_completion"]["missing_gates"] == []
     assert report["status"] == "live_evidence_supplied_not_readiness_claim"
+
+
+def test_voice_operator_overrides_manifest_report_placeholder_source_artifacts(tmp_path):
+    evidence = _complete_live_evidence()
+    (tmp_path / "all-live-evidence.json").write_text(json.dumps(evidence), encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "ok": True,
+                "reports": {
+                    "combined": "all-live-evidence.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    source_artifact = str(tmp_path / "all-live-evidence.json")
+    assert live_evidence["issues"] == []
+    assert live_evidence["section_refs"] == {
+        "discord_live_probe": {
+            "source_artifact": source_artifact,
+            "section": "discord_live_probe",
+        },
+        "sidecar_session": {
+            "source_artifact": source_artifact,
+            "section": "sidecar_session",
+        },
+        "live_turn": {
+            "source_artifact": source_artifact,
+            "section": "live_turn",
+        },
+    }
+
+
+def test_live_evidence_rejects_complete_payload_without_schema_and_source_artifacts():
+    evidence = build_live_probe_evidence_template()
+    evidence.pop("schema_version")
+    evidence["discord_live_probe"].pop("source_artifact")
+    evidence["sidecar_session"].pop("source_artifact")
+    evidence["live_turn"].pop("source_artifact")
+    evidence["discord_live_probe"].update(
+        {
+            "ok": True,
+            "connect_perm": True,
+            "speak_perm": True,
+            "connected": True,
+            "opus_loaded": True,
+            "accepted_audio_source": True,
+            "played": True,
+            "playing_during_probe": True,
+            "receiver_started": True,
+            "receiver_frames": 12,
+            "receiver_speech_start": 1,
+            "inbound_observed": True,
+            "disconnected": True,
+            "require_inbound": True,
+        }
+    )
+    evidence["sidecar_session"].update(
+        {
+            "sidecar_running": True,
+            "sidecar_healthy": True,
+            "session_started": True,
+            "session_closed": True,
+            "fallback_mode_visible": True,
+        }
+    )
+    evidence["live_turn"].update(
+        {
+            "transcript_observed": True,
+            "assistant_audio_observed": True,
+            "barge_in_observed": True,
+            "spoken_reply_short": True,
+            "no_voice_denial_observed": True,
+            "speech_end_to_first_audio_ms": 900,
+            "barge_in_stop_ms": 90,
+        }
+    )
+
+    result = validate_live_probe_evidence(evidence)
+
+    assert result["overall_status"] == "partial_live_evidence"
+    assert result["issues"] == [
+        "discord_live_probe:missing_source_artifact",
+        "live_turn:missing_source_artifact",
+        "missing_schema_version",
+        "sidecar_session:missing_source_artifact",
+    ]
+
+
+def test_voice_operator_rejects_manifest_with_example_only_referenced_section(tmp_path):
+    discord_probe = build_live_probe_evidence_example()["discord_live_probe"]
+    discord_probe["example_only"] = True
+    sidecar = build_live_probe_evidence_template()["sidecar_session"]
+    sidecar.update(
+        {
+            "sidecar_running": True,
+            "sidecar_healthy": True,
+            "session_started": True,
+            "session_closed": True,
+            "fallback_mode_visible": True,
+        }
+    )
+    live_turn = build_live_probe_evidence_template()["live_turn"]
+    live_turn.update(
+        {
+            "transcript_observed": True,
+            "assistant_audio_observed": True,
+            "barge_in_observed": True,
+            "spoken_reply_short": True,
+            "no_voice_denial_observed": True,
+            "speech_end_to_first_audio_ms": 950,
+            "barge_in_stop_ms": 80,
+        }
+    )
+    (tmp_path / "discord-live-probe.json").write_text(json.dumps(discord_probe), encoding="utf-8")
+    (tmp_path / "sidecar-session.json").write_text(json.dumps(sidecar), encoding="utf-8")
+    (tmp_path / "live-turn.json").write_text(json.dumps(live_turn), encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "ok": True,
+                "reports": {
+                    "discord_live_probe": "discord-live-probe.json",
+                    "sidecar_session": "sidecar-session.json",
+                    "live_turn": "live-turn.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "example_only_evidence_not_accepted" in live_evidence["issues"]
+    assert "live_evidence_manifest:discord_live_probe:example_only_evidence_not_accepted" in live_evidence["issues"]
+
+
+def test_voice_operator_rejects_manifest_with_missing_or_invalid_schema(tmp_path):
+    discord_probe = build_live_probe_evidence_example()["discord_live_probe"]
+    discord_probe.pop("example_only", None)
+    sidecar = build_live_probe_evidence_template()["sidecar_session"]
+    sidecar.update(
+        {
+            "sidecar_running": True,
+            "sidecar_healthy": True,
+            "session_started": True,
+            "session_closed": True,
+            "fallback_mode_visible": True,
+        }
+    )
+    live_turn = build_live_probe_evidence_template()["live_turn"]
+    live_turn.update(
+        {
+            "transcript_observed": True,
+            "assistant_audio_observed": True,
+            "barge_in_observed": True,
+            "spoken_reply_short": True,
+            "no_voice_denial_observed": True,
+            "speech_end_to_first_audio_ms": 950,
+            "barge_in_stop_ms": 80,
+        }
+    )
+    (tmp_path / "discord-live-probe.json").write_text(json.dumps(discord_probe), encoding="utf-8")
+    (tmp_path / "sidecar-session.json").write_text(json.dumps(sidecar), encoding="utf-8")
+    (tmp_path / "live-turn.json").write_text(json.dumps(live_turn), encoding="utf-8")
+
+    base_manifest = {
+        "ok": True,
+        "reports": {
+            "discord_live_probe": "discord-live-probe.json",
+            "sidecar_session": "sidecar-session.json",
+            "live_turn": "live-turn.json",
+        },
+    }
+    missing_schema_path = tmp_path / "missing-schema-manifest.json"
+    missing_schema_path.write_text(json.dumps(base_manifest), encoding="utf-8")
+    missing_schema = _load_live_evidence([missing_schema_path])
+    assert missing_schema["overall_status"] == "partial_live_evidence"
+    assert "live_evidence_manifest:missing_schema_version" in missing_schema["issues"]
+
+    invalid_schema_path = tmp_path / "invalid-schema-manifest.json"
+    invalid_schema_path.write_text(json.dumps({**base_manifest, "schema_version": "wrong.schema.v1"}), encoding="utf-8")
+    invalid_schema = _load_live_evidence([invalid_schema_path])
+    assert invalid_schema["overall_status"] == "partial_live_evidence"
+    assert "live_evidence_manifest:invalid_schema_version" in invalid_schema["issues"]
+
+
+def test_live_evidence_rejects_nested_example_only_sections():
+    evidence = build_live_probe_evidence_template()
+    evidence["discord_live_probe"].update(
+        {
+            "example_only": True,
+            "ok": True,
+            "connect_perm": True,
+            "speak_perm": True,
+            "connected": True,
+            "opus_loaded": True,
+            "accepted_audio_source": True,
+            "played": True,
+            "playing_during_probe": True,
+            "receiver_started": True,
+            "receiver_frames": 12,
+            "receiver_speech_start": 1,
+            "inbound_observed": True,
+            "disconnected": True,
+            "require_inbound": True,
+        }
+    )
+    evidence["sidecar_session"].update(
+        {
+            "example_only": True,
+            "sidecar_running": True,
+            "sidecar_healthy": True,
+            "session_started": True,
+            "session_closed": True,
+            "fallback_mode_visible": True,
+        }
+    )
+    evidence["live_turn"].update(
+        {
+            "example_only": True,
+            "transcript_observed": True,
+            "assistant_audio_observed": True,
+            "barge_in_observed": True,
+            "spoken_reply_short": True,
+            "no_voice_denial_observed": True,
+            "speech_end_to_first_audio_ms": 950,
+            "barge_in_stop_ms": 80,
+        }
+    )
+
+    result = validate_live_probe_evidence(evidence)
+
+    assert "discord_live_probe:example_only_evidence_not_accepted" in result["issues"]
+    assert "sidecar_session:example_only_evidence_not_accepted" in result["issues"]
+    assert "live_turn:example_only_evidence_not_accepted" in result["issues"]
 
 
 def test_voice_operator_cli_smoke(tmp_path):

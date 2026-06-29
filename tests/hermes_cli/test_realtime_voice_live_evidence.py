@@ -33,6 +33,7 @@ def test_live_evidence_collects_loopback_and_readiness_reports(monkeypatch, tmp_
     assert (tmp_path / "discord-loopback.json").is_file()
     assert (tmp_path / "discord-live-probe.json").is_file()
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == "voiceops.realtime_voice_live_evidence_manifest.v1"
     assert manifest["ok"] is True
     assert manifest["reports"]["discord_loopback"].endswith("discord-loopback.json")
     assert manifest["evidence_context"]["env_presence"]["OPENAI_API_KEY"] is False
