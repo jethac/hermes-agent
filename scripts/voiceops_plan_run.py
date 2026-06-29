@@ -327,10 +327,16 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
         "secret_policy": "Operators supply secrets only through local env/config files or provider CLIs; never paste secret values into artifacts.",
         "phases": [
             {
+                "order": 1,
                 "phase_id": "live_discord_voice",
                 "gate_id": live_gate["gate_id"],
                 "status": live_gate["status"],
                 "can_run_here_now": blockers.get("discord_env", {}).get("missing_env_keys") == [],
+                "blocked_by_current_environment": {
+                    "missing_env_keys": blockers.get("discord_env", {}).get("missing_env_keys", []),
+                    "present_env_keys": blockers.get("discord_env", {}).get("present_env_keys", []),
+                    "needs_external_live_probe": live_gate["status"] != "live_evidence_supplied_not_readiness_claim",
+                },
                 "first_safe_command": live_commands[0],
                 "required_inputs": [
                     "Discord bot token and channel env/config presence",
@@ -357,10 +363,17 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "must_not": live_gate["operator_must_not"],
             },
             {
+                "order": 2,
                 "phase_id": "spend_and_provisioning_preflight",
                 "gate_id": provisioning_gate["gate_id"],
                 "status": provisioning_gate["status"],
                 "can_run_here_now": blockers.get("provisioning_cli", {}).get("missing") == [],
+                "blocked_by_current_environment": {
+                    "missing_cli": blockers.get("provisioning_cli", {}).get("missing", []),
+                    "present_cli": blockers.get("provisioning_cli", {}).get("present", []),
+                    "needs_read_only_discovery": provisioning_gate["status"] != "ready",
+                    "needs_redacted_setup_evidence": provisioning_gate["status"] != "ready",
+                },
                 "diagnostic_command": provisioning_commands[0],
                 "first_safe_command": provisioning_commands[1],
                 "required_inputs": [
@@ -406,10 +419,16 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "must_not": provisioning_gate["operator_must_not"],
             },
             {
+                "order": 3,
                 "phase_id": "local_spark_stack",
                 "gate_id": spark_gate["gate_id"],
                 "status": spark_gate["status"],
                 "can_run_here_now": blockers.get("spark_host", {}).get("blocks_local_collection_here") is False,
+                "blocked_by_current_environment": {
+                    "required_hardware": blockers.get("spark_host", {}).get("required_hardware", "1x NVIDIA DGX Spark"),
+                    "current_host_hint": blockers.get("spark_host", {}).get("current_host_hint", "not_dgx_collection_host"),
+                    "needs_measured_spark_evidence": spark_gate["status"] != "validated",
+                },
                 "first_safe_command": spark_commands[0],
                 "required_inputs": [
                     "1x NVIDIA DGX Spark host",
@@ -1548,7 +1567,7 @@ def _operator_handoff_markdown(handoff: dict[str, Any]) -> str:
                 continue
             lines.extend(
                 [
-                    f"### {phase.get('phase_id')}",
+                    f"### {phase.get('order')}. {phase.get('phase_id')}",
                     f"- Gate: `{phase.get('gate_id')}`",
                     f"- Status: `{phase.get('status')}`",
                     f"- Can run here now: {phase.get('can_run_here_now')}",
@@ -1561,6 +1580,11 @@ def _operator_handoff_markdown(handoff: dict[str, Any]) -> str:
                     f"- Success check: {phase.get('success_check')}",
                 ]
             )
+            blocked_by = phase.get("blocked_by_current_environment")
+            if isinstance(blocked_by, dict) and blocked_by:
+                lines.append("- Blocked by current environment:")
+                for key, value in sorted(blocked_by.items()):
+                    lines.append(f"  - `{key}`: `{value}`")
             for label in ("required_inputs", "expected_artifacts", "commands", "must_not"):
                 items = phase.get(label)
                 if isinstance(items, list):

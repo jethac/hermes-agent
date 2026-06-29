@@ -520,6 +520,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "spend_and_provisioning_preflight",
         "local_spark_stack",
     ]
+    assert [phase["order"] for phase in handoff["phases"]] == [1, 2, 3]
     assert [phase["status"] for phase in handoff["phases"]] == [
         "needs_live_probe",
         "needs_setup",
@@ -527,6 +528,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     ]
     assert handoff["phases"][0]["can_run_here_now"] is False
     assert handoff["phases"][0]["first_safe_command"] == next_actions[0]["first_safe_command"]
+    assert handoff["phases"][0]["blocked_by_current_environment"] == {
+        "missing_env_keys": next_actions[0]["blocked_by_current_environment"]["missing_env_keys"],
+        "present_env_keys": blockers["discord_env"]["present_env_keys"],
+        "needs_external_live_probe": True,
+    }
     assert "discord-live-probe.json with source_artifact, collector_attestation" in json.dumps(
         handoff["phases"][0]["required_inputs"]
     )
@@ -554,6 +560,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--package-audit" in handoff["phases"][1]["commands"][0]
     assert handoff["phases"][1]["diagnostic_command"] == next_actions[1]["diagnostic_command"]
     assert handoff["phases"][1]["first_safe_command"] == next_actions[1]["first_safe_command"]
+    assert handoff["phases"][1]["blocked_by_current_environment"] == {
+        "missing_cli": next_actions[1]["blocked_by_current_environment"]["missing_cli"],
+        "present_cli": blockers["provisioning_cli"]["present"],
+        "needs_read_only_discovery": True,
+        "needs_redacted_setup_evidence": True,
+    }
     assert handoff["phases"][1]["command_safety"]["plan_index_dry_audit"] == "no_write_no_network_no_probe_audit"
     assert handoff["phases"][1]["command_safety"]["read_only_discovery"] == "network_possible_allowlisted_read_only"
     assert handoff["phases"][1]["command_safety"]["validate_nemoclaw_action_packet"] == (
@@ -570,6 +582,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         handoff["phases"][1]["expected_artifacts"]
     )
     assert handoff["phases"][2]["first_safe_command"] == next_actions[2]["first_safe_command"]
+    assert handoff["phases"][2]["blocked_by_current_environment"] == {
+        "required_hardware": next_actions[2]["blocked_by_current_environment"]["required_hardware"],
+        "current_host_hint": next_actions[2]["blocked_by_current_environment"]["current_host_hint"],
+        "needs_measured_spark_evidence": True,
+    }
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in handoff["phases"][2]["commands"]
     assert "--refresh-source-hashes" in handoff["phases"][2]["commands"][1]
     assert "--lint-evidence" in handoff["phases"][2]["commands"][2]
@@ -892,10 +909,29 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert closure["schema_version"] == "voiceops.closure_index.v1"
     assert handoff_payload == closure["operator_handoff"]
     assert handoff_payload["schema_version"] == "voiceops.operator_handoff.v1"
+    assert [phase["order"] for phase in handoff_payload["phases"]] == [1, 2, 3]
     assert [phase["first_safe_command"] for phase in handoff_payload["phases"]] == [
         closure["next_actions"][0]["first_safe_command"],
         closure["next_actions"][1]["first_safe_command"],
         closure["next_actions"][2]["first_safe_command"],
+    ]
+    assert [phase["blocked_by_current_environment"] for phase in handoff_payload["phases"]] == [
+        {
+            "missing_env_keys": closure["next_actions"][0]["blocked_by_current_environment"]["missing_env_keys"],
+            "present_env_keys": closure["current_environment_blockers"]["discord_env"]["present_env_keys"],
+            "needs_external_live_probe": True,
+        },
+        {
+            "missing_cli": closure["next_actions"][1]["blocked_by_current_environment"]["missing_cli"],
+            "present_cli": closure["current_environment_blockers"]["provisioning_cli"]["present"],
+            "needs_read_only_discovery": True,
+            "needs_redacted_setup_evidence": True,
+        },
+        {
+            "required_hardware": closure["next_actions"][2]["blocked_by_current_environment"]["required_hardware"],
+            "current_host_hint": closure["next_actions"][2]["blocked_by_current_environment"]["current_host_hint"],
+            "needs_measured_spark_evidence": True,
+        },
     ]
     voice_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "live_discord_voice_operator")
     assert voice_gate["evidence_scaffold"].endswith("live-voice-evidence-scaffold/manifest.json")
@@ -997,6 +1033,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "loopback_smoke_bridge protocol smoke checks" in closure_markdown
     assert "required_oracle_authority_routes" in closure_markdown
     assert "VoiceOps Operator Handoff" in handoff_markdown
+    assert "### 1. live_discord_voice" in handoff_markdown
+    assert "### 2. spend_and_provisioning_preflight" in handoff_markdown
+    assert "### 3. local_spark_stack" in handoff_markdown
+    assert "Blocked by current environment" in handoff_markdown
     assert "loopback_smoke_bridge protocol smoke checks" in handoff_markdown
     assert "live_discord_voice" in handoff_markdown
     assert "sidecar_mode=production" in handoff_markdown
