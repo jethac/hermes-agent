@@ -367,6 +367,11 @@ def test_write_probe_artifacts(tmp_path):
     assert not any("missing_audit_event" in issue for issue in example_validation["validation_issues"])
     assert post_approval_scaffold["example_only"] is True
     assert post_approval_validation["status"] == "not_supplied"
+    assert post_approval_validation["expected_action_ids"] == sorted(execution_plan["approval_contracts"])
+    assert post_approval_validation["receipt_count"] == 0
+    assert post_approval_validation["credential_location_count"] == 0
+    assert post_approval_validation["rollback_receipt_count"] == 0
+    assert post_approval_validation["audit_event_count"] == 0
     assert Path(paths["post_approval_audit_ledger"]).read_text(encoding="utf-8") == ""
     assert setup_closure["schema_version"] == "voiceops.milestone2.setup_closure.v1"
     assert setup_closure["preflight_evidence_template"] == "provisioning-preflight-evidence.template.json"
@@ -1150,7 +1155,11 @@ def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_pat
 
     assert loaded["status"] == "valid"
     assert loaded["validation_issues"] == []
+    assert loaded["expected_action_ids"] == sorted(action["action_id"] for action in actions)
     assert loaded["receipt_count"] == 4
+    assert loaded["credential_location_count"] == 3
+    assert loaded["rollback_receipt_count"] == 4
+    assert loaded["audit_event_count"] == 4
     assert loaded["ledger_rows"][0]["receipt_id"] == "receipt-provision-voip-provider-001"
     assert report_with_receipts["post_approval_receipts"]["status"] == "valid"
     assert len(ledger_rows) == 4

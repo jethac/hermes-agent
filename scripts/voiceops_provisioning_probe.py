@@ -2647,14 +2647,25 @@ def write_post_approval_receipts_scaffold(output_dir: Path, plan: Mapping[str, A
     return {"post_approval_receipts_scaffold": scaffold_path}
 
 
+def _post_approval_receipts_validation_base(plan: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "expected_action_ids": sorted(str(action["action_id"]) for action in plan["approval_required_actions"]),
+        "receipt_count": 0,
+        "credential_location_count": 0,
+        "rollback_receipt_count": 0,
+        "audit_event_count": 0,
+        "ledger_rows": [],
+    }
+
+
 def load_post_approval_receipts(path: Path | None, plan: Mapping[str, Any]) -> dict[str, Any]:
     if path is None:
         return {
+            **_post_approval_receipts_validation_base(plan),
             "loaded": False,
             "path": None,
             "status": "not_supplied",
             "validation_issues": [],
-            "ledger_rows": [],
             "redaction_policy": "not_loaded",
         }
     resolved = path.expanduser().resolve(strict=False)
@@ -2664,29 +2675,29 @@ def load_post_approval_receipts(path: Path | None, plan: Mapping[str, Any]) -> d
         payload = json.loads(resolved.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {
+            **_post_approval_receipts_validation_base(plan),
             "loaded": False,
             "path": str(path),
             "status": "not_found",
             "validation_issues": ["post_approval_receipts:file_not_found"],
-            "ledger_rows": [],
             "redaction_policy": "references_only",
         }
     except json.JSONDecodeError as exc:
         return {
+            **_post_approval_receipts_validation_base(plan),
             "loaded": False,
             "path": str(path),
             "status": "invalid",
             "validation_issues": [f"post_approval_receipts:json_parse_failed:{exc.msg}"],
-            "ledger_rows": [],
             "redaction_policy": "references_only",
         }
     if not isinstance(payload, Mapping):
         return {
+            **_post_approval_receipts_validation_base(plan),
             "loaded": False,
             "path": str(path),
             "status": "invalid",
             "validation_issues": ["post_approval_receipts:root_must_be_object"],
-            "ledger_rows": [],
             "redaction_policy": "references_only",
         }
     report = validate_post_approval_receipts(payload, plan)
@@ -2882,6 +2893,7 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
             issues.append(f"post_approval_receipts:{audit_id}:missing_operator_next_step")
 
     return {
+        **_post_approval_receipts_validation_base(plan),
         "status": "valid" if not issues else "invalid",
         "validation_issues": sorted(set(issues)),
         "receipt_count": len(receipts),
