@@ -352,6 +352,8 @@ def test_write_probe_artifacts(tmp_path):
     assert "stripe_projects_account" in execution_plan["preflight"]["required_evidence"]
     assert "phone-context.json" in json.dumps(execution_plan)
     assert "VoiceOps Milestone 2 Execution Plan" in execution_markdown
+    assert "## Provider Selection" in execution_markdown
+    assert "VoIP provider candidate: `twilio/voice`" in execution_markdown
     assert post_approval_template["schema_version"] == "voiceops.milestone2.post_approval_receipts.v1"
     assert post_approval_template["receipts"] == []
     assert post_approval_example["example_only"] is True
@@ -1004,6 +1006,9 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
         "stripe_actions_dry_run": "stripe-actions-dry-run.sh",
         "voiceops_demo": "voiceops-demo.json",
     }
+    assert plan["provider_selection"]["voip_provider_candidate"] == "twilio/voice"
+    assert plan["provider_selection"]["source"] == "default"
+    assert plan["provider_selection"]["default_used"] is True
     assert {
         "approval_id",
         "command_sha256",
@@ -1090,6 +1095,33 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
     assert "sk_live_123456789abcdef" not in serialized
     assert "+15551234567" not in serialized
     assert "secret-token" not in serialized
+
+
+def test_execution_plan_derives_voip_provider_candidate_from_preflight_evidence(tmp_path):
+    evidence = _complete_preflight_evidence()
+    evidence["stripe_projects"]["voip_provider_candidate"] = "vapi/voice"
+    evidence_path = _write_preflight_evidence(tmp_path, evidence)
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "VAPI_API_KEY": "secret"},
+        env_files=[],
+        preflight_evidence_path=evidence_path,
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+
+    plan = build_milestone2_execution_plan(report)
+    provision_action = next(
+        action for action in plan["approval_required_actions"] if action["action_id"] == "provision-voip-provider"
+    )
+
+    assert report["preflight_evidence"]["voip_provider_candidate"] == "vapi/voice"
+    assert plan["provider_selection"]["voip_provider_candidate"] == "vapi/voice"
+    assert plan["provider_selection"]["source"] == "preflight_evidence"
+    assert plan["provider_selection"]["default_used"] is False
+    assert provision_action["command"] == "stripe projects add vapi/voice"
+    assert provision_action["command_sha256"] == hashlib.sha256(b"stripe projects add vapi/voice").hexdigest()
+    assert plan["provider_selection"]["command_sha256"] == provision_action["command_sha256"]
 
 
 def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_path):
@@ -1405,6 +1437,17 @@ def test_preflight_evidence_rejects_generic_secret_shaped_refs(tmp_path):
 
     assert "phone_handoff.credential_location_ref: secret-like value" in loaded["validation_issues"]
     assert "mpp.policy_ref: secret-like value" in loaded["validation_issues"]
+
+
+def test_preflight_evidence_rejects_unsafe_voip_provider_candidate(tmp_path):
+    evidence = _complete_preflight_evidence()
+    evidence["stripe_projects"]["voip_provider_candidate"] = "twilio/voice; rm -rf /"
+    evidence_path = _write_preflight_evidence(tmp_path, evidence)
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert loaded["voip_provider_candidate"] is None
+    assert "stripe_projects.voip_provider_candidate: invalid provider candidate" in loaded["validation_issues"]
 
 
 def test_preflight_evidence_rejects_not_redacted_artifacts_and_nested_example_only(tmp_path):

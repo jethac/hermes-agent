@@ -231,6 +231,8 @@ PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS = [
 PREFLIGHT_EVIDENCE_SECTIONS = ("stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback")
 PREFLIGHT_SOURCE_ARTIFACT_KIND = "redacted_setup_evidence"
 PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256 = "0" * 64
+DEFAULT_VOIP_PROVIDER_CANDIDATE = "twilio/voice"
+VOIP_PROVIDER_CANDIDATE_RE = re.compile(r"^[a-z0-9][a-z0-9._/-]{0,80}$")
 
 SECRET_KEY_RE = re.compile(
     r"(?i)\b([A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|AUTH)[A-Z0-9_]*)\s*=\s*([^\s,;]+)"
@@ -655,6 +657,14 @@ def _timestamp_issues(payload: Mapping[str, Any]) -> list[str]:
     return issues
 
 
+def _preflight_field_value_issues(payload: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    candidate = str(_dot_get(payload, "stripe_projects.voip_provider_candidate") or "").strip()
+    if candidate and not VOIP_PROVIDER_CANDIDATE_RE.fullmatch(candidate):
+        issues.append("stripe_projects.voip_provider_candidate: invalid provider candidate")
+    return issues
+
+
 def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
     if path is None:
         return {
@@ -663,6 +673,7 @@ def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
             "fields_present": [],
             "missing_fields": PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
             "validation_issues": [],
+            "voip_provider_candidate": None,
             "redaction_policy": "not_loaded",
         }
     resolved = path.expanduser().resolve(strict=False)
@@ -677,6 +688,7 @@ def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
             "fields_present": [],
             "missing_fields": PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
             "validation_issues": ["preflight evidence file not found"],
+            "voip_provider_candidate": None,
             "redaction_policy": "references_only",
         }
     except json.JSONDecodeError as exc:
@@ -686,6 +698,7 @@ def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
             "fields_present": [],
             "missing_fields": PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
             "validation_issues": [f"preflight evidence JSON parse failed: {exc.msg}"],
+            "voip_provider_candidate": None,
             "redaction_policy": "references_only",
         }
     if not isinstance(raw_payload, Mapping):
@@ -695,22 +708,30 @@ def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
             "fields_present": [],
             "missing_fields": PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
             "validation_issues": ["preflight evidence root must be an object"],
+            "voip_provider_candidate": None,
             "redaction_policy": "references_only",
         }
     raw_payload, manifest_issues = _expand_preflight_evidence_manifest(path, raw_payload)
     fields_present = [field for field in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS if _field_present(raw_payload, field)]
     missing_fields = [field for field in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS if field not in fields_present]
-    validation_issues = [*manifest_issues, *_preflight_secret_issues(raw_payload), *_timestamp_issues(raw_payload)]
+    validation_issues = [
+        *manifest_issues,
+        *_preflight_secret_issues(raw_payload),
+        *_timestamp_issues(raw_payload),
+        *_preflight_field_value_issues(raw_payload),
+    ]
     if str(raw_payload.get("schema_version") or "") != PREFLIGHT_EVIDENCE_SCHEMA_VERSION:
         validation_issues.append("missing_or_invalid_schema_version")
     validation_issues.extend(_example_only_presence_issues(raw_payload))
     validation_issues.extend(_source_artifact_issues(raw_payload, path))
+    candidate = str(_dot_get(raw_payload, "stripe_projects.voip_provider_candidate") or "").strip()
     return {
         "loaded": True,
         "path": str(path),
         "fields_present": fields_present,
         "missing_fields": missing_fields,
         "validation_issues": validation_issues,
+        "voip_provider_candidate": candidate if VOIP_PROVIDER_CANDIDATE_RE.fullmatch(candidate) else None,
         "redaction_policy": "references_only",
     }
 
@@ -1945,6 +1966,26 @@ def _expected_post_approval_evidence(action: Mapping[str, Any]) -> dict[str, Any
     }
 
 
+def _selected_voip_provider_candidate(report: Mapping[str, Any]) -> dict[str, Any]:
+    preflight = report.get("preflight_evidence")
+    if isinstance(preflight, Mapping) and preflight.get("loaded") and not preflight.get("validation_issues"):
+        path_text = str(preflight.get("path") or "")
+        candidate = str(preflight.get("voip_provider_candidate") or "").strip()
+        if VOIP_PROVIDER_CANDIDATE_RE.fullmatch(candidate):
+            return {
+                "candidate": candidate,
+                "source": "preflight_evidence",
+                "source_artifact": path_text or None,
+                "default_used": candidate == DEFAULT_VOIP_PROVIDER_CANDIDATE,
+            }
+    return {
+        "candidate": DEFAULT_VOIP_PROVIDER_CANDIDATE,
+        "source": "default",
+        "source_artifact": None,
+        "default_used": True,
+    }
+
+
 def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
     checks = {check["check_id"]: check for check in report["checks"]}
     demo_refs = {
@@ -1985,7 +2026,8 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
             "phone_provider",
         )
     ]
-    provision_command = "stripe projects add twilio/voice"
+    provider_selection = _selected_voip_provider_candidate(report)
+    provision_command = f"stripe projects add {provider_selection['candidate']}"
     spend_command = (
         "link-cli spend-request create --merchant-name ExampleOps "
         "--merchant-url https://example.invalid --amount 4900 --request-approval"
@@ -2138,6 +2180,13 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
             "status": "no_live_spend_without_explicit_approval",
         },
         "readiness_gates": gates,
+        "provider_selection": {
+            "voip_provider_candidate": provider_selection["candidate"],
+            "source": provider_selection["source"],
+            "source_artifact": provider_selection["source_artifact"],
+            "default_used": provider_selection["default_used"],
+            "command_sha256": _command_sha256(provision_command),
+        },
         "read_only_discovery": [
             {
                 "step_id": "stripe-projects-catalog-discovery",
@@ -2398,6 +2447,18 @@ def _execution_plan_markdown(plan: dict[str, Any]) -> str:
                 "",
             ]
         )
+    provider_selection = plan["provider_selection"]
+    lines.extend(
+        [
+            "## Provider Selection",
+            "",
+            f"- VoIP provider candidate: `{provider_selection['voip_provider_candidate']}`",
+            f"- Source: {provider_selection['source']}",
+            f"- Default used: {'yes' if provider_selection['default_used'] else 'no'}",
+            f"- Provision command SHA-256: `{provider_selection['command_sha256']}`",
+            "",
+        ]
+    )
     lines.extend(["## Approval-Required Actions", ""])
     for action in plan["approval_required_actions"]:
         lines.extend(
