@@ -406,7 +406,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "mppx_or_fallback",
     ]
     assert next_actions[1]["blocked_by_current_environment"]["needs_read_only_discovery"] is True
-    assert next_actions[1]["first_safe_command"].endswith("--dry-audit")
+    assert "--dry-audit" in next_actions[1]["diagnostic_command"]
+    assert "voiceops_provisioning_probe.py" in next_actions[1]["first_safe_command"]
+    assert "--run-readonly-discovery" not in next_actions[1]["first_safe_command"]
+    assert next_actions[1]["first_evidence_command"] == next_actions[1]["first_safe_command"]
     assert next_actions[2]["blocked_by_current_environment"]["required_hardware"] == "1x NVIDIA DGX Spark"
     assert next_actions[2]["blocked_by_current_environment"]["needs_measured_spark_evidence"] is True
     assert next_actions[2]["first_safe_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
@@ -1164,7 +1167,9 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
         "uv run python -m hermes_cli.realtime_voice_live_evidence"
     )
     assert "--from-realtime-voice-report" in payload["next_actions"][0]["first_safe_command"]
-    assert payload["next_actions"][1]["first_safe_command"].endswith("--dry-audit")
+    assert "--dry-audit" in payload["next_actions"][1]["diagnostic_command"]
+    assert "voiceops_provisioning_probe.py" in payload["next_actions"][1]["first_safe_command"]
+    assert payload["next_actions"][1]["first_evidence_command"] == payload["next_actions"][1]["first_safe_command"]
     assert payload["next_actions"][2]["first_safe_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
     assert not output_dir.exists()
     assert not artifact_root.exists()

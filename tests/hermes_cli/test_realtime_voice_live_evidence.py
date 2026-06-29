@@ -783,6 +783,41 @@ def test_live_evidence_manifest_rejects_incomplete_optional_evidence(monkeypatch
     assert "sidecar_session" not in result.reports
 
 
+def test_live_evidence_manifest_rejects_incomplete_discord_probe_optional_evidence(monkeypatch, tmp_path):
+    async def unexpected_loopback():
+        raise AssertionError("loopback probe should not run in validation mode")
+
+    async def unexpected_live(_args):
+        raise AssertionError("live Discord probe should not run in validation mode")
+
+    discord_path = _write_json(tmp_path / "discord-live-probe.json", {"kind": "discord_live_probe", "ok": True})
+    sidecar_path = _write_json(tmp_path / "sidecar-session.json", _complete_sidecar_session())
+    live_turn_path = _write_json(tmp_path / "live-turn.json", _complete_live_turn())
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", unexpected_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", unexpected_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--validate-live-evidence",
+            "--discord-live-probe-evidence",
+            str(discord_path),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+            "--live-turn-evidence",
+            str(live_turn_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    assert result.ok is False
+    assert "discord_live_probe" not in result.reports
+    assert "discord_live_probe: connect_perm must be true" in result.issues
+    assert "discord_live_probe: latency_metrics_ms.connect_ms must be a non-negative number" in result.issues
+    assert "discord_live_probe: receiver_frames or receiver_speech_start must be positive" in result.issues
+
+
 def test_live_evidence_manifest_rejects_invalid_optional_evidence(monkeypatch, tmp_path):
     async def fake_loopback():
         return _FakeProbeResult(ok=True)

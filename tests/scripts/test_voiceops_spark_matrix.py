@@ -428,6 +428,30 @@ def test_spark_matrix_rejects_candidate_with_mismatched_source_artifact_hash(tmp
     assert matrix["role_status"]["oracle"] == "needs_evidence"
 
 
+def test_spark_matrix_rejects_candidate_with_example_only_source_artifact(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    source_path = tmp_path / "artifacts/test/example-source.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(json.dumps({"example_only": True, "redacted": True}), encoding="utf-8")
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    evidence["source_artifact"] = "artifacts/test/example-source.json"
+    evidence["source_artifact_sha256"] = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    evidence["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "source_artifact_example_only_not_accepted" in evaluation["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
 def test_spark_matrix_rejects_candidate_with_invalid_measured_at(tmp_path):
     evidence_path = tmp_path / "evidence.json"
     evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
@@ -662,6 +686,23 @@ def test_spark_matrix_rejects_stack_smoke_with_mismatched_source_artifact_hash(t
 
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "source_artifact_sha256_mismatch" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_rejects_stack_smoke_with_example_only_source_artifact(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    source_path = tmp_path / "artifacts/test/example-stack-smoke.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(json.dumps({"example_only": True, "redacted": True}), encoding="utf-8")
+    incomplete = _stack_smoke()
+    incomplete["source_artifact"] = "artifacts/test/example-stack-smoke.json"
+    incomplete["source_artifact_sha256"] = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    evidence_path.write_text(json.dumps({"evidence": [incomplete]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "source_artifact_example_only_not_accepted" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
 
 

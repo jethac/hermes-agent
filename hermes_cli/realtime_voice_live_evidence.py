@@ -606,7 +606,36 @@ def _optional_evidence_structural_issues(report_key: str, payload: dict[str, Any
     if payload.get("example_only") is True:
         return ["example_only evidence is not accepted"]
     if report_key == "discord_live_probe":
-        return []
+        issues = _missing_required_optional_fields(
+            payload,
+            (
+                "ok",
+                "connect_perm",
+                "speak_perm",
+                "connected",
+                "opus_loaded",
+                "accepted_audio_source",
+                "played",
+                "playing_during_probe",
+                "receiver_started",
+                "inbound_observed",
+                "disconnected",
+                "require_inbound",
+            ),
+            nested_numbers=(
+                "latency_metrics_ms.connect_ms",
+                "latency_metrics_ms.playback_observed_ms",
+                "latency_metrics_ms.inbound_observed_ms",
+                "latency_metrics_ms.disconnect_ms",
+            ),
+        )
+        receiver_frames = _non_negative_number(payload.get("receiver_frames"))
+        receiver_speech_start = _non_negative_number(payload.get("receiver_speech_start"))
+        if (receiver_frames is None or receiver_frames <= 0) and (
+            receiver_speech_start is None or receiver_speech_start <= 0
+        ):
+            issues.append("receiver_frames or receiver_speech_start must be positive")
+        return issues
     if report_key == "sidecar_session":
         return _missing_required_optional_fields(
             payload,

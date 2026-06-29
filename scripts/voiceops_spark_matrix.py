@@ -649,6 +649,17 @@ def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
         source_bytes = source_path.read_bytes()
     except OSError:
         return [*issues, "source_artifact_unreadable"]
+    try:
+        source_payload = json.loads(source_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        source_payload = None
+        issues.append("source_artifact_invalid_json")
+    if isinstance(source_payload, dict):
+        if source_payload.get("example_only") is True:
+            issues.append("source_artifact_example_only_not_accepted")
+        redaction_policy = str(source_payload.get("redaction_policy") or "").strip()
+        if source_payload.get("redacted") is not True and not redaction_policy:
+            issues.append("source_artifact_not_redacted")
     if expected_sha256 and len(expected_sha256) == 64 and all(
         character in "0123456789abcdef" for character in expected_sha256
     ):
@@ -1239,7 +1250,7 @@ def _operator_runbook(plan: dict[str, Any]) -> str:
         "```",
         "",
         "3. Replace the scaffold source artifacts under `spark-benchmark-scaffold/sources/` with redacted measured raw outputs.",
-        "4. Fill `spark-benchmark-scaffold/spark-benchmark-evidence.json` with measured metrics, real `source_artifact` refs, `verified: true`, and no `example_only` markers.",
+        "4. Fill `spark-benchmark-scaffold/spark-benchmark-evidence.json` with measured metrics, real `source_artifact` refs, matching `source_artifact_sha256` values, `verified: true`, and no `example_only` markers.",
         "5. Re-run the matrix validator against the measured evidence.",
         "",
         "```bash",
@@ -1258,6 +1269,8 @@ def _operator_runbook(plan: dict[str, Any]) -> str:
         f"- Evidence scaffold: `{plan['evidence_scaffold']}`",
         f"- Matrix artifact: `{plan['matrix_artifact']}`",
         "- Source artifacts must exist and resolve relative to the supplied evidence file.",
+        "- Source artifacts must be redacted UTF-8 JSON and must not carry `example_only: true`.",
+        "- `source_artifact_sha256` must match the referenced source artifact bytes.",
         "- `example_only: true` evidence is rejected.",
         "- `loopback_smoke_bridge` evidence is protocol-only and must remain unverified for local ASR/TTS roles.",
         "",

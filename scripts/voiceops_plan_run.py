@@ -417,6 +417,7 @@ def _build_next_actions(
         phase = phases.get(gate_id, {})
         commands = phase.get("commands") if isinstance(phase, dict) else None
         first_command = commands[0] if isinstance(commands, list) and commands else gate.get("rerun_command")
+        diagnostic_command = None
         if gate_id == "live_discord_voice_operator":
             blocked_by = {
                 "missing_env_keys": blockers.get("discord_env", {}).get("missing_env_keys", []),
@@ -427,12 +428,18 @@ def _build_next_actions(
                 "then run the live Discord evidence collector after Discord env/config and production sidecar are ready."
             )
         elif gate_id == "spend_and_provisioning_preflight":
+            if isinstance(commands, list) and len(commands) > 1:
+                diagnostic_command = commands[0]
+                first_command = commands[1]
             blocked_by = {
                 "missing_cli": blockers.get("provisioning_cli", {}).get("missing", []),
                 "needs_read_only_discovery": True,
                 "needs_redacted_setup_evidence": True,
             }
-            operator_step = "Install/auth required CLIs, run the dry audit first, then collect read-only provisioning discovery and redacted setup evidence."
+            operator_step = (
+                "Run the no-write dry audit for status if needed, then collect local provisioning presence evidence, "
+                "read-only discovery, and redacted setup evidence."
+            )
         elif gate_id == "local_spark_stack_matrix":
             blocked_by = {
                 "current_host_hint": blockers.get("spark_host", {}).get("current_host_hint", "unknown"),
@@ -452,6 +459,8 @@ def _build_next_actions(
                 "can_run_here_now": bool(phase.get("can_run_here_now")) if isinstance(phase, dict) else False,
                 "blocked_by_current_environment": blocked_by,
                 "first_safe_command": first_command,
+                "first_evidence_command": first_command,
+                **({"diagnostic_command": diagnostic_command} if diagnostic_command else {}),
                 "success_check": phase.get("success_check") if isinstance(phase, dict) else gate.get("completion_signal"),
                 "operator_step": operator_step,
                 "secret_policy": "presence booleans and redacted artifact refs only; never include secret values",
@@ -1370,11 +1379,14 @@ def _next_actions_markdown(actions: list[dict[str, Any]]) -> str:
                 f"### {action.get('order')}. {action.get('gate_id')}",
                 f"- Can run here now: {action.get('can_run_here_now')}",
                 f"- First safe command: `{action.get('first_safe_command')}`",
+                f"- First evidence command: `{action.get('first_evidence_command')}`",
                 f"- Success check: {action.get('success_check')}",
                 f"- Operator step: {action.get('operator_step')}",
                 f"- Secret policy: {action.get('secret_policy')}",
             ]
         )
+        if action.get("diagnostic_command"):
+            lines.append(f"- Diagnostic command: `{action.get('diagnostic_command')}`")
         blocked_by = action.get("blocked_by_current_environment")
         if isinstance(blocked_by, dict):
             lines.append("- Blocked by current environment:")
