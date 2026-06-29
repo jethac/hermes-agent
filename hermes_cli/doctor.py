@@ -878,13 +878,34 @@ def _discord_realtime_voice_smoke_report_payload(result: Any, **extra: Any) -> d
         "sidecar_pcm16_bytes": int(
             mapping.get("sidecar_pcm16_bytes", getattr(result, "sidecar_pcm16_bytes", 0)) or 0
         ),
+        "sidecar_pcm16_first_sample": mapping.get(
+            "sidecar_pcm16_first_sample",
+            getattr(result, "sidecar_pcm16_first_sample", None),
+        ),
+        "sidecar_pcm16_checksum": int(
+            mapping.get("sidecar_pcm16_checksum", getattr(result, "sidecar_pcm16_checksum", 0)) or 0
+        ),
         "mixer_frames": int(mapping.get("mixer_frames", getattr(result, "mixer_frames", 0)) or 0),
         "mixer_frame_bytes": int(
             mapping.get("mixer_frame_bytes", getattr(result, "mixer_frame_bytes", 0)) or 0
         ),
         "barge_in_sent": bool(mapping.get("barge_in_sent", getattr(result, "barge_in_sent", False))),
+        "speech_energy_sent": bool(
+            mapping.get("speech_energy_sent", getattr(result, "speech_energy_sent", False))
+        ),
         "mixer_stop_calls": int(
             mapping.get("mixer_stop_calls", getattr(result, "mixer_stop_calls", 0)) or 0
+        ),
+        "sidecar_closed": bool(mapping.get("sidecar_closed", getattr(result, "sidecar_closed", False))),
+        "shutdown_elapsed_ms": mapping.get(
+            "shutdown_elapsed_ms",
+            getattr(result, "shutdown_elapsed_ms", None),
+        ),
+        "shutdown_bounded": bool(
+            mapping.get("shutdown_bounded", getattr(result, "shutdown_bounded", False))
+        ),
+        "shutdown_timed_out": bool(
+            mapping.get("shutdown_timed_out", getattr(result, "shutdown_timed_out", False))
         ),
         "events": list(tuple(mapping.get("events", getattr(result, "events", ())) or ())),
         "error": str(mapping.get("error", getattr(result, "error", "")) or "") or None,

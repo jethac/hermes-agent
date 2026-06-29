@@ -10,6 +10,7 @@ summary that can be used as the hackathon evidence index.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import sys
@@ -23,6 +24,11 @@ from scripts.voiceops_channel_policy import build_channel_policy, validate_polic
 from scripts.voiceops_operator_state import build_operator_state, validate_operator_state, write_operator_state
 from scripts.voiceops_provisioning_probe import build_probe_report, write_probe_artifacts
 from scripts.voiceops_spark_matrix import build_matrix, write_matrix
+from scripts.voiceops_voice_operator import (
+    build_voice_operator_report_from_smoke,
+    validate_voice_operator_report,
+    write_voice_operator_report,
+)
 
 
 DEFAULT_ARTIFACT_ROOT = Path("artifacts")
@@ -30,7 +36,8 @@ DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-plan/current")
 
 SAFETY_FLAGS = {
     "network_io": False,
-    "env_secret_reads": False,
+    "env_presence_inspection": True,
+    "env_secret_values_emitted": False,
     "outbound_sends": False,
     "outbound_calls": False,
     "live_spend": False,
@@ -76,10 +83,36 @@ def build_plan_run(
     timeout_seconds: int = 3,
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    return asyncio.run(
+        build_plan_run_async(
+            artifact_root=artifact_root,
+            output_dir=output_dir,
+            budget_cents=budget_cents,
+            evidence_paths=evidence_paths,
+            env_files=env_files,
+            run_command_probes=run_command_probes,
+            timeout_seconds=timeout_seconds,
+            env=env,
+        )
+    )
+
+
+async def build_plan_run_async(
+    *,
+    artifact_root: Path = DEFAULT_ARTIFACT_ROOT,
+    output_dir: Path = DEFAULT_OUTPUT_DIR,
+    budget_cents: int = 20_000,
+    evidence_paths: list[Path] | None = None,
+    env_files: list[Path] | None = None,
+    run_command_probes: bool = False,
+    timeout_seconds: int = 3,
+    env: dict[str, str] | None = None,
+) -> dict[str, Any]:
     evidence_paths = evidence_paths or []
     env_files = env_files or []
 
     demo_dir = artifact_root / "hackathon-voiceops-demo" / "current"
+    voice_operator_dir = artifact_root / "voiceops-voice-operator" / "current"
     provisioning_dir = artifact_root / "voiceops-provisioning" / "current"
     channel_policy_dir = artifact_root / "voiceops-channel-policy" / "current"
     spark_matrix_dir = artifact_root / "voiceops-spark-matrix" / "current"
@@ -102,6 +135,24 @@ def build_plan_run(
                 "budget_cents": demo["spend_policy"]["limit_cents"],
                 "held_budget_cents": demo["totals"]["held_budget_cents"],
                 "ready_or_queued_cents": demo["totals"]["ready_or_queued_cents"],
+            },
+        )
+    )
+
+    voice_operator = await build_voice_operator_report_from_smoke()
+    voice_operator_issues = validate_voice_operator_report(voice_operator)
+    voice_operator_paths = write_voice_operator_report(voice_operator_dir, voice_operator)
+    results.append(
+        _milestone_result(
+            milestone="milestone_1_real_voice_operator",
+            command=f"uv run python scripts/voiceops_voice_operator.py --output-dir {voice_operator_dir}",
+            output_dir=voice_operator_dir,
+            artifacts=voice_operator_paths,
+            status="needs_live_probe" if not voice_operator_issues else "validation_failed",
+            details={
+                "validation_issues": voice_operator_issues,
+                "live_probe_status": voice_operator["live_probe_required_for_completion"]["status"],
+                "latency_metrics_ms": voice_operator["latency_metrics_ms"],
             },
         )
     )
@@ -180,7 +231,7 @@ def build_plan_run(
     readiness_gaps = [
         result["milestone"]
         for result in results
-        if result["status"] in {"needs_setup", "needs_evidence"}
+        if result["status"] in {"needs_setup", "needs_evidence", "needs_live_probe"}
     ]
     return {
         "schema_version": "voiceops.plan_run.v1",
@@ -201,7 +252,7 @@ def _markdown(summary: dict[str, Any]) -> str:
         "",
         f"- OK: {'yes' if summary['ok'] else 'no'}",
         f"- Artifact root: `{summary['artifact_root']}`",
-        "- Safety: artifact-only; no network I/O, env secret reads, sends, calls, live spend, or provider provisioning",
+        "- Safety: artifact-only; no network I/O, secret value emission, sends, calls, live spend, or provider provisioning",
         f"- Hard failures: {', '.join(summary['hard_failures']) if summary['hard_failures'] else 'none'}",
         f"- Readiness gaps: {', '.join(summary['readiness_gaps']) if summary['readiness_gaps'] else 'none'}",
         "",

@@ -18,10 +18,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert summary["artifact_only"] is True
     assert summary["ok"] is True
     assert summary["hard_failures"] == []
+    assert "milestone_1_real_voice_operator" in summary["readiness_gaps"]
     assert "milestone_2_real_spend_and_provisioning_preflight" in summary["readiness_gaps"]
     assert "milestone_4_local_spark_stack_matrix" in summary["readiness_gaps"]
     assert summary["safety"] == {
-        "env_secret_reads": False,
+        "env_presence_inspection": True,
+        "env_secret_values_emitted": False,
         "live_spend": False,
         "network_io": False,
         "outbound_calls": False,
@@ -30,6 +32,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     }
     assert {result["milestone"] for result in summary["results"]} == {
         "milestone_0_hackathon_proof",
+        "milestone_1_real_voice_operator",
         "milestone_2_real_spend_and_provisioning_preflight",
         "milestone_3_multi_channel_policy",
         "milestone_4_local_spark_stack_matrix",
@@ -40,6 +43,14 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(demo_result["artifacts"]["dashboard"]).exists()
     assert Path(demo_result["artifacts"]["operator_state"]).exists()
     assert Path(demo_result["artifacts"]["operator_state_events"]).exists()
+
+    voice_result = next(result for result in summary["results"] if result["milestone"] == "milestone_1_real_voice_operator")
+    assert voice_result["status"] == "needs_live_probe"
+    assert voice_result["details"]["live_probe_status"] == "needs_live_probe"
+    assert Path(voice_result["artifacts"]["json"]).exists()
+    assert Path(voice_result["artifacts"]["markdown"]).exists()
+    assert Path(voice_result["artifacts"]["smoke_json"]).exists()
+    assert Path(voice_result["artifacts"]["events_jsonl"]).exists()
 
     provisioning_result = next(
         result for result in summary["results"] if result["milestone"] == "milestone_2_real_spend_and_provisioning_preflight"

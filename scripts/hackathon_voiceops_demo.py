@@ -196,16 +196,50 @@ def _surface_matrix() -> list[VoiceSurface]:
     ]
 
 
-def _sponsor_stack(active_model: str) -> dict[str, Any]:
+def _active_model_path(active_model: str) -> dict[str, Any]:
+    normalized = active_model.lower()
+    is_super = "nemotron" in normalized and "super" in normalized
+    is_ultra = "nemotron" in normalized and "ultra" in normalized
+    if is_super:
+        return {
+            "active_model": active_model,
+            "selected_by": "Hermes /model",
+            "path": "spark_local_nemotron_3_super",
+            "status": "preferred_local",
+            "recording_ready": True,
+            "label": "Nemotron 3 Super on DGX Spark",
+        }
+    if is_ultra:
+        return {
+            "active_model": active_model,
+            "selected_by": "Hermes /model",
+            "path": "hosted_nemotron_3_ultra_fallback",
+            "status": "hosted_fallback",
+            "recording_ready": True,
+            "label": "Nemotron 3 Ultra hosted fallback",
+        }
     return {
+        "active_model": active_model,
+        "selected_by": "Hermes /model",
+        "path": "non_nvidia_fallback",
+        "status": "needs_nemotron_selection",
+        "recording_ready": False,
+        "label": "Switch Hermes to Nemotron 3 Super or hosted Nemotron 3 Ultra",
+    }
+
+
+def _sponsor_stack(active_model: str) -> dict[str, Any]:
+    active_path = _active_model_path(active_model)
+    return {
+        "hermes_active_model": active_path,
         "nemotron_3_super": {
             "role": "preferred Spark-local NVIDIA oracle target for serious planning and reasoning",
-            "selection": active_model,
+            "selection": active_model if active_path["path"] == "spark_local_nemotron_3_super" else "not selected",
             "note": "Configured through Hermes' normal /model flow; VoiceOps does not introduce a separate oracle_model setting.",
         },
         "nemotron_3_ultra_hosted_fallback": {
             "role": "hosted fallback when the local Nemotron 3 Super Spark path is unavailable or still under benchmark",
-            "selection": "Nemotron 3 Ultra via Hermes /model hosted provider path",
+            "selection": active_model if active_path["path"] == "hosted_nemotron_3_ultra_fallback" else "available fallback via Hermes /model hosted provider path",
             "note": "Fallback is still selected through Hermes' normal /model flow, not a VoiceOps-specific model setting.",
         },
         "nemoclaw": {
@@ -231,6 +265,8 @@ def _spark_stack(active_model: str, reflex_model: str) -> dict[str, Any]:
         },
         "oracle": {
             "model": active_model,
+            "selected_by": "Hermes /model",
+            "active_model_path": _active_model_path(active_model),
             "role": "Hermes active model selected by /model; no separate oracle_model setting",
             "interface_contract": "receives committed intent, transcript evidence, spend policy, and tool plan",
             "preferred_local_target": "Nemotron 3 Super on DGX Spark",
@@ -354,7 +390,7 @@ def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
         "runtime": "NemoClaw",
         "mode": "dry_run_until_user_approval",
         "source_channel": "discord_voice",
-        "hermes_active_model": demo["sponsor_stack"]["nemotron_3_super"]["selection"],
+        "hermes_active_model": demo["sponsor_stack"]["hermes_active_model"]["active_model"],
         "model_selected_by": "Hermes /model",
         "spend_policy": demo["spend_policy"],
         "allowed_capabilities": [
@@ -449,7 +485,8 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
         "mode": {
             "artifact_only": True,
             "bounded": True,
-            "env_secret_reads": False,
+            "env_presence_inspection": True,
+            "env_secret_values_emitted": False,
             "headless": True,
             "live_spend": False,
             "network_io": False,
@@ -635,10 +672,13 @@ def build_readiness_report(
 
     checks.append(
         ReadinessCheck(
-            check_id="nemotron_3_super_model",
-            status="pass",
+            check_id="nemotron_3_super_or_ultra_active_model",
+            status="pass" if demo["sponsor_stack"]["hermes_active_model"]["recording_ready"] else "fail",
             required_for_video=True,
-            detail=f"demo oracle path is {demo['sponsor_stack']['nemotron_3_super']['selection']}",
+            detail=(
+                f"Hermes active model path is {demo['sponsor_stack']['hermes_active_model']['label']}: "
+                f"{demo['sponsor_stack']['hermes_active_model']['active_model']}"
+            ),
             next_step="Before recording, switch Hermes with /model so the visible model path is Nemotron 3 Super on Spark, or Ultra as the hosted fallback.",
         )
     )
@@ -1476,10 +1516,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--approval-required-over-cents", type=int, default=1_000)
     parser.add_argument(
         "--active-model",
-        "--oracle-model",
         dest="active_model",
         default="Nemotron 3 Super local on DGX Spark via Hermes /model",
-        help="Hermes active model selected through /model; --oracle-model is kept as a compatibility alias.",
+        help="Hermes active model selected through /model.",
     )
     parser.add_argument("--reflex-model", default="Gemma 4 E2B audio-native reflex on Spark")
     parser.add_argument(

@@ -287,6 +287,21 @@ Make `/voice join` usable as the daily control surface:
 - latency metrics from user speech end to reflex response, oracle response, and TTS playback
 - voice capability prompt context so Hermes does not claim it cannot hear or speak
 
+Headless command:
+
+```bash
+uv run python scripts/voiceops_voice_operator.py --output-dir artifacts/voiceops-voice-operator/current
+```
+
+The command writes:
+
+- `voice-operator-readiness.json`
+- `voice-operator-readiness.md`
+- `discord-loopback-smoke.json`
+- `voice-operator-events.jsonl`
+
+The voice-operator artifact runs the in-memory Discord realtime voice loopback smoke. It verifies lifecycle, receiver callback wiring, PCM conversion, mixer playback, barge-in signaling, latency metrics, and sidecar shutdown without Discord network access, provider sidecar network access, credential reads, sends, or calls. It must still report that a live Discord `/voice join` probe is required before claiming production readiness.
+
 ## Milestone 2: Real Spend and Provisioning
 
 Turn the dry-run queue into controlled live operations:
@@ -408,6 +423,7 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-di
 The command writes:
 
 - all Milestone 0 demo artifacts under `artifacts/hackathon-voiceops-demo/current`
+- all Milestone 1 voice-operator artifacts under `artifacts/voiceops-voice-operator/current`
 - all Milestone 2 provisioning preflight artifacts under `artifacts/voiceops-provisioning/current`
 - all Milestone 3 channel policy artifacts under `artifacts/voiceops-channel-policy/current`
 - all Milestone 4 Spark matrix artifacts under `artifacts/voiceops-spark-matrix/current`

@@ -216,10 +216,17 @@ class TestRealtimeVoiceReadiness:
                 transport="discord_voice",
                 input_pcm48_bytes=3840,
                 sidecar_pcm16_bytes=640,
+                sidecar_pcm16_first_sample=450,
+                sidecar_pcm16_checksum=195,
                 mixer_frames=1,
                 mixer_frame_bytes=3840,
                 barge_in_sent=True,
+                speech_energy_sent=True,
                 mixer_stop_calls=2,
+                sidecar_closed=True,
+                shutdown_elapsed_ms=1,
+                shutdown_bounded=True,
+                shutdown_timed_out=False,
                 events=("transcript.final", "barge_in"),
                 error="",
             )
@@ -229,7 +236,13 @@ class TestRealtimeVoiceReadiness:
         assert payload["kind"] == "discord_bridge"
         assert payload["transport"] == "discord_voice"
         assert payload["sidecar_pcm16_bytes"] == 640
+        assert payload["sidecar_pcm16_first_sample"] == 450
+        assert payload["sidecar_pcm16_checksum"] == 195
         assert payload["barge_in_sent"] is True
+        assert payload["speech_energy_sent"] is True
+        assert payload["sidecar_closed"] is True
+        assert payload["shutdown_bounded"] is True
+        assert payload["shutdown_timed_out"] is False
         assert payload["error"] is None
 
     def test_discord_voice_live_probe_report_payload_is_json_safe(self):
@@ -765,10 +778,17 @@ class TestRealtimeVoiceReadiness:
                 transport="discord_voice",
                 input_pcm48_bytes=3840,
                 sidecar_pcm16_bytes=640,
+                sidecar_pcm16_first_sample=450,
+                sidecar_pcm16_checksum=195,
                 mixer_frames=1,
                 mixer_frame_bytes=3840,
                 barge_in_sent=True,
+                speech_energy_sent=True,
                 mixer_stop_calls=2,
+                sidecar_closed=True,
+                shutdown_elapsed_ms=1,
+                shutdown_bounded=True,
+                shutdown_timed_out=False,
                 events=("transcript.final", "barge_in"),
                 error="",
             ),
@@ -792,10 +812,17 @@ class TestRealtimeVoiceReadiness:
                 "transport": "discord_voice",
                 "input_pcm48_bytes": 3840,
                 "sidecar_pcm16_bytes": 640,
+                "sidecar_pcm16_first_sample": 450,
+                "sidecar_pcm16_checksum": 195,
                 "mixer_frames": 1,
                 "mixer_frame_bytes": 3840,
                 "barge_in_sent": True,
+                "speech_energy_sent": True,
                 "mixer_stop_calls": 2,
+                "sidecar_closed": True,
+                "shutdown_elapsed_ms": 1,
+                "shutdown_bounded": True,
+                "shutdown_timed_out": False,
                 "events": ["transcript.final", "barge_in"],
                 "error": None,
             }
@@ -811,10 +838,17 @@ class TestRealtimeVoiceReadiness:
                 transport="discord_voice",
                 input_pcm48_bytes=3840,
                 sidecar_pcm16_bytes=0,
+                sidecar_pcm16_first_sample=None,
+                sidecar_pcm16_checksum=0,
                 mixer_frames=0,
                 mixer_frame_bytes=0,
                 barge_in_sent=False,
+                speech_energy_sent=False,
                 mixer_stop_calls=0,
+                sidecar_closed=False,
+                shutdown_elapsed_ms=None,
+                shutdown_bounded=False,
+                shutdown_timed_out=False,
                 events=("transcript.partial",),
                 error="discord realtime loopback smoke did not satisfy invariants",
             ),
