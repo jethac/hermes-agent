@@ -108,6 +108,13 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
         "reflex:needs_evidence",
         "tts:needs_evidence",
     ]
+    assert {
+        "schema_version",
+        "oracle_selected_by",
+        "oracle_authority_routes",
+        "interface_input_sources",
+        "reflex_providers",
+    } <= set(closure["required_stack_smoke_fields"])
     assert closure["all_local_stack_smoke"]["required_components"] == ["reflex", "oracle", "asr", "tts", "sidecar"]
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" == closure["rerun_commands"]["dgx_eval"]
     assert "VoiceOps Milestone 4 Spark Matrix Closure" in closure_markdown

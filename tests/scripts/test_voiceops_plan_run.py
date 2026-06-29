@@ -156,6 +156,14 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
         "readiness-closure-index.md",
     ]:
         assert f"`{artifact}`" in text
+    assert "voiceops.realtime_voice_live_evidence_manifest.v1" in text
+    assert "voiceops.milestone1.live_voice_evidence.v1" in text
+    assert "placeholder source paths inside referenced artifacts are not trusted as provenance" in text
+    assert "source_artifact` for every redacted evidence section" in text
+    assert "all_local_stack_smoke" in text
+    assert "oracle authority routes include tools/files/memory/project context" in text
+    assert "reflex provider includes `vllm`" in text
+    assert "local reflex turns must not call the oracle" in text
 
 
 def test_goal_doc_keeps_super_local_and_ultra_hosted():

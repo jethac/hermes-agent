@@ -237,9 +237,13 @@ def test_write_probe_artifacts(tmp_path):
     assert setup_closure["preflight_evidence_template"] == "provisioning-preflight-evidence.template.json"
     assert setup_closure["preflight_evidence_example"] == "provisioning-preflight-evidence.example.json"
     assert setup_closure["preflight_evidence_manifest_example"] == "provisioning-preflight-evidence.manifest.example.json"
+    assert setup_closure["evidence_contract"]["preflight_schema_version"] == "voiceops.milestone2.preflight_evidence.v1"
+    assert setup_closure["evidence_contract"]["required_section_field"] == "source_artifact"
+    assert setup_closure["evidence_contract"]["source_artifacts_must_exist"] is True
     assert "provisioning-preflight-evidence.manifest.json" in setup_closure["rerun_commands"]["with_preflight_manifest"]
     assert "VoiceOps Milestone 2 Setup Closure Plan" in setup_markdown
     assert "Manifest example" in setup_markdown
+    assert "source_artifact" in setup_markdown
     assert preflight_example["example_only"] is True
     assert preflight_manifest_example["example_only"] is True
     assert preflight_manifest_example["reports"]["stripe_projects"].endswith("stripe-projects-evidence.json")
