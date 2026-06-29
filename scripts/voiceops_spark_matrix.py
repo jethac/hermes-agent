@@ -759,18 +759,189 @@ def _evidence_example() -> dict[str, Any]:
     }
 
 
+def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
+    evaluations = {item["candidate_id"]: item for item in matrix["evaluations"]}
+    missing_roles = [
+        f"{role}:{status}"
+        for role, status in sorted(matrix["role_status"].items())
+        if status != "validated"
+    ]
+    return {
+        "schema_version": "voiceops.milestone4.spark_matrix_closure.v1",
+        "artifact_id": "voiceops-m4-spark-matrix-closure",
+        "milestone": "milestone_4_local_spark_stack_matrix",
+        "generated_at": matrix["generated_at"],
+        "mode": {
+            "artifact_only": True,
+            "supplied_artifacts_only": True,
+            "spark_execution": False,
+            "network_io": False,
+            "env_secret_reads": False,
+            "live_spend": False,
+            "provider_provisioning": False,
+            "outbound_calls": False,
+        },
+        "hardware_target": matrix["hardware_target"],
+        "ready": matrix["ready_for_one_spark_demo"],
+        "ready_for_one_spark_demo": matrix["ready_for_one_spark_demo"],
+        "status": "complete" if matrix["ready_for_one_spark_demo"] else "needs_external_evidence",
+        "source_matrix_artifact": "spark-model-matrix.json",
+        "missing_gates": [
+            *missing_roles,
+            *([] if matrix["stack_smoke"]["status"] == "validated" else ["all_local_stack_smoke"]),
+        ],
+        "missing_roles": missing_roles,
+        "stack_smoke_status": matrix["stack_smoke"]["status"],
+        "stack_smoke_issues": matrix["stack_smoke"]["issues"],
+        "evidence_template": "spark-benchmark-evidence-template.json",
+        "evidence_example": "spark-benchmark-evidence.example.json",
+        "matrix_artifact": "spark-model-matrix.json",
+        "required_candidate_fields": [
+            "candidate_id",
+            "model",
+            "engine",
+            "hardware",
+            "locality",
+            "measured_at",
+            "metrics",
+            "source_artifact",
+            "verified",
+        ],
+        "required_stack_smoke_fields": [
+            "kind",
+            "components",
+            "hardware",
+            "locality",
+            "measured_at",
+            "metrics.speech_end_to_first_audio_ms",
+            "metrics.barge_in_stop_ms",
+            "source_artifact",
+            "verified",
+        ],
+        "candidate_closure": [
+            {
+                "candidate_id": candidate["candidate_id"],
+                "role": candidate["role"],
+                "priority": candidate["priority"],
+                "locality": candidate["locality"],
+                "model": candidate["model"],
+                "engine": candidate["engine"],
+                "status": evaluations[candidate["candidate_id"]]["status"],
+                "issues": evaluations[candidate["candidate_id"]]["issues"],
+                "required_targets": candidate["required_targets"],
+                "proof": (
+                    "Measured local DGX Spark evidence required for role readiness."
+                    if candidate["locality"] == "local_spark" and candidate["priority"] == 1
+                    else "Fallback evidence is useful for demos but does not satisfy one-Spark local readiness."
+                ),
+            }
+            for candidate in matrix["candidates"]
+        ],
+        "all_local_stack_smoke": {
+            "kind": STACK_SMOKE_KIND,
+            "required_components": list(STACK_SMOKE_REQUIRED_COMPONENTS),
+            "required_oracle_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
+            "required_interface_input_source": "native_audio",
+            "required_reflex_provider": "vllm",
+            "target_metrics": {
+                "speech_end_to_first_audio_ms": {"operator": "<=", "value": 1500, "unit": "ms"},
+                "barge_in_stop_ms": {"operator": "<=", "value": 150, "unit": "ms"},
+            },
+        },
+        "rerun_commands": {
+            "matrix_only": "uv run python scripts/voiceops_spark_matrix.py --output-dir artifacts/voiceops-spark-matrix/current",
+            "with_evidence": (
+                "uv run python scripts/voiceops_spark_matrix.py "
+                "--output-dir artifacts/voiceops-spark-matrix/current "
+                "--evidence path/to/spark-benchmark-evidence.json"
+            ),
+            "plan_index": (
+                "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                "--output-dir artifacts/voiceops-plan/current "
+                "--evidence path/to/spark-benchmark-evidence.json"
+            ),
+            "dgx_eval": "scripts/dgx_spark_gemma4_voice_eval.sh",
+        },
+        "operator_must_not": [
+            "claim one-Spark readiness from hosted Nemotron 3 Ultra fallback evidence or cloud TTS fallback evidence",
+            "mark benchmark evidence verified without raw source artifacts",
+            "treat the matrix template or example as measured evidence",
+        ],
+        "completion_signal": "ready_for_one_spark_demo is true, all primary local role_status values are validated, and all_local_stack_smoke is validated",
+    }
+
+
+def _closure_markdown(plan: dict[str, Any]) -> str:
+    lines = [
+        "# VoiceOps Milestone 4 Spark Matrix Closure",
+        "",
+        f"- Status: {plan['status']}",
+        f"- Hardware target: {plan['hardware_target']}",
+        f"- Ready for one-Spark demo: {'yes' if plan['ready_for_one_spark_demo'] else 'no'}",
+        f"- Missing roles: {', '.join(plan['missing_roles']) if plan['missing_roles'] else 'none'}",
+        f"- Stack smoke: {plan['stack_smoke_status']}",
+        f"- Stack smoke issues: {', '.join(plan['stack_smoke_issues']) if plan['stack_smoke_issues'] else 'none'}",
+        "",
+        "## Evidence Artifacts",
+        "",
+        f"- Template: `{plan['evidence_template']}`",
+        f"- Example: `{plan['evidence_example']}`",
+        f"- Matrix: `{plan['matrix_artifact']}`",
+        "",
+        "## Candidate Closure",
+        "",
+    ]
+    for item in plan["candidate_closure"]:
+        target_text = ", ".join(
+            f"{target['metric']} {target['operator']} {target['value']:g} {target['unit']}"
+            for target in item["required_targets"]
+        )
+        lines.extend(
+            [
+                f"### {item['candidate_id']}",
+                "",
+                f"- Role: {item['role']}",
+                f"- Locality: {item['locality']}",
+                f"- Status: {item['status']}",
+                f"- Issues: {', '.join(item['issues']) if item['issues'] else 'none'}",
+                f"- Targets: {target_text}",
+                f"- Proof: {item['proof']}",
+                "",
+            ]
+        )
+    lines.extend(["## All-Local Stack Smoke", ""])
+    smoke = plan["all_local_stack_smoke"]
+    lines.append(f"- Kind: `{smoke['kind']}`")
+    lines.append(f"- Components: {', '.join(smoke['required_components'])}")
+    lines.append(f"- Oracle routes: {', '.join(smoke['required_oracle_routes'])}")
+    lines.append(f"- Interface input source: {smoke['required_interface_input_source']}")
+    lines.append(f"- Reflex provider: {smoke['required_reflex_provider']}")
+    lines.extend(["", "## Rerun Commands", ""])
+    for label, command in plan["rerun_commands"].items():
+        lines.append(f"- {label}: `{command}`")
+    lines.extend(["", "## Do Not", ""])
+    lines.extend(f"- {item}" for item in plan["operator_must_not"])
+    lines.append("")
+    return "\n".join(lines)
+
+
 def write_matrix(output_dir: Path, matrix: dict[str, Any]) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    closure_plan = _closure_plan(matrix)
     paths = {
         "json": output_dir / "spark-model-matrix.json",
         "markdown": output_dir / "spark-model-matrix.md",
         "evidence_template": output_dir / "spark-benchmark-evidence-template.json",
         "evidence_example": output_dir / "spark-benchmark-evidence.example.json",
+        "closure_json": output_dir / "spark-matrix-closure-plan.json",
+        "closure_markdown": output_dir / "spark-matrix-closure-plan.md",
     }
     _write_json(paths["json"], matrix)
     paths["markdown"].write_text(_markdown(matrix), encoding="utf-8")
     _write_json(paths["evidence_template"], _evidence_template(matrix["candidates"]))
     _write_json(paths["evidence_example"], _evidence_example())
+    _write_json(paths["closure_json"], closure_plan)
+    paths["closure_markdown"].write_text(_closure_markdown(closure_plan), encoding="utf-8")
     return {key: str(path) for key, path in paths.items()}
 
 

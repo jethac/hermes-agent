@@ -419,8 +419,10 @@ The command writes:
 - `spark-model-matrix.md`
 - `spark-benchmark-evidence-template.json`
 - `spark-benchmark-evidence.example.json`
+- `spark-matrix-closure-plan.json`
+- `spark-matrix-closure-plan.md`
 
-When benchmark evidence exists, pass it with repeated `--evidence path/to/evidence.json` arguments. The matrix accepts its native `voiceops.spark_benchmark_evidence.v1` records and adapts the generated KAME DGX Spark benchmark evidence shape when provenance is present. Local readiness requires more than role metrics: evidence must identify the hardware/locality, model, measurement time, source artifact, verification state, and an all-local stack smoke proving reflex, oracle, ASR, TTS, and sidecar ran together on one DGX Spark. Until measured evidence is supplied, the matrix must mark local Spark roles as needing evidence rather than claiming readiness. The generated `.example.json` file is a passing-looking guide for measured Spark artifacts, but all `example_only: true` entries are rejected by the matrix.
+When benchmark evidence exists, pass it with repeated `--evidence path/to/evidence.json` arguments. The matrix accepts its native `voiceops.spark_benchmark_evidence.v1` records and adapts the generated KAME DGX Spark benchmark evidence shape when provenance is present. Local readiness requires more than role metrics: evidence must identify the hardware/locality, model, measurement time, source artifact, verification state, and an all-local stack smoke proving reflex, oracle, ASR, TTS, and sidecar ran together on one DGX Spark. Until measured evidence is supplied, the matrix must mark local Spark roles as needing evidence rather than claiming readiness. The generated `.example.json` file is a passing-looking guide for measured Spark artifacts, but all `example_only: true` entries are rejected by the matrix. The generated Spark closure plan is the Milestone 4 checklist that the readiness closure index should point at for missing model, speech, and all-local stack-smoke proof.
 
 ## Milestone 5: Operator Dashboard
 

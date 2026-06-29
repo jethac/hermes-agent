@@ -88,6 +88,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert matrix_result["status"] == "needs_evidence"
     assert matrix_result["details"]["ready_for_one_spark_demo"] is False
     assert matrix_result["details"]["stack_smoke_status"] == "needs_evidence"
+    assert Path(matrix_result["artifacts"]["closure_json"]).exists()
+    assert Path(matrix_result["artifacts"]["closure_markdown"]).exists()
     assert Path(matrix_result["artifacts"]["evidence_example"]).exists()
 
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
@@ -97,6 +99,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert payload["ok"] is True
     assert closure["artifact_id"] == "voiceops-plan-readiness-closure"
     assert closure["schema_version"] == "voiceops.closure_index.v1"
+    spark_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "local_spark_stack_matrix")
+    assert spark_gate["closure_plan"].endswith("spark-matrix-closure-plan.json")
+    assert spark_gate["closure_artifact"].endswith("spark-matrix-closure-plan.md")
     assert "VoiceOps Plan Run Summary" in markdown
     assert "Readiness Closure" in markdown
     assert "VoiceOps Readiness Closure Index" in closure_markdown
@@ -118,6 +123,8 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
         "setup-closure-plan.md",
         "spark-benchmark-evidence-template.json",
         "spark-benchmark-evidence.example.json",
+        "spark-matrix-closure-plan.json",
+        "spark-matrix-closure-plan.md",
         "readiness-closure-index.json",
         "readiness-closure-index.md",
     ]:

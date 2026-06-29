@@ -206,7 +206,8 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "evidence_template": spark["artifacts"].get("evidence_template"),
             "template_artifact": spark["artifacts"].get("evidence_template"),
             "matrix_artifact": spark["artifacts"].get("json"),
-            "closure_artifact": spark["artifacts"].get("markdown"),
+            "closure_plan": spark["artifacts"].get("closure_json"),
+            "closure_artifact": spark["artifacts"].get("closure_markdown"),
             "required_candidate_fields": [
                 "candidate_id",
                 "model",
