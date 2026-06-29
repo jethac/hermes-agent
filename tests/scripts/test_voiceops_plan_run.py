@@ -153,6 +153,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(voice_result["artifacts"]["smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["events_jsonl"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_example"]).exists()
+    assert Path(voice_result["artifacts"]["live_evidence_scaffold_manifest"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_template"]).exists()
     assert Path(voice_result["artifacts"]["live_probe_closure_json"]).exists()
 
@@ -196,6 +197,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert closure["schema_version"] == "voiceops.closure_index.v1"
     assert handoff_payload == closure["operator_handoff"]
     assert handoff_payload["schema_version"] == "voiceops.operator_handoff.v1"
+    voice_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "live_discord_voice_operator")
+    assert voice_gate["evidence_scaffold"].endswith("live-voice-evidence-scaffold/manifest.json")
     provisioning_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "spend_and_provisioning_preflight")
     assert provisioning_gate["evidence_manifest_example"].endswith(
         "provisioning-preflight-evidence.manifest.example.json"
@@ -242,6 +245,7 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     for artifact in [
         "live-voice-evidence-template.json",
         "live-voice-evidence.example.json",
+        "live-voice-evidence-scaffold/manifest.json",
         "live-probe-closure-plan.json",
         "live-probe-closure-plan.md",
         "provisioning-preflight-evidence.template.json",

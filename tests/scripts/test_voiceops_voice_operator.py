@@ -171,20 +171,29 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     report = build_voice_operator_report(_smoke_payload())
     paths = write_voice_operator_report(tmp_path, report)
 
-    assert set(paths) == {
+    required_paths = {
         "events_jsonl",
         "json",
         "live_evidence_example",
+        "live_evidence_scaffold_manifest",
         "live_evidence_template",
         "live_probe_closure_json",
         "live_probe_closure_markdown",
         "markdown",
         "smoke_json",
     }
+    assert required_paths <= set(paths)
+    assert {
+        "scaffold_discord_live_probe",
+        "scaffold_sidecar_session",
+        "scaffold_live_turn",
+    } <= set(paths)
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     smoke = json.loads(Path(paths["smoke_json"]).read_text(encoding="utf-8"))
     live_template = json.loads(Path(paths["live_evidence_template"]).read_text(encoding="utf-8"))
     live_example = json.loads(Path(paths["live_evidence_example"]).read_text(encoding="utf-8"))
+    live_scaffold_manifest_path = Path(paths["live_evidence_scaffold_manifest"])
+    live_scaffold_manifest = json.loads(live_scaffold_manifest_path.read_text(encoding="utf-8"))
     live_closure = json.loads(Path(paths["live_probe_closure_json"]).read_text(encoding="utf-8"))
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
     closure_markdown = Path(paths["live_probe_closure_markdown"]).read_text(encoding="utf-8")
@@ -202,7 +211,16 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert live_template["schema_version"] == "voiceops.milestone1.live_voice_evidence.v1"
     assert live_example["example_only"] is True
     assert "example_only_evidence_not_accepted" in validate_live_probe_evidence(live_example)["issues"]
+    assert live_scaffold_manifest["example_only"] is True
+    assert live_scaffold_manifest["reports"]["sidecar_session"] == "sections/sidecar-session.json"
+    scaffold_evidence = _load_live_evidence([live_scaffold_manifest_path])
+    assert scaffold_evidence["overall_status"] == "partial_live_evidence"
+    assert "example_only_evidence_not_accepted" in scaffold_evidence["issues"]
+    assert "live_evidence_manifest:sidecar_session:example_only_evidence_not_accepted" in scaffold_evidence["issues"]
+    assert all("source_artifact_not_found" not in issue for issue in scaffold_evidence["issues"])
+    assert json.loads(Path(paths["scaffold_live_turn"]).read_text(encoding="utf-8"))["kind"] == "live_turn"
     assert live_closure["schema_version"] == "voiceops.milestone1.live_probe_closure.v1"
+    assert live_closure["live_evidence_scaffold_manifest"] == "live-voice-evidence-scaffold/manifest.json"
     assert live_closure["evidence_contract"]["manifest_schema_version"] == (
         "voiceops.realtime_voice_live_evidence_manifest.v1"
     )
@@ -224,6 +242,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert "Live Probe Boundary" in markdown
     assert "Supplied Live Evidence" in markdown
     assert "VoiceOps Milestone 1 Live Probe Closure" in closure_markdown
+    assert "live-voice-evidence-scaffold/manifest.json" in closure_markdown
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in closure_markdown
     assert "source_artifact" in closure_markdown
     assert "kind/evidence_type" in closure_markdown

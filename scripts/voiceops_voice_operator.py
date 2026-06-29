@@ -285,6 +285,50 @@ def build_live_probe_evidence_example() -> dict[str, Any]:
     return example
 
 
+def write_live_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
+    scaffold_dir = output_dir / "live-voice-evidence-scaffold"
+    sections_dir = scaffold_dir / "sections"
+    sections_dir.mkdir(parents=True, exist_ok=True)
+
+    example = build_live_probe_evidence_example()
+    section_files = {
+        "discord_live_probe": "discord-live-probe.json",
+        "sidecar_session": "sidecar-session.json",
+        "live_turn": "live-turn.json",
+    }
+    reports: dict[str, str] = {}
+    paths: dict[str, Path] = {}
+    for section_name, section_file in section_files.items():
+        section = dict(example[section_name])
+        section["example_only"] = True
+        section["kind"] = section_name
+        section["source_artifact"] = section_file
+        section["redaction_policy"] = (
+            "example only; replace with real redacted live evidence and remove example_only before ingest"
+        )
+        section_path = sections_dir / section_file
+        _write_json(section_path, section)
+        reports[section_name] = f"sections/{section_file}"
+        paths[f"scaffold_{section_name}"] = section_path
+
+    manifest_path = scaffold_dir / "manifest.json"
+    _write_json(
+        manifest_path,
+        {
+            "schema_version": LIVE_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+            "example_only": True,
+            "redaction_policy": "example only; this scaffold is rejected until all example_only markers are removed",
+            "reports": reports,
+            "notes": (
+                "Replace each section report with real redacted Discord/sidecar/turn evidence. "
+                "Do not paste tokens, full phone numbers, or raw private transcripts."
+            ),
+        },
+    )
+    paths["live_evidence_scaffold_manifest"] = manifest_path
+    return paths
+
+
 def _load_live_evidence(paths: list[Path] | None) -> dict[str, Any]:
     paths = paths or []
     if not paths:
@@ -954,6 +998,7 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
         "status": report["live_probe_required_for_completion"]["status"],
         "missing_gates": report["live_probe_required_for_completion"]["missing_gates"],
         "live_evidence_template": "live-voice-evidence-template.json",
+        "live_evidence_scaffold_manifest": "live-voice-evidence-scaffold/manifest.json",
         "evidence_contract": {
             "manifest_schema_version": LIVE_EVIDENCE_MANIFEST_SCHEMA_VERSION,
             "expanded_evidence_schema_version": LIVE_EVIDENCE_SCHEMA_VERSION,
@@ -1029,6 +1074,7 @@ def _live_probe_closure_markdown(plan: dict[str, Any]) -> str:
         f"- Status: {plan['status']}",
         f"- Missing gates: {', '.join(plan['missing_gates']) if plan['missing_gates'] else 'none'}",
         f"- Template: `{plan['live_evidence_template']}`",
+        f"- Scaffold manifest: `{plan['live_evidence_scaffold_manifest']}`",
         "- Mode: supplied artifacts only; this file does not run Discord or read credentials",
         "",
         "## Evidence Contract",
@@ -1077,6 +1123,7 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
     _write_json(paths["smoke_json"], report["smoke"])
     _write_json(paths["live_evidence_template"], build_live_probe_evidence_template())
     _write_json(paths["live_evidence_example"], build_live_probe_evidence_example())
+    paths.update(write_live_evidence_scaffold(output_dir))
     _write_json(paths["live_probe_closure_json"], closure_plan)
     paths["live_probe_closure_markdown"].write_text(_live_probe_closure_markdown(closure_plan), encoding="utf-8")
     _write_jsonl(

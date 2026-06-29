@@ -256,6 +256,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "artifacts/realtime-voice-evidence/live-current/discord-live-probe.json",
                     "artifacts/realtime-voice-evidence/live-current/sidecar-session.json",
                     "artifacts/realtime-voice-evidence/live-current/live-turn.json",
+                    "artifacts/voiceops-voice-operator/current/live-voice-evidence-scaffold/manifest.json",
                 ],
                 "success_check": live_gate["completion_signal"],
                 "must_not": live_gate["operator_must_not"],
@@ -351,6 +352,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "evidence_template": voice["artifacts"].get("live_evidence_template"),
             "template_artifact": voice["artifacts"].get("live_evidence_template"),
             "evidence_example": voice["artifacts"].get("live_evidence_example"),
+            "evidence_scaffold": voice["artifacts"].get("live_evidence_scaffold_manifest"),
             "closure_plan": voice["artifacts"].get("live_probe_closure_json"),
             "closure_artifact": voice["artifacts"].get("live_probe_closure_markdown"),
             "collection_commands": {
