@@ -57,8 +57,17 @@ def _complete_preflight_evidence() -> dict[str, object]:
 
 
 def _write_preflight_evidence(tmp_path: Path, payload: dict[str, object] | None = None) -> Path:
+    payload = payload or _complete_preflight_evidence()
+    for section_name in ("stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback"):
+        section = payload.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        source_path = tmp_path / f"{section_name}-source.json"
+        source_path.write_text(json.dumps({"section": section_name, "redacted": True}), encoding="utf-8")
+        if not section.get("source_artifact"):
+            section["source_artifact"] = source_path.name
     evidence_path = tmp_path / "preflight-evidence.json"
-    evidence_path.write_text(json.dumps(payload or _complete_preflight_evidence(), indent=2), encoding="utf-8")
+    evidence_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return evidence_path
 
 
@@ -267,6 +276,59 @@ def test_preflight_evidence_example_is_not_accepted_as_proof(tmp_path):
     } <= set(report["required_failures"])
 
 
+def test_preflight_evidence_rejects_missing_or_invalid_schema(tmp_path):
+    evidence = _complete_preflight_evidence()
+    evidence.pop("schema_version")
+    missing_schema_path = _write_preflight_evidence(tmp_path, evidence)
+
+    missing_schema = load_preflight_evidence(missing_schema_path)
+
+    assert missing_schema["missing_fields"] == []
+    assert "missing_or_invalid_schema_version" in missing_schema["validation_issues"]
+
+    evidence["schema_version"] = "wrong.schema.v1"
+    invalid_schema_path = tmp_path / "invalid-schema-preflight.json"
+    invalid_schema_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    invalid_schema = load_preflight_evidence(invalid_schema_path)
+
+    assert invalid_schema["missing_fields"] == []
+    assert "missing_or_invalid_schema_version" in invalid_schema["validation_issues"]
+
+
+def test_preflight_evidence_rejects_complete_shape_without_source_artifacts(tmp_path):
+    evidence = _complete_preflight_evidence()
+    evidence_path = tmp_path / "synthetic-preflight.json"
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    loaded = load_preflight_evidence(evidence_path)
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
+        env_files=[],
+        preflight_evidence_path=evidence_path,
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+    )
+
+    assert loaded["missing_fields"] == [
+        "stripe_projects.source_artifact",
+        "stripe_link.source_artifact",
+        "mpp.source_artifact",
+        "phone_handoff.source_artifact",
+        "rollback.source_artifact",
+    ]
+    assert "stripe_projects.source_artifact: missing" in loaded["validation_issues"]
+    assert report["ready"] is False
+    assert {
+        "credential_location_reference",
+        "mpp_approval_boundary",
+        "phone_provider_account",
+        "rollback_owner_refs",
+        "stripe_link_approval_capability",
+        "stripe_projects_account",
+    } <= set(report["required_failures"])
+
+
 def test_preflight_evidence_manifest_merges_redacted_section_files(tmp_path):
     sections = _complete_preflight_evidence()
     (tmp_path / "stripe-projects.json").write_text(
@@ -309,6 +371,53 @@ def test_preflight_evidence_manifest_merges_redacted_section_files(tmp_path):
     assert report["ready"] is True
 
 
+def test_preflight_evidence_manifest_rejects_missing_or_invalid_schema(tmp_path):
+    sections = _complete_preflight_evidence()
+    (tmp_path / "stripe-link.json").write_text(json.dumps(sections["stripe_link"]), encoding="utf-8")
+    base_manifest = {"reports": {"stripe_link": "stripe-link.json"}}
+    missing_schema_path = tmp_path / "missing-schema-manifest.json"
+    missing_schema_path.write_text(json.dumps(base_manifest), encoding="utf-8")
+
+    missing_schema = load_preflight_evidence(missing_schema_path)
+
+    assert "preflight_evidence_manifest:missing_schema_version" in missing_schema["validation_issues"]
+
+    invalid_schema_path = tmp_path / "invalid-schema-manifest.json"
+    invalid_schema_path.write_text(json.dumps({**base_manifest, "schema_version": "wrong.schema.v1"}), encoding="utf-8")
+
+    invalid_schema = load_preflight_evidence(invalid_schema_path)
+
+    assert "preflight_evidence_manifest:invalid_schema_version" in invalid_schema["validation_issues"]
+
+
+def test_preflight_evidence_manifest_rejects_example_only_referenced_sections(tmp_path):
+    sections = _complete_preflight_evidence()
+    sections["stripe_link"]["example_only"] = True
+    (tmp_path / "stripe-link.json").write_text(json.dumps(sections["stripe_link"]), encoding="utf-8")
+    sections["mpp"]["example_only"] = True
+    (tmp_path / "mpp.json").write_text(json.dumps({"mpp": sections["mpp"]}), encoding="utf-8")
+    manifest_path = tmp_path / "preflight-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+                "reports": {
+                    "stripe_link": "stripe-link.json",
+                    "mpp": "mpp.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_preflight_evidence(manifest_path)
+
+    assert "preflight_evidence_manifest:stripe_link:example_only evidence is not accepted" in loaded["validation_issues"]
+    assert "preflight_evidence_manifest:mpp:example_only evidence is not accepted" in loaded["validation_issues"]
+    assert "stripe_link: example_only evidence is not accepted" in loaded["validation_issues"]
+    assert "mpp: example_only evidence is not accepted" in loaded["validation_issues"]
+
+
 def test_preflight_evidence_manifest_prefers_manifest_relative_paths(monkeypatch, tmp_path):
     manifest_dir = tmp_path / "manifest-dir"
     cwd_dir = tmp_path / "cwd"
@@ -334,6 +443,36 @@ def test_preflight_evidence_manifest_prefers_manifest_relative_paths(monkeypatch
 
     assert "stripe_link.account_ref" in loaded["fields_present"]
     assert not any("secret-like value" in issue for issue in loaded["validation_issues"])
+
+
+def test_preflight_evidence_manifest_does_not_fallback_to_cwd(monkeypatch, tmp_path):
+    manifest_dir = tmp_path / "manifest-dir"
+    cwd_dir = tmp_path / "cwd"
+    manifest_dir.mkdir()
+    cwd_dir.mkdir()
+    cwd_section = {
+        "account_ref": "stripe-link-account-ref-demo",
+        "approval_capability_confirmed": True,
+        "max_approved_cents": 20_000,
+        "currency": "usd",
+    }
+    (cwd_dir / "stripe-link.json").write_text(json.dumps(cwd_section), encoding="utf-8")
+    manifest_path = manifest_dir / "preflight-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+                "reports": {"stripe_link": "stripe-link.json"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(cwd_dir)
+
+    loaded = load_preflight_evidence(manifest_path)
+
+    assert "preflight_evidence_manifest:stripe_link:evidence file not found" in loaded["validation_issues"]
+    assert "stripe_link.account_ref" in loaded["missing_fields"]
 
 
 def test_preflight_evidence_manifest_rejects_example_or_invalid_sections(tmp_path):

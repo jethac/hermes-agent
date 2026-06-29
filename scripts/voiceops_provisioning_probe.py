@@ -24,6 +24,8 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-provisioning/current")
 FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
+PREFLIGHT_EVIDENCE_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence.v1"
+PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence_manifest.v1"
 
 BLOCKED_CAPABILITIES = [
     "live_spend",
@@ -165,21 +167,26 @@ SETUP_CLOSURE_REQUIREMENTS: dict[str, dict[str, Any]] = {
     },
 }
 PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS = [
+    "stripe_projects.source_artifact",
     "stripe_projects.account_ref",
     "stripe_projects.projects_catalog_checked_at",
     "stripe_projects.voip_provider_candidate",
     "stripe_projects.can_create_project_after_approval",
+    "stripe_link.source_artifact",
     "stripe_link.account_ref",
     "stripe_link.approval_capability_confirmed",
     "stripe_link.max_approved_cents",
     "stripe_link.currency",
+    "mpp.source_artifact",
     "mpp.boundary_tool",
     "mpp.policy_ref",
     "mpp.approval_packet_ref",
+    "phone_handoff.source_artifact",
     "phone_handoff.provider",
     "phone_handoff.provider_account_ref",
     "phone_handoff.phone_target_ref",
     "phone_handoff.credential_location_ref",
+    "rollback.source_artifact",
     "rollback.deprovision_owner",
     "rollback.refund_or_cancel_owner",
     "rollback.call_cancel_owner",
@@ -291,32 +298,37 @@ def _parse_env_file(path: Path) -> dict[str, str]:
 
 def build_preflight_evidence_template() -> dict[str, Any]:
     return {
-        "schema_version": "voiceops.milestone2.preflight_evidence.v1",
+        "schema_version": PREFLIGHT_EVIDENCE_SCHEMA_VERSION,
         "redaction_policy": "references and aliases only; no raw secrets, cards, tokens, or full phone numbers",
         "stripe_projects": {
+            "source_artifact": None,
             "account_ref": None,
             "projects_catalog_checked_at": None,
             "voip_provider_candidate": "twilio/voice",
             "can_create_project_after_approval": False,
         },
         "stripe_link": {
+            "source_artifact": None,
             "account_ref": None,
             "approval_capability_confirmed": False,
             "max_approved_cents": 0,
             "currency": "usd",
         },
         "mpp": {
+            "source_artifact": None,
             "boundary_tool": None,
             "policy_ref": None,
             "approval_packet_ref": "nemoclaw-action-packet.json",
         },
         "phone_handoff": {
+            "source_artifact": None,
             "provider": None,
             "provider_account_ref": None,
             "phone_target_ref": None,
             "credential_location_ref": None,
         },
         "rollback": {
+            "source_artifact": None,
             "deprovision_owner": None,
             "refund_or_cancel_owner": None,
             "call_cancel_owner": None,
@@ -331,6 +343,7 @@ def build_preflight_evidence_example() -> dict[str, Any]:
     example["stripe_projects"].update(
         {
             "account_ref": "stripe-projects-account-ref-demo",
+            "source_artifact": "artifacts/voiceops-provisioning/current/stripe-projects-catalog-redacted.json",
             "projects_catalog_checked_at": "2026-06-29T00:00:00Z",
             "voip_provider_candidate": "twilio/voice",
             "can_create_project_after_approval": True,
@@ -339,6 +352,7 @@ def build_preflight_evidence_example() -> dict[str, Any]:
     example["stripe_link"].update(
         {
             "account_ref": "stripe-link-account-ref-demo",
+            "source_artifact": "artifacts/voiceops-provisioning/current/stripe-link-approval-redacted.json",
             "approval_capability_confirmed": True,
             "max_approved_cents": 20_000,
             "currency": "usd",
@@ -347,6 +361,7 @@ def build_preflight_evidence_example() -> dict[str, Any]:
     example["mpp"].update(
         {
             "boundary_tool": "nemoclaw",
+            "source_artifact": "artifacts/voiceops-provisioning/current/nemoclaw-boundary-redacted.json",
             "policy_ref": "voiceops-policy-ref-demo",
             "approval_packet_ref": "nemoclaw-action-packet.json",
         }
@@ -354,6 +369,7 @@ def build_preflight_evidence_example() -> dict[str, Any]:
     example["phone_handoff"].update(
         {
             "provider": "twilio",
+            "source_artifact": "artifacts/voiceops-provisioning/current/phone-handoff-redacted.json",
             "provider_account_ref": "twilio-account-ref-demo",
             "phone_target_ref": "operator-phone-ref-demo",
             "credential_location_ref": "1password://VoiceOps/Twilio Demo Credential Ref",
@@ -362,6 +378,7 @@ def build_preflight_evidence_example() -> dict[str, Any]:
     example["rollback"].update(
         {
             "deprovision_owner": "operator-ref-demo",
+            "source_artifact": "artifacts/voiceops-provisioning/current/rollback-owners-redacted.json",
             "refund_or_cancel_owner": "operator-ref-demo",
             "call_cancel_owner": "operator-ref-demo",
         }
@@ -371,7 +388,7 @@ def build_preflight_evidence_example() -> dict[str, Any]:
 
 def build_preflight_evidence_manifest_example() -> dict[str, Any]:
     return {
-        "schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+        "schema_version": PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION,
         "example_only": True,
         "redaction_policy": "example only; reference real redacted section files and remove example_only before ingest",
         "reports": {
@@ -472,8 +489,12 @@ def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
     fields_present = [field for field in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS if _field_present(raw_payload, field)]
     missing_fields = [field for field in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS if field not in fields_present]
     validation_issues = [*manifest_issues, *_preflight_secret_issues(raw_payload)]
+    if str(raw_payload.get("schema_version") or "") != PREFLIGHT_EVIDENCE_SCHEMA_VERSION:
+        validation_issues.append("missing_or_invalid_schema_version")
     if raw_payload.get("example_only") is True:
         validation_issues.append("example_only evidence is not accepted")
+    validation_issues.extend(_nested_example_only_issues(raw_payload))
+    validation_issues.extend(_source_artifact_issues(raw_payload, path))
     return {
         "loaded": True,
         "path": str(path),
@@ -489,8 +510,13 @@ def _expand_preflight_evidence_manifest(path: Path, payload: Mapping[str, Any]) 
     if not isinstance(reports, Mapping):
         return payload, []
 
-    expanded: dict[str, Any] = {}
+    expanded: dict[str, Any] = {"schema_version": PREFLIGHT_EVIDENCE_SCHEMA_VERSION}
     issues: list[str] = []
+    manifest_schema = str(payload.get("schema_version") or "")
+    if not manifest_schema:
+        issues.append("preflight_evidence_manifest:missing_schema_version")
+    elif manifest_schema != PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION:
+        issues.append("preflight_evidence_manifest:invalid_schema_version")
     if payload.get("example_only") is True:
         expanded["example_only"] = True
     for section_name, report_path_value in reports.items():
@@ -519,9 +545,7 @@ def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) ->
     basename_sibling = manifest_path.parent / report_path.name
     if basename_sibling.exists():
         return basename_sibling
-    if report_path.exists():
-        return report_path
-    return report_path
+    return sibling
 
 
 def _load_preflight_manifest_report(path: Path, section_name: str) -> tuple[Mapping[str, Any] | None, list[str]]:
@@ -536,10 +560,55 @@ def _load_preflight_manifest_report(path: Path, section_name: str) -> tuple[Mapp
         return None, [f"evidence JSON parse failed: {exc.msg}"]
     if not isinstance(payload, Mapping):
         return None, ["evidence root must be an object"]
+    issues: list[str] = []
+    if payload.get("example_only") is True:
+        issues.append("example_only evidence is not accepted")
     section = payload.get(section_name)
     if isinstance(section, Mapping):
-        return section, []
-    return payload, []
+        section = _with_preflight_section_source_artifact(section, path)
+        if section.get("example_only") is True:
+            issues.append("example_only evidence is not accepted")
+        return section, issues
+    return _with_preflight_section_source_artifact(payload, path), issues
+
+
+def _nested_example_only_issues(payload: Mapping[str, Any]) -> list[str]:
+    return [
+        f"{section_name}: example_only evidence is not accepted"
+        for section_name in PREFLIGHT_EVIDENCE_SECTIONS
+        if isinstance(payload.get(section_name), Mapping) and payload[section_name].get("example_only") is True
+    ]
+
+
+def _with_preflight_section_source_artifact(section: Mapping[str, Any], path: Path) -> dict[str, Any]:
+    section_copy = dict(section)
+    reported_source = str(section_copy.get("source_artifact") or "")
+    source_artifact = str(path)
+    section_copy["source_artifact"] = source_artifact
+    if reported_source and reported_source != source_artifact:
+        section_copy["reported_source_artifact"] = reported_source
+    return section_copy
+
+
+def _source_artifact_issues(payload: Mapping[str, Any], evidence_path: Path) -> list[str]:
+    issues: list[str] = []
+    for section_name in PREFLIGHT_EVIDENCE_SECTIONS:
+        section = payload.get(section_name)
+        if not isinstance(section, Mapping):
+            continue
+        source_artifact = str(section.get("source_artifact") or "").strip()
+        if not source_artifact:
+            issues.append(f"{section_name}.source_artifact: missing")
+        elif not _source_artifact_exists(source_artifact, evidence_path):
+            issues.append(f"{section_name}.source_artifact: artifact not found")
+    return issues
+
+
+def _source_artifact_exists(source_artifact: str, evidence_path: Path) -> bool:
+    source_path = Path(source_artifact).expanduser()
+    if source_path.is_absolute():
+        return source_path.exists()
+    return (evidence_path.parent / source_artifact).exists()
 
 
 def _default_env_files() -> list[Path]:

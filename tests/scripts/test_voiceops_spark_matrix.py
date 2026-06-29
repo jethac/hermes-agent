@@ -32,6 +32,9 @@ def _stack_smoke() -> dict:
         "measured_at": "2026-06-29T00:00:00Z",
         "source_artifact": "artifacts/test/stack-smoke.json",
         "oracle_selected_by": "Hermes /model",
+        "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
+        "interface_input_sources": ["native_audio"],
+        "reflex_providers": ["vllm"],
         "components": {
             "reflex": True,
             "oracle": True,
@@ -305,6 +308,37 @@ def test_spark_matrix_hosted_ultra_does_not_validate_local_oracle_role(tmp_path)
     assert matrix["ready_for_one_spark_demo"] is False
 
 
+def test_spark_matrix_cartesia_fallback_does_not_validate_local_tts_role(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.spark_benchmark_evidence.v1",
+                "candidate_id": "tts-cartesia-cloud-fallback",
+                "hardware": "hosted",
+                "locality": "hosted",
+                "model": "Cartesia cloud TTS",
+                "engine": "Cartesia API",
+                "verified": True,
+                "measured_at": "2026-06-29T00:00:00Z",
+                "source_artifact": "artifacts/test/cartesia.json",
+                "metrics": {
+                    "tts_first_audio_ms": 250,
+                    "cutoff_count": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    matrix = build_matrix([evidence_path])
+    evaluations = {evaluation["candidate_id"]: evaluation for evaluation in matrix["evaluations"]}
+
+    assert evaluations["tts-cartesia-cloud-fallback"]["status"] == "validated"
+    assert matrix["role_status"]["tts"] == "needs_evidence"
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
 def test_spark_matrix_rejects_unproven_all_local_stack_smoke(tmp_path):
     evidence_path = tmp_path / "evidence.json"
     incomplete = _stack_smoke()
@@ -332,6 +366,23 @@ def test_spark_matrix_rejects_stack_smoke_without_provenance(tmp_path):
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "missing_source_artifact" in matrix["stack_smoke"]["issues"]
     assert "missing_measured_at" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_rejects_native_stack_smoke_without_kame_routing_proof(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    incomplete = _stack_smoke()
+    incomplete.pop("oracle_authority_routes")
+    incomplete.pop("interface_input_sources")
+    incomplete.pop("reflex_providers")
+    evidence_path.write_text(json.dumps({"evidence": [incomplete]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "missing_oracle_authority_routes:files,memory,project_context,tools" in matrix["stack_smoke"]["issues"]
+    assert "missing_interface_input_source:native_audio" in matrix["stack_smoke"]["issues"]
+    assert "missing_reflex_provider:vllm" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
 
 

@@ -30,11 +30,28 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "local_spark_stack_matrix",
         "spend_and_provisioning_preflight",
     }
+    assert "schema_version" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "transcript_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert gates["live_discord_voice_operator"]["evidence_contract"] == {
+        "manifest_schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+        "expanded_evidence_schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+        "required_sections": ["discord_live_probe", "sidecar_session", "live_turn"],
+        "required_section_refs": ["source_artifact", "section"],
+        "source_artifacts_must_exist": True,
+        "example_only_accepted": False,
+    }
     assert "operator_must_not" in gates["live_discord_voice_operator"]
     assert "manifest.json" in gates["live_discord_voice_operator"]["rerun_command"]
     assert "missing_preflight_fields" in gates["spend_and_provisioning_preflight"]
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["preflight_schema_version"] == (
+        "voiceops.milestone2.preflight_evidence.v1"
+    )
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["example_only_accepted"] is False
     assert "required_candidate_fields" in gates["local_spark_stack_matrix"]
+    assert "schema_version" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
+    assert gates["local_spark_stack_matrix"]["evidence_contract"]["hosted_fallback_counts_for_one_spark_readiness"] is False
+    assert "all_local_stack_smoke:needs_evidence" in gates["local_spark_stack_matrix"]["missing"]
+    assert "all_local_stack_smoke is validated" in gates["local_spark_stack_matrix"]["completion_signal"]
     assert summary["hard_failures"] == []
     assert "milestone_1_real_voice_operator" in summary["readiness_gaps"]
     assert "milestone_2_real_spend_and_provisioning_preflight" in summary["readiness_gaps"]
@@ -112,6 +129,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "Readiness Closure" in markdown
     assert "VoiceOps Readiness Closure Index" in closure_markdown
     assert "live_discord_voice_operator" in closure_markdown
+    assert "voiceops.realtime_voice_live_evidence_manifest.v1" in closure_markdown
+    assert "voiceops.milestone2.preflight_evidence_manifest.v1" in closure_markdown
+    assert "voiceops.spark_benchmark_evidence.v1" in closure_markdown
     assert "milestone_0_hackathon_proof" in markdown
 
 

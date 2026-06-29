@@ -89,6 +89,9 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
         for role, status in sorted(spark["details"].get("role_status", {}).items())
         if status != "validated"
     ]
+    stack_smoke_status = str(spark["details"].get("stack_smoke_status") or "")
+    if stack_smoke_status != "validated":
+        spark_missing.append(f"all_local_stack_smoke:{stack_smoke_status or 'needs_evidence'}")
     gates = [
         {
             "milestone": voice["milestone"],
@@ -105,6 +108,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "closure_plan": voice["artifacts"].get("live_probe_closure_json"),
             "closure_artifact": voice["artifacts"].get("live_probe_closure_markdown"),
             "required_evidence_fields": [
+                "schema_version",
                 "connect_perm",
                 "speak_perm",
                 "connected",
@@ -131,6 +135,14 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "speech_end_to_first_audio_ms",
                 "barge_in_stop_ms",
             ],
+            "evidence_contract": {
+                "manifest_schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "expanded_evidence_schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+                "required_sections": ["discord_live_probe", "sidecar_session", "live_turn"],
+                "required_section_refs": ["source_artifact", "section"],
+                "source_artifacts_must_exist": True,
+                "example_only_accepted": False,
+            },
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                 "--output-dir artifacts/voiceops-plan/current "
@@ -156,6 +168,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "closure_plan": provisioning["artifacts"].get("setup_closure_json"),
             "closure_artifact": provisioning["artifacts"].get("setup_closure_markdown"),
             "requirement_fields_per_gate": [
+                "schema_version",
                 "check_id",
                 "area",
                 "category",
@@ -171,6 +184,14 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "evidence_artifacts",
             ],
             "missing_preflight_fields": provisioning["details"].get("preflight_evidence_missing_fields", []),
+            "evidence_contract": {
+                "preflight_schema_version": "voiceops.milestone2.preflight_evidence.v1",
+                "manifest_schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+                "required_sections": ["stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback"],
+                "example_only_accepted": False,
+                "secret_like_values_accepted": False,
+                "full_phone_numbers_accepted": False,
+            },
             "rerun_commands": {
                 "presence_only": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
@@ -216,6 +237,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "closure_plan": spark["artifacts"].get("closure_json"),
             "closure_artifact": spark["artifacts"].get("closure_markdown"),
             "required_candidate_fields": [
+                "schema_version",
                 "candidate_id",
                 "model",
                 "engine",
@@ -227,6 +249,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "verified",
             ],
             "required_stack_smoke_fields": [
+                "schema_version",
                 "kind",
                 "components",
                 "hardware",
@@ -235,12 +258,24 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "metrics.speech_end_to_first_audio_ms",
                 "metrics.barge_in_stop_ms",
                 "source_artifact",
+                "oracle_authority_routes",
+                "interface_input_sources",
+                "reflex_providers",
                 "verified",
             ],
             "current_issues": [
                 *spark_missing,
                 *spark["details"].get("stack_smoke_issues", []),
             ],
+            "evidence_contract": {
+                "benchmark_schema_version": "voiceops.spark_benchmark_evidence.v1",
+                "required_locality_for_one_spark": "local_spark",
+                "required_hardware": "1x NVIDIA DGX Spark",
+                "required_oracle_selection": "Hermes /model",
+                "required_stack_components": ["reflex", "oracle", "asr", "tts", "sidecar"],
+                "hosted_fallback_counts_for_one_spark_readiness": False,
+                "example_only_accepted": False,
+            },
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                 "--output-dir artifacts/voiceops-plan/current "
@@ -251,7 +286,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "mark benchmark evidence verified without raw source artifacts",
                 "treat the matrix template as measured evidence",
             ],
-            "completion_signal": "ready_for_one_spark_demo is true and role_status values are validated",
+            "completion_signal": "ready_for_one_spark_demo is true, role_status values are validated, and all_local_stack_smoke is validated",
         },
     ]
     return {
@@ -517,9 +552,14 @@ def _markdown(summary: dict[str, Any]) -> str:
                 f"- Closure artifact: `{gate['closure_artifact']}`",
                 f"- Rerun: `{gate['rerun_command']}`",
                 f"- Completion signal: {gate['completion_signal']}",
-                "",
             ]
         )
+        contract = gate.get("evidence_contract")
+        if isinstance(contract, dict):
+            lines.append("- Evidence contract:")
+            for key, value in sorted(contract.items()):
+                lines.append(f"  - `{key}`: `{value}`")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -561,9 +601,14 @@ def _closure_markdown(closure: dict[str, Any]) -> str:
                 f"- Closure artifact: `{gate['closure_artifact']}`",
                 f"- Rerun command: `{gate['rerun_command']}`",
                 f"- Completion signal: {gate['completion_signal']}",
-                "",
             ]
         )
+        contract = gate.get("evidence_contract")
+        if isinstance(contract, dict):
+            lines.append("- Evidence contract:")
+            for key, value in sorted(contract.items()):
+                lines.append(f"  - `{key}`: `{value}`")
+        lines.append("")
     return "\n".join(lines)
 
 

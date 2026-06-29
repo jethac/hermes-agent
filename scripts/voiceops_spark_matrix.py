@@ -518,18 +518,18 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
             if oracle_bound_calls is None or oracle_bound_turns is None or oracle_bound_calls < oracle_bound_turns:
                 issues.append("target_failed:oracle_bound_oracle_calls")
 
-            routes = set(_list_values(item.get("oracle_authority_routes")))
-            missing_routes = sorted(set(STACK_SMOKE_REQUIRED_ORACLE_ROUTES).difference(routes))
-            if missing_routes:
-                issues.append("missing_oracle_authority_routes:" + ",".join(missing_routes))
+        routes = set(_list_values(item.get("oracle_authority_routes")))
+        missing_routes = sorted(set(STACK_SMOKE_REQUIRED_ORACLE_ROUTES).difference(routes))
+        if missing_routes:
+            issues.append("missing_oracle_authority_routes:" + ",".join(missing_routes))
 
-            input_sources = set(_list_values(item.get("interface_input_sources")))
-            if "native_audio" not in input_sources:
-                issues.append("missing_interface_input_source:native_audio")
+        input_sources = set(_list_values(item.get("interface_input_sources")))
+        if "native_audio" not in input_sources:
+            issues.append("missing_interface_input_source:native_audio")
 
-            reflex_providers = set(_list_values(item.get("reflex_providers")))
-            if "vllm" not in reflex_providers:
-                issues.append("missing_reflex_provider:vllm")
+        reflex_providers = set(_list_values(item.get("reflex_providers")))
+        if "vllm" not in reflex_providers:
+            issues.append("missing_reflex_provider:vllm")
 
     return {
         "status": "validated" if not issues else "fails_target",
@@ -658,6 +658,9 @@ def _evidence_template(candidates: list[dict[str, Any]]) -> dict[str, Any]:
                 "measured_at": None,
                 "source_artifact": None,
                 "oracle_selected_by": "Hermes /model",
+                "oracle_authority_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
+                "interface_input_sources": ["native_audio"],
+                "reflex_providers": ["vllm"],
                 "components": {name: None for name in STACK_SMOKE_REQUIRED_COMPONENTS},
                 "metrics": {
                     "speech_end_to_first_audio_ms": None,
@@ -752,6 +755,9 @@ def _evidence_example() -> dict[str, Any]:
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/all-local-stack-smoke.json",
                 "oracle_selected_by": "Hermes /model",
+                "oracle_authority_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
+                "interface_input_sources": ["native_audio"],
+                "reflex_providers": ["vllm"],
                 "components": {name: True for name in STACK_SMOKE_REQUIRED_COMPONENTS},
                 "metrics": {
                     "speech_end_to_first_audio_ms": 900,
