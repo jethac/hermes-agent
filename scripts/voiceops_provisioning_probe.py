@@ -2077,7 +2077,7 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "with_preflight_manifest": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
             "plan_index": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
             "plan_index_manifest": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
-            "plan_index_manifest_and_post_approval_receipts": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json --post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json",
+            "plan_index_manifest_and_post_approval_receipts": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env --read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json --post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json",
             "refresh_preflight_source_hashes": "uv run python scripts/voiceops_provisioning_probe.py --refresh-preflight-source-hashes artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
             "source_artifact_sha256": "shasum -a 256 path/to/redacted-source-artifact.json",
         },
@@ -2153,6 +2153,7 @@ def _setup_closure_markdown(plan: dict[str, Any]) -> str:
 
 def _safe_command_manifest_json() -> dict[str, Any]:
     return {
+        "schema_version": "voiceops.milestone2.safe_command_manifest.v1",
         "policy": "Default mode executes no vendor commands. If enabled, isolated HOME version/help probes and separately opted-in exact read-only discovery commands are allowed. Mutating, spend, provisioning, credential, and call commands are refused.",
         "blocked_patterns": MUTATING_COMMAND_PATTERNS,
         "commands": [asdict(probe) for probe in _command_manifest()],

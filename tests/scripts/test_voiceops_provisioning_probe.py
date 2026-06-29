@@ -436,6 +436,7 @@ def test_write_probe_artifacts(tmp_path):
     assert discovery_manifest["schema_version"] == "voiceops.milestone2.read_only_discovery_manifest.v1"
     assert discovery_manifest["audit_ledger"] == "audit-ledger.read-only-discovery.jsonl"
     assert Path(paths["read_only_discovery_audit_ledger"]).read_text(encoding="utf-8") == ""
+    assert manifest["schema_version"] == "voiceops.milestone2.safe_command_manifest.v1"
     assert "read_only_discovery_commands" in manifest
     assert "version_help_commands" in manifest
     assert "VoiceOps Provisioning Readiness Probe" in markdown
@@ -516,6 +517,10 @@ def test_write_probe_artifacts(tmp_path):
         scaffold_manifest_path
         in setup_closure["rerun_commands"]["plan_index_manifest_and_post_approval_receipts"]
     )
+    assert (
+        "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json"
+        in setup_closure["rerun_commands"]["plan_index_manifest_and_post_approval_receipts"]
+    )
     assert "--post-approval-receipts" in setup_closure["rerun_commands"][
         "plan_index_manifest_and_post_approval_receipts"
     ]
@@ -525,6 +530,7 @@ def test_write_probe_artifacts(tmp_path):
     assert "Manifest example" in setup_markdown
     assert "Two-layer scaffold" in setup_markdown
     assert "source_artifact" in setup_markdown
+    assert "--read-only-discovery-evidence" in setup_markdown
     assert stale_manifest_path not in setup_markdown
     assert "`stripe_projects.account_ref`" in setup_markdown
     assert "`stripe_link.max_approved_cents`" in setup_markdown
