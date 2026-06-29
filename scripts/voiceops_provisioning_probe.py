@@ -2562,60 +2562,78 @@ def build_post_approval_receipts_template(plan: Mapping[str, Any]) -> dict[str, 
 def build_post_approval_receipts_example(plan: Mapping[str, Any]) -> dict[str, Any]:
     example = build_post_approval_receipts_template(plan)
     example["example_only"] = True
-    action = next(iter(plan["approval_required_actions"]))
-    credential_ref = action.get("credential_location_ref")
-    example["receipts"] = [
-        {
-            "receipt_id": "receipt-example-provision-voip-provider",
-            "action_id": action["action_id"],
-            "approval_id": action["approval_id"],
-            "provider": action["provider"],
-            "status": "executed",
-            "approved_by": "operator-ref-demo",
-            "approved_at": "2026-06-29T00:00:00Z",
-            "executed_at": "2026-06-29T00:00:30Z",
-            "command_sha256": action["command_sha256"],
-            "amount_cents": 0,
-            "currency": "usd",
-            "external_reference": "provider-resource-ref-demo",
-            "credential_location_ref": credential_ref,
-            "rollback_ref": action["rollback_ref"],
-            "audit_event_id": "audit-example-provision-voip-provider",
-            "approval_artifact": action["approval_artifact"],
-            "redacted_summary": "Example only; replace with real redacted receipt refs.",
-        }
-    ]
-    example["credential_locations"] = [
-        {
-            "credential_ref_id": credential_ref,
-            "provider": action["provider"],
-            "service_id": "provider-resource-ref-demo",
-            "storage_backend": "provider_managed",
-            "secret_name_or_path": "credential-location-ref-demo",
-            "created_by_action_id": action["action_id"],
-            "rotation_due": "2026-09-29T00:00:00Z",
-            "redacted": True,
-        }
-    ]
-    example["rollback_receipts"] = [
-        {
-            "rollback_ref": action["rollback_ref"],
-            "status": "not_run",
-            "owner_ref": "operator-ref-demo",
-            "notes": "Example only; rollback not needed for this sample.",
-        }
-    ]
-    example["audit_events"] = [
-        {
-            "audit_event_id": "audit-example-provision-voip-provider",
-            "action_id": action["action_id"],
-            "receipt_id": "receipt-example-provision-voip-provider",
-            "status": "executed",
-            "provider": action["provider"],
-            "artifact_ref": "post-approval-receipts.example.json",
-            "operator_next_step": "Replace this example with real redacted post-approval evidence.",
-        }
-    ]
+    action_estimates = {
+        str(step.get("step_id") or ""): step.get("estimated_cents")
+        for step in plan.get("execution_steps", [])
+        if isinstance(step, Mapping)
+    }
+    actions = list(plan["approval_required_actions"])
+    example["receipts"] = []
+    example["credential_locations"] = []
+    example["rollback_receipts"] = []
+    example["audit_events"] = []
+    for action in actions:
+        action_id = str(action["action_id"])
+        action_ref = action_id.replace("-", "_")
+        receipt_id = f"receipt-example-{action_id}"
+        audit_event_id = f"audit-example-{action_id}"
+        credential_ref = action.get("credential_location_ref")
+        estimated_cents = action_estimates.get(action_id, 0)
+        if not isinstance(estimated_cents, int):
+            estimated_cents = 0
+        example["receipts"].append(
+            {
+                "receipt_id": receipt_id,
+                "action_id": action_id,
+                "approval_id": action["approval_id"],
+                "provider": action["provider"],
+                "status": "executed",
+                "approved_by": "operator-ref-demo",
+                "approved_at": "2026-06-29T00:00:00Z",
+                "executed_at": "2026-06-29T00:00:30Z",
+                "command_sha256": action["command_sha256"],
+                "amount_cents": estimated_cents,
+                "currency": "usd",
+                "external_reference": f"provider-resource-ref-demo-{action_id}",
+                "credential_location_ref": credential_ref,
+                "rollback_ref": action["rollback_ref"],
+                "audit_event_id": audit_event_id,
+                "approval_artifact": action["approval_artifact"],
+                "redacted_summary": "Example only; replace with real redacted receipt refs.",
+            }
+        )
+        if action.get("credential_location_required"):
+            example["credential_locations"].append(
+                {
+                    "credential_ref_id": credential_ref,
+                    "provider": action["provider"],
+                    "service_id": f"provider-resource-ref-demo-{action_id}",
+                    "storage_backend": "provider_managed",
+                    "secret_name_or_path": f"credential-location-ref-demo-{action_ref}",
+                    "created_by_action_id": action_id,
+                    "rotation_due": "2026-09-29T00:00:00Z",
+                    "redacted": True,
+                }
+            )
+        example["rollback_receipts"].append(
+            {
+                "rollback_ref": action["rollback_ref"],
+                "status": "not_run",
+                "owner_ref": "operator-ref-demo",
+                "notes": "Example only; rollback not needed for this sample.",
+            }
+        )
+        example["audit_events"].append(
+            {
+                "audit_event_id": audit_event_id,
+                "action_id": action_id,
+                "receipt_id": receipt_id,
+                "status": "executed",
+                "provider": action["provider"],
+                "artifact_ref": "post-approval-receipts.example.json",
+                "operator_next_step": "Replace this example with real redacted post-approval evidence.",
+            }
+        )
     return example
 
 

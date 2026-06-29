@@ -338,9 +338,33 @@ def test_write_probe_artifacts(tmp_path):
     assert post_approval_template["schema_version"] == "voiceops.milestone2.post_approval_receipts.v1"
     assert post_approval_template["receipts"] == []
     assert post_approval_example["example_only"] is True
-    assert "example_only evidence is not accepted" in " ".join(
-        validate_post_approval_receipts(post_approval_example, execution_plan)["validation_issues"]
+    assert post_approval_example["expected_actions"] == sorted(execution_plan["approval_contracts"])
+    assert post_approval_scaffold["expected_actions"] == sorted(execution_plan["approval_contracts"])
+    expected_action_ids = {action["action_id"] for action in execution_plan["approval_required_actions"]}
+    credential_required_action_ids = {
+        action["action_id"]
+        for action in execution_plan["approval_required_actions"]
+        if action["credential_location_required"]
+    }
+    assert {receipt["action_id"] for receipt in post_approval_example["receipts"]} == expected_action_ids
+    assert {receipt["action_id"] for receipt in post_approval_scaffold["receipts"]} == expected_action_ids
+    assert {event["action_id"] for event in post_approval_example["audit_events"]} == expected_action_ids
+    assert {event["action_id"] for event in post_approval_scaffold["audit_events"]} == expected_action_ids
+    assert {item["created_by_action_id"] for item in post_approval_example["credential_locations"]} == (
+        credential_required_action_ids
     )
+    assert {item["created_by_action_id"] for item in post_approval_scaffold["credential_locations"]} == (
+        credential_required_action_ids
+    )
+    assert {item["rollback_ref"] for item in post_approval_example["rollback_receipts"]} == {
+        action["rollback_ref"] for action in execution_plan["approval_required_actions"]
+    }
+    example_validation = validate_post_approval_receipts(post_approval_example, execution_plan)
+    assert "example_only evidence is not accepted" in " ".join(example_validation["validation_issues"])
+    assert not any("missing_receipts_for_actions" in issue for issue in example_validation["validation_issues"])
+    assert not any("missing_credential_location" in issue for issue in example_validation["validation_issues"])
+    assert not any("missing_rollback_receipt" in issue for issue in example_validation["validation_issues"])
+    assert not any("missing_audit_event" in issue for issue in example_validation["validation_issues"])
     assert post_approval_scaffold["example_only"] is True
     assert post_approval_validation["status"] == "not_supplied"
     assert Path(paths["post_approval_audit_ledger"]).read_text(encoding="utf-8") == ""
@@ -1148,6 +1172,7 @@ def test_post_approval_receipts_reject_examples_secrets_and_mismatches():
     bad["receipts"][0]["approved_at"] = "2026-06-29T00:01:00Z"
     bad["receipts"][0]["executed_at"] = "2026-06-29T00:00:30Z"
     bad["receipts"][0]["external_reference"] = "sk_live_123456789abcdef"
+    bad["receipts"] = bad["receipts"][:-1]
     bad["audit_events"][0]["provider"] = "wrong-provider"
     bad["audit_events"][0]["status"] = "held"
     bad["credential_locations"][0]["raw_secret"] = "secret"
