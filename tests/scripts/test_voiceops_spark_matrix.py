@@ -87,12 +87,17 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     }
     assert {candidate["candidate_id"] for candidate in matrix["candidates"]} >= {
         "reflex-gemma4-e2b",
+        "reflex-gemma4-e4b",
         "oracle-nemotron3-super-local",
         "oracle-nemotron3-ultra-hosted",
         "asr-nemotron-speech",
         "tts-magpie-local",
         "tts-cartesia-cloud-fallback",
     }
+    reflex_candidates = {candidate["candidate_id"]: candidate for candidate in matrix["candidates"] if candidate["role"] == "reflex"}
+    assert reflex_candidates["reflex-gemma4-e2b"]["priority"] == 1
+    assert reflex_candidates["reflex-gemma4-e4b"]["priority"] == 1
+    assert reflex_candidates["reflex-gemma4-e4b"]["locality"] == "local_spark"
     oracle_candidates = {candidate["candidate_id"]: candidate for candidate in matrix["candidates"] if candidate["role"] == "oracle"}
     assert oracle_candidates["oracle-nemotron3-super-local"]["priority"] == 1
     assert oracle_candidates["oracle-nemotron3-super-local"]["locality"] == "local_spark"
@@ -111,6 +116,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert required_paths <= set(paths)
     assert {
         "scaffold_source_reflex-gemma4-e2b",
+        "scaffold_source_reflex-gemma4-e4b",
         "scaffold_source_oracle-nemotron3-super-local",
         "scaffold_source_asr-nemotron-speech",
         "scaffold_source_tts-magpie-local",
@@ -201,7 +207,9 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     }
     assert scaffold_matrix["ready_for_one_spark_demo"] is False
     assert "example_only_evidence_not_accepted" in scaffold_evaluations["reflex-gemma4-e2b"]["issues"]
+    assert "example_only_evidence_not_accepted" in scaffold_evaluations["reflex-gemma4-e4b"]["issues"]
     assert "source_artifact_not_found" not in scaffold_evaluations["reflex-gemma4-e2b"]["issues"]
+    assert "source_artifact_not_found" not in scaffold_evaluations["reflex-gemma4-e4b"]["issues"]
     assert "source_artifact_not_found" not in scaffold_matrix["stack_smoke"]["issues"]
     scaffold_source = json.loads(Path(paths["scaffold_source_reflex-gemma4-e2b"]).read_text(encoding="utf-8"))
     assert scaffold_source["redacted"] is True
@@ -785,6 +793,40 @@ def test_spark_matrix_adapts_kame_benchmark_evidence_with_provenance(tmp_path):
     assert evaluations["tts-magpie-local"]["status"] == "validated"
     assert matrix["stack_smoke"]["status"] == "validated"
     assert matrix["ready_for_one_spark_demo"] is True
+
+
+def test_spark_matrix_adapts_kame_e4b_interface_evidence(tmp_path):
+    evidence_path = tmp_path / "kame-e4b-evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            [
+                {
+                    "kind": "kame_benchmark_result",
+                    "category": "interface",
+                    "model": "gemma-4-E4B-it",
+                    "hardware": "1x DGX Spark",
+                    "locality": "local_spark",
+                    "verified": True,
+                    "measured_at": "2026-06-29T00:00:00Z",
+                    "source_artifact": "artifacts/kame/raw.json",
+                    "metrics": {
+                        "kame_interface_model_request_ms": 350,
+                        "speech_end_to_interface_decision_p90_ms": 900,
+                        "steady_state_memory_gb": 34,
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    matrix = build_matrix([evidence_path])
+    evaluations = {evaluation["candidate_id"]: evaluation for evaluation in matrix["evaluations"]}
+
+    assert evaluations["reflex-gemma4-e2b"]["status"] == "needs_evidence"
+    assert evaluations["reflex-gemma4-e4b"]["status"] == "validated"
+    assert matrix["role_status"]["reflex"] == "validated"
+    assert matrix["ready_for_one_spark_demo"] is False
 
 
 def test_spark_matrix_rejects_protocol_only_kame_speech_evidence(tmp_path):

@@ -31,6 +31,7 @@ POST_APPROVAL_RECEIPTS_SCHEMA_VERSION = "voiceops.milestone2.post_approval_recei
 POST_APPROVAL_RECEIPT_STATUSES = {"executed", "failed", "held", "denied", "skipped", "rolled_back"}
 POST_APPROVAL_NON_EXECUTED_STATUSES = {"held", "denied", "skipped"}
 PREFLIGHT_REDACTED_SOURCE_SCHEMA_VERSION = "voiceops.milestone2.redacted_source_artifact.v1"
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 PHONE_TARGET_ENV_KEYS = [
     "VOICEOPS_DEMO_PHONE_NUMBER",
@@ -55,6 +56,37 @@ BLOCKED_CAPABILITIES = [
     "account_mutation",
     "network_tunnels",
 ]
+
+PAYMENT_SKILL_CONTRACTS = {
+    "stripe-projects": {
+        "path": Path("optional-skills/payments/stripe-projects/SKILL.md"),
+        "required_terms": [
+            "stripe projects add",
+            "twilio",
+            "billing",
+            ".env",
+            "never commit",
+        ],
+    },
+    "stripe-link-cli": {
+        "path": Path("optional-skills/payments/stripe-link-cli/SKILL.md"),
+        "required_terms": [
+            "--request-approval",
+            "http 402",
+            "shared_payment_token",
+            "do not print card details",
+        ],
+    },
+    "mpp-agent": {
+        "path": Path("optional-skills/payments/mpp-agent/SKILL.md"),
+        "required_terms": [
+            "http 402",
+            "www-authenticate",
+            "method=\"stripe\"",
+            "wallet keys never enter agent context",
+        ],
+    },
+}
 
 MUTATING_COMMAND_PATTERNS = [
     "projects add",
@@ -118,6 +150,14 @@ SETUP_CLOSURE_REQUIREMENTS: dict[str, dict[str, Any]] = {
         "accepted_env_keys": [],
         "operator_action": "Install the MPP/NemoClaw boundary CLI on PATH.",
         "proof": "A rerun records mppx_version as found/pass or an accepted fallback boundary CLI.",
+    },
+    "stripe_skills_bundle": {
+        "category": "local_skill_bundle",
+        "accepted_binaries": [],
+        "safe_probe_commands": [],
+        "accepted_env_keys": [],
+        "operator_action": "Restore or update the local optional Stripe Skills bundle with Projects, Link, and MPP safety contracts.",
+        "proof": "A rerun records stripe_skills_bundle as pass with all required SKILL.md files and safety terms present.",
     },
     "phone_target": {
         "category": "configuration",
@@ -320,6 +360,73 @@ def _env_present(env: Mapping[str, str], key: str) -> bool:
 
 def _present_keys(env: Mapping[str, str], keys: Iterable[str]) -> list[str]:
     return sorted(key for key in keys if _env_present(env, key))
+
+
+def _skill_frontmatter_name(text: str) -> str | None:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        key, separator, value = line.partition(":")
+        if separator and key.strip() == "name":
+            return value.strip().strip("'\"")
+    return None
+
+
+def load_payment_skill_bundle_evidence(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
+    skill_reports: dict[str, dict[str, Any]] = {}
+    missing_files: list[str] = []
+    wrong_names: list[str] = []
+    missing_terms: list[str] = []
+    for skill_name, contract in PAYMENT_SKILL_CONTRACTS.items():
+        relative_path = contract["path"]
+        path = repo_root / relative_path
+        exists = path.is_file()
+        report = {
+            "path": str(relative_path),
+            "exists": exists,
+            "frontmatter_name": None,
+            "required_terms_present": {},
+        }
+        if not exists:
+            missing_files.append(str(relative_path))
+            skill_reports[skill_name] = report
+            continue
+        text = path.read_text(encoding="utf-8")
+        frontmatter_name = _skill_frontmatter_name(text)
+        report["frontmatter_name"] = frontmatter_name
+        if frontmatter_name != skill_name:
+            wrong_names.append(f"{skill_name}:frontmatter_name")
+        normalized = text.lower()
+        required_terms_present = {
+            term: term.lower() in normalized
+            for term in contract["required_terms"]
+        }
+        report["required_terms_present"] = required_terms_present
+        missing_terms.extend(
+            f"{skill_name}:{term}"
+            for term, present in required_terms_present.items()
+            if not present
+        )
+        skill_reports[skill_name] = report
+    issues = [
+        *[f"missing_skill_file:{path}" for path in missing_files],
+        *[f"wrong_skill_frontmatter:{name}" for name in wrong_names],
+        *[f"missing_skill_safety_term:{term}" for term in missing_terms],
+    ]
+    return {
+        "schema_version": "voiceops.milestone2.payment_skill_bundle_evidence.v1",
+        "repo_root": str(repo_root),
+        "non_mutating": True,
+        "network_io": False,
+        "secret_values_emitted": False,
+        "required_skills": sorted(PAYMENT_SKILL_CONTRACTS),
+        "skills": skill_reports,
+        "issues": sorted(issues),
+        "status": "pass" if not issues else "fail",
+    }
 
 
 def _parse_env_file(path: Path) -> dict[str, str]:
@@ -1334,6 +1441,7 @@ def build_probe_report(
     *,
     env: Mapping[str, str] | None = None,
     env_files: Iterable[Path] | None = None,
+    repo_root: Path = REPO_ROOT,
     preflight_evidence_path: Path | None = None,
     post_approval_receipts_path: Path | None = None,
     which: Callable[[str], str | None] = shutil.which,
@@ -1344,6 +1452,7 @@ def build_probe_report(
     timeout_seconds: int = 3,
 ) -> dict[str, Any]:
     env, env_sources = _merge_env_sources(os.environ if env is None else env, _default_env_files() if env_files is None else env_files)
+    payment_skill_bundle = load_payment_skill_bundle_evidence(repo_root)
     command_results = [
         _run_probe(
             probe,
@@ -1429,6 +1538,22 @@ def build_probe_report(
             ),
             next_step="Install the MPP/NemoClaw boundary CLI before approving network-capable provisioning actions.",
             evidence={"probe_id": "mppx_version", "path": mpp_probe.get("path"), "fallback_path": fallback_mpp_path},
+        )
+    )
+    checks.append(
+        ReadinessCheck(
+            check_id="stripe_skills_bundle",
+            area="stripe_skills",
+            status=payment_skill_bundle["status"],
+            required=True,
+            detail=(
+                "Stripe Projects, Link, and MPP optional skills are present with required safety terms"
+                if payment_skill_bundle["status"] == "pass"
+                else "Stripe Skills bundle safety check failed: "
+                + ", ".join(payment_skill_bundle["issues"])
+            ),
+            next_step="Restore or update optional payment skills before approving Stripe/Link/MPP provisioning flows.",
+            evidence=payment_skill_bundle,
         )
     )
 
@@ -1613,6 +1738,7 @@ def build_probe_report(
         "preflight_evidence_loaded": preflight_evidence["loaded"],
         "preflight_evidence_missing_fields": preflight_evidence["missing_fields"],
         "area_status": area_status,
+        "payment_skill_bundle": payment_skill_bundle,
         "preflight_evidence": preflight_evidence,
         "env_sources": env_sources,
         "checks": check_dicts,

@@ -374,6 +374,28 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert handoff["schema_version"] == "voiceops.operator_handoff.v1"
     assert handoff["changes_readiness_by_itself"] is False
     assert handoff["final_success_signal"] == "readiness_gaps is [] and closure_status is complete"
+    next_actions = summary["closure_index"]["next_actions"]
+    assert [action["gate_id"] for action in next_actions] == [
+        "live_discord_voice_operator",
+        "spend_and_provisioning_preflight",
+        "local_spark_stack_matrix",
+    ]
+    assert next_actions[0]["order"] == 1
+    assert next_actions[0]["can_run_here_now"] is False
+    assert next_actions[0]["blocked_by_current_environment"]["needs_external_live_probe"] is True
+    assert "DISCORD_BOT_TOKEN" in next_actions[0]["blocked_by_current_environment"]["missing_env_keys"]
+    assert "hermes_cli.realtime_voice_live_evidence" in next_actions[0]["first_safe_command"]
+    assert next_actions[1]["blocked_by_current_environment"]["missing_cli"] == [
+        "stripe",
+        "link-cli",
+        "mppx_or_fallback",
+    ]
+    assert next_actions[1]["blocked_by_current_environment"]["needs_read_only_discovery"] is True
+    assert next_actions[1]["first_safe_command"].endswith("--dry-audit")
+    assert next_actions[2]["blocked_by_current_environment"]["required_hardware"] == "1x NVIDIA DGX Spark"
+    assert next_actions[2]["blocked_by_current_environment"]["needs_measured_spark_evidence"] is True
+    assert next_actions[2]["first_safe_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
+    assert all("never include secret values" in action["secret_policy"] for action in next_actions)
     assert [phase["phase_id"] for phase in handoff["phases"]] == [
         "live_discord_voice",
         "spend_and_provisioning_preflight",
@@ -703,6 +725,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "Diagnostic only" in closure_markdown
     assert "voiceops.operator_handoff.v1" in closure_markdown
     assert "Final reindex command" in closure_markdown
+    assert "Next Actions" in closure_markdown
+    assert "First safe command" in closure_markdown
+    assert "needs_external_live_probe" in closure_markdown
     assert "live_discord_voice_operator" in closure_markdown
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in closure_markdown
     assert "python -m hermes_cli.realtime_voice_live_evidence" in closure_markdown
@@ -732,6 +757,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "no_write_no_network_no_probe_audit" in handoff_markdown
     assert "Final reindex command" in handoff_markdown
     assert "milestone_0_hackathon_proof" in markdown
+    assert "Next Actions" in markdown
 
 
 def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, monkeypatch):
@@ -926,9 +952,13 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "The operator handoff is the ordered execution runbook" in text
     assert "does not change readiness by itself" in text
     assert "`--dry-audit` builds the same plan summary in a temporary artifact root" in text
+    assert "ordered `next_actions`" in text
+    assert "The `next_actions` records are machine-readable" in text
     assert "Its `ok` field means no hard validation failures, not readiness" in text
     assert "closure rehearsal" in text.lower()
     assert "`remaining_gates: []`" in text
+    assert "local optional Stripe Skills bundle contracts" in text
+    assert "optional-skills/payments/stripe-projects" in text
 
 
 def test_goal_doc_keeps_super_local_and_ultra_hosted():
@@ -1097,6 +1127,12 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
         "spend_and_provisioning_preflight",
         "local_spark_stack_matrix",
     ]
+    assert [action["gate_id"] for action in payload["next_actions"]] == payload["remaining_gates"]
+    assert payload["next_actions"][0]["first_safe_command"].startswith(
+        "uv run python -m hermes_cli.realtime_voice_live_evidence"
+    )
+    assert payload["next_actions"][1]["first_safe_command"].endswith("--dry-audit")
+    assert payload["next_actions"][2]["first_safe_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
     assert not output_dir.exists()
     assert not artifact_root.exists()
 

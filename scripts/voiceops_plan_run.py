@@ -398,6 +398,60 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
     }
 
 
+def _build_next_actions(
+    *, remaining_gates: list[dict[str, Any]], handoff: dict[str, Any], blockers: dict[str, Any]
+) -> list[dict[str, Any]]:
+    phases = {
+        str(phase.get("gate_id")): phase
+        for phase in handoff.get("phases", [])
+        if isinstance(phase, dict)
+    }
+    actions: list[dict[str, Any]] = []
+    for index, gate in enumerate(remaining_gates, start=1):
+        gate_id = str(gate.get("gate_id"))
+        phase = phases.get(gate_id, {})
+        commands = phase.get("commands") if isinstance(phase, dict) else None
+        first_command = commands[0] if isinstance(commands, list) and commands else gate.get("rerun_command")
+        if gate_id == "live_discord_voice_operator":
+            blocked_by = {
+                "missing_env_keys": blockers.get("discord_env", {}).get("missing_env_keys", []),
+                "needs_external_live_probe": True,
+            }
+            operator_step = "Run the live Discord evidence collector after Discord env/config and production sidecar are ready."
+        elif gate_id == "spend_and_provisioning_preflight":
+            blocked_by = {
+                "missing_cli": blockers.get("provisioning_cli", {}).get("missing", []),
+                "needs_read_only_discovery": True,
+                "needs_redacted_setup_evidence": True,
+            }
+            operator_step = "Install/auth required CLIs, run the dry audit first, then collect read-only provisioning discovery and redacted setup evidence."
+        elif gate_id == "local_spark_stack_matrix":
+            blocked_by = {
+                "current_host_hint": blockers.get("spark_host", {}).get("current_host_hint", "unknown"),
+                "needs_measured_spark_evidence": True,
+                "required_hardware": blockers.get("spark_host", {}).get("required_hardware", "1x NVIDIA DGX Spark"),
+            }
+            operator_step = "Collect measured local DGX Spark KAME/reflex/oracle/ASR/TTS evidence and re-run the matrix with that evidence."
+        else:
+            blocked_by = {"needs_external_evidence": True}
+            operator_step = "Collect the required external evidence for this gate and re-run the plan index."
+        actions.append(
+            {
+                "order": index,
+                "gate_id": gate_id,
+                "milestone": gate.get("milestone"),
+                "status": gate.get("status"),
+                "can_run_here_now": bool(phase.get("can_run_here_now")) if isinstance(phase, dict) else False,
+                "blocked_by_current_environment": blocked_by,
+                "first_safe_command": first_command,
+                "success_check": phase.get("success_check") if isinstance(phase, dict) else gate.get("completion_signal"),
+                "operator_step": operator_step,
+                "secret_policy": "presence booleans and redacted artifact refs only; never include secret values",
+            }
+        )
+    return actions
+
+
 def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
     results = summary["results"]
     voice = _result_by_milestone(results, "milestone_1_real_voice_operator")
@@ -800,6 +854,8 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
     blockers = _build_current_environment_blockers(current_environment)
     readiness_gap_milestones = set(summary["readiness_gaps"])
     remaining_gates = [gate for gate in gates if gate["milestone"] in readiness_gap_milestones]
+    handoff = _build_operator_handoff(gates, blockers)
+    next_actions = _build_next_actions(remaining_gates=remaining_gates, handoff=handoff, blockers=blockers)
     return {
         "schema_version": "voiceops.closure_index.v1",
         "artifact_id": "voiceops-plan-readiness-closure",
@@ -813,7 +869,8 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
         "readiness_gaps": summary["readiness_gaps"],
         "current_environment": current_environment,
         "current_environment_blockers": blockers,
-        "operator_handoff": _build_operator_handoff(gates, blockers),
+        "operator_handoff": handoff,
+        "next_actions": next_actions,
         "closure_status": "needs_external_evidence" if summary["readiness_gaps"] else "complete",
         "remaining_gates": remaining_gates,
         "gates": gates,
@@ -1097,6 +1154,10 @@ def _markdown(summary: dict[str, Any]) -> str:
         "",
         _operator_handoff_markdown(summary.get("closure_index", {}).get("operator_handoff", {})),
         "",
+        "## Next Actions",
+        "",
+        _next_actions_markdown(summary.get("closure_index", {}).get("next_actions", [])),
+        "",
         "## Milestones",
         "",
     ]
@@ -1193,6 +1254,10 @@ def _closure_markdown(closure: dict[str, Any]) -> str:
         "",
         _operator_handoff_markdown(closure.get("operator_handoff", {})),
         "",
+        "## Next Actions",
+        "",
+        _next_actions_markdown(closure.get("next_actions", [])),
+        "",
         "## Gates",
         "",
     ]
@@ -1273,6 +1338,29 @@ def _environment_blockers_markdown(blockers: dict[str, Any]) -> str:
         if isinstance(section, dict):
             lines.append(f"- {section_name}:")
             for key, value in sorted(section.items()):
+                lines.append(f"  - `{key}`: `{value}`")
+    return "\n".join(lines)
+
+
+def _next_actions_markdown(actions: list[dict[str, Any]]) -> str:
+    if not actions:
+        return "- No remaining readiness actions"
+    lines: list[str] = []
+    for action in actions:
+        lines.extend(
+            [
+                f"### {action.get('order')}. {action.get('gate_id')}",
+                f"- Can run here now: {action.get('can_run_here_now')}",
+                f"- First safe command: `{action.get('first_safe_command')}`",
+                f"- Success check: {action.get('success_check')}",
+                f"- Operator step: {action.get('operator_step')}",
+                f"- Secret policy: {action.get('secret_policy')}",
+            ]
+        )
+        blocked_by = action.get("blocked_by_current_environment")
+        if isinstance(blocked_by, dict):
+            lines.append("- Blocked by current environment:")
+            for key, value in sorted(blocked_by.items()):
                 lines.append(f"  - `{key}`: `{value}`")
     return "\n".join(lines)
 
@@ -1404,6 +1492,7 @@ def main(argv: list[str] | None = None) -> int:
                         ],
                         "safety": summary["safety"],
                         "current_environment_blockers": summary["closure_index"]["current_environment_blockers"],
+                        "next_actions": summary["closure_index"]["next_actions"],
                     },
                     indent=2,
                     sort_keys=True,

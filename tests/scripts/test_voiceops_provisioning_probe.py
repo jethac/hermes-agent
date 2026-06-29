@@ -18,6 +18,7 @@ from scripts.voiceops_provisioning_probe import (
     build_post_approval_receipts_example,
     build_post_approval_receipts_template,
     build_probe_report,
+    load_payment_skill_bundle_evidence,
     load_post_approval_receipts,
     load_preflight_evidence,
     parse_args,
@@ -98,6 +99,96 @@ def _write_preflight_evidence(tmp_path: Path, payload: dict[str, object] | None 
     evidence_path = tmp_path / "preflight-evidence.json"
     evidence_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return evidence_path
+
+
+def _write_payment_skill_bundle(root: Path, *, weaken_link: bool = False, omit_mpp: bool = False) -> None:
+    skills = {
+        "stripe-projects": """
+---
+name: stripe-projects
+---
+# Stripe Projects
+Use `stripe projects add twilio/sms` only after approval. Billing happens on Stripe's side.
+The CLI writes `.env`; never commit credential files.
+""",
+        "stripe-link-cli": """
+---
+name: stripe-link-cli
+---
+# Stripe Link CLI
+Use `--request-approval` for every spend. HTTP 402 with `method="stripe"` uses `shared_payment_token`.
+Do not print card details to stdout.
+""",
+        "mpp-agent": """
+---
+name: mpp-agent
+---
+# MPP Agent
+Handles HTTP 402 APIs with `www-authenticate` challenges and `method="stripe"` when Link is available.
+Wallet keys never enter agent context.
+""",
+    }
+    if weaken_link:
+        skills["stripe-link-cli"] = """
+---
+name: stripe-link-cli
+---
+# Stripe Link CLI
+Pay for things.
+"""
+    if omit_mpp:
+        skills.pop("mpp-agent")
+    for name, text in skills.items():
+        path = root / "optional-skills" / "payments" / name / "SKILL.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text.strip() + "\n", encoding="utf-8")
+
+
+def test_payment_skill_bundle_is_checked_headlessly():
+    evidence = load_payment_skill_bundle_evidence()
+
+    assert evidence["status"] == "pass"
+    assert evidence["non_mutating"] is True
+    assert evidence["network_io"] is False
+    assert evidence["secret_values_emitted"] is False
+    assert evidence["issues"] == []
+    assert set(evidence["required_skills"]) == {"mpp-agent", "stripe-link-cli", "stripe-projects"}
+
+
+def test_missing_payment_skill_bundle_blocks_preflight_readiness(tmp_path):
+    _write_payment_skill_bundle(tmp_path, omit_mpp=True)
+
+    report = build_probe_report(
+        env={},
+        env_files=[],
+        repo_root=tmp_path,
+        which=lambda _command: None,
+    )
+
+    bundle = report["payment_skill_bundle"]
+    assert bundle["status"] == "fail"
+    assert "missing_skill_file:optional-skills/payments/mpp-agent/SKILL.md" in bundle["issues"]
+    assert "stripe_skills_bundle" in report["required_failures"]
+    assert report["area_status"]["stripe_skills"] == "fail"
+
+
+def test_payment_skill_bundle_requires_link_mpp_402_and_projects_safety_terms(tmp_path):
+    _write_payment_skill_bundle(tmp_path, weaken_link=True)
+
+    report = build_probe_report(
+        env={},
+        env_files=[],
+        repo_root=tmp_path,
+        which=lambda _command: None,
+    )
+
+    bundle = report["payment_skill_bundle"]
+    assert bundle["status"] == "fail"
+    assert "missing_skill_safety_term:stripe-link-cli:--request-approval" in bundle["issues"]
+    assert "missing_skill_safety_term:stripe-link-cli:http 402" in bundle["issues"]
+    assert "missing_skill_safety_term:stripe-link-cli:shared_payment_token" in bundle["issues"]
+    assert "missing_skill_safety_term:stripe-link-cli:do not print card details" in bundle["issues"]
+    assert "stripe_skills_bundle" in report["required_failures"]
 
 
 def test_probe_passes_with_safe_local_tools_and_redacts_outputs(tmp_path):

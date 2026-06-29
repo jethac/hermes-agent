@@ -71,6 +71,20 @@ def default_candidates() -> list[Candidate]:
             ),
         ),
         Candidate(
+            candidate_id="reflex-gemma4-e4b",
+            role="reflex",
+            model="Gemma 4 E4B audio-native",
+            engine="vLLM multimodal audio path or equivalent Spark container",
+            locality="local_spark",
+            priority=1,
+            purpose="larger KAME interface candidate for audio-native intent triage when E2B quality is insufficient",
+            required_targets=_targets(
+                ("first_token_ms", "<=", 1000, "ms"),
+                ("intent_latency_ms", "<=", 1400, "ms"),
+                ("steady_state_memory_gb", "<=", 48, "GB"),
+            ),
+        ),
+        Candidate(
             candidate_id="oracle-nemotron3-super-local",
             role="oracle",
             model="Nemotron 3 Super",
@@ -182,6 +196,8 @@ def _model_matches_candidate(candidate: Candidate, model: Any) -> bool:
     candidate_id = candidate.candidate_id
     if candidate_id == "reflex-gemma4-e2b":
         return "gemma" in normalized and ("e2b" in normalized or "e-2b" in normalized)
+    if candidate_id == "reflex-gemma4-e4b":
+        return "gemma" in normalized and ("e4b" in normalized or "e-4b" in normalized)
     if candidate_id == "oracle-nemotron3-super-local":
         return "nemotron" in normalized and "super" in normalized
     if candidate_id == "oracle-nemotron3-ultra-hosted":
@@ -307,11 +323,13 @@ def _adapt_kame_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         metrics = entry.get("metrics") if isinstance(entry.get("metrics"), dict) else {}
         category = str(entry.get("category") or "")
-        if category == "interface" and str(entry.get("model") or "").lower().replace("-", "").find("e2b") >= 0:
+        normalized_model = str(entry.get("model") or "").lower().replace("-", "")
+        if category == "interface" and ("e2b" in normalized_model or "e4b" in normalized_model):
+            reflex_candidate_id = "reflex-gemma4-e4b" if "e4b" in normalized_model else "reflex-gemma4-e2b"
             adapted.append(
                 _base_adapted_evidence(
                     entry,
-                    candidate_id="reflex-gemma4-e2b",
+                    candidate_id=reflex_candidate_id,
                     model=str(entry.get("model") or ""),
                     engine=str(entry.get("engine") or "vLLM multimodal audio path"),
                     metrics={
@@ -789,6 +807,23 @@ def _evidence_example() -> dict[str, Any]:
             },
             {
                 "schema_version": EVIDENCE_SCHEMA_VERSION,
+                "candidate_id": "reflex-gemma4-e4b",
+                "hardware": SPARK_HARDWARE_TARGET,
+                "locality": "local_spark",
+                "model": "Gemma 4 E4B audio-native",
+                "engine": "vLLM multimodal audio path or equivalent Spark container",
+                "verified": True,
+                "measured_at": "2026-06-29T00:00:00Z",
+                "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/reflex-e4b-raw.json",
+                "metrics": {
+                    "first_token_ms": 850,
+                    "intent_latency_ms": 1250,
+                    "steady_state_memory_gb": 32,
+                },
+                "example_only": True,
+            },
+            {
+                "schema_version": EVIDENCE_SCHEMA_VERSION,
                 "candidate_id": "oracle-nemotron3-super-local",
                 "hardware": SPARK_HARDWARE_TARGET,
                 "locality": "local_spark",
@@ -873,6 +908,7 @@ def write_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
     scaffold = _evidence_example()
     source_names = {
         "reflex-gemma4-e2b": "reflex-gemma4-e2b-raw.json",
+        "reflex-gemma4-e4b": "reflex-gemma4-e4b-raw.json",
         "oracle-nemotron3-super-local": "oracle-nemotron3-super-raw.json",
         "asr-nemotron-speech": "asr-nemotron-speech-raw.json",
         "tts-magpie-local": "tts-magpie-local-raw.json",
