@@ -263,6 +263,7 @@ The command writes:
 - `demo-script.md`
 - `nemoclaw-action-packet.json`
 - `phone-context.json`
+- `milestone2-execution-plan.json`
 - `readiness-report.json`
 - `readiness-report.md`
 - `operator-dashboard.html`
@@ -310,8 +311,12 @@ The command writes:
 - `provisioning-readiness.json`
 - `provisioning-readiness.md`
 - `safe-command-manifest.json`
+- `milestone2-execution-plan.json`
+- `milestone2-execution-plan.md`
 
 The default preflight is non-mutating and only checks PATH/env presence, env-key presence, command policy, and phone-handoff configuration shape. It blocks live spend, provider provisioning, credential retrieval, outbound phone calls, account mutation, and network tunnels. If active command probing is needed, it must be explicitly enabled with `--run-command-probes`; that mode is still limited to isolated version/help subprocess probes and must not be treated as approval for `stripe projects add`, Link spend creation, card retrieval, MPP payment, SMS, or phone calls.
+
+The Milestone 2 execution plan is also non-mutating. It is the post-approval contract for the first live provisioning flow: readiness gates, display-only discovery commands, approval-required Stripe/Link/phone actions, receipt schema, credential-location schema, rollback/deprovision notes, and phone-context linkage. It must never claim that spend, provisioning, credential retrieval, outbound messages, or phone calls have already executed.
 
 ## Milestone 3: Multi-Channel Operations
 

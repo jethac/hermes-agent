@@ -18,6 +18,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "audit_ledger",
         "demo_script",
         "dashboard",
+        "milestone2_execution_plan",
         "nemoclaw_packet",
         "operator_state",
         "operator_state_events",
@@ -31,6 +32,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     nemoclaw = json.loads(Path(paths["nemoclaw_packet"]).read_text(encoding="utf-8"))
     phone_context = json.loads(Path(paths["phone_context"]).read_text(encoding="utf-8"))
+    milestone2_plan = json.loads(Path(paths["milestone2_execution_plan"]).read_text(encoding="utf-8"))
     operator_state = json.loads(Path(paths["operator_state"]).read_text(encoding="utf-8"))
     operator_events = [
         json.loads(line)
@@ -59,6 +61,20 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert phone_context["target_channel"] == "phone"
     assert phone_context["status"] == "queued_requires_approval"
     assert phone_context["pending_approvals"]
+    assert milestone2_plan["schema_version"] == "voiceops.milestone2.execution_plan.v1"
+    assert milestone2_plan["demo_refs"]["phone_context"] == "phone-context.json"
+    assert milestone2_plan["source_readiness_artifact"] == "provisioning-readiness.json"
+    assert {step["step_id"] for step in milestone2_plan["execution_steps"]} >= {
+        "provision-voip-provider",
+        "buy-service-credit",
+        "call-user-phone",
+    }
+    assert {gate["gate_id"] for gate in milestone2_plan["approval_gates"]} >= {
+        "stripe-projects-provisioning",
+        "stripe-link-spend",
+        "phone-call-handoff",
+    }
+    assert "deprovision_voip_provider" in milestone2_plan["rollback_plan"]
     assert operator_state["schema_version"] == "voiceops.operator_state.v1"
     assert operator_state["current_mode"] == "approval-required"
     assert operator_state["active_voice_surface"]["surface_id"] == "discord_voice"
@@ -67,6 +83,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "DGX Spark" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "nemoclaw-action-packet.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "phone-context.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "milestone2-execution-plan.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "readiness-report.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "operator-dashboard.html" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "operator-state.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
@@ -110,6 +127,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Upcoming Tasks" in dashboard
     assert "operator-state.json" in dashboard
     assert "Phone Handoff" in dashboard
+    assert "milestone2-execution-plan.json" in dashboard
     assert Path(paths["readiness_json"]).exists()
     assert "VoiceOps Recording Readiness" in Path(paths["readiness_markdown"]).read_text(encoding="utf-8")
 

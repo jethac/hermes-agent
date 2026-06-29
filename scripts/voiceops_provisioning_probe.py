@@ -535,16 +535,426 @@ def _safe_command_manifest_json() -> dict[str, Any]:
     }
 
 
+def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
+    checks = {check["check_id"]: check for check in report["checks"]}
+    gates = [
+        {
+            "gate_id": check_id,
+            "area": checks[check_id]["area"],
+            "status": checks[check_id]["status"],
+            "required": checks[check_id]["required"],
+            "detail": checks[check_id]["detail"],
+            "next_step": checks[check_id]["next_step"],
+        }
+        for check_id in (
+            "stripe_cli",
+            "stripe_projects_cli",
+            "stripe_link_cli",
+            "mpp_agent",
+            "phone_target",
+            "phone_provider",
+        )
+    ]
+    return {
+        "generated_at": _utc_now(),
+        "schema_version": "voiceops.milestone2.execution_plan.v1",
+        "artifact_id": "voiceops-m2-execution-plan",
+        "plan_id": "voiceops-m2-post-approval-execution-plan",
+        "milestone": "milestone_2_real_spend_and_provisioning",
+        "command": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current",
+        "output_dir": str(DEFAULT_OUTPUT_DIR),
+        "artifact_only": True,
+        "mode": {
+            "artifact_only": True,
+            "headless": True,
+            "bounded": True,
+        },
+        "source_readiness_artifact": "provisioning-readiness.json",
+        "source_phone_context_artifact": "phone-context.json",
+        "source_nemoclaw_artifact": "nemoclaw-action-packet.json",
+        "safety": {
+            "network_io": False,
+            "env_secret_reads": False,
+            "live_spend": False,
+            "provider_provisioning": False,
+            "credential_retrieval": False,
+            "outbound_phone_calls": False,
+            "account_mutation": False,
+        },
+        "blocked_capabilities": [
+            "live_spend",
+            "provider_provisioning",
+            "credential_retrieval",
+            "outbound_calls",
+            "outbound_messages",
+            "network_tunnels",
+            "raw_card_data",
+            "unapproved_recurring_charges",
+        ],
+        "preflight": {
+            "command": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current",
+            "readiness_artifact": "provisioning-readiness.json",
+            "run_command_probes_default": False,
+            "active_probe_policy": "version_help_only",
+            "run_command_probes_does_not_grant_approval": True,
+        },
+        "demo_refs": {
+            "voiceops_demo": "voiceops-demo.json",
+            "nemoclaw_packet": "nemoclaw-action-packet.json",
+            "phone_context": "phone-context.json",
+            "audit_ledger": "audit-ledger.jsonl",
+            "stripe_actions_dry_run": "stripe-actions-dry-run.sh",
+        },
+        "spend_policy": {
+            "currency": "usd",
+            "budget_cap_cents": 20_000,
+            "approval_threshold_cents": 1_000,
+            "queued_cents": 7_400,
+            "held_cents": 0,
+            "status": "no_live_spend_without_explicit_approval",
+        },
+        "readiness_gates": gates,
+        "read_only_discovery": [
+            {
+                "step_id": "stripe-projects-catalog-discovery",
+                "command": "stripe projects list --limit 10",
+                "status": "not_executed",
+                "requires": ["stripe_cli", "stripe_projects_cli", "mpp_agent"],
+                "purpose": "Confirm available Projects catalog entries before choosing a VoIP provider.",
+                "allowed_after": "operator opts into a read-only discovery run",
+                "records_to": "audit-ledger.jsonl",
+            },
+            {
+                "step_id": "stripe-link-auth-status",
+                "command": "link-cli auth status",
+                "status": "not_executed",
+                "requires": ["stripe_link_cli", "mpp_agent"],
+                "purpose": "Confirm Link approval capability without creating a spend request.",
+                "allowed_after": "operator opts into a read-only auth-status run",
+                "records_to": "audit-ledger.jsonl",
+            },
+        ],
+        "approval_required_actions": [
+            {
+                "action_id": "provision-voip-provider",
+                "provider": "stripe-projects",
+                "command": "stripe projects add twilio/voice",
+                "status": "blocked_until_explicit_approval",
+                "requires": ["stripe_cli", "stripe_projects_cli", "mpp_agent"],
+                "approval_artifact": "nemoclaw-action-packet.json",
+                "expected_receipt_ref": "receipts.provision_voip_provider",
+                "rollback_ref": "rollback_plan.deprovision_voip_provider",
+            },
+            {
+                "action_id": "buy-service-credit",
+                "provider": "stripe-link-cli",
+                "command": "link-cli spend-request create --merchant-name ExampleOps --merchant-url https://example.invalid --amount 4900 --request-approval",
+                "status": "blocked_until_explicit_approval",
+                "requires": ["stripe_link_cli", "mpp_agent"],
+                "approval_artifact": "nemoclaw-action-packet.json",
+                "expected_receipt_ref": "receipts.buy_service_credit",
+                "rollback_ref": "rollback_plan.refund_or_cancel_service_credit",
+            },
+            {
+                "action_id": "call-user-phone",
+                "provider": "voiceops-phone-bridge",
+                "command": "queue outbound call --context phone-context.json",
+                "status": "blocked_until_explicit_approval",
+                "requires": ["phone_target", "phone_provider", "mpp_agent"],
+                "approval_artifact": "phone-context.json",
+                "expected_receipt_ref": "receipts.call_user_phone",
+                "rollback_ref": "rollback_plan.cancel_or_end_phone_handoff",
+            },
+        ],
+        "execution_steps": [
+            {
+                "step_id": "bind-spend-policy",
+                "provider": "voiceops-policy",
+                "purpose": "Bind spoken budget and approval threshold to the action packet.",
+                "estimated_cents": 0,
+                "requires_approval": False,
+                "status": "planned_not_executed",
+                "evidence_required": ["voiceops-demo.json", "audit-ledger.jsonl"],
+                "rollback_or_deprovision_note": "Append a superseding policy event if the operator changes the budget.",
+                "audit_event_id": "evt-001",
+            },
+            {
+                "step_id": "provision-voip-provider",
+                "provider": "stripe-projects",
+                "purpose": "Provision a VoIP-capable provider account after approval.",
+                "estimated_cents": 2500,
+                "requires_approval": True,
+                "status": "blocked_until_explicit_approval",
+                "evidence_required": ["nemoclaw-action-packet.json", "provisioning-readiness.json"],
+                "rollback_or_deprovision_note": "Disable calling, then deprovision or suspend provider resources after approval.",
+                "audit_event_id": "evt-002",
+            },
+            {
+                "step_id": "buy-service-credit",
+                "provider": "stripe-link-cli",
+                "purpose": "Request approved prepaid service credit through Link.",
+                "estimated_cents": 4900,
+                "requires_approval": True,
+                "status": "blocked_until_explicit_approval",
+                "evidence_required": ["nemoclaw-action-packet.json", "stripe-actions-dry-run.sh"],
+                "rollback_or_deprovision_note": "Cancel pending spend request or record refund path.",
+                "audit_event_id": "evt-003",
+            },
+            {
+                "step_id": "persist-call-context",
+                "provider": "hermes-audit-ledger",
+                "purpose": "Persist Discord context for phone handoff.",
+                "estimated_cents": 0,
+                "requires_approval": False,
+                "status": "planned_not_executed",
+                "evidence_required": ["phone-context.json", "audit-ledger.jsonl"],
+                "rollback_or_deprovision_note": "Append a corrected context packet if the handoff request changes.",
+                "audit_event_id": "evt-004",
+            },
+            {
+                "step_id": "call-user-phone",
+                "provider": "voiceops-phone-bridge",
+                "purpose": "Queue or place outbound call with preserved Discord context after approval.",
+                "estimated_cents": 0,
+                "requires_approval": True,
+                "status": "blocked_until_explicit_approval",
+                "evidence_required": ["phone-context.json", "channel-policy.json"],
+                "rollback_or_deprovision_note": "Cancel queued call, or end active call and record call receipt.",
+                "audit_event_id": "evt-005",
+            },
+            {
+                "step_id": "publish-status",
+                "provider": "hermes-gateway",
+                "purpose": "Post redacted approval and handoff status to configured channels.",
+                "estimated_cents": 0,
+                "requires_approval": True,
+                "status": "blocked_until_explicit_approval",
+                "evidence_required": ["channel-policy.json", "audit-ledger.jsonl"],
+                "rollback_or_deprovision_note": "Post a correction event and preserve the original audit id.",
+                "audit_event_id": "evt-006",
+            },
+        ],
+        "approval_gates": [
+            {
+                "gate_id": "stripe-projects-provisioning",
+                "action_ids": ["provision-voip-provider"],
+                "requires_human_approval": True,
+                "reason": "Provider provisioning can create billable resources.",
+            },
+            {
+                "gate_id": "stripe-link-spend",
+                "action_ids": ["buy-service-credit"],
+                "requires_human_approval": True,
+                "reason": "Spend request can move money or reserve budget.",
+            },
+            {
+                "gate_id": "phone-call-handoff",
+                "action_ids": ["call-user-phone"],
+                "requires_human_approval": True,
+                "reason": "Outbound calls cross channel boundaries and may expose context.",
+            },
+            {
+                "gate_id": "outbound-status-messages",
+                "action_ids": ["publish-status"],
+                "requires_human_approval": True,
+                "reason": "External/customer-visible messages require channel-policy approval.",
+            },
+        ],
+        "command_policy": {
+            "default": "forbid_execution",
+            "mutating_commands_are_display_only": True,
+            "dry_run_shell_artifact": "stripe-actions-dry-run.sh",
+            "forbidden_command_patterns": MUTATING_COMMAND_PATTERNS,
+        },
+        "redaction_policy": {
+            "secrets": "redacted_or_absent",
+            "phone_numbers": "redacted_or_hashed",
+            "card_like_values": "redacted_or_absent",
+        },
+        "receipt_schema": {
+            "required_fields": [
+                "receipt_id",
+                "action_id",
+                "provider",
+                "status",
+                "approved_by",
+                "approved_at",
+                "executed_at",
+                "amount_cents",
+                "currency",
+                "external_reference",
+                "audit_event_id",
+            ],
+            "secret_policy": "receipts must contain references and redacted summaries only; never raw credentials, card data, tokens, or full phone numbers",
+        },
+        "credential_location_schema": {
+            "required_fields": [
+                "credential_ref_id",
+                "provider",
+                "service_id",
+                "storage_backend",
+                "secret_name_or_path",
+                "created_by_action_id",
+                "rotation_due",
+            ],
+            "allowed_storage_backends": ["hermes_secret_store", "system_keychain", "provider_managed"],
+            "forbidden_fields": ["raw_secret", "raw_token", "raw_card_data", "raw_phone_number"],
+        },
+        "rollback_plan": {
+            "deprovision_voip_provider": [
+                "Record provider account/project id from receipt.",
+                "Disable outbound calling before deleting resources.",
+                "Delete or suspend VoIP provider project only after operator approval.",
+                "Append rollback receipt and credential cleanup reference to audit-ledger.jsonl.",
+            ],
+            "refund_or_cancel_service_credit": [
+                "Record Link spend request id and merchant reference.",
+                "Cancel pending request or record refund path if already captured.",
+                "Append refund/cancel status to audit-ledger.jsonl.",
+            ],
+            "cancel_or_end_phone_handoff": [
+                "Cancel queued call if not started.",
+                "If connected, end the call and preserve the call receipt id.",
+                "Post redacted status to Discord/WhatsApp according to channel policy.",
+            ],
+        },
+        "audit_requirements": [
+            "append a child audit event before every approved external action",
+            "append result, receipt reference, credential location reference, and rollback reference after every action",
+            "preserve source Discord audit ids when handing context to phone or WhatsApp",
+            "mark skipped, denied, or held actions explicitly rather than implying execution",
+        ],
+    }
+
+
+def _execution_plan_markdown(plan: dict[str, Any]) -> str:
+    lines = [
+        "# VoiceOps Milestone 2 Execution Plan",
+        "",
+        f"- Plan ID: {plan['plan_id']}",
+        f"- Schema: {plan['schema_version']}",
+        "- Mode: artifact-only; no live spend, provisioning, credential retrieval, or outbound calls",
+        f"- Phone context: `{plan['source_phone_context_artifact']}`",
+        f"- Readiness source: `{plan['source_readiness_artifact']}`",
+        f"- Budget cap: {plan['spend_policy']['currency']} {plan['spend_policy']['budget_cap_cents'] / 100:.2f}",
+        f"- Queued spend: {plan['spend_policy']['currency']} {plan['spend_policy']['queued_cents'] / 100:.2f}",
+        "",
+        "## Demo References",
+        "",
+    ]
+    for label, artifact in sorted(plan["demo_refs"].items()):
+        lines.append(f"- {label}: `{artifact}`")
+    lines.extend([
+        "",
+        "## Readiness Gates",
+        "",
+    ])
+    for gate in plan["readiness_gates"]:
+        lines.append(f"- {gate['gate_id']}: {gate['status']} ({gate['area']})")
+    lines.extend(["", "## Read-Only Discovery", ""])
+    for step in plan["read_only_discovery"]:
+        lines.extend(
+            [
+                f"### {step['step_id']}",
+                "",
+                f"- Status: {step['status']}",
+                f"- Command: `{step['command']}`",
+                f"- Allowed after: {step['allowed_after']}",
+                "",
+            ]
+        )
+    lines.extend(["## Approval-Required Actions", ""])
+    for action in plan["approval_required_actions"]:
+        lines.extend(
+            [
+                f"### {action['action_id']}",
+                "",
+                f"- Provider: {action['provider']}",
+                f"- Status: {action['status']}",
+                f"- Command: `{action['command']}`",
+                f"- Approval artifact: `{action['approval_artifact']}`",
+                f"- Receipt ref: `{action['expected_receipt_ref']}`",
+                f"- Rollback ref: `{action['rollback_ref']}`",
+                "",
+            ]
+        )
+    lines.extend(["## Execution Steps", ""])
+    for step in plan["execution_steps"]:
+        lines.extend(
+            [
+                f"### {step['step_id']}",
+                "",
+                f"- Provider: {step['provider']}",
+                f"- Status: {step['status']}",
+                f"- Requires approval: {'yes' if step['requires_approval'] else 'no'}",
+                f"- Evidence: {', '.join(step['evidence_required'])}",
+                f"- Rollback/deprovision: {step['rollback_or_deprovision_note']}",
+                "",
+            ]
+        )
+    lines.extend(["## Approval Gates", ""])
+    for gate in plan["approval_gates"]:
+        lines.extend(
+            [
+                f"### {gate['gate_id']}",
+                "",
+                f"- Actions: {', '.join(gate['action_ids'])}",
+                f"- Requires human approval: {'yes' if gate['requires_human_approval'] else 'no'}",
+                f"- Reason: {gate['reason']}",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "## Command Policy",
+            "",
+            f"- Default: {plan['command_policy']['default']}",
+            f"- Mutating commands display-only: {plan['command_policy']['mutating_commands_are_display_only']}",
+            f"- Dry-run shell artifact: `{plan['command_policy']['dry_run_shell_artifact']}`",
+            "",
+        ]
+    )
+    lines.extend(
+        [
+            "## Receipt Schema",
+            "",
+            "- Required fields: " + ", ".join(plan["receipt_schema"]["required_fields"]),
+            f"- Secret policy: {plan['receipt_schema']['secret_policy']}",
+            "",
+            "## Credential Location Schema",
+            "",
+            "- Required fields: " + ", ".join(plan["credential_location_schema"]["required_fields"]),
+            "- Forbidden fields: " + ", ".join(plan["credential_location_schema"]["forbidden_fields"]),
+            "",
+            "## Rollback Plan",
+            "",
+        ]
+    )
+    for rollback_id, steps in plan["rollback_plan"].items():
+        lines.append(f"### {rollback_id}")
+        lines.extend(f"- {step}" for step in steps)
+        lines.append("")
+    lines.extend(["## Audit Requirements", ""])
+    lines.extend(f"- {requirement}" for requirement in plan["audit_requirements"])
+    lines.append("")
+    return "\n".join(lines)
+
+
 def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    execution_plan = build_milestone2_execution_plan(report)
     paths = {
         "json": output_dir / "provisioning-readiness.json",
         "markdown": output_dir / "provisioning-readiness.md",
         "command_manifest": output_dir / "safe-command-manifest.json",
+        "execution_plan_json": output_dir / "milestone2-execution-plan.json",
+        "execution_plan_markdown": output_dir / "milestone2-execution-plan.md",
     }
     _write_json(paths["json"], report)
     paths["markdown"].write_text(_markdown(report), encoding="utf-8")
     _write_json(paths["command_manifest"], _safe_command_manifest_json())
+    _write_json(paths["execution_plan_json"], execution_plan)
+    paths["execution_plan_markdown"].write_text(_execution_plan_markdown(execution_plan), encoding="utf-8")
     return {key: str(path) for key, path in paths.items()}
 
 

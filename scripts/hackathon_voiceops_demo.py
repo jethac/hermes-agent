@@ -15,9 +15,14 @@ import json
 import os
 import shlex
 import shutil
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.voiceops_provisioning_probe import build_milestone2_execution_plan
 
 
 DEFAULT_REQUEST = (
@@ -503,6 +508,93 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
     }
 
 
+def _demo_milestone2_report(demo: dict[str, Any], readiness: dict[str, Any]) -> dict[str, Any]:
+    checks = []
+    for check in readiness["checks"]:
+        if check["check_id"] in {
+            "stripe_projects_cli",
+            "stripe_link_cli",
+            "nemoclaw_boundary",
+            "phone_handoff",
+        }:
+            area = {
+                "stripe_projects_cli": "stripe_projects",
+                "stripe_link_cli": "stripe_link",
+                "nemoclaw_boundary": "mpp",
+                "phone_handoff": "phone_handoff",
+            }[check["check_id"]]
+            check_id = {
+                "stripe_projects_cli": "stripe_projects_cli",
+                "stripe_link_cli": "stripe_link_cli",
+                "nemoclaw_boundary": "mpp_agent",
+                "phone_handoff": "phone_target",
+            }[check["check_id"]]
+            checks.append(
+                {
+                    "check_id": check_id,
+                    "area": area,
+                    "status": "pass" if check["status"] == "pass" else "fail",
+                    "required": check["required_for_video"] or check_id in {"phone_target"},
+                    "detail": check["detail"],
+                    "next_step": check["next_step"],
+                    "evidence": {"source": "readiness-report.json"},
+                }
+            )
+    existing = {check["check_id"] for check in checks}
+    if "stripe_cli" not in existing:
+        stripe_projects = next(check for check in checks if check["check_id"] == "stripe_projects_cli")
+        checks.insert(
+            0,
+            {
+                "check_id": "stripe_cli",
+                "area": "stripe_projects",
+                "status": stripe_projects["status"],
+                "required": True,
+                "detail": stripe_projects["detail"],
+                "next_step": stripe_projects["next_step"],
+                "evidence": {"source": "readiness-report.json"},
+            },
+        )
+    if "phone_provider" not in existing:
+        phone_ready = next(check for check in checks if check["check_id"] == "phone_target")
+        checks.append(
+            {
+                "check_id": "phone_provider",
+                "area": "phone_handoff",
+                "status": phone_ready["status"],
+                "required": True,
+                "detail": "demo provider readiness follows phone handoff readiness",
+                "next_step": "Run the provisioning preflight before any approved live phone handoff.",
+                "evidence": {"source": "readiness-report.json"},
+            }
+        )
+    required_failures = [check["check_id"] for check in checks if check["required"] and check["status"] != "pass"]
+    return {
+        "generated_at": readiness["generated_at"],
+        "ready": not required_failures,
+        "required_failures": required_failures,
+        "checks": checks,
+        "probe": {
+            "name": "voiceops_demo_milestone2_readiness",
+            "non_mutating": True,
+            "bounded": True,
+            "run_commands": False,
+            "blocked_capabilities": [
+                "live_spend",
+                "provider_provisioning",
+                "credential_retrieval",
+                "outbound_phone_calls",
+                "account_mutation",
+            ],
+        },
+        "demo_refs": {
+            "phone_context": "phone-context.json",
+            "nemoclaw_packet": "nemoclaw-action-packet.json",
+            "budget_cents": demo["spend_policy"]["limit_cents"],
+        },
+    }
+
+
 def build_readiness_report(
     demo: dict[str, Any],
     *,
@@ -741,6 +833,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "- `nemoclaw-action-packet.json`: sandbox and approval frame for billable/network-capable actions",
         "- `phone-context.json`: outbound phone-call handoff context preserved from Discord",
         "- `readiness-report.json`: local recording prerequisite report",
+        "- `milestone2-execution-plan.json`: post-approval execution contract for VoIP provisioning, spend request, call receipt, credential reference, and rollback",
         "- `operator-dashboard.html`: static recording dashboard for budget, approvals, guardrails, and handoff state",
         "- `operator-state.json`: machine-readable current mode, surface, budget, approval, service, and task state",
         "- `operator-state-events.jsonl`: append-friendly view of recent operator audit events",
@@ -867,6 +960,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "- `nemoclaw-action-packet.json` for the approval boundary",
         "- `stripe-actions-dry-run.sh` for non-mutating Stripe/Projects commands",
         "- `phone-context.json` for the handoff context",
+        "- `milestone2-execution-plan.json` for receipts, credential references, approval gates, and rollback/deprovision notes",
         "- `audit-ledger.jsonl` for durable action evidence",
         "",
         "## Submission Checklist",
@@ -1268,6 +1362,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         <div class="panel">
           <h2>Phone Handoff</h2>
           <p>{_h(phone_context['spoken_opening'])}</p>
+          <p><a href="milestone2-execution-plan.json">Post-approval execution packet</a> records the approval gates, receipt schema, credential-location schema, and rollback notes.</p>
         </div>
         <div class="panel">
           <h2>Upcoming Tasks</h2>
@@ -1347,6 +1442,7 @@ def write_demo(
         "dashboard": output_dir / "operator-dashboard.html",
         "operator_state": output_dir / "operator-state.json",
         "operator_state_events": output_dir / "operator-state-events.jsonl",
+        "milestone2_execution_plan": output_dir / "milestone2-execution-plan.json",
         "recording_runbook": output_dir / "recording-runbook.md",
         "submission_writeup": output_dir / "submission-writeup.md",
         "stripe_actions": output_dir / "stripe-actions-dry-run.sh",
@@ -1359,6 +1455,7 @@ def write_demo(
     _write_json(paths["phone_context"], _phone_context_packet(demo))
     _write_json(paths["readiness_json"], readiness)
     paths["readiness_markdown"].write_text(_readiness_markdown(readiness), encoding="utf-8")
+    _write_json(paths["milestone2_execution_plan"], build_milestone2_execution_plan(_demo_milestone2_report(demo, readiness)))
     operator_state = _operator_state_packet(demo, readiness)
     _write_json(paths["operator_state"], operator_state)
     _write_jsonl(paths["operator_state_events"], operator_state["recent_audit_events"])

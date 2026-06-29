@@ -9,6 +9,7 @@ import pytest
 
 from scripts.voiceops_provisioning_probe import (
     CommandResult,
+    build_milestone2_execution_plan,
     build_probe_report,
     parse_args,
     write_probe_artifacts,
@@ -115,14 +116,98 @@ def test_write_probe_artifacts(tmp_path):
     )
     paths = write_probe_artifacts(tmp_path, report)
 
-    assert set(paths) == {"json", "markdown", "command_manifest"}
+    assert set(paths) == {
+        "command_manifest",
+        "execution_plan_json",
+        "execution_plan_markdown",
+        "json",
+        "markdown",
+    }
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
+    execution_plan = json.loads(Path(paths["execution_plan_json"]).read_text(encoding="utf-8"))
     manifest = json.loads(Path(paths["command_manifest"]).read_text(encoding="utf-8"))
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
+    execution_markdown = Path(paths["execution_plan_markdown"]).read_text(encoding="utf-8")
     assert payload["probe"]["non_mutating"] is True
     assert "VoiceOps Provisioning Readiness Probe" in markdown
+    assert execution_plan["schema_version"] == "voiceops.milestone2.execution_plan.v1"
+    assert "phone-context.json" in json.dumps(execution_plan)
+    assert "VoiceOps Milestone 2 Execution Plan" in execution_markdown
     assert "projects add" in manifest["blocked_patterns"]
     assert "+15551234567" not in json.dumps(payload)
+
+
+def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
+    report = build_probe_report(
+        env={
+            "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+            "TWILIO_ACCOUNT_SID": "AC123456789abcdef",
+            "TWILIO_AUTH_TOKEN": "secret-token",
+            "STRIPE_SECRET_KEY": "sk_live_123456789abcdef",
+        },
+        env_files=[],
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+    )
+    plan = build_milestone2_execution_plan(report)
+
+    assert plan["schema_version"] == "voiceops.milestone2.execution_plan.v1"
+    assert plan["artifact_id"] == "voiceops-m2-execution-plan"
+    assert plan["mode"] == {"artifact_only": True, "bounded": True, "headless": True}
+    assert plan["safety"] == {
+        "account_mutation": False,
+        "credential_retrieval": False,
+        "env_secret_reads": False,
+        "live_spend": False,
+        "network_io": False,
+        "outbound_phone_calls": False,
+        "provider_provisioning": False,
+    }
+    assert {
+        "live_spend",
+        "provider_provisioning",
+        "credential_retrieval",
+        "outbound_calls",
+        "outbound_messages",
+        "network_tunnels",
+        "raw_card_data",
+        "unapproved_recurring_charges",
+    } <= set(plan["blocked_capabilities"])
+    assert plan["preflight"]["run_command_probes_default"] is False
+    assert plan["preflight"]["run_command_probes_does_not_grant_approval"] is True
+    assert plan["demo_refs"] == {
+        "audit_ledger": "audit-ledger.jsonl",
+        "nemoclaw_packet": "nemoclaw-action-packet.json",
+        "phone_context": "phone-context.json",
+        "stripe_actions_dry_run": "stripe-actions-dry-run.sh",
+        "voiceops_demo": "voiceops-demo.json",
+    }
+    assert "receipt_id" in plan["receipt_schema"]["required_fields"]
+    assert "credential_ref_id" in plan["credential_location_schema"]["required_fields"]
+    assert "raw_secret" in plan["credential_location_schema"]["forbidden_fields"]
+    assert {"deprovision_voip_provider", "refund_or_cancel_service_credit", "cancel_or_end_phone_handoff"} <= set(
+        plan["rollback_plan"]
+    )
+
+    risky_steps = [
+        step
+        for step in plan["execution_steps"]
+        if step["provider"] in {"stripe-projects", "stripe-link-cli", "voiceops-phone-bridge", "hermes-gateway"}
+    ]
+    assert risky_steps
+    assert all(step["requires_approval"] is True for step in risky_steps)
+    assert all(step["status"] == "blocked_until_explicit_approval" for step in risky_steps)
+    assert {gate["gate_id"] for gate in plan["approval_gates"]} == {
+        "outbound-status-messages",
+        "phone-call-handoff",
+        "stripe-link-spend",
+        "stripe-projects-provisioning",
+    }
+
+    serialized = json.dumps(plan)
+    assert "sk_live_123456789abcdef" not in serialized
+    assert "+15551234567" not in serialized
+    assert "secret-token" not in serialized
 
 
 def test_probe_loads_env_file_key_presence_without_values(tmp_path):
