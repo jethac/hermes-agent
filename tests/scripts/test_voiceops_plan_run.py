@@ -863,7 +863,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "realtime_voice_report_derivation_schema_version" in closure_markdown
     assert "unverified_source_artifacts_accepted" in closure_markdown
     assert "voiceops.milestone2.preflight_evidence_manifest.v1" in closure_markdown
-    assert "provisioning-preflight-evidence.manifest.json" in closure_markdown
+    scaffold_manifest_path = (
+        "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/"
+        "provisioning-preflight-evidence.manifest.json"
+    )
+    stale_manifest_path = "artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json"
+    assert scaffold_manifest_path in closure_markdown
+    assert stale_manifest_path not in closure_markdown
     assert "--refresh-preflight-source-hashes" in closure_markdown
     assert "--dry-audit" in closure_markdown
     assert "network_possible_allowlisted_read_only" in closure_markdown

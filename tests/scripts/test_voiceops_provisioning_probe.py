@@ -503,21 +503,29 @@ def test_write_probe_artifacts(tmp_path):
         "rollback_receipts[].rollback_ref",
         "audit_events[].audit_event_id",
     ]
-    assert "provisioning-preflight-evidence.manifest.json" in setup_closure["rerun_commands"]["with_preflight_manifest"]
+    scaffold_manifest_path = (
+        "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/"
+        "provisioning-preflight-evidence.manifest.json"
+    )
+    stale_manifest_path = "artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json"
+    assert scaffold_manifest_path in setup_closure["rerun_commands"]["with_preflight_manifest"]
     assert "--run-readonly-discovery" in setup_closure["rerun_commands"]["read_only_discovery"]
     assert "--refresh-preflight-source-hashes" in setup_closure["rerun_commands"]["refresh_preflight_source_hashes"]
+    assert scaffold_manifest_path in setup_closure["rerun_commands"]["plan_index_manifest"]
     assert (
-        "provisioning-preflight-evidence.manifest.json"
+        scaffold_manifest_path
         in setup_closure["rerun_commands"]["plan_index_manifest_and_post_approval_receipts"]
     )
     assert "--post-approval-receipts" in setup_closure["rerun_commands"][
         "plan_index_manifest_and_post_approval_receipts"
     ]
+    assert stale_manifest_path not in json.dumps(setup_closure["rerun_commands"])
     assert setup_closure["rerun_commands"]["source_artifact_sha256"].startswith("shasum -a 256")
     assert "VoiceOps Milestone 2 Setup Closure Plan" in setup_markdown
     assert "Manifest example" in setup_markdown
     assert "Two-layer scaffold" in setup_markdown
     assert "source_artifact" in setup_markdown
+    assert stale_manifest_path not in setup_markdown
     assert "`stripe_projects.account_ref`" in setup_markdown
     assert "`stripe_link.max_approved_cents`" in setup_markdown
     assert "`phone_handoff.credential_location_ref`" in setup_markdown

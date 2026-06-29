@@ -317,6 +317,18 @@ def test_spark_matrix_requires_single_coherent_candidate_record(tmp_path):
     assert matrix["role_status"]["oracle"] == "needs_evidence"
 
 
+def test_spark_matrix_reports_missing_evidence_file_without_crashing(tmp_path):
+    evidence_path = tmp_path / "missing-evidence.json"
+
+    matrix = build_matrix([evidence_path])
+    paths = write_matrix(tmp_path / "matrix", matrix)
+    closure_markdown = Path(paths["closure_markdown"]).read_text(encoding="utf-8")
+
+    assert matrix["ready_for_one_spark_demo"] is False
+    assert matrix["evidence_load_issues"] == [f"evidence_file_not_found:{evidence_path}"]
+    assert f"evidence_file_not_found:{evidence_path}" in closure_markdown
+
+
 def test_spark_matrix_example_is_not_accepted_as_proof(tmp_path):
     paths = write_matrix(tmp_path, build_matrix())
 
@@ -1258,6 +1270,27 @@ def test_spark_matrix_cli_smoke(tmp_path):
     assert Path(payload["artifacts"]["evidence_example"]).exists()
     assert Path(payload["artifacts"]["evidence_scaffold"]).exists()
     assert Path(payload["artifacts"]["evidence_template"]).exists()
+
+
+def test_spark_matrix_cli_writes_artifacts_for_missing_evidence_file(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_spark_matrix.py"
+    missing_evidence = tmp_path / "missing-evidence.json"
+    output_dir = tmp_path / "matrix"
+
+    result = subprocess.run(
+        ["python", str(script), "--output-dir", str(output_dir), "--evidence", str(missing_evidence)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert payload["ok"] is False
+    assert payload["evidence_load_issues"] == [f"evidence_file_not_found:{missing_evidence}"]
+    assert Path(payload["artifacts"]["json"]).exists()
+    matrix = json.loads(Path(payload["artifacts"]["json"]).read_text(encoding="utf-8"))
+    assert matrix["ready_for_one_spark_demo"] is False
 
 
 def test_spark_matrix_parse_args_accepts_repeated_evidence(tmp_path):

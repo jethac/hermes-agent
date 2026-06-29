@@ -159,10 +159,22 @@ def default_candidates() -> list[Candidate]:
     ]
 
 
-def _load_evidence(paths: Iterable[Path]) -> list[dict[str, Any]]:
+def _load_evidence(paths: Iterable[Path]) -> tuple[list[dict[str, Any]], list[str]]:
     evidence: list[dict[str, Any]] = []
+    issues: list[str] = []
     for path in paths:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        resolved = path.expanduser().resolve(strict=False)
+        try:
+            payload = json.loads(resolved.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            issues.append(f"evidence_file_not_found:{resolved}")
+            continue
+        except json.JSONDecodeError as exc:
+            issues.append(f"evidence_json_parse_failed:{resolved}:{exc.msg}")
+            continue
+        except OSError as exc:
+            issues.append(f"evidence_file_unreadable:{resolved}:{exc.strerror or exc}")
+            continue
         if isinstance(payload, list):
             evidence.extend(_with_evidence_source(item, path) for item in payload if isinstance(item, dict))
         elif isinstance(payload, dict) and isinstance(payload.get("evidence"), list):
@@ -174,7 +186,9 @@ def _load_evidence(paths: Iterable[Path]) -> list[dict[str, Any]]:
             )
         elif isinstance(payload, dict):
             evidence.append(_with_evidence_source(payload, path))
-    return [*evidence, *_adapt_kame_evidence(evidence)]
+        else:
+            issues.append(f"evidence_root_must_be_object_or_list:{resolved}")
+    return [*evidence, *_adapt_kame_evidence(evidence)], issues
 
 
 def _with_evidence_source(item: dict[str, Any], path: Path, *, example_only: bool = False) -> dict[str, Any]:
@@ -693,7 +707,7 @@ def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
 
 def build_matrix(evidence_paths: Iterable[Path] = ()) -> dict[str, Any]:
     candidates = default_candidates()
-    evidence = _load_evidence(evidence_paths)
+    evidence, evidence_load_issues = _load_evidence(evidence_paths)
     evaluations = [evaluate_candidate(candidate, evidence) for candidate in candidates]
     stack_smoke = evaluate_stack_smoke(evidence)
     role_status: dict[str, str] = {}
@@ -718,8 +732,11 @@ def build_matrix(evidence_paths: Iterable[Path] = ()) -> dict[str, Any]:
         "candidates": [asdict(candidate) for candidate in candidates],
         "evaluations": evaluations,
         "stack_smoke": stack_smoke,
+        "evidence_load_issues": evidence_load_issues,
         "role_status": role_status,
         "ready_for_one_spark_demo": (
+            not evidence_load_issues
+            and
             all(status == "validated" for status in role_status.values())
             and stack_smoke["status"] == "validated"
         ),
@@ -1027,6 +1044,7 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             *([] if matrix["stack_smoke"]["status"] == "validated" else ["all_local_stack_smoke"]),
         ],
         "missing_roles": missing_roles,
+        "evidence_load_issues": matrix.get("evidence_load_issues", []),
         "stack_smoke_status": matrix["stack_smoke"]["status"],
         "stack_smoke_issues": matrix["stack_smoke"]["issues"],
         "evidence_template": "spark-benchmark-evidence-template.json",
@@ -1182,6 +1200,7 @@ def _closure_markdown(plan: dict[str, Any]) -> str:
         f"- Status: {plan['status']}",
         f"- Hardware target: {plan['hardware_target']}",
         f"- Ready for one-Spark demo: {'yes' if plan['ready_for_one_spark_demo'] else 'no'}",
+        f"- Evidence load issues: {', '.join(plan['evidence_load_issues']) if plan['evidence_load_issues'] else 'none'}",
         f"- Missing roles: {', '.join(plan['missing_roles']) if plan['missing_roles'] else 'none'}",
         f"- Stack smoke: {plan['stack_smoke_status']}",
         f"- Stack smoke issues: {', '.join(plan['stack_smoke_issues']) if plan['stack_smoke_issues'] else 'none'}",
@@ -1387,8 +1406,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     matrix = build_matrix(args.evidence)
     paths = write_matrix(args.output_dir, matrix)
-    print(json.dumps({"ok": True, "output_dir": str(args.output_dir), "artifacts": paths}, indent=2, sort_keys=True))
-    return 0
+    ok = not matrix.get("evidence_load_issues")
+    print(
+        json.dumps(
+            {
+                "ok": ok,
+                "output_dir": str(args.output_dir),
+                "artifacts": paths,
+                "evidence_load_issues": matrix.get("evidence_load_issues", []),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
