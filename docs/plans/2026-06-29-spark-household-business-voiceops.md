@@ -638,12 +638,14 @@ When evidence exists, rerun the same indexer with the relevant read-only artifac
 ```bash
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
+  --package-audit \
   --voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json
 ```
 
 ```bash
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
+  --package-audit \
   --env-file .env \
   --read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json \
   --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json
@@ -652,6 +654,7 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
 ```bash
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
+  --package-audit \
   --env-file .env \
   --read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json \
   --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json
@@ -660,6 +663,7 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
 ```bash
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
+  --package-audit \
   --env-file .env \
   --read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json \
   --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json \
@@ -669,6 +673,7 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
 ```bash
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
+  --package-audit \
   --evidence artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json
 ```
 
@@ -677,6 +682,7 @@ If local setup discovery needs bounded binary/version checks, run the provisioni
 ```bash
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
+  --package-audit \
   --env-file .env \
   --run-command-probes
 ```
@@ -686,6 +692,7 @@ If local setup discovery needs authenticated display-only catalog/auth checks, k
 ```bash
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
+  --package-audit \
   --env-file .env \
   --run-readonly-discovery
 ```

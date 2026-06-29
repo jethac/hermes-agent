@@ -1169,6 +1169,28 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "optional-skills/payments/stripe-projects" in text
 
 
+def test_goal_doc_plan_run_commands_include_package_audit():
+    text = GOAL_DOC.read_text(encoding="utf-8")
+    commands: list[str] = []
+    current: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not current and line.startswith("uv run python scripts/voiceops_plan_run.py"):
+            current = [line.rstrip(" \\")]
+            if not line.endswith("\\"):
+                commands.append(" ".join(current))
+                current = []
+            continue
+        if current:
+            current.append(line.rstrip(" \\"))
+            if not line.endswith("\\"):
+                commands.append(" ".join(current))
+                current = []
+
+    assert commands
+    assert all("--package-audit" in command for command in commands)
+
+
 def test_goal_doc_keeps_super_local_and_ultra_hosted():
     text = GOAL_DOC.read_text(encoding="utf-8")
 
