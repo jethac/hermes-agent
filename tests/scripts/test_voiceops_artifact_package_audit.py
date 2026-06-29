@@ -113,6 +113,29 @@ def test_package_audit_rejects_malformed_promised_scaffold_json(tmp_path):
     ) in report["issues"]
 
 
+def test_package_audit_rejects_secret_like_values_in_artifacts(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    phone_context_path = artifact_root / "hackathon-voiceops-demo" / "current" / "phone-context.json"
+    phone_context = json.loads(phone_context_path.read_text(encoding="utf-8"))
+    phone_context["unsafe_demo_key"] = "sk_test_nonsecretfixture000"
+    phone_context["unsafe_phone_number"] = "+15551234567"
+    _write_json(phone_context_path, phone_context)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert any(
+        issue.startswith("secret_scan:hackathon-voiceops-demo/current/phone-context.json:")
+        and issue.endswith(":openai_or_stripe_secret_key")
+        for issue in report["issues"]
+    )
+    assert any(
+        issue.startswith("secret_scan:hackathon-voiceops-demo/current/phone-context.json:")
+        and issue.endswith(":e164_phone_number")
+        for issue in report["issues"]
+    )
+
+
 def test_package_audit_rejects_live_dashboard_claim_with_open_gates(tmp_path):
     artifact_root = _generate_package(tmp_path)
     dashboard = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-dashboard.html"

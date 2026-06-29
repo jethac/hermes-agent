@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -31,6 +32,18 @@ EXPECTED_HANDOFF_PHASES = (
 )
 LOCAL_MODEL_MARKERS = ("local", "dgx", "spark", "localhost", "127.0.0.1", "vllm")
 HOSTED_MODEL_MARKERS = ("hosted", "cloud", "provider", "remote", "api", "nous")
+SECRET_SCAN_PATTERNS = (
+    ("openai_or_stripe_secret_key", re.compile(r"\bsk_(?:live|test|car)_[A-Za-z0-9_-]{12,}\b")),
+    ("openai_project_key", re.compile(r"\bsk-proj-[A-Za-z0-9_-]{12,}\b")),
+    ("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{12,}\b")),
+    ("github_token", re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,}\b")),
+    ("github_fine_grained_token", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b")),
+    ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_-]{20,}\b")),
+    ("sendgrid_api_key", re.compile(r"\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b")),
+    ("discord_bot_token", re.compile(r"\b[MNO][A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{20,}\b")),
+    ("e164_phone_number", re.compile(r"(?<![A-Za-z0-9_])\+[1-9][0-9]{9,14}\b")),
+)
 EXPECTED_PACKAGE_ARTIFACTS = (
     "hackathon-voiceops-demo/current/audit-ledger.jsonl",
     "hackathon-voiceops-demo/current/demo-script.md",
@@ -183,6 +196,27 @@ def _audit_expected_package_artifacts(artifact_root: Path, issues: list[str]) ->
                 issues.append(f"{label}:empty")
         checked_artifacts.append(str(path))
     return checked_artifacts
+
+
+def _audit_no_secret_like_values(artifact_root: Path, checked_artifacts: list[str], issues: list[str]) -> None:
+    for path_text in checked_artifacts:
+        path = Path(path_text)
+        label = _artifact_label(artifact_root, path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (FileNotFoundError, UnicodeDecodeError, OSError):
+            continue
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            for rule_id, pattern in SECRET_SCAN_PATTERNS:
+                if pattern.search(line):
+                    issues.append(f"secret_scan:{label}:line_{line_number}:{rule_id}")
+
+
+def _artifact_label(artifact_root: Path, path: Path) -> str:
+    try:
+        return str(path.relative_to(artifact_root))
+    except ValueError:
+        return str(path)
 
 
 def _dry_run_metadata_rows(script_text: str, issues: list[str]) -> list[dict[str, Any]]:
@@ -850,6 +884,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     issues: list[str] = []
     warnings: list[str] = []
     checked_artifacts = _audit_expected_package_artifacts(artifact_root, issues)
+    _audit_no_secret_like_values(artifact_root, checked_artifacts, issues)
     demo_dir = artifact_root / "hackathon-voiceops-demo" / "current"
     plan_dir = artifact_root / "voiceops-plan" / "current"
     channel_dir = artifact_root / "voiceops-channel-policy" / "current"
