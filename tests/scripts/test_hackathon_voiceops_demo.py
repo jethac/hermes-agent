@@ -108,3 +108,35 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     not_ready = build_readiness_report(demo, env={}, which=lambda _command: None)
     assert not_ready["ready_for_recording"] is False
     assert {"discord_voice", "stripe_projects_cli", "stripe_link_cli"}.issubset(set(not_ready["required_failures"]))
+
+
+def test_voiceops_readiness_report_loads_env_files_without_exposing_values(tmp_path):
+    args = parse_args([])
+    demo = build_demo(args)
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "DISCORD_BOT_TOKEN=secret-token",
+                "DISCORD_VOICE_CHANNEL_NAME=General",
+                "WHATSAPP_ENABLED=true",
+                "VOICEOPS_DEMO_PHONE_NUMBER='+15551234567'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_which(command: str) -> str | None:
+        commands = {
+            "stripe": "/usr/local/bin/stripe",
+            "npx": "/usr/local/bin/npx",
+        }
+        return commands.get(command)
+
+    report = build_readiness_report(demo, env={}, env_files=[env_file], which=fake_which)
+
+    assert report["ready_for_recording"] is True
+    assert report["required_failures"] == []
+    assert report["env_sources"][1]["path"] == str(env_file)
+    assert report["env_sources"][1]["loaded"] is True
+    assert "secret-token" not in json.dumps(report)

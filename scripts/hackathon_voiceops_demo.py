@@ -106,6 +106,63 @@ def _which_any(which: Callable[[str], str | None], commands: Iterable[str]) -> s
     return None
 
 
+def _parse_env_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return values
+    except OSError:
+        return values
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if not key:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def _merge_env_sources(
+    env: Mapping[str, str],
+    env_files: Iterable[Path],
+) -> tuple[dict[str, str], list[dict[str, Any]]]:
+    merged = dict(env)
+    sources: list[dict[str, Any]] = [{"kind": "process", "loaded": True, "key_count": len(env)}]
+    for path in env_files:
+        parsed = _parse_env_file(path)
+        exists = path.exists()
+        # Mirror Hermes readiness semantics: env files can prove configured
+        # state even when the current shell did not export those variables.
+        merged.update(parsed)
+        sources.append(
+            {
+                "kind": "env_file",
+                "path": str(path),
+                "exists": exists,
+                "loaded": bool(parsed),
+                "key_count": len(parsed),
+            }
+        )
+    return merged, sources
+
+
+def _default_readiness_env_files(hermes_home: Path | None = None) -> list[Path]:
+    repo_root = Path(__file__).resolve().parents[1]
+    resolved_home = hermes_home or Path(os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
+    return [repo_root / ".env", resolved_home / ".env"]
+
+
 def _surface_matrix() -> list[VoiceSurface]:
     return [
         VoiceSurface(
@@ -337,9 +394,10 @@ def build_readiness_report(
     demo: dict[str, Any],
     *,
     env: Mapping[str, str] | None = None,
+    env_files: Iterable[Path] = (),
     which: Callable[[str], str | None] = shutil.which,
 ) -> dict[str, Any]:
-    env = os.environ if env is None else env
+    env, env_sources = _merge_env_sources(os.environ if env is None else env, env_files)
     checks: list[ReadinessCheck] = []
 
     hermes_path = _which_any(which, ["hermes"])
@@ -462,6 +520,7 @@ def build_readiness_report(
         "generated_at": _utc_now(),
         "ready_for_recording": not required_failures,
         "required_failures": [check["check_id"] for check in required_failures],
+        "env_sources": env_sources,
         "checks": check_dicts,
     }
 
@@ -582,9 +641,20 @@ def _readiness_markdown(report: dict[str, Any]) -> str:
         f"- Ready for recording: {'yes' if report['ready_for_recording'] else 'no'}",
         f"- Required failures: {', '.join(report['required_failures']) if report['required_failures'] else 'none'}",
         "",
-        "## Checks",
+        "## Env Sources",
         "",
     ]
+    for source in report.get("env_sources") or []:
+        if source.get("kind") == "process":
+            lines.append(f"- process env: {source.get('key_count', 0)} keys visible")
+        else:
+            state = "loaded" if source.get("loaded") else "missing or empty"
+            lines.append(f"- {source.get('path')}: {state} ({source.get('key_count', 0)} keys)")
+    lines.extend([
+        "",
+        "## Checks",
+        "",
+    ])
     for check in report["checks"]:
         required = "required" if check["required_for_video"] else "optional"
         lines.extend(
@@ -647,9 +717,14 @@ def _stripe_script(actions: Iterable[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def write_demo(output_dir: Path, demo: dict[str, Any]) -> dict[str, str]:
+def write_demo(
+    output_dir: Path,
+    demo: dict[str, Any],
+    *,
+    readiness_env_files: Iterable[Path] = (),
+) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    readiness = build_readiness_report(demo)
+    readiness = build_readiness_report(demo, env_files=readiness_env_files)
     paths = {
         "json": output_dir / "voiceops-demo.json",
         "markdown": output_dir / "voiceops-demo.md",
@@ -683,6 +758,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--approval-required-over-cents", type=int, default=1_000)
     parser.add_argument("--oracle-model", default="Nemotron 3 Ultra via Hermes /model for the hackathon demo")
     parser.add_argument("--reflex-model", default="Gemma 4 E2B audio-native reflex on Spark")
+    parser.add_argument(
+        "--hermes-home",
+        type=Path,
+        default=Path(os.environ.get("HERMES_HOME") or (Path.home() / ".hermes")),
+        help="Hermes home whose .env should be considered for readiness without printing secrets.",
+    )
+    parser.add_argument(
+        "--env-file",
+        action="append",
+        default=[],
+        type=Path,
+        help="Additional .env file to include in the readiness presence check.",
+    )
+    parser.add_argument(
+        "--no-default-env-files",
+        action="store_true",
+        help="Only use process env and explicit --env-file values for readiness.",
+    )
     return parser.parse_args(argv)
 
 
@@ -693,7 +786,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.approval_required_over_cents < 0:
         raise SystemExit("--approval-required-over-cents must be non-negative")
     demo = build_demo(args)
-    paths = write_demo(args.output_dir, demo)
+    env_files = [] if args.no_default_env_files else _default_readiness_env_files(args.hermes_home)
+    env_files.extend(args.env_file)
+    paths = write_demo(args.output_dir, demo, readiness_env_files=env_files)
     print(json.dumps({"ok": True, "output_dir": str(args.output_dir), "artifacts": paths}, indent=2, sort_keys=True))
     return 0
 
