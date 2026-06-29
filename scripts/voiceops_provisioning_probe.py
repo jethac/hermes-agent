@@ -32,6 +32,21 @@ POST_APPROVAL_RECEIPT_STATUSES = {"executed", "failed", "held", "denied", "skipp
 POST_APPROVAL_NON_EXECUTED_STATUSES = {"held", "denied", "skipped"}
 PREFLIGHT_REDACTED_SOURCE_SCHEMA_VERSION = "voiceops.milestone2.redacted_source_artifact.v1"
 
+PHONE_TARGET_ENV_KEYS = [
+    "VOICEOPS_DEMO_PHONE_NUMBER",
+    "TWILIO_PHONE_NUMBER",
+    "VAPI_PHONE_NUMBER_ID",
+    "BLAND_PHONE_NUMBER",
+]
+PHONE_PROVIDER_ENV_KEYS = [
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "TWILIO_PHONE_NUMBER_SID",
+    "VAPI_API_KEY",
+    "VAPI_PHONE_NUMBER_ID",
+    "BLAND_API_KEY",
+]
+
 BLOCKED_CAPABILITIES = [
     "live_spend",
     "provider_provisioning",
@@ -109,10 +124,7 @@ SETUP_CLOSURE_REQUIREMENTS: dict[str, dict[str, Any]] = {
         "accepted_binaries": [],
         "safe_probe_commands": [],
         "accepted_env_keys": [
-            "VOICEOPS_DEMO_PHONE_NUMBER",
-            "TWILIO_PHONE_NUMBER",
-            "VAPI_PHONE_NUMBER_ID",
-            "BLAND_PHONE_NUMBER",
+            *PHONE_TARGET_ENV_KEYS,
         ],
         "operator_action": "Set one phone handoff target env key in a repo-local env file or launch environment.",
         "proof": "A rerun records at least one accepted phone target key as present without emitting its value.",
@@ -122,12 +134,7 @@ SETUP_CLOSURE_REQUIREMENTS: dict[str, dict[str, Any]] = {
         "accepted_binaries": ["twilio", "vapi", "bland"],
         "safe_probe_commands": [["twilio", "--version"]],
         "accepted_env_keys": [
-            "TWILIO_ACCOUNT_SID",
-            "TWILIO_AUTH_TOKEN",
-            "TWILIO_PHONE_NUMBER_SID",
-            "VAPI_API_KEY",
-            "VAPI_PHONE_NUMBER_ID",
-            "BLAND_API_KEY",
+            *PHONE_PROVIDER_ENV_KEYS,
         ],
         "operator_action": "Configure a phone provider env key set or install an accepted provider CLI.",
         "proof": "A rerun records accepted provider env-key presence or provider CLI availability.",
@@ -1401,22 +1408,8 @@ def build_probe_report(
         )
     )
 
-    phone_target_keys = [
-        "VOICEOPS_DEMO_PHONE_NUMBER",
-        "TWILIO_PHONE_NUMBER",
-        "VAPI_PHONE_NUMBER_ID",
-        "BLAND_PHONE_NUMBER",
-    ]
-    phone_provider_keys = [
-        "TWILIO_ACCOUNT_SID",
-        "TWILIO_AUTH_TOKEN",
-        "TWILIO_PHONE_NUMBER_SID",
-        "VAPI_API_KEY",
-        "VAPI_PHONE_NUMBER_ID",
-        "BLAND_API_KEY",
-    ]
-    target_present = _present_keys(env, phone_target_keys)
-    provider_present = _present_keys(env, phone_provider_keys)
+    target_present = _present_keys(env, PHONE_TARGET_ENV_KEYS)
+    provider_present = _present_keys(env, PHONE_PROVIDER_ENV_KEYS)
     provider_name, provider_path = _which_any(which, ["twilio", "vapi", "bland"])
     checks.append(
         ReadinessCheck(

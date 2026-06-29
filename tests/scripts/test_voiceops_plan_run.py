@@ -880,6 +880,28 @@ def test_plan_run_keeps_provisioning_incomplete_without_preflight_evidence(tmp_p
     assert provisioning_result["details"]["run_command_probes"] is False
 
 
+def test_plan_run_current_environment_tracks_bland_phone_provider_keys(tmp_path):
+    artifact_root = tmp_path / "artifacts"
+    output_dir = artifact_root / "voiceops-plan" / "current"
+    summary = build_plan_run(
+        artifact_root=artifact_root,
+        output_dir=output_dir,
+        env={
+            "PATH": "",
+            "BLAND_PHONE_NUMBER": "+15551234567",
+            "BLAND_API_KEY": "bland-secret-token",
+        },
+    )
+
+    env_presence = summary["current_environment"]["provisioning"]["env_presence"]
+    serialized = json.dumps(summary)
+
+    assert env_presence["BLAND_PHONE_NUMBER"] is True
+    assert env_presence["BLAND_API_KEY"] is True
+    assert "+15551234567" not in serialized
+    assert "bland-secret-token" not in serialized
+
+
 def test_plan_run_env_file_presence_is_redacted_and_reflected_in_handoff(tmp_path):
     artifact_root = tmp_path / "artifacts"
     output_dir = artifact_root / "voiceops-plan" / "current"

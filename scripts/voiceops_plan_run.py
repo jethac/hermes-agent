@@ -26,7 +26,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.hackathon_voiceops_demo import build_demo, parse_args as parse_demo_args, write_demo
 from scripts.voiceops_channel_policy import build_channel_policy, build_review_packet, validate_policy, write_channel_policy
 from scripts.voiceops_operator_state import build_operator_state, validate_operator_state, write_operator_state
-from scripts.voiceops_provisioning_probe import build_probe_report, write_probe_artifacts
+from scripts.voiceops_provisioning_probe import (
+    PHONE_PROVIDER_ENV_KEYS,
+    PHONE_TARGET_ENV_KEYS,
+    build_probe_report,
+    write_probe_artifacts,
+)
 from scripts.voiceops_spark_matrix import build_matrix, write_matrix
 from scripts.voiceops_voice_operator import (
     build_voice_operator_report_from_smoke,
@@ -171,15 +176,7 @@ def _build_current_environment_snapshot(
         "DISCORD_VOICE_CHANNEL_ID",
         "DISCORD_VOICE_CHANNEL_NAME",
     ]
-    provisioning_env_keys = [
-        "VOICEOPS_DEMO_PHONE_NUMBER",
-        "TWILIO_PHONE_NUMBER",
-        "VAPI_PHONE_NUMBER_ID",
-        "TWILIO_ACCOUNT_SID",
-        "TWILIO_AUTH_TOKEN",
-        "TWILIO_PHONE_NUMBER_SID",
-        "VAPI_API_KEY",
-    ]
+    provisioning_env_keys = [*PHONE_TARGET_ENV_KEYS, *PHONE_PROVIDER_ENV_KEYS]
     provisioning_binaries = ["stripe", "link-cli", "mppx", "mpp", "mpp-agent", "nemoclaw", "openshell", "twilio", "vapi", "bland"]
     system = platform.system()
     machine = platform.machine()
