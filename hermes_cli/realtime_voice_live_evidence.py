@@ -22,6 +22,9 @@ class RealtimeVoiceLiveEvidenceResult:
     require_gemini_live: bool = False
     reports: dict[str, str] = field(default_factory=dict)
     issues: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    live_probe_ok: bool | None = None
+    live_probe_status: str = "not_run"
     evidence_context: dict[str, Any] = field(default_factory=dict)
     validate_live_evidence: bool = False
     strict_validation: dict[str, Any] = field(default_factory=dict)
@@ -97,6 +100,9 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
     output_dir.mkdir(parents=True, exist_ok=True)
     reports: dict[str, str] = {}
     issues: list[str] = []
+    warnings: list[str] = []
+    live_probe_ok: bool | None = None
+    live_probe_status = "not_run"
     context = _evidence_context(args)
 
     if getattr(args, "validate_live_evidence", False):
@@ -121,13 +127,19 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
 
         live_report = output_dir / "discord-live-probe.json"
         live_result = await _run_discord_live_probe(args)
+        live_probe_ok = bool(getattr(live_result, "ok", False))
+        live_probe_status = "passed" if live_probe_ok else "failed"
         _write_json(
             live_report,
             _with_report_identity(asdict(live_result), kind="discord_live_probe", report_path=live_report),
         )
         reports["discord_live_probe"] = str(live_report)
-        if args.require_live_discord and not getattr(live_result, "ok", False):
-            issues.append(f"discord_live_probe: {getattr(live_result, 'error', '') or 'failed'}")
+        if not live_probe_ok:
+            message = f"discord_live_probe: {getattr(live_result, 'error', '') or 'failed'}"
+            if args.require_live_discord:
+                issues.append(message)
+            else:
+                warnings.append(message)
 
     _attach_optional_evidence_report(
         reports=reports,
@@ -156,6 +168,9 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
         require_gemini_live=bool(args.require_gemini_live),
         reports=reports,
         issues=issues,
+        warnings=warnings,
+        live_probe_ok=live_probe_ok,
+        live_probe_status=live_probe_status,
         evidence_context=context,
         validate_live_evidence=bool(getattr(args, "validate_live_evidence", False)),
         strict_validation=strict_validation,
@@ -175,6 +190,9 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
             require_gemini_live=bool(args.require_gemini_live),
             reports=reports,
             issues=sorted(set(issues)),
+            warnings=warnings,
+            live_probe_ok=live_probe_ok,
+            live_probe_status=live_probe_status,
             evidence_context=context,
             validate_live_evidence=True,
             strict_validation=strict_validation,

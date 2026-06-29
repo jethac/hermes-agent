@@ -83,6 +83,9 @@ def test_live_evidence_collects_loopback_and_readiness_reports(monkeypatch, tmp_
 
     assert result.ok is True
     assert result.issues == []
+    assert result.live_probe_ok is False
+    assert result.live_probe_status == "failed"
+    assert result.warnings == ["discord_live_probe: DISCORD_BOT_TOKEN is required"]
     assert (tmp_path / "discord-loopback.json").is_file()
     assert (tmp_path / "discord-live-probe.json").is_file()
     loopback = json.loads((tmp_path / "discord-loopback.json").read_text(encoding="utf-8"))
@@ -94,6 +97,9 @@ def test_live_evidence_collects_loopback_and_readiness_reports(monkeypatch, tmp_
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["schema_version"] == "voiceops.realtime_voice_live_evidence_manifest.v1"
     assert manifest["ok"] is True
+    assert manifest["live_probe_ok"] is False
+    assert manifest["live_probe_status"] == "failed"
+    assert manifest["warnings"] == ["discord_live_probe: DISCORD_BOT_TOKEN is required"]
     assert manifest["reports"]["discord_loopback"].endswith("discord-loopback.json")
     assert manifest["evidence_context"]["env_presence"]["OPENAI_API_KEY"] is False
     assert manifest["evidence_context"]["env_presence"]["GEMINI_API_KEY"] is False
@@ -126,6 +132,8 @@ def test_live_evidence_manifest_references_optional_sidecar_and_turn_evidence(mo
     result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
 
     assert result.ok is True
+    assert result.live_probe_ok is True
+    assert result.live_probe_status == "passed"
     assert result.reports["sidecar_session"] == str(sidecar_path)
     assert result.reports["live_turn"] == str(live_turn_path)
     manifest = json.loads((tmp_path / "bundle" / "manifest.json").read_text(encoding="utf-8"))
@@ -163,6 +171,8 @@ def test_live_evidence_validate_mode_does_not_call_discord_probes(monkeypatch, t
 
     assert result.ok is True
     assert result.validate_live_evidence is True
+    assert result.live_probe_ok is None
+    assert result.live_probe_status == "not_run"
     assert result.issues == []
     assert result.reports == {
         "discord_live_probe": str(discord_path),
