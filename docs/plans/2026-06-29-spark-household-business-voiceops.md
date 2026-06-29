@@ -259,10 +259,11 @@ The command writes:
 - `readiness-report.md`
 - `operator-dashboard.html`
 - `recording-runbook.md`
+- `submission-writeup.md`
 - `stripe-actions-dry-run.sh`
 
 The generated shell script is dry-run by construction. It prints the Stripe/Projects commands instead of executing them. The readiness report is non-invasive: it checks local prerequisites and env shape from process env, repo `.env`, Hermes home `.env`, and explicit `--env-file` values by presence only. It does not print secrets, provision, purchase, call, or mutate credentials. The HTML dashboard is a static recording surface and does not require a web server.
-The recording runbook gives the shot list, fallback recording path, submission checklist, and tweet draft without requiring live spend or live provisioning.
+The recording runbook gives the shot list, fallback recording path, submission checklist, and tweet draft without requiring live spend or live provisioning. The submission writeup gives concise public copy for the tweet/thread/form.
 
 ## Milestone 1: Real Voice Operator
 

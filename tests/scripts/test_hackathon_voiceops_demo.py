@@ -24,6 +24,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "readiness_json",
         "readiness_markdown",
         "stripe_actions",
+        "submission_writeup",
     }
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     nemoclaw = json.loads(Path(paths["nemoclaw_packet"]).read_text(encoding="utf-8"))
@@ -50,6 +51,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "readiness-report.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "operator-dashboard.html" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "recording-runbook.md" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "submission-writeup.md" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "spoken in Discord" in Path(paths["demo_script"]).read_text(encoding="utf-8")
     assert "outbound phone call" in Path(paths["demo_script"]).read_text(encoding="utf-8")
     runbook = Path(paths["recording_runbook"]).read_text(encoding="utf-8")
@@ -57,6 +59,11 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Shot List" in runbook
     assert "@NousResearch" in runbook
     assert "Do not show terminal panes or files that contain secrets" in runbook
+    writeup = Path(paths["submission_writeup"]).read_text(encoding="utf-8")
+    assert "Hermes VoiceOps Submission Writeup" in writeup
+    assert "NemoClaw" in writeup
+    assert "Stripe Skills" in writeup
+    assert "@NousResearch" in writeup
     dashboard = Path(paths["dashboard"]).read_text(encoding="utf-8")
     assert "Nemotron 3 Ultra" in dashboard
     assert "NemoClaw Blocks" in dashboard

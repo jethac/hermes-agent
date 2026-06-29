@@ -627,6 +627,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "- `readiness-report.json`: local recording prerequisite report",
         "- `operator-dashboard.html`: static recording dashboard for budget, approvals, guardrails, and handoff state",
         "- `recording-runbook.md`: shot list, fallback plan, and submission checklist",
+        "- `submission-writeup.md`: public submission copy for the tweet/thread/form",
         "",
         "## 90-second video beat sheet",
         "",
@@ -638,6 +639,57 @@ def _markdown(demo: dict[str, Any]) -> str:
         "6. Close by continuing the same task from the phone-call surface.",
         "",
     ])
+    return "\n".join(lines)
+
+
+def _submission_writeup(demo: dict[str, Any]) -> str:
+    policy = demo["spend_policy"]
+    approval_cents = demo["totals"]["approval_required_cents"]
+    lines = [
+        "# Hermes VoiceOps Submission Writeup",
+        "",
+        "## Short Description",
+        "",
+        "Hermes VoiceOps is a local-first household and business operator controlled by live Discord voice, targeted at one NVIDIA DGX Spark. In the demo, the user gives Hermes a fixed budget through Stripe Skills, Hermes prepares a NemoClaw-safe plan, queues VoIP provisioning through Stripe Projects, and preserves context for a phone handoff.",
+        "",
+        "## What The Demo Shows",
+        "",
+        "- Discord voice is the live front door.",
+        f"- {demo['sponsor_stack']['nemotron_3_ultra']['selection']} is the visible serious planning path.",
+        "- NemoClaw frames billable and network-capable actions before execution.",
+        "- Stripe Skills provide the spend and provisioning rail.",
+        f"- The spoken budget becomes a {_dollars(policy['limit_cents'])} spend policy with approval required over {_dollars(policy['approval_required_over_cents'])}.",
+        f"- {_dollars(approval_cents)} of queued spend remains approval-gated.",
+        "- Phone and WhatsApp are treated as follow-on operational surfaces, not separate assistants.",
+        "",
+        "## Why It Matters",
+        "",
+        "The goal is not a generic voice assistant. The goal is an operator that can run real household and small-business workflows while keeping money, credentials, network effects, and external communication behind explicit controls and an audit trail.",
+        "",
+        "## Spark Strategy",
+        "",
+        f"- Compute target: {demo['spark_stack']['compute']}",
+        f"- Reflex/interface: {demo['spark_stack']['reflex']['model']}",
+        f"- Oracle/brain: {demo['spark_stack']['oracle']['model']}",
+        f"- Speech path: {demo['spark_stack']['speech']['asr']} plus {demo['spark_stack']['speech']['tts']}",
+        "",
+        "## Safety Story",
+        "",
+        "- Dry-run by default.",
+        "- Live spend requires user-visible approval.",
+        "- Reflex model does not get broad tool or spend authority.",
+        "- NemoClaw packet lists blocked capabilities such as raw card data in model context and unapproved purchases.",
+        "- Audit ledger records proposed actions, budget impact, approval state, and handoff evidence.",
+        "",
+        "## Demo Prompt",
+        "",
+        f"> {demo['demo']['request']}",
+        "",
+        "## Submission Tweet",
+        "",
+        "Hermes VoiceOps: I give a Spark-powered Hermes agent a budget over Discord voice, it builds a NemoClaw-safe plan, queues Stripe Skills provisioning for VoIP, and preserves context for a phone handoff. Local-first household/business ops, with spend gated by approval. @NousResearch",
+        "",
+    ]
     return "\n".join(lines)
 
 
@@ -1071,6 +1123,7 @@ def write_demo(
         "readiness_markdown": output_dir / "readiness-report.md",
         "dashboard": output_dir / "operator-dashboard.html",
         "recording_runbook": output_dir / "recording-runbook.md",
+        "submission_writeup": output_dir / "submission-writeup.md",
         "stripe_actions": output_dir / "stripe-actions-dry-run.sh",
     }
     _write_json(paths["json"], demo)
@@ -1083,6 +1136,7 @@ def write_demo(
     paths["readiness_markdown"].write_text(_readiness_markdown(readiness), encoding="utf-8")
     paths["dashboard"].write_text(_dashboard_html(demo, readiness), encoding="utf-8")
     paths["recording_runbook"].write_text(_recording_runbook(demo, readiness), encoding="utf-8")
+    paths["submission_writeup"].write_text(_submission_writeup(demo), encoding="utf-8")
     paths["stripe_actions"].write_text(_stripe_script(demo["ops_actions"]), encoding="utf-8")
     paths["stripe_actions"].chmod(0o755)
     return {key: str(path) for key, path in paths.items()}
