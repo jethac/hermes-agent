@@ -481,6 +481,53 @@ def test_package_audit_rejects_handoff_phase_order_and_blocker_drift(tmp_path):
     assert "demo_handoff:local_spark_stack:missing_environment_blockers" in report["issues"]
 
 
+def test_package_audit_rejects_handoff_safe_command_order_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    closure_path = artifact_root / "voiceops-plan" / "current" / "readiness-closure-index.json"
+    handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"
+    demo_handoff_path = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json"
+
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    closure = json.loads(closure_path.read_text(encoding="utf-8"))
+    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    demo_handoff = json.loads(demo_handoff_path.read_text(encoding="utf-8"))
+
+    for payload in (handoff, demo_handoff, closure["operator_handoff"], plan_run["closure_index"]["operator_handoff"]):
+        live_phase = payload["phases"][0]
+        live_phase["commands"][0], live_phase["commands"][1] = live_phase["commands"][1], live_phase["commands"][0]
+        live_phase["first_safe_command"] = live_phase["commands"][0]
+        live_phase["first_evidence_command"] = live_phase["commands"][0]
+        spark_phase = payload["phases"][2]
+        spark_phase["commands"][0], spark_phase["commands"][1] = spark_phase["commands"][1], spark_phase["commands"][0]
+        spark_phase["first_safe_command"] = spark_phase["commands"][0]
+        spark_phase["first_evidence_command"] = spark_phase["commands"][0]
+
+    for payload in (closure, plan_run["closure_index"]):
+        live_action = payload["next_actions"][0]
+        live_action["first_safe_command"] = live_action["first_evidence_command"]
+        spark_action = payload["next_actions"][2]
+        spark_action["first_safe_command"] = spark_action["first_evidence_command"]
+    plan_run["next_actions"] = plan_run["closure_index"]["next_actions"]
+
+    _write_json(plan_run_path, plan_run)
+    _write_json(closure_path, closure)
+    _write_json(handoff_path, handoff)
+    _write_json(demo_handoff_path, demo_handoff)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "operator_handoff:live_discord_voice:first_safe_command_not_no_write_audit" in report["issues"]
+    assert "operator_handoff:live_discord_voice:no_write_audit_not_before_live_collection" in report["issues"]
+    assert "operator_handoff:local_spark_stack:first_safe_command_not_spark_lint" in report["issues"]
+    assert "operator_handoff:local_spark_stack:spark_lint_not_before_dgx_eval" in report["issues"]
+    assert "demo_handoff:live_discord_voice:first_safe_command_not_no_write_audit" in report["issues"]
+    assert "demo_handoff:local_spark_stack:first_safe_command_not_spark_lint" in report["issues"]
+    assert "plan_run:live_discord_voice_operator:first_safe_command_not_no_write_audit" in report["issues"]
+    assert "plan_run:local_spark_stack_matrix:first_safe_command_not_spark_lint" in report["issues"]
+
+
 def test_package_audit_rejects_channel_policy_live_egress_claim(tmp_path):
     artifact_root = _generate_package(tmp_path)
     policy_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy.json"

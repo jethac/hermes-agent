@@ -638,7 +638,10 @@ def test_spark_matrix_refresh_source_hashes_updates_candidate_attestation(tmp_pa
     sources_dir.mkdir()
     source_path = sources_dir / "oracle.json"
     source_path.write_text(
-        json.dumps({"redacted": True, "source": "old oracle output"}, sort_keys=True),
+        json.dumps(
+            {"redacted": True, "source": "old oracle output", "source_key": "oracle-nemotron3-super-local"},
+            sort_keys=True,
+        ),
         encoding="utf-8",
     )
     old_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
@@ -649,7 +652,10 @@ def test_spark_matrix_refresh_source_hashes_updates_candidate_attestation(tmp_pa
     evidence_path = tmp_path / "spark-benchmark-evidence.json"
     evidence_path.write_text(json.dumps({"evidence": [evidence]}, indent=2, sort_keys=True), encoding="utf-8")
     source_path.write_text(
-        json.dumps({"redacted": True, "source": "updated oracle output"}, sort_keys=True),
+        json.dumps(
+            {"redacted": True, "source": "updated oracle output", "source_key": "oracle-nemotron3-super-local"},
+            sort_keys=True,
+        ),
         encoding="utf-8",
     )
 
@@ -667,6 +673,164 @@ def test_spark_matrix_refresh_source_hashes_updates_candidate_attestation(tmp_pa
     assert result["updates"][0]["collector_attestation_changed"] is True
     assert refreshed["source_artifact_sha256"] == new_sha256
     assert refreshed["collector_attestation"]["redacted_artifact_sha256"] == new_sha256
+
+
+def test_spark_matrix_rejects_candidate_with_source_artifact_not_explicitly_redacted(tmp_path):
+    source_path = tmp_path / "artifacts/test/policy-only-source.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(
+        json.dumps(
+            {
+                "redaction_policy": "operator claims this artifact was scrubbed",
+                "source_key": "oracle-nemotron3-super-local",
+            }
+        ),
+        encoding="utf-8",
+    )
+    evidence_path = tmp_path / "evidence.json"
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    evidence["source_artifact"] = "artifacts/test/policy-only-source.json"
+    evidence["source_artifact_sha256"] = source_sha256
+    evidence["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
+    evidence["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "source_artifact_not_redacted" in evaluation["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
+def test_spark_matrix_rejects_candidate_source_artifact_with_secret_and_phone_like_values(tmp_path):
+    source_path = tmp_path / "artifacts/test/leaky-source.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(
+        json.dumps(
+            {
+                "redacted": True,
+                "source_key": "oracle-nemotron3-super-local",
+                "api_key": "sk-" + ("a" * 24),
+                "transcript": "call back at +14155552671",
+            }
+        ),
+        encoding="utf-8",
+    )
+    evidence_path = tmp_path / "evidence.json"
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    evidence["source_artifact"] = "artifacts/test/leaky-source.json"
+    evidence["source_artifact_sha256"] = source_sha256
+    evidence["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
+    evidence["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "source_artifact_contains_likely_secret" in evaluation["issues"]
+    assert "source_artifact_contains_phone_like_value" in evaluation["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
+def test_spark_matrix_refresh_source_hashes_rejects_unsafe_source_without_writing(tmp_path):
+    sources_dir = tmp_path / "sources"
+    sources_dir.mkdir()
+    source_path = sources_dir / "oracle.json"
+    source_path.write_text(
+        json.dumps(
+            {"redacted": True, "source": "old oracle output", "source_key": "oracle-nemotron3-super-local"},
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    old_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    evidence["source_artifact"] = "sources/oracle.json"
+    evidence["source_artifact_sha256"] = old_sha256
+    evidence["collector_attestation"]["redacted_artifact_sha256"] = old_sha256
+    evidence_path = tmp_path / "spark-benchmark-evidence.json"
+    evidence_path.write_text(json.dumps({"evidence": [evidence]}, indent=2, sort_keys=True), encoding="utf-8")
+    before_refresh = evidence_path.read_text(encoding="utf-8")
+    source_path.write_text(
+        json.dumps(
+            {
+                "redaction_policy": "policy text is not an explicit redacted marker",
+                "source_key": "oracle-nemotron3-super-local",
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    result = refresh_spark_source_hashes(evidence_path)
+    refreshed = json.loads(evidence_path.read_text(encoding="utf-8"))["evidence"][0]
+
+    assert result["ok"] is False
+    assert result["artifact_writes"] is False
+    assert result["updates"] == []
+    assert result["issues"] == ["oracle-nemotron3-super-local:source_artifact_not_redacted"]
+    assert evidence_path.read_text(encoding="utf-8") == before_refresh
+    assert refreshed["source_artifact_sha256"] == old_sha256
+    assert refreshed["collector_attestation"]["redacted_artifact_sha256"] == old_sha256
+
+
+def test_spark_matrix_refresh_source_hashes_rejects_leaky_redacted_source_without_writing(tmp_path):
+    sources_dir = tmp_path / "sources"
+    sources_dir.mkdir()
+    source_path = sources_dir / "oracle.json"
+    source_path.write_text(
+        json.dumps(
+            {"redacted": True, "source": "old oracle output", "source_key": "oracle-nemotron3-super-local"},
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    old_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    evidence["source_artifact"] = "sources/oracle.json"
+    evidence["source_artifact_sha256"] = old_sha256
+    evidence["collector_attestation"]["redacted_artifact_sha256"] = old_sha256
+    evidence_path = tmp_path / "spark-benchmark-evidence.json"
+    evidence_path.write_text(json.dumps({"evidence": [evidence]}, indent=2, sort_keys=True), encoding="utf-8")
+    before_refresh = evidence_path.read_text(encoding="utf-8")
+    source_path.write_text(
+        json.dumps(
+            {
+                "redacted": True,
+                "source_key": "oracle-nemotron3-super-local",
+                "api_key": "sk-" + ("b" * 24),
+                "caller_phone": "(415) 555-2671",
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    result = refresh_spark_source_hashes(evidence_path)
+    refreshed = json.loads(evidence_path.read_text(encoding="utf-8"))["evidence"][0]
+
+    assert result["ok"] is False
+    assert result["artifact_writes"] is False
+    assert result["updates"] == []
+    assert "oracle-nemotron3-super-local:source_artifact_contains_likely_secret" in result["issues"]
+    assert "oracle-nemotron3-super-local:source_artifact_contains_phone_like_value" in result["issues"]
+    assert evidence_path.read_text(encoding="utf-8") == before_refresh
+    assert refreshed["source_artifact_sha256"] == old_sha256
+    assert refreshed["collector_attestation"]["redacted_artifact_sha256"] == old_sha256
 
 
 def test_spark_matrix_rejects_candidate_without_collector_attestation(tmp_path):
@@ -1041,7 +1205,10 @@ def test_spark_matrix_refresh_source_hashes_updates_stack_smoke_attestation(tmp_
     sources_dir.mkdir()
     source_path = sources_dir / "stack-smoke.json"
     source_path.write_text(
-        json.dumps({"redacted": True, "source": "old stack smoke"}, sort_keys=True),
+        json.dumps(
+            {"redacted": True, "source": "old stack smoke", "source_key": "voiceops_spark_stack_smoke"},
+            sort_keys=True,
+        ),
         encoding="utf-8",
     )
     old_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
@@ -1052,7 +1219,10 @@ def test_spark_matrix_refresh_source_hashes_updates_stack_smoke_attestation(tmp_
     evidence_path = tmp_path / "spark-benchmark-evidence.json"
     evidence_path.write_text(json.dumps({"evidence": [stack_smoke]}, indent=2, sort_keys=True), encoding="utf-8")
     source_path.write_text(
-        json.dumps({"redacted": True, "source": "updated stack smoke"}, sort_keys=True),
+        json.dumps(
+            {"redacted": True, "source": "updated stack smoke", "source_key": "voiceops_spark_stack_smoke"},
+            sort_keys=True,
+        ),
         encoding="utf-8",
     )
 

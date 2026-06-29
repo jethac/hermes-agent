@@ -549,6 +549,8 @@ def _audit_plan_consistency(
         issues.append("plan_run:remaining_gates_mismatch")
     if plan_run.get("next_actions") != plan_closure.get("next_actions"):
         issues.append("plan_run:next_actions_mismatch")
+    _audit_next_action_command_order("plan_run", plan_run.get("next_actions"), issues)
+    _audit_next_action_command_order("plan_closure", plan_closure.get("next_actions"), issues)
     _audit_plan_safety("plan_run", plan_run.get("safety"), issues)
     _audit_plan_safety("plan_closure", plan_closure.get("safety"), issues)
     if plan_handoff != plan_closure.get("operator_handoff"):
@@ -722,6 +724,161 @@ def _audit_handoff_phase_contract(label: str, handoff: Mapping[str, Any], issues
             continue
         if not isinstance(phase.get("blocked_by_current_environment"), Mapping):
             issues.append(f"{label}:{expected_phase_id}:missing_environment_blockers")
+        _audit_handoff_command_order(label, expected_phase_id, phase, issues)
+
+
+def _audit_handoff_command_order(
+    label: str,
+    phase_id: str,
+    phase: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    commands = phase.get("commands")
+    if not isinstance(commands, list) or not commands:
+        issues.append(f"{label}:{phase_id}:commands_missing")
+        return
+    command_texts = [str(command) for command in commands]
+    first_safe_command = str(phase.get("first_safe_command") or "")
+    first_evidence_command = str(phase.get("first_evidence_command") or "")
+    if not first_safe_command:
+        issues.append(f"{label}:{phase_id}:missing_first_safe_command")
+    elif command_texts[0] != first_safe_command and (
+        not phase.get("diagnostic_command") or len(command_texts) < 2 or command_texts[1] != first_safe_command
+    ):
+        issues.append(f"{label}:{phase_id}:first_safe_command_not_first")
+    if phase_id == "live_discord_voice":
+        _audit_ordered_handoff_command(
+            label,
+            phase_id,
+            command_texts,
+            first_safe_command,
+            required_marker="--audit-only",
+            issue_suffix="first_safe_command_not_no_write_audit",
+            issues=issues,
+        )
+        _audit_ordered_handoff_command(
+            label,
+            phase_id,
+            command_texts,
+            first_evidence_command,
+            required_marker="hermes doctor",
+            issue_suffix="first_evidence_command_not_live_doctor",
+            issues=issues,
+        )
+        _audit_handoff_command_precedence(
+            label,
+            phase_id,
+            command_texts,
+            first_safe_command,
+            first_evidence_command,
+            issue_suffix="no_write_audit_not_before_live_collection",
+            issues=issues,
+        )
+    elif phase_id == "local_spark_stack":
+        _audit_ordered_handoff_command(
+            label,
+            phase_id,
+            command_texts,
+            first_safe_command,
+            required_marker="--lint-evidence",
+            issue_suffix="first_safe_command_not_spark_lint",
+            issues=issues,
+        )
+        _audit_ordered_handoff_command(
+            label,
+            phase_id,
+            command_texts,
+            first_evidence_command,
+            required_marker="dgx_spark_gemma4_voice_eval",
+            issue_suffix="first_evidence_command_not_dgx_eval",
+            issues=issues,
+        )
+        _audit_handoff_command_precedence(
+            label,
+            phase_id,
+            command_texts,
+            first_safe_command,
+            first_evidence_command,
+            issue_suffix="spark_lint_not_before_dgx_eval",
+            issues=issues,
+        )
+    if first_safe_command and first_evidence_command and first_safe_command != first_evidence_command:
+        try:
+            safe_index = command_texts.index(first_safe_command)
+            evidence_index = command_texts.index(first_evidence_command)
+        except ValueError:
+            return
+        if safe_index >= evidence_index:
+            issues.append(f"{label}:{phase_id}:first_safe_command_not_before_first_evidence")
+
+
+def _audit_handoff_command_precedence(
+    label: str,
+    phase_id: str,
+    commands: list[str],
+    safe_command: str,
+    evidence_command: str,
+    *,
+    issue_suffix: str,
+    issues: list[str],
+) -> None:
+    try:
+        safe_index = commands.index(safe_command)
+        evidence_index = commands.index(evidence_command)
+    except ValueError:
+        return
+    if safe_index >= evidence_index:
+        issues.append(f"{label}:{phase_id}:{issue_suffix}")
+
+
+def _audit_next_action_command_order(label: str, actions: Any, issues: list[str]) -> None:
+    if not isinstance(actions, list):
+        issues.append(f"{label}:next_actions_missing")
+        return
+    actions_by_gate = {
+        str(action.get("gate_id")): action
+        for action in actions
+        if isinstance(action, Mapping)
+    }
+    live = actions_by_gate.get("live_discord_voice_operator")
+    if isinstance(live, Mapping):
+        live_safe = str(live.get("first_safe_command") or "")
+        live_evidence = str(live.get("first_evidence_command") or "")
+        if "--audit-only" not in live_safe:
+            issues.append(f"{label}:live_discord_voice_operator:first_safe_command_not_no_write_audit")
+        if "hermes doctor" not in live_evidence:
+            issues.append(f"{label}:live_discord_voice_operator:first_evidence_command_not_realtime_voice_doctor")
+        if live_safe == live_evidence:
+            issues.append(f"{label}:live_discord_voice_operator:first_safe_command_equals_first_evidence")
+    spark = actions_by_gate.get("local_spark_stack_matrix")
+    if isinstance(spark, Mapping):
+        spark_safe = str(spark.get("first_safe_command") or "")
+        spark_evidence = str(spark.get("first_evidence_command") or "")
+        if "--lint-evidence" not in spark_safe:
+            issues.append(f"{label}:local_spark_stack_matrix:first_safe_command_not_spark_lint")
+        if "dgx_spark_gemma4_voice_eval" not in spark_evidence:
+            issues.append(f"{label}:local_spark_stack_matrix:first_evidence_command_not_dgx_eval")
+        if spark_safe == spark_evidence:
+            issues.append(f"{label}:local_spark_stack_matrix:first_safe_command_equals_first_evidence")
+
+
+def _audit_ordered_handoff_command(
+    label: str,
+    phase_id: str,
+    commands: list[str],
+    command: str,
+    *,
+    required_marker: str,
+    issue_suffix: str,
+    issues: list[str],
+) -> None:
+    if not command:
+        issues.append(f"{label}:{phase_id}:missing_{issue_suffix.removeprefix('first_')}")
+        return
+    if command not in commands:
+        issues.append(f"{label}:{phase_id}:{issue_suffix}_not_listed")
+    if required_marker not in command:
+        issues.append(f"{label}:{phase_id}:{issue_suffix}")
 
 
 def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], issues: list[str]) -> None:

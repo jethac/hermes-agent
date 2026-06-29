@@ -601,21 +601,22 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "missing_env_or_config": [] if discord_ready else list(REQUIRED_DISCORD_LIVE_ENV_KEYS),
                     "needs_external_live_probe": True,
                 },
-                "first_safe_command": live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
+                "first_safe_command": live_gate["collection_commands"]["audit_live_manifest_no_write"],
+                "first_evidence_command": live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
                 "commands": [
+                    live_gate["collection_commands"]["audit_live_manifest_no_write"],
                     live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
                     live_gate["collection_commands"]["derive_from_realtime_voice_report"],
                     live_gate["collection_commands"]["collect_live_manifest"],
-                    live_gate["collection_commands"]["audit_live_manifest_no_write"],
                     live_gate["collection_commands"]["validate_live_manifest_offline"],
                     live_gate["collection_commands"]["ingest_live_manifest"],
                     live_gate["rerun_command"],
                 ],
                 "command_safety": {
-                    "run_realtime_voice_doctor_report": "live_discord_probe_and_local_sidecar_diagnostic_writes_report",
+                    "audit_live_manifest_no_write": "no_write_existing_artifact_audit",
+                    "run_realtime_voice_doctor_report": "live_discord_sidecar_collection",
                     "derive_from_realtime_voice_report": "local_file_derivation_only_no_discord_network",
                     "collect_live_manifest": "discord_live_probe_requires_config_no_secret_values_in_artifacts",
-                    "audit_live_manifest_no_write": "no_write_live_evidence_validation",
                     "validate_live_manifest_offline": "local_file_validation_only",
                     "ingest_live_manifest": "local_file_ingest_only",
                     "plan_reindex": "local_reindex_only",
@@ -710,18 +711,19 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "current_host_hint": "not_verified_by_demo_package",
                     "needs_measured_spark_evidence": True,
                 },
-                "first_safe_command": spark_gate["collection_commands"]["dgx_eval"],
+                "first_safe_command": spark_gate["collection_commands"]["lint_evidence"],
+                "first_evidence_command": spark_gate["collection_commands"]["dgx_eval"],
                 "commands": [
+                    spark_gate["collection_commands"]["lint_evidence"],
                     spark_gate["collection_commands"]["dgx_eval"],
                     spark_gate["collection_commands"]["refresh_source_hashes"],
-                    spark_gate["collection_commands"]["lint_evidence"],
                     spark_gate["collection_commands"]["with_evidence"],
                     spark_gate["collection_commands"]["plan_index"],
                 ],
                 "command_safety": {
+                    "lint_evidence": "no_write_spark_evidence_lint",
                     "dgx_eval": "requires_dgx_spark_local_benchmark_collection",
                     "refresh_source_hashes": "local_file_hashing_only",
-                    "lint_evidence": "no_write_benchmark_evidence_lint",
                     "with_evidence": "local_benchmark_evidence_validation",
                     "plan_index": "local_reindex_only",
                 },
@@ -788,6 +790,11 @@ def _operator_handoff_preview_markdown(handoff: dict[str, Any]) -> str:
                 f"- Can run here now: {'yes' if phase['can_run_here_now'] else 'no'}",
                 f"- Blocked by current package: {', '.join(phase['blocked_by_current_package']) if phase['blocked_by_current_package'] else 'none'}",
                 f"- First safe command: `{phase['first_safe_command']}`",
+                *(
+                    [f"- First evidence command: `{phase['first_evidence_command']}`"]
+                    if phase.get("first_evidence_command")
+                    else []
+                ),
                 f"- Success check: {phase['success_check']}",
                 "- Command safety:",
             ]

@@ -556,8 +556,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert next_actions[0]["can_run_here_now"] is False
     assert next_actions[0]["blocked_by_current_environment"]["needs_external_live_probe"] is True
     assert "DISCORD_BOT_TOKEN" in next_actions[0]["blocked_by_current_environment"]["missing_env_keys"]
-    assert "hermes doctor" in next_actions[0]["first_safe_command"]
-    assert "--realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in next_actions[0]["first_safe_command"]
+    assert "--audit-only" in next_actions[0]["first_safe_command"]
+    assert "hermes_cli.realtime_voice_live_evidence" in next_actions[0]["first_safe_command"]
+    assert "hermes doctor" in next_actions[0]["first_evidence_command"]
+    assert (
+        "--realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json"
+        in next_actions[0]["first_evidence_command"]
+    )
     assert next_actions[1]["blocked_by_current_environment"]["missing_cli"] == [
         "stripe",
         "link-cli",
@@ -570,7 +575,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert next_actions[1]["first_evidence_command"] == next_actions[1]["first_safe_command"]
     assert next_actions[2]["blocked_by_current_environment"]["required_hardware"] == "1x NVIDIA DGX Spark"
     assert next_actions[2]["blocked_by_current_environment"]["needs_measured_spark_evidence"] is True
-    assert next_actions[2]["first_safe_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
+    assert "--lint-evidence" in next_actions[2]["first_safe_command"]
+    assert next_actions[2]["first_evidence_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
     assert all("never include secret values" in action["secret_policy"] for action in next_actions)
     assert [phase["phase_id"] for phase in handoff["phases"]] == [
         "live_discord_voice",
@@ -585,6 +591,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     ]
     assert handoff["phases"][0]["can_run_here_now"] is False
     assert handoff["phases"][0]["first_safe_command"] == next_actions[0]["first_safe_command"]
+    assert handoff["phases"][0]["first_evidence_command"] == next_actions[0]["first_evidence_command"]
+    assert "--audit-only" in handoff["phases"][0]["commands"][0]
+    assert handoff["phases"][0]["commands"][1] == next_actions[0]["first_evidence_command"]
+    assert "hermes doctor" in handoff["phases"][0]["commands"][1]
+    assert "--validate-live-evidence" in handoff["phases"][0]["commands"][4]
     assert handoff["phases"][0]["blocked_by_current_environment"] == {
         "missing_env_keys": next_actions[0]["blocked_by_current_environment"]["missing_env_keys"],
         "present_env_keys": blockers["discord_env"]["present_env_keys"],
@@ -600,13 +611,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "fallback_reason" in json.dumps(handoff["phases"][0]["required_inputs"])
     assert "sidecar-session.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
     assert "live-evidence-validation.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
-    assert "hermes doctor" in handoff["phases"][0]["commands"][0]
-    assert "--realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in handoff["phases"][0]["commands"][0]
-    assert "python -m hermes_cli.realtime_voice_live_evidence" in handoff["phases"][0]["commands"][1]
-    assert "--from-realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in handoff["phases"][0]["commands"][1]
+    assert "hermes doctor" in handoff["phases"][0]["commands"][1]
+    assert "--realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in handoff["phases"][0]["commands"][1]
+    assert "python -m hermes_cli.realtime_voice_live_evidence" in handoff["phases"][0]["commands"][2]
+    assert "--from-realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in handoff["phases"][0]["commands"][2]
     assert "path/to/realtime-voice-report.json" not in json.dumps(handoff["phases"][0]["commands"])
-    assert "--require-live-discord" in handoff["phases"][0]["commands"][2]
-    assert "--audit-only" in handoff["phases"][0]["commands"][3]
+    assert "--require-live-discord" in handoff["phases"][0]["commands"][3]
+    assert "--validate-live-evidence" in handoff["phases"][0]["commands"][4]
     assert "--validate-live-evidence" in json.dumps(handoff["phases"][0]["commands"])
     assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in json.dumps(
         handoff["phases"][1]
@@ -639,14 +650,15 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         handoff["phases"][1]["expected_artifacts"]
     )
     assert handoff["phases"][2]["first_safe_command"] == next_actions[2]["first_safe_command"]
+    assert handoff["phases"][2]["first_evidence_command"] == next_actions[2]["first_evidence_command"]
     assert handoff["phases"][2]["blocked_by_current_environment"] == {
         "required_hardware": next_actions[2]["blocked_by_current_environment"]["required_hardware"],
         "current_host_hint": next_actions[2]["blocked_by_current_environment"]["current_host_hint"],
         "needs_measured_spark_evidence": True,
     }
-    assert "scripts/dgx_spark_gemma4_voice_eval.sh" in handoff["phases"][2]["commands"]
-    assert "--refresh-source-hashes" in handoff["phases"][2]["commands"][1]
-    assert "--lint-evidence" in handoff["phases"][2]["commands"][2]
+    assert "--lint-evidence" in handoff["phases"][2]["commands"][0]
+    assert handoff["phases"][2]["commands"][1] == "scripts/dgx_spark_gemma4_voice_eval.sh"
+    assert "--refresh-source-hashes" in handoff["phases"][2]["commands"][2]
     assert "asr-nemotron-speech-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
     assert "tts-magpie-local-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
     assert "all-local-stack-smoke-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
@@ -1666,12 +1678,14 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
         "local_spark_stack_matrix",
     ]
     assert [action["gate_id"] for action in payload["next_actions"]] == payload["remaining_gates"]
-    assert payload["next_actions"][0]["first_safe_command"].startswith("uv run --extra dev --extra voice hermes doctor")
-    assert "realtime-voice-doctor-report.json" in payload["next_actions"][0]["first_safe_command"]
+    assert "--audit-only" in payload["next_actions"][0]["first_safe_command"]
+    assert payload["next_actions"][0]["first_evidence_command"].startswith("uv run --extra dev --extra voice hermes doctor")
+    assert "realtime-voice-doctor-report.json" in payload["next_actions"][0]["first_evidence_command"]
     assert "--dry-audit" in payload["next_actions"][1]["diagnostic_command"]
     assert "voiceops_provisioning_probe.py" in payload["next_actions"][1]["first_safe_command"]
     assert payload["next_actions"][1]["first_evidence_command"] == payload["next_actions"][1]["first_safe_command"]
-    assert payload["next_actions"][2]["first_safe_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
+    assert "--lint-evidence" in payload["next_actions"][2]["first_safe_command"]
+    assert payload["next_actions"][2]["first_evidence_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
     assert not output_dir.exists()
     assert not artifact_root.exists()
 

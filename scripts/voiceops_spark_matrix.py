@@ -12,6 +12,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, MutableMapping
@@ -39,6 +40,31 @@ COLLECTOR_ATTESTATION_REQUIRED_FIELDS = (
     "raw_artifact_sha256",
     "redacted_artifact_sha256",
     "parent_manifest_sha256",
+)
+SOURCE_SECRET_KEY_RE = re.compile(
+    r"(^|[_\-.])("
+    r"api[_\-.]?key|access[_\-.]?token|refresh[_\-.]?token|id[_\-.]?token|auth[_\-.]?token|"
+    r"authorization|bearer|password|passwd|secret|private[_\-.]?key|client[_\-.]?secret|webhook[_\-.]?secret"
+    r")($|[_\-.])",
+    re.IGNORECASE,
+)
+SOURCE_PHONE_KEY_RE = re.compile(
+    r"(^|[_\-.])(phone|tel|telephone|mobile|sms|caller|callee|from[_\-.]?number|to[_\-.]?number)($|[_\-.])",
+    re.IGNORECASE,
+)
+SOURCE_SECRET_VALUE_RE = re.compile(
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----"
+    r"|\bsk-[A-Za-z0-9_-]{20,}\b"
+    r"|\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,}\b"
+    r"|\bgithub_pat_[A-Za-z0-9_]{20,}\b"
+    r"|\bAKIA[0-9A-Z]{16}\b"
+    r"|\bAIza[0-9A-Za-z_-]{35}\b"
+    r"|\bxox[baprs]-[0-9A-Za-z-]{10,}\b"
+    r"|\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b",
+)
+SOURCE_PHONE_VALUE_RE = re.compile(
+    r"(?<![\w])(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]\d{3}[\s.-]\d{4}(?![\w])"
+    r"|(?<![\w])\+[1-9]\d{9,14}(?![\w])"
 )
 
 
@@ -707,17 +733,9 @@ def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
         source_bytes = source_path.read_bytes()
     except OSError:
         return [*issues, "source_artifact_unreadable"]
-    try:
-        source_payload = json.loads(source_bytes.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        source_payload = None
-        issues.append("source_artifact_invalid_json")
+    source_payload, safety_issues = _source_artifact_safety_issues(source_bytes)
+    issues.extend(safety_issues)
     if isinstance(source_payload, dict):
-        if source_payload.get("example_only") is True:
-            issues.append("source_artifact_example_only_not_accepted")
-        redaction_policy = str(source_payload.get("redaction_policy") or "").strip()
-        if source_payload.get("redacted") is not True and not redaction_policy:
-            issues.append("source_artifact_not_redacted")
         issues.extend(_source_artifact_identity_issues(item, source_payload))
     if expected_sha256 and len(expected_sha256) == 64 and all(
         character in "0123456789abcdef" for character in expected_sha256
@@ -731,6 +749,53 @@ def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
             if _valid_sha256(redacted_sha256) and redacted_sha256 != actual_sha256:
                 issues.append("collector_attestation_redacted_sha256_mismatch")
     return issues
+
+
+def _source_artifact_safety_issues(source_bytes: bytes) -> tuple[Any, list[str]]:
+    try:
+        source_payload = json.loads(source_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, ["source_artifact_invalid_json", "source_artifact_not_redacted"]
+    if not isinstance(source_payload, dict):
+        return source_payload, ["source_artifact_root_not_object", "source_artifact_not_redacted"]
+
+    issues: list[str] = []
+    if source_payload.get("example_only") is True:
+        issues.append("source_artifact_example_only_not_accepted")
+    if source_payload.get("redacted") is not True:
+        issues.append("source_artifact_not_redacted")
+    issues.extend(_source_artifact_content_safety_issues(source_payload))
+    return source_payload, sorted(set(issues))
+
+
+def _source_artifact_content_safety_issues(value: Any, *, key: str = "") -> list[str]:
+    issues: set[str] = set()
+    if isinstance(value, dict):
+        for child_key, child_value in value.items():
+            issues.update(_source_artifact_content_safety_issues(child_value, key=str(child_key or "")))
+        return sorted(issues)
+    if isinstance(value, list):
+        for child_value in value:
+            issues.update(_source_artifact_content_safety_issues(child_value, key=key))
+        return sorted(issues)
+
+    text = str(value or "").strip()
+    if not text:
+        return []
+    if SOURCE_SECRET_KEY_RE.search(key) and not _source_value_is_redacted_placeholder(text):
+        issues.add("source_artifact_contains_likely_secret")
+    if SOURCE_PHONE_KEY_RE.search(key) and not _source_value_is_redacted_placeholder(text):
+        issues.add("source_artifact_contains_phone_like_value")
+    if SOURCE_SECRET_VALUE_RE.search(text):
+        issues.add("source_artifact_contains_likely_secret")
+    if SOURCE_PHONE_VALUE_RE.search(text):
+        issues.add("source_artifact_contains_phone_like_value")
+    return sorted(issues)
+
+
+def _source_value_is_redacted_placeholder(value: str) -> bool:
+    normalized = value.strip().lower()
+    return normalized in {"redacted", "[redacted]", "<redacted>", "***", "xxxx", "xxxxx", "null", "none"}
 
 
 def _source_artifact_identity_issues(item: dict[str, Any], source_payload: dict[str, Any]) -> list[str]:
@@ -821,17 +886,12 @@ def refresh_spark_source_hashes(path: Path) -> dict[str, Any]:
         except OSError as exc:
             issues.append(f"{label}:source_artifact_unreadable:{exc.strerror or exc}")
             continue
-        try:
-            source_payload = json.loads(source_bytes.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            source_payload = None
-        if isinstance(source_payload, MutableMapping):
-            if source_payload.get("example_only") is True:
-                issues.append(f"{label}:source_artifact_example_only_not_accepted")
-                continue
-            if source_payload.get("redacted") is not True and not str(source_payload.get("redaction_policy") or "").strip():
-                issues.append(f"{label}:source_artifact_not_redacted")
-                continue
+        source_payload, safety_issues = _source_artifact_safety_issues(source_bytes)
+        if isinstance(source_payload, dict):
+            safety_issues.extend(_source_artifact_identity_issues(dict(item), source_payload))
+        if safety_issues:
+            issues.extend(f"{label}:{issue}" for issue in sorted(set(safety_issues)))
+            continue
         new_sha256 = hashlib.sha256(source_bytes).hexdigest()
         previous_sha256 = str(item.get("source_artifact_sha256") or "")
         item["source_artifact_sha256"] = new_sha256
@@ -1334,6 +1394,8 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "source_artifacts_must_exist": True,
             "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",
             "source_artifact_readable": True,
+            "source_artifact_must_be_explicitly_redacted": True,
+            "source_artifact_must_not_contain_likely_secret_or_phone_values": True,
             "source_artifact_sha256_must_match": True,
             "source_artifact_identity_must_match": True,
             "accepted_source_artifact_identity_fields": [
@@ -1601,7 +1663,7 @@ def _operator_runbook(plan: dict[str, Any]) -> str:
         f"- Evidence scaffold: `{plan['evidence_scaffold']}`",
         f"- Matrix artifact: `{plan['matrix_artifact']}`",
         "- Source artifacts must exist and resolve relative to the supplied evidence file.",
-        "- Source artifacts must be redacted UTF-8 JSON and must not carry `example_only: true`.",
+        "- Source artifacts must be explicitly redacted UTF-8 JSON, must not carry `example_only: true`, and must not contain likely secrets or phone-like values.",
         "- `source_artifact_sha256` must match the referenced source artifact bytes.",
         "- `collector_attestation` must identify the collector, command argv, git commit, timestamp window, raw/redacted hashes, and parent manifest hash.",
         "- `example_only: true` evidence is rejected.",

@@ -295,10 +295,10 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
     provisioning_gate = gate_by_id["spend_and_provisioning_preflight"]
     spark_gate = gate_by_id["local_spark_stack_matrix"]
     live_commands = [
+        live_gate["collection_commands"]["audit_live_manifest_no_write"],
         live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
         live_gate["collection_commands"]["derive_from_realtime_voice_report"],
         live_gate["collection_commands"]["collect_live_manifest"],
-        live_gate["collection_commands"]["audit_live_manifest_no_write"],
         live_gate["collection_commands"]["validate_live_manifest_offline"],
         live_gate["collection_commands"]["ingest_live_manifest"],
         live_gate["rerun_command"],
@@ -319,9 +319,9 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
         provisioning_gate["rerun_commands"]["plan_index_manifest_and_post_approval_receipts"],
     ]
     spark_commands = [
+        spark_gate["collection_commands"]["lint_evidence"],
         spark_gate["collection_commands"]["dgx_eval"],
         spark_gate["collection_commands"]["refresh_source_hashes"],
-        spark_gate["collection_commands"]["lint_evidence"],
         spark_gate["collection_commands"]["with_evidence"],
         spark_gate["collection_commands"]["plan_index"],
     ]
@@ -344,6 +344,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "needs_external_live_probe": live_gate["status"] != "live_evidence_supplied_not_readiness_claim",
                 },
                 "first_safe_command": live_commands[0],
+                "first_evidence_command": live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
                 "required_inputs": [
                     "Discord bot token and channel env/config presence",
                     "running realtime voice sidecar",
@@ -353,6 +354,15 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "live-turn.json with collector_attestation",
                 ],
                 "commands": live_commands,
+                "command_safety": {
+                    "audit_live_manifest_no_write": "no_write_existing_artifact_audit",
+                    "validate_live_manifest_offline": "local_validation_writes_validation_artifact",
+                    "run_realtime_voice_doctor_report": "live_discord_sidecar_collection",
+                    "derive_from_realtime_voice_report": "local_derivation_from_doctor_report",
+                    "collect_live_manifest": "live_discord_probe_collection",
+                    "ingest_live_manifest": "local_live_evidence_ingest",
+                    "plan_index": "local_reindex_only",
+                },
                 "expected_artifacts": [
                     "artifacts/realtime-voice-evidence/live-current/manifest.json",
                     "artifacts/realtime-voice-evidence/live-current/discord-live-probe.json",
@@ -436,6 +446,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "needs_measured_spark_evidence": spark_gate["status"] != "validated",
                 },
                 "first_safe_command": spark_commands[0],
+                "first_evidence_command": spark_gate["collection_commands"]["dgx_eval"],
                 "required_inputs": [
                     "1x NVIDIA DGX Spark host",
                     "local KAME launch pack or equivalent services",
@@ -443,6 +454,13 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "readable benchmark source artifacts",
                 ],
                 "commands": spark_commands,
+                "command_safety": {
+                    "lint_evidence": "no_write_spark_evidence_lint",
+                    "dgx_eval": "live_dgx_spark_collection",
+                    "refresh_source_hashes": "local_source_artifact_hash_refresh",
+                    "with_evidence": "local_matrix_generation_from_supplied_evidence",
+                    "plan_index": "local_reindex_only",
+                },
                 "expected_artifacts": [
                     "artifacts/dgx-spark-gemma4-voice-eval/current/kame-stack",
                     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json",
@@ -524,8 +542,9 @@ def _sync_demo_handoff_preview(demo_dir: Path, plan_handoff: dict[str, Any]) -> 
             continue
         for key in ("commands", "expected_artifacts", "success_check"):
             phase[key] = plan_phase.get(key)
-        if plan_phase.get("first_safe_command"):
-            phase["first_safe_command"] = plan_phase["first_safe_command"]
+        for key in ("diagnostic_command", "first_safe_command", "first_evidence_command", "command_safety"):
+            if plan_phase.get(key):
+                phase[key] = plan_phase[key]
     for key in ("final_reindex_command", "final_package_audit_command", "final_success_signal"):
         preview[key] = plan_handoff.get(key)
     _write_json(preview_path, preview)
@@ -557,6 +576,11 @@ def _build_next_actions(
         phase = phases.get(gate_id, {})
         commands = phase.get("commands") if isinstance(phase, dict) else None
         first_command = commands[0] if isinstance(commands, list) and commands else gate.get("rerun_command")
+        first_evidence_command = (
+            phase.get("first_evidence_command")
+            if isinstance(phase, dict) and phase.get("first_evidence_command")
+            else first_command
+        )
         diagnostic_command = None
         if gate_id == "live_discord_voice_operator":
             blocked_by = {
@@ -564,14 +588,16 @@ def _build_next_actions(
                 "needs_external_live_probe": True,
             }
             operator_step = (
-                "Run the realtime voice doctor report into the live evidence artifact directory, derive sidecar/live-turn "
-                "evidence from that report, then run the live Discord evidence collector after Discord env/config and "
-                "production sidecar are ready."
+                "Start with the no-write live evidence audit if artifacts already exist, then run the realtime voice doctor "
+                "report into the live evidence artifact directory, derive sidecar/live-turn evidence from that report, and "
+                "run the live Discord evidence collector after Discord env/config and production sidecar are ready."
             )
         elif gate_id == "spend_and_provisioning_preflight":
             if isinstance(commands, list) and len(commands) > 1:
-                diagnostic_command = commands[0]
                 first_command = commands[1]
+                first_evidence_command = first_command
+            if isinstance(phase, dict) and phase.get("diagnostic_command"):
+                diagnostic_command = phase.get("diagnostic_command")
             blocked_by = {
                 "missing_cli": blockers.get("provisioning_cli", {}).get("missing", []),
                 "needs_read_only_discovery": True,
@@ -587,7 +613,10 @@ def _build_next_actions(
                 "needs_measured_spark_evidence": True,
                 "required_hardware": blockers.get("spark_host", {}).get("required_hardware", "1x NVIDIA DGX Spark"),
             }
-            operator_step = "Collect measured local DGX Spark KAME/reflex/oracle/ASR/TTS evidence and re-run the matrix with that evidence."
+            operator_step = (
+                "Start with the no-write Spark evidence lint if artifacts already exist, then collect measured local DGX "
+                "Spark KAME/reflex/oracle/ASR/TTS evidence and re-run the matrix with that evidence."
+            )
         else:
             blocked_by = {"needs_external_evidence": True}
             operator_step = "Collect the required external evidence for this gate and re-run the plan index."
@@ -600,7 +629,7 @@ def _build_next_actions(
                 "can_run_here_now": bool(phase.get("can_run_here_now")) if isinstance(phase, dict) else False,
                 "blocked_by_current_environment": blocked_by,
                 "first_safe_command": first_command,
-                "first_evidence_command": first_command,
+                "first_evidence_command": first_evidence_command,
                 **({"diagnostic_command": diagnostic_command} if diagnostic_command else {}),
                 "success_check": phase.get("success_check") if isinstance(phase, dict) else gate.get("completion_signal"),
                 "operator_step": operator_step,
@@ -1694,6 +1723,11 @@ def _operator_handoff_markdown(handoff: dict[str, Any]) -> str:
                     f"- Status: `{phase.get('status')}`",
                     f"- Can run here now: {phase.get('can_run_here_now')}",
                     f"- First safe command: `{phase.get('first_safe_command')}`",
+                    *(
+                        [f"- First evidence command: `{phase.get('first_evidence_command')}`"]
+                        if phase.get("first_evidence_command")
+                        else []
+                    ),
                     *(
                         [f"- Diagnostic command: `{phase.get('diagnostic_command')}`"]
                         if phase.get("diagnostic_command")

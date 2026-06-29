@@ -241,13 +241,16 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         ],
         "needs_external_live_probe": True,
     }
-    assert operator_handoff["phases"][0]["first_safe_command"].startswith("uv run --extra dev --extra voice hermes doctor")
-    assert "realtime-voice-doctor-report.json" in operator_handoff["phases"][0]["first_safe_command"]
+    assert "--audit-only" in operator_handoff["phases"][0]["first_safe_command"]
+    assert operator_handoff["phases"][0]["first_evidence_command"].startswith(
+        "uv run --extra dev --extra voice hermes doctor"
+    )
+    assert "realtime-voice-doctor-report.json" in operator_handoff["phases"][0]["first_evidence_command"]
     assert "path/to/realtime-voice-report.json" not in json.dumps(operator_handoff["phases"][0]["commands"])
     assert "run_realtime_voice_doctor_report" in operator_handoff["phases"][0]["command_safety"]
     assert "derive_from_realtime_voice_report" in operator_handoff["phases"][0]["command_safety"]
     assert operator_handoff["phases"][0]["command_safety"]["audit_live_manifest_no_write"] == (
-        "no_write_live_evidence_validation"
+        "no_write_existing_artifact_audit"
     )
     assert "production realtime voice sidecar session evidence" in operator_handoff["phases"][0]["required_inputs"]
     assert operator_handoff["phases"][1]["command_safety"]["read_only_discovery"] == (
@@ -264,10 +267,11 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "current_host_hint": "not_verified_by_demo_package",
         "needs_measured_spark_evidence": True,
     }
-    assert "--refresh-source-hashes" in operator_handoff["phases"][2]["commands"][1]
-    assert "--lint-evidence" in operator_handoff["phases"][2]["commands"][2]
+    assert "--lint-evidence" in operator_handoff["phases"][2]["commands"][0]
+    assert operator_handoff["phases"][2]["commands"][1] == "scripts/dgx_spark_gemma4_voice_eval.sh"
+    assert "--refresh-source-hashes" in operator_handoff["phases"][2]["commands"][2]
     assert operator_handoff["phases"][2]["command_safety"]["refresh_source_hashes"] == "local_file_hashing_only"
-    assert operator_handoff["phases"][2]["command_safety"]["lint_evidence"] == "no_write_benchmark_evidence_lint"
+    assert operator_handoff["phases"][2]["command_safety"]["lint_evidence"] == "no_write_spark_evidence_lint"
     assert any("oracle_model" in item for item in operator_handoff["phases"][2]["must_not"])
     assert "--voice-live-evidence" in operator_handoff["final_reindex_command"]
     handoff_markdown = Path(paths["operator_handoff_preview_markdown"]).read_text(encoding="utf-8")
