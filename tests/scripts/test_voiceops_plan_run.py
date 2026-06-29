@@ -161,7 +161,12 @@ def _write_preflight_evidence(root: Path) -> Path:
 def _write_post_approval_receipts(root: Path) -> Path:
     report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
     plan = build_milestone2_execution_plan(report)
-    action = next(item for item in plan["approval_required_actions"] if item["action_id"] == "provision-voip-provider")
+    actions = plan["approval_required_actions"]
+    estimates = {
+        step["step_id"]: step["estimated_cents"]
+        for step in plan["execution_steps"]
+        if step.get("requires_approval") is True
+    }
     return _write_json(
         root / "post-approval-receipts.json",
         {
@@ -169,7 +174,7 @@ def _write_post_approval_receipts(root: Path) -> Path:
             "redaction_policy": "references only",
             "receipts": [
                 {
-                    "receipt_id": "receipt-provision-voip-provider-001",
+                    "receipt_id": f"receipt-{action['action_id']}-001",
                     "action_id": action["action_id"],
                     "approval_id": action["approval_id"],
                     "provider": action["provider"],
@@ -178,24 +183,28 @@ def _write_post_approval_receipts(root: Path) -> Path:
                     "approved_at": "2026-06-29T00:00:00Z",
                     "executed_at": "2026-06-29T00:00:30Z",
                     "command_sha256": action["command_sha256"],
-                    "amount_cents": 0,
+                    "amount_cents": estimates.get(action["action_id"], 0),
                     "currency": "usd",
-                    "external_reference": "provider-resource-ref-demo",
+                    "approval_artifact": action["approval_artifact"],
+                    "external_reference": f"provider-resource-ref-{action['action_id']}",
                     "credential_location_ref": action["credential_location_ref"],
                     "rollback_ref": action["rollback_ref"],
-                    "audit_event_id": "audit-provision-voip-provider-001",
+                    "audit_event_id": f"audit-{action['action_id']}-001",
                 }
+                for action in actions
             ],
             "credential_locations": [
                 {
                     "credential_ref_id": action["credential_location_ref"],
                     "provider": action["provider"],
-                    "service_id": "provider-resource-ref-demo",
+                    "service_id": f"provider-resource-ref-{action['action_id']}",
                     "storage_backend": "provider_managed",
-                    "secret_name_or_path": "credential-location-ref-demo",
+                    "secret_name_or_path": f"credential-location-ref-{action['action_id']}",
                     "created_by_action_id": action["action_id"],
                     "rotation_due": "2026-09-29T00:00:00Z",
                 }
+                for action in actions
+                if action["credential_location_required"]
             ],
             "rollback_receipts": [
                 {
@@ -204,16 +213,19 @@ def _write_post_approval_receipts(root: Path) -> Path:
                     "owner_ref": "operator-ref-demo",
                     "notes": "No rollback run.",
                 }
+                for action in actions
             ],
             "audit_events": [
                 {
-                    "audit_event_id": "audit-provision-voip-provider-001",
+                    "audit_event_id": f"audit-{action['action_id']}-001",
                     "action_id": action["action_id"],
-                    "receipt_id": "receipt-provision-voip-provider-001",
+                    "receipt_id": f"receipt-{action['action_id']}-001",
                     "status": "executed",
+                    "provider": action["provider"],
                     "artifact_ref": "post-approval-receipts.json",
                     "operator_next_step": "Review provider dashboard and rollback window.",
                 }
+                for action in actions
             ],
         },
     )
@@ -641,8 +653,14 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     assert statuses["milestone_4_local_spark_stack_matrix"] == "validated"
     assert provisioning_result["details"]["post_approval_receipts_loaded"] is True
     assert provisioning_result["details"]["post_approval_receipts_status"] == "valid"
-    assert provisioning_result["details"]["post_approval_receipt_count"] == 1
+    assert provisioning_result["details"]["post_approval_receipt_count"] == 4
     assert provisioning_result["details"]["post_approval_receipts_validation_issues"] == []
+    assert "--preflight-evidence" in provisioning_result["command"]
+    assert str(preflight_evidence) in provisioning_result["command"]
+    assert "--post-approval-receipts" in provisioning_result["command"]
+    assert str(post_approval_receipts) in provisioning_result["command"]
+    assert provisioning_result["details"]["input_paths"]["preflight_evidence"] == str(preflight_evidence)
+    assert provisioning_result["details"]["input_paths"]["post_approval_receipts"] == str(post_approval_receipts)
     assert summary["safety"] == {
         "env_presence_inspection": True,
         "env_secret_values_emitted": False,

@@ -1046,13 +1046,18 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
 def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_path):
     report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
     plan = build_milestone2_execution_plan(report)
-    action = next(item for item in plan["approval_required_actions"] if item["action_id"] == "provision-voip-provider")
+    actions = plan["approval_required_actions"]
+    estimates = {
+        step["step_id"]: step["estimated_cents"]
+        for step in plan["execution_steps"]
+        if step.get("requires_approval") is True
+    }
     payload = {
         "schema_version": "voiceops.milestone2.post_approval_receipts.v1",
         "redaction_policy": "references only",
         "receipts": [
             {
-                "receipt_id": "receipt-provision-voip-provider-001",
+                "receipt_id": f"receipt-{action['action_id']}-001",
                 "action_id": action["action_id"],
                 "approval_id": action["approval_id"],
                 "provider": action["provider"],
@@ -1061,24 +1066,28 @@ def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_pat
                 "approved_at": "2026-06-29T00:00:00Z",
                 "executed_at": "2026-06-29T00:00:30Z",
                 "command_sha256": action["command_sha256"],
-                "amount_cents": 0,
+                "amount_cents": estimates.get(action["action_id"], 0),
                 "currency": "usd",
-                "external_reference": "provider-resource-ref-demo",
+                "approval_artifact": action["approval_artifact"],
+                "external_reference": f"provider-resource-ref-{action['action_id']}",
                 "credential_location_ref": action["credential_location_ref"],
                 "rollback_ref": action["rollback_ref"],
-                "audit_event_id": "audit-provision-voip-provider-001",
+                "audit_event_id": f"audit-{action['action_id']}-001",
             }
+            for action in actions
         ],
         "credential_locations": [
             {
                 "credential_ref_id": action["credential_location_ref"],
                 "provider": action["provider"],
-                "service_id": "provider-resource-ref-demo",
+                "service_id": f"provider-resource-ref-{action['action_id']}",
                 "storage_backend": "provider_managed",
-                "secret_name_or_path": "credential-location-ref-demo",
+                "secret_name_or_path": f"credential-location-ref-{action['action_id']}",
                 "created_by_action_id": action["action_id"],
                 "rotation_due": "2026-09-29T00:00:00Z",
             }
+            for action in actions
+            if action["credential_location_required"]
         ],
         "rollback_receipts": [
             {
@@ -1087,16 +1096,19 @@ def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_pat
                 "owner_ref": "operator-ref-demo",
                 "notes": "No rollback run.",
             }
+            for action in actions
         ],
         "audit_events": [
             {
-                "audit_event_id": "audit-provision-voip-provider-001",
+                "audit_event_id": f"audit-{action['action_id']}-001",
                 "action_id": action["action_id"],
-                "receipt_id": "receipt-provision-voip-provider-001",
+                "receipt_id": f"receipt-{action['action_id']}-001",
                 "status": "executed",
+                "provider": action["provider"],
                 "artifact_ref": "post-approval-receipts.json",
                 "operator_next_step": "Review provider dashboard and rollback window.",
             }
+            for action in actions
         ],
     }
     receipt_path = tmp_path / "post-approval-receipts.json"
@@ -1114,10 +1126,10 @@ def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_pat
 
     assert loaded["status"] == "valid"
     assert loaded["validation_issues"] == []
-    assert loaded["receipt_count"] == 1
+    assert loaded["receipt_count"] == 4
     assert loaded["ledger_rows"][0]["receipt_id"] == "receipt-provision-voip-provider-001"
     assert report_with_receipts["post_approval_receipts"]["status"] == "valid"
-    assert len(ledger_rows) == 1
+    assert len(ledger_rows) == 4
     assert json.loads(ledger_rows[0])["audit_event_id"] == "audit-provision-voip-provider-001"
     assert "+15551234567" not in json.dumps(loaded)
 
@@ -1129,7 +1141,15 @@ def test_post_approval_receipts_reject_examples_secrets_and_mismatches():
     bad = json.loads(json.dumps(example))
     bad.pop("example_only")
     bad["receipts"][0]["command_sha256"] = "0" * 64
+    bad["receipts"][0]["provider"] = "wrong-provider"
+    bad["receipts"][0]["currency"] = "eur"
+    bad["receipts"][0]["amount_cents"] = 999999
+    bad["receipts"][0]["approval_artifact"] = "wrong-approval.json"
+    bad["receipts"][0]["approved_at"] = "2026-06-29T00:01:00Z"
+    bad["receipts"][0]["executed_at"] = "2026-06-29T00:00:30Z"
     bad["receipts"][0]["external_reference"] = "sk_live_123456789abcdef"
+    bad["audit_events"][0]["provider"] = "wrong-provider"
+    bad["audit_events"][0]["status"] = "held"
     bad["credential_locations"][0]["raw_secret"] = "secret"
 
     example_result = validate_post_approval_receipts(example, plan)
@@ -1141,6 +1161,28 @@ def test_post_approval_receipts_reject_examples_secrets_and_mismatches():
     assert "post_approval_receipts:receipt-example-provision-voip-provider:command_sha256_mismatch" in bad_result[
         "validation_issues"
     ]
+    assert "post_approval_receipts:receipt-example-provision-voip-provider:provider_mismatch" in bad_result[
+        "validation_issues"
+    ]
+    assert "post_approval_receipts:receipt-example-provision-voip-provider:approval_artifact_mismatch" in bad_result[
+        "validation_issues"
+    ]
+    assert "post_approval_receipts:receipt-example-provision-voip-provider:currency_mismatch" in bad_result[
+        "validation_issues"
+    ]
+    assert "post_approval_receipts:receipt-example-provision-voip-provider:amount_exceeds_estimate" in bad_result[
+        "validation_issues"
+    ]
+    assert "post_approval_receipts:receipt-example-provision-voip-provider:approved_after_executed" in bad_result[
+        "validation_issues"
+    ]
+    assert "post_approval_receipts:receipt-example-provision-voip-provider:audit_status_mismatch" in bad_result[
+        "validation_issues"
+    ]
+    assert "post_approval_receipts:receipt-example-provision-voip-provider:audit_provider_mismatch" in bad_result[
+        "validation_issues"
+    ]
+    assert any(issue.startswith("post_approval_receipts:missing_receipts_for_actions:") for issue in bad_result["validation_issues"])
     assert any("secret-like value" in issue for issue in bad_result["validation_issues"])
     assert any("forbidden_raw_field" in issue for issue in bad_result["validation_issues"])
     assert bad_result["ledger_rows"] == []

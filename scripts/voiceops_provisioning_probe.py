@@ -2298,6 +2298,7 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "command_sha256",
                 "amount_cents",
                 "currency",
+                "approval_artifact",
                 "external_reference",
                 "credential_location_ref",
                 "rollback_ref",
@@ -2580,6 +2581,7 @@ def build_post_approval_receipts_example(plan: Mapping[str, Any]) -> dict[str, A
             "credential_location_ref": credential_ref,
             "rollback_ref": action["rollback_ref"],
             "audit_event_id": "audit-example-provision-voip-provider",
+            "approval_artifact": action["approval_artifact"],
             "redacted_summary": "Example only; replace with real redacted receipt refs.",
         }
     ]
@@ -2609,6 +2611,7 @@ def build_post_approval_receipts_example(plan: Mapping[str, Any]) -> dict[str, A
             "action_id": action["action_id"],
             "receipt_id": "receipt-example-provision-voip-provider",
             "status": "executed",
+            "provider": action["provider"],
             "artifact_ref": "post-approval-receipts.example.json",
             "operator_next_step": "Replace this example with real redacted post-approval evidence.",
         }
@@ -2683,6 +2686,8 @@ def _post_approval_receipt_secret_issues(payload: Mapping[str, Any]) -> list[str
         if name in forbidden_names:
             issues.append(f"{path}:forbidden_raw_field")
             continue
+        if name in {"approval_artifact", "artifact_ref"}:
+            continue
         if BEARER_RE.search(value) or PREFLIGHT_SECRET_VALUE_RE.search(value) or SECRET_VALUE_RE.search(value):
             issues.append(f"{path}:secret-like value")
         elif not (name.endswith("_at") or name.endswith("_due")) and PHONE_RE.search(value):
@@ -2715,6 +2720,14 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
         audit_events = []
 
     actions = {action["action_id"]: action for action in plan["approval_required_actions"]}
+    expected_action_ids = set(actions)
+    action_estimates = {
+        str(step.get("step_id") or ""): step.get("estimated_cents")
+        for step in plan.get("execution_steps", [])
+        if isinstance(step, Mapping)
+    }
+    spend_currency = str(plan.get("spend_policy", {}).get("currency") or "")
+    budget_cap_cents = plan.get("spend_policy", {}).get("budget_cap_cents")
     required_receipt_fields = set(plan["receipt_schema"]["required_fields"])
     required_credential_fields = set(plan["credential_location_schema"]["required_fields"])
     forbidden_credential_fields = set(plan["credential_location_schema"]["forbidden_fields"])
@@ -2734,6 +2747,8 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
         if isinstance(item, Mapping)
     }
     receipt_ids: list[str] = []
+    receipt_action_ids: list[str] = []
+    total_amount_cents = 0
     ledger_rows: list[dict[str, Any]] = []
     for index, receipt in enumerate(receipts):
         if not isinstance(receipt, Mapping):
@@ -2742,6 +2757,8 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
         receipt_id = str(receipt.get("receipt_id") or "")
         receipt_ids.append(receipt_id)
         action_id = str(receipt.get("action_id") or "")
+        if action_id:
+            receipt_action_ids.append(action_id)
         action = actions.get(action_id)
         missing = sorted(field for field in required_receipt_fields if field not in receipt)
         if missing:
@@ -2753,6 +2770,10 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
             issues.append(f"post_approval_receipts:{receipt_id}:approval_id_mismatch")
         if receipt.get("command_sha256") != action["command_sha256"]:
             issues.append(f"post_approval_receipts:{receipt_id}:command_sha256_mismatch")
+        if receipt.get("provider") != action["provider"]:
+            issues.append(f"post_approval_receipts:{receipt_id}:provider_mismatch")
+        if receipt.get("approval_artifact") != action["approval_artifact"]:
+            issues.append(f"post_approval_receipts:{receipt_id}:approval_artifact_mismatch")
         if receipt.get("rollback_ref") != action["rollback_ref"]:
             issues.append(f"post_approval_receipts:{receipt_id}:rollback_ref_mismatch")
         if receipt.get("credential_location_ref") != action.get("credential_location_ref"):
@@ -2762,18 +2783,39 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
         if str(receipt.get("rollback_ref") or "") not in rollback_refs:
             issues.append(f"post_approval_receipts:{receipt_id}:missing_rollback_receipt")
         audit_id = str(receipt.get("audit_event_id") or "")
-        if audit_id not in audit_by_id:
+        audit_event = audit_by_id.get(audit_id)
+        if audit_event is None:
             issues.append(f"post_approval_receipts:{receipt_id}:missing_audit_event")
+        else:
+            if audit_event.get("action_id") != action_id:
+                issues.append(f"post_approval_receipts:{receipt_id}:audit_action_id_mismatch")
+            if audit_event.get("receipt_id") != receipt_id:
+                issues.append(f"post_approval_receipts:{receipt_id}:audit_receipt_id_mismatch")
+            if audit_event.get("status") != receipt.get("status"):
+                issues.append(f"post_approval_receipts:{receipt_id}:audit_status_mismatch")
+            if audit_event.get("provider") != action["provider"]:
+                issues.append(f"post_approval_receipts:{receipt_id}:audit_provider_mismatch")
         status = str(receipt.get("status") or "")
         if status not in {"executed", "failed", "held", "denied", "skipped", "rolled_back"}:
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_status")
-        if _parse_preflight_timestamp(receipt.get("approved_at")) is None:
+        approved_at = _parse_preflight_timestamp(receipt.get("approved_at"))
+        executed_at = _parse_preflight_timestamp(receipt.get("executed_at"))
+        if approved_at is None:
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_approved_at")
-        if _parse_preflight_timestamp(receipt.get("executed_at")) is None:
+        if executed_at is None:
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_executed_at")
+        if approved_at is not None and executed_at is not None and approved_at > executed_at:
+            issues.append(f"post_approval_receipts:{receipt_id}:approved_after_executed")
         amount = receipt.get("amount_cents")
         if not isinstance(amount, int) or amount < 0:
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_amount_cents")
+        else:
+            total_amount_cents += amount
+            estimate = action_estimates.get(action_id)
+            if isinstance(estimate, int) and amount > estimate:
+                issues.append(f"post_approval_receipts:{receipt_id}:amount_exceeds_estimate")
+        if str(receipt.get("currency") or "") != spend_currency:
+            issues.append(f"post_approval_receipts:{receipt_id}:currency_mismatch")
         ledger_rows.append(
             {
                 "audit_event_id": audit_id,
@@ -2791,6 +2833,14 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
     duplicate_receipts = sorted(receipt_id for receipt_id in set(receipt_ids) if receipt_id and receipt_ids.count(receipt_id) > 1)
     if duplicate_receipts:
         issues.append(f"post_approval_receipts:duplicate_receipt_ids:{','.join(duplicate_receipts)}")
+    duplicate_actions = sorted(action_id for action_id in set(receipt_action_ids) if action_id and receipt_action_ids.count(action_id) > 1)
+    if duplicate_actions:
+        issues.append(f"post_approval_receipts:duplicate_action_receipts:{','.join(duplicate_actions)}")
+    missing_action_receipts = sorted(expected_action_ids.difference(set(receipt_action_ids)))
+    if missing_action_receipts:
+        issues.append(f"post_approval_receipts:missing_receipts_for_actions:{','.join(missing_action_receipts)}")
+    if isinstance(budget_cap_cents, int) and total_amount_cents > budget_cap_cents:
+        issues.append("post_approval_receipts:total_amount_exceeds_budget")
     for index, credential in enumerate(credential_locations):
         if not isinstance(credential, Mapping):
             issues.append(f"post_approval_receipts:credential_locations[{index}]:not_object")

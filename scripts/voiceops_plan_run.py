@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import platform
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -84,6 +85,36 @@ def _milestone_result(
         "status": status,
         "details": details or {},
     }
+
+
+def _provisioning_probe_command(
+    *,
+    output_dir: Path,
+    env_files: list[Path],
+    preflight_evidence: Path | None,
+    post_approval_receipts: Path | None,
+    run_command_probes: bool,
+    run_readonly_discovery: bool,
+) -> str:
+    argv = [
+        "uv",
+        "run",
+        "python",
+        "scripts/voiceops_provisioning_probe.py",
+        "--output-dir",
+        str(output_dir),
+    ]
+    for env_file in env_files:
+        argv.extend(["--env-file", str(env_file)])
+    if preflight_evidence is not None:
+        argv.extend(["--preflight-evidence", str(preflight_evidence)])
+    if post_approval_receipts is not None:
+        argv.extend(["--post-approval-receipts", str(post_approval_receipts)])
+    if run_command_probes:
+        argv.append("--run-command-probes")
+    if run_readonly_discovery:
+        argv.append("--run-readonly-discovery")
+    return " ".join(shlex.quote(part) for part in argv)
 
 
 def _result_by_milestone(results: list[dict[str, Any]], milestone: str) -> dict[str, Any]:
@@ -829,12 +860,24 @@ async def build_plan_run_async(
     results.append(
         _milestone_result(
             milestone="milestone_2_real_spend_and_provisioning_preflight",
-            command=f"uv run python scripts/voiceops_provisioning_probe.py --output-dir {provisioning_dir}",
+            command=_provisioning_probe_command(
+                output_dir=provisioning_dir,
+                env_files=env_files,
+                preflight_evidence=provisioning_preflight_evidence,
+                post_approval_receipts=post_approval_receipts,
+                run_command_probes=run_command_probes,
+                run_readonly_discovery=run_readonly_discovery,
+            ),
             output_dir=provisioning_dir,
             artifacts=provisioning_paths,
             status="ready" if provisioning["ready"] else "needs_setup",
             details={
                 "ready": provisioning["ready"],
+                "input_paths": {
+                    "env_files": [str(path) for path in env_files],
+                    "preflight_evidence": str(provisioning_preflight_evidence) if provisioning_preflight_evidence else None,
+                    "post_approval_receipts": str(post_approval_receipts) if post_approval_receipts else None,
+                },
                 "required_failures": provisioning["required_failures"],
                 "preflight_evidence_loaded": provisioning["preflight_evidence"]["loaded"],
                 "preflight_evidence_missing_fields": provisioning["preflight_evidence"]["missing_fields"],
