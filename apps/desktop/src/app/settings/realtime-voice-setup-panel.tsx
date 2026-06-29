@@ -420,7 +420,7 @@ function KameControls({
       />
       <ListRow
         action={textInput('voice.realtime.oracle_provider', 'custom')}
-        description="Provider slug for a local oracle override."
+        description="Provider slug for registering a local oracle endpoint."
         title="Oracle provider"
       />
       <ListRow
@@ -430,12 +430,12 @@ function KameControls({
       />
       <ListRow
         action={textInput('voice.realtime.oracle_base_url', 'http://spark.local:8000/v1')}
-        description="OpenAI-compatible URL for a local oracle override."
+        description="OpenAI-compatible URL for the registered local oracle endpoint."
         title="Oracle base URL"
       />
       <ListRow
         action={select('voice.realtime.oracle_api_mode', 'chat_completions', KAME_ORACLE_API_OPTIONS)}
-        description="Wire protocol for the local oracle override."
+        description="Wire protocol for the registered local oracle endpoint."
         title="Oracle API mode"
       />
       <ListRow

@@ -91,7 +91,9 @@ Runner behavior:
   `preflight-local-stack.sh`, `benchmark-matrix.json`, and benchmark evidence
   templates.
 - Uses Gemma 4 E2B as the default native-audio reflex and Gemma 4 26B-A4B as
-  the preferred local oracle model unless environment variables override them.
+  the preferred local oracle provider target unless environment variables
+  override the generated endpoint/preflight target. Hermes still selects the
+  active oracle through its normal `/model` path.
 - Runs endpoint preflight only when `DGX_SPARK_KAME_CHECK=1` is set, so artifact
   generation remains headless before services are online.
 - Validates filled benchmark evidence with the generated stack-pack validator
@@ -107,7 +109,7 @@ export DGX_SPARK_INTERFACE_BASE_URL=http://spark.local:8000/v1
 export DGX_SPARK_INTERFACE_MODEL=gemma-4-E2B-it
 export DGX_SPARK_INTERFACE_MAX_AUDIO_SECONDS=30
 export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8001/v1
-export DGX_SPARK_ORACLE_MODEL=gemma-4-26B-A4B-it
+export DGX_SPARK_ORACLE_MODEL=gemma-4-26B-A4B-it  # provider target, not a Hermes /model override
 export DGX_SPARK_SIDECAR_BASE_URL=http://spark.local:8765
 export DGX_SPARK_LOCAL_VOICE_BRIDGE_URL=http://spark.local:8767
 export DGX_SPARK_LOCAL_TTS_BRIDGE_URL=http://spark.local:8768
@@ -144,7 +146,7 @@ Headless variables:
 
 ```bash
 export DGX_SPARK_ORACLE_BASE_URL=http://<spark-host>:8000
-export DGX_SPARK_ORACLE_MODEL=gemma-4-26b-a4b-it
+export DGX_SPARK_ORACLE_MODEL=gemma-4-26b-a4b-it  # provider target, not a Hermes /model override
 export DGX_SPARK_ORACLE_API_KEY=optional
 export DGX_SPARK_ORACLE_TIMEOUT_SECONDS=120
 export DGX_SPARK_ORACLE_MAX_TOKENS=220
@@ -346,7 +348,7 @@ With Gemma and Cartesia:
 
 ```bash
 export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8000
-export DGX_SPARK_ORACLE_MODEL=gemma-4-26b-a4b-it
+export DGX_SPARK_ORACLE_MODEL=gemma-4-26b-a4b-it  # provider target, not a Hermes /model override
 export CARTESIA_API_KEY=...
 export CARTESIA_VOICE_ID=...
 scripts/dgx_spark_gemma4_voice_eval.sh
@@ -356,7 +358,7 @@ With Gemma, Cartesia, and local DGX speech:
 
 ```bash
 export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8000
-export DGX_SPARK_ORACLE_MODEL=gemma-4-26b-a4b-it
+export DGX_SPARK_ORACLE_MODEL=gemma-4-26b-a4b-it  # provider target, not a Hermes /model override
 export CARTESIA_API_KEY=...
 export CARTESIA_VOICE_ID=...
 export DGX_SPARK_LOCAL_VOICE_BRIDGE_URL=http://spark.local:8770

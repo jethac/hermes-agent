@@ -779,7 +779,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "voice.realtime.oracle_provider": {
         "type": "string",
-        "description": "Hermes oracle provider override for KAME realtime voice",
+        "description": "Local oracle provider registration for KAME realtime voice",
         "category": "voice",
     },
     "voice.realtime.oracle_provider_name": {
@@ -789,17 +789,17 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "voice.realtime.preferred_local_oracle_model": {
         "type": "string",
-        "description": "Preferred local Hermes oracle model label for KAME realtime voice",
+        "description": "Preferred local oracle provider target label for KAME realtime voice; Hermes still chooses the active oracle through /model",
         "category": "voice",
     },
     "voice.realtime.oracle_base_url": {
         "type": "string",
-        "description": "OpenAI-compatible base URL for the KAME local oracle override",
+        "description": "OpenAI-compatible base URL for registering a KAME local oracle endpoint",
         "category": "voice",
     },
     "voice.realtime.oracle_api_mode": {
         "type": "select",
-        "description": "Wire protocol used by the KAME local oracle override",
+        "description": "Wire protocol used by the registered KAME local oracle endpoint",
         "options": ["chat_completions", "anthropic_messages", "codex_responses"],
         "category": "voice",
     },
@@ -1232,7 +1232,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "discord.realtime_voice.oracle_provider": {
         "type": "string",
-        "description": "Hermes oracle provider override for Discord KAME realtime voice",
+        "description": "Local oracle provider registration for Discord KAME realtime voice",
         "category": "discord",
     },
     "discord.realtime_voice.oracle_provider_name": {
@@ -1242,17 +1242,17 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "discord.realtime_voice.preferred_local_oracle_model": {
         "type": "string",
-        "description": "Preferred local Hermes oracle model label for Discord KAME realtime voice",
+        "description": "Preferred local oracle provider target label for Discord KAME realtime voice; Hermes still chooses the active oracle through /model",
         "category": "discord",
     },
     "discord.realtime_voice.oracle_base_url": {
         "type": "string",
-        "description": "OpenAI-compatible base URL for the Discord KAME local oracle override",
+        "description": "OpenAI-compatible base URL for registering the Discord KAME local oracle endpoint",
         "category": "discord",
     },
     "discord.realtime_voice.oracle_api_mode": {
         "type": "select",
-        "description": "Wire protocol used by the Discord KAME local oracle override",
+        "description": "Wire protocol used by the registered Discord KAME local oracle endpoint",
         "options": ["chat_completions", "anthropic_messages", "codex_responses"],
         "category": "discord",
     },

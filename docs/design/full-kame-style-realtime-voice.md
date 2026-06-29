@@ -1,7 +1,7 @@
 # Full KAME-Style Realtime Voice Design
 
 Status: design draft
-Target branch: `wip/kame-style-realtime-voice`
+Target branch: `wip/full-kame-reflex-voice`
 Target deployment: one DGX Spark, with cloud providers allowed only as bring-up fallbacks
 Preferred local reflex: Gemma 4 E2B
 Preferred local oracle target: Hermes active oracle, ideally Gemma 4 26B-A4B when it is good enough for Hermes work

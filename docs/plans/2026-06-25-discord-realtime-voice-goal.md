@@ -5,6 +5,7 @@ date: 2026-06-25
 type: goal
 target_repo: hermes-agent
 origin: June 9 Discord voice-channel live test
+successor_design: docs/design/full-kame-style-realtime-voice.md
 ---
 
 # goal: Fix and harden Discord realtime voice after June 9 test
@@ -24,6 +25,11 @@ The goal is not just to make audio technically work. The goal is for `/voice
 join` to create a coherent live voice session with explicit state, low-latency
 feedback, correct model-facing context, reliable barge-in, observable fallback,
 and tests that prevent the June 9 failure shape from returning.
+
+This document records the June 9 hardening goal and its evidence trail. The
+current KAME architecture target is tracked in
+`docs/design/full-kame-style-realtime-voice.md`; that successor design preserves
+the June 9 reliability requirements while adding the reflex/oracle split.
 
 ---
 

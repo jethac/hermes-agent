@@ -235,18 +235,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--kame-preferred-local-oracle-model",
         default=DEFAULT_KAME_ORACLE_MODEL,
-        help="Preferred local Hermes oracle model label for --preset kame",
+        help="Preferred local oracle provider target label for --preset kame; Hermes still chooses the active oracle through /model",
     )
     parser.add_argument(
         "--kame-oracle-provider",
         default="",
-        help="Provider id for an explicit KAME oracle override; empty keeps Hermes' active oracle",
+        help="Provider id to register a local KAME oracle endpoint; empty keeps Hermes' active oracle provider set unchanged",
     )
     parser.add_argument(
         "--kame-oracle-api-mode",
         default="chat_completions",
         choices=("chat_completions", "anthropic_messages", "codex_responses"),
-        help="API contract used by the explicit KAME oracle endpoint",
+        help="API contract used by the registered local KAME oracle endpoint",
     )
     parser.add_argument(
         "--kame-oracle-timeout-seconds",
