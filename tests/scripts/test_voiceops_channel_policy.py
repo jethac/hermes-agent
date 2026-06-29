@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -64,6 +65,7 @@ def test_channel_policy_contains_approval_escalation_audit_and_redaction_rules()
     assert any("Cross-channel handoff" in rule for rule in policy["audit_id_continuity"]["rules"])
     assert {
         "env_assignment_secret",
+        "sensitive_url",
         "bearer_token",
         "secret_key_like",
         "phone_number",
@@ -77,7 +79,9 @@ def test_redaction_rules_mask_channel_sensitive_values():
         "Bearer token_123456789abcdef, sk_live_123456789abcdef, "
         "+15551234567, user@example.com, 4242 4242 4242 4242, "
         "DISCORD_BOT_TOKEN=discord-secret-token WHATSAPP_TOKEN=EAAG123456789abcdef "
-        "TWILIO_AUTH_TOKEN=0123456789abcdef0123456789abcdef"
+        "TWILIO_AUTH_TOKEN=0123456789abcdef0123456789abcdef "
+        "https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyzABCDEF "
+        "https://checkout.stripe.com/c/pay/cs_live_123456789 https://buy.stripe.com/test_123456789"
     )
 
     redacted = apply_redactions(text)
@@ -90,10 +94,14 @@ def test_redaction_rules_mask_channel_sensitive_values():
     assert "discord-secret-token" not in redacted
     assert "EAAG123456789abcdef" not in redacted
     assert "0123456789abcdef0123456789abcdef" not in redacted
+    assert "discord.com/api/webhooks" not in redacted
+    assert "checkout.stripe.com" not in redacted
+    assert "buy.stripe.com" not in redacted
     assert "Bearer <redacted>" in redacted
     assert "DISCORD_BOT_TOKEN=<redacted>" in redacted
     assert "WHATSAPP_TOKEN=<redacted>" in redacted
     assert "TWILIO_AUTH_TOKEN=<redacted>" in redacted
+    assert "<redacted-url>" in redacted
     assert "<redacted-secret>" in redacted
     assert "<redacted-phone>" in redacted
     assert "<redacted-email>" in redacted
@@ -116,7 +124,7 @@ def test_channel_policy_validates_safety_invariants():
     missing_blocks = json.loads(json.dumps(policy))
     missing_blocks["channel_authorization"][0]["prohibited_actions"] = []
     assert validate_policy(missing_blocks) == [
-        "missing_prohibited_actions:discord:credential_or_secret_echo,payment_or_provisioning_action"
+        "missing_prohibited_actions:discord:credential_or_secret_echo,payment_or_provisioning_action,server_admin_mutation,unapproved_external_invite"
     ]
 
     missing_phone_route = json.loads(json.dumps(policy))
@@ -128,7 +136,7 @@ def test_channel_policy_validates_safety_invariants():
     missing_audit = json.loads(json.dumps(policy))
     missing_audit["audit_id_continuity"]["required_fields"] = ["audit_id"]
     assert validate_policy(missing_audit) == [
-        "missing_audit_fields:channel_id,parent_audit_id,payload_digest,route_id,source_audit_id"
+        "missing_audit_fields:actor_kind,channel_id,parent_audit_id,payload_digest,redaction_profile,route_id,source_audit_id"
     ]
 
     missing_redactions = json.loads(json.dumps(policy))
@@ -136,6 +144,179 @@ def test_channel_policy_validates_safety_invariants():
         rule for rule in missing_redactions["redaction_rules"] if rule["rule_id"] != "phone_number"
     ]
     assert validate_policy(missing_redactions) == ["missing_redaction_rules:phone_number"]
+
+
+def test_channel_policy_rejects_non_artifact_mode_flags():
+    policy = build_channel_policy()
+
+    for key, value in {
+        "headless": False,
+        "bounded": False,
+        "artifact_only": False,
+        "outbound_sends": True,
+        "outbound_calls": True,
+        "env_secret_reads": True,
+        "network_io": True,
+    }.items():
+        unsafe = json.loads(json.dumps(policy))
+        unsafe["mode"][key] = value
+        assert validate_policy(unsafe) == [f"unsafe_mode:{key}"]
+
+
+def test_channel_policy_rejects_missing_blocked_live_capabilities():
+    policy = build_channel_policy()
+    unsafe = json.loads(json.dumps(policy))
+    unsafe["scope"]["blocked_capabilities"].remove("payment_or_provisioning_action")
+
+    assert validate_policy(unsafe) == ["missing_blocked_capabilities:payment_or_provisioning_action"]
+
+
+def test_channel_policy_rejects_unknown_or_duplicate_channels():
+    policy = build_channel_policy()
+
+    duplicate = json.loads(json.dumps(policy))
+    duplicate["channel_authorization"].append(duplicate["channel_authorization"][0])
+    assert validate_policy(duplicate) == ["duplicate_channels:discord"]
+
+    unknown = json.loads(json.dumps(policy))
+    unknown["channel_authorization"].append({**unknown["channel_authorization"][0], "channel_id": "telegram"})
+    assert validate_policy(unknown) == ["unknown_channels:telegram"]
+
+
+def test_channel_policy_rejects_allowed_actions_that_are_prohibited():
+    policy = build_channel_policy()
+    unsafe = json.loads(json.dumps(policy))
+    unsafe["channel_authorization"][1]["allowed_actions"].append("payment_link_send")
+
+    assert validate_policy(unsafe) == ["allowed_action_is_prohibited:whatsapp:payment_link_send"]
+
+
+def test_channel_policy_validates_channel_specific_required_boundaries():
+    policy = build_channel_policy()
+
+    unsafe = json.loads(json.dumps(policy))
+    unsafe["channel_authorization"][2]["approval_required_for"].remove("any_sms_send")
+    assert validate_policy(unsafe) == ["missing_approval_requirements:phone_sms:any_sms_send"]
+
+    unsafe = json.loads(json.dumps(policy))
+    unsafe["channel_authorization"][1]["prohibited_actions"].remove("payment_link_send")
+    assert validate_policy(unsafe) == ["missing_prohibited_actions:whatsapp:payment_link_send"]
+
+    unsafe = json.loads(json.dumps(policy))
+    unsafe["channel_authorization"][0]["evidence_required"].remove("source_audit_id")
+    assert validate_policy(unsafe) == [
+        "missing_evidence_requirements:discord:source_audit_id",
+        "missing_source_audit_id_evidence:discord",
+    ]
+
+
+def test_channel_policy_validates_spend_provisioning_route_semantics():
+    policy = build_channel_policy()
+    unsafe = json.loads(json.dumps(policy))
+    route = next(route for route in unsafe["approval_routing"] if route["route_id"] == "spend_provisioning_or_credential")
+    route["default_decision"] = "hold_for_human_approval"
+    route["required_approval_count"] = 1
+    route["escalation_level"] = "level_1"
+    route["approver_roles"] = ["operator_on_call"]
+
+    assert validate_policy(unsafe) == [
+        "unsafe_route_decision:spend_provisioning_or_credential",
+        "unsafe_route_approval_count:spend_provisioning_or_credential",
+        "unsafe_route_escalation:spend_provisioning_or_credential",
+        "missing_route_approvers:spend_provisioning_or_credential:business_owner,security_owner",
+        "unsafe_high_risk_route_decision:spend_provisioning_or_credential",
+        "unsafe_high_risk_route_approval_count:spend_provisioning_or_credential",
+    ]
+
+
+def test_channel_policy_validates_phone_handoff_route_is_phone_only():
+    policy = build_channel_policy()
+    unsafe = json.loads(json.dumps(policy))
+    route = next(route for route in unsafe["approval_routing"] if route["route_id"] == "approved_phone_handoff_call")
+    route["applies_to"] = ["discord", "phone_sms"]
+
+    assert validate_policy(unsafe) == ["unsafe_route_channels:approved_phone_handoff_call:discord,phone_sms"]
+
+
+def test_channel_policy_rejects_execution_permissions_in_level_3_escalation():
+    policy = build_channel_policy()
+    unsafe = json.loads(json.dumps(policy))
+    level_3 = next(step for step in unsafe["escalation_policy"] if step["level"] == "level_3")
+    level_3["permitted_actions"].append("execute_provisioning")
+
+    assert validate_policy(unsafe) == ["unsafe_escalation_action:level_3:execute_provisioning"]
+
+
+def test_channel_policy_requires_full_audit_continuity_fields_and_rules():
+    policy = build_channel_policy()
+    unsafe = json.loads(json.dumps(policy))
+    unsafe["audit_id_continuity"]["required_fields"].remove("actor_kind")
+    unsafe["audit_id_continuity"]["required_fields"].remove("redaction_profile")
+
+    assert validate_policy(unsafe) == ["missing_audit_fields:actor_kind,redaction_profile"]
+
+    unsafe = json.loads(json.dumps(policy))
+    unsafe["audit_id_continuity"]["rules"] = ["Never overwrite an existing audit_id."]
+    assert validate_policy(unsafe) == [
+        "missing_audit_rule:outbound",
+        "missing_audit_rule:escalation",
+        "missing_audit_rule:redaction",
+        "missing_audit_rule:cross_channel",
+    ]
+
+
+def test_redaction_rules_compile_only_apply_to_known_channels_and_keep_safe_order():
+    policy = build_channel_policy()
+
+    for rule in policy["redaction_rules"]:
+        re.compile(rule["pattern"])
+        assert set(rule["applies_to"]) <= {"discord", "whatsapp", "phone_sms"}
+
+    unsafe = json.loads(json.dumps(policy))
+    rules = unsafe["redaction_rules"]
+    card_index = next(index for index, rule in enumerate(rules) if rule["rule_id"] == "payment_card_like")
+    phone_index = next(index for index, rule in enumerate(rules) if rule["rule_id"] == "phone_number")
+    rules[card_index], rules[phone_index] = rules[phone_index], rules[card_index]
+    assert validate_policy(unsafe) == ["unsafe_redaction_order:payment_card_like_after_phone_number"]
+
+    unsafe = json.loads(json.dumps(policy))
+    unsafe["redaction_rules"][0]["applies_to"] = ["telegram"]
+    assert validate_policy(unsafe) == ["redaction_rule_invalid_channels:env_assignment_secret:telegram"]
+
+    unsafe = json.loads(json.dumps(policy))
+    unsafe["redaction_rules"][0]["pattern"] = "["
+    assert validate_policy(unsafe) == ["redaction_rule_invalid_pattern:env_assignment_secret"]
+
+
+def test_redaction_rules_mask_raw_provider_tokens_and_payment_urls():
+    text = (
+        "discord webhook https://discord.com/api/webhooks/123456789012345678/"
+        "abcdefghijklmnopqrstuvwxyzABCDEF "
+        "whatsapp EAAGm0PX4ZCpsBANZCZA1234567890 "
+        "twilio TWILIO_ACCOUNT_SID_FIXTURE_REDACTED "
+        "stripe sk_live_51ABCDEF123456789 whsec_123456789abcdef "
+        "checkout https://checkout.stripe.com/c/pay/cs_live_123456789 "
+        "link https://buy.stripe.com/test_123456789"
+    )
+
+    redacted = apply_redactions(text)
+
+    assert "discord.com/api/webhooks" not in redacted
+    assert "EAAGm0PX4ZCpsBANZCZA1234567890" not in redacted
+    assert "TWILIO_ACCOUNT_SID_FIXTURE_REDACTED" not in redacted
+    assert "sk_live_51ABCDEF123456789" not in redacted
+    assert "whsec_123456789abcdef" not in redacted
+    assert "checkout.stripe.com" not in redacted
+    assert "buy.stripe.com" not in redacted
+
+
+def test_redaction_rule_order_masks_cards_before_phone_numbers():
+    redacted = apply_redactions("card 4242 4242 4242 4242 phone +1 (555) 123-4567")
+
+    assert "<redacted-card>" in redacted
+    assert "<redacted-phone>" in redacted
+    assert "4242" not in redacted
+    assert "555" not in redacted
 
 
 def test_write_channel_policy_artifacts(tmp_path):

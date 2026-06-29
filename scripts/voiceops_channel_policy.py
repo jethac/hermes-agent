@@ -25,10 +25,31 @@ REQUIRED_AUDIT_FIELDS = {
     "source_audit_id",
     "channel_id",
     "route_id",
+    "actor_kind",
+    "redaction_profile",
     "payload_digest",
+}
+REQUIRED_SCOPE_BLOCKED_CAPABILITIES = {
+    "discord_send_without_approval",
+    "whatsapp_send_without_approval",
+    "sms_send_without_approval",
+    "voice_call",
+    "payment_or_provisioning_action",
+    "credential_or_secret_retrieval",
+}
+REQUIRED_APPROVAL_REQUIREMENTS = {
+    "discord": {"customer_visible_message", "sensitive_context_replay"},
+    "whatsapp": {"any_customer_visible_send", "template_change", "handoff_to_human_agent"},
+    "phone_sms": {"any_sms_send", "approved_phone_handoff_call", "customer_visible_handoff"},
+}
+REQUIRED_EVIDENCE_REQUIREMENTS = {
+    "discord": {"operator_actor_id", "guild_or_channel_id", "source_audit_id"},
+    "whatsapp": {"business_account_id", "conversation_id", "source_audit_id"},
+    "phone_sms": {"normalized_phone_hash", "conversation_id", "source_audit_id", "phone_context_ref"},
 }
 REQUIRED_REDACTION_RULES = {
     "env_assignment_secret",
+    "sensitive_url",
     "bearer_token",
     "secret_key_like",
     "phone_number",
@@ -36,10 +57,85 @@ REQUIRED_REDACTION_RULES = {
     "payment_card_like",
 }
 REQUIRED_PROHIBITED_ACTIONS = {
-    "discord": {"credential_or_secret_echo", "payment_or_provisioning_action"},
-    "whatsapp": {"credential_or_secret_echo", "payment_link_send", "bulk_or_marketing_broadcast"},
-    "phone_sms": {"unapproved_voice_call", "payment_link_send", "credential_or_secret_echo"},
+    "discord": {
+        "server_admin_mutation",
+        "credential_or_secret_echo",
+        "payment_or_provisioning_action",
+        "unapproved_external_invite",
+    },
+    "whatsapp": {
+        "unapproved_template_send",
+        "payment_link_send",
+        "credential_or_secret_echo",
+        "bulk_or_marketing_broadcast",
+    },
+    "phone_sms": {
+        "unapproved_voice_call",
+        "mms_send",
+        "payment_link_send",
+        "bulk_or_marketing_campaign",
+        "credential_or_secret_echo",
+    },
 }
+REQUIRED_APPROVAL_ROUTES = {
+    "approved_phone_handoff_call": {
+        "applies_to": {"phone_sms"},
+        "default_decision": "hold_for_human_approval",
+        "min_approval_count": 1,
+        "escalation_level": "level_1",
+    },
+    "customer_visible_outbound": {
+        "applies_to": set(CHANNEL_IDS),
+        "default_decision": "hold_for_human_approval",
+        "min_approval_count": 1,
+        "escalation_level": "level_1",
+    },
+    "sensitive_context_replay": {
+        "applies_to": set(CHANNEL_IDS),
+        "default_decision": "hold_for_dual_approval",
+        "min_approval_count": 2,
+        "escalation_level": "level_2",
+    },
+    "spend_provisioning_or_credential": {
+        "applies_to": set(CHANNEL_IDS),
+        "default_decision": "deny_and_escalate",
+        "min_approval_count": 2,
+        "escalation_level": "level_3",
+        "approver_roles": {"business_owner", "security_owner"},
+    },
+}
+REQUIRED_ESCALATIONS = {
+    "level_1": {
+        "destination_role": "channel_owner",
+        "permitted_actions": {"keep_draft_unsent", "request_clarifying_approval", "post_internal_status"},
+    },
+    "level_2": {
+        "destination_role": "incident_commander",
+        "permitted_actions": {"freeze_channel_egress", "preserve_audit_chain", "page_privacy_reviewer"},
+    },
+    "level_3": {
+        "destination_role": "business_owner_and_security_owner",
+        "permitted_actions": {"deny_execution", "record_blocked_intent", "require_written_approval"},
+    },
+}
+LEVEL_3_FORBIDDEN_ACTION_TERMS = (
+    "send",
+    "call",
+    "provision",
+    "spend",
+    "payment",
+    "credential",
+    "secret",
+    "retrieve",
+    "execute",
+)
+AUDIT_RULE_REQUIRED_TERMS = {
+    "outbound": ("outbound", "source_audit_id"),
+    "escalation": ("escalation", "parent_audit_id"),
+    "redaction": ("redaction", "source_audit_id"),
+    "cross_channel": ("cross-channel", "parent_audit_id"),
+}
+HIGH_RISK_ROUTE_TRIGGER_TERMS = ("payment", "spend", "provisioning", "credential", "account_mutation")
 
 
 @dataclass(frozen=True)
@@ -283,9 +379,21 @@ def default_redaction_rules() -> list[RedactionRule]:
             rationale="Do not expose authorization headers in channel logs or replies.",
         ),
         RedactionRule(
+            rule_id="sensitive_url",
+            applies_to=list(CHANNEL_IDS),
+            pattern=(
+                r"(?i)\bhttps://(?:"
+                r"(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/[^\s,;]+"
+                r"|(?:checkout|buy)\.stripe\.com/[^\s,;]+"
+                r")"
+            ),
+            replacement="<redacted-url>",
+            rationale="Mask credential-bearing webhook URLs and payment checkout links before channel persistence.",
+        ),
+        RedactionRule(
             rule_id="secret_key_like",
             applies_to=list(CHANNEL_IDS),
-            pattern=r"(?i)\b(?:sk|pk|rk|whsec|AC|SG|xox[baprs]|gh[pousr])[_-]?[A-Za-z0-9][A-Za-z0-9_\-]{8,}\b",
+            pattern=r"(?i)\b(?:sk|pk|rk|whsec|AC|SG|EAAG|xox[baprs]|gh[pousr])[_-]?[A-Za-z0-9][A-Za-z0-9_\-]{8,}\b",
             replacement="<redacted-secret>",
             rationale="Mask provider keys, signing secrets, account identifiers, and bot tokens.",
         ),
@@ -381,42 +489,129 @@ def build_channel_policy() -> dict[str, Any]:
 
 def validate_policy(policy: dict[str, Any]) -> list[str]:
     issues: list[str] = []
-    channels = {channel.get("channel_id") for channel in policy.get("channel_authorization", [])}
-    missing_channels = set(CHANNEL_IDS) - channels
+    known_channels = set(CHANNEL_IDS)
+    channel_ids = [str(channel.get("channel_id") or "") for channel in policy.get("channel_authorization", [])]
+    channels = set(channel_ids)
+    missing_channels = known_channels - channels
     if missing_channels:
         issues.append(f"missing_channels:{','.join(sorted(missing_channels))}")
+    unknown_channels = channels - known_channels
+    if unknown_channels:
+        issues.append(f"unknown_channels:{','.join(sorted(unknown_channels))}")
+    duplicate_channels = sorted(channel_id for channel_id in channels if channel_ids.count(channel_id) > 1)
+    if duplicate_channels:
+        issues.append(f"duplicate_channels:{','.join(duplicate_channels)}")
+
+    blocked_capabilities = set(policy.get("scope", {}).get("blocked_capabilities") or [])
+    missing_blocked_capabilities = REQUIRED_SCOPE_BLOCKED_CAPABILITIES - blocked_capabilities
+    if missing_blocked_capabilities:
+        issues.append(f"missing_blocked_capabilities:{','.join(sorted(missing_blocked_capabilities))}")
+
     for channel in policy.get("channel_authorization", []):
         channel_id = str(channel.get("channel_id") or "")
         if channel.get("audit_required") is not True:
             issues.append(f"audit_not_required:{channel_id}")
-        if not channel.get("approval_required_for"):
+        approval_required = set(channel.get("approval_required_for") or [])
+        if not approval_required:
             issues.append(f"missing_approval_requirements:{channel_id}")
-        if not channel.get("evidence_required"):
+        missing_approval = REQUIRED_APPROVAL_REQUIREMENTS.get(channel_id, set()) - approval_required
+        if missing_approval:
+            issues.append(f"missing_approval_requirements:{channel_id}:{','.join(sorted(missing_approval))}")
+        evidence_required = set(channel.get("evidence_required") or [])
+        if not evidence_required:
             issues.append(f"missing_evidence_requirements:{channel_id}")
+        missing_evidence = REQUIRED_EVIDENCE_REQUIREMENTS.get(channel_id, set()) - evidence_required
+        if missing_evidence:
+            issues.append(f"missing_evidence_requirements:{channel_id}:{','.join(sorted(missing_evidence))}")
+        if channel_id in REQUIRED_EVIDENCE_REQUIREMENTS and "source_audit_id" not in evidence_required:
+            issues.append(f"missing_source_audit_id_evidence:{channel_id}")
         prohibited = set(channel.get("prohibited_actions") or [])
         missing_prohibited = REQUIRED_PROHIBITED_ACTIONS.get(channel_id, set()) - prohibited
         if missing_prohibited:
             issues.append(f"missing_prohibited_actions:{channel_id}:{','.join(sorted(missing_prohibited))}")
+        allowed_prohibited_overlap = prohibited & set(channel.get("allowed_actions") or [])
+        if allowed_prohibited_overlap:
+            issues.append(f"allowed_action_is_prohibited:{channel_id}:{','.join(sorted(allowed_prohibited_overlap))}")
+
     if not policy.get("approval_routing"):
         issues.append("missing_approval_routing")
     else:
-        route_ids = {route.get("route_id") for route in policy.get("approval_routing", [])}
-        for required_route in {
-            "approved_phone_handoff_call",
-            "customer_visible_outbound",
-            "sensitive_context_replay",
-            "spend_provisioning_or_credential",
-        }:
-            if required_route not in route_ids:
+        routes = {route.get("route_id"): route for route in policy.get("approval_routing", [])}
+        for required_route, contract in REQUIRED_APPROVAL_ROUTES.items():
+            route = routes.get(required_route)
+            if route is None:
                 issues.append(f"missing_approval_route:{required_route}")
+                continue
+            actual_channels = set(route.get("applies_to") or [])
+            expected_channels = set(contract["applies_to"])
+            if actual_channels != expected_channels:
+                issues.append(f"unsafe_route_channels:{required_route}:{','.join(sorted(actual_channels))}")
+            if route.get("default_decision") != contract["default_decision"]:
+                issues.append(f"unsafe_route_decision:{required_route}")
+            try:
+                approval_count = int(route.get("required_approval_count"))
+            except (TypeError, ValueError):
+                approval_count = -1
+            if approval_count < int(contract["min_approval_count"]):
+                issues.append(f"unsafe_route_approval_count:{required_route}")
+            if route.get("escalation_level") != contract["escalation_level"]:
+                issues.append(f"unsafe_route_escalation:{required_route}")
+            missing_approvers = set(contract.get("approver_roles", set())) - set(route.get("approver_roles") or [])
+            if missing_approvers:
+                issues.append(f"missing_route_approvers:{required_route}:{','.join(sorted(missing_approvers))}")
+
+        escalation_levels = {
+            str(step.get("level") or "") for step in policy.get("escalation_policy", []) if step.get("level")
+        }
+        for route in policy.get("approval_routing", []):
+            route_id = str(route.get("route_id") or "unknown")
+            escalation_level = str(route.get("escalation_level") or "")
+            if escalation_level and escalation_level != "none" and escalation_level not in escalation_levels:
+                issues.append(f"approval_route_missing_escalation_level:{route_id}:{escalation_level}")
+            trigger = str(route.get("trigger") or "").lower()
+            if any(term in trigger for term in HIGH_RISK_ROUTE_TRIGGER_TERMS):
+                try:
+                    approval_count = int(route.get("required_approval_count"))
+                except (TypeError, ValueError):
+                    approval_count = -1
+                decision = str(route.get("default_decision") or "")
+                if decision != "deny_and_escalate":
+                    issues.append(f"unsafe_high_risk_route_decision:{route_id}")
+                if approval_count < 2:
+                    issues.append(f"unsafe_high_risk_route_approval_count:{route_id}")
+
     if not policy.get("escalation_policy"):
         issues.append("missing_escalation_policy")
+    else:
+        escalations = {step.get("level"): step for step in policy.get("escalation_policy", [])}
+        for required_level, contract in REQUIRED_ESCALATIONS.items():
+            step = escalations.get(required_level)
+            if step is None:
+                issues.append(f"missing_escalation_level:{required_level}")
+                continue
+            if step.get("destination_role") != contract["destination_role"]:
+                issues.append(f"escalation_wrong_destination:{required_level}:{step.get('destination_role')}")
+            missing_actions = set(contract["permitted_actions"]) - set(step.get("permitted_actions") or [])
+            if missing_actions:
+                issues.append(f"escalation_missing_actions:{required_level}:{','.join(sorted(missing_actions))}")
+        level_3 = escalations.get("level_3")
+        if level_3:
+            for action in level_3.get("permitted_actions") or []:
+                action_text = str(action).lower()
+                if any(term in action_text for term in LEVEL_3_FORBIDDEN_ACTION_TERMS):
+                    issues.append(f"unsafe_escalation_action:level_3:{action}")
+
     audit = policy.get("audit_id_continuity", {})
     if not audit.get("rules"):
         issues.append("missing_audit_id_continuity")
     missing_audit_fields = REQUIRED_AUDIT_FIELDS - set(audit.get("required_fields") or [])
     if missing_audit_fields:
         issues.append(f"missing_audit_fields:{','.join(sorted(missing_audit_fields))}")
+    audit_rules = [str(rule).lower() for rule in audit.get("rules") or []]
+    for requirement_id, required_terms in AUDIT_RULE_REQUIRED_TERMS.items():
+        if not any(all(term in rule for term in required_terms) for rule in audit_rules):
+            issues.append(f"missing_audit_rule:{requirement_id}")
+
     redaction_rules = policy.get("redaction_rules") or []
     if not redaction_rules:
         issues.append("missing_redaction_rules")
@@ -424,7 +619,27 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
         missing_redaction_rules = REQUIRED_REDACTION_RULES - {rule.get("rule_id") for rule in redaction_rules}
         if missing_redaction_rules:
             issues.append(f"missing_redaction_rules:{','.join(sorted(missing_redaction_rules))}")
+        rule_ids = [str(rule.get("rule_id") or "") for rule in redaction_rules]
+        if "payment_card_like" in rule_ids and "phone_number" in rule_ids:
+            if rule_ids.index("payment_card_like") > rule_ids.index("phone_number"):
+                issues.append("unsafe_redaction_order:payment_card_like_after_phone_number")
+        for rule in redaction_rules:
+            rule_id = str(rule.get("rule_id") or "unknown")
+            applies_to = set(rule.get("applies_to") or [])
+            invalid_channels = applies_to - known_channels
+            if invalid_channels:
+                issues.append(f"redaction_rule_invalid_channels:{rule_id}:{','.join(sorted(invalid_channels))}")
+            if not applies_to:
+                issues.append(f"redaction_rule_missing_channels:{rule_id}")
+            try:
+                re.compile(str(rule.get("pattern") or ""))
+            except re.error:
+                issues.append(f"redaction_rule_invalid_pattern:{rule_id}")
+
     mode = policy.get("mode", {})
+    for key in ("headless", "bounded", "artifact_only"):
+        if mode.get(key) is not True:
+            issues.append(f"unsafe_mode:{key}")
     for key in ("network_io", "env_secret_reads", "outbound_sends", "outbound_calls"):
         if mode.get(key) is not False:
             issues.append(f"unsafe_mode:{key}")
