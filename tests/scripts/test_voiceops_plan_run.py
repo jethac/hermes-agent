@@ -380,6 +380,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "local_spark_stack",
     ]
     assert handoff["phases"][0]["can_run_here_now"] is False
+    assert "discord-live-probe.json with source_artifact" in json.dumps(handoff["phases"][0]["required_inputs"])
+    assert "sidecar_mode=production" in json.dumps(handoff["phases"][0]["required_inputs"])
+    assert "healthcheck_observed" in json.dumps(handoff["phases"][0]["required_inputs"])
+    assert "provider_transport_observed" in json.dumps(handoff["phases"][0]["required_inputs"])
+    assert "session_id_redacted" in json.dumps(handoff["phases"][0]["required_inputs"])
+    assert "fallback_reason" in json.dumps(handoff["phases"][0]["required_inputs"])
     assert "sidecar-session.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
     assert "live-evidence-validation.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
     assert "python -m hermes_cli.realtime_voice_live_evidence" in handoff["phases"][0]["commands"][0]
@@ -418,12 +424,44 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     ]
     assert "schema_version" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "transcript_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "sidecar_mode" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "healthcheck_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "provider_transport_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "session_id_redacted" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "fallback_reason" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "latency_metrics_ms.connect_ms" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "latency_metrics_ms.session_start_ms" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "source_artifact" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert gates["live_discord_voice_operator"]["evidence_contract"] == {
         "manifest_schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
         "strict_validation_schema_version": "voiceops.realtime_voice_live_evidence_validation.v1",
         "expanded_evidence_schema_version": "voiceops.milestone1.live_voice_evidence.v1",
         "required_sections": ["discord_live_probe", "sidecar_session", "live_turn"],
         "required_section_refs": ["source_artifact", "section"],
+        "required_discord_latency_metrics_ms": [
+            "connect_ms",
+            "playback_observed_ms",
+            "inbound_observed_ms",
+            "disconnect_ms",
+        ],
+        "required_sidecar_fields": [
+            "sidecar_running",
+            "sidecar_healthy",
+            "session_started",
+            "session_closed",
+            "fallback_mode_visible",
+            "fallback_reason",
+            "sidecar_mode",
+            "healthcheck_observed",
+            "provider_transport_observed",
+            "session_id_redacted",
+            "shutdown_bounded",
+            "shutdown_timed_out",
+        ],
+        "required_sidecar_mode": "production",
+        "required_sidecar_latency_metrics_ms": ["session_start_ms", "shutdown_ms"],
+        "template_source_artifacts_accepted": False,
+        "unverified_source_artifacts_accepted": False,
         "source_artifacts_must_exist": True,
         "example_only_accepted": False,
     }
@@ -484,6 +522,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         gates["local_spark_stack_matrix"]["evidence_contract"]["preferred_local_oracle_candidate_id"]
         == "oracle-nemotron3-super-local"
     )
+    assert gates["local_spark_stack_matrix"]["evidence_contract"]["required_oracle_authority_routes"] == [
+        "tools",
+        "files",
+        "memory",
+        "project_context",
+    ]
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["preferred_local_oracle_model"] == "Nemotron 3 Super"
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["non_counting_fallback_oracle_models"] == [
         "Nemotron 3 Ultra"
@@ -658,6 +702,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "python -m hermes_cli.realtime_voice_live_evidence" in closure_markdown
     assert "--sidecar-session-evidence" in closure_markdown
     assert "--live-turn-evidence" in closure_markdown
+    assert "required_sidecar_mode" in closure_markdown
+    assert "required_sidecar_latency_metrics_ms" in closure_markdown
+    assert "required_discord_latency_metrics_ms" in closure_markdown
+    assert "unverified_source_artifacts_accepted" in closure_markdown
     assert "voiceops.milestone2.preflight_evidence_manifest.v1" in closure_markdown
     assert "provisioning-preflight-evidence.manifest.json" in closure_markdown
     assert "--refresh-preflight-source-hashes" in closure_markdown
@@ -666,9 +714,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "spark-operator-runbook.md" in closure_markdown
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in closure_markdown
     assert "loopback_smoke_bridge protocol smoke checks" in closure_markdown
+    assert "required_oracle_authority_routes" in closure_markdown
     assert "VoiceOps Operator Handoff" in handoff_markdown
     assert "loopback_smoke_bridge protocol smoke checks" in handoff_markdown
     assert "live_discord_voice" in handoff_markdown
+    assert "sidecar_mode=production" in handoff_markdown
+    assert "provider_transport_observed" in handoff_markdown
     assert "Final reindex command" in handoff_markdown
     assert "milestone_0_hackathon_proof" in markdown
 
