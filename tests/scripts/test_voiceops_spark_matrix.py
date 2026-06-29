@@ -875,6 +875,27 @@ def test_spark_matrix_rejects_candidate_with_placeholder_collector_attestation(t
     assert matrix["role_status"]["oracle"] == "needs_evidence"
 
 
+def test_spark_matrix_rejects_candidate_with_inverted_collector_attestation_window(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    evidence["collector_attestation"]["started_at"] = "2026-06-29T00:00:02Z"
+    evidence["collector_attestation"]["finished_at"] = "2026-06-29T00:00:01Z"
+    evidence["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "collector_attestation_invalid:timestamp_window" in evaluation["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
 def test_spark_matrix_rejects_candidate_with_example_only_source_artifact(tmp_path):
     evidence_path = tmp_path / "evidence.json"
     source_path = tmp_path / "artifacts/test/example-source.json"
@@ -1197,6 +1218,20 @@ def test_spark_matrix_rejects_stack_smoke_without_collector_attestation(tmp_path
 
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "missing_collector_attestation" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_rejects_stack_smoke_with_inverted_collector_attestation_window(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    stack_smoke = _stack_smoke()
+    stack_smoke["collector_attestation"]["started_at"] = "2026-06-29T00:00:02Z"
+    stack_smoke["collector_attestation"]["finished_at"] = "2026-06-29T00:00:01Z"
+    evidence_path.write_text(json.dumps({"evidence": [stack_smoke]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "collector_attestation_invalid:timestamp_window" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
 
 

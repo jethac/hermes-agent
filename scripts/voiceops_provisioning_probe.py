@@ -1084,9 +1084,14 @@ def _collector_attestation_issues(
     command_argv = attestation.get("command_argv")
     if not isinstance(command_argv, list) or not command_argv or not all(isinstance(item, str) and item for item in command_argv):
         issues.append(f"{section_name}.collector_attestation.command_argv: invalid")
-    for field in ("started_at", "finished_at"):
-        if _parse_preflight_timestamp(attestation.get(field)) is None:
-            issues.append(f"{section_name}.collector_attestation.{field}: invalid")
+    started_at = _parse_preflight_timestamp(attestation.get("started_at"))
+    finished_at = _parse_preflight_timestamp(attestation.get("finished_at"))
+    if started_at is None:
+        issues.append(f"{section_name}.collector_attestation.started_at: invalid")
+    if finished_at is None:
+        issues.append(f"{section_name}.collector_attestation.finished_at: invalid")
+    if started_at is not None and finished_at is not None and started_at > finished_at:
+        issues.append(f"{section_name}.collector_attestation.finished_at: before_started_at")
     for field in ("raw_artifact_sha256", "redacted_artifact_sha256", "parent_manifest_sha256"):
         if not _valid_sha256(attestation.get(field)):
             issues.append(f"{section_name}.collector_attestation.{field}: invalid")

@@ -452,6 +452,16 @@ def test_live_evidence_rejects_stale_source_artifact_attestation_hash(tmp_path):
     assert "discord_live_probe:collector_attestation_redacted_sha256_mismatch" in live_evidence["issues"]
 
 
+def test_live_evidence_rejects_inverted_collector_attestation_window():
+    evidence = _complete_live_evidence()
+    evidence["discord_live_probe"]["collector_attestation"]["started_at"] = "2026-06-29T00:00:02Z"
+    evidence["discord_live_probe"]["collector_attestation"]["finished_at"] = "2026-06-29T00:00:01Z"
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "discord_live_probe:collector_attestation_invalid:timestamp_window" in live_evidence["issues"]
+
+
 def test_live_evidence_rejects_fake_parent_manifest_attestation_hash(tmp_path):
     evidence = _complete_live_evidence()
     source_path = tmp_path / "discord-live-probe.json"

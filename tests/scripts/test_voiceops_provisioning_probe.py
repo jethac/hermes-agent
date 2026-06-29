@@ -891,6 +891,19 @@ def test_preflight_evidence_rejects_missing_collector_attestation(tmp_path):
     assert "stripe_projects_account" in report["required_failures"]
 
 
+def test_preflight_evidence_rejects_inverted_collector_attestation_window(tmp_path):
+    evidence = _complete_preflight_evidence()
+    evidence_path = _write_preflight_evidence(tmp_path, evidence)
+    payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+    payload["stripe_projects"]["collector_attestation"]["started_at"] = "2026-06-29T00:00:02Z"
+    payload["stripe_projects"]["collector_attestation"]["finished_at"] = "2026-06-29T00:00:01Z"
+    evidence_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "stripe_projects.collector_attestation.finished_at: before_started_at" in loaded["validation_issues"]
+
+
 def test_preflight_evidence_rejects_source_artifact_without_schema_or_matching_section(tmp_path):
     evidence = _complete_preflight_evidence()
     stripe_source = tmp_path / "stripe-projects-redacted.json"
@@ -1270,6 +1283,32 @@ def test_readonly_discovery_report_rejects_stale_collector_attestation_hash(tmp_
     assert "read_only_discovery.collector_attestation.redacted_artifact_sha256: mismatch" in loaded[
         "validation_issues"
     ]
+
+
+def test_readonly_discovery_report_rejects_inverted_collector_attestation_window(tmp_path):
+    discovery_report = build_probe_report(
+        env={},
+        env_files=[],
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+    paths = write_probe_artifacts(tmp_path / "discovery", discovery_report)
+    report_path = Path(paths["read_only_discovery_json"])
+    manifest_path = Path(paths["read_only_discovery_manifest"])
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["collector_attestation"]["started_at"] = "2026-06-29T00:00:02Z"
+    report["collector_attestation"]["finished_at"] = "2026-06-29T00:00:01Z"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["report_sha256"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    loaded = load_readonly_discovery_evidence(manifest_path)
+
+    assert loaded["status"] == "fail"
+    assert "read_only_discovery.collector_attestation.finished_at: before_started_at" in loaded["validation_issues"]
 
 
 def test_refresh_preflight_manifest_source_sha256_updates_section_files(tmp_path):
@@ -2311,6 +2350,23 @@ def test_post_approval_receipts_reject_stale_collector_attestation():
 
     assert loaded["status"] == "invalid"
     assert "post_approval_receipts.collector_attestation.redacted_artifact_sha256: mismatch" in loaded[
+        "validation_issues"
+    ]
+    assert loaded["ledger_rows"] == []
+
+
+def test_post_approval_receipts_reject_inverted_collector_attestation_window():
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    payload = _complete_post_approval_receipts(plan)
+    payload = _with_post_approval_attestation(payload)
+    payload["collector_attestation"]["started_at"] = "2026-06-29T00:00:02Z"
+    payload["collector_attestation"]["finished_at"] = "2026-06-29T00:00:01Z"
+
+    loaded = validate_post_approval_receipts(payload, plan)
+
+    assert loaded["status"] == "invalid"
+    assert "post_approval_receipts.collector_attestation.finished_at: before_started_at" in loaded[
         "validation_issues"
     ]
     assert loaded["ledger_rows"] == []

@@ -283,16 +283,22 @@ def _measured_at(item: dict[str, Any]) -> str | None:
     return None
 
 
-def _has_parseable_timezone_timestamp(value: Any) -> bool:
+def _parse_timezone_timestamp(value: Any) -> dt.datetime | None:
     text = str(value or "").strip()
     if not text:
-        return False
+        return None
     normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
     try:
         parsed = dt.datetime.fromisoformat(normalized)
     except ValueError:
-        return False
-    return parsed.tzinfo is not None and parsed.utcoffset() is not None
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed
+
+
+def _has_parseable_timezone_timestamp(value: Any) -> bool:
+    return _parse_timezone_timestamp(value) is not None
 
 
 def _verified(item: dict[str, Any]) -> bool:
@@ -958,9 +964,14 @@ def _collector_attestation_issues(item: dict[str, Any]) -> list[str]:
     command_argv = attestation.get("command_argv")
     if not isinstance(command_argv, list) or not command_argv or not all(isinstance(part, str) and part for part in command_argv):
         issues.append("collector_attestation_invalid:command_argv")
-    for field in ("started_at", "finished_at"):
-        if not _has_parseable_timezone_timestamp(attestation.get(field)):
-            issues.append(f"collector_attestation_invalid:{field}")
+    started_at = _parse_timezone_timestamp(attestation.get("started_at"))
+    finished_at = _parse_timezone_timestamp(attestation.get("finished_at"))
+    if started_at is None:
+        issues.append("collector_attestation_invalid:started_at")
+    if finished_at is None:
+        issues.append("collector_attestation_invalid:finished_at")
+    if started_at is not None and finished_at is not None and started_at > finished_at:
+        issues.append("collector_attestation_invalid:timestamp_window")
     for field in ("raw_artifact_sha256", "redacted_artifact_sha256", "parent_manifest_sha256"):
         if not _valid_sha256(attestation.get(field)):
             issues.append(f"collector_attestation_invalid:{field}")

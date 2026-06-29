@@ -818,13 +818,18 @@ def _with_collector_attestation(
     attested_payload.pop("collector_attestation", None)
     payload_sha256 = _payload_sha256(attested_payload)
     timestamp = _utc_timestamp()
+    started_at = str(enriched.get("collected_at") or timestamp)
+    started_dt = _parse_timezone_timestamp(started_at)
+    finished_dt = _parse_timezone_timestamp(timestamp)
+    if started_dt is not None and finished_dt is not None and started_dt > finished_dt:
+        started_at = timestamp
     enriched["collector_attestation"] = {
         "collector_name": "hermes_cli.realtime_voice_live_evidence",
         "collector_version": "voiceops.realtime_voice_live_evidence.v1",
         "run_id": str(enriched.get("run_id") or f"{section_name}-{payload_sha256[:12]}"),
         "command_argv": list(sys.argv),
         "git_commit": _git_output("rev-parse", "HEAD") or "unavailable",
-        "started_at": str(enriched.get("collected_at") or timestamp),
+        "started_at": started_at,
         "finished_at": timestamp,
         "raw_artifact_sha256": payload_sha256,
         "redacted_artifact_sha256": payload_sha256,
@@ -847,6 +852,20 @@ def _file_sha256(path: Path) -> str:
 
 def _utc_timestamp() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _parse_timezone_timestamp(value: Any) -> dt.datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = dt.datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed
 
 
 def _report_ref(output_dir: Path, report_path: Path) -> str:

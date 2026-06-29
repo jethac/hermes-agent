@@ -812,6 +812,24 @@ def test_live_evidence_derives_complete_sections_from_realtime_voice_report(monk
         assert forbidden not in live_turn
 
 
+def test_live_evidence_collector_attestation_clamps_future_collected_at(monkeypatch):
+    monkeypatch.setattr(realtime_voice_live_evidence, "_utc_timestamp", lambda: "2026-06-29T00:00:01Z")
+
+    payload = {
+        "kind": "discord_live_probe",
+        "collected_at": "2026-06-29T00:00:02Z",
+        "ok": True,
+    }
+
+    enriched = realtime_voice_live_evidence._with_collector_attestation(
+        payload,
+        section_name="discord_live_probe",
+    )
+
+    assert enriched["collector_attestation"]["started_at"] == "2026-06-29T00:00:01Z"
+    assert enriched["collector_attestation"]["finished_at"] == "2026-06-29T00:00:01Z"
+
+
 def test_live_evidence_derives_partial_report_without_discord_probe(monkeypatch, tmp_path):
     async def unexpected_loopback():
         raise AssertionError("loopback probe should not run when deriving from an existing report")
