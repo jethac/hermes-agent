@@ -615,6 +615,22 @@ The operator handoff is the ordered execution runbook derived from the closure i
 
 The test suite includes a closure rehearsal with redacted local fixtures for all three remaining gates. It proves that supplied live voice evidence, provisioning preflight evidence, and Spark benchmark evidence can drive `readiness_gaps: []`, `closure_status: complete`, and `remaining_gates: []` without credentials, live Discord, provider actions, phone calls, network I/O, or DGX Spark execution. Real readiness still requires replacing those fixtures with actual collected evidence.
 
+Package consistency audit:
+
+```bash
+uv run python scripts/voiceops_artifact_package_audit.py --artifact-root artifacts --audit-only
+```
+
+Artifact-writing audit:
+
+```bash
+uv run python scripts/voiceops_artifact_package_audit.py \
+  --artifact-root artifacts \
+  --output-dir artifacts/voiceops-package-audit/current
+```
+
+The package audit is local and static. It reads the generated VoiceOps package and checks cross-artifact consistency between the demo readiness report, demo closure summary, plan closure index, operator state, dashboard HTML, NemoClaw packet validation, audit ledger, and dry-run shell metadata. It catches contradictions such as live-ready claims while closure gates remain, mismatched NemoClaw/operator approval contracts, executed audit rows in a dry-run package, external service provisioning claims without receipts, and missing non-live dashboard status. `--audit-only` performs no persistent writes.
+
 When evidence exists, rerun the same indexer with the relevant read-only artifacts instead of hand-editing the index:
 
 ```bash
