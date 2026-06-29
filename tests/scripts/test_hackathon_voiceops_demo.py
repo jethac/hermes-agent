@@ -67,17 +67,28 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert payload["artifact_manifest"]["operator_state"] == "operator-state.json"
     assert payload["artifact_manifest"]["milestone2_execution_plan"] == "milestone2-execution-plan.json"
     assert payload["recording_readiness"]["artifact_ref"] == "readiness-report.json"
-    assert payload["recording_readiness"]["ready_for_recording"] is False
-    assert payload["recording_readiness"]["static_recording_ready"] is False
+    assert payload["recording_readiness"]["ready_for_recording"] is True
+    assert payload["recording_readiness"]["static_recording_ready"] is True
     assert payload["recording_readiness"]["ready_for_recording_scope"] == "static_artifact_recording_only"
     assert payload["recording_readiness"]["live_demo_ready"] is False
+    assert payload["recording_readiness"]["live_prerequisite_failures"] == [
+        "discord_voice",
+        "stripe_projects_cli",
+        "stripe_link_cli",
+    ]
     assert payload["recording_readiness"]["live_demo_missing_evidence"] == [
         "live_discord_voice_operator",
         "spend_and_provisioning_preflight",
         "local_spark_stack_matrix",
     ]
     assert payload["recording_readiness"]["spark_local_evidence_status"] == "target_selected_needs_benchmark_evidence"
-    assert payload["recording_readiness"]["required_failures"]
+    assert payload["recording_readiness"]["required_failures"] == []
+    assert payload["recording_readiness"]["artifact_required_failures"] == []
+    assert payload["recording_readiness"]["all_required_check_failures"] == [
+        "discord_voice",
+        "stripe_projects_cli",
+        "stripe_link_cli",
+    ]
     assert payload["readiness_closure_ref"] == "artifacts/voiceops-plan/current/readiness-closure-index.json"
     assert payload["readiness_closure"]["closure_status"] == "needs_external_evidence"
     assert {gate["gate_id"] for gate in payload["readiness_closure"]["gates"]} == {
@@ -435,6 +446,9 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     ]
     assert ready["spark_local_evidence_status"] == "target_selected_needs_benchmark_evidence"
     assert ready["required_failures"] == []
+    assert ready["artifact_required_failures"] == []
+    assert ready["live_prerequisite_failures"] == []
+    assert ready["all_required_check_failures"] == []
     checks = {check["check_id"]: check for check in ready["checks"]}
     assert checks["phone_target"]["status"] == "pass"
     assert checks["phone_provider"]["status"] == "pass"
@@ -449,8 +463,10 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
         },
         which=fake_which,
     )
-    assert stripe_without_projects_marker["ready_for_recording"] is False
-    assert "stripe_projects_cli" in stripe_without_projects_marker["required_failures"]
+    assert stripe_without_projects_marker["ready_for_recording"] is True
+    assert stripe_without_projects_marker["static_recording_ready"] is True
+    assert stripe_without_projects_marker["required_failures"] == []
+    assert "stripe_projects_cli" in stripe_without_projects_marker["live_prerequisite_failures"]
 
     def fake_npx_only(command: str) -> str | None:
         commands = {
@@ -470,8 +486,10 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
         },
         which=fake_npx_only,
     )
-    assert npx_not_ready["ready_for_recording"] is False
-    assert "stripe_link_cli" in npx_not_ready["required_failures"]
+    assert npx_not_ready["ready_for_recording"] is True
+    assert npx_not_ready["static_recording_ready"] is True
+    assert npx_not_ready["required_failures"] == []
+    assert "stripe_link_cli" in npx_not_ready["live_prerequisite_failures"]
 
     target_only = build_readiness_report(
         demo,
@@ -506,8 +524,12 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     assert "phone_target" in build_milestone2_like_failures(demo, provider_only)
 
     not_ready = build_readiness_report(demo, env={}, which=lambda _command: None)
-    assert not_ready["ready_for_recording"] is False
-    assert {"discord_voice", "stripe_projects_cli", "stripe_link_cli"}.issubset(set(not_ready["required_failures"]))
+    assert not_ready["ready_for_recording"] is True
+    assert not_ready["static_recording_ready"] is True
+    assert not_ready["required_failures"] == []
+    assert {"discord_voice", "stripe_projects_cli", "stripe_link_cli"}.issubset(
+        set(not_ready["live_prerequisite_failures"])
+    )
 
 
 def test_voiceops_readiness_report_loads_env_files_without_exposing_values(tmp_path):
@@ -541,6 +563,7 @@ def test_voiceops_readiness_report_loads_env_files_without_exposing_values(tmp_p
     assert report["live_demo_ready"] is False
     assert report["ready_for_recording_scope"] == "static_artifact_recording_only"
     assert report["required_failures"] == []
+    assert report["live_prerequisite_failures"] == []
     assert report["env_sources"][1]["path"] == str(env_file)
     assert report["env_sources"][1]["loaded"] is True
     assert "secret-token" not in json.dumps(report)
