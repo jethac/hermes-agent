@@ -789,6 +789,11 @@ HERMES_KAME_LOG_PROVIDER_SPANS={_env_bool(metrics["log_provider_spans"])}
 HERMES_KAME_ORACLE_MODEL={roles["oracle"]["preferred_local_model"]}
 HERMES_KAME_ORACLE_BASE_URL={roles["oracle"]["base_url"]}
 HERMES_KAME_ORACLE_TIMEOUT_SECONDS={roles["oracle"]["timeout_seconds"]}
+
+# The default loopback_smoke_bridge ASR/TTS adapters are protocol-only smoke checks.
+# They cannot satisfy VoiceOps local ASR/TTS evidence; replace the module, adapter,
+# model, and base URL values below with production local speech providers before
+# marking Spark speech evidence verified.
 HERMES_VOICE_STREAMING_STT_BASE_URL={roles["asr"]["base_url"]}
 HERMES_DGX_SPARK_ASR_PROVIDER={roles["asr"]["provider"]}
 HERMES_VOICE_STREAMING_STT_MODEL={roles["asr"]["model"]}

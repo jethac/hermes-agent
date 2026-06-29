@@ -564,6 +564,8 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "HERMES_KAME_BARGE_IN_MIN_RMS=350" in env_example
     assert "HERMES_KAME_METRICS_ENABLED=true" in env_example
     assert "HERMES_KAME_ORACLE_TIMEOUT_SECONDS=60.0" in env_example
+    assert "loopback_smoke_bridge ASR/TTS adapters are protocol-only smoke checks" in env_example
+    assert "cannot satisfy VoiceOps local ASR/TTS evidence" in env_example
     assert "HERMES_DGX_SPARK_ASR_PROVIDER=streaming_stt" in env_example
     assert "HERMES_DGX_SPARK_ASR_ADAPTER=loopback_smoke_bridge" in env_example
     assert "HERMES_DGX_SPARK_TTS_PROVIDER=streaming_tts" in env_example

@@ -174,6 +174,11 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "uv run python scripts/voiceops_spark_matrix.py" in operator_runbook
     assert "uv run python scripts/voiceops_plan_run.py" in operator_runbook
     assert "Hosted Nemotron 3 Ultra or cloud TTS evidence" in operator_runbook
+    assert "`loopback_smoke_bridge`" in operator_runbook
+    assert "protocol-only smoke checks" in operator_runbook
+    assert "HERMES_DGX_SPARK_ASR_MODULE" in operator_runbook
+    assert "HERMES_DGX_SPARK_TTS_ADAPTER" in operator_runbook
+    assert "must remain unverified for local ASR/TTS roles" in operator_runbook
     assert "`speech_end_to_first_audio_ms <= 1500`" in operator_runbook
     assert "`barge_in_stop_ms <= 150`" in operator_runbook
     assert "`local_turn_oracle_calls == 0`" in operator_runbook
