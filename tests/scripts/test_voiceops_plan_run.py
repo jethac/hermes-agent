@@ -61,6 +61,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in json.dumps(
         handoff["phases"][1]
     )
+    assert "--refresh-preflight-source-hashes" in json.dumps(handoff["phases"][1]["commands"])
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in handoff["phases"][2]["commands"]
     assert "path/to/spark-benchmark-evidence.json" in handoff["final_reindex_command"]
     gates = {gate["gate_id"]: gate for gate in summary["closure_index"]["gates"]}
@@ -228,8 +229,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert "validate_post_approval_receipts" in provisioning_gate["collection_commands"]
     assert "read_only_discovery" in provisioning_gate["collection_commands"]
+    assert "refresh_preflight_source_hashes" in provisioning_gate["collection_commands"]
+    assert "--refresh-preflight-source-hashes" in provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"]
     assert "--run-readonly-discovery" in provisioning_gate["collection_commands"]["read_only_discovery"]
     assert "--run-readonly-discovery" in provisioning_gate["rerun_commands"]["plan_index_read_only_discovery"]
+    assert "--refresh-preflight-source-hashes" in provisioning_gate["rerun_commands"]["refresh_preflight_source_hashes"]
     assert provisioning_gate["evidence_contract"]["read_only_discovery_grants_approval"] is False
     assert "voiceops.milestone2.post_approval_receipts.v1" == provisioning_gate["evidence_contract"][
         "post_approval_receipts_schema_version"
@@ -257,6 +261,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--live-turn-evidence" in closure_markdown
     assert "voiceops.milestone2.preflight_evidence_manifest.v1" in closure_markdown
     assert "provisioning-preflight-evidence.manifest.json" in closure_markdown
+    assert "--refresh-preflight-source-hashes" in closure_markdown
     assert "voiceops.spark_benchmark_evidence.v1" in closure_markdown
     assert "spark-benchmark-evidence.example.json" in closure_markdown
     assert "spark-operator-runbook.md" in closure_markdown

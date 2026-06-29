@@ -275,6 +275,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     provisioning_gate["collection_commands"]["presence_only"],
                     provisioning_gate["collection_commands"]["bounded_version_help"],
                     provisioning_gate["collection_commands"]["read_only_discovery"],
+                    provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"],
                     provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
                     provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
                     provisioning_gate["rerun_commands"]["plan_index_manifest"],
@@ -464,6 +465,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
                     "--preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
                 ),
+                "refresh_preflight_source_hashes": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--refresh-preflight-source-hashes "
+                    "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
+                ),
                 "validate_post_approval_receipts": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
@@ -536,6 +542,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current --env-file .env "
                     "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
+                ),
+                "refresh_preflight_source_hashes": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--refresh-preflight-source-hashes "
+                    "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
                 ),
                 "plan_index_post_approval_receipts": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
