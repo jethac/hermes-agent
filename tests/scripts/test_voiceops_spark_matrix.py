@@ -103,6 +103,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
         "evidence_template",
         "json",
         "markdown",
+        "operator_runbook",
     }
     assert required_paths <= set(paths)
     assert {
@@ -116,6 +117,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "all_local_stack_smoke: needs_evidence" in Path(paths["markdown"]).read_text(encoding="utf-8")
     closure = json.loads(Path(paths["closure_json"]).read_text(encoding="utf-8"))
     closure_markdown = Path(paths["closure_markdown"]).read_text(encoding="utf-8")
+    operator_runbook = Path(paths["operator_runbook"]).read_text(encoding="utf-8")
     example = json.loads(Path(paths["evidence_example"]).read_text(encoding="utf-8"))
     scaffold_path = Path(paths["evidence_scaffold"])
     scaffold = json.loads(scaffold_path.read_text(encoding="utf-8"))
@@ -166,6 +168,16 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "oracle_authority_routes" in closure_markdown
     assert "source_artifact" in closure_markdown
     assert "source_artifacts_must_exist" in closure_markdown
+    assert "VoiceOps DGX Spark Operator Runbook" in operator_runbook
+    assert "scripts/dgx_spark_gemma4_voice_eval.sh" in operator_runbook
+    assert "spark-benchmark-scaffold/spark-benchmark-evidence.json" in operator_runbook
+    assert "uv run python scripts/voiceops_spark_matrix.py" in operator_runbook
+    assert "uv run python scripts/voiceops_plan_run.py" in operator_runbook
+    assert "Hosted Nemotron 3 Ultra or cloud TTS evidence" in operator_runbook
+    assert "`speech_end_to_first_audio_ms <= 1500`" in operator_runbook
+    assert "`barge_in_stop_ms <= 150`" in operator_runbook
+    assert "`local_turn_oracle_calls == 0`" in operator_runbook
+    assert "`oracle_bound_oracle_calls >= oracle_bound_turns`" in operator_runbook
     assert example["example_only"] is True
     assert all(item["example_only"] is True for item in example["evidence"])
     assert scaffold["example_only"] is True

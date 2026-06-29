@@ -311,6 +311,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "expected_artifacts": [
                     "artifacts/dgx-spark-gemma4-voice-eval/current/kame-stack",
                     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json",
+                    "artifacts/voiceops-spark-matrix/current/spark-operator-runbook.md",
                     "path/to/spark-benchmark-evidence.json",
                     "artifacts/voiceops-spark-matrix/current/spark-model-matrix.json",
                 ],
@@ -569,6 +570,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "matrix_artifact": spark["artifacts"].get("json"),
             "closure_plan": spark["artifacts"].get("closure_json"),
             "closure_artifact": spark["artifacts"].get("closure_markdown"),
+            "operator_runbook": spark["artifacts"].get("operator_runbook"),
             "collection_commands": {
                 "matrix_only": (
                     "uv run python scripts/voiceops_spark_matrix.py "
@@ -1017,6 +1019,8 @@ def _closure_markdown(closure: dict[str, Any]) -> str:
                 f"- Closure artifact: `{gate['closure_artifact']}`",
             ]
         )
+        if gate.get("operator_runbook"):
+            lines.append(f"- Operator runbook: `{gate['operator_runbook']}`")
         if gate.get("evidence_scaffold"):
             lines.append(f"- Scaffold artifact: `{gate['evidence_scaffold']}`")
         lines.extend(

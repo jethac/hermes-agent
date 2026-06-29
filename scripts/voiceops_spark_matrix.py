@@ -1100,6 +1100,105 @@ def _closure_markdown(plan: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _operator_runbook(plan: dict[str, Any]) -> str:
+    commands = plan["rerun_commands"]
+    lines = [
+        "# VoiceOps DGX Spark Operator Runbook",
+        "",
+        "- Purpose: collect the measured one-Spark evidence required by Milestone 4 without hand-editing readiness.",
+        f"- Hardware target: {plan['hardware_target']}",
+        f"- Current status: {plan['status']}",
+        f"- Ready for one-Spark demo: {'yes' if plan['ready_for_one_spark_demo'] else 'no'}",
+        f"- Missing gates: {', '.join(plan['missing_gates']) if plan['missing_gates'] else 'none'}",
+        "",
+        "## Safety Boundary",
+        "",
+        "- This runbook does not install models, start servers, read secrets, spend money, provision services, send messages, or place calls.",
+        "- It records how to collect and ingest local DGX Spark benchmark evidence.",
+        "- Hosted Nemotron 3 Ultra or cloud TTS evidence can be useful fallback context, but it cannot satisfy one-Spark readiness.",
+        "",
+        "## Collection Sequence",
+        "",
+        "1. Start the local KAME stack on the DGX Spark: reflex, Hermes oracle endpoint selected through `/model`, ASR, TTS, and realtime voice sidecar.",
+        "2. Run the repo-side evaluator on the DGX Spark and preserve every raw output artifact it writes.",
+        "",
+        "```bash",
+        commands["dgx_eval"],
+        "```",
+        "",
+        "3. Replace the scaffold source artifacts under `spark-benchmark-scaffold/sources/` with redacted measured raw outputs.",
+        "4. Fill `spark-benchmark-scaffold/spark-benchmark-evidence.json` with measured metrics, real `source_artifact` refs, `verified: true`, and no `example_only` markers.",
+        "5. Re-run the matrix validator against the measured evidence.",
+        "",
+        "```bash",
+        commands["with_evidence"],
+        "```",
+        "",
+        "6. Re-index the full VoiceOps plan with the same measured evidence file.",
+        "",
+        "```bash",
+        commands["plan_index"],
+        "```",
+        "",
+        "## Required Evidence",
+        "",
+        f"- Candidate schema: `{plan['evidence_contract']['schema_version']}`",
+        f"- Evidence scaffold: `{plan['evidence_scaffold']}`",
+        f"- Matrix artifact: `{plan['matrix_artifact']}`",
+        "- Source artifacts must exist and resolve relative to the supplied evidence file.",
+        "- `example_only: true` evidence is rejected.",
+        "",
+        "## Role Evidence",
+        "",
+    ]
+    for item in plan["candidate_closure"]:
+        if item["priority"] != 1 or item["locality"] != "local_spark":
+            continue
+        target_text = ", ".join(
+            f"{target['metric']} {target['operator']} {target['value']:g} {target['unit']}"
+            for target in item["required_targets"]
+        )
+        lines.extend(
+            [
+                f"### {item['role']}: {item['candidate_id']}",
+                "",
+                f"- Model: {item['model']}",
+                f"- Engine: {item['engine']}",
+                f"- Current status: {item['status']}",
+                f"- Targets: {target_text}",
+                f"- Current issues: {', '.join(item['issues']) if item['issues'] else 'none'}",
+                "",
+            ]
+        )
+    smoke = plan["all_local_stack_smoke"]
+    lines.extend(
+        [
+            "## All-Local Stack Smoke",
+            "",
+            f"- Kind: `{smoke['kind']}`",
+            f"- Required components: {', '.join(smoke['required_components'])}",
+            f"- Required oracle routes: {', '.join(smoke['required_oracle_routes'])}",
+            f"- Required interface input source: `{smoke['required_interface_input_source']}`",
+            f"- Required reflex provider: `{smoke['required_reflex_provider']}`",
+            "- Required metrics: `speech_end_to_first_audio_ms <= 1500`, `barge_in_stop_ms <= 150`, `local_turn_oracle_calls == 0`, and `oracle_bound_oracle_calls >= oracle_bound_turns`.",
+            "",
+            "## Do Not",
+            "",
+        ]
+    )
+    lines.extend(f"- {item}" for item in plan["operator_must_not"])
+    lines.extend(
+        [
+            "",
+            "## Completion Signal",
+            "",
+            plan["completion_signal"],
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def write_matrix(output_dir: Path, matrix: dict[str, Any]) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
     closure_plan = _closure_plan(matrix)
@@ -1110,6 +1209,7 @@ def write_matrix(output_dir: Path, matrix: dict[str, Any]) -> dict[str, str]:
         "evidence_example": output_dir / "spark-benchmark-evidence.example.json",
         "closure_json": output_dir / "spark-matrix-closure-plan.json",
         "closure_markdown": output_dir / "spark-matrix-closure-plan.md",
+        "operator_runbook": output_dir / "spark-operator-runbook.md",
     }
     _write_json(paths["json"], matrix)
     paths["markdown"].write_text(_markdown(matrix), encoding="utf-8")
@@ -1118,6 +1218,7 @@ def write_matrix(output_dir: Path, matrix: dict[str, Any]) -> dict[str, str]:
     paths.update(write_evidence_scaffold(output_dir))
     _write_json(paths["closure_json"], closure_plan)
     paths["closure_markdown"].write_text(_closure_markdown(closure_plan), encoding="utf-8")
+    paths["operator_runbook"].write_text(_operator_runbook(closure_plan), encoding="utf-8")
     return {key: str(path) for key, path in paths.items()}
 
 

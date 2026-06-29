@@ -230,6 +230,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     spark_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "local_spark_stack_matrix")
     assert spark_gate["closure_plan"].endswith("spark-matrix-closure-plan.json")
     assert spark_gate["closure_artifact"].endswith("spark-matrix-closure-plan.md")
+    assert spark_gate["operator_runbook"].endswith("spark-operator-runbook.md")
     assert spark_gate["evidence_scaffold"].endswith("spark-benchmark-scaffold/spark-benchmark-evidence.json")
     assert "VoiceOps Plan Run Summary" in markdown
     assert "Readiness Closure" in markdown
@@ -250,6 +251,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "provisioning-preflight-evidence.manifest.json" in closure_markdown
     assert "voiceops.spark_benchmark_evidence.v1" in closure_markdown
     assert "spark-benchmark-evidence.example.json" in closure_markdown
+    assert "spark-operator-runbook.md" in closure_markdown
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in closure_markdown
     assert "VoiceOps Operator Handoff" in handoff_markdown
     assert "live_discord_voice" in handoff_markdown
@@ -286,6 +288,7 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
         "spark-benchmark-scaffold/spark-benchmark-evidence.json",
         "spark-matrix-closure-plan.json",
         "spark-matrix-closure-plan.md",
+        "spark-operator-runbook.md",
         "readiness-closure-index.json",
         "readiness-closure-index.md",
         "operator-handoff.json",
@@ -316,6 +319,8 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "`local_turn_oracle_calls == 0`" in text
     assert "`oracle_bound_oracle_calls >= oracle_bound_turns`" in text
     assert "local reflex turns must not call the oracle" in text
+    assert "scripts/dgx_spark_gemma4_voice_eval.sh" in text
+    assert "spark-operator-runbook.md" in text
     assert "The operator handoff is the ordered execution runbook" in text
     assert "does not change readiness by itself" in text
 
