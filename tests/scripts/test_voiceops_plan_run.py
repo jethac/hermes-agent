@@ -83,6 +83,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(provisioning_result["artifacts"]["execution_plan_json"]).exists()
     assert Path(provisioning_result["artifacts"]["execution_plan_markdown"]).exists()
     assert Path(provisioning_result["artifacts"]["preflight_evidence_example"]).exists()
+    assert Path(provisioning_result["artifacts"]["preflight_evidence_manifest_example"]).exists()
 
     matrix_result = next(result for result in summary["results"] if result["milestone"] == "milestone_4_local_spark_stack_matrix")
     assert matrix_result["status"] == "needs_evidence"
@@ -119,6 +120,7 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
         "live-probe-closure-plan.md",
         "provisioning-preflight-evidence.template.json",
         "provisioning-preflight-evidence.example.json",
+        "provisioning-preflight-evidence.manifest.example.json",
         "setup-closure-plan.json",
         "setup-closure-plan.md",
         "spark-benchmark-evidence-template.json",

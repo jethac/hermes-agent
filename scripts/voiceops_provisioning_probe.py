@@ -184,6 +184,7 @@ PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS = [
     "rollback.refund_or_cancel_owner",
     "rollback.call_cancel_owner",
 ]
+PREFLIGHT_EVIDENCE_SECTIONS = ("stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback")
 
 SECRET_KEY_RE = re.compile(
     r"(?i)\b([A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|AUTH)[A-Z0-9_]*)\s*=\s*([^\s,;]+)"
@@ -368,6 +369,22 @@ def build_preflight_evidence_example() -> dict[str, Any]:
     return example
 
 
+def build_preflight_evidence_manifest_example() -> dict[str, Any]:
+    return {
+        "schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+        "example_only": True,
+        "redaction_policy": "example only; reference real redacted section files and remove example_only before ingest",
+        "reports": {
+            "stripe_projects": "path/to/stripe-projects-evidence.json",
+            "stripe_link": "path/to/stripe-link-evidence.json",
+            "mpp": "path/to/nemoclaw-boundary-evidence.json",
+            "phone_handoff": "path/to/phone-handoff-evidence.json",
+            "rollback": "path/to/rollback-owner-evidence.json",
+        },
+        "notes": "Each referenced file may contain either the section object itself or an object with the matching section key.",
+    }
+
+
 def _dot_get(payload: Mapping[str, Any], path: str) -> Any:
     current: Any = payload
     for part in path.split("."):
@@ -451,9 +468,10 @@ def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
             "validation_issues": ["preflight evidence root must be an object"],
             "redaction_policy": "references_only",
         }
+    raw_payload, manifest_issues = _expand_preflight_evidence_manifest(path, raw_payload)
     fields_present = [field for field in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS if _field_present(raw_payload, field)]
     missing_fields = [field for field in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS if field not in fields_present]
-    validation_issues = _preflight_secret_issues(raw_payload)
+    validation_issues = [*manifest_issues, *_preflight_secret_issues(raw_payload)]
     if raw_payload.get("example_only") is True:
         validation_issues.append("example_only evidence is not accepted")
     return {
@@ -464,6 +482,62 @@ def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
         "validation_issues": validation_issues,
         "redaction_policy": "references_only",
     }
+
+
+def _expand_preflight_evidence_manifest(path: Path, payload: Mapping[str, Any]) -> tuple[Mapping[str, Any], list[str]]:
+    reports = payload.get("reports")
+    if not isinstance(reports, Mapping):
+        return payload, []
+
+    expanded: dict[str, Any] = {}
+    issues: list[str] = []
+    if payload.get("example_only") is True:
+        expanded["example_only"] = True
+    for section_name, report_path_value in reports.items():
+        if section_name not in PREFLIGHT_EVIDENCE_SECTIONS:
+            issues.append(f"preflight_evidence_manifest:{section_name}:unknown_section")
+            continue
+        report_path_text = str(report_path_value or "").strip()
+        if not report_path_text:
+            issues.append(f"preflight_evidence_manifest:{section_name}:empty_report_path")
+            continue
+        report_path = _resolve_manifest_report_path(path, report_path_text)
+        loaded, report_issues = _load_preflight_manifest_report(report_path, section_name)
+        issues.extend(f"preflight_evidence_manifest:{section_name}:{issue}" for issue in report_issues)
+        if loaded is not None:
+            expanded[section_name] = loaded
+    return expanded if expanded else payload, issues
+
+
+def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) -> Path:
+    report_path = Path(report_path_text).expanduser()
+    if report_path.is_absolute() or report_path.exists():
+        return report_path
+    sibling = manifest_path.parent / report_path_text
+    if sibling.exists():
+        return sibling
+    basename_sibling = manifest_path.parent / report_path.name
+    if basename_sibling.exists():
+        return basename_sibling
+    return report_path
+
+
+def _load_preflight_manifest_report(path: Path, section_name: str) -> tuple[Mapping[str, Any] | None, list[str]]:
+    resolved = path.expanduser().resolve(strict=False)
+    if resolved == FORBIDDEN_ENV_ROOT or FORBIDDEN_ENV_ROOT in resolved.parents:
+        raise ValueError(f"refusing to inspect forbidden Hermes worktree path: {resolved}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None, ["evidence file not found"]
+    except json.JSONDecodeError as exc:
+        return None, [f"evidence JSON parse failed: {exc.msg}"]
+    if not isinstance(payload, Mapping):
+        return None, ["evidence root must be an object"]
+    section = payload.get(section_name)
+    if isinstance(section, Mapping):
+        return section, []
+    return payload, []
 
 
 def _default_env_files() -> list[Path]:
@@ -1504,6 +1578,7 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
         "execution_plan_markdown": output_dir / "milestone2-execution-plan.md",
         "preflight_evidence_template": output_dir / "provisioning-preflight-evidence.template.json",
         "preflight_evidence_example": output_dir / "provisioning-preflight-evidence.example.json",
+        "preflight_evidence_manifest_example": output_dir / "provisioning-preflight-evidence.manifest.example.json",
         "setup_closure_json": output_dir / "setup-closure-plan.json",
         "setup_closure_markdown": output_dir / "setup-closure-plan.md",
     }
@@ -1514,6 +1589,7 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
     paths["execution_plan_markdown"].write_text(_execution_plan_markdown(execution_plan), encoding="utf-8")
     _write_json(paths["preflight_evidence_template"], build_preflight_evidence_template())
     _write_json(paths["preflight_evidence_example"], build_preflight_evidence_example())
+    _write_json(paths["preflight_evidence_manifest_example"], build_preflight_evidence_manifest_example())
     _write_json(paths["setup_closure_json"], setup_closure)
     paths["setup_closure_markdown"].write_text(_setup_closure_markdown(setup_closure), encoding="utf-8")
     return {key: str(path) for key, path in paths.items()}

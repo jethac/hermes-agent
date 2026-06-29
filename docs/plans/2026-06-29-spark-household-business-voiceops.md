@@ -354,6 +354,7 @@ The command writes:
 - `milestone2-execution-plan.md`
 - `provisioning-preflight-evidence.template.json`
 - `provisioning-preflight-evidence.example.json`
+- `provisioning-preflight-evidence.manifest.example.json`
 - `setup-closure-plan.json`
 - `setup-closure-plan.md`
 
@@ -368,7 +369,7 @@ uv run python scripts/voiceops_provisioning_probe.py \
   --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json
 ```
 
-The supplied evidence path is read-only. It must contain account aliases, capability booleans, provider references, credential-location references, and rollback owners only. It must not contain Stripe secrets, provider tokens, raw card data, full phone numbers, or proof of unapproved live spend. The generated `.example.json` file shows a redacted completed shape for headless setup, but it is rejected as proof while `example_only: true` remains present.
+The supplied evidence path is read-only. It may be one complete preflight evidence JSON file or a manifest that references separate redacted section files for Stripe Projects, Stripe Link, MPP/NemoClaw, phone handoff, and rollback ownership. It must contain account aliases, capability booleans, provider references, credential-location references, and rollback owners only. It must not contain Stripe secrets, provider tokens, raw card data, full phone numbers, or proof of unapproved live spend. The generated `.example.json` and `.manifest.example.json` files show redacted completed shapes for headless setup, but they are rejected as proof while `example_only: true` remains present.
 
 The Milestone 2 execution plan is also non-mutating. It is the post-approval contract for the first live provisioning flow: readiness gates, display-only discovery commands, approval-required Stripe/Link/phone actions, receipt schema, credential-location schema, rollback/deprovision notes, and phone-context linkage. It must never claim that spend, provisioning, credential retrieval, outbound messages, or phone calls have already executed.
 

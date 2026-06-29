@@ -11,6 +11,7 @@ from scripts.voiceops_provisioning_probe import (
     CommandResult,
     PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
     build_preflight_evidence_example,
+    build_preflight_evidence_manifest_example,
     build_preflight_evidence_template,
     build_milestone2_execution_plan,
     build_probe_report,
@@ -201,6 +202,7 @@ def test_write_probe_artifacts(tmp_path):
         "json",
         "markdown",
         "preflight_evidence_example",
+        "preflight_evidence_manifest_example",
         "preflight_evidence_template",
         "setup_closure_json",
         "setup_closure_markdown",
@@ -210,6 +212,7 @@ def test_write_probe_artifacts(tmp_path):
     manifest = json.loads(Path(paths["command_manifest"]).read_text(encoding="utf-8"))
     setup_closure = json.loads(Path(paths["setup_closure_json"]).read_text(encoding="utf-8"))
     preflight_example = json.loads(Path(paths["preflight_evidence_example"]).read_text(encoding="utf-8"))
+    preflight_manifest_example = json.loads(Path(paths["preflight_evidence_manifest_example"]).read_text(encoding="utf-8"))
     preflight_template = json.loads(Path(paths["preflight_evidence_template"]).read_text(encoding="utf-8"))
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
     execution_markdown = Path(paths["execution_plan_markdown"]).read_text(encoding="utf-8")
@@ -224,6 +227,8 @@ def test_write_probe_artifacts(tmp_path):
     assert setup_closure["schema_version"] == "voiceops.milestone2.setup_closure.v1"
     assert "VoiceOps Milestone 2 Setup Closure Plan" in setup_markdown
     assert preflight_example["example_only"] is True
+    assert preflight_manifest_example["example_only"] is True
+    assert preflight_manifest_example["reports"]["stripe_projects"].endswith("stripe-projects-evidence.json")
     assert "example_only evidence is not accepted" in load_preflight_evidence(
         Path(paths["preflight_evidence_example"])
     )["validation_issues"]
@@ -255,6 +260,76 @@ def test_preflight_evidence_example_is_not_accepted_as_proof(tmp_path):
         "stripe_link_approval_capability",
         "stripe_projects_account",
     } <= set(report["required_failures"])
+
+
+def test_preflight_evidence_manifest_merges_redacted_section_files(tmp_path):
+    sections = _complete_preflight_evidence()
+    (tmp_path / "stripe-projects.json").write_text(
+        json.dumps({"stripe_projects": sections["stripe_projects"]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "stripe-link.json").write_text(json.dumps(sections["stripe_link"]), encoding="utf-8")
+    (tmp_path / "mpp.json").write_text(json.dumps({"mpp": sections["mpp"]}), encoding="utf-8")
+    (tmp_path / "phone.json").write_text(json.dumps({"phone_handoff": sections["phone_handoff"]}), encoding="utf-8")
+    (tmp_path / "rollback.json").write_text(json.dumps(sections["rollback"]), encoding="utf-8")
+    manifest_path = tmp_path / "preflight-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+                "reports": {
+                    "stripe_projects": "stripe-projects.json",
+                    "stripe_link": "stripe-link.json",
+                    "mpp": "mpp.json",
+                    "phone_handoff": "phone.json",
+                    "rollback": "rollback.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_preflight_evidence(manifest_path)
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
+        env_files=[],
+        preflight_evidence_path=manifest_path,
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+    )
+
+    assert loaded["loaded"] is True
+    assert loaded["missing_fields"] == []
+    assert loaded["validation_issues"] == []
+    assert report["ready"] is True
+
+
+def test_preflight_evidence_manifest_rejects_example_or_invalid_sections(tmp_path):
+    bad_section = tmp_path / "stripe-projects.json"
+    bad_section.write_text("[]", encoding="utf-8")
+    manifest_path = tmp_path / "preflight-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                **build_preflight_evidence_manifest_example(),
+                "reports": {
+                    "stripe_projects": str(bad_section),
+                    "stripe_link": "missing-link.json",
+                    "unknown": "ignored.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_preflight_evidence(manifest_path)
+
+    assert loaded["loaded"] is True
+    assert "example_only evidence is not accepted" in loaded["validation_issues"]
+    assert "preflight_evidence_manifest:stripe_projects:evidence root must be an object" in loaded["validation_issues"]
+    assert "preflight_evidence_manifest:stripe_link:evidence file not found" in loaded["validation_issues"]
+    assert "preflight_evidence_manifest:unknown:unknown_section" in loaded["validation_issues"]
+    assert "stripe_projects.account_ref" in loaded["missing_fields"]
 
 
 def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
