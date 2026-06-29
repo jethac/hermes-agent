@@ -21,6 +21,8 @@ from typing import Any, Mapping
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.voiceops_channel_policy import CHANNEL_IDS, validate_policy
+from scripts.voiceops_provisioning_probe import validate_post_approval_receipts
+from scripts.voiceops_voice_operator import _load_live_evidence, validate_live_probe_evidence
 
 
 DEFAULT_ARTIFACT_ROOT = Path("artifacts")
@@ -140,8 +142,16 @@ EXPECTED_PACKAGE_ARTIFACTS = (
     "voiceops-voice-operator/current/voice-operator-readiness.json",
     "voiceops-voice-operator/current/voice-operator-readiness.md",
 )
+OPTIONAL_PACKAGE_ARTIFACTS = (
+    "voiceops-provisioning/current/post-approval-receipts.json",
+)
 AUDITED_PACKAGE_DIRS = tuple(
-    sorted({"/".join(relative_path.split("/")[:2]) for relative_path in EXPECTED_PACKAGE_ARTIFACTS})
+    sorted(
+        {
+            "/".join(relative_path.split("/")[:2])
+            for relative_path in (*EXPECTED_PACKAGE_ARTIFACTS, *OPTIONAL_PACKAGE_ARTIFACTS)
+        }
+    )
 )
 
 
@@ -192,6 +202,20 @@ def _audit_expected_package_artifacts(artifact_root: Path, issues: list[str]) ->
     checked_artifacts: list[str] = []
     for relative_path in EXPECTED_PACKAGE_ARTIFACTS:
         path = artifact_root / relative_path
+        label = f"package_artifact:{relative_path}"
+        if path.suffix == ".json":
+            _read_json(path, issues, label)
+        elif path.suffix == ".jsonl":
+            _read_jsonl(path, issues, label)
+        else:
+            text = _read_text(path, issues, label)
+            if not text.strip():
+                issues.append(f"{label}:empty")
+        checked_artifacts.append(str(path))
+    for relative_path in OPTIONAL_PACKAGE_ARTIFACTS:
+        path = artifact_root / relative_path
+        if not path.exists():
+            continue
         label = f"package_artifact:{relative_path}"
         if path.suffix == ".json":
             _read_json(path, issues, label)
@@ -1058,6 +1082,116 @@ def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], 
         issues.append("channel_policy_review:missing_package_audit_review_command")
 
 
+def _resolve_package_artifact_path(artifact_root: Path, path_text: str) -> Path:
+    path = Path(path_text)
+    if path.is_absolute():
+        return path
+    if path.parts and path.parts[0] == artifact_root.name:
+        return artifact_root.parent / path
+    return artifact_root / path
+
+
+def _audit_post_approval_receipt_scaffold(
+    scaffold: Mapping[str, Any],
+    execution_plan: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    if scaffold.get("example_only") is not True:
+        issues.append("post_approval_receipts_scaffold:must_remain_example_only")
+    recomputed_scaffold = validate_post_approval_receipts(scaffold, execution_plan)
+    scaffold_issues = recomputed_scaffold.get("validation_issues")
+    if recomputed_scaffold.get("status") != "invalid":
+        issues.append("post_approval_receipts_scaffold:unexpectedly_valid")
+    if not any("example_only" in str(issue) for issue in scaffold_issues or []):
+        issues.append("post_approval_receipts_scaffold:missing_example_only_validation_issue")
+
+
+def _audit_post_approval_receipt_validation(
+    *,
+    artifact_root: Path,
+    execution_plan: Mapping[str, Any],
+    scaffold: Mapping[str, Any],
+    stored_validation: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    _audit_post_approval_receipt_scaffold(scaffold, execution_plan, issues)
+    if stored_validation.get("loaded") is True:
+        receipt_path_text = str(stored_validation.get("path") or "").strip()
+        if not receipt_path_text:
+            issues.append("post_approval_receipts_validation:loaded_without_path")
+            return
+        receipt_path = _resolve_package_artifact_path(artifact_root, receipt_path_text)
+        receipt_payload = _read_json(receipt_path, issues, "post_approval_receipts")
+        if not isinstance(receipt_payload, Mapping) or not receipt_payload:
+            issues.append("post_approval_receipts_validation:loaded_receipts_empty_or_invalid")
+            return
+        recomputed = validate_post_approval_receipts(receipt_payload, execution_plan)
+        for key in (
+            "status",
+            "validation_issues",
+            "receipt_count",
+            "credential_location_count",
+            "rollback_receipt_count",
+            "audit_event_count",
+            "ledger_rows",
+        ):
+            if stored_validation.get(key) != recomputed.get(key):
+                issues.append(f"post_approval_receipts_validation:{key}_mismatch")
+        return
+
+    if stored_validation.get("status") != "not_supplied":
+        issues.append("post_approval_receipts_validation:status_not_not_supplied_without_loaded_receipts")
+    if stored_validation.get("validation_issues") not in ([], None):
+        issues.append("post_approval_receipts_validation:issues_present_without_loaded_receipts")
+    if stored_validation.get("ledger_rows") not in ([], None):
+        issues.append("post_approval_receipts_validation:ledger_rows_present_without_loaded_receipts")
+    for key in ("receipt_count", "credential_location_count", "rollback_receipt_count", "audit_event_count"):
+        if stored_validation.get(key) not in (0, None):
+            issues.append(f"post_approval_receipts_validation:{key}_nonzero_without_loaded_receipts")
+
+
+def _audit_live_evidence_scaffold(
+    *,
+    manifest_path: Path,
+    manifest: Mapping[str, Any],
+    sections: Mapping[str, Mapping[str, Any]],
+    issues: list[str],
+) -> None:
+    if manifest.get("example_only") is not True:
+        issues.append("live_evidence_scaffold:manifest_must_remain_example_only")
+    if str(manifest.get("overall_status") or "") == "live_evidence_supplied_not_readiness_claim":
+        issues.append("live_evidence_scaffold:manifest_unexpected_live_claim")
+    for section_name, section in sections.items():
+        if section.get("example_only") is not True:
+            issues.append(f"live_evidence_scaffold:{section_name}:must_remain_example_only")
+        attestation = section.get("collector_attestation")
+        if not isinstance(attestation, Mapping) or attestation.get("example_only") is not True:
+            issues.append(f"live_evidence_scaffold:{section_name}:collector_attestation_must_remain_example_only")
+
+    manifest_validation = _load_live_evidence([manifest_path])
+    manifest_issues = manifest_validation.get("issues")
+    if manifest_validation.get("overall_status") == "live_evidence_supplied_not_readiness_claim":
+        issues.append("live_evidence_scaffold:manifest_unexpectedly_valid")
+    if not any("example_only" in str(issue) for issue in manifest_issues or []):
+        issues.append("live_evidence_scaffold:manifest_missing_example_only_validation_issue")
+    for issue in manifest_issues or []:
+        issue_text = str(issue)
+        if issue_text.startswith("live_evidence_manifest:") and "example_only" not in issue_text:
+            issues.append(f"live_evidence_scaffold:{issue_text}")
+
+    evidence = {
+        "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+        "discord_live_probe": dict(sections.get("discord_live_probe") or {}),
+        "sidecar_session": dict(sections.get("sidecar_session") or {}),
+        "live_turn": dict(sections.get("live_turn") or {}),
+    }
+    validation = validate_live_probe_evidence(evidence)
+    if validation.get("overall_status") == "live_evidence_supplied_not_readiness_claim":
+        issues.append("live_evidence_scaffold:unexpectedly_valid")
+    if not any("example_only" in str(issue) for issue in validation.get("issues") or []):
+        issues.append("live_evidence_scaffold:missing_example_only_validation_issue")
+
+
 def _require_markdown_tokens(label: str, markdown: str, tokens: Mapping[str, str], issues: list[str]) -> None:
     for issue, token in tokens.items():
         if token not in markdown:
@@ -1225,6 +1359,8 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     _audit_no_secret_like_values(artifact_root, checked_artifacts, issues)
     demo_dir = artifact_root / "hackathon-voiceops-demo" / "current"
     plan_dir = artifact_root / "voiceops-plan" / "current"
+    provisioning_dir = artifact_root / "voiceops-provisioning" / "current"
+    voice_dir = artifact_root / "voiceops-voice-operator" / "current"
     channel_dir = artifact_root / "voiceops-channel-policy" / "current"
     spark_dir = artifact_root / "voiceops-spark-matrix" / "current"
 
@@ -1249,6 +1385,36 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     plan_closure_markdown = _read_text(plan_dir / "readiness-closure-index.md", issues, "plan_closure_markdown")
     plan_handoff = _read_json(plan_dir / "operator-handoff.json", issues, "operator_handoff")
     plan_handoff_markdown = _read_text(plan_dir / "operator-handoff.md", issues, "operator_handoff_markdown")
+    execution_plan = _read_json(provisioning_dir / "milestone2-execution-plan.json", issues, "milestone2_execution_plan")
+    post_approval_scaffold = _read_json(
+        provisioning_dir / "post-approval-receipts-scaffold" / "post-approval-receipts.json",
+        issues,
+        "post_approval_receipts_scaffold",
+    )
+    post_approval_validation = _read_json(
+        provisioning_dir / "post-approval-receipts.validation.json",
+        issues,
+        "post_approval_receipts_validation",
+    )
+    live_scaffold_dir = voice_dir / "live-voice-evidence-scaffold"
+    live_scaffold_manifest = _read_json(live_scaffold_dir / "manifest.json", issues, "live_evidence_scaffold_manifest")
+    live_scaffold_sections = {
+        "discord_live_probe": _read_json(
+            live_scaffold_dir / "sections" / "discord-live-probe.json",
+            issues,
+            "live_evidence_scaffold_discord_live_probe",
+        ),
+        "sidecar_session": _read_json(
+            live_scaffold_dir / "sections" / "sidecar-session.json",
+            issues,
+            "live_evidence_scaffold_sidecar_session",
+        ),
+        "live_turn": _read_json(
+            live_scaffold_dir / "sections" / "live-turn.json",
+            issues,
+            "live_evidence_scaffold_live_turn",
+        ),
+    }
     spark_matrix = _read_json(spark_dir / "spark-model-matrix.json", issues, "spark_matrix")
     channel_policy = _read_json(channel_dir / "channel-policy.json", issues, "channel_policy")
     channel_review = _read_json(channel_dir / "channel-policy-review.json", issues, "channel_policy_review")
@@ -1301,6 +1467,19 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         issues=issues,
     )
     _audit_channel_policy(channel_policy, channel_review, issues)
+    _audit_post_approval_receipt_validation(
+        artifact_root=artifact_root,
+        execution_plan=execution_plan,
+        scaffold=post_approval_scaffold,
+        stored_validation=post_approval_validation,
+        issues=issues,
+    )
+    _audit_live_evidence_scaffold(
+        manifest_path=live_scaffold_dir / "manifest.json",
+        manifest=live_scaffold_manifest,
+        sections=live_scaffold_sections,
+        issues=issues,
+    )
     _audit_markdown_consistency(
         spark_local_target_selected=spark_local_target_selected,
         demo_markdown=demo_markdown,

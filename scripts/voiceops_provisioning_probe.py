@@ -1062,6 +1062,15 @@ def _valid_sha256(value: Any) -> bool:
     return bool(re.fullmatch(r"[0-9a-f]{64}", text))
 
 
+def _collector_attestation_command_arg_is_sensitive(value: str) -> bool:
+    return bool(
+        BEARER_RE.search(value)
+        or PREFLIGHT_SECRET_VALUE_RE.search(value)
+        or SECRET_VALUE_RE.search(value)
+        or PHONE_RE.search(value)
+    )
+
+
 def _collector_attestation_issues(
     section: Mapping[str, Any],
     *,
@@ -1084,6 +1093,8 @@ def _collector_attestation_issues(
     command_argv = attestation.get("command_argv")
     if not isinstance(command_argv, list) or not command_argv or not all(isinstance(item, str) and item for item in command_argv):
         issues.append(f"{section_name}.collector_attestation.command_argv: invalid")
+    elif any(_collector_attestation_command_arg_is_sensitive(item) for item in command_argv):
+        issues.append(f"{section_name}.collector_attestation.command_argv: secret_or_phone_like_value")
     started_at = _parse_preflight_timestamp(attestation.get("started_at"))
     finished_at = _parse_preflight_timestamp(attestation.get("finished_at"))
     if started_at is None:

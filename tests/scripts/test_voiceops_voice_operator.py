@@ -462,6 +462,30 @@ def test_live_evidence_rejects_inverted_collector_attestation_window():
     assert "discord_live_probe:collector_attestation_invalid:timestamp_window" in live_evidence["issues"]
 
 
+def test_live_evidence_rejects_sensitive_collector_attestation_command_argv():
+    evidence = _complete_live_evidence()
+    evidence["discord_live_probe"]["collector_attestation"]["command_argv"] = [
+        "voiceops-live-collector",
+        "--notify=+15551234567",
+    ]
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "discord_live_probe:collector_attestation_secret_or_phone_like_command_argv" in live_evidence["issues"]
+
+
+def test_live_evidence_allows_spark_matrix_test_path_in_collector_attestation_command_argv():
+    evidence = _complete_live_evidence()
+    evidence["discord_live_probe"]["collector_attestation"]["command_argv"] = [
+        "pytest",
+        "tests/scripts/test_voiceops_spark_matrix.py",
+    ]
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "discord_live_probe:collector_attestation_secret_or_phone_like_command_argv" not in live_evidence["issues"]
+
+
 def test_live_evidence_rejects_fake_parent_manifest_attestation_hash(tmp_path):
     evidence = _complete_live_evidence()
     source_path = tmp_path / "discord-live-probe.json"

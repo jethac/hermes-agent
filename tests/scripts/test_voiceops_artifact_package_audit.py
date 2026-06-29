@@ -358,6 +358,181 @@ def test_package_audit_rejects_missing_channel_policy_review_action(tmp_path):
     assert "demo_handoff:missing_channel_policy_review_phase" in report["issues"]
 
 
+def test_package_audit_rejects_forged_post_approval_receipt_validation(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    scaffold_path = (
+        artifact_root
+        / "voiceops-provisioning"
+        / "current"
+        / "post-approval-receipts-scaffold"
+        / "post-approval-receipts.json"
+    )
+    validation_path = artifact_root / "voiceops-provisioning" / "current" / "post-approval-receipts.validation.json"
+    scaffold = json.loads(scaffold_path.read_text(encoding="utf-8"))
+    scaffold.pop("example_only", None)
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    validation.update(
+        {
+            "loaded": False,
+            "status": "valid",
+            "receipt_count": 1,
+            "ledger_rows": [{"action_id": "provision-voip-provider", "status": "executed"}],
+            "validation_issues": [],
+        }
+    )
+    _write_json(scaffold_path, scaffold)
+    _write_json(validation_path, validation)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "post_approval_receipts_scaffold:must_remain_example_only" in report["issues"]
+    assert "post_approval_receipts_validation:status_not_not_supplied_without_loaded_receipts" in report["issues"]
+    assert "post_approval_receipts_validation:receipt_count_nonzero_without_loaded_receipts" in report["issues"]
+    assert "post_approval_receipts_validation:ledger_rows_present_without_loaded_receipts" in report["issues"]
+
+
+def test_package_audit_resolves_loaded_post_approval_receipt_path_and_recomputes(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    receipt_path = artifact_root / "voiceops-provisioning" / "current" / "post-approval-receipts.json"
+    validation_path = artifact_root / "voiceops-provisioning" / "current" / "post-approval-receipts.validation.json"
+    _write_json(
+        receipt_path,
+        {
+            "schema_version": "voiceops.post_approval_receipts.v1",
+            "receipts": [],
+            "credential_locations": [],
+            "rollback_receipts": [],
+            "audit_events": [],
+        },
+    )
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    validation.update(
+        {
+            "loaded": True,
+            "path": "artifacts/voiceops-provisioning/current/post-approval-receipts.json",
+            "status": "valid",
+            "validation_issues": [],
+        }
+    )
+    _write_json(validation_path, validation)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "package_artifact:unexpected:voiceops-provisioning/current/post-approval-receipts.json" not in report[
+        "issues"
+    ]
+    assert "post_approval_receipts_validation:status_mismatch" in report["issues"]
+    assert "post_approval_receipts_validation:validation_issues_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_empty_loaded_post_approval_receipts(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    receipt_path = artifact_root / "voiceops-provisioning" / "current" / "post-approval-receipts.json"
+    validation_path = artifact_root / "voiceops-provisioning" / "current" / "post-approval-receipts.validation.json"
+    _write_json(receipt_path, {})
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    validation.update(
+        {
+            "loaded": True,
+            "path": "artifacts/voiceops-provisioning/current/post-approval-receipts.json",
+            "status": "valid",
+            "validation_issues": [],
+        }
+    )
+    _write_json(validation_path, validation)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "post_approval_receipts_validation:loaded_receipts_empty_or_invalid" in report["issues"]
+
+
+def test_package_audit_checks_post_approval_scaffold_even_when_receipts_loaded(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    scaffold_path = (
+        artifact_root
+        / "voiceops-provisioning"
+        / "current"
+        / "post-approval-receipts-scaffold"
+        / "post-approval-receipts.json"
+    )
+    receipt_path = artifact_root / "voiceops-provisioning" / "current" / "post-approval-receipts.json"
+    validation_path = artifact_root / "voiceops-provisioning" / "current" / "post-approval-receipts.validation.json"
+    scaffold = json.loads(scaffold_path.read_text(encoding="utf-8"))
+    scaffold.pop("example_only", None)
+    _write_json(scaffold_path, scaffold)
+    _write_json(
+        receipt_path,
+        {
+            "schema_version": "voiceops.post_approval_receipts.v1",
+            "receipts": [],
+            "credential_locations": [],
+            "rollback_receipts": [],
+            "audit_events": [],
+        },
+    )
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    validation.update(
+        {
+            "loaded": True,
+            "path": "artifacts/voiceops-provisioning/current/post-approval-receipts.json",
+            "status": "valid",
+            "validation_issues": [],
+        }
+    )
+    _write_json(validation_path, validation)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "post_approval_receipts_scaffold:must_remain_example_only" in report["issues"]
+
+
+def test_package_audit_rejects_live_evidence_scaffold_claiming_live_readiness(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    scaffold_dir = artifact_root / "voiceops-voice-operator" / "current" / "live-voice-evidence-scaffold"
+    manifest_path = scaffold_dir / "manifest.json"
+    discord_path = scaffold_dir / "sections" / "discord-live-probe.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    discord = json.loads(discord_path.read_text(encoding="utf-8"))
+    manifest.pop("example_only", None)
+    manifest["overall_status"] = "live_evidence_supplied_not_readiness_claim"
+    discord.pop("example_only", None)
+    discord["collector_attestation"].pop("example_only", None)
+    _write_json(manifest_path, manifest)
+    _write_json(discord_path, discord)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "live_evidence_scaffold:manifest_must_remain_example_only" in report["issues"]
+    assert "live_evidence_scaffold:manifest_unexpected_live_claim" in report["issues"]
+    assert "live_evidence_scaffold:discord_live_probe:must_remain_example_only" in report["issues"]
+    assert "live_evidence_scaffold:discord_live_probe:collector_attestation_must_remain_example_only" in report[
+        "issues"
+    ]
+
+
+def test_package_audit_rejects_live_evidence_scaffold_manifest_path_tampering(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    manifest_path = (
+        artifact_root / "voiceops-voice-operator" / "current" / "live-voice-evidence-scaffold" / "manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["reports"]["discord_live_probe"] = "/tmp/discord-live-probe.json"
+    _write_json(manifest_path, manifest)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "live_evidence_scaffold:live_evidence_manifest:discord_live_probe:report_path:absolute_path_not_allowed"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_plan_run_model_arg_drift_from_demo(tmp_path):
     artifact_root = _generate_package(
         tmp_path,

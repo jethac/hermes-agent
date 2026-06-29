@@ -203,6 +203,16 @@ def _valid_sha256(value: Any) -> bool:
     return len(text) == 64 and all(character in "0123456789abcdef" for character in text)
 
 
+def _collector_attestation_command_arg_is_sensitive(value: str) -> bool:
+    text = str(value or "")
+    if SECRET_VALUE_RE.search(text):
+        return True
+    if re.search(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}\b", text):
+        return True
+    digits = "".join(ch for ch in text if ch.isdigit())
+    return "+" in text and len(digits) >= 8
+
+
 def _collector_attestation_issues(
     section: Mapping[str, Any],
     section_name: str,
@@ -227,6 +237,8 @@ def _collector_attestation_issues(
     command_argv = attestation.get("command_argv")
     if not isinstance(command_argv, list) or not command_argv or not all(isinstance(part, str) and part for part in command_argv):
         issues.append(f"{section_name}:collector_attestation_invalid:command_argv")
+    elif any(_collector_attestation_command_arg_is_sensitive(part) for part in command_argv):
+        issues.append(f"{section_name}:collector_attestation_secret_or_phone_like_command_argv")
     started_at = _parse_timezone_timestamp(attestation.get("started_at"))
     finished_at = _parse_timezone_timestamp(attestation.get("finished_at"))
     if started_at is None:
