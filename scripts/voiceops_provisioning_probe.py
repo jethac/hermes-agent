@@ -1926,6 +1926,12 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "full_phone_numbers_accepted": False,
             "read_only_discovery_schema_version": "voiceops.milestone2.read_only_discovery.v1",
             "read_only_discovery_grants_approval": False,
+            "post_approval_receipts_schema_version": POST_APPROVAL_RECEIPTS_SCHEMA_VERSION,
+            "post_approval_linkage_ids_must_be_unique": [
+                "credential_locations[].credential_ref_id",
+                "rollback_receipts[].rollback_ref",
+                "audit_events[].audit_event_id",
+            ],
         },
         "mode": {
             "artifact_only": True,

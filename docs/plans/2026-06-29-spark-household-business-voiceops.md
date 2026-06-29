@@ -445,7 +445,7 @@ uv run python scripts/voiceops_provisioning_probe.py \
   --post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json
 ```
 
-The receipt bundle uses `voiceops.milestone2.post_approval_receipts.v1` and must contain redacted `receipts`, `credential_locations`, `rollback_receipts`, and `audit_events`. The validator rejects `example_only`, raw secret/token/card/phone fields, command hash mismatches, unknown action ids, missing credential-location refs, missing rollback refs, and missing audit events. A valid bundle writes `post-approval-receipts.validation.json` and `audit-ledger.post-approval.jsonl`; it still does not execute spend, provisioning, credential retrieval, messages, or calls.
+The receipt bundle uses `voiceops.milestone2.post_approval_receipts.v1` and must contain redacted `receipts`, `credential_locations`, `rollback_receipts`, and `audit_events`. The validator rejects `example_only`, raw secret/token/card/phone fields, command hash mismatches, unknown action ids, duplicate credential-location refs, duplicate rollback refs, duplicate audit event ids, missing credential-location refs, missing rollback refs, and missing audit events. A valid bundle writes `post-approval-receipts.validation.json` and `audit-ledger.post-approval.jsonl`; it still does not execute spend, provisioning, credential retrieval, messages, or calls.
 
 ## Milestone 3: Multi-Channel Operations
 

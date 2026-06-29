@@ -708,6 +708,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "read_only_discovery_auth_context": "isolated_home",
                 "read_only_discovery_proves_existing_local_auth": False,
                 "post_approval_receipts_schema_version": "voiceops.milestone2.post_approval_receipts.v1",
+                "post_approval_linkage_ids_must_be_unique": [
+                    "credential_locations[].credential_ref_id",
+                    "rollback_receipts[].rollback_ref",
+                    "audit_events[].audit_event_id",
+                ],
             },
             "rerun_commands": {
                 "plan_index_dry_audit": (

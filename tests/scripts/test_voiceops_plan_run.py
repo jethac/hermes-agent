@@ -736,6 +736,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "voiceops.milestone2.post_approval_receipts.v1" == provisioning_gate["evidence_contract"][
         "post_approval_receipts_schema_version"
     ]
+    assert provisioning_gate["evidence_contract"]["post_approval_linkage_ids_must_be_unique"] == [
+        "credential_locations[].credential_ref_id",
+        "rollback_receipts[].rollback_ref",
+        "audit_events[].audit_event_id",
+    ]
     assert "--post-approval-receipts" in provisioning_gate["rerun_commands"]["plan_index_post_approval_receipts"]
     assert "--post-approval-receipts" in handoff_payload["final_reindex_command"]
     spark_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "local_spark_stack_matrix")

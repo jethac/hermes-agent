@@ -495,6 +495,14 @@ def test_write_probe_artifacts(tmp_path):
     assert setup_closure["evidence_contract"]["read_only_discovery_grants_approval"] is False
     assert setup_closure["evidence_contract"]["required_section_field"] == "source_artifact"
     assert setup_closure["evidence_contract"]["source_artifacts_must_exist"] is True
+    assert setup_closure["evidence_contract"]["post_approval_receipts_schema_version"] == (
+        "voiceops.milestone2.post_approval_receipts.v1"
+    )
+    assert setup_closure["evidence_contract"]["post_approval_linkage_ids_must_be_unique"] == [
+        "credential_locations[].credential_ref_id",
+        "rollback_receipts[].rollback_ref",
+        "audit_events[].audit_event_id",
+    ]
     assert "provisioning-preflight-evidence.manifest.json" in setup_closure["rerun_commands"]["with_preflight_manifest"]
     assert "--run-readonly-discovery" in setup_closure["rerun_commands"]["read_only_discovery"]
     assert "--refresh-preflight-source-hashes" in setup_closure["rerun_commands"]["refresh_preflight_source_hashes"]
