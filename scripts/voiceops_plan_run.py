@@ -105,8 +105,23 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             ),
             "evidence_template": voice["artifacts"].get("live_evidence_template"),
             "template_artifact": voice["artifacts"].get("live_evidence_template"),
+            "evidence_example": voice["artifacts"].get("live_evidence_example"),
             "closure_plan": voice["artifacts"].get("live_probe_closure_json"),
             "closure_artifact": voice["artifacts"].get("live_probe_closure_markdown"),
+            "collection_commands": {
+                "collect_live_manifest": (
+                    "uv run python -m hermes_cli.realtime_voice_live_evidence "
+                    "--output-dir artifacts/realtime-voice-evidence/live-current "
+                    "--require-live-discord --require-inbound --wait-seconds 5 "
+                    "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
+                    "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
+                ),
+                "ingest_live_manifest": (
+                    "uv run python scripts/voiceops_voice_operator.py "
+                    "--output-dir artifacts/voiceops-voice-operator/current "
+                    "--live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json"
+                ),
+            },
             "required_evidence_fields": [
                 "schema_version",
                 "connect_perm",
@@ -167,6 +182,26 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "evidence_manifest_example": provisioning["artifacts"].get("preflight_evidence_manifest_example"),
             "closure_plan": provisioning["artifacts"].get("setup_closure_json"),
             "closure_artifact": provisioning["artifacts"].get("setup_closure_markdown"),
+            "collection_commands": {
+                "presence_only": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env"
+                ),
+                "bounded_version_help": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-command-probes"
+                ),
+                "ingest_preflight_evidence": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
+                    "--preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json"
+                ),
+                "ingest_preflight_manifest": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
+                    "--preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json"
+                ),
+            },
             "requirement_fields_per_gate": [
                 "schema_version",
                 "check_id",
@@ -233,9 +268,27 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "missing": spark_missing,
             "evidence_template": spark["artifacts"].get("evidence_template"),
             "template_artifact": spark["artifacts"].get("evidence_template"),
+            "evidence_example": spark["artifacts"].get("evidence_example"),
             "matrix_artifact": spark["artifacts"].get("json"),
             "closure_plan": spark["artifacts"].get("closure_json"),
             "closure_artifact": spark["artifacts"].get("closure_markdown"),
+            "collection_commands": {
+                "matrix_only": (
+                    "uv run python scripts/voiceops_spark_matrix.py "
+                    "--output-dir artifacts/voiceops-spark-matrix/current"
+                ),
+                "with_evidence": (
+                    "uv run python scripts/voiceops_spark_matrix.py "
+                    "--output-dir artifacts/voiceops-spark-matrix/current "
+                    "--evidence path/to/spark-benchmark-evidence.json"
+                ),
+                "plan_index": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current "
+                    "--evidence path/to/spark-benchmark-evidence.json"
+                ),
+                "dgx_eval": "scripts/dgx_spark_gemma4_voice_eval.sh",
+            },
             "required_candidate_fields": [
                 "schema_version",
                 "candidate_id",
@@ -549,11 +602,18 @@ def _markdown(summary: dict[str, Any]) -> str:
                 f"- Status: {gate['status']}",
                 f"- Missing: {', '.join(gate['missing']) if gate['missing'] else 'none'}",
                 f"- Template: `{gate['template_artifact']}`",
+                f"- Example: `{gate.get('evidence_example') or 'none'}`",
+                f"- Manifest example: `{gate.get('evidence_manifest_example') or 'none'}`",
                 f"- Closure artifact: `{gate['closure_artifact']}`",
                 f"- Rerun: `{gate['rerun_command']}`",
                 f"- Completion signal: {gate['completion_signal']}",
             ]
         )
+        commands = gate.get("collection_commands")
+        if isinstance(commands, dict):
+            lines.append("- Collection commands:")
+            for label, command in sorted(commands.items()):
+                lines.append(f"  - `{label}`: `{command}`")
         contract = gate.get("evidence_contract")
         if isinstance(contract, dict):
             lines.append("- Evidence contract:")
@@ -598,11 +658,18 @@ def _closure_markdown(closure: dict[str, Any]) -> str:
                 f"- Status: {gate['status']}",
                 f"- Missing: {', '.join(gate['missing']) if gate['missing'] else 'none'}",
                 f"- Template artifact: `{gate['template_artifact']}`",
+                f"- Example artifact: `{gate.get('evidence_example') or 'none'}`",
+                f"- Manifest example artifact: `{gate.get('evidence_manifest_example') or 'none'}`",
                 f"- Closure artifact: `{gate['closure_artifact']}`",
                 f"- Rerun command: `{gate['rerun_command']}`",
                 f"- Completion signal: {gate['completion_signal']}",
             ]
         )
+        commands = gate.get("collection_commands")
+        if isinstance(commands, dict):
+            lines.append("- Collection commands:")
+            for label, command in sorted(commands.items()):
+                lines.append(f"  - `{label}`: `{command}`")
         contract = gate.get("evidence_contract")
         if isinstance(contract, dict):
             lines.append("- Evidence contract:")
