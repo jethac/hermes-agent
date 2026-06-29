@@ -262,8 +262,14 @@ def test_live_evidence_example_is_not_accepted_as_proof():
     assert "example_only_evidence_not_accepted" in result["issues"]
 
 
-def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing_safety_mode():
+def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing_safety_mode(tmp_path):
     evidence = _complete_live_evidence()
+    evidence["discord_live_probe"]["source_artifact"] = str(tmp_path / "discord-live-probe.json")
+    evidence["sidecar_session"]["source_artifact"] = str(tmp_path / "sidecar-session.json")
+    evidence["live_turn"]["source_artifact"] = str(tmp_path / "live-turn.json")
+    (tmp_path / "discord-live-probe.json").write_text(json.dumps(evidence["discord_live_probe"]), encoding="utf-8")
+    (tmp_path / "sidecar-session.json").write_text(json.dumps(evidence["sidecar_session"]), encoding="utf-8")
+    (tmp_path / "live-turn.json").write_text(json.dumps(evidence["live_turn"]), encoding="utf-8")
     live_evidence = validate_live_probe_evidence(evidence)
     report = build_voice_operator_report(_smoke_payload(), live_evidence=live_evidence)
 
@@ -278,6 +284,9 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
 
 def test_voice_operator_rejects_loaded_evidence_with_missing_source_artifact_files(tmp_path):
     evidence = _complete_live_evidence()
+    evidence["discord_live_probe"]["source_artifact"] = "missing-discord-live-probe.json"
+    evidence["sidecar_session"]["source_artifact"] = "missing-sidecar-session.json"
+    evidence["live_turn"]["source_artifact"] = "missing-live-turn.json"
     evidence_path = tmp_path / "live-evidence.json"
     evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
 
@@ -289,14 +298,26 @@ def test_voice_operator_rejects_loaded_evidence_with_missing_source_artifact_fil
     assert "live_turn:source_artifact_not_found" in live_evidence["issues"]
 
 
+def test_live_evidence_rejects_template_source_artifact_placeholders():
+    live_evidence = validate_live_probe_evidence(_complete_live_evidence())
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "discord_live_probe:template_source_artifact_not_accepted" in live_evidence["issues"]
+    assert "sidecar_session:template_source_artifact_not_accepted" in live_evidence["issues"]
+    assert "live_turn:template_source_artifact_not_accepted" in live_evidence["issues"]
+
+
 def test_voice_operator_loaded_evidence_does_not_resolve_source_artifacts_from_cwd(monkeypatch, tmp_path):
     evidence_dir = tmp_path / "evidence-dir"
     cwd_dir = tmp_path / "cwd"
     evidence_dir.mkdir()
     cwd_dir.mkdir()
-    for name in ("discord-live-probe.json", "voice-status-or-sidecar-report.json", "voice-turn-evidence.json"):
+    for name in ("cwd-discord-live-probe.json", "cwd-sidecar-session.json", "cwd-live-turn.json"):
         (cwd_dir / name).write_text("{}", encoding="utf-8")
     evidence = _complete_live_evidence()
+    evidence["discord_live_probe"]["source_artifact"] = "cwd-discord-live-probe.json"
+    evidence["sidecar_session"]["source_artifact"] = "cwd-sidecar-session.json"
+    evidence["live_turn"]["source_artifact"] = "cwd-live-turn.json"
     evidence_path = evidence_dir / "live-evidence.json"
     evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
     monkeypatch.chdir(cwd_dir)
@@ -327,6 +348,7 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
         "require_inbound": True,
     }
     sidecar = {
+        "kind": "sidecar_session",
         "sidecar_running": True,
         "sidecar_healthy": True,
         "session_started": True,
@@ -334,6 +356,7 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
         "fallback_mode_visible": True,
     }
     live_turn = {
+        "kind": "live_turn",
         "transcript_observed": True,
         "assistant_audio_observed": True,
         "barge_in_observed": True,

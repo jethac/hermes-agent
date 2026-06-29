@@ -151,7 +151,17 @@ def _attach_optional_evidence_report(
     if not isinstance(payload, dict):
         issues.append(f"{report_key}: evidence root must be an object")
         return
+    if not _optional_evidence_has_identity(report_key, payload):
+        issues.append(f"{report_key}: evidence file must include kind, evidence_type, or live evidence schema")
+        return
     reports[report_key] = str(resolved)
+
+
+def _optional_evidence_has_identity(report_key: str, payload: dict[str, Any]) -> bool:
+    if payload.get("schema_version") == "voiceops.milestone1.live_voice_evidence.v1":
+        return True
+    kind = str(payload.get("kind") or payload.get("evidence_type") or "").strip()
+    return kind == report_key
 
 
 async def _run_discord_loopback_smoke() -> Any:

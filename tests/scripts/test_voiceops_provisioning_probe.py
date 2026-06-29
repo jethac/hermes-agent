@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 from pathlib import Path
 from typing import Sequence
@@ -63,9 +64,21 @@ def _write_preflight_evidence(tmp_path: Path, payload: dict[str, object] | None 
         if not isinstance(section, dict):
             continue
         source_path = tmp_path / f"{section_name}-source.json"
-        source_path.write_text(json.dumps({"section": section_name, "redacted": True}), encoding="utf-8")
+        source_payload = {
+            "section": section_name,
+            "redacted": True,
+            "redaction_policy": "references only; no raw secrets, tokens, or full phone numbers",
+        }
+        source_bytes = json.dumps(source_payload, sort_keys=True).encode("utf-8")
+        source_path.write_bytes(source_bytes)
         if not section.get("source_artifact"):
             section["source_artifact"] = source_path.name
+        if not section.get("source_artifact_kind"):
+            section["source_artifact_kind"] = "redacted_setup_evidence"
+        if not section.get("source_artifact_sha256"):
+            section["source_artifact_sha256"] = hashlib.sha256(source_bytes).hexdigest()
+        if not section.get("source_artifact_redacted_at"):
+            section["source_artifact_redacted_at"] = "2026-06-29T00:00:00Z"
     evidence_path = tmp_path / "preflight-evidence.json"
     evidence_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return evidence_path
@@ -318,13 +331,11 @@ def test_preflight_evidence_rejects_complete_shape_without_source_artifacts(tmp_
         runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
     )
 
-    assert loaded["missing_fields"] == [
-        "stripe_projects.source_artifact",
-        "stripe_link.source_artifact",
-        "mpp.source_artifact",
-        "phone_handoff.source_artifact",
-        "rollback.source_artifact",
-    ]
+    assert "stripe_projects.source_artifact" in loaded["missing_fields"]
+    assert "stripe_link.source_artifact" in loaded["missing_fields"]
+    assert "mpp.source_artifact" in loaded["missing_fields"]
+    assert "phone_handoff.source_artifact" in loaded["missing_fields"]
+    assert "rollback.source_artifact" in loaded["missing_fields"]
     assert "stripe_projects.source_artifact: missing" in loaded["validation_issues"]
     assert report["ready"] is False
     assert {
@@ -337,16 +348,67 @@ def test_preflight_evidence_rejects_complete_shape_without_source_artifacts(tmp_
     } <= set(report["required_failures"])
 
 
+def test_preflight_evidence_rejects_synthetic_schema_valid_refs_without_provenance(tmp_path):
+    evidence = _complete_preflight_evidence()
+    for section_name in ("stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback"):
+        source_path = tmp_path / f"{section_name}-redacted.json"
+        source_path.write_text(json.dumps({"redacted": True, "section": section_name}), encoding="utf-8")
+        evidence[section_name]["source_artifact"] = source_path.name
+
+    evidence_path = tmp_path / "synthetic-refs-preflight.json"
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    loaded = load_preflight_evidence(evidence_path)
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
+        env_files=[],
+        preflight_evidence_path=evidence_path,
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+    )
+
+    assert report["ready"] is False
+    assert "stripe_projects.source_artifact_sha256" in loaded["missing_fields"]
+    assert "stripe_projects.source_artifact_redacted_at" in loaded["missing_fields"]
+    assert "stripe_projects.source_artifact_sha256: invalid" in loaded["validation_issues"]
+    assert "stripe_projects_account" in report["required_failures"]
+
+
+def test_preflight_evidence_rejects_invalid_timestamps(tmp_path):
+    evidence = _complete_preflight_evidence()
+    evidence["stripe_projects"]["projects_catalog_checked_at"] = "June 29 2026"
+    evidence["stripe_link"]["source_artifact_redacted_at"] = "not-a-timestamp"
+    evidence_path = _write_preflight_evidence(tmp_path, evidence)
+
+    loaded = load_preflight_evidence(evidence_path)
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
+        env_files=[],
+        preflight_evidence_path=evidence_path,
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+    )
+
+    assert "stripe_projects.projects_catalog_checked_at: invalid timestamp" in loaded["validation_issues"]
+    assert "stripe_link.source_artifact_redacted_at: invalid timestamp" in loaded["validation_issues"]
+    assert report["ready"] is False
+    assert "stripe_projects_account" in report["required_failures"]
+    assert "stripe_link_approval_capability" in report["required_failures"]
+
+
 def test_preflight_evidence_manifest_merges_redacted_section_files(tmp_path):
     sections = _complete_preflight_evidence()
+    for section in sections.values():
+        if isinstance(section, dict):
+            section["source_artifact_redacted_at"] = "2026-06-29T00:00:00Z"
     (tmp_path / "stripe-projects.json").write_text(
-        json.dumps({"stripe_projects": sections["stripe_projects"]}),
+        json.dumps({"redacted": True, "stripe_projects": sections["stripe_projects"]}),
         encoding="utf-8",
     )
-    (tmp_path / "stripe-link.json").write_text(json.dumps(sections["stripe_link"]), encoding="utf-8")
-    (tmp_path / "mpp.json").write_text(json.dumps({"mpp": sections["mpp"]}), encoding="utf-8")
-    (tmp_path / "phone.json").write_text(json.dumps({"phone_handoff": sections["phone_handoff"]}), encoding="utf-8")
-    (tmp_path / "rollback.json").write_text(json.dumps(sections["rollback"]), encoding="utf-8")
+    (tmp_path / "stripe-link.json").write_text(json.dumps({"redacted": True, **sections["stripe_link"]}), encoding="utf-8")
+    (tmp_path / "mpp.json").write_text(json.dumps({"redacted": True, "mpp": sections["mpp"]}), encoding="utf-8")
+    (tmp_path / "phone.json").write_text(json.dumps({"redacted": True, "phone_handoff": sections["phone_handoff"]}), encoding="utf-8")
+    (tmp_path / "rollback.json").write_text(json.dumps({"redacted": True, **sections["rollback"]}), encoding="utf-8")
     manifest_path = tmp_path / "preflight-manifest.json"
     manifest_path.write_text(
         json.dumps(

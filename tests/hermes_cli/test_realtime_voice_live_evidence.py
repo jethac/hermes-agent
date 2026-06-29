@@ -49,8 +49,8 @@ def test_live_evidence_manifest_references_optional_sidecar_and_turn_evidence(mo
 
     sidecar_path = tmp_path / "sidecar-session.json"
     live_turn_path = tmp_path / "live-turn.json"
-    sidecar_path.write_text(json.dumps({"sidecar_running": True}), encoding="utf-8")
-    live_turn_path.write_text(json.dumps({"transcript_observed": True}), encoding="utf-8")
+    sidecar_path.write_text(json.dumps({"kind": "sidecar_session", "sidecar_running": True}), encoding="utf-8")
+    live_turn_path.write_text(json.dumps({"kind": "live_turn", "transcript_observed": True}), encoding="utf-8")
     monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", fake_loopback)
     monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", fake_live)
 
@@ -72,6 +72,33 @@ def test_live_evidence_manifest_references_optional_sidecar_and_turn_evidence(mo
     manifest = json.loads((tmp_path / "bundle" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["reports"]["sidecar_session"] == str(sidecar_path)
     assert manifest["reports"]["live_turn"] == str(live_turn_path)
+
+
+def test_live_evidence_manifest_rejects_anonymous_optional_evidence(monkeypatch, tmp_path):
+    async def fake_loopback():
+        return _FakeProbeResult(ok=True)
+
+    async def fake_live(_args):
+        return _FakeProbeResult(ok=True)
+
+    sidecar_path = tmp_path / "sidecar-session.json"
+    sidecar_path.write_text(json.dumps({"sidecar_running": True}), encoding="utf-8")
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", fake_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", fake_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    assert result.ok is False
+    assert "sidecar_session: evidence file must include kind, evidence_type, or live evidence schema" in result.issues
+    assert "sidecar_session" not in result.reports
 
 
 def test_live_evidence_manifest_rejects_invalid_optional_evidence(monkeypatch, tmp_path):

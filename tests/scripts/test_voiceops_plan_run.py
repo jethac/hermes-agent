@@ -49,6 +49,17 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["preflight_schema_version"] == (
         "voiceops.milestone2.preflight_evidence.v1"
     )
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["required_section_field"] == "source_artifact"
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["required_section_provenance_fields"] == [
+        "source_artifact_kind",
+        "source_artifact_sha256",
+        "source_artifact_redacted_at",
+    ]
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["source_artifacts_must_exist"] is True
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["source_artifact_sha256_must_match"] is True
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["manifest_report_resolution"].endswith(
+        "process cwd is never used"
+    )
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["example_only_accepted"] is False
     assert "provisioning-preflight-evidence.manifest.json" in gates["spend_and_provisioning_preflight"]["collection_commands"]["ingest_preflight_manifest"]
     assert "required_candidate_fields" in gates["local_spark_stack_matrix"]

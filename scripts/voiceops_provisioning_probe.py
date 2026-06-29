@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -168,30 +169,46 @@ SETUP_CLOSURE_REQUIREMENTS: dict[str, dict[str, Any]] = {
 }
 PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS = [
     "stripe_projects.source_artifact",
+    "stripe_projects.source_artifact_kind",
+    "stripe_projects.source_artifact_sha256",
+    "stripe_projects.source_artifact_redacted_at",
     "stripe_projects.account_ref",
     "stripe_projects.projects_catalog_checked_at",
     "stripe_projects.voip_provider_candidate",
     "stripe_projects.can_create_project_after_approval",
     "stripe_link.source_artifact",
+    "stripe_link.source_artifact_kind",
+    "stripe_link.source_artifact_sha256",
+    "stripe_link.source_artifact_redacted_at",
     "stripe_link.account_ref",
     "stripe_link.approval_capability_confirmed",
     "stripe_link.max_approved_cents",
     "stripe_link.currency",
     "mpp.source_artifact",
+    "mpp.source_artifact_kind",
+    "mpp.source_artifact_sha256",
+    "mpp.source_artifact_redacted_at",
     "mpp.boundary_tool",
     "mpp.policy_ref",
     "mpp.approval_packet_ref",
     "phone_handoff.source_artifact",
+    "phone_handoff.source_artifact_kind",
+    "phone_handoff.source_artifact_sha256",
+    "phone_handoff.source_artifact_redacted_at",
     "phone_handoff.provider",
     "phone_handoff.provider_account_ref",
     "phone_handoff.phone_target_ref",
     "phone_handoff.credential_location_ref",
     "rollback.source_artifact",
+    "rollback.source_artifact_kind",
+    "rollback.source_artifact_sha256",
+    "rollback.source_artifact_redacted_at",
     "rollback.deprovision_owner",
     "rollback.refund_or_cancel_owner",
     "rollback.call_cancel_owner",
 ]
 PREFLIGHT_EVIDENCE_SECTIONS = ("stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback")
+PREFLIGHT_SOURCE_ARTIFACT_KIND = "redacted_setup_evidence"
 
 SECRET_KEY_RE = re.compile(
     r"(?i)\b([A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|AUTH)[A-Z0-9_]*)\s*=\s*([^\s,;]+)"
@@ -302,6 +319,9 @@ def build_preflight_evidence_template() -> dict[str, Any]:
         "redaction_policy": "references and aliases only; no raw secrets, cards, tokens, or full phone numbers",
         "stripe_projects": {
             "source_artifact": None,
+            "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
+            "source_artifact_sha256": None,
+            "source_artifact_redacted_at": None,
             "account_ref": None,
             "projects_catalog_checked_at": None,
             "voip_provider_candidate": "twilio/voice",
@@ -309,6 +329,9 @@ def build_preflight_evidence_template() -> dict[str, Any]:
         },
         "stripe_link": {
             "source_artifact": None,
+            "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
+            "source_artifact_sha256": None,
+            "source_artifact_redacted_at": None,
             "account_ref": None,
             "approval_capability_confirmed": False,
             "max_approved_cents": 0,
@@ -316,12 +339,18 @@ def build_preflight_evidence_template() -> dict[str, Any]:
         },
         "mpp": {
             "source_artifact": None,
+            "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
+            "source_artifact_sha256": None,
+            "source_artifact_redacted_at": None,
             "boundary_tool": None,
             "policy_ref": None,
             "approval_packet_ref": "nemoclaw-action-packet.json",
         },
         "phone_handoff": {
             "source_artifact": None,
+            "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
+            "source_artifact_sha256": None,
+            "source_artifact_redacted_at": None,
             "provider": None,
             "provider_account_ref": None,
             "phone_target_ref": None,
@@ -329,6 +358,9 @@ def build_preflight_evidence_template() -> dict[str, Any]:
         },
         "rollback": {
             "source_artifact": None,
+            "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
+            "source_artifact_sha256": None,
+            "source_artifact_redacted_at": None,
             "deprovision_owner": None,
             "refund_or_cancel_owner": None,
             "call_cancel_owner": None,
@@ -344,6 +376,8 @@ def build_preflight_evidence_example() -> dict[str, Any]:
         {
             "account_ref": "stripe-projects-account-ref-demo",
             "source_artifact": "artifacts/voiceops-provisioning/current/stripe-projects-catalog-redacted.json",
+            "source_artifact_sha256": "replace-with-real-redacted-artifact-sha256",
+            "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
             "projects_catalog_checked_at": "2026-06-29T00:00:00Z",
             "voip_provider_candidate": "twilio/voice",
             "can_create_project_after_approval": True,
@@ -353,6 +387,8 @@ def build_preflight_evidence_example() -> dict[str, Any]:
         {
             "account_ref": "stripe-link-account-ref-demo",
             "source_artifact": "artifacts/voiceops-provisioning/current/stripe-link-approval-redacted.json",
+            "source_artifact_sha256": "replace-with-real-redacted-artifact-sha256",
+            "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
             "approval_capability_confirmed": True,
             "max_approved_cents": 20_000,
             "currency": "usd",
@@ -362,6 +398,8 @@ def build_preflight_evidence_example() -> dict[str, Any]:
         {
             "boundary_tool": "nemoclaw",
             "source_artifact": "artifacts/voiceops-provisioning/current/nemoclaw-boundary-redacted.json",
+            "source_artifact_sha256": "replace-with-real-redacted-artifact-sha256",
+            "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
             "policy_ref": "voiceops-policy-ref-demo",
             "approval_packet_ref": "nemoclaw-action-packet.json",
         }
@@ -370,6 +408,8 @@ def build_preflight_evidence_example() -> dict[str, Any]:
         {
             "provider": "twilio",
             "source_artifact": "artifacts/voiceops-provisioning/current/phone-handoff-redacted.json",
+            "source_artifact_sha256": "replace-with-real-redacted-artifact-sha256",
+            "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
             "provider_account_ref": "twilio-account-ref-demo",
             "phone_target_ref": "operator-phone-ref-demo",
             "credential_location_ref": "1password://VoiceOps/Twilio Demo Credential Ref",
@@ -379,6 +419,8 @@ def build_preflight_evidence_example() -> dict[str, Any]:
         {
             "deprovision_owner": "operator-ref-demo",
             "source_artifact": "artifacts/voiceops-provisioning/current/rollback-owners-redacted.json",
+            "source_artifact_sha256": "replace-with-real-redacted-artifact-sha256",
+            "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
             "refund_or_cancel_owner": "operator-ref-demo",
             "call_cancel_owner": "operator-ref-demo",
         }
@@ -438,8 +480,42 @@ def _preflight_secret_issues(payload: Mapping[str, Any]) -> list[str]:
     for path, value in _walk_strings(payload):
         if SECRET_KEY_RE.search(f"{path}={value}") or BEARER_RE.search(value) or PREFLIGHT_SECRET_VALUE_RE.search(value):
             issues.append(f"{path}: secret-like value")
-        elif not path.endswith("_checked_at") and PHONE_RE.search(value):
+        elif (
+            not path.endswith("_checked_at")
+            and not path.endswith("_redacted_at")
+            and not path.endswith("_sha256")
+            and PHONE_RE.search(value)
+        ):
             issues.append(f"{path}: phone-like value")
+    return issues
+
+
+def _parse_preflight_timestamp(value: Any) -> dt.datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = dt.datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed
+
+
+def _timestamp_issues(payload: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    for path in ["stripe_projects.projects_catalog_checked_at"]:
+        value = _dot_get(payload, path)
+        if str(value or "").strip() and _parse_preflight_timestamp(value) is None:
+            issues.append(f"{path}: invalid timestamp")
+    for section_name in PREFLIGHT_EVIDENCE_SECTIONS:
+        path = f"{section_name}.source_artifact_redacted_at"
+        value = _dot_get(payload, path)
+        if str(value or "").strip() and _parse_preflight_timestamp(value) is None:
+            issues.append(f"{path}: invalid timestamp")
     return issues
 
 
@@ -488,7 +564,7 @@ def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
     raw_payload, manifest_issues = _expand_preflight_evidence_manifest(path, raw_payload)
     fields_present = [field for field in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS if _field_present(raw_payload, field)]
     missing_fields = [field for field in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS if field not in fields_present]
-    validation_issues = [*manifest_issues, *_preflight_secret_issues(raw_payload)]
+    validation_issues = [*manifest_issues, *_preflight_secret_issues(raw_payload), *_timestamp_issues(raw_payload)]
     if str(raw_payload.get("schema_version") or "") != PREFLIGHT_EVIDENCE_SCHEMA_VERSION:
         validation_issues.append("missing_or_invalid_schema_version")
     if raw_payload.get("example_only") is True:
@@ -585,6 +661,13 @@ def _with_preflight_section_source_artifact(section: Mapping[str, Any], path: Pa
     reported_source = str(section_copy.get("source_artifact") or "")
     source_artifact = str(path)
     section_copy["source_artifact"] = source_artifact
+    if not str(section_copy.get("source_artifact_kind") or "").strip():
+        section_copy["source_artifact_kind"] = PREFLIGHT_SOURCE_ARTIFACT_KIND
+    try:
+        if not str(section_copy.get("source_artifact_sha256") or "").strip():
+            section_copy["source_artifact_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        pass
     if reported_source and reported_source != source_artifact:
         section_copy["reported_source_artifact"] = reported_source
     return section_copy
@@ -597,18 +680,56 @@ def _source_artifact_issues(payload: Mapping[str, Any], evidence_path: Path) -> 
         if not isinstance(section, Mapping):
             continue
         source_artifact = str(section.get("source_artifact") or "").strip()
+        source_kind = str(section.get("source_artifact_kind") or "").strip()
+        source_sha256 = str(section.get("source_artifact_sha256") or "").strip()
         if not source_artifact:
             issues.append(f"{section_name}.source_artifact: missing")
-        elif not _source_artifact_exists(source_artifact, evidence_path):
+            continue
+        if source_kind != PREFLIGHT_SOURCE_ARTIFACT_KIND:
+            issues.append(f"{section_name}.source_artifact_kind: invalid")
+        source_path = _resolve_source_artifact_path(source_artifact, evidence_path)
+        if not source_path.exists():
             issues.append(f"{section_name}.source_artifact: artifact not found")
+            continue
+        try:
+            artifact_bytes = source_path.read_bytes()
+        except OSError as exc:
+            issues.append(f"{section_name}.source_artifact: artifact unreadable: {exc.strerror or exc}")
+            continue
+        actual_sha256 = hashlib.sha256(artifact_bytes).hexdigest()
+        if not re.fullmatch(r"[0-9a-f]{64}", source_sha256):
+            issues.append(f"{section_name}.source_artifact_sha256: invalid")
+        elif source_sha256 != actual_sha256:
+            issues.append(f"{section_name}.source_artifact_sha256: mismatch")
+        issues.extend(f"{section_name}.source_artifact:{issue}" for issue in _redacted_artifact_issues(artifact_bytes))
     return issues
 
 
-def _source_artifact_exists(source_artifact: str, evidence_path: Path) -> bool:
+def _resolve_source_artifact_path(source_artifact: str, evidence_path: Path) -> Path:
     source_path = Path(source_artifact).expanduser()
     if source_path.is_absolute():
-        return source_path.exists()
-    return (evidence_path.parent / source_artifact).exists()
+        return source_path
+    return evidence_path.parent / source_artifact
+
+
+def _redacted_artifact_issues(artifact_bytes: bytes) -> list[str]:
+    try:
+        artifact = json.loads(artifact_bytes.decode("utf-8"))
+    except UnicodeDecodeError:
+        return ["artifact must be utf-8 JSON"]
+    except json.JSONDecodeError as exc:
+        return [f"artifact JSON parse failed: {exc.msg}"]
+    if not isinstance(artifact, Mapping):
+        return ["artifact root must be an object"]
+    issues: list[str] = []
+    if artifact.get("example_only") is True:
+        issues.append("example_only evidence is not accepted")
+    redaction_policy = str(artifact.get("redaction_policy") or "").lower()
+    redacted_flag = artifact.get("redacted") is True
+    if not redacted_flag and "redact" not in redaction_policy:
+        issues.append("artifact is not marked redacted")
+    issues.extend(_preflight_secret_issues(artifact))
+    return issues
 
 
 def _default_env_files() -> list[Path]:
@@ -951,6 +1072,9 @@ def build_probe_report(
                 "stripe_projects",
                 [
                     "stripe_projects.source_artifact",
+                    "stripe_projects.source_artifact_kind",
+                    "stripe_projects.source_artifact_sha256",
+                    "stripe_projects.source_artifact_redacted_at",
                     "stripe_projects.account_ref",
                     "stripe_projects.projects_catalog_checked_at",
                     "stripe_projects.voip_provider_candidate",
@@ -964,6 +1088,9 @@ def build_probe_report(
                 "stripe_link",
                 [
                     "stripe_link.source_artifact",
+                    "stripe_link.source_artifact_kind",
+                    "stripe_link.source_artifact_sha256",
+                    "stripe_link.source_artifact_redacted_at",
                     "stripe_link.account_ref",
                     "stripe_link.approval_capability_confirmed",
                     "stripe_link.max_approved_cents",
@@ -977,6 +1104,9 @@ def build_probe_report(
                 "mpp",
                 [
                     "mpp.source_artifact",
+                    "mpp.source_artifact_kind",
+                    "mpp.source_artifact_sha256",
+                    "mpp.source_artifact_redacted_at",
                     "mpp.boundary_tool",
                     "mpp.policy_ref",
                     "mpp.approval_packet_ref",
@@ -989,6 +1119,9 @@ def build_probe_report(
                 "phone_handoff",
                 [
                     "phone_handoff.source_artifact",
+                    "phone_handoff.source_artifact_kind",
+                    "phone_handoff.source_artifact_sha256",
+                    "phone_handoff.source_artifact_redacted_at",
                     "phone_handoff.provider",
                     "phone_handoff.provider_account_ref",
                     "phone_handoff.phone_target_ref",
@@ -999,7 +1132,13 @@ def build_probe_report(
             preflight_check(
                 "credential_location_reference",
                 "phone_handoff",
-                ["phone_handoff.source_artifact", "phone_handoff.credential_location_ref"],
+                [
+                    "phone_handoff.source_artifact",
+                    "phone_handoff.source_artifact_kind",
+                    "phone_handoff.source_artifact_sha256",
+                    "phone_handoff.source_artifact_redacted_at",
+                    "phone_handoff.credential_location_ref",
+                ],
                 "Credential location reference evidence is present",
                 "Fill a source_artifact and non-secret credential location ref in the preflight evidence file.",
             ),
@@ -1008,6 +1147,9 @@ def build_probe_report(
                 "rollback",
                 [
                     "rollback.source_artifact",
+                    "rollback.source_artifact_kind",
+                    "rollback.source_artifact_sha256",
+                    "rollback.source_artifact_redacted_at",
                     "rollback.deprovision_owner",
                     "rollback.refund_or_cancel_owner",
                     "rollback.call_cancel_owner",
@@ -1165,8 +1307,17 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "manifest_schema_version": PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION,
             "required_sections": list(PREFLIGHT_EVIDENCE_SECTIONS),
             "required_section_field": "source_artifact",
+            "required_section_provenance_fields": [
+                "source_artifact_kind",
+                "source_artifact_sha256",
+                "source_artifact_redacted_at",
+            ],
+            "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
             "source_artifacts_must_exist": True,
+            "source_artifact_sha256_must_match": True,
+            "source_artifacts_must_be_redacted_json": True,
             "source_artifact_resolution": "absolute paths or paths relative to the supplied evidence/manifest file",
+            "manifest_report_resolution": "absolute paths or paths relative to the supplied manifest file; process cwd is never used",
             "example_only_accepted": False,
             "secret_like_values_accepted": False,
             "full_phone_numbers_accepted": False,

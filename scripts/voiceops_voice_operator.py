@@ -74,6 +74,12 @@ LIVE_EVIDENCE_REQUIRED_TURN_BOOLS = (
     "no_voice_denial_observed",
 )
 
+LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS = {
+    "discord-live-probe.json",
+    "voice-status-or-sidecar-report.json",
+    "voice-turn-evidence.json",
+}
+
 
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -297,6 +303,8 @@ def _expand_live_evidence_manifest(path: Path, payload: Mapping[str, Any]) -> tu
             issues.extend(f"live_evidence_manifest:{report_name}:{issue}" for issue in loaded["issues"])
         report_payload = loaded.get("payload")
         if isinstance(report_payload, Mapping):
+            if not _manifest_report_has_identity(report_name, report_payload):
+                issues.append(f"live_evidence_manifest:{report_name}:missing_report_identity")
             report_payload = _with_manifest_report_provenance(report_payload, report_path)
             if report_payload.get("example_only") is True:
                 issues.append(f"live_evidence_manifest:{report_name}:example_only_evidence_not_accepted")
@@ -330,7 +338,7 @@ def _with_manifest_report_provenance(payload: Mapping[str, Any], report_path: Pa
 
 def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) -> Path:
     report_path = Path(report_path_text).expanduser()
-    if report_path.is_absolute() or report_path.exists():
+    if report_path.is_absolute():
         return report_path
     sibling = manifest_path.parent / report_path_text
     if sibling.exists():
@@ -339,6 +347,21 @@ def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) ->
     if basename_sibling.exists():
         return basename_sibling
     return report_path
+
+
+def _manifest_report_has_identity(report_name: str, payload: Mapping[str, Any]) -> bool:
+    if str(payload.get("schema_version") or "") == LIVE_EVIDENCE_SCHEMA_VERSION:
+        return True
+    kind = str(payload.get("kind") or payload.get("evidence_type") or "").strip()
+    if report_name == "combined":
+        return any(isinstance(payload.get(section), Mapping) for section in ("discord_live_probe", "sidecar_session", "live_turn"))
+    if report_name == "discord_live_probe":
+        return kind == "discord_live_probe"
+    if report_name == "sidecar_session":
+        return kind == "sidecar_session"
+    if report_name == "live_turn":
+        return kind == "live_turn"
+    return bool(kind)
 
 
 def _merge_live_evidence_payload(target: dict[str, Any], payload: Mapping[str, Any]) -> None:
@@ -392,8 +415,13 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
     discord_probe = _discord_probe_section(payload)
     if not str(discord_probe.get("source_artifact") or "").strip():
         issues.append("discord_live_probe:missing_source_artifact")
-    elif paths and not _source_artifact_exists(discord_probe.get("source_artifact"), paths):
-        issues.append("discord_live_probe:source_artifact_not_found")
+    else:
+        _validate_source_artifact(
+            discord_probe.get("source_artifact"),
+            "discord_live_probe",
+            paths or [],
+            issues,
+        )
     if discord_probe.get("example_only") is True:
         issues.append("discord_live_probe:example_only_evidence_not_accepted")
     for key in LIVE_EVIDENCE_REQUIRED_DISCORD_BOOLS:
@@ -414,8 +442,13 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
     sidecar = payload.get("sidecar_session") if isinstance(payload.get("sidecar_session"), Mapping) else {}
     if not str(sidecar.get("source_artifact") or "").strip():
         issues.append("sidecar_session:missing_source_artifact")
-    elif paths and not _source_artifact_exists(sidecar.get("source_artifact"), paths):
-        issues.append("sidecar_session:source_artifact_not_found")
+    else:
+        _validate_source_artifact(
+            sidecar.get("source_artifact"),
+            "sidecar_session",
+            paths or [],
+            issues,
+        )
     if sidecar.get("example_only") is True:
         issues.append("sidecar_session:example_only_evidence_not_accepted")
     for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS:
@@ -425,8 +458,13 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
     live_turn = payload.get("live_turn") if isinstance(payload.get("live_turn"), Mapping) else {}
     if not str(live_turn.get("source_artifact") or "").strip():
         issues.append("live_turn:missing_source_artifact")
-    elif paths and not _source_artifact_exists(live_turn.get("source_artifact"), paths):
-        issues.append("live_turn:source_artifact_not_found")
+    else:
+        _validate_source_artifact(
+            live_turn.get("source_artifact"),
+            "live_turn",
+            paths or [],
+            issues,
+        )
     if live_turn.get("example_only") is True:
         issues.append("live_turn:example_only_evidence_not_accepted")
     for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS:
@@ -493,6 +531,28 @@ def _source_artifact_exists(source_artifact: Any, evidence_paths: list[Path]) ->
     if source_path.is_absolute():
         return source_path.exists()
     return any((path.parent / source_text).exists() for path in evidence_paths)
+
+
+def _validate_source_artifact(
+    source_artifact: Any,
+    section_name: str,
+    evidence_paths: list[Path],
+    issues: list[str],
+) -> None:
+    source_text = str(source_artifact or "").strip()
+    if source_text in LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS:
+        issues.append(f"{section_name}:template_source_artifact_not_accepted")
+        return
+    source_path = Path(source_text).expanduser()
+    if evidence_paths:
+        if not _source_artifact_exists(source_text, evidence_paths):
+            issues.append(f"{section_name}:source_artifact_not_found")
+        return
+    if source_path.is_absolute():
+        if not source_path.exists():
+            issues.append(f"{section_name}:source_artifact_not_found")
+        return
+    issues.append(f"{section_name}:unverified_source_artifact")
 
 
 def _walk_live_evidence_strings(value: Any, prefix: str = "") -> list[tuple[str, str]]:
