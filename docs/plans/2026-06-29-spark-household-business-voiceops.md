@@ -59,7 +59,7 @@ Evidence notes:
 
 - NVIDIA's Nemotron deployment guide lists a "Nemotron 3 Super on DGX Spark" path for a single DGX Spark with 128 GB unified memory using vLLM and TensorRT-LLM with NVFP4 and MTP.
 - NVIDIA describes Nemotron 3 Super as a 120B-total, 12B-active hybrid MoE model for agentic reasoning.
-- NVIDIA describes Nemotron 3 Ultra as a 550B model; its NVFP4 checkpoint is still far larger than the Spark-local target, so Ultra should be a hosted or remote fallback unless new local evidence proves otherwise.
+- NVIDIA describes Nemotron 3 Ultra as a 550B model; for VoiceOps, Ultra is only an optional hosted/upstream fallback and must not be used as Spark-local readiness proof.
 
 ## Operating Domains
 
@@ -343,8 +343,22 @@ The command writes:
 - `safe-command-manifest.json`
 - `milestone2-execution-plan.json`
 - `milestone2-execution-plan.md`
+- `provisioning-preflight-evidence.template.json`
+- `setup-closure-plan.json`
+- `setup-closure-plan.md`
 
 The default preflight is non-mutating and only checks PATH/env presence, env-key presence, command policy, and phone-handoff configuration shape. It blocks live spend, provider provisioning, credential retrieval, outbound phone calls, account mutation, and network tunnels. If active command probing is needed, it must be explicitly enabled with `--run-command-probes`; that mode is still limited to isolated version/help subprocess probes and must not be treated as approval for `stripe projects add`, Link spend creation, card retrieval, MPP payment, SMS, or phone calls.
+
+When local setup and account/capability evidence exists, ingest supplied evidence without running live spend or provider mutations:
+
+```bash
+uv run python scripts/voiceops_provisioning_probe.py \
+  --output-dir artifacts/voiceops-provisioning/current \
+  --env-file .env \
+  --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json
+```
+
+The supplied evidence path is read-only. It must contain account aliases, capability booleans, provider references, credential-location references, and rollback owners only. It must not contain Stripe secrets, provider tokens, raw card data, full phone numbers, or proof of unapproved live spend.
 
 The Milestone 2 execution plan is also non-mutating. It is the post-approval contract for the first live provisioning flow: readiness gates, display-only discovery commands, approval-required Stripe/Link/phone actions, receipt schema, credential-location schema, rollback/deprovision notes, and phone-context linkage. It must never claim that spend, provisioning, credential retrieval, outbound messages, or phone calls have already executed.
 
@@ -451,6 +465,38 @@ The command writes:
 The plan run is artifact-only. It should surface readiness gaps such as missing Stripe/phone local setup or missing DGX Spark benchmark evidence, but those gaps must not cause live spend, provider provisioning, outbound messaging, calls, or secret reads.
 
 The readiness closure index is the top-level next-action map for the remaining external evidence gates. It must keep live Discord voice evidence, Stripe/MPP/phone provisioning evidence, and DGX Spark benchmark evidence separate, list the required proof shape for each gate, point at the relevant evidence templates and closure plans, and continue to report `needs_external_evidence` until supplied artifacts prove the live gates. It must never collapse missing live evidence into a single ready claim.
+
+When evidence exists, rerun the same indexer with the relevant read-only artifacts instead of hand-editing the index:
+
+```bash
+uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
+  --output-dir artifacts/voiceops-plan/current \
+  --voice-live-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json \
+  --voice-live-evidence path/to/sidecar-session.json \
+  --voice-live-evidence path/to/live-turn.json
+```
+
+```bash
+uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
+  --output-dir artifacts/voiceops-plan/current \
+  --env-file .env \
+  --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json
+```
+
+```bash
+uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
+  --output-dir artifacts/voiceops-plan/current \
+  --evidence path/to/spark-benchmark-evidence.json
+```
+
+If local setup discovery needs bounded binary/version checks, run the provisioning probe with explicit opt-in and then re-index its evidence:
+
+```bash
+uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
+  --output-dir artifacts/voiceops-plan/current \
+  --env-file .env \
+  --run-command-probes
+```
 
 ## Success Criteria
 

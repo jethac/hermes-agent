@@ -1,12 +1,12 @@
 ---
-title: "DGX Spark Gemma 4 realtime voice evaluation plan"
+title: "DGX Spark KAME realtime voice evaluation plan"
 status: planned
 date: 2026-06-28
 type: plan
 target_repo: hermes-agent
 ---
 
-# DGX Spark Gemma 4 Realtime Voice Evaluation Plan
+# DGX Spark KAME Realtime Voice Evaluation Plan
 
 ## Summary
 
@@ -18,10 +18,13 @@ the KAME architecture intact:
 - The interface layer hears, segments turns, handles barge-in, speaks, and
   delegates reasoning/actions to Hermes.
 
-The preferred brain target is Gemma 4 26B-A4B served locally on DGX Spark. The
-voice layer should be evaluated independently so a weak or experimental voice
-frontend cannot hide a strong local oracle, and a good voice frontend cannot
-hide a weak oracle.
+The preferred Spark-local large-model/oracle target is Nemotron 3 Super served
+locally on DGX Spark. Gemma 4 E2B remains the preferred reflex/interface
+candidate because it is the audio-native low-latency KAME frontend target.
+Gemma 4 26B-A4B remains a comparison candidate, not the primary local brain.
+The voice layer should be evaluated independently so a weak or experimental
+voice frontend cannot hide a strong local oracle, and a good voice frontend
+cannot hide a weak oracle.
 
 ## Evidence Snapshot
 
@@ -29,15 +32,18 @@ Recent DGX Spark reports suggest this ranking for Hermes:
 
 | Area | Best-supported path | Evidence summary | Risk |
 | --- | --- | --- | --- |
-| Local oracle | Gemma 4 26B-A4B via vLLM | Reported around 24-40 decode tok/s, with strong prefill and workable memory use on single Spark. | Serving image/version details matter. |
-| Cloud voice baseline | Cartesia bridge | We already have a Hermes STT/TTS bridge. Good for proving Gemma-as-brain before local speech work. | Cloud dependency; not a local-only answer. |
+| Local oracle | Nemotron 3 Super via Hermes `/model` to a local Spark endpoint | Sponsor-aligned serious reasoning target with an explicit Spark-local deployment path; must be benchmarked before one-Spark readiness is claimed. | Serving image/version and memory profile details matter. |
+| Oracle comparison | Gemma 4 26B-A4B via vLLM | Reported around 24-40 decode tok/s, with strong prefill and workable memory use on single Spark. | Comparison target, not the primary VoiceOps brain. |
+| Cloud voice baseline | Cartesia bridge | We already have a Hermes STT/TTS bridge. Good for proving the voice path while local speech work proceeds. | Cloud dependency; not a local-only answer. |
 | Local voice pipeline | Nemotron Speech or Riva-like ASR + Magpie/Riva TTS | Pipecat/Nemotron/Magpie is the only well-instrumented Spark voice pipeline found, around 1.2s server-side voice-to-voice in reported runs. | Need a Hermes-compatible bridge; full Riva setup reports include install pain. |
 | Full-duplex local S2S | Moshi/PersonaPlex | Spark reports mention choppy/unusable realtime audio. | Deprioritize until the pipeline baseline is solved. |
 | Direct speech LLM | Ultravox | No confirmed DGX Spark deployment numbers found. | Watchlist only. |
 | TensorRT-LLM | Model support exists, but less practical user evidence than vLLM/SGLang/llama.cpp. | Revisit after vLLM baseline. |
 
-The practical conclusion is to prove Gemma 4 26B-A4B as the oracle first, then
-compare voice frontends against that stable brain.
+The practical conclusion is to prove Nemotron 3 Super as the Spark-local oracle
+first, then compare voice frontends against that stable brain. Gemma 4 E2B stays
+on the reflex/interface track, while Gemma 4 26B-A4B is kept as a measured
+comparison oracle.
 
 ## Headless Runner
 
@@ -90,7 +96,7 @@ Runner behavior:
 - Generates `compose.yaml`, `.env.example`, `launch-local-stack.sh`,
   `preflight-local-stack.sh`, `benchmark-matrix.json`, and benchmark evidence
   templates.
-- Uses Gemma 4 E2B as the default native-audio reflex and Gemma 4 26B-A4B as
+- Uses Gemma 4 E2B as the default native-audio reflex and Nemotron 3 Super as
   the preferred local oracle provider target unless environment variables
   override the generated endpoint/preflight target. Hermes still selects the
   active oracle through its normal `/model` path.
@@ -109,7 +115,7 @@ export DGX_SPARK_INTERFACE_BASE_URL=http://spark.local:8000/v1
 export DGX_SPARK_INTERFACE_MODEL=gemma-4-E2B-it
 export DGX_SPARK_INTERFACE_MAX_AUDIO_SECONDS=30
 export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8001/v1
-export DGX_SPARK_ORACLE_MODEL=gemma-4-26B-A4B-it  # provider target, not a Hermes /model override
+export DGX_SPARK_ORACLE_MODEL=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target, not a Hermes /model override
 export DGX_SPARK_SIDECAR_BASE_URL=http://spark.local:8765
 export DGX_SPARK_LOCAL_VOICE_BRIDGE_URL=http://spark.local:8767
 export DGX_SPARK_LOCAL_TTS_BRIDGE_URL=http://spark.local:8768
@@ -123,22 +129,22 @@ Acceptance gates:
 | --- | --- |
 | KAME launch pack generation | Required |
 | Interface model | Defaults to Gemma 4 E2B native audio |
-| Local oracle provider target | Defaults to Gemma 4 26B-A4B; Hermes still selects the active oracle through `/model` |
+| Local oracle provider target | Defaults to Nemotron 3 Super; Hermes still selects the active oracle through `/model` |
 | Preflight | Required only when `DGX_SPARK_KAME_CHECK=1` |
 | Benchmark matrix | Includes direct-audio vs STT-fallback reflex comparison |
 | Evidence validation | Required when `DGX_SPARK_KAME_BENCHMARK_EVIDENCE` is set |
 | Recommendation report | Emits Track A/B/C decision and missing-evidence reasons |
 
-## Track A: Gemma 4 26B-A4B Oracle
+## Track A: Nemotron 3 Super Oracle
 
-Goal: verify that Gemma 4 26B-A4B can serve as Hermes's local brain before any
-voice frontend evaluation.
+Goal: verify that Nemotron 3 Super can serve as Hermes's local Spark brain
+before any voice frontend evaluation.
 
 Expected external service:
 
 - OpenAI-compatible chat completions endpoint on the DGX Spark.
-- Suggested first serving path: vLLM with the Spark/Gemma 4 CUDA 13 image or
-  equivalent known-good recipe.
+- Suggested first serving path: vLLM or TensorRT-LLM with the Spark-compatible
+  Nemotron 3 Super recipe.
 - Keep the model warm for the full evaluation; do not unload/swap between voice
   runs.
 
@@ -146,7 +152,7 @@ Headless variables:
 
 ```bash
 export DGX_SPARK_ORACLE_BASE_URL=http://<spark-host>:8000
-export DGX_SPARK_ORACLE_MODEL=gemma-4-26b-a4b-it  # provider target, not a Hermes /model override
+export DGX_SPARK_ORACLE_MODEL=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target, not a Hermes /model override
 export DGX_SPARK_ORACLE_API_KEY=optional
 export DGX_SPARK_ORACLE_TIMEOUT_SECONDS=120
 export DGX_SPARK_ORACLE_MAX_TOKENS=220
@@ -156,7 +162,7 @@ Runner behavior:
 
 - Runs `python -m hermes_cli.realtime_voice_oracle_probe`.
 - Calls `/v1/chat/completions`, accepting either root or `/v1` base URLs.
-- Writes `oracle-gemma4-probe.json`.
+- Writes `oracle-probe.json`.
 - Records elapsed milliseconds, completion tokens, approximate tokens/sec, and
   a response preview.
 
@@ -234,8 +240,9 @@ Acceptance gates:
 | Barge-in | Stop/cancel under 150ms target |
 | Model-facing context | Hermes never claims it cannot hear/speak while in voice mode |
 
-Track B is the fastest path to answering: "Is Gemma 4 26B-A4B good enough as
-the Hermes brain in a voice session?"
+Track B is the fastest path to answering: "Is the selected Hermes oracle,
+preferably Nemotron 3 Super on Spark, good enough in a voice session before
+local speech is ready?"
 
 ## Track C: Local DGX Speech Bridge
 
@@ -295,9 +302,9 @@ Acceptance gates:
 | Local ASR partial latency | Under 300ms |
 | Final transcript latency | Under 700ms after speech end |
 | Local TTS first audio | Under 900ms from first assistant text |
-| End-to-end spoken turn | Under 1500ms with Gemma warm |
+| End-to-end spoken turn | Under 1500ms with the selected oracle warm |
 | Barge-in | Under 150ms stop/cancel |
-| Resource contention | Gemma decode does not collapse while speech bridge is active |
+| Resource contention | Oracle decode does not collapse while speech bridge is active |
 
 Track C only becomes the preferred path if it beats or gets close to Track B
 while preserving reliability and local-only operation.
@@ -306,15 +313,16 @@ while preserving reliability and local-only operation.
 
 | Track | Brain | Voice frontend | Must run headless? | Purpose |
 | --- | --- | --- | --- | --- |
-| A | Gemma 4 26B-A4B via vLLM | none | Yes | Prove local oracle viability. |
-| B | Gemma 4 26B-A4B via vLLM | Cartesia bridge | Yes | Establish high-quality voice baseline. |
-| C | Gemma 4 26B-A4B via vLLM | Local DGX speech bridge | Yes | Test local-only target. |
+| A | Nemotron 3 Super via local Spark endpoint | none | Yes | Prove preferred local oracle viability. |
+| B | Nemotron 3 Super via local Spark endpoint | Cartesia bridge | Yes | Establish high-quality voice baseline. |
+| C | Nemotron 3 Super via local Spark endpoint | Local DGX speech bridge | Yes | Test local-only target. |
+| D | Gemma 4 26B-A4B via vLLM | best passing voice frontend | Yes | Compare non-NVIDIA local brain quality and latency. |
 
 ## Decision Rules
 
-1. If Track A fails, do not evaluate local speech yet. Fix Gemma serving first.
-2. If Track A passes and Track B feels good, Gemma 4 is a plausible Hermes
-   brain and local speech becomes an optimization.
+1. If Track A fails, do not evaluate local speech yet. Fix Nemotron 3 Super serving first.
+2. If Track A passes and Track B feels good, Nemotron 3 Super is a plausible
+   Hermes brain and local speech becomes an optimization.
 3. If Track B passes but Track C fails, ship/keep Cartesia as the baseline and
    continue local speech bridge development separately.
 4. If Track C passes within 25% of Track B latency, prefer Track C for local DGX
@@ -344,21 +352,21 @@ Optional track failures are recorded in `summary.md` without aborting the whole
 run. Set `DGX_SPARK_EVAL_STRICT=1` when a nonzero exit is desired for any
 optional track failure.
 
-With Gemma and Cartesia:
+With Nemotron 3 Super and Cartesia:
 
 ```bash
 export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8000
-export DGX_SPARK_ORACLE_MODEL=gemma-4-26b-a4b-it  # provider target, not a Hermes /model override
+export DGX_SPARK_ORACLE_MODEL=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target, not a Hermes /model override
 export CARTESIA_API_KEY=...
 export CARTESIA_VOICE_ID=...
 scripts/dgx_spark_gemma4_voice_eval.sh
 ```
 
-With Gemma, Cartesia, and local DGX speech:
+With Nemotron 3 Super, Cartesia, and local DGX speech:
 
 ```bash
 export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8000
-export DGX_SPARK_ORACLE_MODEL=gemma-4-26b-a4b-it  # provider target, not a Hermes /model override
+export DGX_SPARK_ORACLE_MODEL=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target, not a Hermes /model override
 export CARTESIA_API_KEY=...
 export CARTESIA_VOICE_ID=...
 export DGX_SPARK_LOCAL_VOICE_BRIDGE_URL=http://spark.local:8770

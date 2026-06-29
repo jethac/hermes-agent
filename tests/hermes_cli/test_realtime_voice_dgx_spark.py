@@ -12,6 +12,7 @@ PRODUCTION_ASR_MODEL = "nemotron-speech-streaming-0.6b"
 PRODUCTION_TTS_MODEL = "magpie-local-streaming-tts"
 PRODUCTION_ASR_ADAPTER = "nemotron_speech_streaming"
 PRODUCTION_TTS_ADAPTER = "magpie_streaming_tts"
+DEFAULT_SUPER_ORACLE_MODEL = realtime_voice_dgx_spark.DEFAULT_ORACLE_MODEL
 
 
 def _manifest(tmp_path: Path, *, production_speech: bool = False) -> dict:
@@ -39,7 +40,7 @@ def _manifest(tmp_path: Path, *, production_speech: bool = False) -> dict:
         interface_gpu_memory_utilization=0.18,
         interface_max_audio_seconds=30.0,
         oracle_base_url="http://spark.local:8001/v1",
-        oracle_model="gemma-4-26B-A4B-it",
+        oracle_model=DEFAULT_SUPER_ORACLE_MODEL,
         oracle_context_tokens=32768,
         oracle_gpu_memory_utilization=0.62,
         sidecar_base_url="http://spark.local:8765",
@@ -135,7 +136,7 @@ def _passing_benchmark_evidence() -> list[dict]:
             "kind": "kame_model_assumption_result",
             "name": "oracle_authority",
             "validated_by": "oracle_models_probe",
-            "model": "gemma-4-26B-A4B-it",
+            "model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
             "ok": True,
         },
     ]
@@ -305,7 +306,7 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
         "image": 0,
         "audio": 0,
     }
-    assert manifest["model_assumptions"]["oracle_authority"]["model"] == "gemma-4-26B-A4B-it"
+    assert manifest["model_assumptions"]["oracle_authority"]["model"] == DEFAULT_SUPER_ORACLE_MODEL
     assert manifest["roles"]["interface"]["provider"] == "gemma4"
     assert manifest["roles"]["interface"]["implementation"] == "openai_compatible_vllm"
     assert manifest["roles"]["interface"]["model"] == "gemma-4-E2B-it"
@@ -318,7 +319,7 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     assert manifest["roles"]["interface"]["limit_mm_per_prompt"] == {"image": 0, "audio": 1}
     assert manifest["roles"]["interface"]["max_audio_seconds"] == 30.0
     assert manifest["roles"]["interface"]["api_key_env"] == "HERMES_KAME_INTERFACE_API_KEY"
-    assert manifest["roles"]["oracle"]["preferred_local_model"] == "gemma-4-26B-A4B-it"
+    assert manifest["roles"]["oracle"]["preferred_local_model"] == DEFAULT_SUPER_ORACLE_MODEL
     assert manifest["roles"]["oracle"]["limit_mm_per_prompt"] == {"image": 0, "audio": 0}
     assert manifest["roles"]["asr"]["role"] == "oracle_verbatim_evidence"
     assert manifest["roles"]["asr"]["provider"] == "streaming_stt"
@@ -350,7 +351,7 @@ def test_rendered_compose_has_reflex_oracle_and_sidecar_without_secret_material(
     assert "kame-asr-bridge:" in compose
     assert "kame-tts-bridge:" in compose
     assert "gemma-4-E2B-it" in compose
-    assert "gemma-4-26B-A4B-it" in compose
+    assert DEFAULT_SUPER_ORACLE_MODEL in compose
     assert "--limit-mm-per-prompt" in compose
     assert '{"audio":1,"image":0}' in compose
     assert '{"audio":0,"image":0}' in compose
@@ -421,7 +422,7 @@ def test_manifest_clamps_interface_max_audio_seconds(tmp_path):
         interface_gpu_memory_utilization=0.18,
         interface_max_audio_seconds=99.0,
         oracle_base_url="http://spark.local:8001/v1",
-        oracle_model="gemma-4-26B-A4B-it",
+        oracle_model=DEFAULT_SUPER_ORACLE_MODEL,
         oracle_context_tokens=32768,
         oracle_gpu_memory_utilization=0.62,
         sidecar_base_url="http://spark.local:8765",
@@ -442,7 +443,7 @@ def test_manifest_clamps_interface_max_audio_seconds(tmp_path):
         interface_gpu_memory_utilization=0.18,
         interface_max_audio_seconds=0.25,
         oracle_base_url="http://spark.local:8001/v1",
-        oracle_model="gemma-4-26B-A4B-it",
+        oracle_model=DEFAULT_SUPER_ORACLE_MODEL,
         oracle_context_tokens=32768,
         oracle_gpu_memory_utilization=0.62,
         sidecar_base_url="http://spark.local:8765",
@@ -547,7 +548,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert ': "${HERMES_KAME_INTERFACE_PROVIDER:=gemma4}"' in launch
     assert ': "${HERMES_KAME_INTERFACE_MODEL:=gemma-4-E2B-it}"' in launch
     assert ': "${HERMES_KAME_INTERFACE_API_KEY_ENV:=HERMES_KAME_INTERFACE_API_KEY}"' in launch
-    assert ': "${HERMES_KAME_ORACLE_MODEL:=gemma-4-26B-A4B-it}"' in launch
+    assert ': "${HERMES_KAME_ORACLE_MODEL:=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4}"' in launch
     assert ': "${HERMES_VOICE_STREAMING_STT_BASE_URL:=http://spark.local:8767}"' in launch
     assert ': "${HERMES_VOICE_STREAMING_TTS_BASE_URL:=http://spark.local:8768}"' in launch
     assert ': "${HERMES_KAME_VOICE_RESPONSE_POLICY:=sentence_cap}"' in launch
@@ -810,7 +811,7 @@ def test_preflight_checks_openai_models_and_health_urls(monkeypatch, tmp_path):
                 }
             )
         if request.full_url.endswith("/models") and ":8001" in request.full_url:
-            return _Response({"data": [{"id": "gemma-4-26B-A4B-it"}]})
+            return _Response({"data": [{"id": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"}]})
         if request.full_url.endswith("/health") and ":8765" in request.full_url:
             return _Response(
                 {
@@ -896,7 +897,7 @@ def test_preflight_fails_when_sidecar_lacks_kame_reflex_capability(monkeypatch, 
                 }
             )
         if request.full_url.endswith("/models") and ":8001" in request.full_url:
-            return _Response({"data": [{"id": "gemma-4-26B-A4B-it"}]})
+            return _Response({"data": [{"id": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"}]})
         if request.full_url.endswith("/health") and ":8765" in request.full_url:
             return _Response(
                 {
@@ -955,7 +956,7 @@ def test_preflight_fails_when_interface_audio_probe_is_not_kame_json(monkeypatch
         if request.full_url.endswith("/chat/completions") and ":8000" in request.full_url:
             return _Response({"choices": [{"message": {"content": "not json"}}]})
         if request.full_url.endswith("/models") and ":8001" in request.full_url:
-            return _Response({"data": [{"id": "gemma-4-26B-A4B-it"}]})
+            return _Response({"data": [{"id": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"}]})
         if request.full_url.endswith("/health") and ":8765" in request.full_url:
             return _Response(
                 {
@@ -1028,7 +1029,7 @@ def test_preflight_fails_when_speech_bridge_health_payload_is_not_ok(monkeypatch
                 }
             )
         if request.full_url.endswith("/models") and ":8001" in request.full_url:
-            return _Response({"data": [{"id": "gemma-4-26B-A4B-it"}]})
+            return _Response({"data": [{"id": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"}]})
         if request.full_url.endswith("/health") and ":8765" in request.full_url:
             return _Response(
                 {
@@ -1475,7 +1476,7 @@ def test_voice_subcommand_exposes_dgx_spark_launch_profile(tmp_path):
             "--interface-candidate-model",
             "gemma-4-E4B-it",
             "--oracle-model",
-            "gemma-4-26B-A4B-it",
+            "custom-local-oracle-model",
             "--asr-provider",
             "nvidia_speech",
             "--tts-provider",
@@ -1491,7 +1492,7 @@ def test_voice_subcommand_exposes_dgx_spark_launch_profile(tmp_path):
     assert args.interface_model == "gemma-4-E2B-it"
     assert args.interface_provider == "gemma4"
     assert args.interface_candidate_model == ["gemma-4-E4B-it"]
-    assert args.oracle_model == "gemma-4-26B-A4B-it"
+    assert args.oracle_model == "custom-local-oracle-model"
     assert args.asr_provider == "nvidia_speech"
     assert args.tts_provider == "cartesia"
     assert args.check is True

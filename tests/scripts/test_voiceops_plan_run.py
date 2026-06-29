@@ -8,6 +8,9 @@ from pathlib import Path
 from scripts.voiceops_plan_run import build_plan_run, parse_args, write_plan_run
 
 
+GOAL_DOC = Path(__file__).resolve().parents[2] / "docs" / "plans" / "2026-06-29-spark-household-business-voiceops.md"
+
+
 def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     artifact_root = tmp_path / "artifacts"
     output_dir = artifact_root / "voiceops-plan" / "current"
@@ -95,6 +98,34 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "VoiceOps Readiness Closure Index" in closure_markdown
     assert "live_discord_voice_operator" in closure_markdown
     assert "milestone_0_hackathon_proof" in markdown
+
+
+def test_goal_doc_lists_voiceops_closure_artifacts():
+    text = GOAL_DOC.read_text(encoding="utf-8")
+
+    for artifact in [
+        "live-voice-evidence-template.json",
+        "live-probe-closure-plan.json",
+        "live-probe-closure-plan.md",
+        "provisioning-preflight-evidence.template.json",
+        "setup-closure-plan.json",
+        "setup-closure-plan.md",
+        "spark-benchmark-evidence-template.json",
+        "readiness-closure-index.json",
+        "readiness-closure-index.md",
+    ]:
+        assert f"`{artifact}`" in text
+
+
+def test_goal_doc_keeps_super_local_and_ultra_hosted():
+    text = GOAL_DOC.read_text(encoding="utf-8")
+
+    assert "Nemotron 3 Super is the preferred Spark-local NVIDIA oracle/model target" in text
+    assert "Nemotron 3 Ultra is the hosted fallback" in text
+    assert "Ultra is only an optional hosted/upstream fallback" in text
+    assert "must not be used as Spark-local readiness proof" in text
+    assert "There should not be a separate `oracle_model` setting for VoiceOps" in text
+    assert "`/model` remains authoritative" in text
 
 
 def test_plan_run_keeps_provisioning_incomplete_without_preflight_evidence(tmp_path):

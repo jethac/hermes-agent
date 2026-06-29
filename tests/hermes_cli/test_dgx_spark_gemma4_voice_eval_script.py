@@ -48,6 +48,9 @@ def test_dgx_spark_eval_script_generates_full_kame_launch_pack():
     assert "Full KAME stack pack: $KAME_STACK_DIR" in text
     assert "python -m hermes_cli.realtime_voice_oracle_probe" in text
     assert "--output \"$ARTIFACT_DIR/oracle-probe.json\"" in text
+    assert "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4" in text
+    assert "gemma-4-26B-A4B-it" not in text
+    assert "gemma-4-26b-a4b-it" not in text
     assert "python -m hermes_cli.realtime_voice_dgx_report" in text
     assert "--output \"$ARTIFACT_DIR/recommendation.json\"" in text
     assert "--markdown-output \"$ARTIFACT_DIR/recommendation.md\"" in text
