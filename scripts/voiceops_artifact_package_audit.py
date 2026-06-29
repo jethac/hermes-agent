@@ -515,6 +515,7 @@ def _iter_plan_run_commands(value: Any) -> list[str]:
 
 def _audit_plan_consistency(
     *,
+    demo: Mapping[str, Any],
     demo_closure: Mapping[str, Any],
     demo_handoff: Mapping[str, Any],
     plan_run: Mapping[str, Any],
@@ -551,6 +552,7 @@ def _audit_plan_consistency(
     _audit_plan_safety("plan_closure", plan_closure.get("safety"), issues)
     if plan_handoff != plan_closure.get("operator_handoff"):
         issues.append("operator_handoff:mismatch_with_closure")
+    _audit_plan_model_args(demo=demo, plan_run=plan_run, issues=issues)
     for label, payload in (
         ("demo_closure", demo_closure),
         ("demo_handoff", demo_handoff),
@@ -586,6 +588,29 @@ def _audit_plan_consistency(
         for key in ("order", "commands", "expected_artifacts", "success_check"):
             if demo_phase.get(key) != plan_phase.get(key):
                 issues.append(f"demo_handoff:{phase_id}:{key}_mismatch")
+
+
+def _audit_plan_model_args(*, demo: Mapping[str, Any], plan_run: Mapping[str, Any], issues: list[str]) -> None:
+    plan_args = plan_run.get("plan_args")
+    if plan_args is None:
+        return
+    if not isinstance(plan_args, Mapping):
+        issues.append("plan_run:plan_args_not_object")
+        return
+    active_model_arg = plan_args.get("active_model")
+    reflex_model_arg = plan_args.get("reflex_model")
+    sponsor_stack = demo.get("sponsor_stack") if isinstance(demo.get("sponsor_stack"), Mapping) else {}
+    active_path = (
+        sponsor_stack.get("hermes_active_model")
+        if isinstance(sponsor_stack.get("hermes_active_model"), Mapping)
+        else {}
+    )
+    spark_stack = demo.get("spark_stack") if isinstance(demo.get("spark_stack"), Mapping) else {}
+    reflex = spark_stack.get("reflex") if isinstance(spark_stack.get("reflex"), Mapping) else {}
+    if active_model_arg is not None and active_model_arg != active_path.get("active_model"):
+        issues.append("plan_run:active_model_arg_mismatch_demo")
+    if reflex_model_arg is not None and reflex_model_arg != reflex.get("model"):
+        issues.append("plan_run:reflex_model_arg_mismatch_demo")
 
 
 def _audit_plan_safety(label: str, safety: Any, issues: list[str]) -> None:
@@ -985,6 +1010,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     )
     _audit_service_claims(operator_state, issues)
     _audit_plan_consistency(
+        demo=demo,
         demo_closure=demo_closure,
         demo_handoff=demo_handoff,
         plan_run=plan_run,

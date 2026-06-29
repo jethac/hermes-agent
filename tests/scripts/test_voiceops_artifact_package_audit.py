@@ -11,10 +11,10 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _generate_package(tmp_path: Path) -> Path:
+def _generate_package(tmp_path: Path, **plan_kwargs) -> Path:
     artifact_root = tmp_path / "artifacts"
     output_dir = artifact_root / "voiceops-plan" / "current"
-    summary = build_plan_run(artifact_root=artifact_root, output_dir=output_dir, env={})
+    summary = build_plan_run(artifact_root=artifact_root, output_dir=output_dir, env={}, **plan_kwargs)
     write_plan_run(output_dir, summary)
     return artifact_root
 
@@ -313,6 +313,38 @@ def test_package_audit_rejects_plan_run_top_level_mirror_drift(tmp_path):
     assert "plan_run:closure_status_mismatch" in report["issues"]
     assert "plan_run:remaining_gates_mismatch" in report["issues"]
     assert "plan_run:next_actions_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_plan_run_model_arg_drift_from_demo(tmp_path):
+    artifact_root = _generate_package(
+        tmp_path,
+        active_model="Nemotron 3 Super via hosted provider",
+        reflex_model="Gemma 4 E4B audio-native",
+    )
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    plan_run["plan_args"]["active_model"] = "Nemotron 3 Ultra via hosted provider"
+    plan_run["plan_args"]["reflex_model"] = "Gemma 4 E2B audio-native"
+    _write_json(plan_run_path, plan_run)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "plan_run:active_model_arg_mismatch_demo" in report["issues"]
+    assert "plan_run:reflex_model_arg_mismatch_demo" in report["issues"]
+
+
+def test_package_audit_rejects_non_object_plan_args(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    plan_run["plan_args"] = ["not", "an", "object"]
+    _write_json(plan_run_path, plan_run)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "plan_run:plan_args_not_object" in report["issues"]
 
 
 def test_package_audit_rejects_plan_safety_drift(tmp_path):
