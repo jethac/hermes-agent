@@ -1114,6 +1114,13 @@ def _refresh_preflight_section_hashes(
         previous_sha256 = str(section.get("source_artifact_sha256") or "")
         new_sha256 = hashlib.sha256(source_bytes).hexdigest()
         section["source_artifact_sha256"] = new_sha256
+        attestation = section.get("collector_attestation")
+        previous_attestation_sha256: str | None = None
+        attestation_changed = False
+        if isinstance(attestation, MutableMapping):
+            previous_attestation_sha256 = str(attestation.get("redacted_artifact_sha256") or "")
+            attestation["redacted_artifact_sha256"] = new_sha256
+            attestation_changed = previous_attestation_sha256 != new_sha256
         updates.append(
             {
                 "section": section_name,
@@ -1122,6 +1129,9 @@ def _refresh_preflight_section_hashes(
                 "source_artifact_path": str(source_path),
                 "previous_sha256": previous_sha256,
                 "source_artifact_sha256": new_sha256,
+                "previous_collector_attestation_redacted_artifact_sha256": previous_attestation_sha256,
+                "collector_attestation_redacted_artifact_sha256": new_sha256 if isinstance(attestation, Mapping) else None,
+                "collector_attestation_changed": attestation_changed,
                 "changed": previous_sha256 != new_sha256,
             }
         )

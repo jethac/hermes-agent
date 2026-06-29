@@ -323,6 +323,19 @@ def _demo_closure_summary() -> dict[str, Any]:
                     "source_artifact_kind",
                     "source_artifact_sha256",
                     "source_artifact_redacted_at",
+                    "collector_attestation",
+                ],
+                "required_collector_attestation_fields": [
+                    "collector_name",
+                    "collector_version",
+                    "run_id",
+                    "command_argv",
+                    "git_commit",
+                    "started_at",
+                    "finished_at",
+                    "raw_artifact_sha256",
+                    "redacted_artifact_sha256",
+                    "parent_manifest_sha256",
                 ],
                 "source_artifact_kind": "redacted_setup_evidence",
                 "source_artifacts_must_exist": True,
@@ -402,6 +415,10 @@ def _demo_closure_summary() -> dict[str, Any]:
                     "uv run python scripts/voiceops_spark_matrix.py "
                     "--output-dir artifacts/voiceops-spark-matrix/current "
                     f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
+                ),
+                "refresh_source_hashes": (
+                    "uv run python scripts/voiceops_spark_matrix.py "
+                    f"--refresh-source-hashes {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
                 ),
                 "lint_evidence": (
                     "uv run python scripts/voiceops_spark_matrix.py "
@@ -646,12 +663,14 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                 "first_safe_command": spark_gate["collection_commands"]["dgx_eval"],
                 "commands": [
                     spark_gate["collection_commands"]["dgx_eval"],
+                    spark_gate["collection_commands"]["refresh_source_hashes"],
                     spark_gate["collection_commands"]["lint_evidence"],
                     spark_gate["collection_commands"]["with_evidence"],
                     spark_gate["collection_commands"]["plan_index"],
                 ],
                 "command_safety": {
                     "dgx_eval": "requires_dgx_spark_local_benchmark_collection",
+                    "refresh_source_hashes": "local_file_hashing_only",
                     "lint_evidence": "no_write_benchmark_evidence_lint",
                     "with_evidence": "local_benchmark_evidence_validation",
                     "plan_index": "local_reindex_only",

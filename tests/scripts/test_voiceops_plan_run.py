@@ -571,7 +571,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert handoff["phases"][2]["first_safe_command"] == next_actions[2]["first_safe_command"]
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in handoff["phases"][2]["commands"]
-    assert "--lint-evidence" in handoff["phases"][2]["commands"][1]
+    assert "--refresh-source-hashes" in handoff["phases"][2]["commands"][1]
+    assert "--lint-evidence" in handoff["phases"][2]["commands"][2]
     assert "asr-nemotron-speech-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
     assert "tts-magpie-local-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
     assert "all-local-stack-smoke-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
@@ -687,6 +688,19 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "source_artifact_kind",
         "source_artifact_sha256",
         "source_artifact_redacted_at",
+        "collector_attestation",
+    ]
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["required_collector_attestation_fields"] == [
+        "collector_name",
+        "collector_version",
+        "run_id",
+        "command_argv",
+        "git_commit",
+        "started_at",
+        "finished_at",
+        "raw_artifact_sha256",
+        "redacted_artifact_sha256",
+        "parent_manifest_sha256",
     ]
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["source_artifacts_must_exist"] is True
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["source_artifact_sha256_must_match"] is True
@@ -764,6 +778,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "all_local_stack_smoke:needs_evidence" in gates["local_spark_stack_matrix"]["missing"]
     assert "all_local_stack_smoke is validated" in gates["local_spark_stack_matrix"]["completion_signal"]
     assert gates["local_spark_stack_matrix"]["collection_commands"]["dgx_eval"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
+    assert "--refresh-source-hashes" in gates["local_spark_stack_matrix"]["collection_commands"]["refresh_source_hashes"]
     assert "--lint-evidence" in gates["local_spark_stack_matrix"]["collection_commands"]["lint_evidence"]
     assert "host_system" in gates["local_spark_stack_matrix"]["current_environment"]
     assert summary["hard_failures"] == []
@@ -1197,10 +1212,12 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "`source_artifact_kind: redacted_setup_evidence`, `source_artifact_sha256`, `source_artifact_redacted_at`, and `collector_attestation`" in text
     assert "SHA-256 must match the referenced redacted JSON source artifact" in text
     assert "attestation redacted hash must match that SHA-256" in text
+    assert "refreshes `source_artifact_sha256` and `collector_attestation.redacted_artifact_sha256` together" in text
     assert "redaction and collection timestamps must be parseable with timezone information" in text
     assert "placeholder or `example_only` attestations are rejected" in text
     assert "all_local_stack_smoke" in text
     assert "source_artifact_sha256` and `collector_attestation.redacted_artifact_sha256`" in text
+    assert "`--refresh-source-hashes path/to/evidence.json`" in text
     assert "oracle authority routes include tools/files/memory/project context" in text
     assert "reflex provider includes `vllm`" in text
     assert "`speech_end_to_first_audio_ms <= 1500`" in text

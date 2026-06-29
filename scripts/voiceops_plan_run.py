@@ -314,6 +314,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
     ]
     spark_commands = [
         spark_gate["collection_commands"]["dgx_eval"],
+        spark_gate["collection_commands"]["refresh_source_hashes"],
         spark_gate["collection_commands"]["lint_evidence"],
         spark_gate["collection_commands"]["with_evidence"],
         spark_gate["collection_commands"]["plan_index"],
@@ -775,6 +776,19 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "source_artifact_kind",
                     "source_artifact_sha256",
                     "source_artifact_redacted_at",
+                    "collector_attestation",
+                ],
+                "required_collector_attestation_fields": [
+                    "collector_name",
+                    "collector_version",
+                    "run_id",
+                    "command_argv",
+                    "git_commit",
+                    "started_at",
+                    "finished_at",
+                    "raw_artifact_sha256",
+                    "redacted_artifact_sha256",
+                    "parent_manifest_sha256",
                 ],
                 "source_artifact_kind": "redacted_setup_evidence",
                 "source_artifacts_must_exist": True,
@@ -901,6 +915,10 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "uv run python scripts/voiceops_spark_matrix.py "
                     "--output-dir artifacts/voiceops-spark-matrix/current "
                     f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
+                ),
+                "refresh_source_hashes": (
+                    "uv run python scripts/voiceops_spark_matrix.py "
+                    f"--refresh-source-hashes {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
                 ),
                 "lint_evidence": (
                     "uv run python scripts/voiceops_spark_matrix.py "

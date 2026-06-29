@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.voiceops_spark_matrix import build_matrix, parse_args, write_matrix
+from scripts.voiceops_spark_matrix import build_matrix, parse_args, refresh_spark_source_hashes, write_matrix
 
 
 def _source_artifact_sha256(relative: str) -> str:
@@ -207,6 +207,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert closure["benchmark_evidence_shape"]["evidence"][0]["candidate_id"] == "oracle-nemotron3-super-local"
     assert closure["benchmark_evidence_shape"]["evidence"][1]["kind"] == "voiceops_spark_stack_smoke"
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" == closure["rerun_commands"]["dgx_eval"]
+    assert "--refresh-source-hashes" in closure["rerun_commands"]["refresh_source_hashes"]
     assert "--lint-evidence" in closure["rerun_commands"]["lint_evidence"]
     assert "spark-benchmark-scaffold/spark-benchmark-evidence.json" in closure["rerun_commands"]["lint_evidence"]
     assert "VoiceOps Milestone 4 Spark Matrix Closure" in closure_markdown
@@ -230,6 +231,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "spark-benchmark-scaffold/spark-benchmark-evidence.json" in operator_runbook
     assert "path/to/spark-benchmark-evidence.json" not in operator_runbook
     assert "uv run python scripts/voiceops_spark_matrix.py" in operator_runbook
+    assert "--refresh-source-hashes" in operator_runbook
     assert "uv run python scripts/voiceops_plan_run.py" in operator_runbook
     assert "collector_attestation.redacted_artifact_sha256" in operator_runbook
     assert "Nemotron 3 Super is the preferred one-Spark oracle candidate" in operator_runbook
@@ -509,6 +511,42 @@ def test_spark_matrix_rejects_candidate_with_mismatched_source_artifact_hash(tmp
     assert evaluation["status"] == "fails_target"
     assert "source_artifact_sha256_mismatch" in evaluation["issues"]
     assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
+def test_spark_matrix_refresh_source_hashes_updates_candidate_attestation(tmp_path):
+    sources_dir = tmp_path / "sources"
+    sources_dir.mkdir()
+    source_path = sources_dir / "oracle.json"
+    source_path.write_text(
+        json.dumps({"redacted": True, "source": "old oracle output"}, sort_keys=True),
+        encoding="utf-8",
+    )
+    old_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    evidence["source_artifact"] = "sources/oracle.json"
+    evidence["source_artifact_sha256"] = old_sha256
+    evidence["collector_attestation"]["redacted_artifact_sha256"] = old_sha256
+    evidence_path = tmp_path / "spark-benchmark-evidence.json"
+    evidence_path.write_text(json.dumps({"evidence": [evidence]}, indent=2, sort_keys=True), encoding="utf-8")
+    source_path.write_text(
+        json.dumps({"redacted": True, "source": "updated oracle output"}, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    result = refresh_spark_source_hashes(evidence_path)
+    refreshed = json.loads(evidence_path.read_text(encoding="utf-8"))["evidence"][0]
+    new_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+
+    assert result["ok"] is True
+    assert result["schema_version"] == "voiceops.spark_evidence_hash_refresh.v1"
+    assert result["network_io"] is False
+    assert result["spark_execution"] is False
+    assert result["artifact_writes"] is True
+    assert result["updates"][0]["item"] == "oracle-nemotron3-super-local"
+    assert result["updates"][0]["changed"] is True
+    assert result["updates"][0]["collector_attestation_changed"] is True
+    assert refreshed["source_artifact_sha256"] == new_sha256
+    assert refreshed["collector_attestation"]["redacted_artifact_sha256"] == new_sha256
 
 
 def test_spark_matrix_rejects_candidate_without_collector_attestation(tmp_path):
@@ -826,6 +864,37 @@ def test_spark_matrix_rejects_stack_smoke_without_collector_attestation(tmp_path
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "missing_collector_attestation" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_refresh_source_hashes_updates_stack_smoke_attestation(tmp_path):
+    sources_dir = tmp_path / "sources"
+    sources_dir.mkdir()
+    source_path = sources_dir / "stack-smoke.json"
+    source_path.write_text(
+        json.dumps({"redacted": True, "source": "old stack smoke"}, sort_keys=True),
+        encoding="utf-8",
+    )
+    old_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    stack_smoke = _stack_smoke()
+    stack_smoke["source_artifact"] = "sources/stack-smoke.json"
+    stack_smoke["source_artifact_sha256"] = old_sha256
+    stack_smoke["collector_attestation"]["redacted_artifact_sha256"] = old_sha256
+    evidence_path = tmp_path / "spark-benchmark-evidence.json"
+    evidence_path.write_text(json.dumps({"evidence": [stack_smoke]}, indent=2, sort_keys=True), encoding="utf-8")
+    source_path.write_text(
+        json.dumps({"redacted": True, "source": "updated stack smoke"}, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    result = refresh_spark_source_hashes(evidence_path)
+    refreshed = json.loads(evidence_path.read_text(encoding="utf-8"))["evidence"][0]
+    new_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+
+    assert result["ok"] is True
+    assert result["updates"][0]["item"] == "voiceops_spark_stack_smoke"
+    assert result["updates"][0]["collector_attestation_changed"] is True
+    assert refreshed["source_artifact_sha256"] == new_sha256
+    assert refreshed["collector_attestation"]["redacted_artifact_sha256"] == new_sha256
 
 
 def test_spark_matrix_rejects_stack_smoke_with_example_only_source_artifact(tmp_path):
@@ -1492,6 +1561,21 @@ def test_spark_matrix_parse_args_accepts_repeated_evidence(tmp_path):
     args = parse_args(["--evidence", str(first), "--evidence", str(second)])
 
     assert args.evidence == [first, second]
+
+
+def test_spark_matrix_parse_args_accepts_refresh_source_hashes(tmp_path):
+    evidence = tmp_path / "spark-benchmark-evidence.json"
+    args = parse_args(["--refresh-source-hashes", str(evidence)])
+
+    assert args.refresh_source_hashes == evidence
+    assert args.evidence == []
+    assert args.lint_evidence is False
+
+
+def test_spark_matrix_parse_args_rejects_refresh_combined_with_evidence(tmp_path):
+    evidence = tmp_path / "spark-benchmark-evidence.json"
+    with pytest.raises(SystemExit):
+        parse_args(["--refresh-source-hashes", str(evidence), "--evidence", str(evidence)])
 
 
 def test_spark_matrix_parse_args_lint_requires_evidence():

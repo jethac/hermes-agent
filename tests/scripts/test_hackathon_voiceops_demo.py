@@ -213,7 +213,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "network_possible_allowlisted_read_only"
     )
     assert "local_spark_stack_matrix" in operator_handoff["phases"][2]["blocked_by_current_package"]
-    assert "--lint-evidence" in operator_handoff["phases"][2]["commands"][1]
+    assert "--refresh-source-hashes" in operator_handoff["phases"][2]["commands"][1]
+    assert "--lint-evidence" in operator_handoff["phases"][2]["commands"][2]
+    assert operator_handoff["phases"][2]["command_safety"]["refresh_source_hashes"] == "local_file_hashing_only"
     assert operator_handoff["phases"][2]["command_safety"]["lint_evidence"] == "no_write_benchmark_evidence_lint"
     assert any("oracle_model" in item for item in operator_handoff["phases"][2]["must_not"])
     assert "--voice-live-evidence" in operator_handoff["final_reindex_command"]

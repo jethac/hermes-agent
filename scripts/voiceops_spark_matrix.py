@@ -14,7 +14,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, MutableMapping
 
 
 SPARK_HARDWARE_TARGET = "1x NVIDIA DGX Spark"
@@ -727,6 +727,117 @@ def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
     return issues
 
 
+def _resolve_source_artifact_path(item: MutableMapping[str, Any], evidence_path: Path) -> Path | None:
+    source_text = str(item.get("source_artifact") or "").strip()
+    if not source_text:
+        return None
+    source_path = Path(source_text).expanduser()
+    if not source_path.is_absolute():
+        source_path = evidence_path.expanduser().parent / source_text
+    return source_path
+
+
+def _spark_refresh_items(payload: Any) -> list[MutableMapping[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, MutableMapping)]
+    if isinstance(payload, MutableMapping) and isinstance(payload.get("evidence"), list):
+        return [item for item in payload["evidence"] if isinstance(item, MutableMapping)]
+    if isinstance(payload, MutableMapping):
+        return [payload]
+    return []
+
+
+def refresh_spark_source_hashes(path: Path) -> dict[str, Any]:
+    """Refresh benchmark source hashes in a local Spark evidence file."""
+
+    target = path.expanduser()
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return _spark_refresh_result(target, issues=["target file not found"], updates=[])
+    except json.JSONDecodeError as exc:
+        return _spark_refresh_result(target, issues=[f"target JSON parse failed: {exc.msg}"], updates=[])
+    except OSError as exc:
+        return _spark_refresh_result(target, issues=[f"target file unreadable: {exc.strerror or exc}"], updates=[])
+
+    items = _spark_refresh_items(payload)
+    if not items:
+        return _spark_refresh_result(target, issues=["target root must be an object, list, or object with evidence list"], updates=[])
+
+    issues: list[str] = []
+    updates: list[dict[str, Any]] = []
+    for index, item in enumerate(items):
+        label = str(item.get("candidate_id") or item.get("kind") or f"item-{index}")
+        source_path = _resolve_source_artifact_path(item, target)
+        if source_path is None:
+            issues.append(f"{label}:missing_source_artifact")
+            continue
+        if not source_path.exists():
+            issues.append(f"{label}:source_artifact_not_found:{source_path.resolve(strict=False)}")
+            continue
+        if not source_path.is_file():
+            issues.append(f"{label}:source_artifact_not_file:{source_path.resolve(strict=False)}")
+            continue
+        try:
+            source_bytes = source_path.read_bytes()
+        except OSError as exc:
+            issues.append(f"{label}:source_artifact_unreadable:{exc.strerror or exc}")
+            continue
+        try:
+            source_payload = json.loads(source_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            source_payload = None
+        if isinstance(source_payload, MutableMapping):
+            if source_payload.get("example_only") is True:
+                issues.append(f"{label}:source_artifact_example_only_not_accepted")
+                continue
+            if source_payload.get("redacted") is not True and not str(source_payload.get("redaction_policy") or "").strip():
+                issues.append(f"{label}:source_artifact_not_redacted")
+                continue
+        new_sha256 = hashlib.sha256(source_bytes).hexdigest()
+        previous_sha256 = str(item.get("source_artifact_sha256") or "")
+        item["source_artifact_sha256"] = new_sha256
+        attestation = item.get("collector_attestation")
+        previous_attestation_sha256: str | None = None
+        attestation_changed = False
+        if isinstance(attestation, MutableMapping):
+            previous_attestation_sha256 = str(attestation.get("redacted_artifact_sha256") or "")
+            attestation["redacted_artifact_sha256"] = new_sha256
+            attestation_changed = previous_attestation_sha256 != new_sha256
+        updates.append(
+            {
+                "item": label,
+                "source_artifact": str(item.get("source_artifact") or ""),
+                "source_artifact_path": str(source_path),
+                "previous_sha256": previous_sha256,
+                "source_artifact_sha256": new_sha256,
+                "previous_collector_attestation_redacted_artifact_sha256": previous_attestation_sha256,
+                "collector_attestation_redacted_artifact_sha256": new_sha256 if isinstance(attestation, MutableMapping) else None,
+                "collector_attestation_changed": attestation_changed,
+                "changed": previous_sha256 != new_sha256,
+            }
+        )
+    if updates and not issues:
+        _write_json(target, payload)
+    return _spark_refresh_result(target, issues=issues, updates=updates)
+
+
+def _spark_refresh_result(path: Path, *, issues: list[str], updates: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "ok": not issues,
+        "schema_version": "voiceops.spark_evidence_hash_refresh.v1",
+        "artifact_id": "voiceops-m4-spark-evidence-hash-refresh",
+        "generated_at": _utc_now(),
+        "target_path": str(path),
+        "artifact_writes": bool(updates and not issues),
+        "network_io": False,
+        "spark_execution": False,
+        "env_secret_reads": False,
+        "updates": updates,
+        "issues": issues,
+    }
+
+
 def _valid_sha256(value: Any) -> bool:
     text = str(value or "").strip().lower()
     return len(text) == 64 and all(character in "0123456789abcdef" for character in text)
@@ -1290,6 +1401,10 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
         },
         "rerun_commands": {
             "matrix_only": "uv run python scripts/voiceops_spark_matrix.py --output-dir artifacts/voiceops-spark-matrix/current",
+            "refresh_source_hashes": (
+                "uv run python scripts/voiceops_spark_matrix.py "
+                f"--refresh-source-hashes {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
+            ),
             "with_evidence": (
                 "uv run python scripts/voiceops_spark_matrix.py "
                 "--output-dir artifacts/voiceops-spark-matrix/current "
@@ -1414,14 +1529,20 @@ def _operator_runbook(plan: dict[str, Any]) -> str:
         "```",
         "",
         "3. Replace the scaffold source artifacts under `spark-benchmark-scaffold/sources/` with redacted measured raw outputs.",
-        "4. Fill `spark-benchmark-scaffold/spark-benchmark-evidence.json` with measured metrics, real `source_artifact` refs, matching `source_artifact_sha256` values, matching `collector_attestation.redacted_artifact_sha256` values, `verified: true`, and no `example_only` markers.",
-        "5. Re-run the matrix validator against the measured evidence.",
+        "4. Fill `spark-benchmark-scaffold/spark-benchmark-evidence.json` with measured metrics, real `source_artifact` refs, `verified: true`, and no `example_only` markers.",
+        "5. Refresh `source_artifact_sha256` and `collector_attestation.redacted_artifact_sha256` values from the redacted source artifacts.",
+        "",
+        "```bash",
+        commands["refresh_source_hashes"],
+        "```",
+        "",
+        "6. Re-run the matrix validator against the measured evidence.",
         "",
         "```bash",
         commands["with_evidence"],
         "```",
         "",
-        "6. Re-index the full VoiceOps plan with the same measured evidence file.",
+        "7. Re-index the full VoiceOps plan with the same measured evidence file.",
         "",
         "```bash",
         commands["plan_index"],
@@ -1528,7 +1649,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="Benchmark evidence JSON file to validate against the matrix. May be repeated.",
     )
+    parser.add_argument(
+        "--refresh-source-hashes",
+        type=Path,
+        help=(
+            "Refresh source_artifact_sha256 and collector_attestation.redacted_artifact_sha256 "
+            "fields in a local Spark benchmark evidence file without running benchmarks."
+        ),
+    )
     args = parser.parse_args(argv)
+    if args.refresh_source_hashes is not None and (args.lint_evidence or args.evidence):
+        parser.error("--refresh-source-hashes cannot be combined with --lint-evidence or --evidence")
     if args.lint_evidence and not args.evidence:
         parser.error("--lint-evidence requires at least one --evidence path")
     return args
@@ -1563,6 +1694,10 @@ def _lint_summary(matrix: dict[str, Any], evidence_paths: Iterable[Path]) -> dic
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.refresh_source_hashes is not None:
+        result = refresh_spark_source_hashes(args.refresh_source_hashes)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result["ok"] else 1
     matrix = build_matrix(args.evidence)
     if args.lint_evidence:
         summary = _lint_summary(matrix, args.evidence)
