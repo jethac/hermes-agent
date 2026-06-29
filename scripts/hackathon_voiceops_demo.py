@@ -166,16 +166,12 @@ def _demo_closure_summary() -> dict[str, Any]:
                     "uv run python -m hermes_cli.realtime_voice_live_evidence "
                     "--output-dir artifacts/realtime-voice-evidence/live-current "
                     "--validate-live-evidence "
-                    "--discord-live-probe-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json "
-                    "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
-                    "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
+                    "--live-evidence-manifest artifacts/realtime-voice-evidence/live-current/manifest.json"
                 ),
                 "audit_live_manifest_no_write": (
                     "uv run python -m hermes_cli.realtime_voice_live_evidence "
                     "--audit-only "
-                    "--discord-live-probe-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json "
-                    "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
-                    "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
+                    "--live-evidence-manifest artifacts/realtime-voice-evidence/live-current/manifest.json"
                 ),
                 "ingest_live_manifest": (
                     "uv run python scripts/voiceops_voice_operator.py "

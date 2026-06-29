@@ -637,6 +637,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "path/to/realtime-voice-report.json" not in json.dumps(handoff["phases"][0]["commands"])
     assert "--require-live-discord" in handoff["phases"][0]["commands"][4]
     assert "--validate-live-evidence" in handoff["phases"][0]["commands"][5]
+    assert "--live-evidence-manifest artifacts/realtime-voice-evidence/live-current/manifest.json" in handoff[
+        "phases"
+    ][0]["commands"][5]
     assert "--validate-live-evidence" in json.dumps(handoff["phases"][0]["commands"])
     assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in json.dumps(
         handoff["phases"][1]
@@ -771,9 +774,14 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--validate-live-evidence" in gates["live_discord_voice_operator"]["collection_commands"][
         "validate_live_manifest_offline"
     ]
-    assert "--discord-live-probe-evidence" in gates["live_discord_voice_operator"]["collection_commands"][
+    assert "--live-evidence-manifest artifacts/realtime-voice-evidence/live-current/manifest.json" in gates[
+        "live_discord_voice_operator"
+    ]["collection_commands"][
         "validate_live_manifest_offline"
     ]
+    assert "--live-evidence-manifest artifacts/realtime-voice-evidence/live-current/manifest.json" in gates[
+        "live_discord_voice_operator"
+    ]["collection_commands"]["audit_live_manifest_no_write"]
     assert "--sidecar-session-evidence" in gates["live_discord_voice_operator"]["collection_commands"]["collect_live_manifest"]
     assert "--live-turn-evidence" in gates["live_discord_voice_operator"]["collection_commands"]["collect_live_manifest"]
     assert "--from-realtime-voice-report" in gates["live_discord_voice_operator"]["collection_commands"][
@@ -1345,6 +1353,7 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in text
     assert "voiceops.realtime_voice_live_evidence_validation.v1" in text
     assert "`--validate-live-evidence`" in text
+    assert "`--live-evidence-manifest`" in text
     assert "`--from-realtime-voice-report`" in text
     assert "`--audit-only`" in text
     assert "`--package-audit`" in text

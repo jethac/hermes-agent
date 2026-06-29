@@ -107,6 +107,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional read-only live turn evidence JSON to reference from the manifest",
     )
     parser.add_argument(
+        "--live-evidence-manifest",
+        type=Path,
+        help=(
+            "Optional read-only realtime voice live evidence manifest JSON to audit or validate directly "
+            "without reconstructing split section-file arguments"
+        ),
+    )
+    parser.add_argument(
         "--from-realtime-voice-report",
         type=Path,
         help=(
@@ -144,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def audit_realtime_voice_live_evidence(args: argparse.Namespace) -> dict[str, Any]:
+    manifest_path = getattr(args, "live_evidence_manifest", None)
     reports = {
         report_key: evidence_path
         for report_key, evidence_path in (
@@ -158,11 +167,15 @@ def audit_realtime_voice_live_evidence(args: argparse.Namespace) -> dict[str, An
         issues.append("audit_only: --from-realtime-voice-report is not supported because derivation writes files")
     if getattr(args, "run_realtime_voice_doctor_report", False):
         issues.append("audit_only: --run-realtime-voice-doctor-report is not supported because it runs doctor and writes files")
-    if not reports:
+    if manifest_path is not None and reports:
+        issues.append("audit_only: --live-evidence-manifest cannot be combined with split evidence file arguments")
+    if manifest_path is None and not reports:
         issues.append("audit_only: at least one live evidence file is required")
 
     strict_validation: dict[str, Any]
-    if reports:
+    if manifest_path is not None:
+        strict_validation = _strict_live_evidence_validation(manifest_path)
+    elif reports:
         with tempfile.TemporaryDirectory(prefix="hermes-live-evidence-audit-") as tmpdir:
             package_reports: dict[str, str] = {}
             package_dir = Path(tmpdir)
@@ -208,6 +221,7 @@ def audit_realtime_voice_live_evidence(args: argparse.Namespace) -> dict[str, An
         "discord_probe_run": False,
         "report_derivation_run": False,
         "output_dir": str(Path(args.output_dir).expanduser()),
+        "live_evidence_manifest": str(manifest_path) if manifest_path is not None else None,
         "reports": {report_key: str(path) for report_key, path in reports.items()},
         "issues": all_issues,
         "strict_validation": strict_validation,
@@ -235,9 +249,22 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
         if getattr(args, "from_realtime_voice_report", None) is not None
         else None
     )
+    live_evidence_manifest_path = (
+        Path(args.live_evidence_manifest)
+        if getattr(args, "live_evidence_manifest", None) is not None
+        else None
+    )
+    split_evidence_supplied = any(
+        getattr(args, attr, None) is not None
+        for attr in ("discord_live_probe_evidence", "sidecar_session_evidence", "live_turn_evidence")
+    )
+    if live_evidence_manifest_path is not None and split_evidence_supplied:
+        issues.append("live_evidence_manifest: cannot combine --live-evidence-manifest with split evidence file arguments")
     if getattr(args, "run_realtime_voice_doctor_report", False):
         if realtime_voice_report_path is not None:
             issues.append("realtime_voice_doctor_report: cannot combine --run-realtime-voice-doctor-report with --from-realtime-voice-report")
+        elif live_evidence_manifest_path is not None:
+            issues.append("realtime_voice_doctor_report: cannot combine --run-realtime-voice-doctor-report with --live-evidence-manifest")
         else:
             realtime_voice_report_path = Path(
                 getattr(args, "doctor_report", None) or output_dir / "realtime-voice-doctor-report.json"
@@ -266,6 +293,8 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
         )
     elif getattr(args, "run_realtime_voice_doctor_report", False):
         pass
+    elif live_evidence_manifest_path is not None:
+        reports["live_evidence_manifest"] = str(live_evidence_manifest_path)
     elif getattr(args, "validate_live_evidence", False):
         if getattr(args, "discord_live_probe_evidence", None) is None:
             issues.append("discord_live_probe: evidence file is required for --validate-live-evidence")
@@ -347,12 +376,9 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
     )
     manifest_path = output_dir / "manifest.json"
     _write_json(manifest_path, asdict(result))
-    optional_evidence_supplied = any(
-        getattr(args, attr, None) is not None
-        for attr in ("discord_live_probe_evidence", "sidecar_session_evidence", "live_turn_evidence")
-    ) or derived_evidence_supplied
+    optional_evidence_supplied = split_evidence_supplied or live_evidence_manifest_path is not None or derived_evidence_supplied
     if getattr(args, "validate_live_evidence", False) or optional_evidence_supplied:
-        strict_validation = _strict_live_evidence_validation(manifest_path)
+        strict_validation = _strict_live_evidence_validation(live_evidence_manifest_path or manifest_path)
         strict_issues = [f"live_evidence_validation:{issue}" for issue in strict_validation.get("issues", [])]
         if strict_issues:
             issues.extend(strict_issues)
