@@ -72,6 +72,203 @@ def _milestone_result(
     }
 
 
+def _result_by_milestone(results: list[dict[str, Any]], milestone: str) -> dict[str, Any]:
+    return next(result for result in results if result["milestone"] == milestone)
+
+
+def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
+    results = summary["results"]
+    voice = _result_by_milestone(results, "milestone_1_real_voice_operator")
+    provisioning = _result_by_milestone(results, "milestone_2_real_spend_and_provisioning_preflight")
+    spark = _result_by_milestone(results, "milestone_4_local_spark_stack_matrix")
+    source_plan_run = str(Path(summary["output_dir"]) / "voiceops-plan-run.json")
+    voice_missing = voice["details"].get("live_probe_missing_gates", [])
+    provisioning_missing = provisioning["details"].get("required_failures", [])
+    spark_missing = [
+        f"{role}:{status}"
+        for role, status in sorted(spark["details"].get("role_status", {}).items())
+        if status != "validated"
+    ]
+    gates = [
+        {
+            "milestone": voice["milestone"],
+            "status": voice["status"],
+            "gate_id": "live_discord_voice_operator",
+            "gate_ids": voice_missing,
+            "missing": voice_missing,
+            "blocking_reason": (
+                "Headless loopback does not prove real Discord gateway join, live receiver transport, "
+                "production sidecar availability, or one real voice turn."
+            ),
+            "evidence_template": voice["artifacts"].get("live_evidence_template"),
+            "template_artifact": voice["artifacts"].get("live_evidence_template"),
+            "closure_plan": voice["artifacts"].get("live_probe_closure_json"),
+            "closure_artifact": voice["artifacts"].get("live_probe_closure_markdown"),
+            "required_evidence_fields": [
+                "connect_perm",
+                "speak_perm",
+                "connected",
+                "opus_loaded",
+                "accepted_audio_source",
+                "played",
+                "playing_during_probe",
+                "receiver_started",
+                "receiver_frames",
+                "receiver_speech_start",
+                "inbound_observed",
+                "disconnected",
+                "require_inbound",
+                "sidecar_running",
+                "sidecar_healthy",
+                "session_started",
+                "session_closed",
+                "fallback_mode_visible",
+                "transcript_observed",
+                "assistant_audio_observed",
+                "barge_in_observed",
+                "spoken_reply_short",
+                "no_voice_denial_observed",
+                "speech_end_to_first_audio_ms",
+                "barge_in_stop_ms",
+            ],
+            "rerun_command": (
+                "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                "--output-dir artifacts/voiceops-plan/current "
+                "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json "
+                "--voice-live-evidence path/to/sidecar-session.json "
+                "--voice-live-evidence path/to/live-turn.json"
+            ),
+            "operator_must_not": [
+                "paste Discord bot tokens or provider tokens into evidence files",
+                "include full phone numbers or private transcript content with secrets",
+                "claim production readiness from the headless loopback smoke alone",
+            ],
+            "completion_signal": "live_probe_missing_gates becomes [] and live_probe_status is live_evidence_supplied_not_readiness_claim",
+        },
+        {
+            "milestone": provisioning["milestone"],
+            "status": provisioning["status"],
+            "gate_id": "spend_and_provisioning_preflight",
+            "gate_ids": provisioning_missing,
+            "missing": provisioning_missing,
+            "evidence_template": provisioning["artifacts"].get("preflight_evidence_template"),
+            "template_artifact": provisioning["artifacts"].get("preflight_evidence_template"),
+            "closure_plan": provisioning["artifacts"].get("setup_closure_json"),
+            "closure_artifact": provisioning["artifacts"].get("setup_closure_markdown"),
+            "requirement_fields_per_gate": [
+                "check_id",
+                "area",
+                "category",
+                "status",
+                "closure_state",
+                "detail",
+                "operator_action",
+                "next_step",
+                "proof",
+                "accepted_binaries",
+                "accepted_env_keys",
+                "safe_probe_commands",
+                "evidence_artifacts",
+            ],
+            "missing_preflight_fields": provisioning["details"].get("preflight_evidence_missing_fields", []),
+            "rerun_commands": {
+                "presence_only": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env"
+                ),
+                "bounded_version_help": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-command-probes"
+                ),
+                "plan_index": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json"
+                ),
+            },
+            "rerun_command": (
+                "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                "--output-dir artifacts/voiceops-plan/current "
+                "--env-file .env "
+                "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json"
+            ),
+            "operator_must_not": [
+                "paste secret values into chat or artifact files",
+                "use /Users/jethac/.hermes/hermes-agent as an env-file source",
+                "run mutating Stripe Projects, Link spend, provider provisioning, or phone-call commands before approval",
+            ],
+            "completion_signal": "required_failures becomes [] and milestone status becomes ready",
+        },
+        {
+            "milestone": spark["milestone"],
+            "status": spark["status"],
+            "gate_id": "local_spark_stack_matrix",
+            "gate_ids": ["reflex", "oracle", "asr", "tts", "all_local_stack_smoke"],
+            "missing": spark_missing,
+            "evidence_template": spark["artifacts"].get("evidence_template"),
+            "template_artifact": spark["artifacts"].get("evidence_template"),
+            "matrix_artifact": spark["artifacts"].get("json"),
+            "closure_artifact": spark["artifacts"].get("markdown"),
+            "required_candidate_fields": [
+                "candidate_id",
+                "model",
+                "engine",
+                "hardware",
+                "locality",
+                "measured_at",
+                "metrics",
+                "source_artifact",
+                "verified",
+            ],
+            "required_stack_smoke_fields": [
+                "kind",
+                "components",
+                "hardware",
+                "locality",
+                "measured_at",
+                "metrics.speech_end_to_first_audio_ms",
+                "metrics.barge_in_stop_ms",
+                "source_artifact",
+                "verified",
+            ],
+            "current_issues": [
+                *spark_missing,
+                *spark["details"].get("stack_smoke_issues", []),
+            ],
+            "rerun_command": (
+                "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                "--output-dir artifacts/voiceops-plan/current "
+                "--evidence path/to/spark-benchmark-evidence.json"
+            ),
+            "operator_must_not": [
+                "claim one-Spark readiness from hosted Ultra or cloud TTS fallback evidence",
+                "mark benchmark evidence verified without raw source artifacts",
+                "treat the matrix template as measured evidence",
+            ],
+            "completion_signal": "ready_for_one_spark_demo is true and role_status values are validated",
+        },
+    ]
+    return {
+        "schema_version": "voiceops.closure_index.v1",
+        "artifact_id": "voiceops-plan-readiness-closure",
+        "source_plan_run_artifact": source_plan_run,
+        "artifact_only": True,
+        "safety": {
+            "network_io": False,
+            "outbound_sends": False,
+            "live_spend": False,
+            "provider_provisioning": False,
+            "outbound_calls": False,
+            "spark_execution": False,
+            "secret_values_emitted": False,
+        },
+        "readiness_gaps": summary["readiness_gaps"],
+        "closure_status": "needs_external_evidence" if summary["readiness_gaps"] else "complete",
+        "remaining_gates": gates,
+        "gates": gates,
+    }
+
+
 def build_plan_run(
     *,
     artifact_root: Path = DEFAULT_ARTIFACT_ROOT,
@@ -223,6 +420,8 @@ async def build_plan_run_async(
             details={
                 "ready_for_one_spark_demo": spark_matrix["ready_for_one_spark_demo"],
                 "role_status": spark_matrix["role_status"],
+                "stack_smoke_status": spark_matrix["stack_smoke"]["status"],
+                "stack_smoke_issues": spark_matrix["stack_smoke"]["issues"],
             },
         )
     )
@@ -251,7 +450,7 @@ async def build_plan_run_async(
         for result in results
         if result["status"] in {"needs_setup", "needs_evidence", "needs_live_probe"}
     ]
-    return {
+    summary = {
         "schema_version": "voiceops.plan_run.v1",
         "artifact_only": True,
         "safety": SAFETY_FLAGS,
@@ -262,6 +461,8 @@ async def build_plan_run_async(
         "readiness_gaps": readiness_gaps,
         "results": results,
     }
+    summary["closure_index"] = build_readiness_closure_index(summary)
+    return summary
 
 
 def _markdown(summary: dict[str, Any]) -> str:
@@ -295,6 +496,24 @@ def _markdown(summary: dict[str, Any]) -> str:
             for key, value in sorted(result["details"].items()):
                 lines.append(f"  - `{key}`: `{value}`")
         lines.append("")
+    lines.extend(["## Readiness Closure", ""])
+    closure = summary.get("closure_index", {})
+    lines.append(f"- Status: {closure.get('closure_status', 'unknown')}")
+    for gate in closure.get("gates", []):
+        lines.extend(
+            [
+                f"### {gate['gate_id']}",
+                "",
+                f"- Milestone: `{gate['milestone']}`",
+                f"- Status: {gate['status']}",
+                f"- Missing: {', '.join(gate['missing']) if gate['missing'] else 'none'}",
+                f"- Template: `{gate['template_artifact']}`",
+                f"- Closure artifact: `{gate['closure_artifact']}`",
+                f"- Rerun: `{gate['rerun_command']}`",
+                f"- Completion signal: {gate['completion_signal']}",
+                "",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -303,10 +522,43 @@ def write_plan_run(output_dir: Path, summary: dict[str, Any]) -> dict[str, str]:
     paths = {
         "json": output_dir / "voiceops-plan-run.json",
         "markdown": output_dir / "voiceops-plan-run.md",
+        "closure_json": output_dir / "readiness-closure-index.json",
+        "closure_markdown": output_dir / "readiness-closure-index.md",
     }
     _write_json(paths["json"], summary)
     paths["markdown"].write_text(_markdown(summary), encoding="utf-8")
+    _write_json(paths["closure_json"], summary["closure_index"])
+    paths["closure_markdown"].write_text(_closure_markdown(summary["closure_index"]), encoding="utf-8")
     return {key: str(path) for key, path in paths.items()}
+
+
+def _closure_markdown(closure: dict[str, Any]) -> str:
+    lines = [
+        "# VoiceOps Readiness Closure Index",
+        "",
+        f"- Status: {closure['closure_status']}",
+        "- Safety: artifact-only; no network, spend, provisioning, calls, Spark benchmark execution, or secret values",
+        f"- Readiness gaps: {', '.join(closure['readiness_gaps']) if closure['readiness_gaps'] else 'none'}",
+        "",
+        "## Gates",
+        "",
+    ]
+    for gate in closure["gates"]:
+        lines.extend(
+            [
+                f"### {gate['gate_id']}",
+                "",
+                f"- Milestone: `{gate['milestone']}`",
+                f"- Status: {gate['status']}",
+                f"- Missing: {', '.join(gate['missing']) if gate['missing'] else 'none'}",
+                f"- Template artifact: `{gate['template_artifact']}`",
+                f"- Closure artifact: `{gate['closure_artifact']}`",
+                f"- Rerun command: `{gate['rerun_command']}`",
+                f"- Completion signal: {gate['completion_signal']}",
+                "",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

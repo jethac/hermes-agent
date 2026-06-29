@@ -17,6 +17,20 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert summary["schema_version"] == "voiceops.plan_run.v1"
     assert summary["artifact_only"] is True
     assert summary["ok"] is True
+    assert summary["closure_index"]["schema_version"] == "voiceops.closure_index.v1"
+    assert summary["closure_index"]["closure_status"] == "needs_external_evidence"
+    assert summary["closure_index"]["source_plan_run_artifact"].endswith("voiceops-plan-run.json")
+    assert summary["closure_index"]["remaining_gates"] == summary["closure_index"]["gates"]
+    gates = {gate["gate_id"]: gate for gate in summary["closure_index"]["gates"]}
+    assert set(gates) == {
+        "live_discord_voice_operator",
+        "local_spark_stack_matrix",
+        "spend_and_provisioning_preflight",
+    }
+    assert "transcript_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "operator_must_not" in gates["live_discord_voice_operator"]
+    assert "missing_preflight_fields" in gates["spend_and_provisioning_preflight"]
+    assert "required_candidate_fields" in gates["local_spark_stack_matrix"]
     assert summary["hard_failures"] == []
     assert "milestone_1_real_voice_operator" in summary["readiness_gaps"]
     assert "milestone_2_real_spend_and_provisioning_preflight" in summary["readiness_gaps"]
@@ -67,11 +81,19 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     matrix_result = next(result for result in summary["results"] if result["milestone"] == "milestone_4_local_spark_stack_matrix")
     assert matrix_result["status"] == "needs_evidence"
     assert matrix_result["details"]["ready_for_one_spark_demo"] is False
+    assert matrix_result["details"]["stack_smoke_status"] == "needs_evidence"
 
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
+    closure = json.loads(Path(paths["closure_json"]).read_text(encoding="utf-8"))
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
+    closure_markdown = Path(paths["closure_markdown"]).read_text(encoding="utf-8")
     assert payload["ok"] is True
+    assert closure["artifact_id"] == "voiceops-plan-readiness-closure"
+    assert closure["schema_version"] == "voiceops.closure_index.v1"
     assert "VoiceOps Plan Run Summary" in markdown
+    assert "Readiness Closure" in markdown
+    assert "VoiceOps Readiness Closure Index" in closure_markdown
+    assert "live_discord_voice_operator" in closure_markdown
     assert "milestone_0_hackathon_proof" in markdown
 
 
@@ -123,6 +145,8 @@ def test_plan_run_cli_smoke(tmp_path):
     assert payload["ok"] is True
     assert Path(payload["artifacts"]["json"]).exists()
     assert Path(payload["artifacts"]["markdown"]).exists()
+    assert Path(payload["artifacts"]["closure_json"]).exists()
+    assert Path(payload["artifacts"]["closure_markdown"]).exists()
 
 
 def test_parse_args_defaults_to_plan_artifact_paths():
