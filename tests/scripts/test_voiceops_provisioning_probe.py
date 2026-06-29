@@ -1101,6 +1101,125 @@ def test_readonly_discovery_manifest_rejects_stale_report_sha256(tmp_path):
     assert "read_only_discovery_manifest:report_sha256:mismatch" in loaded["validation_issues"]
 
 
+def test_readonly_discovery_manifest_rejects_absolute_report_path(tmp_path):
+    discovery_report = build_probe_report(
+        env={},
+        env_files=[],
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+    paths = write_probe_artifacts(tmp_path / "discovery", discovery_report)
+    manifest_path = Path(paths["read_only_discovery_manifest"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["report"] = str(Path(paths["read_only_discovery_json"]))
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    loaded = load_readonly_discovery_evidence(manifest_path)
+
+    assert loaded["status"] == "fail"
+    assert "read_only_discovery_manifest:report_path:absolute_path_not_allowed" in loaded["validation_issues"]
+
+
+def test_readonly_discovery_manifest_rejects_user_home_report_path(tmp_path):
+    discovery_report = build_probe_report(
+        env={},
+        env_files=[],
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+    paths = write_probe_artifacts(tmp_path / "discovery", discovery_report)
+    manifest_path = Path(paths["read_only_discovery_manifest"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["report"] = "~/read-only-discovery.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    loaded = load_readonly_discovery_evidence(manifest_path)
+
+    assert loaded["status"] == "fail"
+    assert "read_only_discovery_manifest:report_path:user_home_not_allowed" in loaded["validation_issues"]
+
+
+def test_readonly_discovery_manifest_rejects_parent_escape_report_path(tmp_path):
+    discovery_report = build_probe_report(
+        env={},
+        env_files=[],
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+    paths = write_probe_artifacts(tmp_path / "discovery", discovery_report)
+    manifest_path = Path(paths["read_only_discovery_manifest"])
+    outside_report = tmp_path / "read-only-discovery.json"
+    outside_report.write_text(Path(paths["read_only_discovery_json"]).read_text(encoding="utf-8"), encoding="utf-8")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["report"] = "../read-only-discovery.json"
+    manifest["report_sha256"] = hashlib.sha256(outside_report.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    loaded = load_readonly_discovery_evidence(manifest_path)
+
+    assert loaded["status"] == "fail"
+    assert "read_only_discovery_manifest:report_path:parent_traversal_not_allowed" in loaded["validation_issues"]
+
+
+def test_readonly_discovery_manifest_rejects_symlink_escape_report_path(tmp_path):
+    discovery_report = build_probe_report(
+        env={},
+        env_files=[],
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+    paths = write_probe_artifacts(tmp_path / "discovery", discovery_report)
+    manifest_path = Path(paths["read_only_discovery_manifest"])
+    outside_report = tmp_path / "outside-read-only-discovery.json"
+    outside_report.write_text(Path(paths["read_only_discovery_json"]).read_text(encoding="utf-8"), encoding="utf-8")
+    (manifest_path.parent / "escaped-read-only-discovery.json").unlink(missing_ok=True)
+    (manifest_path.parent / "escaped-read-only-discovery.json").symlink_to(outside_report)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["report"] = "escaped-read-only-discovery.json"
+    manifest["report_sha256"] = hashlib.sha256(outside_report.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    loaded = load_readonly_discovery_evidence(manifest_path)
+
+    assert loaded["status"] == "fail"
+    assert "read_only_discovery_manifest:report_path:path_escape_not_allowed" in loaded["validation_issues"]
+
+
+def test_readonly_discovery_manifest_does_not_fallback_to_cwd(monkeypatch, tmp_path):
+    discovery_report = build_probe_report(
+        env={},
+        env_files=[],
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+    paths = write_probe_artifacts(tmp_path / "discovery", discovery_report)
+    manifest_path = Path(paths["read_only_discovery_manifest"])
+    cwd_dir = tmp_path / "cwd"
+    cwd_dir.mkdir()
+    cwd_report = cwd_dir / "missing-from-manifest-dir.json"
+    cwd_report.write_text(Path(paths["read_only_discovery_json"]).read_text(encoding="utf-8"), encoding="utf-8")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["report"] = cwd_report.name
+    manifest["report_sha256"] = hashlib.sha256(cwd_report.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.chdir(cwd_dir)
+
+    loaded = load_readonly_discovery_evidence(manifest_path)
+
+    assert loaded["status"] == "fail"
+    assert "read_only_discovery:file_not_found" in loaded["validation_issues"]
+
+
 def test_readonly_discovery_report_rejects_missing_collector_attestation(tmp_path):
     discovery_report = build_probe_report(
         env={},

@@ -1769,6 +1769,11 @@ def _load_readonly_discovery_report(path: Path) -> tuple[Mapping[str, Any] | Non
         report_ref = str(payload.get("report") or "").strip()
         if not report_ref:
             return None, ["read_only_discovery_manifest:missing_report"]
+        report_path_issues = _relative_artifact_ref_issues(report_ref, base_path=path)
+        if report_path_issues:
+            return None, [
+                f"read_only_discovery_manifest:report_path:{issue}" for issue in report_path_issues
+            ]
         report_path = _resolve_manifest_report_path(path, report_ref)
         expected_report_sha256 = str(payload.get("report_sha256") or "").strip().lower()
         manifest_issues: list[str] = []
