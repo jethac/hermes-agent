@@ -91,7 +91,7 @@ class ReadinessCheck:
     next_step: str
 
 
-STATIC_ARTIFACT_REQUIRED_CHECK_IDS = {"nemotron_3_super_spark_or_labeled_ultra_hosted_fallback"}
+STATIC_ARTIFACT_REQUIRED_CHECK_IDS = {"nemotron_3_super_spark_or_labeled_hosted_fallback"}
 LIVE_PREREQUISITE_CHECK_IDS = {"discord_voice", "stripe_projects_cli", "stripe_link_cli"}
 
 
@@ -459,7 +459,7 @@ def _active_model_path(active_model: str) -> dict[str, Any]:
             "path": "hosted_nemotron_3_ultra_fallback",
             "status": "hosted_fallback",
             "recording_ready": True,
-            "label": "Nemotron 3 Ultra hosted fallback",
+            "label": "Hosted /model fallback",
             "spark_local": False,
         }
     return {
@@ -468,7 +468,7 @@ def _active_model_path(active_model: str) -> dict[str, Any]:
         "path": "non_nvidia_fallback",
         "status": "needs_nemotron_selection",
         "recording_ready": False,
-        "label": "Switch Hermes to Nemotron 3 Super or hosted Nemotron 3 Ultra",
+        "label": "Switch Hermes to Nemotron 3 Super or label the hosted fallback",
         "spark_local": False,
     }
 
@@ -483,11 +483,11 @@ def _sponsor_stack(active_model: str) -> dict[str, Any]:
             "note": "Configured through Hermes' normal /model flow; VoiceOps does not introduce a separate oracle_model setting.",
         },
         "nemotron_3_ultra_hosted_fallback": {
-            "role": "hosted fallback when the local Nemotron 3 Super Spark path is unavailable or still under benchmark",
+            "role": "clearly labeled hosted /model fallback when the local Nemotron 3 Super Spark path is unavailable or still under benchmark",
             "selection": (
                 active_model
                 if active_path["path"] == "hosted_nemotron_3_ultra_fallback"
-                else "Nemotron 3 Ultra hosted fallback available via Hermes /model hosted provider path"
+                else "Hosted /model fallback available if the local Nemotron 3 Super path is unavailable"
             ),
             "note": "Fallback is still selected through Hermes' normal /model flow, not a VoiceOps-specific model setting.",
         },
@@ -519,7 +519,7 @@ def _spark_stack(active_model: str, reflex_model: str) -> dict[str, Any]:
             "role": "Hermes active model selected by /model; no separate oracle_model setting",
             "interface_contract": "receives committed intent, transcript evidence, spend policy, and tool plan",
             "preferred_local_target": "Nemotron 3 Super on DGX Spark",
-            "hosted_fallback": "Nemotron 3 Ultra via Hermes /model hosted provider path",
+            "hosted_fallback": "clearly labeled hosted provider through Hermes /model",
         },
         "speech": {
             "asr": "Nemotron Speech or equivalent local streaming ASR for durable transcript evidence",
@@ -1130,7 +1130,7 @@ def build_readiness_report(
 
     checks.append(
         ReadinessCheck(
-            check_id="nemotron_3_super_spark_or_labeled_ultra_hosted_fallback",
+            check_id="nemotron_3_super_spark_or_labeled_hosted_fallback",
             status="pass" if demo["sponsor_stack"]["hermes_active_model"]["recording_ready"] else "fail",
             required_for_video=True,
             detail=(
@@ -1140,7 +1140,7 @@ def build_readiness_report(
                 if demo["sponsor_stack"]["hermes_active_model"]["spark_local"]
                 else "Hosted fallback selected; this does not count as Spark-local readiness proof."
             ),
-            next_step="Before recording, prefer /model to Nemotron 3 Super on Spark. Use Nemotron 3 Ultra only as a clearly labeled hosted fallback if Super is unavailable.",
+            next_step="Before recording, prefer /model to Nemotron 3 Super on Spark. Use a hosted model only as a clearly labeled fallback if Super is unavailable.",
         )
     )
 
@@ -1359,7 +1359,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "## Sponsor stack",
         "",
         f"- Nemotron 3 Super: {demo['sponsor_stack']['nemotron_3_super']['role']}",
-        f"- Nemotron 3 Ultra fallback: {demo['sponsor_stack']['nemotron_3_ultra_hosted_fallback']['role']}",
+        f"- Hosted fallback: {demo['sponsor_stack']['nemotron_3_ultra_hosted_fallback']['role']}",
         f"- NemoClaw: {demo['sponsor_stack']['nemoclaw']['role']}",
         f"- Stripe Skills: {demo['sponsor_stack']['stripe_skills']['demo_use']}",
         "",
@@ -1439,7 +1439,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         "",
         "- Discord voice is the live front door.",
         f"- {demo['sponsor_stack']['nemotron_3_super']['selection']} is the visible serious planning path.",
-        "- Hosted fallback: Nemotron 3 Ultra via Hermes /model hosted provider path, only if the local Nemotron 3 Super Spark path is unavailable.",
+        "- Hosted fallback: clearly labeled provider through Hermes /model, only if the local Nemotron 3 Super Spark path is unavailable.",
         "- NemoClaw frames billable and network-capable actions before execution.",
         "- Stripe Skills provide the spend and provisioning rail.",
         f"- The spoken budget becomes a {_dollars(policy['limit_cents'])} spend policy with approval required over {_dollars(policy['approval_required_over_cents'])}.",
@@ -1543,7 +1543,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "",
         "1. Discord voice: join the voice channel and say the prompt above.",
         "2. Reflex response: show Hermes acknowledging the budget immediately and stating that billable actions require approval.",
-        "3. Oracle path: show Nemotron 3 Super selected through Hermes' normal `/model` flow or visible in the generated dashboard; use Ultra only as the hosted fallback.",
+        "3. Oracle path: show Nemotron 3 Super selected through Hermes' normal `/model` flow or visible in the generated dashboard; label any hosted fallback clearly.",
         "4. NemoClaw boundary: show `nemoclaw-action-packet.json` or the dashboard NemoClaw section before any billable/network-capable action.",
         "5. Stripe Skills: show queued Stripe Projects VoIP provisioning and Link-gated service-credit spend in `stripe-actions-dry-run.sh` or the dashboard approval queue.",
         "6. Phone handoff: show `phone-context.json` and narrate that the same Discord context is preserved for the outbound call.",
@@ -1565,7 +1565,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "",
         "- Video is between 1 and 3 minutes.",
         "- Video tags `@NousResearch` in the tweet.",
-        "- Short writeup mentions DGX Spark, Discord voice, Nemotron 3 Super, Ultra hosted fallback, NemoClaw, and Stripe Skills.",
+        "- Short writeup mentions DGX Spark, Discord voice, Nemotron 3 Super, labeled hosted fallback if used, NemoClaw, and Stripe Skills.",
         "- Submit the tweet link in the Nous Discord submissions channel.",
         "- Fill out the hackathon Typeform submission.",
         "- Confirm no API keys, phone numbers, tokens, or account secrets are visible.",
@@ -1986,7 +1986,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
           <ul>
             <li><span>Active</span><strong>{_h(demo['sponsor_stack']['hermes_active_model']['label'])}</strong><small>Selected through Hermes /model.</small></li>
             <li><span>Preferred local</span><strong>Nemotron 3 Super on DGX Spark</strong><small>Spark-local readiness requires measured local evidence.</small></li>
-            <li><span>Hosted fallback</span><strong>Nemotron 3 Ultra hosted fallback</strong><small>Ultra does not count as Spark-local readiness proof.</small></li>
+            <li><span>Hosted fallback</span><strong>Clearly labeled /model fallback</strong><small>Hosted fallback does not count as Spark-local readiness proof.</small></li>
           </ul>
         </div>
         <div class="panel">

@@ -153,10 +153,10 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert payload["sponsor_stack"]["hermes_active_model"]["spark_local"] is True
     assert payload["sponsor_stack"]["nemotron_3_super"]["selection"].startswith("Nemotron 3 Super")
     assert payload["sponsor_stack"]["nemotron_3_ultra_hosted_fallback"]["selection"].startswith(
-        "Nemotron 3 Ultra hosted fallback"
+        "Hosted /model fallback"
     )
     assert payload["spark_stack"]["oracle"]["preferred_local_target"] == "Nemotron 3 Super on DGX Spark"
-    assert payload["spark_stack"]["oracle"]["hosted_fallback"].startswith("Nemotron 3 Ultra")
+    assert payload["spark_stack"]["oracle"]["hosted_fallback"].startswith("clearly labeled hosted provider")
     assert payload["spark_stack"]["oracle"]["active_model_path"]["path"] == "spark_local_nemotron_3_super"
     assert payload["sponsor_stack"]["stripe_skills"]["skills"] == ["stripe-projects", "stripe-link-cli", "mpp-agent"]
     assert payload["voice_surfaces"][0]["channel"] == "discord"
@@ -318,8 +318,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "read-only-discovery.json" in Path(paths["dashboard"]).read_text(encoding="utf-8")
     dashboard = Path(paths["dashboard"]).read_text(encoding="utf-8")
     assert "Nemotron 3 Super" in dashboard
-    assert "Nemotron 3 Ultra hosted fallback" in dashboard
-    assert "Ultra does not count as Spark-local readiness proof" in dashboard
+    assert "Clearly labeled /model fallback" in dashboard
+    assert "Hosted fallback does not count as Spark-local readiness proof" in dashboard
     assert "NemoClaw Blocks" in dashboard
     assert "Plan Closure Gates" in dashboard
     assert "read_only_discovery" in dashboard
@@ -384,7 +384,7 @@ def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned
     assert ultra_demo["sponsor_stack"]["hermes_active_model"]["spark_local"] is False
     assert ultra_demo["sponsor_stack"]["nemotron_3_super"]["selection"] == "not selected"
     assert ultra_demo["sponsor_stack"]["nemotron_3_ultra_hosted_fallback"]["selection"].startswith("Nemotron 3 Ultra")
-    assert "nemotron_3_super_spark_or_labeled_ultra_hosted_fallback" not in ultra_ready["required_failures"]
+    assert "nemotron_3_super_spark_or_labeled_hosted_fallback" not in ultra_ready["required_failures"]
     assert ultra_ready["spark_local_evidence_status"] == "hosted_or_nonlocal_path_not_spark_evidence"
     assert ultra_ready["live_demo_ready"] is False
 
@@ -403,7 +403,7 @@ def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned
 
     assert kimi_demo["sponsor_stack"]["hermes_active_model"]["path"] == "non_nvidia_fallback"
     assert kimi_demo["sponsor_stack"]["hermes_active_model"]["spark_local"] is False
-    assert "nemotron_3_super_spark_or_labeled_ultra_hosted_fallback" in kimi_ready["required_failures"]
+    assert "nemotron_3_super_spark_or_labeled_hosted_fallback" in kimi_ready["required_failures"]
 
 
 def test_voiceops_demo_dry_run_does_not_execute_live_stripe(tmp_path):

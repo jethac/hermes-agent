@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from scripts.voiceops_plan_run import build_plan_run, parse_args, write_plan_run
+from scripts.voiceops_provisioning_probe import build_milestone2_execution_plan, build_probe_report
 
 
 GOAL_DOC = Path(__file__).resolve().parents[2] / "docs" / "plans" / "2026-06-29-spark-household-business-voiceops.md"
@@ -157,6 +158,67 @@ def _write_preflight_evidence(root: Path) -> Path:
     )
 
 
+def _write_post_approval_receipts(root: Path) -> Path:
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    action = next(item for item in plan["approval_required_actions"] if item["action_id"] == "provision-voip-provider")
+    return _write_json(
+        root / "post-approval-receipts.json",
+        {
+            "schema_version": "voiceops.milestone2.post_approval_receipts.v1",
+            "redaction_policy": "references only",
+            "receipts": [
+                {
+                    "receipt_id": "receipt-provision-voip-provider-001",
+                    "action_id": action["action_id"],
+                    "approval_id": action["approval_id"],
+                    "provider": action["provider"],
+                    "status": "executed",
+                    "approved_by": "operator-ref-demo",
+                    "approved_at": "2026-06-29T00:00:00Z",
+                    "executed_at": "2026-06-29T00:00:30Z",
+                    "command_sha256": action["command_sha256"],
+                    "amount_cents": 0,
+                    "currency": "usd",
+                    "external_reference": "provider-resource-ref-demo",
+                    "credential_location_ref": action["credential_location_ref"],
+                    "rollback_ref": action["rollback_ref"],
+                    "audit_event_id": "audit-provision-voip-provider-001",
+                }
+            ],
+            "credential_locations": [
+                {
+                    "credential_ref_id": action["credential_location_ref"],
+                    "provider": action["provider"],
+                    "service_id": "provider-resource-ref-demo",
+                    "storage_backend": "provider_managed",
+                    "secret_name_or_path": "credential-location-ref-demo",
+                    "created_by_action_id": action["action_id"],
+                    "rotation_due": "2026-09-29T00:00:00Z",
+                }
+            ],
+            "rollback_receipts": [
+                {
+                    "rollback_ref": action["rollback_ref"],
+                    "status": "not_run",
+                    "owner_ref": "operator-ref-demo",
+                    "notes": "No rollback run.",
+                }
+            ],
+            "audit_events": [
+                {
+                    "audit_event_id": "audit-provision-voip-provider-001",
+                    "action_id": action["action_id"],
+                    "receipt_id": "receipt-provision-voip-provider-001",
+                    "status": "executed",
+                    "artifact_ref": "post-approval-receipts.json",
+                    "operator_next_step": "Review provider dashboard and rollback window.",
+                }
+            ],
+        },
+    )
+
+
 def _base_spark_evidence(candidate_id: str, *, model: str, source_artifact: str) -> dict:
     return {
         "schema_version": "voiceops.spark_benchmark_evidence.v1",
@@ -298,14 +360,19 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         handoff["phases"][1]
     )
     assert "--refresh-preflight-source-hashes" in json.dumps(handoff["phases"][1]["commands"])
+    assert "--post-approval-receipts" in json.dumps(handoff["phases"][1]["commands"])
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in handoff["phases"][2]["commands"]
     assert "path/to/spark-benchmark-evidence.json" in handoff["final_reindex_command"]
+    assert "--post-approval-receipts" in handoff["final_reindex_command"]
     gates = {gate["gate_id"]: gate for gate in summary["closure_index"]["gates"]}
     assert set(gates) == {
         "live_discord_voice_operator",
         "local_spark_stack_matrix",
         "spend_and_provisioning_preflight",
     }
+    assert "plan_index_manifest_and_post_approval_receipts" in json.dumps(
+        gates["spend_and_provisioning_preflight"]["rerun_commands"]
+    )
     assert "schema_version" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "transcript_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert gates["live_discord_voice_operator"]["evidence_contract"] == {
@@ -404,6 +471,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert provisioning_result["details"]["run_command_probes"] is False
     assert provisioning_result["details"]["run_readonly_discovery"] is False
     assert provisioning_result["details"]["read_only_discovery_status"] == "not_requested"
+    assert provisioning_result["details"]["post_approval_receipts_loaded"] is False
+    assert provisioning_result["details"]["post_approval_receipts_status"] == "not_supplied"
+    assert provisioning_result["details"]["post_approval_receipt_count"] == 0
     assert Path(provisioning_result["artifacts"]["execution_plan_json"]).exists()
     assert Path(provisioning_result["artifacts"]["execution_plan_markdown"]).exists()
     assert Path(provisioning_result["artifacts"]["post_approval_receipts_template"]).exists()
@@ -460,6 +530,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in provisioning_gate[
         "rerun_commands"
     ]["plan_index_manifest"]
+    combined_receipt_command = provisioning_gate["rerun_commands"]["plan_index_manifest_and_post_approval_receipts"]
+    assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in combined_receipt_command
+    assert "--post-approval-receipts" in combined_receipt_command
     assert provisioning_gate["evidence_scaffold"].endswith(
         "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
     )
@@ -475,6 +548,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "post_approval_receipts_schema_version"
     ]
     assert "--post-approval-receipts" in provisioning_gate["rerun_commands"]["plan_index_post_approval_receipts"]
+    assert "--post-approval-receipts" in handoff_payload["final_reindex_command"]
     spark_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "local_spark_stack_matrix")
     assert spark_gate["closure_plan"].endswith("spark-matrix-closure-plan.json")
     assert spark_gate["closure_artifact"].endswith("spark-matrix-closure-plan.md")
@@ -517,6 +591,7 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     monkeypatch.setenv("PATH", str(fake_bin))
     live_evidence = _write_live_voice_evidence(tmp_path / "live-voice")
     preflight_evidence = _write_preflight_evidence(tmp_path / "preflight")
+    post_approval_receipts = _write_post_approval_receipts(tmp_path / "post-approval")
     spark_evidence = _write_spark_evidence(tmp_path / "spark")
 
     summary = build_plan_run(
@@ -533,10 +608,14 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
         },
         voice_live_evidence_paths=[live_evidence],
         provisioning_preflight_evidence=preflight_evidence,
+        post_approval_receipts=post_approval_receipts,
         evidence_paths=[spark_evidence],
     )
 
     statuses = {result["milestone"]: result["status"] for result in summary["results"]}
+    provisioning_result = next(
+        result for result in summary["results"] if result["milestone"] == "milestone_2_real_spend_and_provisioning_preflight"
+    )
     serialized = json.dumps(summary)
 
     assert summary["ok"] is True
@@ -547,6 +626,10 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     assert statuses["milestone_1_real_voice_operator"] == "live_evidence_supplied"
     assert statuses["milestone_2_real_spend_and_provisioning_preflight"] == "ready"
     assert statuses["milestone_4_local_spark_stack_matrix"] == "validated"
+    assert provisioning_result["details"]["post_approval_receipts_loaded"] is True
+    assert provisioning_result["details"]["post_approval_receipts_status"] == "valid"
+    assert provisioning_result["details"]["post_approval_receipt_count"] == 1
+    assert provisioning_result["details"]["post_approval_receipts_validation_issues"] == []
     assert summary["safety"] == {
         "env_presence_inspection": True,
         "env_secret_values_emitted": False,
@@ -640,7 +723,7 @@ def test_goal_doc_keeps_super_local_and_ultra_hosted():
     text = GOAL_DOC.read_text(encoding="utf-8")
 
     assert "Nemotron 3 Super is the preferred Spark-local NVIDIA oracle/model target" in text
-    assert "Nemotron 3 Ultra is the hosted fallback" in text
+    assert "A clearly labeled hosted `/model` fallback is acceptable only when the local Spark path is unavailable" in text
     assert "Ultra is only an optional hosted/upstream fallback" in text
     assert "must not be used as Spark-local readiness proof" in text
     assert "There should not be a separate `oracle_model` setting for VoiceOps" in text

@@ -16,7 +16,7 @@ Hermes VoiceOps is a local-first operator for daily life and business:
 - Business: customer ops, vendor setup, SaaS provisioning, recurring reviews, payments, reporting, and incident response.
 - Voice surfaces: Discord live voice for the desk, WhatsApp for mobile chat, phone/SMS for urgent fallback.
 - Compute: DGX Spark runs the KAME reflex, speech stack, and preferred local models where practical.
-- Reasoning: Nemotron 3 Super is the preferred Spark-local NVIDIA oracle/model target, while Hermes `/model` remains authoritative. Nemotron 3 Ultra is the hosted fallback when the local Spark path is unavailable.
+- Reasoning: Nemotron 3 Super is the preferred Spark-local NVIDIA oracle/model target, while Hermes `/model` remains authoritative. A clearly labeled hosted `/model` fallback is acceptable only when the local Spark path is unavailable.
 - Safety: NemoClaw is the preferred sponsor-aligned execution boundary for spend, provisioning, and network-capable action packets.
 - Spend: Stripe Link, Stripe Projects, and MPP/402 become the controlled path for paying, provisioning, and recording approvals.
 - Audit: every planned, approved, held, executed, failed, or rolled-back action is durable and inspectable.
@@ -31,12 +31,12 @@ There are two related but distinct model strategies.
 
 Use Nemotron 3 Super visibly as the preferred Spark-local Hermes oracle/model path for the demo because it is sponsor-aligned, has a credible one-Spark serving path, and communicates serious agentic reasoning on the NVIDIA target. The demo should show Nemotron 3 Super as the planner behind the budgeted VoIP provisioning workflow when the local Spark path is available.
 
-This does not mean VoiceOps adds a separate model selector. Nemotron 3 Super should still be selected through Hermes's normal `/model` flow. If the local Super endpoint is not ready, Nemotron 3 Ultra is acceptable as a clearly labeled hosted fallback through the same `/model` flow. The goal is to prove that Hermes can carry a Discord voice request into a safe, budgeted, tool-using business operation with NVIDIA/Stripe integrations visible.
+This does not mean VoiceOps adds a separate model selector. Nemotron 3 Super should still be selected through Hermes's normal `/model` flow. If the local Super endpoint is not ready, a hosted model is acceptable only as a clearly labeled `/model` fallback. The goal is to prove that Hermes can carry a Discord voice request into a safe, budgeted, tool-using business operation with NVIDIA/Stripe integrations visible.
 
 Hackathon stack:
 
 - Nemotron 3 Super as the preferred Spark-local serious reasoning/planning path
-- Nemotron 3 Ultra as the hosted fallback if Super local serving is not ready
+- clearly labeled hosted `/model` fallback if Super local serving is not ready
 - NemoClaw as the safe execution boundary
 - Stripe Skills as the spend and provisioning rail
 - Discord voice as the live interface
@@ -44,16 +44,16 @@ Hackathon stack:
 
 ### One-Spark Local Strategy
 
-For the long-term household/business appliance, treat Nemotron 3 Super as the first preferred Spark-local NVIDIA oracle target, but still require benchmark evidence before claiming one-Spark readiness. Nemotron 3 Ultra is not the one-Spark target; keep it as a hosted or future multi-Spark fallback unless local evidence proves otherwise.
+For the long-term household/business appliance, treat Nemotron 3 Super as the first preferred Spark-local NVIDIA oracle target, but still require benchmark evidence before claiming one-Spark readiness. Nemotron 3 Ultra is not the one-Spark target; keep it as hosted or future multi-Spark context unless local evidence proves otherwise.
 
 Target KAME layout:
 
 - Reflex/interface: Gemma 4 E2B or E4B-style audio-native model, always warm, optimized for turn-taking and routing.
 - Oracle/brain: whatever Hermes `/model` selects, with Nemotron 3 Super as the first preferred local NVIDIA candidate to evaluate on DGX Spark.
 - Speech: local ASR/TTS where practical, with ASR used as oracle evidence rather than reflex input in full KAME mode.
-- Fallbacks: hosted Nemotron 3 Ultra, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
+- Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
-The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing Nemotron 3 Ultra as the hosted fallback. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.
+The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.
 
 Evidence notes:
 
@@ -123,7 +123,7 @@ The oracle is Hermes's active model, selected through the existing Hermes `/mode
 Target:
 
 - Nemotron 3 Super as the preferred Spark-local hackathon demo and sponsor-aligned planning path, selected through `/model`
-- Nemotron 3 Ultra as the hosted fallback selected through `/model` when local Super is unavailable
+- a clearly labeled hosted fallback selected through `/model` when local Super is unavailable
 - current cloud model for bring-up if needed
 - local Nemotron 3 Super on DGX Spark when it proves good enough for Hermes work and beats alternatives on latency, quality, and reliability
 - owns memory, tools, files, long reasoning, project context, and durable task execution
@@ -228,7 +228,7 @@ Required proof:
 
 - Discord voice is the live front door.
 - Hermes gives an immediate KAME-style acknowledgement.
-- Nemotron 3 Super is visible as the preferred Spark-local serious planning/oracle path for the demo, with Ultra labeled as hosted fallback if used.
+- Nemotron 3 Super is visible as the preferred Spark-local serious planning/oracle path for the demo, with any hosted fallback labeled clearly if used.
 - NemoClaw is visible as the safe execution boundary before billable or network-capable actions.
 - Hermes converts the spoken budget into a spend policy.
 - Stripe Projects action is queued to provision a VoIP-capable provider account, such as Twilio voice.
@@ -244,7 +244,7 @@ Video spine:
 1. User joins Discord voice.
 2. User gives Hermes a fixed amount of spending money through Stripe Skills.
 3. Hermes acknowledges the budget and explains that live spend requires approval.
-4. Hermes uses Nemotron 3 Super for the plan, or clearly labels Nemotron 3 Ultra as the hosted fallback.
+4. Hermes uses Nemotron 3 Super for the plan, or clearly labels a hosted `/model` fallback.
 5. Hermes presents a NemoClaw-safe action packet.
 6. Hermes queues Stripe Projects to provision VoIP.
 7. Hermes queues a Link-gated spend request for service credit.
@@ -569,6 +569,7 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
   --env-file .env \
+  --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json \
   --post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json
 ```
 

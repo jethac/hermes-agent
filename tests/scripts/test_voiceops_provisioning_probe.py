@@ -358,6 +358,13 @@ def test_write_probe_artifacts(tmp_path):
     assert "provisioning-preflight-evidence.manifest.json" in setup_closure["rerun_commands"]["with_preflight_manifest"]
     assert "--run-readonly-discovery" in setup_closure["rerun_commands"]["read_only_discovery"]
     assert "--refresh-preflight-source-hashes" in setup_closure["rerun_commands"]["refresh_preflight_source_hashes"]
+    assert (
+        "provisioning-preflight-evidence.manifest.json"
+        in setup_closure["rerun_commands"]["plan_index_manifest_and_post_approval_receipts"]
+    )
+    assert "--post-approval-receipts" in setup_closure["rerun_commands"][
+        "plan_index_manifest_and_post_approval_receipts"
+    ]
     assert setup_closure["rerun_commands"]["source_artifact_sha256"].startswith("shasum -a 256")
     assert "VoiceOps Milestone 2 Setup Closure Plan" in setup_markdown
     assert "Manifest example" in setup_markdown
