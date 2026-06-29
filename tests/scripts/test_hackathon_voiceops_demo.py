@@ -40,6 +40,27 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         if line
     ]
     action_ids = {action["action_id"] for action in payload["ops_actions"]}
+    assert payload["artifact_manifest"]["readiness_json"] == "readiness-report.json"
+    assert payload["artifact_manifest"]["operator_state"] == "operator-state.json"
+    assert payload["artifact_manifest"]["milestone2_execution_plan"] == "milestone2-execution-plan.json"
+    assert payload["recording_readiness"]["artifact_ref"] == "readiness-report.json"
+    assert payload["recording_readiness"]["ready_for_recording"] is False
+    assert payload["recording_readiness"]["required_failures"]
+    assert payload["readiness_closure_ref"] == "artifacts/voiceops-plan/current/readiness-closure-index.json"
+    assert payload["readiness_closure"]["closure_status"] == "needs_external_evidence"
+    assert {gate["gate_id"] for gate in payload["readiness_closure"]["gates"]} == {
+        "live_discord_voice_operator",
+        "spend_and_provisioning_preflight",
+        "local_spark_stack_matrix",
+    }
+    assert payload["operator_state_ref"] == "operator-state.json"
+    assert payload["operator_state_events_ref"] == "operator-state-events.jsonl"
+    assert payload["milestone2_execution_plan_ref"] == "milestone2-execution-plan.json"
+    assert payload["safety_boundary_refs"] == {
+        "nemoclaw_action_packet": "nemoclaw-action-packet.json",
+        "phone_context": "phone-context.json",
+        "stripe_actions_dry_run": "stripe-actions-dry-run.sh",
+    }
     assert payload["spark_stack"]["local_first"] is True
     assert payload["sponsor_stack"]["hermes_active_model"]["path"] == "spark_local_nemotron_3_super"
     assert payload["sponsor_stack"]["hermes_active_model"]["selected_by"] == "Hermes /model"
@@ -82,6 +103,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     }
     assert "deprovision_voip_provider" in milestone2_plan["rollback_plan"]
     assert operator_state["schema_version"] == "voiceops.operator_state.v1"
+    assert payload["operator_state"] == operator_state
+    assert operator_state["readiness_closure"]["closure_status"] == "needs_external_evidence"
     assert operator_state["current_mode"] == "approval-required"
     assert operator_state["active_voice_surface"]["surface_id"] == "discord_voice"
     assert operator_state["provisioned_services"]
@@ -103,14 +126,30 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Shot List" in runbook
     assert "@NousResearch" in runbook
     assert "Do not show terminal panes or files that contain secrets" in runbook
+    assert "Plan Closure Gates" in runbook
+    assert "live_discord_voice_operator" in runbook
+    assert "production_sidecar" in runbook
+    assert "live_turn" in runbook
+    assert "spend_and_provisioning_preflight" in runbook
+    assert "local_spark_stack_matrix" in runbook
     writeup = Path(paths["submission_writeup"]).read_text(encoding="utf-8")
     assert "Hermes VoiceOps Submission Writeup" in writeup
     assert "NemoClaw" in writeup
     assert "Stripe Skills" in writeup
     assert "@NousResearch" in writeup
+    assert "Remaining Closure Gates" in writeup
+    assert "live_discord_voice_operator" in writeup
+    assert "spend_and_provisioning_preflight" in writeup
+    assert "local_spark_stack_matrix" in writeup
     dashboard = Path(paths["dashboard"]).read_text(encoding="utf-8")
     assert "Nemotron 3 Super" in dashboard
+    assert "Nemotron 3 Ultra hosted fallback" in dashboard
+    assert "Ultra does not count as Spark-local readiness proof" in dashboard
     assert "NemoClaw Blocks" in dashboard
+    assert "Plan Closure Gates" in dashboard
+    assert "live_discord_voice_operator" in dashboard
+    assert "spend_and_provisioning_preflight" in dashboard
+    assert "local_spark_stack_matrix" in dashboard
     assert "Current Mode" in dashboard
     assert "dry_run_until_user_approval" in dashboard
     assert "approval-required" in dashboard

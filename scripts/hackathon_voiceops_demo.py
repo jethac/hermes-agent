@@ -90,6 +90,72 @@ def _h(value: Any) -> str:
     return html.escape(str(value), quote=True)
 
 
+def _demo_closure_summary() -> dict[str, Any]:
+    gates = [
+        {
+            "gate_id": "live_discord_voice_operator",
+            "status": "needs_live_probe",
+            "missing": ["discord_join", "discord_playback", "live_receiver", "production_sidecar", "live_turn"],
+            "template_artifact": "live-voice-evidence-template.json",
+            "closure_artifact": "live-probe-closure-plan.md",
+            "completion_signal": "live_probe_missing_gates becomes []",
+        },
+        {
+            "gate_id": "spend_and_provisioning_preflight",
+            "status": "needs_setup",
+            "missing": [
+                "stripe_cli",
+                "stripe_projects_cli",
+                "stripe_link_cli",
+                "mpp_agent",
+                "phone_target",
+                "phone_provider",
+                "stripe_projects_account",
+                "stripe_link_approval_capability",
+                "mpp_approval_boundary",
+                "phone_provider_account",
+                "credential_location_reference",
+                "rollback_owner_refs",
+            ],
+            "template_artifact": "provisioning-preflight-evidence.template.json",
+            "closure_artifact": "setup-closure-plan.md",
+            "completion_signal": "required_failures becomes [] and milestone status becomes ready",
+        },
+        {
+            "gate_id": "local_spark_stack_matrix",
+            "status": "needs_evidence",
+            "missing": ["reflex:needs_evidence", "oracle:needs_evidence", "asr:needs_evidence", "tts:needs_evidence"],
+            "template_artifact": "spark-benchmark-evidence-template.json",
+            "closure_artifact": "spark-model-matrix.md",
+            "completion_signal": "ready_for_one_spark_demo is true and role_status values are validated",
+        },
+    ]
+    return {
+        "schema_version": "voiceops.demo_closure_summary.v1",
+        "closure_status": "needs_external_evidence",
+        "readiness_closure_ref": "artifacts/voiceops-plan/current/readiness-closure-index.json",
+        "gates": gates,
+    }
+
+
+def _closure_gate_markdown_lines(closure: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for gate in closure["gates"]:
+        lines.extend(
+            [
+                f"### {gate['gate_id']}",
+                "",
+                f"- Status: {gate['status']}",
+                f"- Missing: {', '.join(gate['missing'])}",
+                f"- Template: `{gate['template_artifact']}`",
+                f"- Closure artifact: `{gate['closure_artifact']}`",
+                f"- Completion signal: {gate['completion_signal']}",
+                "",
+            ]
+        )
+    return lines
+
+
 def _slug(value: str) -> str:
     chars = []
     for ch in value.lower():
@@ -522,6 +588,7 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
             "status": "no_live_spend_without_explicit_approval",
         },
         "pending_approvals": pending_approvals,
+        "readiness_closure": _demo_closure_summary(),
         "recent_audit_events": demo["audit_events"][-5:],
         "planned_services": planned_services,
         "provisioned_services": [
@@ -904,6 +971,7 @@ def _markdown(demo: dict[str, Any]) -> str:
 def _submission_writeup(demo: dict[str, Any]) -> str:
     policy = demo["spend_policy"]
     approval_cents = demo["totals"]["approval_required_cents"]
+    closure = _demo_closure_summary()
     lines = [
         "# Hermes VoiceOps Submission Writeup",
         "",
@@ -941,6 +1009,15 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         "- NemoClaw packet lists blocked capabilities such as raw card data in model context and unapproved purchases.",
         "- Audit ledger records proposed actions, budget impact, approval state, and handoff evidence.",
         "",
+        "## Remaining Closure Gates",
+        "",
+        f"- Closure status: {closure['closure_status']}",
+        f"- Closure index: `{closure['readiness_closure_ref']}`",
+        *[
+            f"- `{gate['gate_id']}`: {gate['status']} (missing: {', '.join(gate['missing'])})"
+            for gate in closure["gates"]
+        ],
+        "",
         "## Demo Prompt",
         "",
         f"> {demo['demo']['request']}",
@@ -955,6 +1032,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
 
 def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
     failures = readiness["required_failures"]
+    closure = _demo_closure_summary()
     fallback = (
         "Use the static dashboard plus generated dry-run packets; narrate the missing required checks directly."
         if failures
@@ -980,9 +1058,14 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         f"- Ready for recording: {'yes' if readiness['ready_for_recording'] else 'no'}",
         f"- Required failures: {', '.join(failures) if failures else 'none'}",
         f"- Recording fallback: {fallback}",
+        f"- Plan closure status: {closure['closure_status']}",
+        f"- Closure index: `{closure['readiness_closure_ref']}`",
         "",
         "Do not show terminal panes or files that contain secrets. Do not run live spend or provisioning unless the user explicitly approves it during the recording.",
         "",
+        "## Plan Closure Gates",
+        "",
+        *_closure_gate_markdown_lines(closure),
         "## Spoken Demo Prompt",
         "",
         "Say this in Discord voice:",
@@ -1080,6 +1163,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
     nemoclaw = _nemoclaw_action_packet(demo)
     phone_context = _phone_context_packet(demo)
     operator_state = _operator_state_packet(demo, readiness)
+    closure = _demo_closure_summary()
     budget_status = operator_state["budget_status"]
     voice_surface = operator_state["active_voice_surface"]
     approval_cents = demo["totals"]["approval_required_cents"]
@@ -1150,6 +1234,16 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
             f"<span class=\"pill {_status_class(check['status'])}\">{_h(check['status'])}</span>"
             f"<strong>{_h(check['check_id'])}</strong>"
             f"<small>{_h(required)} - {_h(check['detail'])}</small>"
+            "</li>"
+        )
+    closure_items = []
+    for gate in closure["gates"]:
+        closure_items.append(
+            "<li>"
+            f"<span class=\"pill {_status_class(gate['status'])}\">{_h(gate['status'])}</span>"
+            f"<strong>{_h(gate['gate_id'])}</strong>"
+            f"<small>Missing: {_h(', '.join(gate['missing']))}</small>"
+            f"<small>Template: {_h(gate['template_artifact'])}; closure: {_h(gate['closure_artifact'])}</small>"
             "</li>"
         )
     guardrail_items = "".join(f"<li>{_h(item)}</li>" for item in nemoclaw["blocked_capabilities"])
@@ -1404,6 +1498,19 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
           <ul>{''.join(readiness_items)}</ul>
         </div>
         <div class="panel">
+          <h2>Plan Closure Gates</h2>
+          <p>Closure index: {_h(closure['readiness_closure_ref'])}</p>
+          <ul>{''.join(closure_items)}</ul>
+        </div>
+        <div class="panel">
+          <h2>Model Strategy</h2>
+          <ul>
+            <li><span>Active</span><strong>{_h(demo['sponsor_stack']['hermes_active_model']['label'])}</strong><small>Selected through Hermes /model.</small></li>
+            <li><span>Preferred local</span><strong>Nemotron 3 Super on DGX Spark</strong><small>Spark-local readiness requires measured local evidence.</small></li>
+            <li><span>Hosted fallback</span><strong>Nemotron 3 Ultra hosted fallback</strong><small>Ultra does not count as Spark-local readiness proof.</small></li>
+          </ul>
+        </div>
+        <div class="panel">
           <h2>NemoClaw Blocks</h2>
           <ul>{guardrail_items}</ul>
         </div>
@@ -1470,6 +1577,34 @@ def _stripe_script(actions: Iterable[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _demo_package(
+    demo: dict[str, Any],
+    *,
+    readiness: dict[str, Any],
+    operator_state: dict[str, Any],
+    paths: dict[str, Path],
+) -> dict[str, Any]:
+    payload = dict(demo)
+    payload["artifact_manifest"] = {key: path.name for key, path in sorted(paths.items())}
+    payload["recording_readiness"] = {
+        "artifact_ref": paths["readiness_json"].name,
+        "ready_for_recording": readiness["ready_for_recording"],
+        "required_failures": readiness["required_failures"],
+    }
+    payload["readiness_closure"] = _demo_closure_summary()
+    payload["readiness_closure_ref"] = "artifacts/voiceops-plan/current/readiness-closure-index.json"
+    payload["operator_state"] = operator_state
+    payload["operator_state_ref"] = paths["operator_state"].name
+    payload["operator_state_events_ref"] = paths["operator_state_events"].name
+    payload["milestone2_execution_plan_ref"] = paths["milestone2_execution_plan"].name
+    payload["safety_boundary_refs"] = {
+        "nemoclaw_action_packet": paths["nemoclaw_packet"].name,
+        "stripe_actions_dry_run": paths["stripe_actions"].name,
+        "phone_context": paths["phone_context"].name,
+    }
+    return payload
+
+
 def write_demo(
     output_dir: Path,
     demo: dict[str, Any],
@@ -1495,7 +1630,8 @@ def write_demo(
         "submission_writeup": output_dir / "submission-writeup.md",
         "stripe_actions": output_dir / "stripe-actions-dry-run.sh",
     }
-    _write_json(paths["json"], demo)
+    operator_state = _operator_state_packet(demo, readiness)
+    _write_json(paths["json"], _demo_package(demo, readiness=readiness, operator_state=operator_state, paths=paths))
     paths["markdown"].write_text(_markdown(demo), encoding="utf-8")
     _write_jsonl(paths["audit_ledger"], demo["audit_events"])
     paths["demo_script"].write_text(_demo_script(demo), encoding="utf-8")
@@ -1504,7 +1640,6 @@ def write_demo(
     _write_json(paths["readiness_json"], readiness)
     paths["readiness_markdown"].write_text(_readiness_markdown(readiness), encoding="utf-8")
     _write_json(paths["milestone2_execution_plan"], build_milestone2_execution_plan(_demo_milestone2_report(demo, readiness)))
-    operator_state = _operator_state_packet(demo, readiness)
     _write_json(paths["operator_state"], operator_state)
     _write_jsonl(paths["operator_state_events"], operator_state["recent_audit_events"])
     paths["dashboard"].write_text(_dashboard_html(demo, readiness), encoding="utf-8")
