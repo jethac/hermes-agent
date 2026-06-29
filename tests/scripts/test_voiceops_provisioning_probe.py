@@ -254,6 +254,7 @@ def test_write_probe_artifacts(tmp_path):
     assert setup_closure["evidence_contract"]["required_section_field"] == "source_artifact"
     assert setup_closure["evidence_contract"]["source_artifacts_must_exist"] is True
     assert "provisioning-preflight-evidence.manifest.json" in setup_closure["rerun_commands"]["with_preflight_manifest"]
+    assert setup_closure["rerun_commands"]["source_artifact_sha256"].startswith("shasum -a 256")
     assert "VoiceOps Milestone 2 Setup Closure Plan" in setup_markdown
     assert "Manifest example" in setup_markdown
     assert "source_artifact" in setup_markdown
@@ -262,6 +263,8 @@ def test_write_probe_artifacts(tmp_path):
     assert "`phone_handoff.credential_location_ref`" in setup_markdown
     assert "`rollback.deprovision_owner`" in setup_markdown
     assert preflight_example["example_only"] is True
+    assert len(preflight_example["stripe_projects"]["source_artifact_sha256"]) == 64
+    assert set(preflight_example["stripe_projects"]["source_artifact_sha256"]) == {"0"}
     assert preflight_manifest_example["example_only"] is True
     assert preflight_manifest_example["reports"]["stripe_projects"].endswith("stripe-projects-evidence.json")
     assert "example_only evidence is not accepted" in load_preflight_evidence(

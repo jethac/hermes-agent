@@ -205,7 +205,13 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     )
     assert live_closure["evidence_contract"]["required_section_field"] == "source_artifact"
     assert live_closure["evidence_contract"]["source_artifacts_must_exist"] is True
+    assert live_closure["evidence_contract"]["template_source_artifacts_accepted"] is False
+    assert "kind/evidence_type" in live_closure["evidence_contract"]["manifest_report_identity"]
+    assert live_closure["evidence_shapes"]["discord_live_probe"]["kind"] == "discord_live_probe"
+    assert live_closure["evidence_shapes"]["discord_live_probe"]["require_inbound"] is True
+    assert live_closure["evidence_shapes"]["sidecar_session"]["kind"] == "sidecar_session"
     assert live_closure["evidence_shapes"]["sidecar_session"]["source_artifact"] == "sidecar-session.json"
+    assert live_closure["evidence_shapes"]["live_turn"]["kind"] == "live_turn"
     assert live_closure["evidence_shapes"]["live_turn"]["source_artifact"] == "live-turn.json"
     assert "hermes_cli.realtime_voice_live_evidence" in live_closure["recommended_collection"]["live_bundle_manifest"]
     assert "manifest.json" in live_closure["recommended_collection"]["ingest"]
@@ -217,6 +223,9 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert "VoiceOps Milestone 1 Live Probe Closure" in closure_markdown
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in closure_markdown
     assert "source_artifact" in closure_markdown
+    assert "kind/evidence_type" in closure_markdown
+    assert "sidecar_session" in closure_markdown
+    assert "live_turn" in closure_markdown
     assert "sidecar-session.json" in closure_markdown
     assert "raw transcript text" in closure_markdown
     assert "hand-edit manifest.json" in closure_markdown
@@ -406,6 +415,87 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
     }
     assert report["live_probe_required_for_completion"]["missing_gates"] == []
     assert report["status"] == "live_evidence_supplied_not_readiness_claim"
+
+
+def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path):
+    discord_path = tmp_path / "actual-discord-probe.json"
+    sidecar_path = tmp_path / "actual-sidecar-session.json"
+    turn_path = tmp_path / "actual-live-turn.json"
+    discord_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+                "kind": "discord_live_probe",
+                "source_artifact": discord_path.name,
+                "ok": True,
+                "connect_perm": True,
+                "speak_perm": True,
+                "connected": True,
+                "opus_loaded": True,
+                "accepted_audio_source": True,
+                "played": True,
+                "playing_during_probe": True,
+                "receiver_started": True,
+                "receiver_frames": 18,
+                "receiver_speech_start": 1,
+                "inbound_observed": True,
+                "disconnected": True,
+                "require_inbound": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+                "kind": "sidecar_session",
+                "source_artifact": sidecar_path.name,
+                "sidecar_running": True,
+                "sidecar_healthy": True,
+                "session_started": True,
+                "session_closed": True,
+                "fallback_mode_visible": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    turn_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+                "kind": "live_turn",
+                "source_artifact": turn_path.name,
+                "transcript_observed": True,
+                "assistant_audio_observed": True,
+                "barge_in_observed": True,
+                "spoken_reply_short": True,
+                "no_voice_denial_observed": True,
+                "speech_end_to_first_audio_ms": 950,
+                "barge_in_stop_ms": 80,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([discord_path, sidecar_path, turn_path])
+
+    assert live_evidence["overall_status"] == "live_evidence_supplied_not_readiness_claim"
+    assert live_evidence["issues"] == []
+    assert live_evidence["section_refs"] == {
+        "discord_live_probe": {
+            "source_artifact": discord_path.name,
+            "section": "discord_live_probe",
+        },
+        "sidecar_session": {
+            "source_artifact": sidecar_path.name,
+            "section": "sidecar_session",
+        },
+        "live_turn": {
+            "source_artifact": turn_path.name,
+            "section": "live_turn",
+        },
+    }
 
 
 def test_voice_operator_overrides_manifest_report_placeholder_source_artifacts(tmp_path):

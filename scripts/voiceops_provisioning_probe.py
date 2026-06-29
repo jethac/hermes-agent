@@ -209,6 +209,7 @@ PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS = [
 ]
 PREFLIGHT_EVIDENCE_SECTIONS = ("stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback")
 PREFLIGHT_SOURCE_ARTIFACT_KIND = "redacted_setup_evidence"
+PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256 = "0" * 64
 
 SECRET_KEY_RE = re.compile(
     r"(?i)\b([A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|AUTH)[A-Z0-9_]*)\s*=\s*([^\s,;]+)"
@@ -376,7 +377,7 @@ def build_preflight_evidence_example() -> dict[str, Any]:
         {
             "account_ref": "stripe-projects-account-ref-demo",
             "source_artifact": "artifacts/voiceops-provisioning/current/stripe-projects-catalog-redacted.json",
-            "source_artifact_sha256": "replace-with-real-redacted-artifact-sha256",
+            "source_artifact_sha256": PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
             "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
             "projects_catalog_checked_at": "2026-06-29T00:00:00Z",
             "voip_provider_candidate": "twilio/voice",
@@ -387,7 +388,7 @@ def build_preflight_evidence_example() -> dict[str, Any]:
         {
             "account_ref": "stripe-link-account-ref-demo",
             "source_artifact": "artifacts/voiceops-provisioning/current/stripe-link-approval-redacted.json",
-            "source_artifact_sha256": "replace-with-real-redacted-artifact-sha256",
+            "source_artifact_sha256": PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
             "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
             "approval_capability_confirmed": True,
             "max_approved_cents": 20_000,
@@ -398,7 +399,7 @@ def build_preflight_evidence_example() -> dict[str, Any]:
         {
             "boundary_tool": "nemoclaw",
             "source_artifact": "artifacts/voiceops-provisioning/current/nemoclaw-boundary-redacted.json",
-            "source_artifact_sha256": "replace-with-real-redacted-artifact-sha256",
+            "source_artifact_sha256": PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
             "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
             "policy_ref": "voiceops-policy-ref-demo",
             "approval_packet_ref": "nemoclaw-action-packet.json",
@@ -408,7 +409,7 @@ def build_preflight_evidence_example() -> dict[str, Any]:
         {
             "provider": "twilio",
             "source_artifact": "artifacts/voiceops-provisioning/current/phone-handoff-redacted.json",
-            "source_artifact_sha256": "replace-with-real-redacted-artifact-sha256",
+            "source_artifact_sha256": PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
             "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
             "provider_account_ref": "twilio-account-ref-demo",
             "phone_target_ref": "operator-phone-ref-demo",
@@ -419,7 +420,7 @@ def build_preflight_evidence_example() -> dict[str, Any]:
         {
             "deprovision_owner": "operator-ref-demo",
             "source_artifact": "artifacts/voiceops-provisioning/current/rollback-owners-redacted.json",
-            "source_artifact_sha256": "replace-with-real-redacted-artifact-sha256",
+            "source_artifact_sha256": PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
             "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
             "refund_or_cancel_owner": "operator-ref-demo",
             "call_cancel_owner": "operator-ref-demo",
@@ -1342,6 +1343,7 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "with_preflight_manifest": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json",
             "plan_index": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
             "plan_index_manifest": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json",
+            "source_artifact_sha256": "shasum -a 256 path/to/redacted-source-artifact.json",
         },
         "operator_must_not": [
             "paste secret values into chat or artifact files",

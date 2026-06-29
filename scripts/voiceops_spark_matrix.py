@@ -143,12 +143,18 @@ def _load_evidence(paths: Iterable[Path]) -> list[dict[str, Any]]:
     for path in paths:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(payload, list):
-            evidence.extend(item for item in payload if isinstance(item, dict))
+            evidence.extend(_with_evidence_source(item, path) for item in payload if isinstance(item, dict))
         elif isinstance(payload, dict) and isinstance(payload.get("evidence"), list):
-            evidence.extend(item for item in payload["evidence"] if isinstance(item, dict))
+            evidence.extend(_with_evidence_source(item, path) for item in payload["evidence"] if isinstance(item, dict))
         elif isinstance(payload, dict):
-            evidence.append(payload)
+            evidence.append(_with_evidence_source(payload, path))
     return [*evidence, *_adapt_kame_evidence(evidence)]
+
+
+def _with_evidence_source(item: dict[str, Any], path: Path) -> dict[str, Any]:
+    copy = dict(item)
+    copy["_evidence_path"] = str(path)
+    return copy
 
 
 def _matches_hardware(value: Any) -> bool:
@@ -220,6 +226,7 @@ def _base_adapted_evidence(
         "source_artifact": _source_artifact(source),
         "metrics": metrics,
         "adapted_from": str(source.get("kind") or ""),
+        "_evidence_path": source.get("_evidence_path"),
     }
 
 
@@ -257,6 +264,7 @@ def _adapt_kame_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "interface_input_sources": _list_values(entry.get("interface_input_sources")),
                     "reflex_providers": _list_values(entry.get("reflex_providers")),
                     "adapted_from": "kame_smoke_result",
+                    "_evidence_path": entry.get("_evidence_path"),
                 }
             )
             continue
@@ -416,6 +424,8 @@ def evaluate_candidate(candidate: Candidate, evidence: list[dict[str, Any]]) -> 
             issues.append("model_mismatch")
         if not str(item.get("source_artifact") or "").strip():
             issues.append("missing_source_artifact")
+        else:
+            issues.extend(_source_artifact_issues(item))
         if not str(item.get("measured_at") or "").strip():
             issues.append("missing_measured_at")
         locality = str(item.get("locality") or "").strip()
@@ -485,6 +495,8 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
             issues.append("missing_schema_version")
         if not str(item.get("source_artifact") or "").strip():
             issues.append("missing_source_artifact")
+        else:
+            issues.extend(_source_artifact_issues(item))
         if not str(item.get("measured_at") or "").strip():
             issues.append("missing_measured_at")
         if not _matches_hardware(item.get("hardware")):
@@ -539,6 +551,26 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
         "issues": sorted(set(issues)),
         "evidence_count": len(matching),
     }
+
+
+def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
+    source_text = str(item.get("source_artifact") or "").strip()
+    evidence_path_text = str(item.get("_evidence_path") or "").strip()
+    if not evidence_path_text:
+        return ["source_artifact_unverified"]
+    source_path = Path(source_text).expanduser()
+    if not source_path.is_absolute():
+        source_path = Path(evidence_path_text).expanduser().parent / source_text
+    if not source_path.exists():
+        return ["source_artifact_not_found"]
+    if not source_path.is_file():
+        return ["source_artifact_not_file"]
+    try:
+        with source_path.open("rb") as handle:
+            handle.read(1)
+    except OSError:
+        return ["source_artifact_unreadable"]
+    return []
 
 
 def build_matrix(evidence_paths: Iterable[Path] = ()) -> dict[str, Any]:
@@ -828,6 +860,14 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "source_artifact",
             "verified",
         ],
+        "evidence_contract": {
+            "schema_version": EVIDENCE_SCHEMA_VERSION,
+            "source_artifacts_must_exist": True,
+            "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",
+            "source_artifact_readable": True,
+            "example_only_accepted": False,
+            "hosted_fallback_counts_for_one_spark_readiness": False,
+        },
         "required_stack_smoke_fields": [
             "schema_version",
             "kind",
@@ -961,9 +1001,18 @@ def _closure_markdown(plan: dict[str, Any]) -> str:
         f"- Example: `{plan['evidence_example']}`",
         f"- Matrix: `{plan['matrix_artifact']}`",
         "",
-        "## Candidate Closure",
+        "## Evidence Contract",
         "",
     ]
+    for key, value in sorted(plan["evidence_contract"].items()):
+        lines.append(f"- `{key}`: `{value}`")
+    lines.extend(
+        [
+            "",
+        "## Candidate Closure",
+        "",
+        ]
+    )
     for item in plan["candidate_closure"]:
         target_text = ", ".join(
             f"{target['metric']} {target['operator']} {target['value']:g} {target['unit']}"

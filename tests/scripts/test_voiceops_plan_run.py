@@ -65,6 +65,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "required_candidate_fields" in gates["local_spark_stack_matrix"]
     assert "schema_version" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["hosted_fallback_counts_for_one_spark_readiness"] is False
+    assert gates["local_spark_stack_matrix"]["evidence_contract"]["source_artifacts_must_exist"] is True
+    assert gates["local_spark_stack_matrix"]["evidence_contract"]["source_artifact_readable"] is True
+    assert gates["local_spark_stack_matrix"]["evidence_contract"]["source_artifact_resolution"].endswith(
+        "supplied benchmark evidence file"
+    )
     assert "all_local_stack_smoke:needs_evidence" in gates["local_spark_stack_matrix"]["missing"]
     assert "all_local_stack_smoke is validated" in gates["local_spark_stack_matrix"]["completion_signal"]
     assert gates["local_spark_stack_matrix"]["collection_commands"]["dgx_eval"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
@@ -180,11 +185,22 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
         assert f"`{artifact}`" in text
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in text
     assert "voiceops.milestone1.live_voice_evidence.v1" in text
+    assert "For non-manifest ingestion, pass one `--live-evidence` per section or combined file" in text
+    assert "kind` or `evidence_type` values such as `discord_live_probe`, `sidecar_session`, or `live_turn`" in text
+    assert "Manifest ingestion is preferred because manifest reports record the actual referenced report path as provenance" in text
     assert "placeholder source paths inside referenced artifacts are not trusted as provenance" in text
+    assert "Template source artifact names such as `discord-live-probe.json`, `voice-status-or-sidecar-report.json`, and `voice-turn-evidence.json` are rejected" in text
     assert "source_artifact` for every redacted evidence section" in text
+    assert "`source_artifact_kind: redacted_setup_evidence`, `source_artifact_sha256`, and `source_artifact_redacted_at`" in text
+    assert "SHA-256 must match the referenced redacted JSON source artifact" in text
+    assert "redaction timestamp must be parseable with timezone information" in text
     assert "all_local_stack_smoke" in text
     assert "oracle authority routes include tools/files/memory/project context" in text
     assert "reflex provider includes `vllm`" in text
+    assert "`speech_end_to_first_audio_ms <= 1500`" in text
+    assert "`barge_in_stop_ms <= 150`" in text
+    assert "`local_turn_oracle_calls == 0`" in text
+    assert "`oracle_bound_oracle_calls >= oracle_bound_turns`" in text
     assert "local reflex turns must not call the oracle" in text
 
 

@@ -4,7 +4,23 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from scripts.voiceops_spark_matrix import build_matrix, parse_args, write_matrix
+
+
+@pytest.fixture(autouse=True)
+def _spark_raw_source_artifacts(tmp_path):
+    for relative in [
+        "artifacts/test/raw.json",
+        "artifacts/test/stack-smoke.json",
+        "artifacts/test/hosted.json",
+        "artifacts/test/cartesia.json",
+        "artifacts/kame/raw.json",
+    ]:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"redacted": True, "source": relative}), encoding="utf-8")
 
 
 def _base_evidence(candidate_id: str, *, model: str, locality: str = "local_spark") -> dict:
@@ -124,6 +140,9 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
         "metrics.oracle_bound_oracle_calls",
     } <= set(closure["required_stack_smoke_fields"])
     assert closure["all_local_stack_smoke"]["required_components"] == ["reflex", "oracle", "asr", "tts", "sidecar"]
+    assert closure["evidence_contract"]["source_artifacts_must_exist"] is True
+    assert closure["evidence_contract"]["source_artifact_readable"] is True
+    assert closure["evidence_contract"]["source_artifact_resolution"].endswith("supplied benchmark evidence file")
     assert closure["benchmark_evidence_shape"]["evidence"][0]["schema_version"] == "voiceops.spark_benchmark_evidence.v1"
     assert closure["benchmark_evidence_shape"]["evidence"][0]["candidate_id"] == "oracle-nemotron3-super-local"
     assert closure["benchmark_evidence_shape"]["evidence"][1]["kind"] == "voiceops_spark_stack_smoke"
@@ -134,6 +153,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "voiceops.spark_benchmark_evidence.v1" in closure_markdown
     assert "oracle_authority_routes" in closure_markdown
     assert "source_artifact" in closure_markdown
+    assert "source_artifacts_must_exist" in closure_markdown
     assert example["example_only"] is True
     assert all(item["example_only"] is True for item in example["evidence"])
     assert template["evidence"][0]["verified"] is False
@@ -248,6 +268,26 @@ def test_spark_matrix_fails_unverified_or_slow_evidence(tmp_path):
     assert "evidence_not_verified" in evaluation["issues"]
     assert "model_mismatch" in evaluation["issues"]
     assert "target_failed:decode_tok_s" in evaluation["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
+def test_spark_matrix_rejects_candidate_with_missing_source_artifact(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    evidence["source_artifact"] = "missing/raw-oracle.json"
+    evidence["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "source_artifact_not_found" in evaluation["issues"]
     assert matrix["role_status"]["oracle"] == "needs_evidence"
 
 
@@ -437,6 +477,19 @@ def test_spark_matrix_rejects_stack_smoke_without_provenance(tmp_path):
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "missing_source_artifact" in matrix["stack_smoke"]["issues"]
     assert "missing_measured_at" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_rejects_stack_smoke_with_missing_source_artifact(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    incomplete = _stack_smoke()
+    incomplete["source_artifact"] = "missing/stack-smoke.json"
+    evidence_path.write_text(json.dumps({"evidence": [incomplete]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "source_artifact_not_found" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
 
 
