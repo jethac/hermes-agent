@@ -18,9 +18,9 @@ from typing import Any, Iterable
 
 
 DEFAULT_REQUEST = (
-    "Hermes, set up tomorrow's paid household and business operations. "
-    "Keep spend under 200 dollars, provision the services we need, and leave "
-    "me an audit trail I can approve from Discord."
+    "Hermes, I am giving you 200 dollars to use through Stripe Skills. "
+    "Provision yourself a VoIP provider account, then call my phone with "
+    "this same context so we can continue outside Discord."
 )
 
 
@@ -95,11 +95,30 @@ def _surface_matrix() -> list[VoiceSurface]:
         ),
         VoiceSurface(
             channel="phone",
-            role="fallback phone call and SMS escalation",
-            implementation="Stripe Projects can provision Twilio; Hermes routes call summaries into the same ops queue",
-            status="demo-action-queued",
+            role="outbound call handoff with the same operational context",
+            implementation="Stripe Projects provisions Twilio or another VoIP provider; Hermes queues the call through the phone bridge",
+            status="demo-call-queued",
         ),
     ]
+
+
+def _sponsor_stack(oracle_model: str) -> dict[str, Any]:
+    return {
+        "nemotron_3_ultra": {
+            "role": "hackathon-visible Hermes oracle/model target for serious planning and reasoning",
+            "selection": oracle_model,
+            "note": "Configured through Hermes' normal /model flow; VoiceOps does not introduce a separate oracle_model setting.",
+        },
+        "nemoclaw": {
+            "role": "safe execution boundary for agent actions that touch tools, credentials, network, and spend",
+            "demo_use": "wrap or present the Stripe/VoIP provisioning plan as a sandboxed execution packet before approval",
+        },
+        "stripe_skills": {
+            "role": "controlled economic rail",
+            "skills": ["stripe-projects", "stripe-link-cli", "mpp-agent"],
+            "demo_use": "provision VoIP service, request approved spend, and preserve receipts/audit events",
+        },
+    }
 
 
 def _spark_stack(oracle_model: str, reflex_model: str) -> dict[str, Any]:
@@ -133,20 +152,20 @@ def _spark_stack(oracle_model: str, reflex_model: str) -> dict[str, Any]:
 def _ops_actions(total_budget_cents: int) -> list[OpsAction]:
     base_actions = [
         OpsAction(
-            action_id="provision-sms",
-            provider="stripe-projects",
-            command="stripe projects add twilio/sms",
-            purpose="create SMS/phone escalation path for urgent household and business alerts",
-            estimated_cents=2500,
-            requires_approval=True,
-            status="queued",
+            action_id="grant-spend-budget",
+            provider="voiceops-policy",
+            command="record spend cap usd:200 approval_required:true",
+            purpose="bind the spoken Discord budget to the approval and audit policy",
+            estimated_cents=0,
+            requires_approval=False,
+            status="ready",
         ),
         OpsAction(
-            action_id="provision-db",
+            action_id="provision-voip-provider",
             provider="stripe-projects",
-            command="stripe projects add neon/postgres",
-            purpose="store operations ledger, approvals, vendor credentials, and recurring tasks",
-            estimated_cents=1900,
+            command="stripe projects add twilio/voice",
+            purpose="provision a VoIP-capable provider account for outbound calls and SMS fallback",
+            estimated_cents=2500,
             requires_approval=True,
             status="queued",
         ),
@@ -163,19 +182,28 @@ def _ops_actions(total_budget_cents: int) -> list[OpsAction]:
             status="queued",
         ),
         OpsAction(
-            action_id="schedule-household",
-            provider="hermes-cron",
-            command="hermes cron create 'weekly household operations review'",
-            purpose="review bills, subscriptions, calendar conflicts, and home maintenance tasks",
+            action_id="persist-call-context",
+            provider="hermes-audit-ledger",
+            command="write context packet for outbound phone handoff",
+            purpose="preserve the Discord conversation, budget, approval state, and VoIP provisioning result for the phone call",
             estimated_cents=0,
             requires_approval=False,
             status="ready",
         ),
         OpsAction(
+            action_id="call-user-phone",
+            provider="voiceops-phone-bridge",
+            command="queue outbound call --context artifacts/hackathon-voiceops-demo/current/voiceops-demo.json",
+            purpose="call the user's phone and continue with the same Discord context",
+            estimated_cents=0,
+            requires_approval=True,
+            status="queued",
+        ),
+        OpsAction(
             action_id="publish-status",
             provider="hermes-gateway",
-            command="post summary to Discord, WhatsApp, and phone escalation queue",
-            purpose="send the user a single approval packet across reachable channels",
+            command="post summary to Discord and WhatsApp with phone-call audit ID",
+            purpose="send the user a cross-channel approval packet and call handoff summary",
             estimated_cents=0,
             requires_approval=False,
             status="ready",
@@ -233,8 +261,9 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
             "name": args.demo_name,
             "request": args.request,
             "operator": "Hermes VoiceOps",
-            "submission_theme": "run a household and business from one DGX Spark through conversational voice",
+            "submission_theme": "give a Spark-powered Hermes agent spending money over Discord, let it provision VoIP through Stripe Skills, then continue by phone",
         },
+        "sponsor_stack": _sponsor_stack(args.oracle_model),
         "spark_stack": _spark_stack(args.oracle_model, args.reflex_model),
         "voice_surfaces": [asdict(surface) for surface in _surface_matrix()],
         "spend_policy": asdict(policy),
@@ -264,6 +293,12 @@ def _markdown(demo: dict[str, Any]) -> str:
         "## One-line pitch",
         "",
         "Hermes VoiceOps turns a DGX Spark into a local-first operator for a household and business, controlled by live voice in Discord with WhatsApp and phone escalation paths.",
+        "",
+        "## Sponsor stack",
+        "",
+        f"- Nemotron 3 Ultra: {demo['sponsor_stack']['nemotron_3_ultra']['role']}",
+        f"- NemoClaw: {demo['sponsor_stack']['nemoclaw']['role']}",
+        f"- Stripe Skills: {demo['sponsor_stack']['stripe_skills']['demo_use']}",
         "",
         "## Demo request",
         "",
@@ -303,11 +338,12 @@ def _markdown(demo: dict[str, Any]) -> str:
         "",
         "## 90-second video beat sheet",
         "",
-        "1. Join Discord voice and ask Hermes to set up tomorrow's household and business operations under budget.",
-        "2. Show Hermes producing a KAME reflex acknowledgement immediately, then an oracle-backed operating plan.",
-        "3. Show the Stripe/Projects queue for Twilio, Neon, and a Link-gated spend request.",
-        "4. Show the audit ledger and budget totals.",
-        "5. Close with WhatsApp/phone as the same operator reachable away from the desktop.",
+        "1. Join Discord voice and give Hermes a fixed Stripe Skills budget.",
+        "2. Show Hermes producing a KAME reflex acknowledgement immediately, then a Nemotron-backed operating plan.",
+        "3. Show the NemoClaw/sandboxed action packet before anything billable runs.",
+        "4. Show the Stripe/Projects queue for VoIP provisioning and a Link-gated service-credit spend.",
+        "5. Show Hermes preserving the Discord context and queuing an outbound phone call.",
+        "6. Close by continuing the same task from the phone-call surface.",
         "",
     ])
     return "\n".join(lines)
@@ -324,15 +360,19 @@ def _demo_script(demo: dict[str, Any]) -> str:
             "",
             "Hermes reflex reply:",
             "",
-            "  I heard you. I am preparing an approval packet and will keep spend under the cap.",
+            "  I heard you. I will keep this under 200 dollars and ask before anything billable runs.",
             "",
-            "Hermes oracle reply:",
+            "Hermes oracle reply, using the hackathon sponsor stack:",
             "",
-            "  I queued Twilio for phone/SMS escalation, Neon for the operations ledger, and a Link-gated service-credit purchase. Nothing billable executes until you approve it.",
+            "  I prepared a NemoClaw-safe action packet, queued Stripe Projects to provision a VoIP provider, and queued a Link-gated spend request for service credit. I also preserved this Discord context for the outbound phone call.",
+            "",
+            "Phone handoff:",
+            "",
+            "  Hermes calls the user's phone and says: I am continuing from Discord. You gave me a 200 dollar budget to provision VoIP through Stripe Skills, and I am waiting on your approval before live spend.",
             "",
             "Close:",
             "",
-            "  This is the same local Spark operator reachable through Discord voice, WhatsApp, and phone.",
+            "  This is one Spark-powered Hermes operator carrying context across Discord, Stripe-provisioned VoIP, WhatsApp, and phone.",
             "",
         ]
     )
@@ -380,7 +420,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--request", default=DEFAULT_REQUEST)
     parser.add_argument("--budget-cents", type=int, default=20_000)
     parser.add_argument("--approval-required-over-cents", type=int, default=1_000)
-    parser.add_argument("--oracle-model", default="Hermes active /model selection, ideally Gemma 4 26B-A4B on Spark")
+    parser.add_argument("--oracle-model", default="Nemotron 3 Ultra via Hermes /model for the hackathon demo")
     parser.add_argument("--reflex-model", default="Gemma 4 E2B audio-native reflex on Spark")
     return parser.parse_args(argv)
 

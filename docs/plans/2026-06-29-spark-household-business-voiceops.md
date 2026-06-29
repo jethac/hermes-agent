@@ -16,6 +16,8 @@ Hermes VoiceOps is a local-first operator for daily life and business:
 - Business: customer ops, vendor setup, SaaS provisioning, recurring reviews, payments, reporting, and incident response.
 - Voice surfaces: Discord live voice for the desk, WhatsApp for mobile chat, phone/SMS for urgent fallback.
 - Compute: DGX Spark runs the KAME reflex, speech stack, and preferred local models where practical.
+- Reasoning: Nemotron 3 Ultra is the hackathon-visible oracle/model target, while Hermes `/model` remains authoritative.
+- Safety: NemoClaw is the preferred sponsor-aligned execution boundary for spend, provisioning, and network-capable action packets.
 - Spend: Stripe Link, Stripe Projects, and MPP/402 become the controlled path for paying, provisioning, and recording approvals.
 - Audit: every planned, approved, held, executed, failed, or rolled-back action is durable and inspectable.
 
@@ -81,6 +83,7 @@ The oracle is Hermes's active model, selected through the existing Hermes `/mode
 
 Target:
 
+- Nemotron 3 Ultra for the hackathon demo and sponsor-aligned planning path
 - current cloud model for bring-up if needed
 - local Gemma 4 26B-A4B on DGX Spark when it proves good enough for Hermes work
 - owns memory, tools, files, long reasoning, project context, and durable task execution
@@ -110,6 +113,20 @@ Initial important skills:
 - WhatsApp bridge
 - Discord gateway
 - future Twilio/phone path provisioned through Stripe Projects
+
+### NemoClaw Execution Boundary
+
+For the hackathon story, NemoClaw should be visible as the safe execution layer between an agent plan and real external effects.
+
+It should wrap or present:
+
+- Stripe Projects provisioning packets
+- Stripe Link spend requests
+- VoIP/phone-provider setup
+- outbound message or phone-call actions
+- network and credential access decisions
+
+The video does not need to prove every NemoClaw policy in depth, but it should make clear that the agent is not receiving unchecked authority just because the user spoke a command.
 
 ### Audit Ledger
 
@@ -164,19 +181,34 @@ Goal for the June 30, 2026 submission: show a serious local agent operating syst
 Demo request:
 
 ```text
-Hermes, set up tomorrow's paid household and business operations. Keep spend under 200 dollars, provision the services we need, and leave me an audit trail I can approve from Discord.
+Hermes, I am giving you 200 dollars to use through Stripe Skills. Provision yourself a VoIP provider account, then call my phone with this same context so we can continue outside Discord.
 ```
 
 Required proof:
 
 - Discord voice is the live front door.
 - Hermes gives an immediate KAME-style acknowledgement.
-- Hermes produces a budgeted operations plan.
-- Stripe Projects actions are queued for Twilio/SMS and Neon/Postgres.
-- Stripe Link action is queued for a gated spend request.
+- Nemotron 3 Ultra is visible as the serious planning/oracle path for the demo.
+- NemoClaw is visible as the safe execution boundary before billable or network-capable actions.
+- Hermes converts the spoken budget into a spend policy.
+- Stripe Projects action is queued to provision a VoIP-capable provider account, such as Twilio voice.
+- Stripe Link action is queued for a gated service-credit spend request.
+- Hermes preserves the Discord context for the phone handoff.
+- Hermes queues or performs an outbound call to the user's phone with the same context.
 - The audit ledger shows every action and approval requirement.
 - WhatsApp and phone/SMS appear as reachable follow-on surfaces.
 - The DGX Spark target is explicit in the story and artifacts.
+
+Video spine:
+
+1. User joins Discord voice.
+2. User gives Hermes a fixed amount of spending money through Stripe Skills.
+3. Hermes acknowledges the budget and explains that live spend requires approval.
+4. Hermes uses Nemotron 3 Ultra for the plan.
+5. Hermes presents a NemoClaw-safe action packet.
+6. Hermes queues Stripe Projects to provision VoIP.
+7. Hermes queues a Link-gated spend request for service credit.
+8. Hermes calls the user's phone and continues from the same Discord context.
 
 Headless command:
 
@@ -212,7 +244,8 @@ Turn the dry-run queue into controlled live operations:
 - verify Stripe Link CLI auth and approval flow
 - verify Stripe Projects plugin and catalog on the target machine
 - run `stripe projects list` and safe catalog discovery headlessly
-- execute one low-risk live provisioning path only after explicit approval
+- execute one low-risk live VoIP provisioning path only after explicit approval
+- queue or perform one outbound phone call with a preserved context packet
 - record receipts and generated credential locations without exposing secrets
 - add rollback/deprovision notes to the ledger
 
