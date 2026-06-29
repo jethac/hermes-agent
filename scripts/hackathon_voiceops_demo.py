@@ -2046,10 +2046,38 @@ def _stripe_script(actions: Iterable[dict[str, Any]]) -> str:
         "",
         "# Dry-run action queue generated for the Hermes VoiceOps hackathon demo.",
         "# Keep printf in place until provisioning preflight, channel policy, Link approval, and command review pass.",
+        "# Lines prefixed with voiceops-action-metadata are comments for audit review; they are not executed.",
         "",
     ]
     for action in actions:
         command = action["command"]
+        contract = _approval_contract(action)
+        metadata = {
+            "schema_version": "voiceops.stripe_actions_dry_run.metadata.v1",
+            "action_id": action["action_id"],
+            "provider": action["provider"],
+            "command": command,
+            "purpose": action["purpose"],
+            "estimated_cents": action["estimated_cents"],
+            "status": action["status"],
+            "requires_approval": action["requires_approval"],
+            "approval_id": contract["approval_id"],
+            "approval_channel": contract["approval_channel"],
+            "approval_artifact": contract["approval_artifact"],
+            "approved_by_ref": contract["approved_by_ref"],
+            "approval_status": contract["status"],
+            "allowed_decisions": contract["allowed_decisions"],
+            "command_sha256": contract["command_sha256"],
+            "default_decision": contract["default_decision"],
+            "required_preflight_gates": contract["required_preflight_gates"],
+            "ttl_seconds": contract["ttl_seconds"],
+            "receipt_ref": _receipt_ref(str(action["action_id"])),
+            "credential_location_ref": _credential_location_ref(str(action["action_id"])),
+            "rollback_ref": _rollback_ref(str(action["action_id"])),
+            "execution_mode": "dry_run_printf_only",
+            "provider_command_executes": False,
+        }
+        lines.append(f"# voiceops-action-metadata {json.dumps(metadata, sort_keys=True)}")
         quoted = shlex.quote(command)
         lines.append(f"printf '%s\\n' {quoted}")
     lines.append("")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 from pathlib import Path
 
@@ -410,14 +411,56 @@ def test_voiceops_demo_dry_run_does_not_execute_live_stripe(tmp_path):
     demo = build_demo(args)
     paths = write_demo(tmp_path, demo)
     text = Path(paths["stripe_actions"]).read_text(encoding="utf-8")
+    nemoclaw = json.loads(Path(paths["nemoclaw_packet"]).read_text(encoding="utf-8"))
+    metadata = [
+        json.loads(line.removeprefix("# voiceops-action-metadata "))
+        for line in text.splitlines()
+        if line.startswith("# voiceops-action-metadata ")
+    ]
 
     assert "printf '%s\\n'" in text
+    assert "voiceops-action-metadata" in text
     assert "stripe projects add twilio/voice" in text
     assert "link-cli spend-request create" in text
     assert "queue outbound call" in text
     assert "draft Discord and WhatsApp status summary" in text
     assert "post summary to Discord and WhatsApp" not in text
     assert "provisioning preflight, channel policy, Link approval, and command review pass" in text
+    assert metadata
+    assert len(metadata) == len(demo["ops_actions"])
+    assert {item["schema_version"] for item in metadata} == {"voiceops.stripe_actions_dry_run.metadata.v1"}
+    assert all(item["execution_mode"] == "dry_run_printf_only" for item in metadata)
+    assert all(item["provider_command_executes"] is False for item in metadata)
+    metadata_by_action = {item["action_id"]: item for item in metadata}
+    for action in demo["ops_actions"]:
+        item = metadata_by_action[action["action_id"]]
+        assert item["provider"] == action["provider"]
+        assert item["command"] == action["command"]
+        assert item["purpose"] == action["purpose"]
+        assert item["estimated_cents"] == action["estimated_cents"]
+        assert item["requires_approval"] == action["requires_approval"]
+        assert item["status"] == action["status"]
+        assert item["command_sha256"] == hashlib.sha256(action["command"].encode("utf-8")).hexdigest()
+    for action in nemoclaw["approval_required_actions"]:
+        contract = action["approval_contract"]
+        item = metadata_by_action[action["action_id"]]
+        assert item["approval_id"] == contract["approval_id"]
+        assert item["approval_channel"] == contract["approval_channel"]
+        assert item["approval_artifact"] == contract["approval_artifact"]
+        assert item["approved_by_ref"] == contract["approved_by_ref"]
+        assert item["allowed_decisions"] == contract["allowed_decisions"]
+        assert item["command_sha256"] == contract["command_sha256"]
+        assert item["default_decision"] == contract["default_decision"]
+        assert item["required_preflight_gates"] == contract["required_preflight_gates"]
+        assert item["ttl_seconds"] == contract["ttl_seconds"]
+    executable_lines = [
+        line for line in text.splitlines() if line and not line.startswith("#") and not line.startswith("printf ")
+    ]
+    assert executable_lines == ["set -euo pipefail"]
+    for line in text.splitlines():
+        if line.startswith("#") or line.startswith("printf ") or line == "set -euo pipefail" or not line:
+            continue
+        assert not line.startswith(("stripe ", "link-cli ", "queue outbound call"))
     assert "sk_" not in text
 
 
