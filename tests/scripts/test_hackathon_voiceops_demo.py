@@ -31,7 +31,10 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     phone_context = json.loads(Path(paths["phone_context"]).read_text(encoding="utf-8"))
     action_ids = {action["action_id"] for action in payload["ops_actions"]}
     assert payload["spark_stack"]["local_first"] is True
-    assert payload["sponsor_stack"]["nemotron_3_ultra"]["selection"].startswith("Nemotron 3 Ultra")
+    assert payload["sponsor_stack"]["nemotron_3_super"]["selection"].startswith("Nemotron 3 Super")
+    assert payload["sponsor_stack"]["nemotron_3_ultra_hosted_fallback"]["selection"].startswith("Nemotron 3 Ultra")
+    assert payload["spark_stack"]["oracle"]["preferred_local_target"] == "Nemotron 3 Super on DGX Spark"
+    assert payload["spark_stack"]["oracle"]["hosted_fallback"].startswith("Nemotron 3 Ultra")
     assert payload["sponsor_stack"]["stripe_skills"]["skills"] == ["stripe-projects", "stripe-link-cli", "mpp-agent"]
     assert payload["voice_surfaces"][0]["channel"] == "discord"
     assert {surface["channel"] for surface in payload["voice_surfaces"]} == {"discord", "whatsapp", "phone"}
@@ -40,6 +43,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert payload["totals"]["held_budget_cents"] > 0
     assert nemoclaw["runtime"] == "NemoClaw"
     assert nemoclaw["mode"] == "dry_run_until_user_approval"
+    assert nemoclaw["model_selected_by"] == "Hermes /model"
+    assert nemoclaw["hermes_active_model"].startswith("Nemotron 3 Super")
+    assert "oracle_model" not in nemoclaw
     assert "unapproved_purchase" in nemoclaw["blocked_capabilities"]
     assert "stripe projects add twilio/voice" in nemoclaw["dry_run_commands"]
     assert phone_context["target_channel"] == "phone"
@@ -65,7 +71,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Stripe Skills" in writeup
     assert "@NousResearch" in writeup
     dashboard = Path(paths["dashboard"]).read_text(encoding="utf-8")
-    assert "Nemotron 3 Ultra" in dashboard
+    assert "Nemotron 3 Super" in dashboard
     assert "NemoClaw Blocks" in dashboard
     assert "Approval Queue" in dashboard
     assert "Phone Handoff" in dashboard

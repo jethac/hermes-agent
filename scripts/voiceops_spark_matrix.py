@@ -61,13 +61,13 @@ def default_candidates() -> list[Candidate]:
             ),
         ),
         Candidate(
-            candidate_id="oracle-gemma4-26b-a4b",
+            candidate_id="oracle-nemotron3-super-local",
             role="oracle",
-            model="Gemma 4 26B-A4B",
-            engine="vLLM on DGX Spark",
+            model="Nemotron 3 Super",
+            engine="Hermes /model to local NVIDIA Spark endpoint",
             locality="local_spark",
             priority=1,
-            purpose="preferred one-Spark Hermes brain if quality and latency are good enough",
+            purpose="preferred Spark-local NVIDIA oracle target for Hermes planning and tool orchestration",
             required_targets=_targets(
                 ("decode_tok_s", ">=", 20, "tok/s"),
                 ("prefill_tok_s", ">=", 2500, "tok/s"),
@@ -82,7 +82,7 @@ def default_candidates() -> list[Candidate]:
             engine="Hermes /model hosted provider path",
             locality="hosted",
             priority=2,
-            purpose="hackathon-visible serious planning path while local Spark oracle is benchmarked",
+            purpose="hosted fallback when the local Nemotron 3 Super Spark path is unavailable or still under benchmark",
             required_targets=_targets(
                 ("first_token_ms", "<=", 3500, "ms"),
                 ("tool_plan_quality", ">=", 4, "score"),
@@ -235,10 +235,13 @@ def build_matrix(evidence_paths: Iterable[Path] = ()) -> dict[str, Any]:
     evaluations = [evaluate_candidate(candidate, evidence) for candidate in candidates]
     role_status: dict[str, str] = {}
     for role in sorted({candidate.role for candidate in candidates}):
+        primary_candidate_ids = {
+            candidate.candidate_id for candidate in candidates if candidate.role == role and candidate.priority == 1
+        }
         role_evaluations = [
             evaluation
             for evaluation in evaluations
-            if next(candidate for candidate in candidates if candidate.candidate_id == evaluation["candidate_id"]).role == role
+            if evaluation["candidate_id"] in primary_candidate_ids
         ]
         role_status[role] = "validated" if any(item["status"] == "validated" for item in role_evaluations) else "needs_evidence"
     return {

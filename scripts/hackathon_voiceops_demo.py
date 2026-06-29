@@ -191,12 +191,17 @@ def _surface_matrix() -> list[VoiceSurface]:
     ]
 
 
-def _sponsor_stack(oracle_model: str) -> dict[str, Any]:
+def _sponsor_stack(active_model: str) -> dict[str, Any]:
     return {
-        "nemotron_3_ultra": {
-            "role": "hackathon-visible Hermes oracle/model target for serious planning and reasoning",
-            "selection": oracle_model,
+        "nemotron_3_super": {
+            "role": "preferred Spark-local NVIDIA oracle target for serious planning and reasoning",
+            "selection": active_model,
             "note": "Configured through Hermes' normal /model flow; VoiceOps does not introduce a separate oracle_model setting.",
+        },
+        "nemotron_3_ultra_hosted_fallback": {
+            "role": "hosted fallback when the local Nemotron 3 Super Spark path is unavailable or still under benchmark",
+            "selection": "Nemotron 3 Ultra via Hermes /model hosted provider path",
+            "note": "Fallback is still selected through Hermes' normal /model flow, not a VoiceOps-specific model setting.",
         },
         "nemoclaw": {
             "role": "safe execution boundary for agent actions that touch tools, credentials, network, and spend",
@@ -210,7 +215,7 @@ def _sponsor_stack(oracle_model: str) -> dict[str, Any]:
     }
 
 
-def _spark_stack(oracle_model: str, reflex_model: str) -> dict[str, Any]:
+def _spark_stack(active_model: str, reflex_model: str) -> dict[str, Any]:
     return {
         "compute": "1x NVIDIA DGX Spark target",
         "local_first": True,
@@ -220,9 +225,11 @@ def _spark_stack(oracle_model: str, reflex_model: str) -> dict[str, Any]:
             "input": "native audio when available; explicit local STT fallback state otherwise",
         },
         "oracle": {
-            "model": oracle_model,
+            "model": active_model,
             "role": "Hermes active model selected by /model; no separate oracle_model setting",
             "interface_contract": "receives committed intent, transcript evidence, spend policy, and tool plan",
+            "preferred_local_target": "Nemotron 3 Super on DGX Spark",
+            "hosted_fallback": "Nemotron 3 Ultra via Hermes /model hosted provider path",
         },
         "speech": {
             "asr": "Nemotron Speech or equivalent local streaming ASR for durable transcript evidence",
@@ -342,7 +349,8 @@ def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
         "runtime": "NemoClaw",
         "mode": "dry_run_until_user_approval",
         "source_channel": "discord_voice",
-        "oracle_model": demo["sponsor_stack"]["nemotron_3_ultra"]["selection"],
+        "hermes_active_model": demo["sponsor_stack"]["nemotron_3_super"]["selection"],
+        "model_selected_by": "Hermes /model",
         "spend_policy": demo["spend_policy"],
         "allowed_capabilities": [
             "stripe_projects_catalog",
@@ -435,11 +443,11 @@ def build_readiness_report(
 
     checks.append(
         ReadinessCheck(
-            check_id="nemotron_3_ultra_model",
+            check_id="nemotron_3_super_model",
             status="pass",
             required_for_video=True,
-            detail=f"demo oracle path is {demo['sponsor_stack']['nemotron_3_ultra']['selection']}",
-            next_step="Before recording, switch Hermes with /model so the visible model path is Nemotron 3 Ultra.",
+            detail=f"demo oracle path is {demo['sponsor_stack']['nemotron_3_super']['selection']}",
+            next_step="Before recording, switch Hermes with /model so the visible model path is Nemotron 3 Super on Spark, or Ultra as the hosted fallback.",
         )
     )
 
@@ -547,8 +555,8 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
             "operator": "Hermes VoiceOps",
             "submission_theme": "give a Spark-powered Hermes agent spending money over Discord, let it provision VoIP through Stripe Skills, then continue by phone",
         },
-        "sponsor_stack": _sponsor_stack(args.oracle_model),
-        "spark_stack": _spark_stack(args.oracle_model, args.reflex_model),
+        "sponsor_stack": _sponsor_stack(args.active_model),
+        "spark_stack": _spark_stack(args.active_model, args.reflex_model),
         "voice_surfaces": [asdict(surface) for surface in _surface_matrix()],
         "spend_policy": asdict(policy),
         "ops_actions": [asdict(action) for action in actions],
@@ -580,7 +588,8 @@ def _markdown(demo: dict[str, Any]) -> str:
         "",
         "## Sponsor stack",
         "",
-        f"- Nemotron 3 Ultra: {demo['sponsor_stack']['nemotron_3_ultra']['role']}",
+        f"- Nemotron 3 Super: {demo['sponsor_stack']['nemotron_3_super']['role']}",
+        f"- Nemotron 3 Ultra fallback: {demo['sponsor_stack']['nemotron_3_ultra_hosted_fallback']['role']}",
         f"- NemoClaw: {demo['sponsor_stack']['nemoclaw']['role']}",
         f"- Stripe Skills: {demo['sponsor_stack']['stripe_skills']['demo_use']}",
         "",
@@ -632,7 +641,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "## 90-second video beat sheet",
         "",
         "1. Join Discord voice and give Hermes a fixed Stripe Skills budget.",
-        "2. Show Hermes producing a KAME reflex acknowledgement immediately, then a Nemotron-backed operating plan.",
+        "2. Show Hermes producing a KAME reflex acknowledgement immediately, then a Nemotron 3 Super-backed operating plan.",
         "3. Show the NemoClaw/sandboxed action packet before anything billable runs.",
         "4. Show the Stripe/Projects queue for VoIP provisioning and a Link-gated service-credit spend.",
         "5. Show Hermes preserving the Discord context and queuing an outbound phone call.",
@@ -655,7 +664,8 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         "## What The Demo Shows",
         "",
         "- Discord voice is the live front door.",
-        f"- {demo['sponsor_stack']['nemotron_3_ultra']['selection']} is the visible serious planning path.",
+        f"- {demo['sponsor_stack']['nemotron_3_super']['selection']} is the visible serious planning path.",
+        f"- {demo['sponsor_stack']['nemotron_3_ultra_hosted_fallback']['selection']} is the hosted fallback if the local Spark path is unavailable.",
         "- NemoClaw frames billable and network-capable actions before execution.",
         "- Stripe Skills provide the spend and provisioning rail.",
         f"- The spoken budget becomes a {_dollars(policy['limit_cents'])} spend policy with approval required over {_dollars(policy['approval_required_over_cents'])}.",
@@ -733,7 +743,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "",
         "1. Discord voice: join the voice channel and say the prompt above.",
         "2. Reflex response: show Hermes acknowledging the budget immediately and stating that billable actions require approval.",
-        "3. Oracle path: show Nemotron 3 Ultra selected through Hermes' normal `/model` flow or visible in the generated dashboard.",
+        "3. Oracle path: show Nemotron 3 Super selected through Hermes' normal `/model` flow or visible in the generated dashboard; use Ultra only as the hosted fallback.",
         "4. NemoClaw boundary: show `nemoclaw-action-packet.json` or the dashboard NemoClaw section before any billable/network-capable action.",
         "5. Stripe Skills: show queued Stripe Projects VoIP provisioning and Link-gated service-credit spend in `stripe-actions-dry-run.sh` or the dashboard approval queue.",
         "6. Phone handoff: show `phone-context.json` and narrate that the same Discord context is preserved for the outbound call.",
@@ -754,7 +764,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "",
         "- Video is between 1 and 3 minutes.",
         "- Video tags `@NousResearch` in the tweet.",
-        "- Short writeup mentions DGX Spark, Discord voice, Nemotron 3 Ultra, NemoClaw, and Stripe Skills.",
+        "- Short writeup mentions DGX Spark, Discord voice, Nemotron 3 Super, Ultra hosted fallback, NemoClaw, and Stripe Skills.",
         "- Submit the tweet link in the Nous Discord submissions channel.",
         "- Fill out the hackathon Typeform submission.",
         "- Confirm no API keys, phone numbers, tokens, or account secrets are visible.",
@@ -1013,7 +1023,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
     </section>
 
     <section class="stack">
-      <div class="panel"><h2>Nemotron 3 Ultra</h2><p>{_h(demo['sponsor_stack']['nemotron_3_ultra']['role'])}</p></div>
+      <div class="panel"><h2>Nemotron 3 Super</h2><p>{_h(demo['sponsor_stack']['nemotron_3_super']['role'])}</p></div>
       <div class="panel"><h2>NemoClaw</h2><p>{_h(demo['sponsor_stack']['nemoclaw']['demo_use'])}</p></div>
       <div class="panel"><h2>Stripe Skills</h2><p>{_h(demo['sponsor_stack']['stripe_skills']['demo_use'])}</p></div>
     </section>
@@ -1149,7 +1159,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--request", default=DEFAULT_REQUEST)
     parser.add_argument("--budget-cents", type=int, default=20_000)
     parser.add_argument("--approval-required-over-cents", type=int, default=1_000)
-    parser.add_argument("--oracle-model", default="Nemotron 3 Ultra via Hermes /model for the hackathon demo")
+    parser.add_argument(
+        "--active-model",
+        "--oracle-model",
+        dest="active_model",
+        default="Nemotron 3 Super local on DGX Spark via Hermes /model",
+        help="Hermes active model selected through /model; --oracle-model is kept as a compatibility alias.",
+    )
     parser.add_argument("--reflex-model", default="Gemma 4 E2B audio-native reflex on Spark")
     parser.add_argument(
         "--hermes-home",

@@ -22,12 +22,17 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     }
     assert {candidate["candidate_id"] for candidate in matrix["candidates"]} >= {
         "reflex-gemma4-e2b",
-        "oracle-gemma4-26b-a4b",
+        "oracle-nemotron3-super-local",
         "oracle-nemotron3-ultra-hosted",
         "asr-nemotron-speech",
         "tts-magpie-local",
         "tts-cartesia-cloud-fallback",
     }
+    oracle_candidates = {candidate["candidate_id"]: candidate for candidate in matrix["candidates"] if candidate["role"] == "oracle"}
+    assert oracle_candidates["oracle-nemotron3-super-local"]["priority"] == 1
+    assert oracle_candidates["oracle-nemotron3-super-local"]["locality"] == "local_spark"
+    assert oracle_candidates["oracle-nemotron3-ultra-hosted"]["priority"] == 2
+    assert oracle_candidates["oracle-nemotron3-ultra-hosted"]["locality"] == "hosted"
     assert set(paths) == {"json", "markdown", "evidence_template"}
     assert "VoiceOps DGX Spark Model Matrix" in Path(paths["markdown"]).read_text(encoding="utf-8")
     template = json.loads(Path(paths["evidence_template"]).read_text(encoding="utf-8"))
@@ -51,7 +56,7 @@ def test_spark_matrix_validates_matching_evidence(tmp_path):
                         },
                     },
                     {
-                        "candidate_id": "oracle-gemma4-26b-a4b",
+                        "candidate_id": "oracle-nemotron3-super-local",
                         "verified": True,
                         "metrics": {
                             "decode_tok_s": 24,
@@ -88,7 +93,7 @@ def test_spark_matrix_validates_matching_evidence(tmp_path):
 
     assert matrix["ready_for_one_spark_demo"] is True
     assert evaluations["reflex-gemma4-e2b"]["status"] == "validated"
-    assert evaluations["oracle-gemma4-26b-a4b"]["status"] == "validated"
+    assert evaluations["oracle-nemotron3-super-local"]["status"] == "validated"
     assert evaluations["asr-nemotron-speech"]["status"] == "validated"
     assert evaluations["tts-magpie-local"]["status"] == "validated"
 
@@ -98,7 +103,7 @@ def test_spark_matrix_fails_unverified_or_slow_evidence(tmp_path):
     evidence_path.write_text(
         json.dumps(
             {
-                "candidate_id": "oracle-gemma4-26b-a4b",
+                "candidate_id": "oracle-nemotron3-super-local",
                 "verified": False,
                 "metrics": {
                     "decode_tok_s": 10,
@@ -112,12 +117,36 @@ def test_spark_matrix_fails_unverified_or_slow_evidence(tmp_path):
     )
 
     matrix = build_matrix([evidence_path])
-    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-gemma4-26b-a4b")
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
 
     assert evaluation["status"] == "fails_target"
     assert "evidence_not_verified" in evaluation["issues"]
     assert "target_failed:decode_tok_s" in evaluation["issues"]
     assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
+def test_spark_matrix_hosted_ultra_does_not_validate_local_oracle_role(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "candidate_id": "oracle-nemotron3-ultra-hosted",
+                "verified": True,
+                "metrics": {
+                    "first_token_ms": 900,
+                    "tool_plan_quality": 5,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    matrix = build_matrix([evidence_path])
+    evaluations = {evaluation["candidate_id"]: evaluation for evaluation in matrix["evaluations"]}
+
+    assert evaluations["oracle-nemotron3-ultra-hosted"]["status"] == "validated"
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+    assert matrix["ready_for_one_spark_demo"] is False
 
 
 def test_spark_matrix_cli_smoke(tmp_path):
