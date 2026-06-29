@@ -1625,6 +1625,96 @@ def test_preflight_evidence_rejects_non_usd_currency(tmp_path):
     assert "stripe_link.currency: must be usd" in loaded["validation_issues"]
 
 
+def test_preflight_evidence_rejects_non_string_reference_values(tmp_path):
+    payload = _complete_preflight_evidence()
+    payload["stripe_projects"]["account_ref"] = {"ref": "stripe-account-ref-demo"}
+    payload["stripe_link"]["account_ref"] = ["stripe-link-account-ref-demo"]
+    payload["mpp"]["policy_ref"] = {"policy": "voiceops-policy-demo"}
+    payload["phone_handoff"]["provider_account_ref"] = ["twilio-account-ref-demo"]
+    payload["phone_handoff"]["phone_target_ref"] = {"target": "phone-target-ref-demo"}
+    payload["phone_handoff"]["credential_location_ref"] = []
+    payload["rollback"]["deprovision_owner"] = {"owner": "operator"}
+    payload["rollback"]["refund_or_cancel_owner"] = ["operator"]
+    payload["rollback"]["call_cancel_owner"] = ""
+    evidence_path = _write_preflight_evidence(tmp_path / "evidence", payload)
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "stripe_projects.account_ref: must be a non-empty reference string" in loaded["validation_issues"]
+    assert "stripe_link.account_ref: must be a non-empty reference string" in loaded["validation_issues"]
+    assert "mpp.policy_ref: must be a non-empty reference string" in loaded["validation_issues"]
+    assert "phone_handoff.provider_account_ref: must be a non-empty reference string" in loaded["validation_issues"]
+    assert "phone_handoff.phone_target_ref: must be a non-empty reference string" in loaded["validation_issues"]
+    assert (
+        "phone_handoff.credential_location_ref: must be a non-empty credential location reference string"
+        in loaded["validation_issues"]
+    )
+    assert "rollback.deprovision_owner: must be a non-empty owner reference string" in loaded["validation_issues"]
+    assert "rollback.refund_or_cancel_owner: must be a non-empty owner reference string" in loaded["validation_issues"]
+    assert "rollback.call_cancel_owner: must be a non-empty owner reference string" in loaded["validation_issues"]
+
+
+def test_preflight_evidence_rejects_unknown_provider_and_boundary_values(tmp_path):
+    payload = _complete_preflight_evidence()
+    payload["mpp"]["boundary_tool"] = "curl"
+    payload["phone_handoff"]["provider"] = "fax-machine"
+    evidence_path = _write_preflight_evidence(tmp_path / "evidence", payload)
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "mpp.boundary_tool: must be one of mppx,mpp,mpp-agent,nemoclaw,openshell" in loaded[
+        "validation_issues"
+    ]
+    assert "phone_handoff.provider: must be one of twilio,vapi,bland" in loaded["validation_issues"]
+
+
+def test_preflight_evidence_rejects_unsafe_approval_packet_ref(tmp_path):
+    payload = _complete_preflight_evidence()
+    payload["mpp"]["approval_packet_ref"] = "../nemoclaw-action-packet.json"
+    evidence_path = _write_preflight_evidence(tmp_path / "evidence", payload)
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "mpp.approval_packet_ref:parent_traversal_not_allowed" in loaded["validation_issues"]
+
+    absolute_payload = _complete_preflight_evidence()
+    absolute_payload["mpp"]["approval_packet_ref"] = str(tmp_path / "nemoclaw-action-packet.json")
+    absolute_path = _write_preflight_evidence(tmp_path / "absolute", absolute_payload)
+
+    absolute_loaded = load_preflight_evidence(absolute_path)
+
+    assert "mpp.approval_packet_ref:absolute_path_not_allowed" in absolute_loaded["validation_issues"]
+
+
+def test_bad_typed_preflight_values_block_top_level_readiness(tmp_path):
+    payload = _complete_preflight_evidence()
+    payload["stripe_projects"]["account_ref"] = {"ref": "stripe-account-ref-demo"}
+    payload["mpp"]["boundary_tool"] = "curl"
+    evidence_path = _write_preflight_evidence(tmp_path / "evidence", payload)
+
+    report = build_probe_report(
+        env={
+            "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+            "TWILIO_ACCOUNT_SID": "AC123",
+        },
+        env_files=[],
+        preflight_evidence_path=evidence_path,
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+
+    assert report["ready"] is False
+    assert "stripe_projects_account" in report["required_failures"]
+    assert "mpp_approval_boundary" in report["required_failures"]
+    assert "stripe_projects.account_ref: must be a non-empty reference string" in report["preflight_evidence"][
+        "validation_issues"
+    ]
+    assert "mpp.boundary_tool: must be one of mppx,mpp,mpp-agent,nemoclaw,openshell" in report[
+        "preflight_evidence"
+    ]["validation_issues"]
+
+
 def test_preflight_evidence_manifest_rejects_example_or_invalid_sections(tmp_path):
     bad_section = tmp_path / "stripe-projects.json"
     bad_section.write_text("[]", encoding="utf-8")

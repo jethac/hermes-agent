@@ -277,6 +277,19 @@ PREFLIGHT_EVIDENCE_SECTIONS = ("stripe_projects", "stripe_link", "mpp", "phone_h
 PREFLIGHT_SOURCE_ARTIFACT_KIND = "redacted_setup_evidence"
 PREFLIGHT_SOURCE_ARTIFACT_BASE_FIELD = "_voiceops_source_artifact_base_path"
 PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256 = "0" * 64
+PREFLIGHT_REFERENCE_FIELDS = {
+    "stripe_projects.account_ref": "must be a non-empty reference string",
+    "stripe_link.account_ref": "must be a non-empty reference string",
+    "mpp.policy_ref": "must be a non-empty reference string",
+    "phone_handoff.provider_account_ref": "must be a non-empty reference string",
+    "phone_handoff.phone_target_ref": "must be a non-empty reference string",
+    "phone_handoff.credential_location_ref": "must be a non-empty credential location reference string",
+    "rollback.deprovision_owner": "must be a non-empty owner reference string",
+    "rollback.refund_or_cancel_owner": "must be a non-empty owner reference string",
+    "rollback.call_cancel_owner": "must be a non-empty owner reference string",
+}
+PREFLIGHT_ALLOWED_BOUNDARY_TOOLS = {"mppx", "mpp", "mpp-agent", "nemoclaw", "openshell"}
+PREFLIGHT_ALLOWED_PHONE_PROVIDERS = {"twilio", "vapi", "bland"}
 COLLECTOR_ATTESTATION_REQUIRED_FIELDS = (
     "collector_name",
     "collector_version",
@@ -829,11 +842,15 @@ def _timestamp_issues(payload: Mapping[str, Any]) -> list[str]:
     return issues
 
 
-def _preflight_field_value_issues(payload: Mapping[str, Any]) -> list[str]:
+def _preflight_field_value_issues(payload: Mapping[str, Any], evidence_path: Path) -> list[str]:
     issues: list[str] = []
     candidate = str(_dot_get(payload, "stripe_projects.voip_provider_candidate") or "").strip()
     if candidate and not VOIP_PROVIDER_CANDIDATE_RE.fullmatch(candidate):
         issues.append("stripe_projects.voip_provider_candidate: invalid provider candidate")
+    for path, message in PREFLIGHT_REFERENCE_FIELDS.items():
+        value = _dot_get(payload, path)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            issues.append(f"{path}: {message}")
     for path in (
         "stripe_projects.can_create_project_after_approval",
         "stripe_link.approval_capability_confirmed",
@@ -849,6 +866,19 @@ def _preflight_field_value_issues(payload: Mapping[str, Any]) -> list[str]:
     currency = str(_dot_get(payload, "stripe_link.currency") or "").strip().lower()
     if currency and currency != "usd":
         issues.append("stripe_link.currency: must be usd")
+    boundary_tool = str(_dot_get(payload, "mpp.boundary_tool") or "").strip().lower()
+    if boundary_tool and boundary_tool not in PREFLIGHT_ALLOWED_BOUNDARY_TOOLS:
+        issues.append("mpp.boundary_tool: must be one of mppx,mpp,mpp-agent,nemoclaw,openshell")
+    provider = str(_dot_get(payload, "phone_handoff.provider") or "").strip().lower()
+    if provider and provider not in PREFLIGHT_ALLOWED_PHONE_PROVIDERS:
+        issues.append("phone_handoff.provider: must be one of twilio,vapi,bland")
+    approval_packet_ref = _dot_get(payload, "mpp.approval_packet_ref")
+    if approval_packet_ref is not None:
+        if not isinstance(approval_packet_ref, str) or not approval_packet_ref.strip():
+            issues.append("mpp.approval_packet_ref: must be a non-empty relative artifact reference")
+        else:
+            ref_issues = _relative_artifact_ref_issues(approval_packet_ref, base_path=evidence_path)
+            issues.extend(f"mpp.approval_packet_ref:{issue}" for issue in ref_issues)
     return issues
 
 
@@ -908,7 +938,7 @@ def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
         *manifest_issues,
         *_preflight_secret_issues(raw_payload),
         *_timestamp_issues(raw_payload),
-        *_preflight_field_value_issues(raw_payload),
+        *_preflight_field_value_issues(raw_payload, path),
     ]
     if str(raw_payload.get("schema_version") or "") != PREFLIGHT_EVIDENCE_SCHEMA_VERSION:
         validation_issues.append("missing_or_invalid_schema_version")
