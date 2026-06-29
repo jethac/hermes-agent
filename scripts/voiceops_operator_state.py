@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -45,8 +46,10 @@ APPROVAL_REQUIRED_CATEGORIES = {"spend", "provisioning"}
 APPROVAL_REQUIRED_SERVICE_PROVIDERS = {"stripe_projects", "twilio_or_vapi", "whatsapp_cloud"}
 ALLOWED_APPROVAL_STATUSES = {"pending", "approved", "denied", "expired"}
 ALLOWED_APPROVAL_DECISIONS = {"hold_for_operator", "deny", "approved_after_operator_review"}
+REQUIRED_APPROVAL_DECISIONS = {"approve_once", "deny", "hold"}
 ALLOWED_AUDIT_STATUSES = {"recorded", "held", "planned", "blocked", "approved", "denied"}
 ALLOWED_SERVICE_STATUSES = {"planned", "provisioned", "blocked", "approval_required"}
+ALLOWED_EXECUTION_STATUSES = {"not_executed", "local_artifact_written"}
 ALLOWED_TASK_STATUSES = {"queued", "planned", "approval_required", "blocked_on_approval"}
 
 
@@ -74,6 +77,8 @@ class BudgetStatus:
 @dataclass(frozen=True)
 class PendingApproval:
     approval_id: str
+    action_id: str
+    provider: str
     title: str
     category: str
     requester_surface: str
@@ -82,6 +87,11 @@ class PendingApproval:
     default_decision: str
     status: str
     ttl_minutes: int
+    approval_artifact: str
+    command: str
+    approval_contract: dict[str, Any]
+    execution_status: str
+    operator_next_step: str
 
 
 @dataclass(frozen=True)
@@ -91,6 +101,8 @@ class AuditEvent:
     status: str
     surface: str
     summary: str
+    artifact_ref: str
+    operator_next_step: str
     parent_audit_id: str | None = None
 
 
@@ -104,6 +116,10 @@ class ServiceState:
     external: bool
     approval_required: bool
     notes: str
+    artifact_ref: str | None
+    approval_ref: str | None
+    execution_status: str
+    operator_next_step: str
 
 
 @dataclass(frozen=True)
@@ -152,10 +168,45 @@ def default_budget_status() -> BudgetStatus:
     )
 
 
+def _command_sha256(command: str) -> str:
+    return hashlib.sha256(command.encode("utf-8")).hexdigest()
+
+
+def _approval_contract(
+    *,
+    approval_id: str,
+    action_id: str,
+    command: str,
+    approval_artifact: str,
+    required_preflight_gates: list[str],
+    ttl_minutes: int,
+) -> dict[str, Any]:
+    return {
+        "approval_id": approval_id,
+        "action_id": action_id,
+        "approval_channel": "discord_voice_operator_confirmation",
+        "approval_artifact": approval_artifact,
+        "approved_by_ref": None,
+        "command_sha256": _command_sha256(command),
+        "required_preflight_gates": required_preflight_gates,
+        "allowed_decisions": ["approve_once", "deny", "hold"],
+        "default_decision": "hold",
+        "ttl_seconds": ttl_minutes * 60,
+        "status": "pending",
+    }
+
+
 def default_pending_approvals() -> list[PendingApproval]:
+    provision_command = "stripe projects add twilio/voice"
+    spend_command = (
+        "link-cli spend-request create --merchant-name ExampleOps "
+        "--merchant-url https://example.invalid --amount 4900 --request-approval"
+    )
     return [
         PendingApproval(
             approval_id="vops-m5-approval-001",
+            action_id="provision-voip-provider",
+            provider="stripe-projects",
             title="Provision VoIP provider account through Stripe Projects",
             category="provisioning",
             requester_surface="discord_voice",
@@ -164,9 +215,23 @@ def default_pending_approvals() -> list[PendingApproval]:
             default_decision="hold_for_operator",
             status="pending",
             ttl_minutes=30,
+            approval_artifact="nemoclaw-action-packet.json",
+            command=provision_command,
+            approval_contract=_approval_contract(
+                approval_id="vops-m5-approval-001",
+                action_id="provision-voip-provider",
+                command=provision_command,
+                approval_artifact="nemoclaw-action-packet.json",
+                required_preflight_gates=["stripe_cli", "stripe_projects_cli", "mpp_agent"],
+                ttl_minutes=30,
+            ),
+            execution_status="not_executed",
+            operator_next_step="Review nemoclaw-action-packet.json, confirm provisioning preflight gates, then approve or hold.",
         ),
         PendingApproval(
             approval_id="vops-m5-approval-002",
+            action_id="buy-service-credit",
+            provider="stripe-link-cli",
             title="Buy prepaid operations service credit through Stripe Link",
             category="spend",
             requester_surface="discord_voice",
@@ -175,6 +240,18 @@ def default_pending_approvals() -> list[PendingApproval]:
             default_decision="hold_for_operator",
             status="pending",
             ttl_minutes=15,
+            approval_artifact="nemoclaw-action-packet.json",
+            command=spend_command,
+            approval_contract=_approval_contract(
+                approval_id="vops-m5-approval-002",
+                action_id="buy-service-credit",
+                command=spend_command,
+                approval_artifact="nemoclaw-action-packet.json",
+                required_preflight_gates=["stripe_link_cli", "mpp_agent"],
+                ttl_minutes=15,
+            ),
+            execution_status="not_executed",
+            operator_next_step="Review the Link spend request details and budget impact before approving any spend.",
         ),
     ]
 
@@ -187,6 +264,8 @@ def default_audit_events() -> list[AuditEvent]:
             status="recorded",
             surface="artifact",
             summary="Milestone 5 operator state artifact generated headlessly.",
+            artifact_ref="operator-state.json",
+            operator_next_step="Review pending approvals and planned services before enabling any live operation.",
         ),
         AuditEvent(
             audit_id="vops-m5-audit-002",
@@ -194,6 +273,8 @@ def default_audit_events() -> list[AuditEvent]:
             status="held",
             surface="discord_voice",
             summary="Budget reservation packet prepared; no spend executed.",
+            artifact_ref="operator-state.json",
+            operator_next_step="Inspect the approval contracts before releasing reserved budget.",
             parent_audit_id="vops-m5-audit-001",
         ),
         AuditEvent(
@@ -202,6 +283,8 @@ def default_audit_events() -> list[AuditEvent]:
             status="planned",
             surface="artifact",
             summary="Phone/SMS and WhatsApp surfaces listed as planned only.",
+            artifact_ref="operator-state.json",
+            operator_next_step="Confirm channel policy review and provider setup evidence before enabling egress.",
             parent_audit_id="vops-m5-audit-001",
         ),
     ]
@@ -218,6 +301,10 @@ def default_planned_services() -> list[ServiceState]:
             external=True,
             approval_required=True,
             notes="Plan only; no Stripe command is executed by this generator.",
+            artifact_ref="nemoclaw-action-packet.json",
+            approval_ref="vops-m5-approval-001",
+            execution_status="not_executed",
+            operator_next_step="Complete provisioning preflight evidence, then review the NemoClaw packet before approval.",
         ),
         ServiceState(
             service_id="phone_sms_bridge",
@@ -228,6 +315,10 @@ def default_planned_services() -> list[ServiceState]:
             external=True,
             approval_required=True,
             notes="Voice calls are blocked in this artifact-only state.",
+            artifact_ref="phone-context.json",
+            approval_ref="vops-m5-approval-001",
+            execution_status="not_executed",
+            operator_next_step="Verify phone target, phone provider account, and channel policy before approving handoff.",
         ),
         ServiceState(
             service_id="whatsapp_business_fallback",
@@ -238,6 +329,10 @@ def default_planned_services() -> list[ServiceState]:
             external=True,
             approval_required=True,
             notes="Customer-visible sends require a separate approval.",
+            artifact_ref="channel-policy.json",
+            approval_ref=None,
+            execution_status="not_executed",
+            operator_next_step="Review channel-policy.json before any WhatsApp egress is enabled.",
         ),
     ]
 
@@ -253,6 +348,10 @@ def default_provisioned_services() -> list[ServiceState]:
             external=False,
             approval_required=False,
             notes="Local artifact directory only; no external service was created.",
+            artifact_ref="operator-state.json",
+            approval_ref=None,
+            execution_status="local_artifact_written",
+            operator_next_step="Use this artifact as the local review surface.",
         )
     ]
 
@@ -304,6 +403,7 @@ def default_upcoming_tasks() -> list[UpcomingTask]:
 
 def build_operator_state() -> dict[str, Any]:
     budget = default_budget_status()
+    pending_approvals = [asdict(approval) for approval in default_pending_approvals()]
     return {
         "generated_at": _utc_now(),
         "schema_version": "voiceops.operator_state.v1",
@@ -343,7 +443,11 @@ def build_operator_state() -> dict[str, Any]:
         },
         "active_voice_surface": asdict(default_voice_surface()),
         "budget_status": asdict(budget),
-        "pending_approvals": [asdict(approval) for approval in default_pending_approvals()],
+        "pending_approvals": pending_approvals,
+        "approval_contracts": {
+            approval["action_id"]: approval["approval_contract"]
+            for approval in pending_approvals
+        },
         "recent_audit_events": [asdict(event) for event in default_audit_events()],
         "planned_services": [asdict(service) for service in default_planned_services()],
         "provisioned_services": [asdict(service) for service in default_provisioned_services()],
@@ -400,19 +504,46 @@ def validate_operator_state(state: dict[str, Any]) -> list[str]:
             issues.append(f"missing_budget_control:{required_control}")
 
     pending_approvals = state.get("pending_approvals", [])
+    approval_contracts = state.get("approval_contracts", {})
+    if not isinstance(approval_contracts, dict):
+        issues.append("invalid_approval_contracts")
+        approval_contracts = {}
     approval_ids = [str(approval.get("approval_id") or "") for approval in pending_approvals]
     duplicate_approvals = sorted(approval_id for approval_id in set(approval_ids) if approval_ids.count(approval_id) > 1)
     if duplicate_approvals:
         issues.append(f"duplicate_pending_approval_ids:{','.join(duplicate_approvals)}")
+    action_ids = [str(approval.get("action_id") or "") for approval in pending_approvals]
+    duplicate_actions = sorted(action_id for action_id in set(action_ids) if action_ids.count(action_id) > 1)
+    if duplicate_actions:
+        issues.append(f"duplicate_pending_approval_action_ids:{','.join(duplicate_actions)}")
+    missing_contract_actions = sorted(set(action_ids) - set(approval_contracts))
+    if missing_contract_actions:
+        issues.append(f"missing_approval_contracts:{','.join(missing_contract_actions)}")
     pending_budget_total = 0
     for approval in pending_approvals:
         approval_id = str(approval.get("approval_id") or "unknown")
+        action_id = str(approval.get("action_id") or "")
         category = str(approval.get("category") or "")
         status = str(approval.get("status") or "")
         decision = str(approval.get("default_decision") or "")
+        command = str(approval.get("command") or "")
+        artifact = str(approval.get("approval_artifact") or "")
         impact = approval.get("budget_impact_cents")
         if not approval_id or approval_id == "unknown":
             issues.append("missing_pending_approval_id")
+        if not action_id:
+            issues.append(f"missing_pending_approval_action_id:{approval_id}")
+        if not approval.get("provider"):
+            issues.append(f"missing_pending_approval_provider:{approval_id}")
+        if not artifact:
+            issues.append(f"missing_pending_approval_artifact:{approval_id}")
+        if not command:
+            issues.append(f"missing_pending_approval_command:{approval_id}")
+        if not approval.get("operator_next_step"):
+            issues.append(f"missing_operator_next_step:{approval_id}")
+        execution_status = approval.get("execution_status")
+        if execution_status != "not_executed":
+            issues.append(f"approval_execution_claimed:{approval_id}")
         if category in APPROVAL_REQUIRED_CATEGORIES and decision != "hold_for_operator":
             issues.append(f"unsafe_approval_decision:{approval_id}")
         if status not in ALLOWED_APPROVAL_STATUSES:
@@ -423,6 +554,31 @@ def validate_operator_state(state: dict[str, Any]) -> list[str]:
             issues.append(f"invalid_approval_budget_impact:{approval_id}")
         else:
             pending_budget_total += impact
+        embedded_contract = approval.get("approval_contract")
+        contract = approval_contracts.get(action_id)
+        if not isinstance(embedded_contract, dict):
+            issues.append(f"missing_embedded_approval_contract:{approval_id}")
+        elif contract != embedded_contract:
+            issues.append(f"approval_contract_mismatch:{approval_id}")
+        if isinstance(contract, dict):
+            if contract.get("approval_id") != approval_id:
+                issues.append(f"approval_contract_id_mismatch:{approval_id}")
+            if contract.get("action_id") != action_id:
+                issues.append(f"approval_contract_action_mismatch:{approval_id}")
+            if contract.get("approval_artifact") != artifact:
+                issues.append(f"approval_contract_artifact_mismatch:{approval_id}")
+            if contract.get("approved_by_ref") is not None:
+                issues.append(f"approval_contract_already_approved:{approval_id}")
+            allowed_decisions = set(contract.get("allowed_decisions") or [])
+            if allowed_decisions != REQUIRED_APPROVAL_DECISIONS:
+                issues.append(f"approval_contract_decisions_mismatch:{approval_id}")
+            if not contract.get("required_preflight_gates"):
+                issues.append(f"approval_contract_missing_preflight_gates:{approval_id}")
+            if contract.get("command_sha256") != _command_sha256(command):
+                issues.append(f"approval_contract_command_digest_mismatch:{approval_id}")
+            ttl_seconds = contract.get("ttl_seconds")
+            if not isinstance(ttl_seconds, int) or ttl_seconds <= 0:
+                issues.append(f"approval_contract_invalid_ttl:{approval_id}")
     if isinstance(reserved, int) and pending_budget_total != reserved:
         issues.append("pending_approval_budget_mismatch")
 
@@ -454,6 +610,10 @@ def validate_operator_state(state: dict[str, Any]) -> list[str]:
             issues.append("missing_audit_id")
         if status not in ALLOWED_AUDIT_STATUSES:
             issues.append(f"invalid_audit_status:{audit_id}:{status}")
+        if not event.get("operator_next_step"):
+            issues.append(f"missing_operator_next_step:{audit_id}")
+        if not event.get("artifact_ref"):
+            issues.append(f"missing_audit_artifact_ref:{audit_id}")
         if parent is not None and parent not in audit_id_set:
             issues.append(f"audit_parent_missing:{audit_id}:{parent}")
 
@@ -473,6 +633,15 @@ def validate_operator_state(state: dict[str, Any]) -> list[str]:
             issues.append(f"external_service_missing_approval:{service_id}")
         if service.get("external") is True and status == "provisioned":
             issues.append(f"external_service_claimed_provisioned:{service_id}")
+        if service.get("external") is True:
+            if service.get("execution_status") != "not_executed":
+                issues.append(f"external_service_execution_claimed:{service_id}")
+            if not service.get("operator_next_step"):
+                issues.append(f"missing_operator_next_step:{service_id}")
+            if not service.get("artifact_ref"):
+                issues.append(f"external_service_missing_artifact_ref:{service_id}")
+        if service.get("execution_status") not in ALLOWED_EXECUTION_STATUSES:
+            issues.append(f"invalid_service_execution_status:{service_id}:{service.get('execution_status')}")
     for service in provisioned_services:
         service_id = str(service.get("service_id") or "unknown")
         status = str(service.get("status") or "")
@@ -480,6 +649,10 @@ def validate_operator_state(state: dict[str, Any]) -> list[str]:
             issues.append(f"invalid_service_status:{service_id}:{status}")
         if service.get("external") is True:
             issues.append(f"external_service_claimed_provisioned:{service_id}")
+        if not service.get("operator_next_step"):
+            issues.append(f"missing_operator_next_step:{service_id}")
+        if service.get("execution_status") not in ALLOWED_EXECUTION_STATUSES:
+            issues.append(f"invalid_service_execution_status:{service_id}:{service.get('execution_status')}")
 
     domains = {task.get("domain") for task in upcoming_tasks}
     for required_domain in ("household", "business"):
@@ -557,14 +730,15 @@ def _markdown(state: dict[str, Any]) -> str:
     ]
     lines.extend(
         _markdown_table(
-            ["Approval", "Category", "Risk", "Decision", "Budget"],
+            ["Approval", "Action", "Provider", "Execution", "Artifact", "Next step"],
             [
                 [
                     approval["title"],
-                    approval["category"],
-                    approval["risk_level"],
-                    approval["default_decision"],
-                    f"{budget['currency']} {approval['budget_impact_cents'] / 100:.2f}",
+                    approval["action_id"],
+                    approval["provider"],
+                    approval["execution_status"],
+                    approval["approval_artifact"],
+                    approval["operator_next_step"],
                 ]
                 for approval in state["pending_approvals"]
             ],
@@ -573,12 +747,16 @@ def _markdown(state: dict[str, Any]) -> str:
     lines.extend(["", "## Recent Audit Events", ""])
     for event in state["recent_audit_events"]:
         parent = f" parent={event['parent_audit_id']}" if event.get("parent_audit_id") else ""
-        lines.append(f"- {event['audit_id']}: {event['event_type']} [{event['status']}]{parent} - {event['summary']}")
+        lines.append(
+            f"- {event['audit_id']}: {event['event_type']} [{event['status']}]{parent} - {event['summary']} "
+            f"Artifact: `{event['artifact_ref']}`. Next step: {event['operator_next_step']}"
+        )
     lines.extend(["", "## Planned Services", ""])
     for service in state["planned_services"]:
         lines.append(
             f"- {service['display_name']}: {service['status']} via {service['provider']}; "
-            f"approval_required={service['approval_required']}"
+            f"approval_required={service['approval_required']}; execution_status={service['execution_status']}; "
+            f"artifact={service['artifact_ref']}; next_step={service['operator_next_step']}"
         )
     lines.extend(["", "## Provisioned Services", ""])
     for service in state["provisioned_services"]:

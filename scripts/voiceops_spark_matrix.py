@@ -145,15 +145,22 @@ def _load_evidence(paths: Iterable[Path]) -> list[dict[str, Any]]:
         if isinstance(payload, list):
             evidence.extend(_with_evidence_source(item, path) for item in payload if isinstance(item, dict))
         elif isinstance(payload, dict) and isinstance(payload.get("evidence"), list):
-            evidence.extend(_with_evidence_source(item, path) for item in payload["evidence"] if isinstance(item, dict))
+            wrapper_example_only = payload.get("example_only") is True
+            evidence.extend(
+                _with_evidence_source(item, path, example_only=wrapper_example_only)
+                for item in payload["evidence"]
+                if isinstance(item, dict)
+            )
         elif isinstance(payload, dict):
             evidence.append(_with_evidence_source(payload, path))
     return [*evidence, *_adapt_kame_evidence(evidence)]
 
 
-def _with_evidence_source(item: dict[str, Any], path: Path) -> dict[str, Any]:
+def _with_evidence_source(item: dict[str, Any], path: Path, *, example_only: bool = False) -> dict[str, Any]:
     copy = dict(item)
     copy["_evidence_path"] = str(path)
+    if example_only:
+        copy["example_only"] = True
     return copy
 
 
@@ -211,20 +218,21 @@ def _base_adapted_evidence(
     candidate_id: str,
     model: str,
     engine: str,
-    locality: str = "local_spark",
+    locality: str | None = None,
     metrics: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "schema_version": EVIDENCE_SCHEMA_VERSION,
         "candidate_id": candidate_id,
-        "hardware": source.get("hardware") or SPARK_HARDWARE_TARGET,
-        "locality": locality,
+        "hardware": source.get("hardware"),
+        "locality": source.get("locality") or locality,
         "model": model,
         "engine": source.get("engine") or engine,
         "verified": _verified(source),
         "measured_at": _measured_at(source),
         "source_artifact": _source_artifact(source),
         "metrics": metrics,
+        "example_only": source.get("example_only") is True,
         "adapted_from": str(source.get("kind") or ""),
         "_evidence_path": source.get("_evidence_path"),
     }
@@ -236,6 +244,7 @@ def _oracle_model_from_kame(entries: list[dict[str, Any]]) -> str:
             entry.get("kind") == "kame_model_assumption_result"
             and entry.get("name") == "oracle_authority"
             and str(entry.get("model") or "").strip()
+            and _verified(entry)
         ):
             return str(entry["model"])
     return ""
@@ -252,17 +261,18 @@ def _adapt_kame_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 {
                     "schema_version": EVIDENCE_SCHEMA_VERSION,
                     "kind": STACK_SMOKE_KIND,
-                    "hardware": entry.get("hardware") or SPARK_HARDWARE_TARGET,
-                    "locality": "local_spark",
+                    "hardware": entry.get("hardware"),
+                    "locality": entry.get("locality"),
                     "verified": _verified(entry),
                     "measured_at": _measured_at(entry),
                     "source_artifact": _source_artifact(entry),
-                    "oracle_selected_by": entry.get("oracle_selected_by") or "Hermes /model",
+                    "oracle_selected_by": entry.get("oracle_selected_by"),
                     "components": _adapt_kame_stack_components(entry),
                     "metrics": _adapt_kame_stack_metrics(entry),
                     "oracle_authority_routes": _list_values(entry.get("oracle_authority_routes")),
                     "interface_input_sources": _list_values(entry.get("interface_input_sources")),
                     "reflex_providers": _list_values(entry.get("reflex_providers")),
+                    "example_only": entry.get("example_only") is True,
                     "adapted_from": "kame_smoke_result",
                     "_evidence_path": entry.get("_evidence_path"),
                 }
@@ -381,10 +391,10 @@ def _adapt_kame_stack_components(entry: dict[str, Any]) -> dict[str, bool]:
         return {name: components.get(name) is True for name in STACK_SMOKE_REQUIRED_COMPONENTS}
     return {
         "reflex": "vllm" in set(_list_values(entry.get("reflex_providers"))),
-        "oracle": str(entry.get("oracle_selected_by") or "Hermes /model") == "Hermes /model"
+        "oracle": str(entry.get("oracle_selected_by") or "") == "Hermes /model"
         and (_coerce_number(entry.get("oracle_bound_oracle_calls")) or 0) > 0,
         "asr": "native_audio" in set(_list_values(entry.get("interface_input_sources"))),
-        "tts": True,
+        "tts": entry.get("tts") is True or entry.get("tts_participated") is True,
         "sidecar": entry.get("ok") is True,
     }
 

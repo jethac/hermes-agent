@@ -701,7 +701,11 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
             "status": "pending",
             "ttl_minutes": 15 if action["action_id"] == "buy-service-credit" else 30,
             "artifact_ref": "nemoclaw-action-packet.json",
+            "approval_artifact": "nemoclaw-action-packet.json",
+            "command": action["command"],
             "approval_contract": _approval_contract(action),
+            "execution_status": "not_executed",
+            "operator_next_step": "Review the approval contract and required preflight gates before approving or holding.",
         }
         for action in demo["ops_actions"]
         if action["requires_approval"] and action["status"] == "queued"
@@ -718,6 +722,9 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
             "approval_required": bool(action["requires_approval"]),
             "notes": "Dry-run demo action; no live provider mutation or spend has executed.",
             "artifact_ref": "voiceops-demo.json",
+            "approval_ref": f"voiceops-demo-{action['action_id']}" if action["requires_approval"] else None,
+            "execution_status": "not_executed",
+            "operator_next_step": "Review the linked dry-run artifact and approval contract before any live action.",
         }
         for action in demo["ops_actions"]
         if action["action_id"] in {"provision-voip-provider", "buy-service-credit", "call-user-phone", "draft-status"}
@@ -738,6 +745,8 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
             "receipt_ref": event["receipt_ref"],
             "credential_location_ref": event["credential_location_ref"],
             "rollback_ref": event["rollback_ref"],
+            "artifact_ref": "audit-ledger.jsonl",
+            "operator_next_step": "Inspect the linked action packet before changing this audit status.",
         }
         for index, event in enumerate(source_audit_events)
     ]
@@ -803,6 +812,10 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
             "held_budget_cents": demo["totals"]["held_budget_cents"],
         },
         "pending_approvals": pending_approvals,
+        "approval_contracts": {
+            approval["action_id"]: approval["approval_contract"]
+            for approval in pending_approvals
+        },
         "readiness_closure": _demo_closure_summary(),
         "recent_audit_events": recent_audit_events,
         "planned_services": planned_services,
@@ -817,6 +830,9 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
                 "approval_required": False,
                 "notes": "Local artifact directory only; no external service was created.",
                 "artifact_ref": "operator-dashboard.html",
+                "approval_ref": None,
+                "execution_status": "local_artifact_written",
+                "operator_next_step": "Use operator-dashboard.html as the local recording and review surface.",
             }
         ],
         "upcoming_tasks": [

@@ -14,6 +14,15 @@ from scripts.voiceops_operator_state import (
 )
 
 
+def _sync_approval_contract(state, approval):
+    contract = dict(approval["approval_contract"])
+    contract["approval_id"] = approval["approval_id"]
+    contract["action_id"] = approval["action_id"]
+    contract["approval_artifact"] = approval["approval_artifact"]
+    approval["approval_contract"] = contract
+    state["approval_contracts"][approval["action_id"]] = contract
+
+
 def test_operator_state_contains_required_dashboard_sections_and_boundaries():
     state = build_operator_state()
 
@@ -54,8 +63,31 @@ def test_operator_state_contains_required_dashboard_sections_and_boundaries():
     assert "approval_packet_required_for_any_spend" in budget["controls"]
 
     assert state["pending_approvals"]
+    assert set(state["approval_contracts"]) == {approval["action_id"] for approval in state["pending_approvals"]}
+    for approval in state["pending_approvals"]:
+        assert approval["action_id"]
+        assert approval["provider"]
+        assert approval["approval_artifact"] == "nemoclaw-action-packet.json"
+        assert approval["command"]
+        assert approval["execution_status"] == "not_executed"
+        assert approval["operator_next_step"]
+        contract = approval["approval_contract"]
+        assert contract == state["approval_contracts"][approval["action_id"]]
+        assert contract["approval_id"] == approval["approval_id"]
+        assert contract["action_id"] == approval["action_id"]
+        assert len(contract["command_sha256"]) == 64
+        assert contract["allowed_decisions"] == ["approve_once", "deny", "hold"]
+        assert contract["approved_by_ref"] is None
+        assert contract["required_preflight_gates"]
     assert state["recent_audit_events"]
+    assert all(event["operator_next_step"] for event in state["recent_audit_events"])
+    assert all(event["artifact_ref"] for event in state["recent_audit_events"])
     assert state["planned_services"]
+    for service in state["planned_services"]:
+        assert service["operator_next_step"]
+        assert service["artifact_ref"]
+        if service["external"]:
+            assert service["execution_status"] == "not_executed"
     assert state["provisioned_services"]
     assert {task["domain"] for task in state["upcoming_tasks"]} == {"household", "business"}
     assert len(state["pending_approvals"]) <= state["bounds"]["max_pending_approvals"]
@@ -90,15 +122,19 @@ def test_operator_state_validates_safety_and_bounds():
     assert validate_operator_state(malformed_budget) == ["invalid_budget_amounts"]
 
     over_bounds = json.loads(json.dumps(state))
+    over_bounds["approval_contracts"] = {}
     over_bounds["pending_approvals"] = [
         {
             **over_bounds["pending_approvals"][0],
             "approval_id": f"vops-m5-extra-{index:02d}",
+            "action_id": f"extra-action-{index:02d}",
             "budget_impact_cents": 900 if index < 7 else 550,
             "category": "status",
         }
         for index in range(9)
     ]
+    for approval in over_bounds["pending_approvals"]:
+        _sync_approval_contract(over_bounds, approval)
     assert validate_operator_state(over_bounds) == ["bounds_exceeded:pending_approvals"]
 
     missing_business = json.loads(json.dumps(state))
@@ -131,6 +167,7 @@ def test_operator_state_validates_pending_approval_contracts():
 
     duplicate = json.loads(json.dumps(state))
     duplicate["pending_approvals"][1]["approval_id"] = duplicate["pending_approvals"][0]["approval_id"]
+    _sync_approval_contract(duplicate, duplicate["pending_approvals"][1])
     assert validate_operator_state(duplicate) == ["duplicate_pending_approval_ids:vops-m5-approval-001"]
 
     unsafe_decision = json.loads(json.dumps(state))
@@ -146,6 +183,39 @@ def test_operator_state_validates_pending_approval_contracts():
     assert validate_operator_state(invalid_budget) == [
         "invalid_approval_budget_impact:vops-m5-approval-001",
         "pending_approval_budget_mismatch",
+    ]
+
+    missing_contract = json.loads(json.dumps(state))
+    missing_contract["approval_contracts"].pop(missing_contract["pending_approvals"][0]["action_id"])
+    assert validate_operator_state(missing_contract) == [
+        "approval_contract_mismatch:vops-m5-approval-001",
+        "missing_approval_contracts:provision-voip-provider",
+    ]
+
+    mismatched_digest = json.loads(json.dumps(state))
+    mismatched_digest["pending_approvals"][0]["command"] = "stripe projects add different/provider"
+    assert validate_operator_state(mismatched_digest) == [
+        "approval_contract_command_digest_mismatch:vops-m5-approval-001",
+    ]
+
+    unsafe_contract = json.loads(json.dumps(state))
+    action_id = unsafe_contract["pending_approvals"][0]["action_id"]
+    unsafe_contract["approval_contracts"][action_id]["allowed_decisions"] = ["approve_once"]
+    unsafe_contract["pending_approvals"][0]["approval_contract"] = unsafe_contract["approval_contracts"][action_id]
+    assert validate_operator_state(unsafe_contract) == [
+        "approval_contract_decisions_mismatch:vops-m5-approval-001",
+    ]
+
+    missing_next_step = json.loads(json.dumps(state))
+    missing_next_step["pending_approvals"][0]["operator_next_step"] = ""
+    assert validate_operator_state(missing_next_step) == [
+        "missing_operator_next_step:vops-m5-approval-001",
+    ]
+
+    claimed_execution = json.loads(json.dumps(state))
+    claimed_execution["pending_approvals"][0]["execution_status"] = "executed"
+    assert validate_operator_state(claimed_execution) == [
+        "approval_execution_claimed:vops-m5-approval-001",
     ]
 
 
@@ -164,6 +234,12 @@ def test_operator_state_validates_audit_parentage_and_service_claims():
     invalid_audit["recent_audit_events"][0]["status"] = "sent"
     assert validate_operator_state(invalid_audit) == ["invalid_audit_status:vops-m5-audit-001:sent"]
 
+    missing_audit_next_step = json.loads(json.dumps(state))
+    missing_audit_next_step["recent_audit_events"][0]["operator_next_step"] = ""
+    assert validate_operator_state(missing_audit_next_step) == [
+        "missing_operator_next_step:vops-m5-audit-001",
+    ]
+
     external_planned_without_approval = json.loads(json.dumps(state))
     external_planned_without_approval["planned_services"][0]["approval_required"] = False
     assert validate_operator_state(external_planned_without_approval) == [
@@ -174,6 +250,19 @@ def test_operator_state_validates_audit_parentage_and_service_claims():
     external_claimed_provisioned["planned_services"][0]["status"] = "provisioned"
     assert validate_operator_state(external_claimed_provisioned) == [
         "external_service_claimed_provisioned:stripe_projects_voiceops_budget"
+    ]
+
+    external_claimed_execution = json.loads(json.dumps(state))
+    external_claimed_execution["planned_services"][0]["execution_status"] = "executed"
+    assert validate_operator_state(external_claimed_execution) == [
+        "external_service_execution_claimed:stripe_projects_voiceops_budget",
+        "invalid_service_execution_status:stripe_projects_voiceops_budget:executed",
+    ]
+
+    missing_service_next_step = json.loads(json.dumps(state))
+    missing_service_next_step["planned_services"][0]["operator_next_step"] = ""
+    assert validate_operator_state(missing_service_next_step) == [
+        "missing_operator_next_step:stripe_projects_voiceops_budget",
     ]
 
     external_provisioned = json.loads(json.dumps(state))
@@ -227,6 +316,10 @@ def test_write_operator_state_artifacts(tmp_path):
     assert "Active Voice Surface" in markdown
     assert "Budget Status" in markdown
     assert "Pending Approvals" in markdown
+    assert "provision-voip-provider" in markdown
+    assert "nemoclaw-action-packet.json" in markdown
+    assert "Next step" in markdown
+    assert "not_executed" in markdown
     assert "Recent Audit Events" in markdown
     assert "Planned Services" in markdown
     assert "Provisioned Services" in markdown

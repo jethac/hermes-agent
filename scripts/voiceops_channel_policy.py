@@ -451,6 +451,9 @@ def build_channel_policy() -> dict[str, Any]:
         "scope": {
             "channels": list(CHANNEL_IDS),
             "default_output_dir": str(DEFAULT_OUTPUT_DIR),
+            "review_required_for_real_egress": True,
+            "review_status": "pending_human_review",
+            "real_egress_enabled": False,
             "blocked_capabilities": [
                 "discord_send_without_approval",
                 "whatsapp_send_without_approval",
@@ -503,6 +506,13 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
         issues.append(f"duplicate_channels:{','.join(duplicate_channels)}")
 
     blocked_capabilities = set(policy.get("scope", {}).get("blocked_capabilities") or [])
+    scope = policy.get("scope", {})
+    if scope.get("review_required_for_real_egress") is not True:
+        issues.append("missing_real_egress_review_gate")
+    if scope.get("review_status") != "pending_human_review":
+        issues.append("invalid_review_status")
+    if scope.get("real_egress_enabled") is not False:
+        issues.append("real_egress_enabled_without_review")
     missing_blocked_capabilities = REQUIRED_SCOPE_BLOCKED_CAPABILITIES - blocked_capabilities
     if missing_blocked_capabilities:
         issues.append(f"missing_blocked_capabilities:{','.join(sorted(missing_blocked_capabilities))}")

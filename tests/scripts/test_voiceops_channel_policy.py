@@ -32,6 +32,9 @@ def test_channel_policy_defines_required_channels_and_boundaries():
         "outbound_calls": False,
         "outbound_sends": False,
     }
+    assert policy["scope"]["review_required_for_real_egress"] is True
+    assert policy["scope"]["review_status"] == "pending_human_review"
+    assert policy["scope"]["real_egress_enabled"] is False
     assert set(channels) == {"discord", "whatsapp", "phone_sms"}
     assert channels["discord"]["authorization_mode"] == "operator_or_service_webhook_only"
     assert "server_admin_mutation" in channels["discord"]["prohibited_actions"]
@@ -169,6 +172,16 @@ def test_channel_policy_rejects_missing_blocked_live_capabilities():
     unsafe["scope"]["blocked_capabilities"].remove("payment_or_provisioning_action")
 
     assert validate_policy(unsafe) == ["missing_blocked_capabilities:payment_or_provisioning_action"]
+
+    missing_review = json.loads(json.dumps(policy))
+    missing_review["scope"]["review_required_for_real_egress"] = False
+    missing_review["scope"]["review_status"] = "approved"
+    missing_review["scope"]["real_egress_enabled"] = True
+    assert validate_policy(missing_review) == [
+        "missing_real_egress_review_gate",
+        "invalid_review_status",
+        "real_egress_enabled_without_review",
+    ]
 
 
 def test_channel_policy_rejects_unknown_or_duplicate_channels():

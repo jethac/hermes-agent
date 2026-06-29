@@ -512,8 +512,13 @@ async def build_plan_run_async(
             command=f"uv run python scripts/voiceops_channel_policy.py --output-dir {channel_policy_dir}",
             output_dir=channel_policy_dir,
             artifacts=channel_paths,
-            status="validated" if not channel_issues else "validation_failed",
-            details={"validation_issues": channel_issues},
+            status="needs_review" if not channel_issues else "validation_failed",
+            details={
+                "validation_issues": channel_issues,
+                "review_required_for_real_egress": channel_policy["scope"]["review_required_for_real_egress"],
+                "review_status": channel_policy["scope"]["review_status"],
+                "real_egress_enabled": channel_policy["scope"]["real_egress_enabled"],
+            },
         )
     )
 
