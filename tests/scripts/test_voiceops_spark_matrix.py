@@ -10,8 +10,34 @@ import pytest
 from scripts.voiceops_spark_matrix import build_matrix, parse_args, refresh_spark_source_hashes, write_matrix
 
 
+SOURCE_KEYS_BY_ARTIFACT = {
+    "artifacts/test/raw.json": [
+        "reflex-gemma4-e2b",
+        "oracle-nemotron3-super-local",
+        "asr-nemotron-speech",
+        "tts-magpie-local",
+    ],
+    "artifacts/test/stack-smoke.json": ["voiceops_spark_stack_smoke"],
+    "artifacts/test/hosted.json": ["oracle-nemotron3-ultra-hosted"],
+    "artifacts/test/cartesia.json": ["tts-cartesia-cloud-fallback"],
+    "artifacts/kame/raw.json": [
+        "reflex-gemma4-e2b",
+        "reflex-gemma4-e4b",
+        "oracle-nemotron3-super-local",
+        "asr-nemotron-speech",
+        "tts-magpie-local",
+        "voiceops_spark_stack_smoke",
+    ],
+}
+
+
+def _source_artifact_payload(relative: str) -> dict:
+    source_keys = SOURCE_KEYS_BY_ARTIFACT.get(relative, [relative])
+    return {"redacted": True, "source": relative, "source_keys": source_keys}
+
+
 def _source_artifact_sha256(relative: str) -> str:
-    payload = json.dumps({"redacted": True, "source": relative}).encode("utf-8")
+    payload = json.dumps(_source_artifact_payload(relative)).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -41,10 +67,14 @@ def _spark_raw_source_artifacts(tmp_path):
     ]:
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"redacted": True, "source": relative}), encoding="utf-8")
+        path.write_text(json.dumps(_source_artifact_payload(relative)), encoding="utf-8")
 
 
 def _base_evidence(candidate_id: str, *, model: str, locality: str = "local_spark") -> dict:
+    source_artifact = {
+        "oracle-nemotron3-ultra-hosted": "artifacts/test/hosted.json",
+        "tts-cartesia-cloud-fallback": "artifacts/test/cartesia.json",
+    }.get(candidate_id, "artifacts/test/raw.json")
     evidence = {
         "schema_version": "voiceops.spark_benchmark_evidence.v1",
         "candidate_id": candidate_id,
@@ -54,11 +84,11 @@ def _base_evidence(candidate_id: str, *, model: str, locality: str = "local_spar
         "engine": "test engine",
         "verified": True,
         "measured_at": "2026-06-29T00:00:00Z",
-        "source_artifact": "artifacts/test/raw.json",
-        "source_artifact_sha256": _source_artifact_sha256("artifacts/test/raw.json"),
+        "source_artifact": source_artifact,
+        "source_artifact_sha256": _source_artifact_sha256(source_artifact),
         "collector_attestation": _collector_attestation(
             candidate_id,
-            _source_artifact_sha256("artifacts/test/raw.json"),
+            _source_artifact_sha256(source_artifact),
         ),
         "metrics": {},
     }
@@ -513,6 +543,61 @@ def test_spark_matrix_rejects_candidate_with_mismatched_source_artifact_hash(tmp
     assert matrix["role_status"]["oracle"] == "needs_evidence"
 
 
+def test_spark_matrix_rejects_candidate_with_missing_source_artifact_identity(tmp_path):
+    source_path = tmp_path / "artifacts/test/no-identity.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(json.dumps({"redacted": True, "source": "generic raw output"}), encoding="utf-8")
+    evidence_path = tmp_path / "evidence.json"
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    evidence["source_artifact"] = "artifacts/test/no-identity.json"
+    evidence["source_artifact_sha256"] = source_sha256
+    evidence["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
+    evidence["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "source_artifact_identity_missing" in evaluation["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
+def test_spark_matrix_rejects_candidate_with_mismatched_source_artifact_identity(tmp_path):
+    source_path = tmp_path / "artifacts/test/wrong-identity.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(
+        json.dumps({"redacted": True, "source": "wrong raw output", "source_key": "reflex-gemma4-e2b"}),
+        encoding="utf-8",
+    )
+    evidence_path = tmp_path / "evidence.json"
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    evidence["source_artifact"] = "artifacts/test/wrong-identity.json"
+    evidence["source_artifact_sha256"] = source_sha256
+    evidence["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
+    evidence["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "source_artifact_identity_mismatch" in evaluation["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
 def test_spark_matrix_rejects_candidate_with_stale_source_and_attestation_hashes(tmp_path):
     sources_dir = tmp_path / "sources"
     sources_dir.mkdir()
@@ -885,6 +970,28 @@ def test_spark_matrix_rejects_stack_smoke_with_mismatched_source_artifact_hash(t
 
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "source_artifact_sha256_mismatch" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_rejects_stack_smoke_with_mismatched_source_artifact_identity(tmp_path):
+    source_path = tmp_path / "artifacts/test/wrong-stack-identity.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(
+        json.dumps({"redacted": True, "source": "wrong stack raw output", "source_key": "tts-magpie-local"}),
+        encoding="utf-8",
+    )
+    evidence_path = tmp_path / "evidence.json"
+    incomplete = _stack_smoke()
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    incomplete["source_artifact"] = "artifacts/test/wrong-stack-identity.json"
+    incomplete["source_artifact_sha256"] = source_sha256
+    incomplete["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
+    evidence_path.write_text(json.dumps({"evidence": [incomplete]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "source_artifact_identity_mismatch" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
 
 

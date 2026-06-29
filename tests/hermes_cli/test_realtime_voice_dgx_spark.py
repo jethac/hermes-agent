@@ -323,7 +323,33 @@ def _passing_benchmark_evidence_with_source(tmp_path: Path) -> list[dict]:
     evidence_path = tmp_path / "kame-evidence.json"
     raw_path = tmp_path / "raw-kame-benchmark.json"
     raw_path.write_text(
-        json.dumps({"redacted": True, "source": "synthetic KAME benchmark fixture"}),
+        json.dumps(
+            {
+                "redacted": True,
+                "source": "synthetic KAME benchmark fixture",
+                "source_keys": [
+                    "kame_benchmark_result",
+                    "kame_comparison_result",
+                    "kame_model_assumption_result",
+                    "kame_smoke_result",
+                    "interface",
+                    "oracle",
+                    "speech",
+                    "oracle_verbatim_asr",
+                    "tts",
+                    "all_local_smoke",
+                    "cloud_fallback_smoke",
+                    "capability_honesty_smoke",
+                    "barge_in_interruption_smoke",
+                    "reflex-gemma4-e2b",
+                    "reflex-gemma4-e4b",
+                    "oracle-nemotron3-super-local",
+                    "asr-nemotron-speech",
+                    "tts-magpie-local",
+                    "voiceops_spark_stack_smoke",
+                ],
+            }
+        ),
         encoding="utf-8",
     )
     source_artifact_sha256 = hashlib.sha256(raw_path.read_bytes()).hexdigest()
@@ -1330,6 +1356,26 @@ def test_benchmark_evidence_validator_rejects_stale_projection_source_and_attest
     assert result["coverage"]["voiceops_matrix_projection_ready"] is False
     assert "voiceops_projection:0:kame_benchmark_result:source_artifact_sha256_mismatch" in result["issues"]
     assert "voiceops_projection:0:kame_benchmark_result:collector_attestation_redacted_sha256_mismatch" in result["issues"]
+
+
+def test_benchmark_evidence_validator_rejects_projection_source_identity_mismatch(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence = _passing_benchmark_evidence_with_source(tmp_path)
+    raw_path = tmp_path / "raw-kame-benchmark.json"
+    raw_path.write_text(
+        json.dumps({"redacted": True, "source": "wrong projection source", "source_key": "unrelated_result"}),
+        encoding="utf-8",
+    )
+    source_artifact_sha256 = hashlib.sha256(raw_path.read_bytes()).hexdigest()
+    for entry in evidence:
+        entry["source_artifact_sha256"] = source_artifact_sha256
+        entry["collector_attestation"]["redacted_artifact_sha256"] = source_artifact_sha256
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["voiceops_matrix_projection_ready"] is False
+    assert "voiceops_projection:0:kame_benchmark_result:source_artifact_identity_mismatch" in result["issues"]
 
 
 def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):

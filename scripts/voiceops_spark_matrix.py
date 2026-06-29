@@ -718,6 +718,7 @@ def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
         redaction_policy = str(source_payload.get("redaction_policy") or "").strip()
         if source_payload.get("redacted") is not True and not redaction_policy:
             issues.append("source_artifact_not_redacted")
+        issues.extend(_source_artifact_identity_issues(item, source_payload))
     if expected_sha256 and len(expected_sha256) == 64 and all(
         character in "0123456789abcdef" for character in expected_sha256
     ):
@@ -730,6 +731,38 @@ def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
             if _valid_sha256(redacted_sha256) and redacted_sha256 != actual_sha256:
                 issues.append("collector_attestation_redacted_sha256_mismatch")
     return issues
+
+
+def _source_artifact_identity_issues(item: dict[str, Any], source_payload: dict[str, Any]) -> list[str]:
+    expected = {
+        value
+        for value in (
+            str(item.get("candidate_id") or "").strip(),
+            str(item.get("kind") or "").strip(),
+        )
+        if value
+    }
+    if not expected:
+        return []
+    actual = set(_source_identity_values(source_payload.get("source_key")))
+    actual.update(_source_identity_values(source_payload.get("source_keys")))
+    actual.update(_source_identity_values(source_payload.get("candidate_id")))
+    actual.update(_source_identity_values(source_payload.get("candidate_ids")))
+    actual.update(_source_identity_values(source_payload.get("kind")))
+    actual.update(_source_identity_values(source_payload.get("kinds")))
+    actual = {str(value).strip() for value in actual if str(value).strip()}
+    if not actual:
+        return ["source_artifact_identity_missing"]
+    if expected.isdisjoint(actual):
+        return ["source_artifact_identity_mismatch"]
+    return []
+
+
+def _source_identity_values(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item or "").strip() for item in value if str(item or "").strip()]
+    text = str(value or "").strip()
+    return [text] if text else []
 
 
 def _resolve_source_artifact_path(item: MutableMapping[str, Any], evidence_path: Path) -> Path | None:
@@ -1302,6 +1335,15 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",
             "source_artifact_readable": True,
             "source_artifact_sha256_must_match": True,
+            "source_artifact_identity_must_match": True,
+            "accepted_source_artifact_identity_fields": [
+                "source_key",
+                "source_keys",
+                "candidate_id",
+                "candidate_ids",
+                "kind",
+                "kinds",
+            ],
             "collector_attestation_required_for_one_spark_readiness": True,
             "collector_attestation_required_fields": list(COLLECTOR_ATTESTATION_REQUIRED_FIELDS),
             "placeholder_collector_attestation_accepted": False,

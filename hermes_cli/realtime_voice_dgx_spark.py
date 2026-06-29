@@ -1848,6 +1848,12 @@ def _projection_source_artifact_issues(entry: Mapping[str, Any]) -> list[str]:
         source_bytes = source_path.read_bytes()
     except OSError:
         return [*issues, "source_artifact_unreadable"]
+    try:
+        source_payload = json.loads(source_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        source_payload = None
+    if isinstance(source_payload, Mapping):
+        issues.extend(_projection_source_artifact_identity_issues(entry, source_payload))
     if expected_sha256 and len(expected_sha256) == 64 and all(
         character in "0123456789abcdef" for character in expected_sha256
     ):
@@ -1864,6 +1870,44 @@ def _projection_source_artifact_issues(entry: Mapping[str, Any]) -> list[str]:
             ):
                 issues.append("collector_attestation_redacted_sha256_mismatch")
     return issues
+
+
+def _projection_source_artifact_identity_issues(entry: Mapping[str, Any], source_payload: Mapping[str, Any]) -> list[str]:
+    expected = {
+        value
+        for value in (
+            str(entry.get("kind") or "").strip(),
+            str(entry.get("category") or "").strip(),
+            str(entry.get("name") or "").strip(),
+            str(entry.get("role") or "").strip(),
+        )
+        if value
+    }
+    if not expected:
+        return []
+    actual = set(_source_identity_values(source_payload.get("source_key")))
+    actual.update(_source_identity_values(source_payload.get("source_keys")))
+    actual.update(_source_identity_values(source_payload.get("kind")))
+    actual.update(_source_identity_values(source_payload.get("kinds")))
+    actual.update(_source_identity_values(source_payload.get("category")))
+    actual.update(_source_identity_values(source_payload.get("categories")))
+    actual.update(_source_identity_values(source_payload.get("name")))
+    actual.update(_source_identity_values(source_payload.get("names")))
+    actual.update(_source_identity_values(source_payload.get("role")))
+    actual.update(_source_identity_values(source_payload.get("roles")))
+    actual = {str(value).strip() for value in actual if str(value).strip()}
+    if not actual:
+        return ["source_artifact_identity_missing"]
+    if expected.isdisjoint(actual):
+        return ["source_artifact_identity_mismatch"]
+    return []
+
+
+def _source_identity_values(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item or "").strip() for item in value if str(item or "").strip()]
+    text = str(value or "").strip()
+    return [text] if text else []
 
 
 def _has_parseable_timezone_timestamp(value: Any) -> bool:

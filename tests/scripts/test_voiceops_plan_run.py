@@ -380,10 +380,22 @@ def _base_spark_evidence(
 def _write_spark_evidence(root: Path) -> Path:
     sources = root / "sources"
     source_sha256: dict[str, str] = {}
-    for name in ["reflex", "oracle", "asr", "tts", "stack-smoke"]:
+    source_keys = {
+        "reflex": "reflex-gemma4-e2b",
+        "oracle": "oracle-nemotron3-super-local",
+        "asr": "asr-nemotron-speech",
+        "tts": "tts-magpie-local",
+        "stack-smoke": "voiceops_spark_stack_smoke",
+    }
+    for name, source_key in source_keys.items():
         source_path = _write_json(
             sources / f"{name}.json",
-            {"redacted": True, "source": name, "summary": "local DGX Spark rehearsal source"},
+            {
+                "redacted": True,
+                "source": name,
+                "source_key": source_key,
+                "summary": "local DGX Spark rehearsal source",
+            },
         )
         source_sha256[name] = hashlib.sha256(source_path.read_bytes()).hexdigest()
     return _write_json(
