@@ -856,7 +856,9 @@ def build_readiness_report(
             detail=(
                 f"Hermes active model path is {demo['sponsor_stack']['hermes_active_model']['label']}: "
                 f"{demo['sponsor_stack']['hermes_active_model']['active_model']}. "
-                f"Spark-local={demo['sponsor_stack']['hermes_active_model']['spark_local']}."
+                "Spark-local target selected; benchmark validation is tracked separately."
+                if demo["sponsor_stack"]["hermes_active_model"]["spark_local"]
+                else "Hosted fallback selected; this does not count as Spark-local readiness proof."
             ),
             next_step="Before recording, prefer /model to Nemotron 3 Super on Spark. Use Nemotron 3 Ultra only as a clearly labeled hosted fallback if Super is unavailable.",
         )
@@ -947,9 +949,25 @@ def build_readiness_report(
 
     check_dicts = [asdict(check) for check in checks]
     required_failures = [check for check in check_dicts if check["required_for_video"] and check["status"] != "pass"]
+    static_recording_ready = not required_failures
+    active_path = demo["sponsor_stack"]["hermes_active_model"]
+    spark_local_evidence_status = (
+        "target_selected_needs_benchmark_evidence"
+        if active_path["spark_local"]
+        else "hosted_or_nonlocal_path_not_spark_evidence"
+    )
     return {
         "generated_at": _utc_now(),
-        "ready_for_recording": not required_failures,
+        "static_recording_ready": static_recording_ready,
+        "ready_for_recording": static_recording_ready,
+        "ready_for_recording_scope": "static_artifact_recording_only",
+        "live_demo_ready": False,
+        "live_demo_missing_evidence": [
+            "live_discord_voice_operator",
+            "spend_and_provisioning_preflight",
+            "local_spark_stack_matrix",
+        ],
+        "spark_local_evidence_status": spark_local_evidence_status,
         "required_failures": [check["check_id"] for check in required_failures],
         "env_sources": env_sources,
         "checks": check_dicts,
@@ -1159,7 +1177,11 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "",
         "## Readiness Gate",
         "",
-        f"- Ready for recording: {'yes' if readiness['ready_for_recording'] else 'no'}",
+        f"- Static recording ready: {'yes' if readiness['static_recording_ready'] else 'no'}",
+        f"- Live demo ready: {'yes' if readiness['live_demo_ready'] else 'no'}",
+        f"- Readiness scope: {readiness['ready_for_recording_scope']}",
+        f"- Spark-local evidence: {readiness['spark_local_evidence_status']}",
+        f"- Missing live evidence: {', '.join(readiness['live_demo_missing_evidence']) if readiness['live_demo_missing_evidence'] else 'none'}",
         f"- Required failures: {', '.join(failures) if failures else 'none'}",
         f"- Recording fallback: {fallback}",
         f"- Plan closure status: {closure['closure_status']}",
@@ -1219,7 +1241,11 @@ def _readiness_markdown(report: dict[str, Any]) -> str:
     lines = [
         "# VoiceOps Recording Readiness",
         "",
-        f"- Ready for recording: {'yes' if report['ready_for_recording'] else 'no'}",
+        f"- Static recording ready: {'yes' if report['static_recording_ready'] else 'no'}",
+        f"- Live demo ready: {'yes' if report['live_demo_ready'] else 'no'}",
+        f"- Readiness scope: {report['ready_for_recording_scope']}",
+        f"- Spark-local evidence: {report['spark_local_evidence_status']}",
+        f"- Missing live evidence: {', '.join(report['live_demo_missing_evidence']) if report['live_demo_missing_evidence'] else 'none'}",
         f"- Required failures: {', '.join(report['required_failures']) if report['required_failures'] else 'none'}",
         "",
         "## Env Sources",
@@ -1273,7 +1299,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
     approval_cents = demo["totals"]["approval_required_cents"]
     limit_cents = max(int(demo["spend_policy"]["limit_cents"] or 0), 1)
     approval_percent = min(100, int(round((approval_cents / limit_cents) * 100)))
-    readiness_label = "Ready" if readiness["ready_for_recording"] else "Needs setup"
+    readiness_label = "Static ready" if readiness["static_recording_ready"] else "Needs setup"
     held_actions = [action for action in demo["ops_actions"] if action["status"] == "held-budget"]
     pending_rows = []
     for approval in operator_state["pending_approvals"]:
@@ -1693,6 +1719,11 @@ def _demo_package(
     payload["recording_readiness"] = {
         "artifact_ref": paths["readiness_json"].name,
         "ready_for_recording": readiness["ready_for_recording"],
+        "static_recording_ready": readiness["static_recording_ready"],
+        "ready_for_recording_scope": readiness["ready_for_recording_scope"],
+        "live_demo_ready": readiness["live_demo_ready"],
+        "live_demo_missing_evidence": readiness["live_demo_missing_evidence"],
+        "spark_local_evidence_status": readiness["spark_local_evidence_status"],
         "required_failures": readiness["required_failures"],
     }
     payload["readiness_closure"] = _demo_closure_summary()

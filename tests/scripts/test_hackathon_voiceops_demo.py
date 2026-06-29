@@ -46,6 +46,15 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert payload["artifact_manifest"]["milestone2_execution_plan"] == "milestone2-execution-plan.json"
     assert payload["recording_readiness"]["artifact_ref"] == "readiness-report.json"
     assert payload["recording_readiness"]["ready_for_recording"] is False
+    assert payload["recording_readiness"]["static_recording_ready"] is False
+    assert payload["recording_readiness"]["ready_for_recording_scope"] == "static_artifact_recording_only"
+    assert payload["recording_readiness"]["live_demo_ready"] is False
+    assert payload["recording_readiness"]["live_demo_missing_evidence"] == [
+        "live_discord_voice_operator",
+        "spend_and_provisioning_preflight",
+        "local_spark_stack_matrix",
+    ]
+    assert payload["recording_readiness"]["spark_local_evidence_status"] == "target_selected_needs_benchmark_evidence"
     assert payload["recording_readiness"]["required_failures"]
     assert payload["readiness_closure_ref"] == "artifacts/voiceops-plan/current/readiness-closure-index.json"
     assert payload["readiness_closure"]["closure_status"] == "needs_external_evidence"
@@ -206,6 +215,12 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "milestone2-execution-plan.json" in dashboard
     assert Path(paths["readiness_json"]).exists()
     assert "VoiceOps Recording Readiness" in Path(paths["readiness_markdown"]).read_text(encoding="utf-8")
+    readiness_markdown = Path(paths["readiness_markdown"]).read_text(encoding="utf-8")
+    assert "Static recording ready:" in readiness_markdown
+    assert "Live demo ready: no" in readiness_markdown
+    assert "Readiness scope: static_artifact_recording_only" in readiness_markdown
+    assert "Spark-local evidence: target_selected_needs_benchmark_evidence" in readiness_markdown
+    assert "Spark-local=True" not in readiness_markdown
 
 
 def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned_model():
@@ -227,6 +242,8 @@ def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned
     assert ultra_demo["sponsor_stack"]["nemotron_3_super"]["selection"] == "not selected"
     assert ultra_demo["sponsor_stack"]["nemotron_3_ultra_hosted_fallback"]["selection"].startswith("Nemotron 3 Ultra")
     assert "nemotron_3_super_spark_or_labeled_ultra_hosted_fallback" not in ultra_ready["required_failures"]
+    assert ultra_ready["spark_local_evidence_status"] == "hosted_or_nonlocal_path_not_spark_evidence"
+    assert ultra_ready["live_demo_ready"] is False
 
     kimi_args = parse_args(["--active-model", "Kimi K2.6"])
     kimi_demo = build_demo(kimi_args)
@@ -301,6 +318,15 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
         which=fake_which,
     )
     assert ready["ready_for_recording"] is True
+    assert ready["static_recording_ready"] is True
+    assert ready["ready_for_recording_scope"] == "static_artifact_recording_only"
+    assert ready["live_demo_ready"] is False
+    assert ready["live_demo_missing_evidence"] == [
+        "live_discord_voice_operator",
+        "spend_and_provisioning_preflight",
+        "local_spark_stack_matrix",
+    ]
+    assert ready["spark_local_evidence_status"] == "target_selected_needs_benchmark_evidence"
     assert ready["required_failures"] == []
 
     stripe_without_projects_marker = build_readiness_report(
@@ -368,6 +394,9 @@ def test_voiceops_readiness_report_loads_env_files_without_exposing_values(tmp_p
     report = build_readiness_report(demo, env={}, env_files=[env_file], which=fake_which)
 
     assert report["ready_for_recording"] is True
+    assert report["static_recording_ready"] is True
+    assert report["live_demo_ready"] is False
+    assert report["ready_for_recording_scope"] == "static_artifact_recording_only"
     assert report["required_failures"] == []
     assert report["env_sources"][1]["path"] == str(env_file)
     assert report["env_sources"][1]["loaded"] is True

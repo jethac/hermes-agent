@@ -363,6 +363,10 @@ def _list_values(value: Any) -> list[str]:
     return [str(item or "").strip() for item in value if str(item or "").strip()]
 
 
+def _stack_smoke_metric(item: dict[str, Any], metrics: dict[str, Any], key: str) -> float | None:
+    return _coerce_number(metrics.get(key) if key in metrics else item.get(key))
+
+
 def _adapt_kame_stack_components(entry: dict[str, Any]) -> dict[str, bool]:
     components = entry.get("components") if isinstance(entry.get("components"), dict) else {}
     if components:
@@ -504,19 +508,18 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
             issues.append("missing_metric:barge_in_stop_ms")
         elif barge_in_ms > 150:
             issues.append("target_failed:barge_in_stop_ms")
-        if item.get("adapted_from") == "kame_smoke_result":
-            local_turns = _coerce_number(metrics.get("local_turns"))
-            local_oracle_calls = _coerce_number(metrics.get("local_turn_oracle_calls"))
-            oracle_bound_turns = _coerce_number(metrics.get("oracle_bound_turns"))
-            oracle_bound_calls = _coerce_number(metrics.get("oracle_bound_oracle_calls"))
-            if local_turns is None or local_turns < 1:
-                issues.append("missing_or_failed:local_turns")
-            if local_oracle_calls is None or local_oracle_calls != 0:
-                issues.append("target_failed:local_turn_oracle_calls")
-            if oracle_bound_turns is None or oracle_bound_turns < 1:
-                issues.append("missing_or_failed:oracle_bound_turns")
-            if oracle_bound_calls is None or oracle_bound_turns is None or oracle_bound_calls < oracle_bound_turns:
-                issues.append("target_failed:oracle_bound_oracle_calls")
+        local_turns = _stack_smoke_metric(item, metrics, "local_turns")
+        local_oracle_calls = _stack_smoke_metric(item, metrics, "local_turn_oracle_calls")
+        oracle_bound_turns = _stack_smoke_metric(item, metrics, "oracle_bound_turns")
+        oracle_bound_calls = _stack_smoke_metric(item, metrics, "oracle_bound_oracle_calls")
+        if local_turns is None or local_turns < 1:
+            issues.append("missing_or_failed:local_turns")
+        if local_oracle_calls is None or local_oracle_calls != 0:
+            issues.append("target_failed:local_turn_oracle_calls")
+        if oracle_bound_turns is None or oracle_bound_turns < 1:
+            issues.append("missing_or_failed:oracle_bound_turns")
+        if oracle_bound_calls is None or oracle_bound_turns is None or oracle_bound_calls < oracle_bound_turns:
+            issues.append("target_failed:oracle_bound_oracle_calls")
 
         routes = set(_list_values(item.get("oracle_authority_routes")))
         missing_routes = sorted(set(STACK_SMOKE_REQUIRED_ORACLE_ROUTES).difference(routes))
@@ -665,6 +668,10 @@ def _evidence_template(candidates: list[dict[str, Any]]) -> dict[str, Any]:
                 "metrics": {
                     "speech_end_to_first_audio_ms": None,
                     "barge_in_stop_ms": None,
+                    "local_turns": None,
+                    "local_turn_oracle_calls": None,
+                    "oracle_bound_turns": None,
+                    "oracle_bound_oracle_calls": None,
                 },
                 "notes": "Set verified=true only after reflex, oracle, ASR, TTS, and sidecar run together locally on one DGX Spark.",
             }
@@ -762,6 +769,10 @@ def _evidence_example() -> dict[str, Any]:
                 "metrics": {
                     "speech_end_to_first_audio_ms": 900,
                     "barge_in_stop_ms": 90,
+                    "local_turns": 2,
+                    "local_turn_oracle_calls": 0,
+                    "oracle_bound_turns": 4,
+                    "oracle_bound_oracle_calls": 4,
                 },
                 "example_only": True,
             },
@@ -830,6 +841,10 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "reflex_providers",
             "metrics.speech_end_to_first_audio_ms",
             "metrics.barge_in_stop_ms",
+            "metrics.local_turns",
+            "metrics.local_turn_oracle_calls",
+            "metrics.oracle_bound_turns",
+            "metrics.oracle_bound_oracle_calls",
             "source_artifact",
             "verified",
         ],
@@ -898,6 +913,10 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
                     "metrics": {
                         "speech_end_to_first_audio_ms": 900,
                         "barge_in_stop_ms": 90,
+                        "local_turns": 2,
+                        "local_turn_oracle_calls": 0,
+                        "oracle_bound_turns": 4,
+                        "oracle_bound_oracle_calls": 4,
                     },
                 },
             ]

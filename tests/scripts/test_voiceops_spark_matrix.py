@@ -45,6 +45,10 @@ def _stack_smoke() -> dict:
         "metrics": {
             "speech_end_to_first_audio_ms": 900,
             "barge_in_stop_ms": 90,
+            "local_turns": 2,
+            "local_turn_oracle_calls": 0,
+            "oracle_bound_turns": 4,
+            "oracle_bound_oracle_calls": 4,
         },
     }
 
@@ -114,6 +118,10 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
         "oracle_authority_routes",
         "interface_input_sources",
         "reflex_providers",
+        "metrics.local_turns",
+        "metrics.local_turn_oracle_calls",
+        "metrics.oracle_bound_turns",
+        "metrics.oracle_bound_oracle_calls",
     } <= set(closure["required_stack_smoke_fields"])
     assert closure["all_local_stack_smoke"]["required_components"] == ["reflex", "oracle", "asr", "tts", "sidecar"]
     assert closure["benchmark_evidence_shape"]["evidence"][0]["schema_version"] == "voiceops.spark_benchmark_evidence.v1"
@@ -350,6 +358,55 @@ def test_spark_matrix_cartesia_fallback_does_not_validate_local_tts_role(tmp_pat
 
     assert evaluations["tts-cartesia-cloud-fallback"]["status"] == "validated"
     assert matrix["role_status"]["tts"] == "needs_evidence"
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_cartesia_fallback_does_not_make_stack_ready_without_local_tts(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "evidence": [
+                    {
+                        **_base_evidence("reflex-gemma4-e2b", model="Gemma 4 E2B audio-native"),
+                        "metrics": {"first_token_ms": 700, "intent_latency_ms": 1100, "steady_state_memory_gb": 20},
+                    },
+                    {
+                        **_base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super"),
+                        "metrics": {
+                            "decode_tok_s": 24,
+                            "prefill_tok_s": 3100,
+                            "first_token_ms": 2100,
+                            "steady_state_memory_gb": 86,
+                        },
+                    },
+                    {
+                        **_base_evidence("asr-nemotron-speech", model="Nemotron Speech streaming"),
+                        "metrics": {"asr_delta_ms": 30, "final_transcript_ms": 600, "word_error_rate": 0.08},
+                    },
+                    {
+                        **_base_evidence("tts-cartesia-cloud-fallback", model="Cartesia cloud TTS", locality="hosted"),
+                        "metrics": {"tts_first_audio_ms": 250, "cutoff_count": 0},
+                    },
+                    _stack_smoke(),
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    matrix = build_matrix([evidence_path])
+    evaluations = {evaluation["candidate_id"]: evaluation for evaluation in matrix["evaluations"]}
+
+    assert evaluations["tts-cartesia-cloud-fallback"]["status"] == "validated"
+    assert evaluations["tts-magpie-local"]["status"] == "needs_evidence"
+    assert matrix["role_status"] == {
+        "asr": "validated",
+        "oracle": "validated",
+        "reflex": "validated",
+        "tts": "needs_evidence",
+    }
+    assert matrix["stack_smoke"]["status"] == "validated"
     assert matrix["ready_for_one_spark_demo"] is False
 
 
