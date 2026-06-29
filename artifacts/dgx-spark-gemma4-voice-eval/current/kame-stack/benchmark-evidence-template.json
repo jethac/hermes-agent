@@ -18,7 +18,8 @@
       "speech_end_to_interface_decision_p90_ms": null,
       "speech_end_to_local_first_audio_ms": null,
       "speech_end_to_local_first_audio_p50_ms": null,
-      "speech_end_to_local_first_audio_p90_ms": null
+      "speech_end_to_local_first_audio_p90_ms": null,
+      "steady_state_memory_gb": null
     },
     "model": "gemma-4-E2B-it",
     "schema_version": "voiceops.spark_benchmark_evidence.v1",
@@ -42,6 +43,7 @@
       "speech_end_to_transcript_ms": null,
       "speech_end_to_transcript_p50_ms": null,
       "speech_end_to_transcript_p90_ms": null,
+      "steady_state_memory_gb": null,
       "transcript_to_interface_decision_ms": null,
       "transcript_to_interface_decision_p50_ms": null,
       "transcript_to_interface_decision_p90_ms": null
@@ -71,7 +73,8 @@
       "speech_end_to_interface_decision_p90_ms": null,
       "speech_end_to_local_first_audio_ms": null,
       "speech_end_to_local_first_audio_p50_ms": null,
-      "speech_end_to_local_first_audio_p90_ms": null
+      "speech_end_to_local_first_audio_p90_ms": null,
+      "steady_state_memory_gb": null
     },
     "model": "gemma-4-E4B-it",
     "schema_version": "voiceops.spark_benchmark_evidence.v1",
@@ -95,6 +98,7 @@
       "speech_end_to_transcript_ms": null,
       "speech_end_to_transcript_p50_ms": null,
       "speech_end_to_transcript_p90_ms": null,
+      "steady_state_memory_gb": null,
       "transcript_to_interface_decision_ms": null,
       "transcript_to_interface_decision_p50_ms": null,
       "transcript_to_interface_decision_p90_ms": null
@@ -112,13 +116,16 @@
     "locality": "local_spark",
     "measured_at": null,
     "metrics": {
+      "decode_tok_s": null,
       "first_tts_audio_to_playback_start_ms": null,
       "oracle_accepted_to_first_token_ms": null,
       "oracle_first_token_to_first_tts_audio_ms": null,
       "oracle_request_to_accepted_ms": null,
       "oracle_request_to_first_audio_p50_ms": null,
       "oracle_request_to_first_audio_p90_ms": null,
-      "sample_count": null
+      "prefill_tok_s": null,
+      "sample_count": null,
+      "steady_state_memory_gb": null
     },
     "model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
     "schema_version": "voiceops.spark_benchmark_evidence.v1",
@@ -201,7 +208,8 @@
       "tts_request_to_audio_end_p90_ms": null,
       "tts_request_to_first_audio_ms": null,
       "tts_request_to_first_audio_p50_ms": null,
-      "tts_request_to_first_audio_p90_ms": null
+      "tts_request_to_first_audio_p90_ms": null,
+      "underrun_count": null
     },
     "mode": null,
     "model": "local-streaming-tts",
@@ -270,6 +278,10 @@
     "local_turns": null,
     "locality": "local_spark",
     "measured_at": null,
+    "metrics": {
+      "barge_in_stop_ms": null,
+      "speech_end_to_first_audio_ms": null
+    },
     "name": "all_local_smoke",
     "notes": "Set ok=true only after Discord or loopback voice proves local interface, oracle, ASR, TTS, and sidecar are all healthy; local turns bypass the oracle; and authority-sensitive turns still route through the oracle.",
     "ok": false,

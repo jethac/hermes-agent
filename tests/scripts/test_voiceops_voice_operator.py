@@ -232,6 +232,9 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert live_closure["evidence_shapes"]["discord_live_probe"]["require_inbound"] is True
     assert live_closure["evidence_shapes"]["sidecar_session"]["kind"] == "sidecar_session"
     assert live_closure["evidence_shapes"]["sidecar_session"]["source_artifact"] == "sidecar-session.json"
+    assert live_closure["evidence_shapes"]["sidecar_session"]["shutdown_bounded"] is True
+    assert live_closure["evidence_shapes"]["sidecar_session"]["shutdown_timed_out"] is False
+    assert live_closure["evidence_shapes"]["sidecar_session"]["latency_metrics_ms"]["shutdown_ms"] == 80
     assert live_closure["evidence_shapes"]["live_turn"]["kind"] == "live_turn"
     assert live_closure["evidence_shapes"]["live_turn"]["source_artifact"] == "live-turn.json"
     assert "hermes_cli.realtime_voice_live_evidence" in live_closure["recommended_collection"]["live_bundle_manifest"]
@@ -358,6 +361,93 @@ def test_voice_operator_loaded_evidence_does_not_resolve_source_artifacts_from_c
     assert "discord_live_probe:source_artifact_not_found" in live_evidence["issues"]
     assert "sidecar_session:source_artifact_not_found" in live_evidence["issues"]
     assert "live_turn:source_artifact_not_found" in live_evidence["issues"]
+
+
+def test_voice_operator_manifest_reports_do_not_resolve_from_cwd(monkeypatch, tmp_path):
+    evidence_dir = tmp_path / "evidence-dir"
+    cwd_dir = tmp_path / "cwd"
+    evidence_dir.mkdir()
+    cwd_dir.mkdir()
+    for name in ("cwd-discord-live-probe.json", "cwd-sidecar-session.json", "cwd-live-turn.json"):
+        (cwd_dir / name).write_text(json.dumps({"kind": name.removesuffix(".json")}), encoding="utf-8")
+    manifest_path = evidence_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "reports": {
+                    "discord_live_probe": "cwd-discord-live-probe.json",
+                    "sidecar_session": "cwd-sidecar-session.json",
+                    "live_turn": "cwd-live-turn.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(cwd_dir)
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert "live_evidence_manifest:discord_live_probe:live_evidence_file_not_found" in live_evidence["issues"]
+    assert "live_evidence_manifest:sidecar_session:live_evidence_file_not_found" in live_evidence["issues"]
+    assert "live_evidence_manifest:live_turn:live_evidence_file_not_found" in live_evidence["issues"]
+
+
+def test_voice_operator_manifest_reports_do_not_fallback_to_basename(tmp_path):
+    discord_probe = _complete_live_evidence()["discord_live_probe"]
+    discord_probe["kind"] = "discord_live_probe"
+    discord_probe["source_artifact"] = str(tmp_path / "discord-live-probe.json")
+    (tmp_path / "discord-live-probe.json").write_text(json.dumps(discord_probe), encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "reports": {
+                    "discord_live_probe": "sections/discord-live-probe.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert "live_evidence_manifest:discord_live_probe:live_evidence_file_not_found" in live_evidence["issues"]
+
+
+def test_voice_operator_manifest_cycle_returns_validation_issue(tmp_path):
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "reports": {
+                    "combined": "manifest.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "live_evidence_manifest:combined:cycle_detected" in live_evidence["issues"]
+
+
+def test_voice_operator_rejects_source_artifact_directory(tmp_path):
+    evidence = _complete_live_evidence()
+    for section_name in ("discord_live_probe", "sidecar_session", "live_turn"):
+        artifact_dir = tmp_path / f"{section_name}.json"
+        artifact_dir.mkdir()
+        evidence[section_name]["source_artifact"] = str(artifact_dir)
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "discord_live_probe:source_artifact_not_file" in live_evidence["issues"]
+    assert "sidecar_session:source_artifact_not_file" in live_evidence["issues"]
+    assert "live_turn:source_artifact_not_file" in live_evidence["issues"]
 
 
 def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):

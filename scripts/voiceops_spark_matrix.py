@@ -208,6 +208,18 @@ def _measured_at(item: dict[str, Any]) -> str | None:
     return None
 
 
+def _has_parseable_timezone_timestamp(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = dt.datetime.fromisoformat(normalized)
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() is not None
+
+
 def _verified(item: dict[str, Any]) -> bool:
     return item.get("verified") is True or item.get("ok") is True
 
@@ -438,6 +450,8 @@ def evaluate_candidate(candidate: Candidate, evidence: list[dict[str, Any]]) -> 
             issues.extend(_source_artifact_issues(item))
         if not str(item.get("measured_at") or "").strip():
             issues.append("missing_measured_at")
+        elif not _has_parseable_timezone_timestamp(item.get("measured_at")):
+            issues.append("invalid_measured_at")
         locality = str(item.get("locality") or "").strip()
         if locality != candidate.locality:
             issues.append("locality_mismatch")
@@ -509,6 +523,8 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
             issues.extend(_source_artifact_issues(item))
         if not str(item.get("measured_at") or "").strip():
             issues.append("missing_measured_at")
+        elif not _has_parseable_timezone_timestamp(item.get("measured_at")):
+            issues.append("invalid_measured_at")
         if not _matches_hardware(item.get("hardware")):
             issues.append("hardware_mismatch")
         if str(item.get("locality") or "") != "local_spark":
@@ -914,6 +930,7 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "source_artifacts_must_exist": True,
             "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",
             "source_artifact_readable": True,
+            "measured_at_timezone_required": True,
             "example_only_accepted": False,
             "hosted_fallback_counts_for_one_spark_readiness": False,
         },

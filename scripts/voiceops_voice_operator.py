@@ -358,7 +358,15 @@ def _load_live_evidence(paths: list[Path] | None) -> dict[str, Any]:
     return evidence
 
 
-def _load_live_evidence_file(path: Path) -> dict[str, Any]:
+def _load_live_evidence_file(path: Path, *, visited: set[Path] | None = None) -> dict[str, Any]:
+    visited = set() if visited is None else set(visited)
+    resolved_path = path.expanduser().resolve()
+    if resolved_path in visited:
+        return {
+            "payload": None,
+            "issues": ["cycle_detected"],
+        }
+    visited.add(resolved_path)
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -376,11 +384,16 @@ def _load_live_evidence_file(path: Path) -> dict[str, Any]:
             "payload": None,
             "issues": ["live_evidence_root_must_be_object"],
         }
-    payload, issues = _expand_live_evidence_manifest(path, payload)
+    payload, issues = _expand_live_evidence_manifest(path, payload, visited=visited)
     return {"payload": payload, "issues": issues}
 
 
-def _expand_live_evidence_manifest(path: Path, payload: Mapping[str, Any]) -> tuple[Mapping[str, Any], list[str]]:
+def _expand_live_evidence_manifest(
+    path: Path,
+    payload: Mapping[str, Any],
+    *,
+    visited: set[Path],
+) -> tuple[Mapping[str, Any], list[str]]:
     reports = payload.get("reports")
     if not isinstance(reports, Mapping):
         return payload, []
@@ -400,7 +413,7 @@ def _expand_live_evidence_manifest(path: Path, payload: Mapping[str, Any]) -> tu
             issues.append(f"live_evidence_manifest:{report_name}:empty_report_path")
             continue
         report_path = _resolve_manifest_report_path(path, report_path_text)
-        loaded = _load_live_evidence_file(report_path)
+        loaded = _load_live_evidence_file(report_path, visited=visited)
         if loaded["issues"]:
             issues.extend(f"live_evidence_manifest:{report_name}:{issue}" for issue in loaded["issues"])
         report_payload = loaded.get("payload")
@@ -441,13 +454,7 @@ def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) ->
     report_path = Path(report_path_text).expanduser()
     if report_path.is_absolute():
         return report_path
-    sibling = manifest_path.parent / report_path_text
-    if sibling.exists():
-        return sibling
-    basename_sibling = manifest_path.parent / report_path.name
-    if basename_sibling.exists():
-        return basename_sibling
-    return report_path
+    return manifest_path.parent / report_path_text
 
 
 def _manifest_report_has_identity(report_name: str, payload: Mapping[str, Any]) -> bool:
@@ -648,8 +655,8 @@ def _source_artifact_exists(source_artifact: Any, evidence_paths: list[Path]) ->
         return False
     source_path = Path(source_text).expanduser()
     if source_path.is_absolute():
-        return source_path.exists()
-    return any((path.parent / source_text).exists() for path in evidence_paths)
+        return source_path.is_file()
+    return any((path.parent / source_text).is_file() for path in evidence_paths)
 
 
 def _validate_source_artifact(
@@ -670,6 +677,8 @@ def _validate_source_artifact(
     if source_path.is_absolute():
         if not source_path.exists():
             issues.append(f"{section_name}:source_artifact_not_found")
+        elif not source_path.is_file():
+            issues.append(f"{section_name}:source_artifact_not_file")
         return
     issues.append(f"{section_name}:unverified_source_artifact")
 
@@ -1013,7 +1022,11 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
         },
         "recommended_collection": {
             "live_bundle_manifest": report["live_probe_required_for_completion"]["recommended_command"],
-            "sidecar_session": "Write sidecar-session.json with kind=sidecar_session, sidecar_running, sidecar_healthy, session_started, session_closed, fallback_mode_visible, and source_artifact.",
+            "sidecar_session": (
+                "Write sidecar-session.json with kind=sidecar_session, sidecar_running, sidecar_healthy, "
+                "session_started, session_closed, fallback_mode_visible, shutdown_bounded=true, "
+                "shutdown_timed_out=false, latency_metrics_ms.shutdown_ms, and source_artifact."
+            ),
             "live_turn": "Write live-turn.json with kind=live_turn, transcript_observed, assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, speech_end_to_first_audio_ms, barge_in_stop_ms, and source_artifact.",
             "ingest": report["live_probe_required_for_completion"]["ingest_command"],
         },
@@ -1044,6 +1057,9 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "session_started": True,
                 "session_closed": True,
                 "fallback_mode_visible": True,
+                "shutdown_bounded": True,
+                "shutdown_timed_out": False,
+                "latency_metrics_ms": {"shutdown_ms": 80},
             },
             "live_turn": {
                 "kind": "live_turn",

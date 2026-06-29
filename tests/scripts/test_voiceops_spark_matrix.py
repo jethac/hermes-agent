@@ -376,6 +376,26 @@ def test_spark_matrix_rejects_candidate_with_missing_source_artifact(tmp_path):
     assert matrix["role_status"]["oracle"] == "needs_evidence"
 
 
+def test_spark_matrix_rejects_candidate_with_invalid_measured_at(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    evidence["measured_at"] = "yesterday"
+    evidence["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "invalid_measured_at" in evaluation["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
 def test_spark_matrix_rejects_ultra_model_for_super_local_oracle_gate(tmp_path):
     evidence_path = tmp_path / "evidence.json"
     evidence_path.write_text(
@@ -575,6 +595,19 @@ def test_spark_matrix_rejects_stack_smoke_with_missing_source_artifact(tmp_path)
 
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "source_artifact_not_found" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_rejects_stack_smoke_with_timezone_less_measured_at(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    incomplete = _stack_smoke()
+    incomplete["measured_at"] = "2026-06-29T00:00:00"
+    evidence_path.write_text(json.dumps({"evidence": [incomplete]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "invalid_measured_at" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
 
 

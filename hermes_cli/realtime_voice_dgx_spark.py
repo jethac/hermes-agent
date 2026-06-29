@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import datetime as dt
 import json
 import os
 import sys
@@ -1187,6 +1188,7 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                         "capability_honesty_rate",
                         "local_route_precision",
                         "oracle_route_recall",
+                        "steady_state_memory_gb",
                     ],
                 },
                 {
@@ -1204,6 +1206,7 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                         "capability_honesty_rate",
                         "local_route_precision",
                         "oracle_route_recall",
+                        "steady_state_memory_gb",
                     ],
                 },
             ]
@@ -1225,6 +1228,9 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                         "first_tts_audio_to_playback_start_ms",
                         "oracle_request_to_first_audio_p50_ms",
                         "oracle_request_to_first_audio_p90_ms",
+                        "decode_tok_s",
+                        "prefill_tok_s",
+                        "steady_state_memory_gb",
                     ],
                 }
             ],
@@ -1280,6 +1286,7 @@ def build_dgx_spark_benchmark_matrix(manifest: Mapping[str, Any]) -> dict[str, A
                         "tts_request_to_audio_end_ms",
                         "tts_request_to_audio_end_p50_ms",
                         "tts_request_to_audio_end_p90_ms",
+                        "underrun_count",
                     ],
                 },
             ],
@@ -1419,6 +1426,10 @@ def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> li
                         "tts": None,
                         "sidecar": None,
                     },
+                    "metrics": {
+                        "speech_end_to_first_audio_ms": None,
+                        "barge_in_stop_ms": None,
+                    },
                 }
             )
         elif name == "cloud_fallback_smoke":
@@ -1489,13 +1500,21 @@ def _with_voiceops_projection_fields(entry: dict[str, Any]) -> dict[str, Any]:
 def load_dgx_spark_benchmark_evidence(path: str | Path) -> list[dict[str, Any]]:
     evidence_path = Path(path).expanduser()
     data = json.loads(evidence_path.read_text(encoding="utf-8"))
+    wrapper_example_only = False
+    if isinstance(data, Mapping) and isinstance(data.get("evidence"), list):
+        wrapper_example_only = data.get("example_only") is True
+        data = data["evidence"]
     if not isinstance(data, list):
-        raise ValueError("DGX Spark KAME benchmark evidence must be a JSON array")
+        raise ValueError("DGX Spark KAME benchmark evidence must be a JSON array or an object with an evidence array")
     entries: list[dict[str, Any]] = []
     for index, entry in enumerate(data):
         if not isinstance(entry, Mapping):
             raise ValueError(f"DGX Spark KAME benchmark evidence entry {index} must be an object")
-        entries.append(dict(entry))
+        entry_copy = dict(entry)
+        entry_copy["_evidence_path"] = str(evidence_path)
+        if wrapper_example_only:
+            entry_copy["example_only"] = True
+        entries.append(entry_copy)
     return entries
 
 
@@ -1778,6 +1797,8 @@ def _voiceops_matrix_projection_issues(entries: list[Mapping[str, Any]]) -> list
         if kind not in projected_kinds:
             continue
         label = f"voiceops_projection:{index}:{kind}"
+        if entry.get("example_only") is True:
+            issues.append(f"{label}:example_only_evidence_not_accepted")
         if str(entry.get("schema_version") or "") != VOICEOPS_SPARK_EVIDENCE_SCHEMA_VERSION:
             issues.append(f"{label}:missing_or_invalid_schema_version")
         hardware = str(entry.get("hardware") or "").strip().lower()
@@ -1789,9 +1810,44 @@ def _voiceops_matrix_projection_issues(entries: list[Mapping[str, Any]]) -> list
             issues.append(f"{label}:verified_not_true")
         if not str(entry.get("measured_at") or "").strip():
             issues.append(f"{label}:missing_measured_at")
+        elif not _has_parseable_timezone_timestamp(entry.get("measured_at")):
+            issues.append(f"{label}:invalid_measured_at")
         if not str(entry.get("source_artifact") or "").strip():
             issues.append(f"{label}:missing_source_artifact")
+        else:
+            issues.extend(f"{label}:{issue}" for issue in _projection_source_artifact_issues(entry))
     return issues
+
+
+def _projection_source_artifact_issues(entry: Mapping[str, Any]) -> list[str]:
+    evidence_path_text = str(entry.get("_evidence_path") or "").strip()
+    if not evidence_path_text:
+        return []
+    source_path = Path(str(entry.get("source_artifact") or "").strip()).expanduser()
+    if not source_path.is_absolute():
+        source_path = Path(evidence_path_text).expanduser().parent / source_path
+    if not source_path.exists():
+        return ["source_artifact_not_found"]
+    if not source_path.is_file():
+        return ["source_artifact_not_file"]
+    try:
+        with source_path.open("rb") as handle:
+            handle.read(1)
+    except OSError:
+        return ["source_artifact_unreadable"]
+    return []
+
+
+def _has_parseable_timezone_timestamp(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = dt.datetime.fromisoformat(normalized)
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() is not None
 
 
 def _find_benchmark_entry(
@@ -2124,7 +2180,7 @@ def _passing_smoke_issues(
     if entry is None:
         return [f"{name}: missing passing smoke result"]
     if name == "all_local_smoke":
-        return _all_local_smoke_issues(entry)
+        return _all_local_smoke_issues(entry, barge_in_stop_target_ms=barge_in_stop_target_ms)
     if name == "cloud_fallback_smoke":
         return _cloud_fallback_smoke_issues(entry)
     if name == "capability_honesty_smoke":
@@ -2146,7 +2202,7 @@ def _passing_smoke_entry(entries: list[Mapping[str, Any]], name: str) -> Mapping
     return None
 
 
-def _all_local_smoke_issues(entry: Mapping[str, Any]) -> list[str]:
+def _all_local_smoke_issues(entry: Mapping[str, Any], *, barge_in_stop_target_ms: float) -> list[str]:
     issues: list[str] = []
     local_turns = _metric_float(entry.get("local_turns"))
     local_oracle_calls = _metric_float(entry.get("local_turn_oracle_calls"))
@@ -2160,6 +2216,33 @@ def _all_local_smoke_issues(entry: Mapping[str, Any]) -> list[str]:
         issues.append("all_local_smoke: requires oracle_bound_turns >= 1")
     if oracle_bound_calls is None or oracle_bound_calls < oracle_bound_turns:
         issues.append("all_local_smoke: requires oracle_bound_oracle_calls >= oracle_bound_turns")
+    if str(entry.get("oracle_selected_by") or "") != "Hermes /model":
+        issues.append("all_local_smoke: requires oracle_selected_by == Hermes /model")
+    components = entry.get("components")
+    if not isinstance(components, Mapping):
+        issues.append("all_local_smoke: requires components mapping")
+    else:
+        missing_components = [
+            name
+            for name in ("reflex", "oracle", "asr", "tts", "sidecar")
+            if components.get(name) is not True
+        ]
+        if missing_components:
+            issues.append("all_local_smoke: components missing " + ",".join(missing_components))
+    metrics = entry.get("metrics")
+    if not isinstance(metrics, Mapping):
+        issues.append("all_local_smoke: requires metrics mapping")
+    else:
+        first_audio_ms = _metric_float(metrics.get("speech_end_to_first_audio_ms"))
+        if first_audio_ms is None:
+            issues.append("all_local_smoke: requires metrics.speech_end_to_first_audio_ms")
+        elif first_audio_ms > 1500:
+            issues.append("all_local_smoke: metrics.speech_end_to_first_audio_ms exceeds 1500")
+        barge_in_stop_ms = _metric_float(metrics.get("barge_in_stop_ms"))
+        if barge_in_stop_ms is None:
+            issues.append("all_local_smoke: requires metrics.barge_in_stop_ms")
+        elif barge_in_stop_ms > barge_in_stop_target_ms:
+            issues.append("all_local_smoke: metrics.barge_in_stop_ms exceeds target")
     authority_routes = entry.get("oracle_authority_routes")
     if not isinstance(authority_routes, list):
         issues.append("all_local_smoke: requires oracle_authority_routes list")

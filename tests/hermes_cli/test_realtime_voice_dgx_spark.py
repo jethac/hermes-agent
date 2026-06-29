@@ -4,6 +4,7 @@ from pathlib import Path
 
 from hermes_cli import realtime_voice_dgx_spark
 from hermes_cli.subcommands.voice import build_voice_parser
+from scripts.voiceops_spark_matrix import build_matrix
 
 
 PRODUCTION_ASR_MODULE = "hermes_cli.realtime_voice_nemotron_speech_bridge"
@@ -85,6 +86,7 @@ def _passing_benchmark_evidence() -> list[dict]:
                         "capability_honesty_rate": 0.99,
                         "local_route_precision": 0.93,
                         "oracle_route_recall": 0.96,
+                        "steady_state_memory_gb": 18,
                     },
                 },
                 {
@@ -104,6 +106,7 @@ def _passing_benchmark_evidence() -> list[dict]:
                         "capability_honesty_rate": 0.98,
                         "local_route_precision": 0.9,
                         "oracle_route_recall": 0.94,
+                        "steady_state_memory_gb": 18,
                     },
                 },
             ]
@@ -162,6 +165,9 @@ def _passing_benchmark_evidence() -> list[dict]:
                 "first_tts_audio_to_playback_start_ms": 40,
                 "oracle_request_to_first_audio_p50_ms": 1040,
                 "oracle_request_to_first_audio_p90_ms": 1900,
+                "decode_tok_s": 24,
+                "prefill_tok_s": 3100,
+                "steady_state_memory_gb": 92,
             },
         },
         {
@@ -214,6 +220,7 @@ def _passing_benchmark_evidence() -> list[dict]:
                 "tts_request_to_audio_end_ms": 620,
                 "tts_request_to_audio_end_p50_ms": 620,
                 "tts_request_to_audio_end_p90_ms": 820,
+                "underrun_count": 0,
             },
         },
         {
@@ -249,9 +256,21 @@ def _passing_benchmark_evidence() -> list[dict]:
             "local_turn_oracle_calls": 0,
             "oracle_bound_turns": 4,
             "oracle_bound_oracle_calls": 4,
+            "oracle_selected_by": "Hermes /model",
+            "components": {
+                "reflex": True,
+                "oracle": True,
+                "asr": True,
+                "tts": True,
+                "sidecar": True,
+            },
             "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
             "interface_input_sources": ["native_audio"],
             "reflex_providers": ["vllm"],
+            "metrics": {
+                "speech_end_to_first_audio_ms": 900,
+                "barge_in_stop_ms": 90,
+            },
         },
         {
             "kind": "kame_smoke_result",
@@ -1151,6 +1170,32 @@ def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_pat
     assert result["coverage"]["voiceops_matrix_projection_ready"] is True
 
 
+def test_benchmark_evidence_validator_accepts_voiceops_closing_kame_evidence(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence = _passing_benchmark_evidence()
+
+    kame_result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert kame_result["ok"] is True
+
+    evidence_path = tmp_path / "kame-evidence.json"
+    (tmp_path / "raw-kame-benchmark.json").write_text(
+        json.dumps({"redacted": True, "source": "synthetic KAME benchmark fixture"}),
+        encoding="utf-8",
+    )
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    voiceops_matrix = build_matrix([evidence_path])
+    evaluations = {evaluation["candidate_id"]: evaluation for evaluation in voiceops_matrix["evaluations"]}
+
+    assert evaluations["reflex-gemma4-e2b"]["status"] == "validated"
+    assert evaluations["oracle-nemotron3-super-local"]["status"] == "validated"
+    assert evaluations["asr-nemotron-speech"]["status"] == "validated"
+    assert evaluations["tts-magpie-local"]["status"] == "validated"
+    assert voiceops_matrix["stack_smoke"]["status"] == "validated"
+    assert voiceops_matrix["ready_for_one_spark_demo"] is True
+
+
 def test_benchmark_evidence_validator_rejects_missing_voiceops_projection_provenance(tmp_path):
     matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
     evidence = _passing_benchmark_evidence()
@@ -1166,6 +1211,62 @@ def test_benchmark_evidence_validator_rejects_missing_voiceops_projection_proven
     assert "voiceops_projection:0:kame_benchmark_result:missing_source_artifact" in result["issues"]
     assert "voiceops_projection:0:kame_benchmark_result:missing_measured_at" in result["issues"]
     assert f"voiceops_projection:{last_entry_index}:kame_smoke_result:missing_or_invalid_hardware" in result["issues"]
+
+
+def test_benchmark_evidence_validator_rejects_invalid_voiceops_projection_timestamp(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence = _passing_benchmark_evidence()
+    evidence[0]["measured_at"] = "2026-06-29T00:00:00"
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["voiceops_matrix_projection_ready"] is False
+    assert "voiceops_projection:0:kame_benchmark_result:invalid_measured_at" in result["issues"]
+
+
+def test_benchmark_evidence_loader_accepts_wrapper_and_preserves_example_marker(tmp_path):
+    evidence_path = tmp_path / "wrapped-evidence.json"
+    evidence_path.write_text(
+        json.dumps({"example_only": True, "evidence": [_passing_benchmark_evidence()[0]]}),
+        encoding="utf-8",
+    )
+
+    loaded = realtime_voice_dgx_spark.load_dgx_spark_benchmark_evidence(evidence_path)
+
+    assert len(loaded) == 1
+    assert loaded[0]["_evidence_path"] == str(evidence_path)
+    assert loaded[0]["example_only"] is True
+
+
+def test_benchmark_evidence_validator_rejects_loaded_example_wrapper(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence_path = tmp_path / "wrapped-evidence.json"
+    (tmp_path / "raw-kame-benchmark.json").write_text(json.dumps({"redacted": True}), encoding="utf-8")
+    evidence_path.write_text(
+        json.dumps({"example_only": True, "evidence": [_passing_benchmark_evidence()[0]]}),
+        encoding="utf-8",
+    )
+    evidence = realtime_voice_dgx_spark.load_dgx_spark_benchmark_evidence(evidence_path)
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["voiceops_matrix_projection_ready"] is False
+    assert "voiceops_projection:0:kame_benchmark_result:example_only_evidence_not_accepted" in result["issues"]
+
+
+def test_benchmark_evidence_validator_rejects_missing_projection_source_file(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence_path = tmp_path / "kame-evidence.json"
+    evidence_path.write_text(json.dumps([_passing_benchmark_evidence()[0]]), encoding="utf-8")
+    evidence = realtime_voice_dgx_spark.load_dgx_spark_benchmark_evidence(evidence_path)
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["voiceops_matrix_projection_ready"] is False
+    assert "voiceops_projection:0:kame_benchmark_result:source_artifact_not_found" in result["issues"]
 
 
 def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):
@@ -1435,6 +1536,7 @@ def test_benchmark_evidence_validator_rejects_asr_hypothesis_regression(tmp_path
 
 def test_main_validates_benchmark_evidence_file(tmp_path, capsys):
     evidence_path = tmp_path / "evidence.json"
+    (tmp_path / "raw-kame-benchmark.json").write_text(json.dumps({"redacted": True}), encoding="utf-8")
     evidence_path.write_text(json.dumps(_passing_benchmark_evidence()), encoding="utf-8")
 
     exit_code = realtime_voice_dgx_spark.main(

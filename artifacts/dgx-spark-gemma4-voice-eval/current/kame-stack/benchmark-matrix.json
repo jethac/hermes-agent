@@ -51,7 +51,8 @@
           "routing_accuracy",
           "capability_honesty_rate",
           "local_route_precision",
-          "oracle_route_recall"
+          "oracle_route_recall",
+          "steady_state_memory_gb"
         ]
       },
       {
@@ -68,7 +69,8 @@
           "routing_accuracy",
           "capability_honesty_rate",
           "local_route_precision",
-          "oracle_route_recall"
+          "oracle_route_recall",
+          "steady_state_memory_gb"
         ]
       },
       {
@@ -86,7 +88,8 @@
           "routing_accuracy",
           "capability_honesty_rate",
           "local_route_precision",
-          "oracle_route_recall"
+          "oracle_route_recall",
+          "steady_state_memory_gb"
         ]
       },
       {
@@ -103,7 +106,8 @@
           "routing_accuracy",
           "capability_honesty_rate",
           "local_route_precision",
-          "oracle_route_recall"
+          "oracle_route_recall",
+          "steady_state_memory_gb"
         ]
       }
     ],
@@ -117,7 +121,10 @@
           "oracle_first_token_to_first_tts_audio_ms",
           "first_tts_audio_to_playback_start_ms",
           "oracle_request_to_first_audio_p50_ms",
-          "oracle_request_to_first_audio_p90_ms"
+          "oracle_request_to_first_audio_p90_ms",
+          "decode_tok_s",
+          "prefill_tok_s",
+          "steady_state_memory_gb"
         ]
       }
     ],
@@ -171,7 +178,8 @@
           "tts_request_to_first_audio_p90_ms",
           "tts_request_to_audio_end_ms",
           "tts_request_to_audio_end_p50_ms",
-          "tts_request_to_audio_end_p90_ms"
+          "tts_request_to_audio_end_p90_ms",
+          "underrun_count"
         ],
         "role": "tts"
       }
