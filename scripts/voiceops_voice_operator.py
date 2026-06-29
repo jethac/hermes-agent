@@ -14,7 +14,7 @@ import json
 import sys
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -44,6 +44,34 @@ BARGE_IN_ENERGY_TEST_REFS = [
     "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_session_sends_speech_energy_event",
 ]
 
+LIVE_EVIDENCE_REQUIRED_DISCORD_BOOLS = (
+    "connect_perm",
+    "speak_perm",
+    "connected",
+    "opus_loaded",
+    "accepted_audio_source",
+    "played",
+    "playing_during_probe",
+    "receiver_started",
+    "disconnected",
+)
+
+LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS = (
+    "sidecar_running",
+    "sidecar_healthy",
+    "session_started",
+    "session_closed",
+    "fallback_mode_visible",
+)
+
+LIVE_EVIDENCE_REQUIRED_TURN_BOOLS = (
+    "transcript_observed",
+    "assistant_audio_observed",
+    "barge_in_observed",
+    "spoken_reply_short",
+    "no_voice_denial_observed",
+)
+
 
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -51,6 +79,262 @@ def _write_json(path: Path, payload: Any) -> None:
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8")
+
+
+def _positive_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _non_negative_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float) and value >= 0:
+        return float(value)
+    try:
+        number = float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
+
+
+def _looks_secret_or_phone(value: Any) -> bool:
+    text = str(value or "")
+    lowered = text.lower()
+    secret_markers = ("sk_", "pk_", "rk_", "whsec_", "xoxb", "xoxp", "ghp_", "bearer ")
+    if any(marker in lowered for marker in secret_markers):
+        return True
+    digits = "".join(ch for ch in text if ch.isdigit())
+    return text.strip().startswith("+") and len(digits) >= 8
+
+
+def build_live_probe_evidence_template() -> dict[str, Any]:
+    return {
+        "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+        "redaction_policy": "references and booleans only; no Discord tokens, provider tokens, full phone numbers, or raw transcripts with secrets",
+        "discord_live_probe": {
+            "source_artifact": "discord-live-probe.json",
+            "kind": "discord_live_probe",
+            "ok": False,
+            "connect_perm": False,
+            "speak_perm": False,
+            "connected": False,
+            "opus_loaded": False,
+            "accepted_audio_source": False,
+            "played": False,
+            "playing_during_probe": False,
+            "receiver_started": False,
+            "receiver_frames": 0,
+            "receiver_speech_start": 0,
+            "inbound_observed": False,
+            "disconnected": False,
+            "require_inbound": True,
+            "latency_metrics_ms": {
+                "connect_ms": None,
+                "playback_observed_ms": None,
+                "inbound_observed_ms": None,
+                "disconnect_ms": None,
+            },
+        },
+        "sidecar_session": {
+            "source_artifact": "voice-status-or-sidecar-report.json",
+            "sidecar_running": False,
+            "sidecar_healthy": False,
+            "session_started": False,
+            "session_closed": False,
+            "fallback_mode_visible": False,
+            "fallback_reason": None,
+            "latency_metrics_ms": {
+                "session_start_ms": None,
+                "shutdown_ms": None,
+            },
+        },
+        "live_turn": {
+            "source_artifact": "voice-turn-evidence.json",
+            "transcript_observed": False,
+            "assistant_audio_observed": False,
+            "barge_in_observed": False,
+            "spoken_reply_short": False,
+            "no_voice_denial_observed": False,
+            "speech_end_to_first_audio_ms": None,
+            "barge_in_stop_ms": None,
+        },
+    }
+
+
+def _load_live_evidence(paths: list[Path] | None) -> dict[str, Any]:
+    paths = paths or []
+    if not paths:
+        return {
+            "loaded": False,
+            "mode": "supplied_artifacts_only",
+            "artifact_paths": [],
+            "overall_status": "needs_live_probe",
+            "issues": ["live_evidence_not_loaded"],
+            "redaction_policy": "not_loaded",
+        }
+    payload: dict[str, Any] = {}
+    load_issues: list[str] = []
+    for path in paths:
+        loaded = _load_live_evidence_file(path)
+        if loaded["issues"]:
+            load_issues.extend(str(issue) for issue in loaded["issues"])
+        data = loaded.get("payload")
+        if isinstance(data, Mapping):
+            _merge_live_evidence_payload(payload, data)
+    evidence = validate_live_probe_evidence(payload, paths=paths)
+    evidence["issues"] = sorted(set([*evidence["issues"], *load_issues]))
+    if evidence["issues"]:
+        evidence["overall_status"] = "partial_live_evidence"
+    else:
+        evidence["overall_status"] = "live_evidence_supplied_not_readiness_claim"
+    return evidence
+
+
+def _load_live_evidence_file(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {
+            "payload": None,
+            "issues": ["live_evidence_file_not_found"],
+        }
+    except json.JSONDecodeError as exc:
+        return {
+            "payload": None,
+            "issues": [f"live_evidence_json_parse_failed:{exc.msg}"],
+        }
+    if not isinstance(payload, Mapping):
+        return {
+            "payload": None,
+            "issues": ["live_evidence_root_must_be_object"],
+        }
+    return {"payload": payload, "issues": []}
+
+
+def _merge_live_evidence_payload(target: dict[str, Any], payload: Mapping[str, Any]) -> None:
+    discord_probe = _discord_probe_section(payload)
+    if discord_probe:
+        target["discord_live_probe"] = dict(discord_probe)
+    for section_name in ("sidecar_session", "live_turn"):
+        section = payload.get(section_name)
+        if isinstance(section, Mapping):
+            target[section_name] = dict(section)
+    if _looks_like_sidecar_session(payload):
+        target["sidecar_session"] = dict(payload)
+    if _looks_like_live_turn(payload):
+        target["live_turn"] = dict(payload)
+
+
+def _looks_like_sidecar_session(payload: Mapping[str, Any]) -> bool:
+    return any(key in payload for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS)
+
+
+def _looks_like_live_turn(payload: Mapping[str, Any]) -> bool:
+    return any(key in payload for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS) or "speech_end_to_first_audio_ms" in payload
+
+
+def _discord_probe_section(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    section = payload.get("discord_live_probe")
+    if isinstance(section, Mapping):
+        return section
+    if payload.get("kind") == "discord_live_probe" or "accepted_audio_source" in payload:
+        return payload
+    return {}
+
+
+def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path] | None = None) -> dict[str, Any]:
+    issues: list[str] = []
+    redaction_issues: list[str] = []
+    for key, value in _walk_live_evidence_strings(payload):
+        if _looks_secret_or_phone(value):
+            redaction_issues.append(f"{key}:secret_or_phone_like_value")
+    if redaction_issues:
+        issues.extend(redaction_issues)
+
+    discord_probe = _discord_probe_section(payload)
+    for key in LIVE_EVIDENCE_REQUIRED_DISCORD_BOOLS:
+        if discord_probe.get(key) is not True:
+            issues.append(f"discord_live_probe:{key}_not_true")
+    if discord_probe.get("ok") is not True:
+        issues.append("discord_live_probe:not_ok")
+    if discord_probe.get("require_inbound") is not True:
+        issues.append("discord_live_probe:require_inbound_not_true")
+    inbound = (
+        discord_probe.get("inbound_observed") is True
+        or _positive_int(discord_probe.get("receiver_frames")) > 0
+        or _positive_int(discord_probe.get("receiver_speech_start")) > 0
+    )
+    if not inbound:
+        issues.append("discord_live_probe:inbound_not_observed")
+
+    sidecar = payload.get("sidecar_session") if isinstance(payload.get("sidecar_session"), Mapping) else {}
+    for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS:
+        if sidecar.get(key) is not True:
+            issues.append(f"sidecar_session:{key}_not_true")
+
+    live_turn = payload.get("live_turn") if isinstance(payload.get("live_turn"), Mapping) else {}
+    for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS:
+        if live_turn.get(key) is not True:
+            issues.append(f"live_turn:{key}_not_true")
+    first_audio_ms = _non_negative_number(live_turn.get("speech_end_to_first_audio_ms"))
+    if first_audio_ms is None:
+        issues.append("live_turn:missing_speech_end_to_first_audio_ms")
+    elif first_audio_ms > 3000:
+        issues.append("live_turn:speech_end_to_first_audio_ms_over_target")
+    barge_in_ms = _non_negative_number(live_turn.get("barge_in_stop_ms"))
+    if barge_in_ms is None:
+        issues.append("live_turn:missing_barge_in_stop_ms")
+    elif barge_in_ms > 150:
+        issues.append("live_turn:barge_in_stop_ms_over_target")
+
+    return {
+        "loaded": True,
+        "mode": "supplied_artifacts_only",
+        "artifact_paths": [str(path) for path in paths or []],
+        "overall_status": "live_evidence_supplied_not_readiness_claim" if not issues else "partial_live_evidence",
+        "issues": sorted(set(issues)),
+        "redaction_policy": "references_only",
+        "discord_live_probe": {
+            "ok": discord_probe.get("ok") is True,
+            "join_ok": all(discord_probe.get(key) is True for key in ("connect_perm", "speak_perm", "connected", "opus_loaded", "disconnected")),
+            "playback_ok": all(discord_probe.get(key) is True for key in ("accepted_audio_source", "played", "playing_during_probe")),
+            "inbound_observed": inbound,
+            "receiver_frames": _positive_int(discord_probe.get("receiver_frames")),
+            "receiver_speech_start": _positive_int(discord_probe.get("receiver_speech_start")),
+        },
+        "sidecar_session": {
+            "ok": all(sidecar.get(key) is True for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS),
+        },
+        "live_turn": {
+            "ok": all(live_turn.get(key) is True for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS)
+            and first_audio_ms is not None
+            and first_audio_ms <= 3000
+            and barge_in_ms is not None
+            and barge_in_ms <= 150,
+            "speech_end_to_first_audio_ms": first_audio_ms,
+            "barge_in_stop_ms": barge_in_ms,
+        },
+    }
+
+
+def _walk_live_evidence_strings(value: Any, prefix: str = "") -> list[tuple[str, str]]:
+    if isinstance(value, Mapping):
+        rows: list[tuple[str, str]] = []
+        for key, child in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            rows.extend(_walk_live_evidence_strings(child, child_prefix))
+        return rows
+    if isinstance(value, list):
+        rows = []
+        for index, child in enumerate(value):
+            rows.extend(_walk_live_evidence_strings(child, f"{prefix}[{index}]"))
+        return rows
+    if isinstance(value, str):
+        return [(prefix, value)]
+    return []
 
 
 def _coverage_from_smoke(smoke: dict[str, Any]) -> dict[str, bool]:
@@ -88,8 +372,30 @@ def _coverage_from_smoke(smoke: dict[str, Any]) -> dict[str, bool]:
     }
 
 
-def build_voice_operator_report(smoke: dict[str, Any]) -> dict[str, Any]:
+def _live_evidence_missing_gates(live_evidence: dict[str, Any]) -> list[str]:
+    missing: set[str] = set()
+    if not live_evidence.get("loaded"):
+        return ["discord_join", "discord_playback", "live_receiver", "production_sidecar", "live_turn"]
+    discord = live_evidence.get("discord_live_probe") if isinstance(live_evidence.get("discord_live_probe"), dict) else {}
+    if discord.get("join_ok") is not True:
+        missing.add("discord_join")
+    if discord.get("playback_ok") is not True:
+        missing.add("discord_playback")
+    if discord.get("inbound_observed") is not True:
+        missing.add("live_receiver")
+    sidecar = live_evidence.get("sidecar_session") if isinstance(live_evidence.get("sidecar_session"), dict) else {}
+    if sidecar.get("ok") is not True:
+        missing.add("production_sidecar")
+    live_turn = live_evidence.get("live_turn") if isinstance(live_evidence.get("live_turn"), dict) else {}
+    if live_turn.get("ok") is not True:
+        missing.add("live_turn")
+    return sorted(missing)
+
+
+def build_voice_operator_report(smoke: dict[str, Any], *, live_evidence: dict[str, Any] | None = None) -> dict[str, Any]:
     coverage = _coverage_from_smoke(smoke)
+    live_evidence = live_evidence or _load_live_evidence([])
+    missing_live_gates = _live_evidence_missing_gates(live_evidence)
     latency = smoke.get("latency_metrics_ms") or {}
     proofs = {
         "lifecycle": {
@@ -163,6 +469,12 @@ def build_voice_operator_report(smoke: dict[str, Any]) -> dict[str, Any]:
             "shutdown_elapsed_ms": smoke.get("shutdown_elapsed_ms"),
             "shutdown_timed_out": bool(smoke.get("shutdown_timed_out")),
         },
+        "live_evidence": {
+            "ok": bool(live_evidence.get("loaded")) and not missing_live_gates and not live_evidence.get("issues"),
+            "mode": live_evidence.get("mode"),
+            "overall_status": live_evidence.get("overall_status"),
+            "missing_gates": missing_live_gates,
+        },
     }
     return {
         "schema_version": "voiceops.milestone1.voice_operator.v1",
@@ -190,6 +502,7 @@ def build_voice_operator_report(smoke: dict[str, Any]) -> dict[str, Any]:
             "voice_capability_prompt_context": True,
             "short_voice_replies_default": True,
             "live_discord_join": False,
+            "live_evidence_supplied": bool(live_evidence.get("loaded")),
         },
         "proofs": proofs,
         "coverage": coverage,
@@ -219,11 +532,23 @@ def build_voice_operator_report(smoke: dict[str, Any]) -> dict[str, Any]:
             "status_command": "/voice status",
         },
         "latency_metrics_ms": smoke.get("latency_metrics_ms") or {},
+        "live_evidence": live_evidence,
         "smoke": smoke,
         "live_probe_required_for_completion": {
-            "status": "needs_live_probe",
+            "status": "needs_live_probe" if missing_live_gates else "live_evidence_supplied_not_readiness_claim",
             "reason": "Headless loopback does not prove a real Discord gateway join, live receiver transport, or production sidecar availability.",
-            "recommended_command": "uv run python -m hermes_cli.discord_voice_live_probe --help",
+            "missing_gates": missing_live_gates,
+            "recommended_command": (
+                "uv run python -m hermes_cli.discord_voice_live_probe "
+                "--require-inbound --wait-seconds 5 --report artifacts/realtime-voice-evidence/live-current/discord-live-probe.json"
+            ),
+            "ingest_command": (
+                "uv run python scripts/voiceops_voice_operator.py "
+                "--output-dir artifacts/voiceops-voice-operator/current "
+                "--live-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json "
+                "--live-evidence path/to/sidecar-session.json "
+                "--live-evidence path/to/live-turn.json"
+            ),
         },
     }
 
@@ -287,22 +612,86 @@ def _markdown(report: dict[str, Any]) -> str:
     live = report["live_probe_required_for_completion"]
     lines.append(f"- Status: {live['status']}")
     lines.append(f"- Reason: {live['reason']}")
+    lines.append(f"- Missing gates: {', '.join(live['missing_gates']) if live['missing_gates'] else 'none'}")
     lines.append(f"- Recommended command: `{live['recommended_command']}`")
+    lines.append(f"- Ingest command: `{live['ingest_command']}`")
+    lines.extend(["", "## Supplied Live Evidence", ""])
+    live_evidence = report["live_evidence"]
+    lines.append(f"- Loaded: {live_evidence['loaded']}")
+    lines.append(f"- Mode: {live_evidence['mode']}")
+    lines.append(f"- Status: {live_evidence['overall_status']}")
+    lines.append(f"- Issues: {', '.join(live_evidence['issues']) if live_evidence['issues'] else 'none'}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": "voiceops.milestone1.live_probe_closure.v1",
+        "artifact_id": "voiceops-m1-live-probe-closure",
+        "milestone": "milestone_1_real_voice_operator",
+        "mode": {
+            "artifact_only": True,
+            "supplied_artifacts_only": True,
+            "discord_network": False,
+            "env_secret_reads": False,
+            "provider_sidecar_network": False,
+        },
+        "status": report["live_probe_required_for_completion"]["status"],
+        "missing_gates": report["live_probe_required_for_completion"]["missing_gates"],
+        "live_evidence_template": "live-voice-evidence-template.json",
+        "recommended_collection": {
+            "discord_live_probe": report["live_probe_required_for_completion"]["recommended_command"],
+            "sidecar_session": "Capture a redacted /voice status or sidecar report with sidecar_running, sidecar_healthy, session_started, and session_closed.",
+            "live_turn": "Capture a redacted live turn evidence JSON with transcript_observed, assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, speech_end_to_first_audio_ms, and barge_in_stop_ms.",
+            "ingest": report["live_probe_required_for_completion"]["ingest_command"],
+        },
+        "do_not": [
+            "paste Discord bot tokens or provider tokens into evidence files",
+            "include full phone numbers or private transcript content with secrets",
+            "claim production readiness from the headless loopback smoke alone",
+        ],
+    }
+
+
+def _live_probe_closure_markdown(plan: dict[str, Any]) -> str:
+    lines = [
+        "# VoiceOps Milestone 1 Live Probe Closure",
+        "",
+        f"- Status: {plan['status']}",
+        f"- Missing gates: {', '.join(plan['missing_gates']) if plan['missing_gates'] else 'none'}",
+        f"- Template: `{plan['live_evidence_template']}`",
+        "- Mode: supplied artifacts only; this file does not run Discord or read credentials",
+        "",
+        "## Collection",
+        "",
+    ]
+    for label, command in plan["recommended_collection"].items():
+        lines.append(f"- {label}: {command}")
+    lines.extend(["", "## Do Not", ""])
+    lines.extend(f"- {item}" for item in plan["do_not"])
     lines.append("")
     return "\n".join(lines)
 
 
 def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    closure_plan = _live_probe_closure_plan(report)
     paths = {
         "json": output_dir / "voice-operator-readiness.json",
         "markdown": output_dir / "voice-operator-readiness.md",
         "smoke_json": output_dir / "discord-loopback-smoke.json",
         "events_jsonl": output_dir / "voice-operator-events.jsonl",
+        "live_evidence_template": output_dir / "live-voice-evidence-template.json",
+        "live_probe_closure_json": output_dir / "live-probe-closure-plan.json",
+        "live_probe_closure_markdown": output_dir / "live-probe-closure-plan.md",
     }
     _write_json(paths["json"], report)
     paths["markdown"].write_text(_markdown(report), encoding="utf-8")
     _write_json(paths["smoke_json"], report["smoke"])
+    _write_json(paths["live_evidence_template"], build_live_probe_evidence_template())
+    _write_json(paths["live_probe_closure_json"], closure_plan)
+    paths["live_probe_closure_markdown"].write_text(_live_probe_closure_markdown(closure_plan), encoding="utf-8")
     _write_jsonl(
         paths["events_jsonl"],
         [
@@ -313,20 +702,27 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
     return {key: str(path) for key, path in paths.items()}
 
 
-async def build_voice_operator_report_from_smoke() -> dict[str, Any]:
+async def build_voice_operator_report_from_smoke(live_evidence_paths: list[Path] | None = None) -> dict[str, Any]:
     smoke_result = await run_discord_realtime_voice_smoke()
-    return build_voice_operator_report(asdict(smoke_result))
+    return build_voice_operator_report(asdict(smoke_result), live_evidence=_load_live_evidence(live_evidence_paths))
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--live-evidence",
+        action="append",
+        default=[],
+        type=Path,
+        help="Read-only live evidence JSON artifact to ingest; may be repeated. The generator still runs no Discord network.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    report = asyncio.run(build_voice_operator_report_from_smoke())
+    report = asyncio.run(build_voice_operator_report_from_smoke(args.live_evidence))
     issues = validate_voice_operator_report(report)
     paths = write_voice_operator_report(args.output_dir, report)
     print(

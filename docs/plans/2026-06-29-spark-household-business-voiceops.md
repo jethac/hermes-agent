@@ -299,8 +299,23 @@ The command writes:
 - `voice-operator-readiness.md`
 - `discord-loopback-smoke.json`
 - `voice-operator-events.jsonl`
+- `live-voice-evidence-template.json`
+- `live-probe-closure-plan.json`
+- `live-probe-closure-plan.md`
 
 The voice-operator artifact runs the in-memory Discord realtime voice loopback smoke. It verifies lifecycle, receiver callback wiring, PCM conversion, mixer playback, barge-in signaling, latency metrics, and sidecar shutdown without Discord network access, provider sidecar network access, credential reads, sends, or calls. It must still report that a live Discord `/voice join` probe is required before claiming production readiness.
+
+When live evidence exists, ingest supplied artifacts without running Discord from the generator:
+
+```bash
+uv run python scripts/voiceops_voice_operator.py \
+  --output-dir artifacts/voiceops-voice-operator/current \
+  --live-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json \
+  --live-evidence path/to/sidecar-session.json \
+  --live-evidence path/to/live-turn.json
+```
+
+The supplied evidence path is read-only. It must prove Discord join/playback, inbound receiver frames or speech-start, production sidecar session start/close, and one live conversational turn with transcript, assistant audio, barge-in, short spoken reply, no voice-capability denial, first-audio latency, and barge-in stop latency. It must not include Discord tokens, provider secrets, full phone numbers, or private transcript text containing secrets.
 
 ## Milestone 2: Real Spend and Provisioning
 

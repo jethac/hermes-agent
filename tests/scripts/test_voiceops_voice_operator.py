@@ -7,8 +7,10 @@ from pathlib import Path
 
 from scripts.voiceops_voice_operator import (
     DEFAULT_OUTPUT_DIR,
+    build_live_probe_evidence_template,
     build_voice_operator_report,
     parse_args,
+    validate_live_probe_evidence,
     validate_voice_operator_report,
     write_voice_operator_report,
 )
@@ -74,6 +76,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["requirements"]["latency_metrics"] is True
     assert report["requirements"]["sidecar_session_shutdown"] is True
     assert report["requirements"]["live_discord_join"] is False
+    assert report["requirements"]["live_evidence_supplied"] is False
     assert report["proofs"]["lifecycle"]["sidecar_closed"] is True
     assert report["proofs"]["callback_wiring"]["loopback_bypasses_live_discord_receiver"] is True
     assert report["proofs"]["pcm_conversion"]["sidecar_pcm16_first_sample"] == 450
@@ -83,6 +86,14 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["shutdown"]["close_timeout_bounded"] is True
     assert report["proofs"]["latency_metrics"]["oracle_metric_status"] == "needs_live_oracle_or_sidecar_probe"
     assert report["live_probe_required_for_completion"]["status"] == "needs_live_probe"
+    assert report["live_probe_required_for_completion"]["missing_gates"] == [
+        "discord_join",
+        "discord_playback",
+        "live_receiver",
+        "production_sidecar",
+        "live_turn",
+    ]
+    assert report["live_evidence"]["overall_status"] == "needs_live_probe"
     assert "I cannot hear voice." in report["voice_capability_prompt_contract"]["must_not_claim"]
     assert report["barge_in_policy"]["silent_packet_policy"].startswith("silent PCM")
 
@@ -104,17 +115,112 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     report = build_voice_operator_report(_smoke_payload())
     paths = write_voice_operator_report(tmp_path, report)
 
-    assert set(paths) == {"events_jsonl", "json", "markdown", "smoke_json"}
+    assert set(paths) == {
+        "events_jsonl",
+        "json",
+        "live_evidence_template",
+        "live_probe_closure_json",
+        "live_probe_closure_markdown",
+        "markdown",
+        "smoke_json",
+    }
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     smoke = json.loads(Path(paths["smoke_json"]).read_text(encoding="utf-8"))
+    live_template = json.loads(Path(paths["live_evidence_template"]).read_text(encoding="utf-8"))
+    live_closure = json.loads(Path(paths["live_probe_closure_json"]).read_text(encoding="utf-8"))
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
+    closure_markdown = Path(paths["live_probe_closure_markdown"]).read_text(encoding="utf-8")
     events = Path(paths["events_jsonl"]).read_text(encoding="utf-8").splitlines()
     assert payload["schema_version"] == "voiceops.milestone1.voice_operator.v1"
     assert smoke["ok"] is True
+    assert live_template["schema_version"] == "voiceops.milestone1.live_voice_evidence.v1"
+    assert live_closure["schema_version"] == "voiceops.milestone1.live_probe_closure.v1"
     assert json.loads(events[0])["event_id"] == "voice-m1-001"
     assert "VoiceOps Milestone 1 Voice Operator" in markdown
     assert "Proofs" in markdown
     assert "Live Probe Boundary" in markdown
+    assert "Supplied Live Evidence" in markdown
+    assert "VoiceOps Milestone 1 Live Probe Closure" in closure_markdown
+
+
+def test_live_evidence_classifies_partial_discord_probe_without_inbound():
+    evidence = {
+        "kind": "discord_live_probe",
+        "ok": True,
+        "connect_perm": True,
+        "speak_perm": True,
+        "connected": True,
+        "opus_loaded": True,
+        "accepted_audio_source": True,
+        "played": True,
+        "playing_during_probe": True,
+        "receiver_started": True,
+        "receiver_frames": 0,
+        "receiver_speech_start": 0,
+        "inbound_observed": False,
+        "disconnected": True,
+        "require_inbound": True,
+    }
+
+    result = validate_live_probe_evidence(evidence)
+
+    assert result["overall_status"] == "partial_live_evidence"
+    assert result["discord_live_probe"]["join_ok"] is True
+    assert result["discord_live_probe"]["playback_ok"] is True
+    assert result["discord_live_probe"]["inbound_observed"] is False
+    assert "discord_live_probe:inbound_not_observed" in result["issues"]
+
+
+def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing_safety_mode():
+    evidence = build_live_probe_evidence_template()
+    evidence["discord_live_probe"].update(
+        {
+            "ok": True,
+            "connect_perm": True,
+            "speak_perm": True,
+            "connected": True,
+            "opus_loaded": True,
+            "accepted_audio_source": True,
+            "played": True,
+            "playing_during_probe": True,
+            "receiver_started": True,
+            "receiver_frames": 12,
+            "receiver_speech_start": 1,
+            "inbound_observed": True,
+            "disconnected": True,
+            "require_inbound": True,
+        }
+    )
+    evidence["sidecar_session"].update(
+        {
+            "sidecar_running": True,
+            "sidecar_healthy": True,
+            "session_started": True,
+            "session_closed": True,
+            "fallback_mode_visible": True,
+        }
+    )
+    evidence["live_turn"].update(
+        {
+            "transcript_observed": True,
+            "assistant_audio_observed": True,
+            "barge_in_observed": True,
+            "spoken_reply_short": True,
+            "no_voice_denial_observed": True,
+            "speech_end_to_first_audio_ms": 900,
+            "barge_in_stop_ms": 90,
+        }
+    )
+    live_evidence = validate_live_probe_evidence(evidence)
+    report = build_voice_operator_report(_smoke_payload(), live_evidence=live_evidence)
+
+    assert report["mode"]["discord_network"] is False
+    assert report["mode"]["env_secret_reads"] is False
+    assert report["requirements"]["live_discord_join"] is False
+    assert report["requirements"]["live_evidence_supplied"] is True
+    assert report["live_evidence"]["overall_status"] == "live_evidence_supplied_not_readiness_claim"
+    assert report["live_probe_required_for_completion"]["missing_gates"] == []
+    assert report["proofs"]["live_evidence"]["ok"] is True
 
 
 def test_voice_operator_cli_smoke(tmp_path):
@@ -139,3 +245,4 @@ def test_parse_args_defaults_to_requested_artifact_dir():
     args = parse_args([])
 
     assert args.output_dir == DEFAULT_OUTPUT_DIR
+    assert args.live_evidence == []

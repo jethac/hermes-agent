@@ -47,10 +47,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     voice_result = next(result for result in summary["results"] if result["milestone"] == "milestone_1_real_voice_operator")
     assert voice_result["status"] == "needs_live_probe"
     assert voice_result["details"]["live_probe_status"] == "needs_live_probe"
+    assert "live_probe_missing_gates" in voice_result["details"]
     assert Path(voice_result["artifacts"]["json"]).exists()
     assert Path(voice_result["artifacts"]["markdown"]).exists()
     assert Path(voice_result["artifacts"]["smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["events_jsonl"]).exists()
+    assert Path(voice_result["artifacts"]["live_evidence_template"]).exists()
+    assert Path(voice_result["artifacts"]["live_probe_closure_json"]).exists()
 
     provisioning_result = next(
         result for result in summary["results"] if result["milestone"] == "milestone_2_real_spend_and_provisioning_preflight"
@@ -127,5 +130,6 @@ def test_parse_args_defaults_to_plan_artifact_paths():
 
     assert args.artifact_root == Path("artifacts")
     assert args.output_dir == Path("artifacts/voiceops-plan/current")
+    assert args.voice_live_evidence == []
     assert args.provisioning_preflight_evidence is None
     assert args.run_command_probes is False

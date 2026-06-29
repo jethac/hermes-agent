@@ -79,6 +79,7 @@ def build_plan_run(
     budget_cents: int = 20_000,
     evidence_paths: list[Path] | None = None,
     env_files: list[Path] | None = None,
+    voice_live_evidence_paths: list[Path] | None = None,
     provisioning_preflight_evidence: Path | None = None,
     run_command_probes: bool = False,
     timeout_seconds: int = 3,
@@ -91,6 +92,7 @@ def build_plan_run(
             budget_cents=budget_cents,
             evidence_paths=evidence_paths,
             env_files=env_files,
+            voice_live_evidence_paths=voice_live_evidence_paths,
             provisioning_preflight_evidence=provisioning_preflight_evidence,
             run_command_probes=run_command_probes,
             timeout_seconds=timeout_seconds,
@@ -106,6 +108,7 @@ async def build_plan_run_async(
     budget_cents: int = 20_000,
     evidence_paths: list[Path] | None = None,
     env_files: list[Path] | None = None,
+    voice_live_evidence_paths: list[Path] | None = None,
     provisioning_preflight_evidence: Path | None = None,
     run_command_probes: bool = False,
     timeout_seconds: int = 3,
@@ -142,7 +145,7 @@ async def build_plan_run_async(
         )
     )
 
-    voice_operator = await build_voice_operator_report_from_smoke()
+    voice_operator = await build_voice_operator_report_from_smoke(voice_live_evidence_paths)
     voice_operator_issues = validate_voice_operator_report(voice_operator)
     voice_operator_paths = write_voice_operator_report(voice_operator_dir, voice_operator)
     results.append(
@@ -151,10 +154,19 @@ async def build_plan_run_async(
             command=f"uv run python scripts/voiceops_voice_operator.py --output-dir {voice_operator_dir}",
             output_dir=voice_operator_dir,
             artifacts=voice_operator_paths,
-            status="needs_live_probe" if not voice_operator_issues else "validation_failed",
+            status=(
+                "live_evidence_supplied"
+                if not voice_operator_issues
+                and voice_operator["live_probe_required_for_completion"]["status"]
+                == "live_evidence_supplied_not_readiness_claim"
+                else "needs_live_probe"
+                if not voice_operator_issues
+                else "validation_failed"
+            ),
             details={
                 "validation_issues": voice_operator_issues,
                 "live_probe_status": voice_operator["live_probe_required_for_completion"]["status"],
+                "live_probe_missing_gates": voice_operator["live_probe_required_for_completion"]["missing_gates"],
                 "latency_metrics_ms": voice_operator["latency_metrics_ms"],
             },
         )
@@ -304,6 +316,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--budget-cents", type=int, default=20_000)
     parser.add_argument("--evidence", action="append", default=[], type=Path)
     parser.add_argument("--env-file", action="append", default=[], type=Path)
+    parser.add_argument("--voice-live-evidence", action="append", default=[], type=Path)
     parser.add_argument("--provisioning-preflight-evidence", type=Path, default=None)
     parser.add_argument("--timeout-seconds", type=int, default=3)
     parser.add_argument(
@@ -322,6 +335,7 @@ def main(argv: list[str] | None = None) -> int:
         budget_cents=args.budget_cents,
         evidence_paths=args.evidence,
         env_files=args.env_file,
+        voice_live_evidence_paths=args.voice_live_evidence,
         provisioning_preflight_evidence=args.provisioning_preflight_evidence,
         run_command_probes=args.run_command_probes,
         timeout_seconds=args.timeout_seconds,
