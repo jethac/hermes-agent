@@ -35,7 +35,11 @@ def test_channel_policy_defines_required_channels_and_boundaries():
     assert channels["discord"]["authorization_mode"] == "operator_or_service_webhook_only"
     assert "server_admin_mutation" in channels["discord"]["prohibited_actions"]
     assert "any_customer_visible_send" in channels["whatsapp"]["approval_required_for"]
-    assert "voice_call" in channels["phone_sms"]["prohibited_actions"]
+    assert channels["phone_sms"]["authorization_mode"] == "sms_and_approved_voice_handoff_only"
+    assert "unapproved_voice_call" in channels["phone_sms"]["prohibited_actions"]
+    assert "queue_approved_phone_handoff_call" in channels["phone_sms"]["allowed_actions"]
+    assert "approved_phone_handoff_call" in channels["phone_sms"]["approval_required_for"]
+    assert "phone_context_ref" in channels["phone_sms"]["evidence_required"]
     assert "any_sms_send" in channels["phone_sms"]["approval_required_for"]
     assert all(channel["audit_required"] is True for channel in channels.values())
 
@@ -48,6 +52,9 @@ def test_channel_policy_contains_approval_escalation_audit_and_redaction_rules()
 
     assert routes["customer_visible_outbound"]["default_decision"] == "hold_for_human_approval"
     assert routes["customer_visible_outbound"]["required_approval_count"] == 1
+    assert routes["approved_phone_handoff_call"]["default_decision"] == "hold_for_human_approval"
+    assert routes["approved_phone_handoff_call"]["required_approval_count"] == 1
+    assert routes["approved_phone_handoff_call"]["applies_to"] == ["phone_sms"]
     assert routes["spend_provisioning_or_credential"]["default_decision"] == "deny_and_escalate"
     assert routes["spend_provisioning_or_credential"]["escalation_level"] == "level_3"
     assert escalations["level_2"]["destination_role"] == "incident_commander"
@@ -111,6 +118,12 @@ def test_channel_policy_validates_safety_invariants():
     assert validate_policy(missing_blocks) == [
         "missing_prohibited_actions:discord:credential_or_secret_echo,payment_or_provisioning_action"
     ]
+
+    missing_phone_route = json.loads(json.dumps(policy))
+    missing_phone_route["approval_routing"] = [
+        route for route in missing_phone_route["approval_routing"] if route["route_id"] != "approved_phone_handoff_call"
+    ]
+    assert validate_policy(missing_phone_route) == ["missing_approval_route:approved_phone_handoff_call"]
 
     missing_audit = json.loads(json.dumps(policy))
     missing_audit["audit_id_continuity"]["required_fields"] = ["audit_id"]

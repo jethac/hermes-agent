@@ -38,7 +38,7 @@ REQUIRED_REDACTION_RULES = {
 REQUIRED_PROHIBITED_ACTIONS = {
     "discord": {"credential_or_secret_echo", "payment_or_provisioning_action"},
     "whatsapp": {"credential_or_secret_echo", "payment_link_send", "bulk_or_marketing_broadcast"},
-    "phone_sms": {"voice_call", "payment_link_send", "credential_or_secret_echo"},
+    "phone_sms": {"unapproved_voice_call", "payment_link_send", "credential_or_secret_echo"},
 }
 
 
@@ -152,27 +152,29 @@ def default_channel_authorizations() -> list[ChannelAuthorization]:
             display_name="Phone SMS",
             ingress_allowed=True,
             egress_allowed=True,
-            authorization_mode="sms_only_approval_gated_no_voice_calls",
+            authorization_mode="sms_and_approved_voice_handoff_only",
             allowed_actions=[
                 "receive_sms_command",
                 "draft_sms_reply",
                 "send_approved_sms_reply",
                 "deliver_approval_request",
+                "queue_approved_phone_handoff_call",
             ],
             approval_required_for=[
                 "any_sms_send",
+                "approved_phone_handoff_call",
                 "phone_number_change",
                 "incident_escalation_sms",
                 "customer_visible_handoff",
             ],
             prohibited_actions=[
-                "voice_call",
+                "unapproved_voice_call",
                 "mms_send",
                 "payment_link_send",
                 "bulk_or_marketing_campaign",
                 "credential_or_secret_echo",
             ],
-            evidence_required=["normalized_phone_hash", "conversation_id", "source_audit_id"],
+            evidence_required=["normalized_phone_hash", "conversation_id", "source_audit_id", "phone_context_ref"],
             audit_required=True,
         ),
     ]
@@ -212,6 +214,17 @@ def default_approval_routes() -> list[ApprovalRoute]:
             ttl_minutes=30,
             escalation_level="level_2",
             audit_event="channel_policy.sensitive_context.request_approval",
+        ),
+        ApprovalRoute(
+            route_id="approved_phone_handoff_call",
+            applies_to=["phone_sms"],
+            trigger="operator_approved_phone_call_with_preserved_context",
+            default_decision="hold_for_human_approval",
+            approver_roles=["operator_on_call"],
+            required_approval_count=1,
+            ttl_minutes=10,
+            escalation_level="level_1",
+            audit_event="channel_policy.phone_handoff.request_approval",
         ),
         ApprovalRoute(
             route_id="spend_provisioning_or_credential",
@@ -388,7 +401,12 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
         issues.append("missing_approval_routing")
     else:
         route_ids = {route.get("route_id") for route in policy.get("approval_routing", [])}
-        for required_route in {"customer_visible_outbound", "sensitive_context_replay", "spend_provisioning_or_credential"}:
+        for required_route in {
+            "approved_phone_handoff_call",
+            "customer_visible_outbound",
+            "sensitive_context_replay",
+            "spend_provisioning_or_credential",
+        }:
             if required_route not in route_ids:
                 issues.append(f"missing_approval_route:{required_route}")
     if not policy.get("escalation_policy"):

@@ -161,11 +161,45 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
             "DISCORD_VOICE_CHANNEL_ID": "123",
             "WHATSAPP_ENABLED": "true",
             "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+            "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
         },
         which=fake_which,
     )
     assert ready["ready_for_recording"] is True
     assert ready["required_failures"] == []
+
+    stripe_without_projects_marker = build_readiness_report(
+        demo,
+        env={
+            "DISCORD_BOT_TOKEN": "set",
+            "DISCORD_VOICE_CHANNEL_ID": "123",
+            "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+        },
+        which=fake_which,
+    )
+    assert stripe_without_projects_marker["ready_for_recording"] is False
+    assert "stripe_projects_cli" in stripe_without_projects_marker["required_failures"]
+
+    def fake_npx_only(command: str) -> str | None:
+        commands = {
+            "hermes": "/usr/local/bin/hermes",
+            "stripe": "/usr/local/bin/stripe",
+            "npx": "/usr/local/bin/npx",
+        }
+        return commands.get(command)
+
+    npx_not_ready = build_readiness_report(
+        demo,
+        env={
+            "DISCORD_BOT_TOKEN": "set",
+            "DISCORD_VOICE_CHANNEL_ID": "123",
+            "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+            "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
+        },
+        which=fake_npx_only,
+    )
+    assert npx_not_ready["ready_for_recording"] is False
+    assert "stripe_link_cli" in npx_not_ready["required_failures"]
 
     not_ready = build_readiness_report(demo, env={}, which=lambda _command: None)
     assert not_ready["ready_for_recording"] is False
@@ -183,6 +217,7 @@ def test_voiceops_readiness_report_loads_env_files_without_exposing_values(tmp_p
                 "DISCORD_VOICE_CHANNEL_NAME=General",
                 "WHATSAPP_ENABLED=true",
                 "VOICEOPS_DEMO_PHONE_NUMBER='+15551234567'",
+                "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED=true",
             ]
         ),
         encoding="utf-8",
@@ -191,7 +226,7 @@ def test_voiceops_readiness_report_loads_env_files_without_exposing_values(tmp_p
     def fake_which(command: str) -> str | None:
         commands = {
             "stripe": "/usr/local/bin/stripe",
-            "npx": "/usr/local/bin/npx",
+            "link-cli": "/usr/local/bin/link-cli",
         }
         return commands.get(command)
 

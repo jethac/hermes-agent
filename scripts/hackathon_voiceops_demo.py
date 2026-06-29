@@ -567,31 +567,38 @@ def build_readiness_report(
     )
 
     stripe_path = _which_any(which, ["stripe"])
+    stripe_projects_verified = _env_truthy(env, "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED")
     checks.append(
         ReadinessCheck(
             check_id="stripe_projects_cli",
-            status="pass" if stripe_path else "fail",
+            status="pass" if stripe_path and stripe_projects_verified else "fail",
             required_for_video=True,
-            detail=f"stripe CLI found at {stripe_path}" if stripe_path else "stripe CLI not found",
-            next_step="Install the Stripe CLI and run `stripe plugin install projects` before attempting live VoIP provisioning.",
+            detail=(
+                f"stripe CLI found at {stripe_path}; Projects help verification marker is present"
+                if stripe_path and stripe_projects_verified
+                else "stripe CLI found, but VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED is not set"
+                if stripe_path
+                else "stripe CLI not found"
+            ),
+            next_step=(
+                "Run `stripe projects --help` or the provisioning preflight command, then set "
+                "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED=true before recording this as ready."
+            ),
         )
     )
 
     link_path = _which_any(which, ["link-cli"])
-    npx_path = _which_any(which, ["npx"])
     checks.append(
         ReadinessCheck(
             check_id="stripe_link_cli",
-            status="pass" if (link_path or npx_path) else "fail",
+            status="pass" if link_path else "fail",
             required_for_video=True,
             detail=(
                 f"link-cli found at {link_path}"
                 if link_path
-                else f"npx found at {npx_path}; can invoke @stripe/link-cli ad hoc"
-                if npx_path
-                else "neither link-cli nor npx found"
+                else "link-cli not found on PATH; npx is not treated as ready because it may fetch packages"
             ),
-            next_step="Install @stripe/link-cli or ensure npx can run it, then authenticate Link before any live spend.",
+            next_step="Install a pinned @stripe/link-cli binary, then authenticate Link before any live spend.",
         )
     )
 

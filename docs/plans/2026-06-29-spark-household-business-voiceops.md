@@ -392,6 +392,26 @@ The operator-state generator is artifact-only. It does not read environment secr
 
 For the hackathon demo, the generated `operator-dashboard.html` from Milestone 0 should visibly show the same operator state shape: current mode, active voice surface, fallback reason, full budget status, pending approvals, recent audit events, planned services, and a link to `operator-state.json`.
 
+## Headless Plan Run
+
+Run every currently headless VoiceOps milestone artifact generator and write one evidence index:
+
+```bash
+uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current
+```
+
+The command writes:
+
+- all Milestone 0 demo artifacts under `artifacts/hackathon-voiceops-demo/current`
+- all Milestone 2 provisioning preflight artifacts under `artifacts/voiceops-provisioning/current`
+- all Milestone 3 channel policy artifacts under `artifacts/voiceops-channel-policy/current`
+- all Milestone 4 Spark matrix artifacts under `artifacts/voiceops-spark-matrix/current`
+- all Milestone 5 operator-state artifacts under `artifacts/voiceops-operator-state/current`
+- `voiceops-plan-run.json`
+- `voiceops-plan-run.md`
+
+The plan run is artifact-only. It should surface readiness gaps such as missing Stripe/phone local setup or missing DGX Spark benchmark evidence, but those gaps must not cause live spend, provider provisioning, outbound messaging, calls, or secret reads.
+
 ## Success Criteria
 
 Short term:
