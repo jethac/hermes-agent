@@ -55,9 +55,25 @@ def _write_json(path, payload):
     return path
 
 
+def _collector_attestation(section_name):
+    return {
+        "collector_name": "pytest.realtime_voice_live_evidence",
+        "collector_version": "voiceops-live-fixture-v1",
+        "run_id": f"pytest-{section_name}",
+        "command_argv": ["pytest", section_name],
+        "git_commit": "abc123def456",
+        "started_at": "2026-06-29T00:00:00Z",
+        "finished_at": "2026-06-29T00:00:01Z",
+        "raw_artifact_sha256": "a" * 64,
+        "redacted_artifact_sha256": "b" * 64,
+        "parent_manifest_sha256": "c" * 64,
+    }
+
+
 def _complete_discord_probe():
     return {
         "kind": "discord_live_probe",
+        "collector_attestation": _collector_attestation("discord_live_probe"),
         "ok": True,
         "connect_perm": True,
         "speak_perm": True,
@@ -84,6 +100,7 @@ def _complete_discord_probe():
 def _complete_sidecar_session():
     return {
         "kind": "sidecar_session",
+        "collector_attestation": _collector_attestation("sidecar_session"),
         "sidecar_running": True,
         "sidecar_healthy": True,
         "session_started": True,
@@ -103,6 +120,7 @@ def _complete_sidecar_session():
 def _complete_live_turn():
     return {
         "kind": "live_turn",
+        "collector_attestation": _collector_attestation("live_turn"),
         "transcript_observed": True,
         "assistant_audio_observed": True,
         "barge_in_observed": True,
@@ -583,8 +601,14 @@ def test_live_evidence_derives_complete_sections_from_realtime_voice_report(monk
     assert result.reports["discord_live_probe"].endswith("discord-live-probe.from-realtime-report.json")
     assert result.reports["sidecar_session"].endswith("sidecar-session.from-realtime-report.json")
     assert result.reports["live_turn"].endswith("live-turn.from-realtime-report.json")
+    discord = json.loads(
+        (tmp_path / "bundle" / "discord-live-probe.from-realtime-report.json").read_text(encoding="utf-8")
+    )
     sidecar = json.loads((tmp_path / "bundle" / "sidecar-session.from-realtime-report.json").read_text(encoding="utf-8"))
     live_turn = json.loads((tmp_path / "bundle" / "live-turn.from-realtime-report.json").read_text(encoding="utf-8"))
+    assert discord["collector_attestation"]["collector_name"] == "hermes_cli.realtime_voice_live_evidence"
+    assert sidecar["collector_attestation"]["collector_name"] == "hermes_cli.realtime_voice_live_evidence"
+    assert live_turn["collector_attestation"]["collector_name"] == "hermes_cli.realtime_voice_live_evidence"
     assert sidecar["sidecar_mode"] == "production"
     assert sidecar["session_closed"] is True
     assert sidecar["provider_transport_observed"] is True

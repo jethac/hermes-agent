@@ -27,11 +27,27 @@ def _write_fake_bin(bin_dir: Path, name: str) -> None:
     path.chmod(0o755)
 
 
+def _collector_attestation(section_name: str, *, redacted_sha256: str | None = None) -> dict:
+    return {
+        "collector_name": "pytest.voiceops_plan_run_fixture",
+        "collector_version": "voiceops-plan-run-fixture-v1",
+        "run_id": f"pytest-{section_name}",
+        "command_argv": ["pytest", section_name],
+        "git_commit": "abc123def456",
+        "started_at": "2026-06-29T00:00:00Z",
+        "finished_at": "2026-06-29T00:00:01Z",
+        "raw_artifact_sha256": "a" * 64,
+        "redacted_artifact_sha256": redacted_sha256 or ("b" * 64),
+        "parent_manifest_sha256": "c" * 64,
+    }
+
+
 def _write_live_voice_evidence(root: Path) -> Path:
     _write_json(
         root / "discord-live-probe.json",
         {
             "kind": "discord_live_probe",
+            "collector_attestation": _collector_attestation("discord_live_probe"),
             "ok": True,
             "connect_perm": True,
             "speak_perm": True,
@@ -58,6 +74,7 @@ def _write_live_voice_evidence(root: Path) -> Path:
         root / "sidecar-session.json",
         {
             "kind": "sidecar_session",
+            "collector_attestation": _collector_attestation("sidecar_session"),
             "sidecar_running": True,
             "sidecar_healthy": True,
             "session_started": True,
@@ -77,6 +94,7 @@ def _write_live_voice_evidence(root: Path) -> Path:
         root / "live-turn.json",
         {
             "kind": "live_turn",
+            "collector_attestation": _collector_attestation("live_turn"),
             "transcript_observed": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,
@@ -158,6 +176,10 @@ def _write_preflight_evidence(root: Path) -> Path:
             "source_artifact_sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
             "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
         }
+        section["collector_attestation"] = _collector_attestation(
+            section_name,
+            redacted_sha256=section["source_artifact_sha256"],
+        )
         report_path = _write_json(sections_dir / report_names[section_name], {section_name: section})
         reports[section_name] = f"sections/{report_path.name}"
     return _write_json(
@@ -331,6 +353,7 @@ def _base_spark_evidence(
         "measured_at": "2026-06-29T00:00:00Z",
         "source_artifact": source_artifact,
         "source_artifact_sha256": source_artifact_sha256,
+        "collector_attestation": _collector_attestation(candidate_id, redacted_sha256=source_artifact_sha256),
         "metrics": {},
     }
     if candidate_id == "oracle-nemotron3-super-local":
@@ -401,6 +424,10 @@ def _write_spark_evidence(root: Path) -> Path:
                     "measured_at": "2026-06-29T00:00:00Z",
                     "source_artifact": "sources/stack-smoke.json",
                     "source_artifact_sha256": source_sha256["stack-smoke"],
+                    "collector_attestation": _collector_attestation(
+                        "stack-smoke",
+                        redacted_sha256=source_sha256["stack-smoke"],
+                    ),
                     "oracle_selected_by": "Hermes /model",
                     "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
                     "interface_input_sources": ["native_audio"],
@@ -577,12 +604,25 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "latency_metrics_ms.connect_ms" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "latency_metrics_ms.session_start_ms" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "source_artifact" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "collector_attestation" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert gates["live_discord_voice_operator"]["evidence_contract"] == {
         "manifest_schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
         "strict_validation_schema_version": "voiceops.realtime_voice_live_evidence_validation.v1",
         "expanded_evidence_schema_version": "voiceops.milestone1.live_voice_evidence.v1",
         "required_sections": ["discord_live_probe", "sidecar_session", "live_turn"],
         "required_section_refs": ["source_artifact", "section"],
+        "required_collector_attestation_fields": [
+            "collector_name",
+            "collector_version",
+            "run_id",
+            "command_argv",
+            "git_commit",
+            "started_at",
+            "finished_at",
+            "raw_artifact_sha256",
+            "redacted_artifact_sha256",
+            "parent_manifest_sha256",
+        ],
         "required_discord_latency_metrics_ms": [
             "connect_ms",
             "playback_observed_ms",
@@ -609,6 +649,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "unverified_source_artifacts_accepted": False,
         "source_artifacts_must_exist": True,
         "example_only_accepted": False,
+        "collector_attestation_required_for_live_readiness": True,
+        "collector_attestation_example_only_accepted": False,
         "realtime_voice_report_derivation_schema_version": "voiceops.realtime_voice_report_derivation.v1",
         "doctor_report_derivation_overclaims_production": False,
     }

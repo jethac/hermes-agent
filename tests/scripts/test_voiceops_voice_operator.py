@@ -55,10 +55,26 @@ def _smoke_payload() -> dict:
     }
 
 
+def _collector_attestation(section_name: str) -> dict:
+    return {
+        "collector_name": "pytest.voiceops_live_fixture",
+        "collector_version": "voiceops-live-fixture-v1",
+        "run_id": f"pytest-{section_name}",
+        "command_argv": ["pytest", section_name],
+        "git_commit": "abc123def456",
+        "started_at": "2026-06-29T00:00:00Z",
+        "finished_at": "2026-06-29T00:00:01Z",
+        "raw_artifact_sha256": "a" * 64,
+        "redacted_artifact_sha256": "b" * 64,
+        "parent_manifest_sha256": "c" * 64,
+    }
+
+
 def _complete_live_evidence() -> dict:
     evidence = build_live_probe_evidence_template()
     evidence["discord_live_probe"].update(
         {
+            "collector_attestation": _collector_attestation("discord_live_probe"),
             "ok": True,
             "connect_perm": True,
             "speak_perm": True,
@@ -83,6 +99,7 @@ def _complete_live_evidence() -> dict:
     )
     evidence["sidecar_session"].update(
         {
+            "collector_attestation": _collector_attestation("sidecar_session"),
             "sidecar_running": True,
             "sidecar_healthy": True,
             "session_started": True,
@@ -100,6 +117,7 @@ def _complete_live_evidence() -> dict:
     )
     evidence["live_turn"].update(
         {
+            "collector_attestation": _collector_attestation("live_turn"),
             "transcript_observed": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,
@@ -265,12 +283,28 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert live_closure["evidence_contract"]["required_section_field"] == "source_artifact"
     assert live_closure["evidence_contract"]["source_artifacts_must_exist"] is True
     assert live_closure["evidence_contract"]["template_source_artifacts_accepted"] is False
+    assert live_closure["evidence_contract"]["collector_attestation_required_for_live_readiness"] is True
+    assert live_closure["evidence_contract"]["collector_attestation_required_fields"] == [
+        "collector_name",
+        "collector_version",
+        "run_id",
+        "command_argv",
+        "git_commit",
+        "started_at",
+        "finished_at",
+        "raw_artifact_sha256",
+        "redacted_artifact_sha256",
+        "parent_manifest_sha256",
+    ]
+    assert live_closure["evidence_contract"]["placeholder_collector_attestation_accepted"] is False
     assert "kind/evidence_type" in live_closure["evidence_contract"]["manifest_report_identity"]
     assert "standalone non-expanded evidence files" in live_closure["evidence_contract"]["standalone_report_identity"]
     assert live_closure["evidence_shapes"]["discord_live_probe"]["kind"] == "discord_live_probe"
+    assert live_closure["evidence_shapes"]["discord_live_probe"]["collector_attestation"]["example_only"] is True
     assert live_closure["evidence_shapes"]["discord_live_probe"]["require_inbound"] is True
     assert live_closure["evidence_shapes"]["sidecar_session"]["kind"] == "sidecar_session"
     assert live_closure["evidence_shapes"]["sidecar_session"]["source_artifact"] == "sidecar-session.json"
+    assert live_closure["evidence_shapes"]["sidecar_session"]["collector_attestation"]["example_only"] is True
     assert live_closure["evidence_shapes"]["sidecar_session"]["shutdown_bounded"] is True
     assert live_closure["evidence_shapes"]["sidecar_session"]["shutdown_timed_out"] is False
     assert live_closure["evidence_shapes"]["sidecar_session"]["sidecar_mode"] == "production"
@@ -282,6 +316,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert live_closure["evidence_shapes"]["sidecar_session"]["latency_metrics_ms"]["shutdown_ms"] == 80
     assert live_closure["evidence_shapes"]["live_turn"]["kind"] == "live_turn"
     assert live_closure["evidence_shapes"]["live_turn"]["source_artifact"] == "live-turn.json"
+    assert live_closure["evidence_shapes"]["live_turn"]["collector_attestation"]["example_only"] is True
     assert "hermes_cli.realtime_voice_live_evidence" in live_closure["recommended_collection"]["live_bundle_manifest"]
     assert "artifacts/realtime-voice-evidence/live-current/sidecar-session.json" in live_closure[
         "recommended_collection"
@@ -300,6 +335,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert "live-voice-evidence-scaffold/manifest.json" in closure_markdown
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in closure_markdown
     assert "source_artifact" in closure_markdown
+    assert "collector_attestation" in closure_markdown
     assert "kind/evidence_type" in closure_markdown
     assert "--validate-live-evidence" in closure_markdown
     assert "artifacts/realtime-voice-evidence/live-current/sidecar-session.json" in closure_markdown
@@ -368,6 +404,22 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     assert report["live_evidence"]["overall_status"] == "live_evidence_supplied_not_readiness_claim"
     assert report["live_probe_required_for_completion"]["missing_gates"] == []
     assert report["proofs"]["live_evidence"]["ok"] is True
+    assert not any("collector_attestation" in issue for issue in live_evidence["issues"])
+
+
+def test_live_evidence_rejects_complete_hand_authored_sections_without_collector_attestation(tmp_path):
+    evidence = _complete_live_evidence()
+    for section_name in ("discord_live_probe", "sidecar_session", "live_turn"):
+        evidence[section_name]["source_artifact"] = str(tmp_path / f"{section_name}.json")
+        evidence[section_name].pop("collector_attestation")
+        (tmp_path / f"{section_name}.json").write_text(json.dumps(evidence[section_name]), encoding="utf-8")
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "discord_live_probe:missing_collector_attestation" in live_evidence["issues"]
+    assert "sidecar_session:missing_collector_attestation" in live_evidence["issues"]
+    assert "live_turn:missing_collector_attestation" in live_evidence["issues"]
 
 
 def test_voice_operator_rejects_loaded_evidence_with_missing_source_artifact_files(tmp_path):
@@ -533,6 +585,7 @@ def test_voice_operator_rejects_source_artifact_directory(tmp_path):
 def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
     discord_probe = {
         "kind": "discord_live_probe",
+        "collector_attestation": _collector_attestation("discord_live_probe"),
         "ok": True,
         "connect_perm": True,
         "speak_perm": True,
@@ -551,10 +604,12 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
     }
     sidecar = {
         "kind": "sidecar_session",
+        "collector_attestation": _collector_attestation("sidecar_session"),
         **_complete_sidecar_session_fields(),
     }
     live_turn = {
         "kind": "live_turn",
+        "collector_attestation": _collector_attestation("live_turn"),
         "transcript_observed": True,
         "assistant_audio_observed": True,
         "barge_in_observed": True,
@@ -619,6 +674,7 @@ def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path
                 "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
                 "kind": "discord_live_probe",
                 "source_artifact": discord_path.name,
+                "collector_attestation": _collector_attestation("discord_live_probe"),
                 "ok": True,
                 "connect_perm": True,
                 "speak_perm": True,
@@ -644,6 +700,7 @@ def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path
                 "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
                 "kind": "sidecar_session",
                 "source_artifact": sidecar_path.name,
+                "collector_attestation": _collector_attestation("sidecar_session"),
                 "sidecar_running": True,
                 "sidecar_healthy": True,
                 "session_started": True,
@@ -667,6 +724,7 @@ def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path
                 "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
                 "kind": "live_turn",
                 "source_artifact": turn_path.name,
+                "collector_attestation": _collector_attestation("live_turn"),
                 "transcript_observed": True,
                 "assistant_audio_observed": True,
                 "barge_in_observed": True,
@@ -906,6 +964,7 @@ def test_live_evidence_rejects_complete_payload_without_schema_and_source_artifa
     evidence["live_turn"].pop("source_artifact")
     evidence["discord_live_probe"].update(
         {
+            "collector_attestation": _collector_attestation("discord_live_probe"),
             "ok": True,
             "connect_perm": True,
             "speak_perm": True,
@@ -925,11 +984,13 @@ def test_live_evidence_rejects_complete_payload_without_schema_and_source_artifa
     )
     evidence["sidecar_session"].update(
         {
+            "collector_attestation": _collector_attestation("sidecar_session"),
             **_complete_sidecar_session_fields(),
         }
     )
     evidence["live_turn"].update(
         {
+            "collector_attestation": _collector_attestation("live_turn"),
             "transcript_observed": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,

@@ -274,6 +274,18 @@ PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS = [
 PREFLIGHT_EVIDENCE_SECTIONS = ("stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback")
 PREFLIGHT_SOURCE_ARTIFACT_KIND = "redacted_setup_evidence"
 PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256 = "0" * 64
+COLLECTOR_ATTESTATION_REQUIRED_FIELDS = (
+    "collector_name",
+    "collector_version",
+    "run_id",
+    "command_argv",
+    "git_commit",
+    "started_at",
+    "finished_at",
+    "raw_artifact_sha256",
+    "redacted_artifact_sha256",
+    "parent_manifest_sha256",
+)
 DEFAULT_VOIP_PROVIDER_CANDIDATE = "twilio/voice"
 VOIP_PROVIDER_CANDIDATE_RE = re.compile(r"^[a-z0-9][a-z0-9._/-]{0,80}$")
 
@@ -457,57 +469,78 @@ def _parse_env_file(path: Path) -> dict[str, str]:
 
 
 def build_preflight_evidence_template() -> dict[str, Any]:
-    return {
-        "schema_version": PREFLIGHT_EVIDENCE_SCHEMA_VERSION,
-        "redaction_policy": "references and aliases only; no raw secrets, cards, tokens, or full phone numbers",
-        "stripe_projects": {
+    def section_source_template() -> dict[str, Any]:
+        return {
             "source_artifact": None,
             "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
             "source_artifact_sha256": None,
             "source_artifact_redacted_at": None,
+            "collector_attestation": {
+                "collector_name": None,
+                "collector_version": None,
+                "run_id": None,
+                "command_argv": [],
+                "git_commit": None,
+                "started_at": None,
+                "finished_at": None,
+                "raw_artifact_sha256": None,
+                "redacted_artifact_sha256": None,
+                "parent_manifest_sha256": None,
+            },
+        }
+
+    return {
+        "schema_version": PREFLIGHT_EVIDENCE_SCHEMA_VERSION,
+        "redaction_policy": "references and aliases only; no raw secrets, cards, tokens, or full phone numbers",
+        "stripe_projects": {
+            **section_source_template(),
             "account_ref": None,
             "projects_catalog_checked_at": None,
             "voip_provider_candidate": "twilio/voice",
             "can_create_project_after_approval": False,
         },
         "stripe_link": {
-            "source_artifact": None,
-            "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
-            "source_artifact_sha256": None,
-            "source_artifact_redacted_at": None,
+            **section_source_template(),
             "account_ref": None,
             "approval_capability_confirmed": False,
             "max_approved_cents": 0,
             "currency": "usd",
         },
         "mpp": {
-            "source_artifact": None,
-            "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
-            "source_artifact_sha256": None,
-            "source_artifact_redacted_at": None,
+            **section_source_template(),
             "boundary_tool": None,
             "policy_ref": None,
             "approval_packet_ref": "nemoclaw-action-packet.json",
         },
         "phone_handoff": {
-            "source_artifact": None,
-            "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
-            "source_artifact_sha256": None,
-            "source_artifact_redacted_at": None,
+            **section_source_template(),
             "provider": None,
             "provider_account_ref": None,
             "phone_target_ref": None,
             "credential_location_ref": None,
         },
         "rollback": {
-            "source_artifact": None,
-            "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
-            "source_artifact_sha256": None,
-            "source_artifact_redacted_at": None,
+            **section_source_template(),
             "deprovision_owner": None,
             "refund_or_cancel_owner": None,
             "call_cancel_owner": None,
         },
+    }
+
+
+def _example_collector_attestation(*, section_name: str, redacted_sha256: str) -> dict[str, Any]:
+    return {
+        "example_only": True,
+        "collector_name": "voiceops_provisioning_probe_manual_redacted_export",
+        "collector_version": "example",
+        "run_id": f"example-{section_name}-run",
+        "command_argv": ["uv", "run", "python", "scripts/voiceops_provisioning_probe.py", "--output-dir", "artifacts/voiceops-provisioning/current"],
+        "git_commit": "0" * 40,
+        "started_at": "2026-06-29T00:00:00Z",
+        "finished_at": "2026-06-29T00:00:01Z",
+        "raw_artifact_sha256": "0" * 64,
+        "redacted_artifact_sha256": redacted_sha256,
+        "parent_manifest_sha256": "0" * 64,
     }
 
 
@@ -521,6 +554,10 @@ def build_preflight_evidence_example() -> dict[str, Any]:
             "source_artifact": "artifacts/voiceops-provisioning/current/stripe-projects-catalog-redacted.json",
             "source_artifact_sha256": PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
             "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
+            "collector_attestation": _example_collector_attestation(
+                section_name="stripe_projects",
+                redacted_sha256=PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
+            ),
             "projects_catalog_checked_at": "2026-06-29T00:00:00Z",
             "voip_provider_candidate": "twilio/voice",
             "can_create_project_after_approval": True,
@@ -532,6 +569,10 @@ def build_preflight_evidence_example() -> dict[str, Any]:
             "source_artifact": "artifacts/voiceops-provisioning/current/stripe-link-approval-redacted.json",
             "source_artifact_sha256": PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
             "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
+            "collector_attestation": _example_collector_attestation(
+                section_name="stripe_link",
+                redacted_sha256=PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
+            ),
             "approval_capability_confirmed": True,
             "max_approved_cents": 20_000,
             "currency": "usd",
@@ -543,6 +584,10 @@ def build_preflight_evidence_example() -> dict[str, Any]:
             "source_artifact": "artifacts/voiceops-provisioning/current/nemoclaw-boundary-redacted.json",
             "source_artifact_sha256": PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
             "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
+            "collector_attestation": _example_collector_attestation(
+                section_name="mpp",
+                redacted_sha256=PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
+            ),
             "policy_ref": "voiceops-policy-ref-demo",
             "approval_packet_ref": "nemoclaw-action-packet.json",
         }
@@ -553,6 +598,10 @@ def build_preflight_evidence_example() -> dict[str, Any]:
             "source_artifact": "artifacts/voiceops-provisioning/current/phone-handoff-redacted.json",
             "source_artifact_sha256": PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
             "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
+            "collector_attestation": _example_collector_attestation(
+                section_name="phone_handoff",
+                redacted_sha256=PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
+            ),
             "provider_account_ref": "twilio-account-ref-demo",
             "phone_target_ref": "operator-phone-ref-demo",
             "credential_location_ref": "1password://VoiceOps/Twilio Demo Credential Ref",
@@ -564,6 +613,10 @@ def build_preflight_evidence_example() -> dict[str, Any]:
             "source_artifact": "artifacts/voiceops-provisioning/current/rollback-owners-redacted.json",
             "source_artifact_sha256": PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
             "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
+            "collector_attestation": _example_collector_attestation(
+                section_name="rollback",
+                redacted_sha256=PREFLIGHT_EXAMPLE_SOURCE_ARTIFACT_SHA256,
+            ),
             "refund_or_cancel_owner": "operator-ref-demo",
             "call_cancel_owner": "operator-ref-demo",
         }
@@ -627,8 +680,13 @@ def write_preflight_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
         section["example_only"] = True
         section["source_artifact"] = f"../sources/{source_path.name}"
         section["source_artifact_kind"] = PREFLIGHT_SOURCE_ARTIFACT_KIND
-        section["source_artifact_sha256"] = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        section["source_artifact_sha256"] = source_sha256
         section["source_artifact_redacted_at"] = "2026-06-29T00:00:00Z"
+        section["collector_attestation"] = _example_collector_attestation(
+            section_name=section_name,
+            redacted_sha256=source_sha256,
+        )
         section_path = sections_dir / section_names[section_name]
         _write_json(
             section_path,
@@ -703,6 +761,7 @@ def _preflight_secret_issues(payload: Mapping[str, Any]) -> list[str]:
             not path.endswith("_checked_at")
             and not path.endswith("_redacted_at")
             and not path.endswith("_sha256")
+            and ".collector_attestation." not in path
             and PHONE_RE.search(value)
         ):
             issues.append(f"{path}: phone-like value")
@@ -920,6 +979,48 @@ def _with_preflight_section_source_artifact(section: Mapping[str, Any], path: Pa
     return section_copy
 
 
+def _valid_sha256(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    return bool(re.fullmatch(r"[0-9a-f]{64}", text))
+
+
+def _collector_attestation_issues(
+    section: Mapping[str, Any],
+    *,
+    section_name: str,
+    expected_redacted_sha256: str,
+) -> list[str]:
+    issues: list[str] = []
+    attestation = section.get("collector_attestation")
+    if not isinstance(attestation, Mapping):
+        return [f"{section_name}.collector_attestation: missing"]
+    if attestation.get("example_only") is True:
+        issues.append(f"{section_name}.collector_attestation: example_only")
+    for field in COLLECTOR_ATTESTATION_REQUIRED_FIELDS:
+        if field not in attestation:
+            issues.append(f"{section_name}.collector_attestation.{field}: missing")
+    for field in ("collector_name", "collector_version", "run_id", "git_commit"):
+        value = str(attestation.get(field) or "").strip()
+        if not value or value.lower() in {"placeholder", "example", "replace-me", "unknown"}:
+            issues.append(f"{section_name}.collector_attestation.{field}: invalid")
+    command_argv = attestation.get("command_argv")
+    if not isinstance(command_argv, list) or not command_argv or not all(isinstance(item, str) and item for item in command_argv):
+        issues.append(f"{section_name}.collector_attestation.command_argv: invalid")
+    for field in ("started_at", "finished_at"):
+        if _parse_preflight_timestamp(attestation.get(field)) is None:
+            issues.append(f"{section_name}.collector_attestation.{field}: invalid")
+    for field in ("raw_artifact_sha256", "redacted_artifact_sha256", "parent_manifest_sha256"):
+        if not _valid_sha256(attestation.get(field)):
+            issues.append(f"{section_name}.collector_attestation.{field}: invalid")
+    if (
+        _valid_sha256(attestation.get("redacted_artifact_sha256"))
+        and _valid_sha256(expected_redacted_sha256)
+        and str(attestation.get("redacted_artifact_sha256")).strip().lower() != expected_redacted_sha256
+    ):
+        issues.append(f"{section_name}.collector_attestation.redacted_artifact_sha256: mismatch")
+    return issues
+
+
 def _source_artifact_issues(payload: Mapping[str, Any], evidence_path: Path) -> list[str]:
     issues: list[str] = []
     for section_name in PREFLIGHT_EVIDENCE_SECTIONS:
@@ -949,6 +1050,13 @@ def _source_artifact_issues(payload: Mapping[str, Any], evidence_path: Path) -> 
             issues.append(f"{section_name}.source_artifact_sha256: invalid")
         elif source_sha256 != actual_sha256:
             issues.append(f"{section_name}.source_artifact_sha256: mismatch")
+        issues.extend(
+            _collector_attestation_issues(
+                section,
+                section_name=section_name,
+                expected_redacted_sha256=source_sha256,
+            )
+        )
         issues.extend(
             f"{section_name}.source_artifact:{issue}"
             for issue in _redacted_artifact_issues(artifact_bytes, section_name=section_name)
@@ -2227,7 +2335,10 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "source_artifact_kind",
                 "source_artifact_sha256",
                 "source_artifact_redacted_at",
+                "collector_attestation",
             ],
+            "collector_attestation_required_fields": list(COLLECTOR_ATTESTATION_REQUIRED_FIELDS),
+            "placeholder_collector_attestation_accepted": False,
             "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
             "source_artifacts_must_exist": True,
             "source_artifact_sha256_must_match": True,

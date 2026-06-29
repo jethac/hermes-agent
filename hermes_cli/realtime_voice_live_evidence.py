@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import datetime as dt
+import hashlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -330,6 +333,7 @@ def _derive_live_evidence_from_realtime_voice_report(
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return {}, [f"realtime_voice_report: failed to load report: {exc}"]
 
+    source_sha256 = _file_sha256(resolved)
     validation_issues = validate_realtime_voice_alpha_report(entries)
     validation_payload = {
         "kind": "realtime_voice_report_validation",
@@ -346,6 +350,11 @@ def _derive_live_evidence_from_realtime_voice_report(
 
     discord = _derive_discord_probe_from_realtime_report(entries, resolved)
     if discord is not None:
+        discord = _with_collector_attestation(
+            discord,
+            section_name="discord_live_probe",
+            parent_manifest_sha256=source_sha256,
+        )
         path = output_dir / "discord-live-probe.from-realtime-report.json"
         _write_json(path, discord)
         reports["discord_live_probe"] = path
@@ -357,6 +366,11 @@ def _derive_live_evidence_from_realtime_voice_report(
         alpha_valid=not validation_issues,
     )
     if sidecar is not None:
+        sidecar = _with_collector_attestation(
+            sidecar,
+            section_name="sidecar_session",
+            parent_manifest_sha256=source_sha256,
+        )
         path = output_dir / "sidecar-session.from-realtime-report.json"
         _write_json(path, sidecar)
         reports["sidecar_session"] = path
@@ -370,6 +384,11 @@ def _derive_live_evidence_from_realtime_voice_report(
         alpha_valid=not validation_issues,
     )
     if live_turn is not None:
+        live_turn = _with_collector_attestation(
+            live_turn,
+            section_name="live_turn",
+            parent_manifest_sha256=source_sha256,
+        )
         path = output_dir / "live-turn.from-realtime-report.json"
         _write_json(path, live_turn)
         reports["live_turn"] = path
@@ -629,7 +648,49 @@ def _with_report_identity(payload: dict[str, Any], *, kind: str, report_path: Pa
     enriched = dict(payload)
     enriched.setdefault("kind", kind)
     enriched.setdefault("source_artifact", str(report_path))
+    return _with_collector_attestation(enriched, section_name=kind)
+
+
+def _with_collector_attestation(
+    payload: dict[str, Any],
+    *,
+    section_name: str,
+    parent_manifest_sha256: str | None = None,
+) -> dict[str, Any]:
+    enriched = dict(payload)
+    attested_payload = dict(enriched)
+    attested_payload.pop("collector_attestation", None)
+    payload_sha256 = _payload_sha256(attested_payload)
+    timestamp = _utc_timestamp()
+    enriched["collector_attestation"] = {
+        "collector_name": "hermes_cli.realtime_voice_live_evidence",
+        "collector_version": "voiceops.realtime_voice_live_evidence.v1",
+        "run_id": str(enriched.get("run_id") or f"{section_name}-{payload_sha256[:12]}"),
+        "command_argv": list(sys.argv),
+        "git_commit": _git_output("rev-parse", "HEAD") or "unavailable",
+        "started_at": str(enriched.get("collected_at") or timestamp),
+        "finished_at": timestamp,
+        "raw_artifact_sha256": payload_sha256,
+        "redacted_artifact_sha256": payload_sha256,
+        "parent_manifest_sha256": parent_manifest_sha256 or ("0" * 64),
+    }
     return enriched
+
+
+def _payload_sha256(payload: dict[str, Any]) -> str:
+    raw = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _file_sha256(path: Path) -> str:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return "0" * 64
+
+
+def _utc_timestamp() -> str:
+    return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _report_ref(output_dir: Path, report_path: Path) -> str:

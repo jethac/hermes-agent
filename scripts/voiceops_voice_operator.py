@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import datetime as dt
 import json
 import re
 import sys
@@ -33,6 +34,18 @@ LIVE_EVIDENCE_REQUIRED_GATES = (
     "live_receiver",
     "production_sidecar",
     "live_turn",
+)
+COLLECTOR_ATTESTATION_REQUIRED_FIELDS = (
+    "collector_name",
+    "collector_version",
+    "run_id",
+    "command_argv",
+    "git_commit",
+    "started_at",
+    "finished_at",
+    "raw_artifact_sha256",
+    "redacted_artifact_sha256",
+    "parent_manifest_sha256",
 )
 
 REQUIRED_EVENTS = {
@@ -166,6 +179,49 @@ def _non_negative_number(value: Any) -> float | None:
     return number if number >= 0 else None
 
 
+def _has_parseable_timezone_timestamp(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = dt.datetime.fromisoformat(normalized)
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() is not None
+
+
+def _valid_sha256(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    return len(text) == 64 and all(character in "0123456789abcdef" for character in text)
+
+
+def _collector_attestation_issues(section: Mapping[str, Any], section_name: str) -> list[str]:
+    attestation = section.get("collector_attestation") or section.get("collector_provenance")
+    if not isinstance(attestation, Mapping):
+        return [f"{section_name}:missing_collector_attestation"]
+    issues: list[str] = []
+    if attestation.get("example_only") is True:
+        issues.append(f"{section_name}:collector_attestation_example_only_not_accepted")
+    for field in COLLECTOR_ATTESTATION_REQUIRED_FIELDS:
+        if field not in attestation:
+            issues.append(f"{section_name}:collector_attestation_missing:{field}")
+    for field in ("collector_name", "collector_version", "run_id", "git_commit"):
+        value = str(attestation.get(field) or "").strip()
+        if not value or value.lower() in {"placeholder", "example", "replace-me", "unknown"}:
+            issues.append(f"{section_name}:collector_attestation_invalid:{field}")
+    command_argv = attestation.get("command_argv")
+    if not isinstance(command_argv, list) or not command_argv or not all(isinstance(part, str) and part for part in command_argv):
+        issues.append(f"{section_name}:collector_attestation_invalid:command_argv")
+    for field in ("started_at", "finished_at"):
+        if not _has_parseable_timezone_timestamp(attestation.get(field)):
+            issues.append(f"{section_name}:collector_attestation_invalid:{field}")
+    for field in ("raw_artifact_sha256", "redacted_artifact_sha256", "parent_manifest_sha256"):
+        if not _valid_sha256(attestation.get(field)):
+            issues.append(f"{section_name}:collector_attestation_invalid:{field}")
+    return issues
+
+
 def _looks_secret_or_phone(value: Any) -> bool:
     text = str(value or "")
     lowered = text.lower()
@@ -195,12 +251,25 @@ def _looks_like_voice_denial_text(value: str) -> bool:
 
 
 def build_live_probe_evidence_template() -> dict[str, Any]:
+    collector_template = {
+        "collector_name": None,
+        "collector_version": None,
+        "run_id": None,
+        "command_argv": [],
+        "git_commit": None,
+        "started_at": None,
+        "finished_at": None,
+        "raw_artifact_sha256": None,
+        "redacted_artifact_sha256": None,
+        "parent_manifest_sha256": None,
+    }
     return {
         "schema_version": LIVE_EVIDENCE_SCHEMA_VERSION,
         "redaction_policy": "references and booleans only; no Discord tokens, provider tokens, full phone numbers, or raw transcripts with secrets",
         "discord_live_probe": {
             "source_artifact": "discord-live-probe.json",
             "kind": "discord_live_probe",
+            "collector_attestation": dict(collector_template),
             "ok": False,
             "connect_perm": False,
             "speak_perm": False,
@@ -224,6 +293,7 @@ def build_live_probe_evidence_template() -> dict[str, Any]:
         },
         "sidecar_session": {
             "source_artifact": "voice-status-or-sidecar-report.json",
+            "collector_attestation": dict(collector_template),
             "sidecar_running": False,
             "sidecar_healthy": False,
             "session_started": False,
@@ -243,6 +313,7 @@ def build_live_probe_evidence_template() -> dict[str, Any]:
         },
         "live_turn": {
             "source_artifact": "voice-turn-evidence.json",
+            "collector_attestation": dict(collector_template),
             "transcript_observed": False,
             "assistant_audio_observed": False,
             "barge_in_observed": False,
@@ -254,12 +325,29 @@ def build_live_probe_evidence_template() -> dict[str, Any]:
     }
 
 
+def _example_collector_attestation(section_name: str) -> dict[str, Any]:
+    return {
+        "example_only": True,
+        "collector_name": "hermes_cli.realtime_voice_live_evidence",
+        "collector_version": "example",
+        "run_id": f"example-{section_name}-run",
+        "command_argv": ["uv", "run", "python", "-m", "hermes_cli.realtime_voice_live_evidence"],
+        "git_commit": "0" * 40,
+        "started_at": "2026-06-29T00:00:00Z",
+        "finished_at": "2026-06-29T00:00:01Z",
+        "raw_artifact_sha256": "0" * 64,
+        "redacted_artifact_sha256": "0" * 64,
+        "parent_manifest_sha256": "0" * 64,
+    }
+
+
 def build_live_probe_evidence_example() -> dict[str, Any]:
     example = build_live_probe_evidence_template()
     example["example_only"] = True
     example["redaction_policy"] = "example only; copy shape with real artifact refs and remove example_only before ingest"
     example["discord_live_probe"].update(
         {
+            "collector_attestation": _example_collector_attestation("discord_live_probe"),
             "ok": True,
             "connect_perm": True,
             "speak_perm": True,
@@ -283,6 +371,7 @@ def build_live_probe_evidence_example() -> dict[str, Any]:
     )
     example["sidecar_session"].update(
         {
+            "collector_attestation": _example_collector_attestation("sidecar_session"),
             "sidecar_running": True,
             "sidecar_healthy": True,
             "session_started": True,
@@ -303,6 +392,7 @@ def build_live_probe_evidence_example() -> dict[str, Any]:
     )
     example["live_turn"].update(
         {
+            "collector_attestation": _example_collector_attestation("live_turn"),
             "transcript_observed": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,
@@ -571,6 +661,8 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         issues.append("example_only_evidence_not_accepted")
     redaction_issues: list[str] = []
     for key, value in _walk_live_evidence_strings(payload):
+        if _is_collector_attestation_path(key):
+            continue
         if _looks_like_forbidden_live_evidence_field(key):
             redaction_issues.append(f"{key}:forbidden_evidence_field")
         if _looks_like_voice_denial_text(value):
@@ -592,6 +684,7 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         )
     if discord_probe.get("example_only") is True:
         issues.append("discord_live_probe:example_only_evidence_not_accepted")
+    issues.extend(_collector_attestation_issues(discord_probe, "discord_live_probe"))
     for key in LIVE_EVIDENCE_REQUIRED_DISCORD_BOOLS:
         if discord_probe.get(key) is not True:
             issues.append(f"discord_live_probe:{key}_not_true")
@@ -629,6 +722,7 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         )
     if sidecar.get("example_only") is True:
         issues.append("sidecar_session:example_only_evidence_not_accepted")
+    issues.extend(_collector_attestation_issues(sidecar, "sidecar_session"))
     for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS:
         if sidecar.get(key) is not True:
             issues.append(f"sidecar_session:{key}_not_true")
@@ -666,6 +760,7 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         )
     if live_turn.get("example_only") is True:
         issues.append("live_turn:example_only_evidence_not_accepted")
+    issues.extend(_collector_attestation_issues(live_turn, "live_turn"))
     for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS:
         if live_turn.get(key) is not True:
             issues.append(f"live_turn:{key}_not_true")
@@ -815,6 +910,11 @@ def _walk_live_evidence_strings(value: Any, prefix: str = "") -> list[tuple[str,
     if isinstance(value, str):
         return [(prefix, value)]
     return []
+
+
+def _is_collector_attestation_path(path: str) -> bool:
+    normalized = f".{path}"
+    return ".collector_attestation." in normalized or ".collector_provenance." in normalized
 
 
 def _coverage_from_smoke(smoke: dict[str, Any]) -> dict[str, bool]:
@@ -1155,6 +1255,9 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "source_artifact_resolution": "absolute paths or paths relative to supplied live-evidence files",
             "template_source_artifacts_accepted": False,
             "example_only_accepted": False,
+            "collector_attestation_required_for_live_readiness": True,
+            "collector_attestation_required_fields": list(COLLECTOR_ATTESTATION_REQUIRED_FIELDS),
+            "placeholder_collector_attestation_accepted": False,
         },
         "recommended_collection": {
             "live_bundle_manifest": report["live_probe_required_for_completion"]["recommended_command"],
@@ -1165,15 +1268,16 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "session_started, session_closed, fallback_mode_visible, fallback_reason, sidecar_mode=production, "
                 "healthcheck_observed, provider_transport_observed, session_id_redacted, shutdown_bounded=true, "
                 "shutdown_timed_out=false, latency_metrics_ms.session_start_ms, latency_metrics_ms.shutdown_ms, "
-                "and source_artifact."
+                "source_artifact, and collector_attestation."
             ),
-            "live_turn": "Write live-turn.json with kind=live_turn, transcript_observed, assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, speech_end_to_first_audio_ms, barge_in_stop_ms, and source_artifact.",
+            "live_turn": "Write live-turn.json with kind=live_turn, transcript_observed, assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, speech_end_to_first_audio_ms, barge_in_stop_ms, source_artifact, and collector_attestation.",
             "ingest": report["live_probe_required_for_completion"]["ingest_command"],
         },
         "evidence_shapes": {
             "discord_live_probe": {
                 "kind": "discord_live_probe",
                 "source_artifact": "absolute/or/resolved-discord-live-probe.json",
+                "collector_attestation": _example_collector_attestation("discord_live_probe"),
                 "ok": True,
                 "connect_perm": True,
                 "speak_perm": True,
@@ -1198,6 +1302,7 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "sidecar_session": {
                 "kind": "sidecar_session",
                 "source_artifact": "sidecar-session.json",
+                "collector_attestation": _example_collector_attestation("sidecar_session"),
                 "sidecar_running": True,
                 "sidecar_healthy": True,
                 "session_started": True,
@@ -1215,6 +1320,7 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "live_turn": {
                 "kind": "live_turn",
                 "source_artifact": "live-turn.json",
+                "collector_attestation": _example_collector_attestation("live_turn"),
                 "transcript_observed": True,
                 "assistant_audio_observed": True,
                 "barge_in_observed": True,

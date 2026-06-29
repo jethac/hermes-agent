@@ -28,6 +28,18 @@ STACK_SMOKE_REQUIRED_ORACLE_ROUTES = ("tools", "files", "memory", "project_conte
 SPARK_BENCHMARK_SCAFFOLD_EVIDENCE = (
     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
 )
+COLLECTOR_ATTESTATION_REQUIRED_FIELDS = (
+    "collector_name",
+    "collector_version",
+    "run_id",
+    "command_argv",
+    "git_commit",
+    "started_at",
+    "finished_at",
+    "raw_artifact_sha256",
+    "redacted_artifact_sha256",
+    "parent_manifest_sha256",
+)
 
 
 @dataclass(frozen=True)
@@ -261,6 +273,11 @@ def _verified(item: dict[str, Any]) -> bool:
     return item.get("verified") is True or item.get("ok") is True
 
 
+def _collector_attestation(item: dict[str, Any]) -> dict[str, Any] | None:
+    attestation = item.get("collector_attestation") or item.get("collector_provenance")
+    return dict(attestation) if isinstance(attestation, dict) else None
+
+
 def _base_adapted_evidence(
     source: dict[str, Any],
     *,
@@ -289,6 +306,7 @@ def _base_adapted_evidence(
         "example_only": source.get("example_only") is True,
         "adapted_from": str(source.get("kind") or ""),
         "_evidence_path": source.get("_evidence_path"),
+        **({"collector_attestation": _collector_attestation(source)} if _collector_attestation(source) else {}),
     }
 
 
@@ -336,6 +354,7 @@ def _adapt_kame_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "example_only": entry.get("example_only") is True,
                     "adapted_from": "kame_smoke_result",
                     "_evidence_path": entry.get("_evidence_path"),
+                    **({"collector_attestation": _collector_attestation(entry)} if _collector_attestation(entry) else {}),
                 }
             )
             continue
@@ -505,6 +524,8 @@ def evaluate_candidate(candidate: Candidate, evidence: list[dict[str, Any]]) -> 
             item_issues.append("missing_source_artifact")
         else:
             item_issues.extend(_source_artifact_issues(item))
+        if candidate.locality == "local_spark":
+            item_issues.extend(_collector_attestation_issues(item))
         if candidate.candidate_id == "oracle-nemotron3-super-local" and item.get("oracle_selected_by") != "Hermes /model":
             item_issues.append("missing_oracle_authority_proof")
         if candidate.role in {"asr", "tts"}:
@@ -605,6 +626,7 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
             issues.append("missing_source_artifact")
         else:
             issues.extend(_source_artifact_issues(item))
+        issues.extend(_collector_attestation_issues(item))
         if not str(item.get("measured_at") or "").strip():
             issues.append("missing_measured_at")
         elif not _has_parseable_timezone_timestamp(item.get("measured_at")):
@@ -705,6 +727,41 @@ def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
     return issues
 
 
+def _valid_sha256(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    return len(text) == 64 and all(character in "0123456789abcdef" for character in text)
+
+
+def _collector_attestation_issues(item: dict[str, Any]) -> list[str]:
+    attestation = item.get("collector_attestation") or item.get("collector_provenance")
+    if not isinstance(attestation, dict):
+        return ["missing_collector_attestation"]
+    issues: list[str] = []
+    if attestation.get("example_only") is True:
+        issues.append("collector_attestation_example_only_not_accepted")
+    for field in COLLECTOR_ATTESTATION_REQUIRED_FIELDS:
+        if field not in attestation:
+            issues.append(f"collector_attestation_missing:{field}")
+    for field in ("collector_name", "collector_version", "run_id", "git_commit"):
+        value = str(attestation.get(field) or "").strip()
+        if not value or value.lower() in {"placeholder", "example", "replace-me", "unknown"}:
+            issues.append(f"collector_attestation_invalid:{field}")
+    command_argv = attestation.get("command_argv")
+    if not isinstance(command_argv, list) or not command_argv or not all(isinstance(part, str) and part for part in command_argv):
+        issues.append("collector_attestation_invalid:command_argv")
+    for field in ("started_at", "finished_at"):
+        if not _has_parseable_timezone_timestamp(attestation.get(field)):
+            issues.append(f"collector_attestation_invalid:{field}")
+    for field in ("raw_artifact_sha256", "redacted_artifact_sha256", "parent_manifest_sha256"):
+        if not _valid_sha256(attestation.get(field)):
+            issues.append(f"collector_attestation_invalid:{field}")
+    source_sha256 = str(item.get("source_artifact_sha256") or "").strip().lower()
+    redacted_sha256 = str(attestation.get("redacted_artifact_sha256") or "").strip().lower()
+    if _valid_sha256(source_sha256) and _valid_sha256(redacted_sha256) and redacted_sha256 != source_sha256:
+        issues.append("collector_attestation_redacted_sha256_mismatch")
+    return issues
+
+
 def build_matrix(evidence_paths: Iterable[Path] = ()) -> dict[str, Any]:
     candidates = default_candidates()
     evidence, evidence_load_issues = _load_evidence(evidence_paths)
@@ -795,6 +852,18 @@ def _markdown(matrix: dict[str, Any]) -> str:
 
 
 def _evidence_template(candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    collector_template = {
+        "collector_name": None,
+        "collector_version": None,
+        "run_id": None,
+        "command_argv": [],
+        "git_commit": None,
+        "started_at": None,
+        "finished_at": None,
+        "raw_artifact_sha256": None,
+        "redacted_artifact_sha256": None,
+        "parent_manifest_sha256": None,
+    }
     return {
         "evidence": [
             {
@@ -808,6 +877,7 @@ def _evidence_template(candidates: list[dict[str, Any]]) -> dict[str, Any]:
                 "measured_at": None,
                 "source_artifact": None,
                 "source_artifact_sha256": None,
+                "collector_attestation": dict(collector_template),
                 "metrics": {target["metric"]: None for target in candidate["required_targets"]},
                 "notes": (
                     "replace null metrics with measured values from the benchmark run; "
@@ -829,6 +899,7 @@ def _evidence_template(candidates: list[dict[str, Any]]) -> dict[str, Any]:
                 "measured_at": None,
                 "source_artifact": None,
                 "source_artifact_sha256": None,
+                "collector_attestation": dict(collector_template),
                 "oracle_selected_by": "Hermes /model",
                 "oracle_authority_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
                 "interface_input_sources": ["native_audio"],
@@ -849,6 +920,21 @@ def _evidence_template(candidates: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _evidence_example() -> dict[str, Any]:
+    def example_attestation(name: str, redacted_sha256: str) -> dict[str, Any]:
+        return {
+            "example_only": True,
+            "collector_name": "dgx_spark_gemma4_voice_eval",
+            "collector_version": "example",
+            "run_id": f"example-{name}-run",
+            "command_argv": ["scripts/dgx_spark_gemma4_voice_eval.sh"],
+            "git_commit": "0" * 40,
+            "started_at": "2026-06-29T00:00:00Z",
+            "finished_at": "2026-06-29T00:00:01Z",
+            "raw_artifact_sha256": "0" * 64,
+            "redacted_artifact_sha256": redacted_sha256,
+            "parent_manifest_sha256": "0" * 64,
+        }
+
     return {
         "example_only": True,
         "schema_version": EVIDENCE_SCHEMA_VERSION,
@@ -865,6 +951,10 @@ def _evidence_example() -> dict[str, Any]:
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/reflex-raw.json",
                 "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
+                "collector_attestation": example_attestation(
+                    "reflex-gemma4-e2b",
+                    "replace-with-sha256-of-redacted-raw-artifact",
+                ),
                 "metrics": {
                     "first_token_ms": 700,
                     "intent_latency_ms": 1100,
@@ -883,6 +973,10 @@ def _evidence_example() -> dict[str, Any]:
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/reflex-e4b-raw.json",
                 "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
+                "collector_attestation": example_attestation(
+                    "reflex-gemma4-e4b",
+                    "replace-with-sha256-of-redacted-raw-artifact",
+                ),
                 "metrics": {
                     "first_token_ms": 850,
                     "intent_latency_ms": 1250,
@@ -901,6 +995,10 @@ def _evidence_example() -> dict[str, Any]:
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/oracle-raw.json",
                 "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
+                "collector_attestation": example_attestation(
+                    "oracle-nemotron3-super-local",
+                    "replace-with-sha256-of-redacted-raw-artifact",
+                ),
                 "metrics": {
                     "decode_tok_s": 24,
                     "prefill_tok_s": 3100,
@@ -920,6 +1018,10 @@ def _evidence_example() -> dict[str, Any]:
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/asr-raw.json",
                 "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
+                "collector_attestation": example_attestation(
+                    "asr-nemotron-speech",
+                    "replace-with-sha256-of-redacted-raw-artifact",
+                ),
                 "metrics": {
                     "asr_delta_ms": 30,
                     "final_transcript_ms": 600,
@@ -938,6 +1040,10 @@ def _evidence_example() -> dict[str, Any]:
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/tts-raw.json",
                 "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
+                "collector_attestation": example_attestation(
+                    "tts-magpie-local",
+                    "replace-with-sha256-of-redacted-raw-artifact",
+                ),
                 "metrics": {
                     "tts_first_audio_ms": 200,
                     "underrun_count": 0,
@@ -953,6 +1059,10 @@ def _evidence_example() -> dict[str, Any]:
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/all-local-stack-smoke.json",
                 "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
+                "collector_attestation": example_attestation(
+                    STACK_SMOKE_KIND,
+                    "replace-with-sha256-of-redacted-raw-artifact",
+                ),
                 "oracle_selected_by": "Hermes /model",
                 "oracle_authority_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
                 "interface_input_sources": ["native_audio"],
@@ -1003,7 +1113,10 @@ def write_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
         }
         _write_json(source_path, source_payload)
         item["source_artifact"] = f"sources/{source_name}"
-        item["source_artifact_sha256"] = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        item["source_artifact_sha256"] = source_sha256
+        if isinstance(item.get("collector_attestation"), dict):
+            item["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
         paths[f"scaffold_source_{source_key}"] = source_path
 
     scaffold_path = scaffold_dir / "spark-benchmark-evidence.json"
@@ -1061,6 +1174,7 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "metrics",
             "source_artifact",
             "source_artifact_sha256",
+            "collector_attestation",
             "verified",
         ],
         "evidence_contract": {
@@ -1072,6 +1186,9 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",
             "source_artifact_readable": True,
             "source_artifact_sha256_must_match": True,
+            "collector_attestation_required_for_one_spark_readiness": True,
+            "collector_attestation_required_fields": list(COLLECTOR_ATTESTATION_REQUIRED_FIELDS),
+            "placeholder_collector_attestation_accepted": False,
             "measured_at_timezone_required": True,
             "example_only_accepted": False,
             "hosted_fallback_counts_for_one_spark_readiness": False,
@@ -1095,6 +1212,7 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "metrics.oracle_bound_oracle_calls",
             "source_artifact",
             "source_artifact_sha256",
+            "collector_attestation",
             "verified",
         ],
         "candidate_closure": [
@@ -1317,6 +1435,7 @@ def _operator_runbook(plan: dict[str, Any]) -> str:
         "- Source artifacts must exist and resolve relative to the supplied evidence file.",
         "- Source artifacts must be redacted UTF-8 JSON and must not carry `example_only: true`.",
         "- `source_artifact_sha256` must match the referenced source artifact bytes.",
+        "- `collector_attestation` must identify the collector, command argv, git commit, timestamp window, raw/redacted hashes, and parent manifest hash.",
         "- `example_only: true` evidence is rejected.",
         "- `loopback_smoke_bridge` evidence is protocol-only and must remain unverified for local ASR/TTS roles.",
         "",

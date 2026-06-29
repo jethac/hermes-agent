@@ -120,6 +120,21 @@ def _complete_preflight_evidence() -> dict[str, object]:
     return evidence
 
 
+def _test_collector_attestation(section_name: str, redacted_sha256: str) -> dict[str, object]:
+    return {
+        "collector_name": "pytest_voiceops_provisioning_fixture",
+        "collector_version": "test-v1",
+        "run_id": f"test-{section_name}-run",
+        "command_argv": ["pytest", "tests/scripts/test_voiceops_provisioning_probe.py"],
+        "git_commit": "a" * 40,
+        "started_at": "2026-06-29T00:00:00Z",
+        "finished_at": "2026-06-29T00:00:01Z",
+        "raw_artifact_sha256": "b" * 64,
+        "redacted_artifact_sha256": redacted_sha256,
+        "parent_manifest_sha256": "c" * 64,
+    }
+
+
 def _write_preflight_evidence(tmp_path: Path, payload: dict[str, object] | None = None) -> Path:
     payload = payload or _complete_preflight_evidence()
     for section_name in ("stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback"):
@@ -143,6 +158,7 @@ def _write_preflight_evidence(tmp_path: Path, payload: dict[str, object] | None 
             section["source_artifact_sha256"] = hashlib.sha256(source_bytes).hexdigest()
         if not section.get("source_artifact_redacted_at"):
             section["source_artifact_redacted_at"] = "2026-06-29T00:00:00Z"
+        section["collector_attestation"] = _test_collector_attestation(section_name, section["source_artifact_sha256"])
     evidence_path = tmp_path / "preflight-evidence.json"
     evidence_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return evidence_path
@@ -593,6 +609,8 @@ def test_write_probe_artifacts(tmp_path):
     assert setup_closure["evidence_contract"]["read_only_discovery_grants_approval"] is False
     assert setup_closure["evidence_contract"]["required_section_field"] == "source_artifact"
     assert setup_closure["evidence_contract"]["source_artifacts_must_exist"] is True
+    assert "collector_attestation" in setup_closure["evidence_contract"]["required_section_provenance_fields"]
+    assert setup_closure["evidence_contract"]["placeholder_collector_attestation_accepted"] is False
     assert setup_closure["evidence_contract"]["post_approval_receipts_schema_version"] == (
         "voiceops.milestone2.post_approval_receipts.v1"
     )
@@ -789,6 +807,29 @@ def test_preflight_evidence_rejects_synthetic_schema_valid_refs_without_provenan
     assert "stripe_projects_account" in report["required_failures"]
 
 
+def test_preflight_evidence_rejects_missing_collector_attestation(tmp_path):
+    evidence = _complete_preflight_evidence()
+    evidence_path = _write_preflight_evidence(tmp_path, evidence)
+    payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+    payload["stripe_projects"].pop("collector_attestation")
+    evidence_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = load_preflight_evidence(evidence_path)
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
+        env_files=[],
+        preflight_evidence_path=evidence_path,
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+
+    assert "stripe_projects.collector_attestation: missing" in loaded["validation_issues"]
+    assert report["ready"] is False
+    assert "stripe_projects_account" in report["required_failures"]
+
+
 def test_preflight_evidence_rejects_source_artifact_without_schema_or_matching_section(tmp_path):
     evidence = _complete_preflight_evidence()
     stripe_source = tmp_path / "stripe-projects-redacted.json"
@@ -877,6 +918,7 @@ def test_preflight_evidence_manifest_merges_redacted_section_files(tmp_path):
         section["source_artifact"] = source_path.name
         section["source_artifact_sha256"] = hashlib.sha256(source_bytes).hexdigest()
         section["source_artifact_redacted_at"] = "2026-06-29T00:00:00Z"
+        section["collector_attestation"] = _test_collector_attestation(section_name, section["source_artifact_sha256"])
     (tmp_path / "stripe-projects.json").write_text(
         json.dumps({"redacted": True, "stripe_projects": sections["stripe_projects"]}),
         encoding="utf-8",
