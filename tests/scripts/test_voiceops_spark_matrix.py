@@ -176,6 +176,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert closure["evidence_contract"]["source_artifacts_must_exist"] is True
     assert closure["evidence_contract"]["source_artifact_readable"] is True
     assert closure["evidence_contract"]["source_artifact_sha256_must_match"] is True
+    assert closure["evidence_contract"]["example_only_accepted"] is False
     assert closure["evidence_contract"]["source_artifact_resolution"].endswith("supplied benchmark evidence file")
     assert closure["benchmark_evidence_shape"]["evidence"][0]["schema_version"] == "voiceops.spark_benchmark_evidence.v1"
     assert closure["benchmark_evidence_shape"]["evidence"][0]["candidate_id"] == "oracle-nemotron3-super-local"
@@ -183,6 +184,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" == closure["rerun_commands"]["dgx_eval"]
     assert "VoiceOps Milestone 4 Spark Matrix Closure" in closure_markdown
     assert "spark-benchmark-scaffold/spark-benchmark-evidence.json" in closure_markdown
+    assert "path/to/spark-benchmark-evidence.json" not in closure_markdown
     assert "hosted or multi-Spark Nemotron 3 Ultra fallback evidence" in closure_markdown
     assert '"evidence": [' in closure_markdown
     assert "voiceops.spark_benchmark_evidence.v1" in closure_markdown
@@ -193,6 +195,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "VoiceOps DGX Spark Operator Runbook" in operator_runbook
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in operator_runbook
     assert "spark-benchmark-scaffold/spark-benchmark-evidence.json" in operator_runbook
+    assert "path/to/spark-benchmark-evidence.json" not in operator_runbook
     assert "uv run python scripts/voiceops_spark_matrix.py" in operator_runbook
     assert "uv run python scripts/voiceops_plan_run.py" in operator_runbook
     assert "Nemotron 3 Super is the preferred one-Spark oracle candidate" in operator_runbook

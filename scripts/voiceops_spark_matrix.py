@@ -25,6 +25,9 @@ EVIDENCE_SCHEMA_VERSION = "voiceops.spark_benchmark_evidence.v1"
 STACK_SMOKE_KIND = "voiceops_spark_stack_smoke"
 STACK_SMOKE_REQUIRED_COMPONENTS = ("reflex", "oracle", "asr", "tts", "sidecar")
 STACK_SMOKE_REQUIRED_ORACLE_ROUTES = ("tools", "files", "memory", "project_context")
+SPARK_BENCHMARK_SCAFFOLD_EVIDENCE = (
+    "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
+)
 
 
 @dataclass(frozen=True)
@@ -1135,12 +1138,12 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "with_evidence": (
                 "uv run python scripts/voiceops_spark_matrix.py "
                 "--output-dir artifacts/voiceops-spark-matrix/current "
-                "--evidence path/to/spark-benchmark-evidence.json"
+                f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
             ),
             "plan_index": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                 "--output-dir artifacts/voiceops-plan/current "
-                "--evidence path/to/spark-benchmark-evidence.json"
+                f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
             ),
             "dgx_eval": "scripts/dgx_spark_gemma4_voice_eval.sh",
         },

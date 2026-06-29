@@ -31,6 +31,9 @@ DEFAULT_REQUEST = (
     "Provision yourself a VoIP provider account, then call my phone with "
     "this same context so we can continue outside Discord."
 )
+SPARK_BENCHMARK_SCAFFOLD_EVIDENCE = (
+    "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
+)
 
 
 @dataclass(frozen=True)
@@ -357,12 +360,12 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "with_evidence": (
                     "uv run python scripts/voiceops_spark_matrix.py "
                     "--output-dir artifacts/voiceops-spark-matrix/current "
-                    "--evidence path/to/spark-benchmark-evidence.json"
+                    f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
                 ),
                 "plan_index": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current "
-                    "--evidence path/to/spark-benchmark-evidence.json"
+                    f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
                 ),
                 "dgx_eval": "scripts/dgx_spark_gemma4_voice_eval.sh",
             },
@@ -373,7 +376,7 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/tts-magpie-local-raw.json",
                 "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/all-local-stack-smoke-raw.json",
                 "artifacts/voiceops-spark-matrix/current/spark-operator-runbook.md",
-                "path/to/spark-benchmark-evidence.json",
+                SPARK_BENCHMARK_SCAFFOLD_EVIDENCE,
                 "artifacts/voiceops-spark-matrix/current/spark-model-matrix.json",
                 "artifacts/voiceops-spark-matrix/current/spark-matrix-closure-plan.md",
             ],
@@ -401,7 +404,7 @@ def _demo_closure_summary() -> dict[str, Any]:
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                 "--output-dir artifacts/voiceops-plan/current "
-                "--evidence path/to/spark-benchmark-evidence.json"
+                f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
             ),
         },
     ]
@@ -626,7 +629,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
             "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json "
             "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
             "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json "
-            "--evidence path/to/spark-benchmark-evidence.json"
+            f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
         ),
         "final_success_signal": "readiness_gaps is [] and closure_status is complete",
     }

@@ -524,7 +524,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "tts-magpie-local-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
     assert "all-local-stack-smoke-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
     assert "loopback_smoke_bridge protocol smoke checks" in json.dumps(handoff["phases"][2]["must_not"])
-    assert "path/to/spark-benchmark-evidence.json" in handoff["final_reindex_command"]
+    assert (
+        "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
+        in handoff["final_reindex_command"]
+    )
+    assert "path/to/spark-benchmark-evidence.json" not in handoff["final_reindex_command"]
     assert "--post-approval-receipts" in handoff["final_reindex_command"]
     gates = {gate["gate_id"]: gate for gate in summary["closure_index"]["gates"]}
     assert set(gates) == {
@@ -819,6 +823,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert spark_gate["closure_artifact"].endswith("spark-matrix-closure-plan.md")
     assert spark_gate["operator_runbook"].endswith("spark-operator-runbook.md")
     assert spark_gate["evidence_scaffold"].endswith("spark-benchmark-scaffold/spark-benchmark-evidence.json")
+    assert (
+        "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
+        in handoff_payload["final_reindex_command"]
+    )
+    assert "path/to/spark-benchmark-evidence.json" not in handoff_payload["final_reindex_command"]
+    assert spark_gate["evidence_contract"]["example_only_accepted"] is False
+    assert spark_gate["evidence_contract"]["source_artifacts_must_exist"] is True
     assert "VoiceOps Plan Run Summary" in markdown
     assert "Readiness Closure" in markdown
     assert "Current Environment" in markdown

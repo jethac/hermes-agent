@@ -621,7 +621,7 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
 ```bash
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
-  --evidence path/to/spark-benchmark-evidence.json
+  --evidence artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json
 ```
 
 If local setup discovery needs bounded binary/version checks, run the provisioning probe with explicit opt-in and then re-index its evidence:

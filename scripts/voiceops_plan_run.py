@@ -44,6 +44,9 @@ from scripts.voiceops_voice_operator import (
 DEFAULT_ARTIFACT_ROOT = Path("artifacts")
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-plan/current")
 FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
+SPARK_BENCHMARK_SCAFFOLD_EVIDENCE = (
+    "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
+)
 
 def _build_safety_flags(provisioning: dict[str, Any] | None = None) -> dict[str, Any]:
     discovery = provisioning.get("read_only_discovery", {}) if isinstance(provisioning, dict) else {}
@@ -391,7 +394,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/tts-magpie-local-raw.json",
                     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/all-local-stack-smoke-raw.json",
                     "artifacts/voiceops-spark-matrix/current/spark-operator-runbook.md",
-                    "path/to/spark-benchmark-evidence.json",
+                    SPARK_BENCHMARK_SCAFFOLD_EVIDENCE,
                     "artifacts/voiceops-spark-matrix/current/spark-model-matrix.json",
                 ],
                 "success_check": spark_gate["completion_signal"],
@@ -406,7 +409,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
             "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json "
             "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
             "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json "
-            "--evidence path/to/spark-benchmark-evidence.json"
+            f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
         ),
         "final_success_signal": "readiness_gaps is [] and closure_status is complete",
     }
@@ -826,12 +829,12 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "with_evidence": (
                     "uv run python scripts/voiceops_spark_matrix.py "
                     "--output-dir artifacts/voiceops-spark-matrix/current "
-                    "--evidence path/to/spark-benchmark-evidence.json"
+                    f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
                 ),
                 "plan_index": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current "
-                    "--evidence path/to/spark-benchmark-evidence.json"
+                    f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
                 ),
                 "dgx_eval": "scripts/dgx_spark_gemma4_voice_eval.sh",
             },
@@ -891,7 +894,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                 "--output-dir artifacts/voiceops-plan/current "
-                "--evidence path/to/spark-benchmark-evidence.json"
+                f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
             ),
             "operator_must_not": [
                 "claim one-Spark readiness from hosted or multi-Spark Nemotron 3 Ultra fallback evidence or cloud TTS fallback evidence",
