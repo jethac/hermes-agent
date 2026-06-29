@@ -238,6 +238,11 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert live_closure["evidence_shapes"]["live_turn"]["kind"] == "live_turn"
     assert live_closure["evidence_shapes"]["live_turn"]["source_artifact"] == "live-turn.json"
     assert "hermes_cli.realtime_voice_live_evidence" in live_closure["recommended_collection"]["live_bundle_manifest"]
+    assert "artifacts/realtime-voice-evidence/live-current/sidecar-session.json" in live_closure[
+        "recommended_collection"
+    ]["live_bundle_manifest"]
+    assert "--validate-live-evidence" in live_closure["recommended_collection"]["validate_bundle_offline"]
+    assert "--discord-live-probe-evidence" in live_closure["recommended_collection"]["validate_bundle_offline"]
     assert "manifest.json" in live_closure["recommended_collection"]["ingest"]
     assert json.loads(events[0])["event_id"] == "voice-m1-001"
     assert "VoiceOps Milestone 1 Voice Operator" in markdown
@@ -249,6 +254,8 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in closure_markdown
     assert "source_artifact" in closure_markdown
     assert "kind/evidence_type" in closure_markdown
+    assert "--validate-live-evidence" in closure_markdown
+    assert "artifacts/realtime-voice-evidence/live-current/sidecar-session.json" in closure_markdown
     assert "sidecar_session" in closure_markdown
     assert "live_turn" in closure_markdown
     assert "sidecar-session.json" in closure_markdown

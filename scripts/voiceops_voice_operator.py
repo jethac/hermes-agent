@@ -908,8 +908,16 @@ def build_voice_operator_report(smoke: dict[str, Any], *, live_evidence: dict[st
                 "uv run python -m hermes_cli.realtime_voice_live_evidence "
                 "--output-dir artifacts/realtime-voice-evidence/live-current "
                 "--require-live-discord --require-inbound --wait-seconds 5 "
-                "--sidecar-session-evidence path/to/sidecar-session.json "
-                "--live-turn-evidence path/to/live-turn.json"
+                "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
+                "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
+            ),
+            "validate_command": (
+                "uv run python -m hermes_cli.realtime_voice_live_evidence "
+                "--output-dir artifacts/realtime-voice-evidence/live-current "
+                "--validate-live-evidence "
+                "--discord-live-probe-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json "
+                "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
+                "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
             ),
             "ingest_command": (
                 "uv run python scripts/voiceops_voice_operator.py "
@@ -1022,6 +1030,7 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
         },
         "recommended_collection": {
             "live_bundle_manifest": report["live_probe_required_for_completion"]["recommended_command"],
+            "validate_bundle_offline": report["live_probe_required_for_completion"]["validate_command"],
             "sidecar_session": (
                 "Write sidecar-session.json with kind=sidecar_session, sidecar_running, sidecar_healthy, "
                 "session_started, session_closed, fallback_mode_visible, shutdown_bounded=true, "
