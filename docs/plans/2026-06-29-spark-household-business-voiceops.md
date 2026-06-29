@@ -257,9 +257,10 @@ The command writes:
 - `phone-context.json`
 - `readiness-report.json`
 - `readiness-report.md`
+- `operator-dashboard.html`
 - `stripe-actions-dry-run.sh`
 
-The generated shell script is dry-run by construction. It prints the Stripe/Projects commands instead of executing them. The readiness report is non-invasive: it checks local prerequisites and env shape from process env, repo `.env`, Hermes home `.env`, and explicit `--env-file` values by presence only. It does not print secrets, provision, purchase, call, or mutate credentials.
+The generated shell script is dry-run by construction. It prints the Stripe/Projects commands instead of executing them. The readiness report is non-invasive: it checks local prerequisites and env shape from process env, repo `.env`, Hermes home `.env`, and explicit `--env-file` values by presence only. It does not print secrets, provision, purchase, call, or mutate credentials. The HTML dashboard is a static recording surface and does not require a web server.
 
 ## Milestone 1: Real Voice Operator
 

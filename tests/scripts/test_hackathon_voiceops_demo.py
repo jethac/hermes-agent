@@ -17,6 +17,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "markdown",
         "audit_ledger",
         "demo_script",
+        "dashboard",
         "nemoclaw_packet",
         "phone_context",
         "readiness_json",
@@ -46,8 +47,14 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "nemoclaw-action-packet.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "phone-context.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "readiness-report.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "operator-dashboard.html" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "spoken in Discord" in Path(paths["demo_script"]).read_text(encoding="utf-8")
     assert "outbound phone call" in Path(paths["demo_script"]).read_text(encoding="utf-8")
+    dashboard = Path(paths["dashboard"]).read_text(encoding="utf-8")
+    assert "Nemotron 3 Ultra" in dashboard
+    assert "NemoClaw Blocks" in dashboard
+    assert "Approval Queue" in dashboard
+    assert "Phone Handoff" in dashboard
     assert Path(paths["readiness_json"]).exists()
     assert "VoiceOps Recording Readiness" in Path(paths["readiness_markdown"]).read_text(encoding="utf-8")
 

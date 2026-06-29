@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import html
 import json
 import os
 import shlex
@@ -78,6 +79,10 @@ def _utc_now() -> str:
 
 def _dollars(cents: int) -> str:
     return f"${cents / 100:,.2f}"
+
+
+def _h(value: Any) -> str:
+    return html.escape(str(value), quote=True)
 
 
 def _slug(value: str) -> str:
@@ -620,6 +625,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "- `nemoclaw-action-packet.json`: sandbox and approval frame for billable/network-capable actions",
         "- `phone-context.json`: outbound phone-call handoff context preserved from Discord",
         "- `readiness-report.json`: local recording prerequisite report",
+        "- `operator-dashboard.html`: static recording dashboard for budget, approvals, guardrails, and handoff state",
         "",
         "## 90-second video beat sheet",
         "",
@@ -669,6 +675,260 @@ def _readiness_markdown(report: dict[str, Any]) -> str:
             ]
         )
     return "\n".join(lines)
+
+
+def _status_class(status: Any) -> str:
+    normalized = str(status or "").strip().lower().replace("_", "-")
+    if normalized in {"pass", "ready", "queued", "demo-call-queued", "implemented-on-branch", "repo-supported"}:
+        return "ok"
+    if normalized in {"warn", "held-budget", "queued-requires-approval"}:
+        return "warn"
+    if normalized in {"fail", "failed"}:
+        return "fail"
+    return "neutral"
+
+
+def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
+    approval_cents = demo["totals"]["approval_required_cents"]
+    limit_cents = max(int(demo["spend_policy"]["limit_cents"] or 0), 1)
+    approval_percent = min(100, int(round((approval_cents / limit_cents) * 100)))
+    readiness_label = "Ready" if readiness["ready_for_recording"] else "Needs setup"
+    action_rows = []
+    for action in demo["ops_actions"]:
+        approval = "approval required" if action["requires_approval"] else "no approval"
+        action_rows.append(
+            "<tr>"
+            f"<td>{_h(action['action_id'])}</td>"
+            f"<td>{_h(action['provider'])}</td>"
+            f"<td><span class=\"pill {_status_class(action['status'])}\">{_h(action['status'])}</span></td>"
+            f"<td>{_h(_dollars(action['estimated_cents']))}</td>"
+            f"<td>{_h(approval)}</td>"
+            "</tr>"
+        )
+    readiness_items = []
+    for check in readiness["checks"]:
+        required = "required" if check["required_for_video"] else "optional"
+        readiness_items.append(
+            "<li>"
+            f"<span class=\"pill {_status_class(check['status'])}\">{_h(check['status'])}</span>"
+            f"<strong>{_h(check['check_id'])}</strong>"
+            f"<small>{_h(required)} - {_h(check['detail'])}</small>"
+            "</li>"
+        )
+    guardrail_items = "".join(
+        f"<li>{_h(item)}</li>" for item in _nemoclaw_action_packet(demo)["blocked_capabilities"]
+    )
+    phone_context = _phone_context_packet(demo)
+    surfaces = "".join(
+        "<li>"
+        f"<span>{_h(surface['channel'])}</span>"
+        f"<strong>{_h(surface['role'])}</strong>"
+        f"<small>{_h(surface['status'])}</small>"
+        "</li>"
+        for surface in demo["voice_surfaces"]
+    )
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{_h(demo['demo']['name'])}</title>
+  <style>
+    :root {{
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --ink: #17202a;
+      --muted: #5f6b7a;
+      --line: #d9e0ea;
+      --green: #0f7b5f;
+      --green-bg: #dff5ec;
+      --amber: #9a5b00;
+      --amber-bg: #fff1d2;
+      --red: #a62f2f;
+      --red-bg: #ffe0df;
+      --blue: #2458a6;
+      --blue-bg: #e6eefc;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }}
+    main {{
+      width: min(1280px, calc(100vw - 48px));
+      margin: 0 auto;
+      padding: 28px 0 36px;
+    }}
+    header {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 20px;
+      align-items: end;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 18px;
+      margin-bottom: 18px;
+    }}
+    h1 {{ margin: 0; font-size: 30px; line-height: 1.1; }}
+    h2 {{ margin: 0 0 12px; font-size: 16px; }}
+    p {{ margin: 0; color: var(--muted); line-height: 1.45; }}
+    .grid {{
+      display: grid;
+      grid-template-columns: 1.45fr 0.9fr;
+      gap: 18px;
+      align-items: start;
+    }}
+    .metrics {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }}
+    .panel, .metric {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }}
+    .metric small, li small {{
+      display: block;
+      color: var(--muted);
+      margin-top: 5px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }}
+    .metric strong {{ display: block; font-size: 22px; margin-top: 5px; }}
+    .stack {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }}
+    th, td {{
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }}
+    th {{ color: var(--muted); font-weight: 600; }}
+    .pill {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }}
+    .ok {{ background: var(--green-bg); color: var(--green); }}
+    .warn {{ background: var(--amber-bg); color: var(--amber); }}
+    .fail {{ background: var(--red-bg); color: var(--red); }}
+    .neutral {{ background: var(--blue-bg); color: var(--blue); }}
+    ul {{
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 10px;
+    }}
+    li {{
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+      overflow-wrap: anywhere;
+    }}
+    li:first-child {{ border-top: 0; padding-top: 0; }}
+    li strong {{ display: block; margin-top: 5px; }}
+    .bar {{
+      height: 10px;
+      background: #edf1f6;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 10px;
+    }}
+    .bar span {{
+      display: block;
+      height: 100%;
+      width: {approval_percent}%;
+      background: var(--green);
+    }}
+    .side {{ display: grid; gap: 18px; }}
+    .section-gap {{ display: grid; gap: 18px; }}
+    @media (max-width: 860px) {{
+      main {{ width: min(100vw - 28px, 760px); }}
+      header, .grid, .metrics, .stack {{ grid-template-columns: 1fr; }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>{_h(demo['demo']['name'])}</h1>
+        <p>{_h(demo['demo']['submission_theme'])}</p>
+      </div>
+      <span class="pill {_status_class('pass' if readiness['ready_for_recording'] else 'warn')}">{_h(readiness_label)}</span>
+    </header>
+
+    <section class="metrics">
+      <div class="metric"><small>Budget</small><strong>{_h(_dollars(demo['spend_policy']['limit_cents']))}</strong></div>
+      <div class="metric"><small>Approval queued</small><strong>{_h(_dollars(approval_cents))}</strong><div class="bar"><span></span></div></div>
+      <div class="metric"><small>Required failures</small><strong>{_h(len(readiness['required_failures']))}</strong></div>
+      <div class="metric"><small>Audit events</small><strong>{_h(len(demo['audit_events']))}</strong></div>
+    </section>
+
+    <section class="stack">
+      <div class="panel"><h2>Nemotron 3 Ultra</h2><p>{_h(demo['sponsor_stack']['nemotron_3_ultra']['role'])}</p></div>
+      <div class="panel"><h2>NemoClaw</h2><p>{_h(demo['sponsor_stack']['nemoclaw']['demo_use'])}</p></div>
+      <div class="panel"><h2>Stripe Skills</h2><p>{_h(demo['sponsor_stack']['stripe_skills']['demo_use'])}</p></div>
+    </section>
+
+    <section class="grid">
+      <div class="section-gap">
+        <div class="panel">
+          <h2>Discord Voice Request</h2>
+          <p>{_h(demo['demo']['request'])}</p>
+        </div>
+        <div class="panel">
+          <h2>Approval Queue</h2>
+          <table>
+            <thead><tr><th>Action</th><th>Provider</th><th>Status</th><th>Spend</th><th>Gate</th></tr></thead>
+            <tbody>{''.join(action_rows)}</tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h2>Voice Surfaces</h2>
+          <ul>{surfaces}</ul>
+        </div>
+      </div>
+
+      <aside class="side">
+        <div class="panel">
+          <h2>Readiness</h2>
+          <ul>{''.join(readiness_items)}</ul>
+        </div>
+        <div class="panel">
+          <h2>NemoClaw Blocks</h2>
+          <ul>{guardrail_items}</ul>
+        </div>
+        <div class="panel">
+          <h2>Phone Handoff</h2>
+          <p>{_h(phone_context['spoken_opening'])}</p>
+        </div>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>
+"""
 
 
 def _demo_script(demo: dict[str, Any]) -> str:
@@ -734,6 +994,7 @@ def write_demo(
         "phone_context": output_dir / "phone-context.json",
         "readiness_json": output_dir / "readiness-report.json",
         "readiness_markdown": output_dir / "readiness-report.md",
+        "dashboard": output_dir / "operator-dashboard.html",
         "stripe_actions": output_dir / "stripe-actions-dry-run.sh",
     }
     _write_json(paths["json"], demo)
@@ -744,6 +1005,7 @@ def write_demo(
     _write_json(paths["phone_context"], _phone_context_packet(demo))
     _write_json(paths["readiness_json"], readiness)
     paths["readiness_markdown"].write_text(_readiness_markdown(readiness), encoding="utf-8")
+    paths["dashboard"].write_text(_dashboard_html(demo, readiness), encoding="utf-8")
     paths["stripe_actions"].write_text(_stripe_script(demo["ops_actions"]), encoding="utf-8")
     paths["stripe_actions"].chmod(0o755)
     return {key: str(path) for key, path in paths.items()}
