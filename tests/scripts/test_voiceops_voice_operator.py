@@ -58,6 +58,14 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
 
     assert report["schema_version"] == "voiceops.milestone1.voice_operator.v1"
     assert report["artifact_only"] is True
+    assert report["status"] == "needs_live_probe"
+    assert report["missing_live_gates"] == [
+        "discord_join",
+        "discord_playback",
+        "live_receiver",
+        "production_sidecar",
+        "live_turn",
+    ]
     assert report["mode"] == {
         "bounded": True,
         "discord_network": False,
@@ -132,6 +140,14 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     closure_markdown = Path(paths["live_probe_closure_markdown"]).read_text(encoding="utf-8")
     events = Path(paths["events_jsonl"]).read_text(encoding="utf-8").splitlines()
     assert payload["schema_version"] == "voiceops.milestone1.voice_operator.v1"
+    assert payload["status"] == "needs_live_probe"
+    assert payload["missing_live_gates"] == [
+        "discord_join",
+        "discord_playback",
+        "live_receiver",
+        "production_sidecar",
+        "live_turn",
+    ]
     assert smoke["ok"] is True
     assert live_template["schema_version"] == "voiceops.milestone1.live_voice_evidence.v1"
     assert live_closure["schema_version"] == "voiceops.milestone1.live_probe_closure.v1"

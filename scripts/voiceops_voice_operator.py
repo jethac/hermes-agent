@@ -396,6 +396,7 @@ def build_voice_operator_report(smoke: dict[str, Any], *, live_evidence: dict[st
     coverage = _coverage_from_smoke(smoke)
     live_evidence = live_evidence or _load_live_evidence([])
     missing_live_gates = _live_evidence_missing_gates(live_evidence)
+    live_probe_status = "needs_live_probe" if missing_live_gates else "live_evidence_supplied_not_readiness_claim"
     latency = smoke.get("latency_metrics_ms") or {}
     proofs = {
         "lifecycle": {
@@ -480,6 +481,8 @@ def build_voice_operator_report(smoke: dict[str, Any], *, live_evidence: dict[st
         "schema_version": "voiceops.milestone1.voice_operator.v1",
         "artifact_id": "voiceops-m1-discord-voice-operator",
         "milestone": "milestone_1_real_voice_operator",
+        "status": live_probe_status,
+        "missing_live_gates": missing_live_gates,
         "artifact_only": True,
         "mode": {
             "headless": True,
@@ -535,7 +538,7 @@ def build_voice_operator_report(smoke: dict[str, Any], *, live_evidence: dict[st
         "live_evidence": live_evidence,
         "smoke": smoke,
         "live_probe_required_for_completion": {
-            "status": "needs_live_probe" if missing_live_gates else "live_evidence_supplied_not_readiness_claim",
+            "status": live_probe_status,
             "reason": "Headless loopback does not prove a real Discord gateway join, live receiver transport, or production sidecar availability.",
             "missing_gates": missing_live_gates,
             "recommended_command": (

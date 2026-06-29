@@ -9,6 +9,7 @@ import pytest
 
 from scripts.voiceops_provisioning_probe import (
     CommandResult,
+    PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
     build_preflight_evidence_template,
     build_milestone2_execution_plan,
     build_probe_report,
@@ -91,8 +92,11 @@ def test_probe_passes_with_safe_local_tools_and_redacts_outputs(tmp_path):
         run_commands=True,
     )
 
+    assert report["status"] == "ready"
     assert report["ready"] is True
     assert report["required_failures"] == []
+    assert report["preflight_evidence_loaded"] is True
+    assert report["preflight_evidence_missing_fields"] == []
     assert calls == [
         ["stripe", "--version"],
         ["stripe", "projects", "--help"],
@@ -122,7 +126,10 @@ def test_probe_reports_required_failures_without_running_missing_tools():
         runner=lambda argv, _timeout_seconds: calls.append(list(argv)) or CommandResult(exit_code=0),
     )
 
+    assert report["status"] == "needs_setup"
     assert report["ready"] is False
+    assert report["preflight_evidence_loaded"] is False
+    assert report["preflight_evidence_missing_fields"] == PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS
     assert set(report["required_failures"]) == {
         "credential_location_reference",
         "mpp_approval_boundary",

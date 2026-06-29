@@ -827,6 +827,7 @@ def build_probe_report(
     for area in sorted({check["area"] for check in check_dicts}):
         area_checks = [check for check in check_dicts if check["area"] == area]
         area_status[area] = "pass" if all(check["status"] == "pass" for check in area_checks if check["required"]) else "fail"
+    ready = not required_failures
     return {
         "generated_at": _utc_now(),
         "probe": {
@@ -838,8 +839,11 @@ def build_probe_report(
             "active_probe_policy": "version_help_only",
             "blocked_capabilities": BLOCKED_CAPABILITIES,
         },
-        "ready": not required_failures,
+        "status": "ready" if ready else "needs_setup",
+        "ready": ready,
         "required_failures": required_failures,
+        "preflight_evidence_loaded": preflight_evidence["loaded"],
+        "preflight_evidence_missing_fields": preflight_evidence["missing_fields"],
         "area_status": area_status,
         "preflight_evidence": preflight_evidence,
         "env_sources": env_sources,
