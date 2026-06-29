@@ -822,6 +822,44 @@ def _evidence_example() -> dict[str, Any]:
     }
 
 
+def write_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
+    scaffold_dir = output_dir / "spark-benchmark-scaffold"
+    sources_dir = scaffold_dir / "sources"
+    sources_dir.mkdir(parents=True, exist_ok=True)
+
+    scaffold = _evidence_example()
+    source_names = {
+        "reflex-gemma4-e2b": "reflex-gemma4-e2b-raw.json",
+        "oracle-nemotron3-super-local": "oracle-nemotron3-super-raw.json",
+        "asr-nemotron-speech": "asr-nemotron-speech-raw.json",
+        "tts-magpie-local": "tts-magpie-local-raw.json",
+        STACK_SMOKE_KIND: "all-local-stack-smoke-raw.json",
+    }
+    paths: dict[str, Path] = {}
+    for item in scaffold["evidence"]:
+        source_key = str(item.get("candidate_id") or item.get("kind") or "unknown")
+        source_name = source_names[source_key]
+        source_path = sources_dir / source_name
+        source_payload = {
+            "schema_version": "voiceops.spark.raw_benchmark_artifact.v1",
+            "example_only": True,
+            "source_key": source_key,
+            "hardware": SPARK_HARDWARE_TARGET,
+            "locality": "local_spark",
+            "redacted": True,
+            "redaction_policy": "example only; replace with redacted raw benchmark output, no secrets or private transcripts",
+            "summary": f"Replace this with measured DGX Spark raw output for {source_key}.",
+        }
+        _write_json(source_path, source_payload)
+        item["source_artifact"] = f"sources/{source_name}"
+        paths[f"scaffold_source_{source_key}"] = source_path
+
+    scaffold_path = scaffold_dir / "spark-benchmark-evidence.json"
+    _write_json(scaffold_path, scaffold)
+    paths["evidence_scaffold"] = scaffold_path
+    return paths
+
+
 def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
     evaluations = {item["candidate_id"]: item for item in matrix["evaluations"]}
     missing_roles = [
@@ -858,6 +896,7 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
         "stack_smoke_issues": matrix["stack_smoke"]["issues"],
         "evidence_template": "spark-benchmark-evidence-template.json",
         "evidence_example": "spark-benchmark-evidence.example.json",
+        "evidence_scaffold": "spark-benchmark-scaffold/spark-benchmark-evidence.json",
         "matrix_artifact": "spark-model-matrix.json",
         "required_candidate_fields": [
             "candidate_id",
@@ -1009,6 +1048,7 @@ def _closure_markdown(plan: dict[str, Any]) -> str:
         "",
         f"- Template: `{plan['evidence_template']}`",
         f"- Example: `{plan['evidence_example']}`",
+        f"- Scaffold: `{plan['evidence_scaffold']}`",
         f"- Matrix: `{plan['matrix_artifact']}`",
         "",
         "## Evidence Contract",
@@ -1075,6 +1115,7 @@ def write_matrix(output_dir: Path, matrix: dict[str, Any]) -> dict[str, str]:
     paths["markdown"].write_text(_markdown(matrix), encoding="utf-8")
     _write_json(paths["evidence_template"], _evidence_template(matrix["candidates"]))
     _write_json(paths["evidence_example"], _evidence_example())
+    paths.update(write_evidence_scaffold(output_dir))
     _write_json(paths["closure_json"], closure_plan)
     paths["closure_markdown"].write_text(_closure_markdown(closure_plan), encoding="utf-8")
     return {key: str(path) for key, path in paths.items()}

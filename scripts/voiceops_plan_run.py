@@ -35,6 +35,7 @@ from scripts.voiceops_voice_operator import (
 
 DEFAULT_ARTIFACT_ROOT = Path("artifacts")
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-plan/current")
+FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
 
 SAFETY_FLAGS = {
     "network_io": False,
@@ -82,6 +83,36 @@ def _env_present(env: dict[str, str], keys: list[str]) -> dict[str, bool]:
     return {key: bool(str(env.get(key) or "").strip()) for key in keys}
 
 
+def _env_file_presence(env_files: list[Path], keys: list[str]) -> dict[str, bool]:
+    key_set = set(keys)
+    presence = {key: False for key in keys}
+    for env_file in env_files:
+        resolved = env_file.expanduser().resolve(strict=False)
+        if resolved == FORBIDDEN_ENV_ROOT or FORBIDDEN_ENV_ROOT in resolved.parents:
+            raise ValueError(f"refusing to inspect forbidden Hermes worktree path: {resolved}")
+        try:
+            lines = resolved.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            continue
+        for line in lines:
+            text = line.strip()
+            if not text or text.startswith("#"):
+                continue
+            if text.startswith("export "):
+                text = text[len("export ") :].strip()
+            key, separator, value = text.partition("=")
+            key = key.strip()
+            if separator and key in key_set and value.strip().strip("'\""):
+                presence[key] = True
+    return presence
+
+
+def _env_presence(env: dict[str, str], env_files: list[Path], keys: list[str]) -> dict[str, bool]:
+    env_presence = _env_present(env, keys)
+    file_presence = _env_file_presence(env_files, keys)
+    return {key: env_presence[key] or file_presence[key] for key in keys}
+
+
 def _binary_present(name: str, env: dict[str, str]) -> bool:
     return shutil.which(name, path=env.get("PATH", "")) is not None
 
@@ -111,6 +142,8 @@ def _build_current_environment_snapshot(
     system = platform.system()
     machine = platform.machine()
     nvidia_smi_present = _binary_present("nvidia-smi", env)
+    discord_env_presence = _env_presence(env, env_files, discord_env_keys)
+    provisioning_env_presence = _env_presence(env, env_files, provisioning_env_keys)
     return {
         "schema_version": "voiceops.current_environment.v1",
         "redaction_policy": "presence booleans only; no env values, tokens, command output, or phone numbers",
@@ -122,15 +155,15 @@ def _build_current_environment_snapshot(
             for path in env_files
         ],
         "discord": {
-            "env_presence": _env_present(env, discord_env_keys),
-            "live_probe_can_run_here": all(_env_present(env, discord_env_keys[:4]).values()),
+            "env_presence": discord_env_presence,
+            "live_probe_can_run_here": all(discord_env_presence[key] for key in discord_env_keys[:4]),
             "sidecar_evidence_files_expected": [
                 "artifacts/realtime-voice-evidence/live-current/sidecar-session.json",
                 "artifacts/realtime-voice-evidence/live-current/live-turn.json",
             ],
         },
         "provisioning": {
-            "env_presence": _env_present(env, provisioning_env_keys),
+            "env_presence": provisioning_env_presence,
             "binary_presence": {binary: _binary_present(binary, env) for binary in provisioning_binaries},
             "required_cli_presence": {
                 "stripe": _binary_present("stripe", env),
@@ -244,7 +277,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 ],
                 "expected_artifacts": [
                     "artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
-                    "artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json",
+                    "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
                     "artifacts/voiceops-provisioning/current/provisioning-readiness.json",
                 ],
                 "success_check": provisioning_gate["completion_signal"],
@@ -267,6 +300,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 ],
                 "expected_artifacts": [
                     "artifacts/dgx-spark-gemma4-voice-eval/current/kame-stack",
+                    "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json",
                     "path/to/spark-benchmark-evidence.json",
                     "artifacts/voiceops-spark-matrix/current/spark-model-matrix.json",
                 ],
@@ -279,7 +313,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
             "--output-dir artifacts/voiceops-plan/current "
             "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json "
             "--env-file .env "
-            "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json "
+            "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
             "--evidence path/to/spark-benchmark-evidence.json"
         ),
         "final_success_signal": "readiness_gaps is [] and closure_status is complete",
@@ -392,6 +426,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "template_artifact": provisioning["artifacts"].get("preflight_evidence_template"),
             "evidence_example": provisioning["artifacts"].get("preflight_evidence_example"),
             "evidence_manifest_example": provisioning["artifacts"].get("preflight_evidence_manifest_example"),
+            "evidence_scaffold": provisioning["artifacts"].get("preflight_evidence_scaffold_manifest"),
             "closure_plan": provisioning["artifacts"].get("setup_closure_json"),
             "closure_artifact": provisioning["artifacts"].get("setup_closure_markdown"),
             "collection_commands": {
@@ -411,7 +446,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "ingest_preflight_manifest": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
-                    "--preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json"
+                    "--preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
                 ),
             },
             "requirement_fields_per_gate": [
@@ -468,7 +503,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "plan_index_manifest": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current --env-file .env "
-                    "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json"
+                    "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
                 ),
             },
             "rerun_command": (
@@ -494,6 +529,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "evidence_template": spark["artifacts"].get("evidence_template"),
             "template_artifact": spark["artifacts"].get("evidence_template"),
             "evidence_example": spark["artifacts"].get("evidence_example"),
+            "evidence_scaffold": spark["artifacts"].get("evidence_scaffold"),
             "matrix_artifact": spark["artifacts"].get("json"),
             "closure_plan": spark["artifacts"].get("closure_json"),
             "closure_artifact": spark["artifacts"].get("closure_markdown"),
@@ -556,6 +592,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "source_artifact_readable": True,
                 "hosted_fallback_counts_for_one_spark_readiness": False,
                 "example_only_accepted": False,
+                "scaffold_is_example_only": True,
             },
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
@@ -932,6 +969,12 @@ def _closure_markdown(closure: dict[str, Any]) -> str:
                 f"- Example artifact: `{gate.get('evidence_example') or 'none'}`",
                 f"- Manifest example artifact: `{gate.get('evidence_manifest_example') or 'none'}`",
                 f"- Closure artifact: `{gate['closure_artifact']}`",
+            ]
+        )
+        if gate.get("evidence_scaffold"):
+            lines.append(f"- Scaffold artifact: `{gate['evidence_scaffold']}`")
+        lines.extend(
+            [
                 f"- Rerun command: `{gate['rerun_command']}`",
                 f"- Completion signal: {gate['completion_signal']}",
             ]

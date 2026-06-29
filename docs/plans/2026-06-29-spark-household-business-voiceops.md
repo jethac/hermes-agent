@@ -356,6 +356,7 @@ The command writes:
 - `provisioning-preflight-evidence.template.json`
 - `provisioning-preflight-evidence.example.json`
 - `provisioning-preflight-evidence.manifest.example.json`
+- `provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json`
 - `setup-closure-plan.json`
 - `setup-closure-plan.md`
 
@@ -376,10 +377,11 @@ Or, when evidence is split by provider/domain:
 uv run python scripts/voiceops_provisioning_probe.py \
   --output-dir artifacts/voiceops-provisioning/current \
   --env-file .env \
-  --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json
+  --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json
 ```
 
 The supplied evidence path is read-only. It may be one complete `voiceops.milestone2.preflight_evidence.v1` JSON file or a `voiceops.milestone2.preflight_evidence_manifest.v1` manifest that references separate redacted section files for Stripe Projects, Stripe Link, MPP/NemoClaw, phone handoff, and rollback ownership. It must contain account aliases, capability booleans, provider references, credential-location references, rollback owners, and a `source_artifact` for every redacted evidence section. Every section must also include `source_artifact_kind: redacted_setup_evidence`, `source_artifact_sha256`, and `source_artifact_redacted_at`; the SHA-256 must match the referenced redacted JSON source artifact, and the redaction timestamp must be parseable with timezone information. Source artifacts must exist, be UTF-8 JSON, be marked redacted or carry a redaction policy, and resolve as absolute paths or paths relative to the supplied evidence/manifest file; the validator must not fall back to unrelated files in the process working directory. It must not contain Stripe secrets, provider tokens, raw card data, full phone numbers, or proof of unapproved live spend. The generated `.example.json` and `.manifest.example.json` files show redacted completed shapes for headless setup, but they are rejected as proof while `example_only: true` remains present.
+The generated `provisioning-preflight-scaffold/` directory is the preferred operator starting point for split evidence: replace each section report and redacted source artifact with real local setup proof, update the SHA-256 fields, and remove every `example_only` marker before ingesting the manifest.
 
 The Milestone 2 execution plan is also non-mutating. It is the post-approval contract for the first live provisioning flow: readiness gates, display-only discovery commands, approval-required Stripe/Link/phone actions, receipt schema, credential-location schema, rollback/deprovision notes, and phone-context linkage. It must never claim that spend, provisioning, credential retrieval, outbound messages, or phone calls have already executed.
 
@@ -430,10 +432,12 @@ The command writes:
 - `spark-model-matrix.md`
 - `spark-benchmark-evidence-template.json`
 - `spark-benchmark-evidence.example.json`
+- `spark-benchmark-scaffold/spark-benchmark-evidence.json`
 - `spark-matrix-closure-plan.json`
 - `spark-matrix-closure-plan.md`
 
 When benchmark evidence exists, pass it with repeated `--evidence path/to/evidence.json` arguments. The matrix accepts its native `voiceops.spark_benchmark_evidence.v1` records and adapts the generated KAME DGX Spark benchmark evidence shape when provenance is present. Local readiness requires more than role metrics: evidence must identify the hardware/locality, model, measurement time, source artifact, verification state, and an all-local stack smoke proving reflex, oracle, ASR, TTS, and sidecar ran together on one DGX Spark. The stack smoke must also prove KAME routing: the oracle is selected by Hermes `/model`, oracle authority routes include tools/files/memory/project context, the interface input source includes `native_audio`, and the reflex provider includes `vllm`. The smoke metrics must include `speech_end_to_first_audio_ms <= 1500`, `barge_in_stop_ms <= 150`, `local_turns >= 1`, `local_turn_oracle_calls == 0`, `oracle_bound_turns >= 1`, and `oracle_bound_oracle_calls >= oracle_bound_turns`. For adapted KAME smoke, local reflex turns must not call the oracle, while oracle-bound turns must route through Hermes `/model` authority. Until measured evidence is supplied, the matrix must mark local Spark roles and `all_local_stack_smoke` as needing evidence rather than claiming readiness. The generated `.example.json` file is a passing-looking guide for measured Spark artifacts, but all `example_only: true` entries are rejected by the matrix. The generated Spark closure plan is the Milestone 4 checklist that the readiness closure index should point at for missing model, speech, and all-local stack-smoke proof.
+The generated `spark-benchmark-scaffold/` directory is the preferred DGX operator starting point: it contains a wrapper benchmark evidence file plus placeholder raw-source artifacts that resolve correctly but are rejected until replaced with measured DGX Spark output and all `example_only` markers are removed.
 
 ## Milestone 5: Operator Dashboard
 
@@ -513,7 +517,7 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
   --env-file .env \
-  --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json
+  --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json
 ```
 
 ```bash

@@ -95,19 +95,30 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert oracle_candidates["oracle-nemotron3-super-local"]["locality"] == "local_spark"
     assert oracle_candidates["oracle-nemotron3-ultra-hosted"]["priority"] == 2
     assert oracle_candidates["oracle-nemotron3-ultra-hosted"]["locality"] == "hosted"
-    assert set(paths) == {
+    required_paths = {
         "closure_json",
         "closure_markdown",
         "evidence_example",
+        "evidence_scaffold",
         "evidence_template",
         "json",
         "markdown",
     }
+    assert required_paths <= set(paths)
+    assert {
+        "scaffold_source_reflex-gemma4-e2b",
+        "scaffold_source_oracle-nemotron3-super-local",
+        "scaffold_source_asr-nemotron-speech",
+        "scaffold_source_tts-magpie-local",
+        "scaffold_source_voiceops_spark_stack_smoke",
+    } <= set(paths)
     assert "VoiceOps DGX Spark Model Matrix" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "all_local_stack_smoke: needs_evidence" in Path(paths["markdown"]).read_text(encoding="utf-8")
     closure = json.loads(Path(paths["closure_json"]).read_text(encoding="utf-8"))
     closure_markdown = Path(paths["closure_markdown"]).read_text(encoding="utf-8")
     example = json.loads(Path(paths["evidence_example"]).read_text(encoding="utf-8"))
+    scaffold_path = Path(paths["evidence_scaffold"])
+    scaffold = json.loads(scaffold_path.read_text(encoding="utf-8"))
     template = json.loads(Path(paths["evidence_template"]).read_text(encoding="utf-8"))
     assert closure["schema_version"] == "voiceops.milestone4.spark_matrix_closure.v1"
     assert closure["status"] == "needs_external_evidence"
@@ -148,6 +159,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert closure["benchmark_evidence_shape"]["evidence"][1]["kind"] == "voiceops_spark_stack_smoke"
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" == closure["rerun_commands"]["dgx_eval"]
     assert "VoiceOps Milestone 4 Spark Matrix Closure" in closure_markdown
+    assert "spark-benchmark-scaffold/spark-benchmark-evidence.json" in closure_markdown
     assert "hosted Nemotron 3 Ultra fallback evidence" in closure_markdown
     assert '"evidence": [' in closure_markdown
     assert "voiceops.spark_benchmark_evidence.v1" in closure_markdown
@@ -156,6 +168,19 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "source_artifacts_must_exist" in closure_markdown
     assert example["example_only"] is True
     assert all(item["example_only"] is True for item in example["evidence"])
+    assert scaffold["example_only"] is True
+    assert scaffold["evidence"][0]["source_artifact"] == "sources/reflex-gemma4-e2b-raw.json"
+    scaffold_matrix = build_matrix([scaffold_path])
+    scaffold_evaluations = {
+        evaluation["candidate_id"]: evaluation
+        for evaluation in scaffold_matrix["evaluations"]
+    }
+    assert scaffold_matrix["ready_for_one_spark_demo"] is False
+    assert "example_only_evidence_not_accepted" in scaffold_evaluations["reflex-gemma4-e2b"]["issues"]
+    assert "source_artifact_not_found" not in scaffold_evaluations["reflex-gemma4-e2b"]["issues"]
+    assert "source_artifact_not_found" not in scaffold_matrix["stack_smoke"]["issues"]
+    scaffold_source = json.loads(Path(paths["scaffold_source_reflex-gemma4-e2b"]).read_text(encoding="utf-8"))
+    assert scaffold_source["redacted"] is True
     assert template["evidence"][0]["verified"] is False
     assert template["evidence"][0]["schema_version"] == "voiceops.spark_benchmark_evidence.v1"
     assert template["evidence"][0]["model"]
@@ -912,6 +937,7 @@ def test_spark_matrix_cli_smoke(tmp_path):
     assert Path(payload["artifacts"]["closure_markdown"]).exists()
     assert Path(payload["artifacts"]["json"]).exists()
     assert Path(payload["artifacts"]["evidence_example"]).exists()
+    assert Path(payload["artifacts"]["evidence_scaffold"]).exists()
     assert Path(payload["artifacts"]["evidence_template"]).exists()
 
 

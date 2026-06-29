@@ -58,7 +58,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert handoff["phases"][0]["can_run_here_now"] is False
     assert "sidecar-session.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
     assert "python -m hermes_cli.realtime_voice_live_evidence" in handoff["phases"][0]["commands"][0]
-    assert "provisioning-preflight-evidence.manifest.json" in json.dumps(handoff["phases"][1])
+    assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in json.dumps(
+        handoff["phases"][1]
+    )
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in handoff["phases"][2]["commands"]
     assert "path/to/spark-benchmark-evidence.json" in handoff["final_reindex_command"]
     gates = {gate["gate_id"]: gate for gate in summary["closure_index"]["gates"]}
@@ -99,7 +101,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "process cwd is never used"
     )
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["example_only_accepted"] is False
-    assert "provisioning-preflight-evidence.manifest.json" in gates["spend_and_provisioning_preflight"]["collection_commands"]["ingest_preflight_manifest"]
+    assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in gates[
+        "spend_and_provisioning_preflight"
+    ]["collection_commands"]["ingest_preflight_manifest"]
     assert gates["spend_and_provisioning_preflight"]["current_environment"]["required_cli_presence"]["stripe"] is False
     assert "required_candidate_fields" in gates["local_spark_stack_matrix"]
     assert "schema_version" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
@@ -162,6 +166,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(provisioning_result["artifacts"]["execution_plan_markdown"]).exists()
     assert Path(provisioning_result["artifacts"]["preflight_evidence_example"]).exists()
     assert Path(provisioning_result["artifacts"]["preflight_evidence_manifest_example"]).exists()
+    assert Path(provisioning_result["artifacts"]["preflight_evidence_scaffold_manifest"]).exists()
 
     channel_result = next(result for result in summary["results"] if result["milestone"] == "milestone_3_multi_channel_policy")
     assert channel_result["status"] == "needs_review"
@@ -178,6 +183,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(matrix_result["artifacts"]["closure_json"]).exists()
     assert Path(matrix_result["artifacts"]["closure_markdown"]).exists()
     assert Path(matrix_result["artifacts"]["evidence_example"]).exists()
+    assert Path(matrix_result["artifacts"]["evidence_scaffold"]).exists()
 
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     closure = json.loads(Path(paths["closure_json"]).read_text(encoding="utf-8"))
@@ -194,10 +200,16 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert provisioning_gate["evidence_manifest_example"].endswith(
         "provisioning-preflight-evidence.manifest.example.json"
     )
-    assert "provisioning-preflight-evidence.manifest.json" in provisioning_gate["rerun_commands"]["plan_index_manifest"]
+    assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in provisioning_gate[
+        "rerun_commands"
+    ]["plan_index_manifest"]
+    assert provisioning_gate["evidence_scaffold"].endswith(
+        "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
+    )
     spark_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "local_spark_stack_matrix")
     assert spark_gate["closure_plan"].endswith("spark-matrix-closure-plan.json")
     assert spark_gate["closure_artifact"].endswith("spark-matrix-closure-plan.md")
+    assert spark_gate["evidence_scaffold"].endswith("spark-benchmark-scaffold/spark-benchmark-evidence.json")
     assert "VoiceOps Plan Run Summary" in markdown
     assert "Readiness Closure" in markdown
     assert "Current Environment" in markdown
@@ -235,10 +247,12 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
         "provisioning-preflight-evidence.template.json",
         "provisioning-preflight-evidence.example.json",
         "provisioning-preflight-evidence.manifest.example.json",
+        "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
         "setup-closure-plan.json",
         "setup-closure-plan.md",
         "spark-benchmark-evidence-template.json",
         "spark-benchmark-evidence.example.json",
+        "spark-benchmark-scaffold/spark-benchmark-evidence.json",
         "spark-matrix-closure-plan.json",
         "spark-matrix-closure-plan.md",
         "readiness-closure-index.json",
@@ -312,6 +326,39 @@ def test_plan_run_keeps_provisioning_incomplete_without_preflight_evidence(tmp_p
     assert provisioning_result["details"]["preflight_evidence_loaded"] is False
     assert "stripe_projects_account" in provisioning_result["details"]["required_failures"]
     assert provisioning_result["details"]["run_command_probes"] is False
+
+
+def test_plan_run_env_file_presence_is_redacted_and_reflected_in_handoff(tmp_path):
+    artifact_root = tmp_path / "artifacts"
+    output_dir = artifact_root / "voiceops-plan" / "current"
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "DISCORD_BOT_TOKEN=secret-discord-token",
+                "DISCORD_GUILD_ID=123",
+                "DISCORD_HOME_CHANNEL=general",
+                "DISCORD_VOICE_CHANNEL_ID=456",
+                "DISCORD_VOICE_CHANNEL_NAME=General",
+                "VOICEOPS_DEMO_PHONE_NUMBER=+15551234567",
+                "TWILIO_ACCOUNT_SID=AC123456789",
+                "TWILIO_AUTH_TOKEN=secret-twilio-token",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    summary = build_plan_run(artifact_root=artifact_root, output_dir=output_dir, env={}, env_files=[env_file])
+    serialized = json.dumps(summary)
+
+    assert summary["current_environment"]["discord"]["env_presence"]["DISCORD_BOT_TOKEN"] is True
+    assert summary["current_environment"]["discord"]["live_probe_can_run_here"] is True
+    assert summary["closure_index"]["current_environment_blockers"]["discord_env"]["missing_env_keys"] == []
+    assert summary["closure_index"]["operator_handoff"]["phases"][0]["can_run_here_now"] is True
+    assert summary["current_environment"]["provisioning"]["env_presence"]["VOICEOPS_DEMO_PHONE_NUMBER"] is True
+    assert "secret-discord-token" not in serialized
+    assert "secret-twilio-token" not in serialized
+    assert "+15551234567" not in serialized
 
 
 def test_plan_run_cli_smoke(tmp_path):
