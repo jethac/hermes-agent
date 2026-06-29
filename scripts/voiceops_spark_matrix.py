@@ -402,6 +402,8 @@ def evaluate_candidate(candidate: Candidate, evidence: list[dict[str, Any]]) -> 
 
     issues: list[str] = []
     for item in matching:
+        if item.get("example_only") is True:
+            issues.append("example_only_evidence_not_accepted")
         if item.get("verified") is not True:
             issues.append("evidence_not_verified")
         if str(item.get("schema_version") or "") != EVIDENCE_SCHEMA_VERSION:
@@ -471,6 +473,8 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
 
     issues: list[str] = []
     for item in matching:
+        if item.get("example_only") is True:
+            issues.append("example_only_evidence_not_accepted")
         if item.get("verified") is not True:
             issues.append("evidence_not_verified")
         if str(item.get("schema_version") or "") != EVIDENCE_SCHEMA_VERSION:
@@ -630,7 +634,13 @@ def _evidence_template(candidates: list[dict[str, Any]]) -> dict[str, Any]:
                 "measured_at": None,
                 "source_artifact": None,
                 "metrics": {target["metric"]: None for target in candidate["required_targets"]},
-                "notes": "replace null metrics with measured values from the benchmark run; source_artifact must point at the raw run output",
+                "notes": (
+                    "replace null metrics with measured values from the benchmark run; "
+                    "hosted fallback evidence must not validate Spark-local readiness; "
+                    "source_artifact must point at the raw run output"
+                    if candidate["locality"] == "hosted"
+                    else "replace null metrics with measured values from the benchmark run; source_artifact must point at the raw run output"
+                ),
             }
             for candidate in candidates
         ]
@@ -655,16 +665,112 @@ def _evidence_template(candidates: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _evidence_example() -> dict[str, Any]:
+    return {
+        "example_only": True,
+        "schema_version": EVIDENCE_SCHEMA_VERSION,
+        "redaction_policy": "example only; replace metrics/source refs with measured DGX Spark artifacts and remove example_only before ingest",
+        "evidence": [
+            {
+                "schema_version": EVIDENCE_SCHEMA_VERSION,
+                "candidate_id": "reflex-gemma4-e2b",
+                "hardware": SPARK_HARDWARE_TARGET,
+                "locality": "local_spark",
+                "model": "Gemma 4 E2B audio-native",
+                "engine": "vLLM multimodal audio path or equivalent Spark container",
+                "verified": True,
+                "measured_at": "2026-06-29T00:00:00Z",
+                "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/reflex-raw.json",
+                "metrics": {
+                    "first_token_ms": 700,
+                    "intent_latency_ms": 1100,
+                    "steady_state_memory_gb": 20,
+                },
+                "example_only": True,
+            },
+            {
+                "schema_version": EVIDENCE_SCHEMA_VERSION,
+                "candidate_id": "oracle-nemotron3-super-local",
+                "hardware": SPARK_HARDWARE_TARGET,
+                "locality": "local_spark",
+                "model": "Nemotron 3 Super",
+                "engine": "Hermes /model to local NVIDIA Spark endpoint",
+                "verified": True,
+                "measured_at": "2026-06-29T00:00:00Z",
+                "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/oracle-raw.json",
+                "metrics": {
+                    "decode_tok_s": 24,
+                    "prefill_tok_s": 3100,
+                    "first_token_ms": 2100,
+                    "steady_state_memory_gb": 86,
+                },
+                "example_only": True,
+            },
+            {
+                "schema_version": EVIDENCE_SCHEMA_VERSION,
+                "candidate_id": "asr-nemotron-speech",
+                "hardware": SPARK_HARDWARE_TARGET,
+                "locality": "local_spark",
+                "model": "Nemotron Speech streaming",
+                "engine": "local NeMo/Riva-style streaming ASR",
+                "verified": True,
+                "measured_at": "2026-06-29T00:00:00Z",
+                "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/asr-raw.json",
+                "metrics": {
+                    "asr_delta_ms": 30,
+                    "final_transcript_ms": 600,
+                    "word_error_rate": 0.08,
+                },
+                "example_only": True,
+            },
+            {
+                "schema_version": EVIDENCE_SCHEMA_VERSION,
+                "candidate_id": "tts-magpie-local",
+                "hardware": SPARK_HARDWARE_TARGET,
+                "locality": "local_spark",
+                "model": "Magpie local TTS",
+                "engine": "local Spark speech service",
+                "verified": True,
+                "measured_at": "2026-06-29T00:00:00Z",
+                "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/tts-raw.json",
+                "metrics": {
+                    "tts_first_audio_ms": 200,
+                    "underrun_count": 0,
+                },
+                "example_only": True,
+            },
+            {
+                "schema_version": EVIDENCE_SCHEMA_VERSION,
+                "kind": STACK_SMOKE_KIND,
+                "hardware": SPARK_HARDWARE_TARGET,
+                "locality": "local_spark",
+                "verified": True,
+                "measured_at": "2026-06-29T00:00:00Z",
+                "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/all-local-stack-smoke.json",
+                "oracle_selected_by": "Hermes /model",
+                "components": {name: True for name in STACK_SMOKE_REQUIRED_COMPONENTS},
+                "metrics": {
+                    "speech_end_to_first_audio_ms": 900,
+                    "barge_in_stop_ms": 90,
+                },
+                "example_only": True,
+            },
+        ],
+    }
+
+
 def write_matrix(output_dir: Path, matrix: dict[str, Any]) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
     paths = {
         "json": output_dir / "spark-model-matrix.json",
         "markdown": output_dir / "spark-model-matrix.md",
         "evidence_template": output_dir / "spark-benchmark-evidence-template.json",
+        "evidence_example": output_dir / "spark-benchmark-evidence.example.json",
     }
     _write_json(paths["json"], matrix)
     paths["markdown"].write_text(_markdown(matrix), encoding="utf-8")
     _write_json(paths["evidence_template"], _evidence_template(matrix["candidates"]))
+    _write_json(paths["evidence_example"], _evidence_example())
     return {key: str(path) for key, path in paths.items()}
 
 

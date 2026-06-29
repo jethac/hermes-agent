@@ -10,9 +10,11 @@ import pytest
 from scripts.voiceops_provisioning_probe import (
     CommandResult,
     PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
+    build_preflight_evidence_example,
     build_preflight_evidence_template,
     build_milestone2_execution_plan,
     build_probe_report,
+    load_preflight_evidence,
     parse_args,
     write_probe_artifacts,
 )
@@ -198,6 +200,7 @@ def test_write_probe_artifacts(tmp_path):
         "execution_plan_markdown",
         "json",
         "markdown",
+        "preflight_evidence_example",
         "preflight_evidence_template",
         "setup_closure_json",
         "setup_closure_markdown",
@@ -206,6 +209,7 @@ def test_write_probe_artifacts(tmp_path):
     execution_plan = json.loads(Path(paths["execution_plan_json"]).read_text(encoding="utf-8"))
     manifest = json.loads(Path(paths["command_manifest"]).read_text(encoding="utf-8"))
     setup_closure = json.loads(Path(paths["setup_closure_json"]).read_text(encoding="utf-8"))
+    preflight_example = json.loads(Path(paths["preflight_evidence_example"]).read_text(encoding="utf-8"))
     preflight_template = json.loads(Path(paths["preflight_evidence_template"]).read_text(encoding="utf-8"))
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
     execution_markdown = Path(paths["execution_plan_markdown"]).read_text(encoding="utf-8")
@@ -219,9 +223,38 @@ def test_write_probe_artifacts(tmp_path):
     assert "VoiceOps Milestone 2 Execution Plan" in execution_markdown
     assert setup_closure["schema_version"] == "voiceops.milestone2.setup_closure.v1"
     assert "VoiceOps Milestone 2 Setup Closure Plan" in setup_markdown
+    assert preflight_example["example_only"] is True
+    assert "example_only evidence is not accepted" in load_preflight_evidence(
+        Path(paths["preflight_evidence_example"])
+    )["validation_issues"]
     assert preflight_template["schema_version"] == "voiceops.milestone2.preflight_evidence.v1"
     assert "projects add" in manifest["blocked_patterns"]
     assert "+15551234567" not in json.dumps(payload)
+
+
+def test_preflight_evidence_example_is_not_accepted_as_proof(tmp_path):
+    evidence_path = _write_preflight_evidence(tmp_path, build_preflight_evidence_example())
+
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
+        env_files=[],
+        preflight_evidence_path=evidence_path,
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+    )
+
+    assert report["ready"] is False
+    assert report["preflight_evidence_loaded"] is True
+    assert report["preflight_evidence_missing_fields"] == []
+    assert "example_only evidence is not accepted" in report["preflight_evidence"]["validation_issues"]
+    assert {
+        "credential_location_reference",
+        "mpp_approval_boundary",
+        "phone_provider_account",
+        "rollback_owner_refs",
+        "stripe_link_approval_capability",
+        "stripe_projects_account",
+    } <= set(report["required_failures"])
 
 
 def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():

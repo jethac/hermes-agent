@@ -72,10 +72,13 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert oracle_candidates["oracle-nemotron3-super-local"]["locality"] == "local_spark"
     assert oracle_candidates["oracle-nemotron3-ultra-hosted"]["priority"] == 2
     assert oracle_candidates["oracle-nemotron3-ultra-hosted"]["locality"] == "hosted"
-    assert set(paths) == {"json", "markdown", "evidence_template"}
+    assert set(paths) == {"json", "markdown", "evidence_example", "evidence_template"}
     assert "VoiceOps DGX Spark Model Matrix" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "all_local_stack_smoke: needs_evidence" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    example = json.loads(Path(paths["evidence_example"]).read_text(encoding="utf-8"))
     template = json.loads(Path(paths["evidence_template"]).read_text(encoding="utf-8"))
+    assert example["example_only"] is True
+    assert all(item["example_only"] is True for item in example["evidence"])
     assert template["evidence"][0]["verified"] is False
     assert template["evidence"][0]["schema_version"] == "voiceops.spark_benchmark_evidence.v1"
     assert template["evidence"][0]["model"]
@@ -126,6 +129,28 @@ def test_spark_matrix_validates_matching_evidence(tmp_path):
     assert evaluations["asr-nemotron-speech"]["status"] == "validated"
     assert evaluations["tts-magpie-local"]["status"] == "validated"
     assert matrix["stack_smoke"]["status"] == "validated"
+
+
+def test_spark_matrix_example_is_not_accepted_as_proof(tmp_path):
+    paths = write_matrix(tmp_path, build_matrix())
+
+    matrix = build_matrix([Path(paths["evidence_example"])])
+    evaluations = {evaluation["candidate_id"]: evaluation for evaluation in matrix["evaluations"]}
+
+    assert matrix["ready_for_one_spark_demo"] is False
+    assert evaluations["reflex-gemma4-e2b"]["status"] == "fails_target"
+    assert evaluations["oracle-nemotron3-super-local"]["status"] == "fails_target"
+    assert evaluations["asr-nemotron-speech"]["status"] == "fails_target"
+    assert evaluations["tts-magpie-local"]["status"] == "fails_target"
+    assert "example_only_evidence_not_accepted" in evaluations["oracle-nemotron3-super-local"]["issues"]
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "example_only_evidence_not_accepted" in matrix["stack_smoke"]["issues"]
+    assert matrix["role_status"] == {
+        "asr": "needs_evidence",
+        "oracle": "needs_evidence",
+        "reflex": "needs_evidence",
+        "tts": "needs_evidence",
+    }
 
 
 def test_spark_matrix_fails_unverified_or_slow_evidence(tmp_path):
@@ -457,6 +482,7 @@ def test_spark_matrix_cli_smoke(tmp_path):
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
     assert Path(payload["artifacts"]["json"]).exists()
+    assert Path(payload["artifacts"]["evidence_example"]).exists()
     assert Path(payload["artifacts"]["evidence_template"]).exists()
 
 

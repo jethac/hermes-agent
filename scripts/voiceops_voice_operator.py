@@ -164,6 +164,61 @@ def build_live_probe_evidence_template() -> dict[str, Any]:
     }
 
 
+def build_live_probe_evidence_example() -> dict[str, Any]:
+    example = build_live_probe_evidence_template()
+    example["example_only"] = True
+    example["redaction_policy"] = "example only; copy shape with real artifact refs and remove example_only before ingest"
+    example["discord_live_probe"].update(
+        {
+            "ok": True,
+            "connect_perm": True,
+            "speak_perm": True,
+            "connected": True,
+            "opus_loaded": True,
+            "accepted_audio_source": True,
+            "played": True,
+            "playing_during_probe": True,
+            "receiver_started": True,
+            "receiver_frames": 42,
+            "receiver_speech_start": 1,
+            "inbound_observed": True,
+            "disconnected": True,
+            "latency_metrics_ms": {
+                "connect_ms": 420,
+                "playback_observed_ms": 180,
+                "inbound_observed_ms": 900,
+                "disconnect_ms": 120,
+            },
+        }
+    )
+    example["sidecar_session"].update(
+        {
+            "sidecar_running": True,
+            "sidecar_healthy": True,
+            "session_started": True,
+            "session_closed": True,
+            "fallback_mode_visible": True,
+            "fallback_reason": "none",
+            "latency_metrics_ms": {
+                "session_start_ms": 110,
+                "shutdown_ms": 80,
+            },
+        }
+    )
+    example["live_turn"].update(
+        {
+            "transcript_observed": True,
+            "assistant_audio_observed": True,
+            "barge_in_observed": True,
+            "spoken_reply_short": True,
+            "no_voice_denial_observed": True,
+            "speech_end_to_first_audio_ms": 950,
+            "barge_in_stop_ms": 90,
+        }
+    )
+    return example
+
+
 def _load_live_evidence(paths: list[Path] | None) -> dict[str, Any]:
     paths = paths or []
     if not paths:
@@ -247,6 +302,8 @@ def _discord_probe_section(payload: Mapping[str, Any]) -> Mapping[str, Any]:
 
 def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path] | None = None) -> dict[str, Any]:
     issues: list[str] = []
+    if payload.get("example_only") is True:
+        issues.append("example_only_evidence_not_accepted")
     redaction_issues: list[str] = []
     for key, value in _walk_live_evidence_strings(payload):
         if _looks_secret_or_phone(value):
@@ -686,6 +743,7 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
         "smoke_json": output_dir / "discord-loopback-smoke.json",
         "events_jsonl": output_dir / "voice-operator-events.jsonl",
         "live_evidence_template": output_dir / "live-voice-evidence-template.json",
+        "live_evidence_example": output_dir / "live-voice-evidence.example.json",
         "live_probe_closure_json": output_dir / "live-probe-closure-plan.json",
         "live_probe_closure_markdown": output_dir / "live-probe-closure-plan.md",
     }
@@ -693,6 +751,7 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
     paths["markdown"].write_text(_markdown(report), encoding="utf-8")
     _write_json(paths["smoke_json"], report["smoke"])
     _write_json(paths["live_evidence_template"], build_live_probe_evidence_template())
+    _write_json(paths["live_evidence_example"], build_live_probe_evidence_example())
     _write_json(paths["live_probe_closure_json"], closure_plan)
     paths["live_probe_closure_markdown"].write_text(_live_probe_closure_markdown(closure_plan), encoding="utf-8")
     _write_jsonl(

@@ -983,7 +983,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         "",
         "- Discord voice is the live front door.",
         f"- {demo['sponsor_stack']['nemotron_3_super']['selection']} is the visible serious planning path.",
-        f"- Nemotron 3 Ultra hosted fallback: {demo['sponsor_stack']['nemotron_3_ultra_hosted_fallback']['selection']} if the local Spark path is unavailable.",
+        "- Hosted fallback: Nemotron 3 Ultra via Hermes /model hosted provider path, only if the local Nemotron 3 Super Spark path is unavailable.",
         "- NemoClaw frames billable and network-capable actions before execution.",
         "- Stripe Skills provide the spend and provisioning rail.",
         f"- The spoken budget becomes a {_dollars(policy['limit_cents'])} spend policy with approval required over {_dollars(policy['approval_required_over_cents'])}.",

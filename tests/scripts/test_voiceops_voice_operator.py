@@ -7,6 +7,7 @@ from pathlib import Path
 
 from scripts.voiceops_voice_operator import (
     DEFAULT_OUTPUT_DIR,
+    build_live_probe_evidence_example,
     build_live_probe_evidence_template,
     build_voice_operator_report,
     parse_args,
@@ -126,6 +127,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert set(paths) == {
         "events_jsonl",
         "json",
+        "live_evidence_example",
         "live_evidence_template",
         "live_probe_closure_json",
         "live_probe_closure_markdown",
@@ -135,6 +137,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     smoke = json.loads(Path(paths["smoke_json"]).read_text(encoding="utf-8"))
     live_template = json.loads(Path(paths["live_evidence_template"]).read_text(encoding="utf-8"))
+    live_example = json.loads(Path(paths["live_evidence_example"]).read_text(encoding="utf-8"))
     live_closure = json.loads(Path(paths["live_probe_closure_json"]).read_text(encoding="utf-8"))
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
     closure_markdown = Path(paths["live_probe_closure_markdown"]).read_text(encoding="utf-8")
@@ -150,6 +153,8 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     ]
     assert smoke["ok"] is True
     assert live_template["schema_version"] == "voiceops.milestone1.live_voice_evidence.v1"
+    assert live_example["example_only"] is True
+    assert "example_only_evidence_not_accepted" in validate_live_probe_evidence(live_example)["issues"]
     assert live_closure["schema_version"] == "voiceops.milestone1.live_probe_closure.v1"
     assert json.loads(events[0])["event_id"] == "voice-m1-001"
     assert "VoiceOps Milestone 1 Voice Operator" in markdown
@@ -185,6 +190,13 @@ def test_live_evidence_classifies_partial_discord_probe_without_inbound():
     assert result["discord_live_probe"]["playback_ok"] is True
     assert result["discord_live_probe"]["inbound_observed"] is False
     assert "discord_live_probe:inbound_not_observed" in result["issues"]
+
+
+def test_live_evidence_example_is_not_accepted_as_proof():
+    result = validate_live_probe_evidence(build_live_probe_evidence_example())
+
+    assert result["overall_status"] == "partial_live_evidence"
+    assert "example_only_evidence_not_accepted" in result["issues"]
 
 
 def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing_safety_mode():

@@ -69,6 +69,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(voice_result["artifacts"]["markdown"]).exists()
     assert Path(voice_result["artifacts"]["smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["events_jsonl"]).exists()
+    assert Path(voice_result["artifacts"]["live_evidence_example"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_template"]).exists()
     assert Path(voice_result["artifacts"]["live_probe_closure_json"]).exists()
 
@@ -80,11 +81,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert provisioning_result["details"]["run_command_probes"] is False
     assert Path(provisioning_result["artifacts"]["execution_plan_json"]).exists()
     assert Path(provisioning_result["artifacts"]["execution_plan_markdown"]).exists()
+    assert Path(provisioning_result["artifacts"]["preflight_evidence_example"]).exists()
 
     matrix_result = next(result for result in summary["results"] if result["milestone"] == "milestone_4_local_spark_stack_matrix")
     assert matrix_result["status"] == "needs_evidence"
     assert matrix_result["details"]["ready_for_one_spark_demo"] is False
     assert matrix_result["details"]["stack_smoke_status"] == "needs_evidence"
+    assert Path(matrix_result["artifacts"]["evidence_example"]).exists()
 
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     closure = json.loads(Path(paths["closure_json"]).read_text(encoding="utf-8"))
@@ -105,12 +108,15 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
 
     for artifact in [
         "live-voice-evidence-template.json",
+        "live-voice-evidence.example.json",
         "live-probe-closure-plan.json",
         "live-probe-closure-plan.md",
         "provisioning-preflight-evidence.template.json",
+        "provisioning-preflight-evidence.example.json",
         "setup-closure-plan.json",
         "setup-closure-plan.md",
         "spark-benchmark-evidence-template.json",
+        "spark-benchmark-evidence.example.json",
         "readiness-closure-index.json",
         "readiness-closure-index.md",
     ]:

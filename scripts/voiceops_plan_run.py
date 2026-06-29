@@ -241,7 +241,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "--evidence path/to/spark-benchmark-evidence.json"
             ),
             "operator_must_not": [
-                "claim one-Spark readiness from hosted Ultra or cloud TTS fallback evidence",
+                "claim one-Spark readiness from hosted Nemotron 3 Ultra fallback evidence or cloud TTS fallback evidence",
                 "mark benchmark evidence verified without raw source artifacts",
                 "treat the matrix template as measured evidence",
             ],

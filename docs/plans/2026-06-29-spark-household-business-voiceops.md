@@ -300,6 +300,7 @@ The command writes:
 - `discord-loopback-smoke.json`
 - `voice-operator-events.jsonl`
 - `live-voice-evidence-template.json`
+- `live-voice-evidence.example.json`
 - `live-probe-closure-plan.json`
 - `live-probe-closure-plan.md`
 
@@ -315,7 +316,7 @@ uv run python scripts/voiceops_voice_operator.py \
   --live-evidence path/to/live-turn.json
 ```
 
-The supplied evidence path is read-only. It must prove Discord join/playback, inbound receiver frames or speech-start, production sidecar session start/close, and one live conversational turn with transcript, assistant audio, barge-in, short spoken reply, no voice-capability denial, first-audio latency, and barge-in stop latency. It must not include Discord tokens, provider secrets, full phone numbers, or private transcript text containing secrets.
+The supplied evidence path is read-only. It must prove Discord join/playback, inbound receiver frames or speech-start, production sidecar session start/close, and one live conversational turn with transcript, assistant audio, barge-in, short spoken reply, no voice-capability denial, first-audio latency, and barge-in stop latency. It must not include Discord tokens, provider secrets, full phone numbers, or private transcript text containing secrets. The generated `.example.json` file is only a populated redacted shape for operators; validators reject `example_only: true` evidence until real artifact references replace it.
 
 ## Milestone 2: Real Spend and Provisioning
 
@@ -344,6 +345,7 @@ The command writes:
 - `milestone2-execution-plan.json`
 - `milestone2-execution-plan.md`
 - `provisioning-preflight-evidence.template.json`
+- `provisioning-preflight-evidence.example.json`
 - `setup-closure-plan.json`
 - `setup-closure-plan.md`
 
@@ -358,7 +360,7 @@ uv run python scripts/voiceops_provisioning_probe.py \
   --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json
 ```
 
-The supplied evidence path is read-only. It must contain account aliases, capability booleans, provider references, credential-location references, and rollback owners only. It must not contain Stripe secrets, provider tokens, raw card data, full phone numbers, or proof of unapproved live spend.
+The supplied evidence path is read-only. It must contain account aliases, capability booleans, provider references, credential-location references, and rollback owners only. It must not contain Stripe secrets, provider tokens, raw card data, full phone numbers, or proof of unapproved live spend. The generated `.example.json` file shows a redacted completed shape for headless setup, but it is rejected as proof while `example_only: true` remains present.
 
 The Milestone 2 execution plan is also non-mutating. It is the post-approval contract for the first live provisioning flow: readiness gates, display-only discovery commands, approval-required Stripe/Link/phone actions, receipt schema, credential-location schema, rollback/deprovision notes, and phone-context linkage. It must never claim that spend, provisioning, credential retrieval, outbound messages, or phone calls have already executed.
 
@@ -408,8 +410,9 @@ The command writes:
 - `spark-model-matrix.json`
 - `spark-model-matrix.md`
 - `spark-benchmark-evidence-template.json`
+- `spark-benchmark-evidence.example.json`
 
-When benchmark evidence exists, pass it with repeated `--evidence path/to/evidence.json` arguments. The matrix accepts its native `voiceops.spark_benchmark_evidence.v1` records and adapts the generated KAME DGX Spark benchmark evidence shape when provenance is present. Local readiness requires more than role metrics: evidence must identify the hardware/locality, model, measurement time, source artifact, verification state, and an all-local stack smoke proving reflex, oracle, ASR, TTS, and sidecar ran together on one DGX Spark. Until measured evidence is supplied, the matrix must mark local Spark roles as needing evidence rather than claiming readiness.
+When benchmark evidence exists, pass it with repeated `--evidence path/to/evidence.json` arguments. The matrix accepts its native `voiceops.spark_benchmark_evidence.v1` records and adapts the generated KAME DGX Spark benchmark evidence shape when provenance is present. Local readiness requires more than role metrics: evidence must identify the hardware/locality, model, measurement time, source artifact, verification state, and an all-local stack smoke proving reflex, oracle, ASR, TTS, and sidecar ran together on one DGX Spark. Until measured evidence is supplied, the matrix must mark local Spark roles as needing evidence rather than claiming readiness. The generated `.example.json` file is a passing-looking guide for measured Spark artifacts, but all `example_only: true` entries are rejected by the matrix.
 
 ## Milestone 5: Operator Dashboard
 

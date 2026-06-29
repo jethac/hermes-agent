@@ -323,6 +323,51 @@ def build_preflight_evidence_template() -> dict[str, Any]:
     }
 
 
+def build_preflight_evidence_example() -> dict[str, Any]:
+    example = build_preflight_evidence_template()
+    example["example_only"] = True
+    example["redaction_policy"] = "example only; copy refs from real account/capability evidence and remove example_only before ingest"
+    example["stripe_projects"].update(
+        {
+            "account_ref": "stripe-projects-account-ref-demo",
+            "projects_catalog_checked_at": "2026-06-29T00:00:00Z",
+            "voip_provider_candidate": "twilio/voice",
+            "can_create_project_after_approval": True,
+        }
+    )
+    example["stripe_link"].update(
+        {
+            "account_ref": "stripe-link-account-ref-demo",
+            "approval_capability_confirmed": True,
+            "max_approved_cents": 20_000,
+            "currency": "usd",
+        }
+    )
+    example["mpp"].update(
+        {
+            "boundary_tool": "nemoclaw",
+            "policy_ref": "voiceops-policy-ref-demo",
+            "approval_packet_ref": "nemoclaw-action-packet.json",
+        }
+    )
+    example["phone_handoff"].update(
+        {
+            "provider": "twilio",
+            "provider_account_ref": "twilio-account-ref-demo",
+            "phone_target_ref": "operator-phone-ref-demo",
+            "credential_location_ref": "1password://VoiceOps/Twilio Demo Credential Ref",
+        }
+    )
+    example["rollback"].update(
+        {
+            "deprovision_owner": "operator-ref-demo",
+            "refund_or_cancel_owner": "operator-ref-demo",
+            "call_cancel_owner": "operator-ref-demo",
+        }
+    )
+    return example
+
+
 def _dot_get(payload: Mapping[str, Any], path: str) -> Any:
     current: Any = payload
     for part in path.split("."):
@@ -409,6 +454,8 @@ def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
     fields_present = [field for field in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS if _field_present(raw_payload, field)]
     missing_fields = [field for field in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS if field not in fields_present]
     validation_issues = _preflight_secret_issues(raw_payload)
+    if raw_payload.get("example_only") is True:
+        validation_issues.append("example_only evidence is not accepted")
     return {
         "loaded": True,
         "path": str(path),
@@ -1456,6 +1503,7 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
         "execution_plan_json": output_dir / "milestone2-execution-plan.json",
         "execution_plan_markdown": output_dir / "milestone2-execution-plan.md",
         "preflight_evidence_template": output_dir / "provisioning-preflight-evidence.template.json",
+        "preflight_evidence_example": output_dir / "provisioning-preflight-evidence.example.json",
         "setup_closure_json": output_dir / "setup-closure-plan.json",
         "setup_closure_markdown": output_dir / "setup-closure-plan.md",
     }
@@ -1465,6 +1513,7 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
     _write_json(paths["execution_plan_json"], execution_plan)
     paths["execution_plan_markdown"].write_text(_execution_plan_markdown(execution_plan), encoding="utf-8")
     _write_json(paths["preflight_evidence_template"], build_preflight_evidence_template())
+    _write_json(paths["preflight_evidence_example"], build_preflight_evidence_example())
     _write_json(paths["setup_closure_json"], setup_closure)
     paths["setup_closure_markdown"].write_text(_setup_closure_markdown(setup_closure), encoding="utf-8")
     return {key: str(path) for key, path in paths.items()}
