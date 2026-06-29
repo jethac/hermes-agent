@@ -225,7 +225,7 @@ def test_write_probe_artifacts(tmp_path):
     )
     paths = write_probe_artifacts(tmp_path, report)
 
-    assert set(paths) == {
+    required_paths = {
         "command_manifest",
         "execution_plan_json",
         "execution_plan_markdown",
@@ -233,16 +233,27 @@ def test_write_probe_artifacts(tmp_path):
         "markdown",
         "preflight_evidence_example",
         "preflight_evidence_manifest_example",
+        "preflight_evidence_scaffold_manifest",
         "preflight_evidence_template",
         "setup_closure_json",
         "setup_closure_markdown",
     }
+    scaffold_sections = ("stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback")
+    scaffold_paths = {
+        f"scaffold_{section_name}_{kind}"
+        for section_name in scaffold_sections
+        for kind in ("section", "source")
+    }
+    assert required_paths <= set(paths)
+    assert scaffold_paths <= set(paths)
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     execution_plan = json.loads(Path(paths["execution_plan_json"]).read_text(encoding="utf-8"))
     manifest = json.loads(Path(paths["command_manifest"]).read_text(encoding="utf-8"))
     setup_closure = json.loads(Path(paths["setup_closure_json"]).read_text(encoding="utf-8"))
     preflight_example = json.loads(Path(paths["preflight_evidence_example"]).read_text(encoding="utf-8"))
     preflight_manifest_example = json.loads(Path(paths["preflight_evidence_manifest_example"]).read_text(encoding="utf-8"))
+    preflight_scaffold_manifest_path = Path(paths["preflight_evidence_scaffold_manifest"])
+    preflight_scaffold_manifest = json.loads(preflight_scaffold_manifest_path.read_text(encoding="utf-8"))
     preflight_template = json.loads(Path(paths["preflight_evidence_template"]).read_text(encoding="utf-8"))
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
     execution_markdown = Path(paths["execution_plan_markdown"]).read_text(encoding="utf-8")
@@ -258,6 +269,10 @@ def test_write_probe_artifacts(tmp_path):
     assert setup_closure["preflight_evidence_template"] == "provisioning-preflight-evidence.template.json"
     assert setup_closure["preflight_evidence_example"] == "provisioning-preflight-evidence.example.json"
     assert setup_closure["preflight_evidence_manifest_example"] == "provisioning-preflight-evidence.manifest.example.json"
+    assert (
+        setup_closure["preflight_evidence_scaffold_manifest"]
+        == "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
+    )
     assert setup_closure["evidence_contract"]["preflight_schema_version"] == "voiceops.milestone2.preflight_evidence.v1"
     assert setup_closure["evidence_contract"]["required_section_field"] == "source_artifact"
     assert setup_closure["evidence_contract"]["source_artifacts_must_exist"] is True
@@ -265,6 +280,7 @@ def test_write_probe_artifacts(tmp_path):
     assert setup_closure["rerun_commands"]["source_artifact_sha256"].startswith("shasum -a 256")
     assert "VoiceOps Milestone 2 Setup Closure Plan" in setup_markdown
     assert "Manifest example" in setup_markdown
+    assert "Two-layer scaffold" in setup_markdown
     assert "source_artifact" in setup_markdown
     assert "`stripe_projects.account_ref`" in setup_markdown
     assert "`stripe_link.max_approved_cents`" in setup_markdown
@@ -275,6 +291,23 @@ def test_write_probe_artifacts(tmp_path):
     assert set(preflight_example["stripe_projects"]["source_artifact_sha256"]) == {"0"}
     assert preflight_manifest_example["example_only"] is True
     assert preflight_manifest_example["reports"]["stripe_projects"].endswith("stripe-projects-evidence.json")
+    assert preflight_scaffold_manifest["example_only"] is True
+    assert (
+        preflight_scaffold_manifest["reports"]["stripe_projects"]
+        == "sections/stripe-projects-evidence.json"
+    )
+    scaffold_issues = load_preflight_evidence(preflight_scaffold_manifest_path)["validation_issues"]
+    assert "example_only evidence is not accepted" in scaffold_issues
+    assert "stripe_projects: example_only evidence is not accepted" in scaffold_issues
+    assert all("artifact not found" not in issue for issue in scaffold_issues)
+    stripe_section_path = preflight_scaffold_manifest_path.parent / preflight_scaffold_manifest["reports"][
+        "stripe_projects"
+    ]
+    stripe_section = json.loads(stripe_section_path.read_text(encoding="utf-8"))["stripe_projects"]
+    stripe_source_path = stripe_section_path.parent / stripe_section["source_artifact"]
+    stripe_source = json.loads(stripe_source_path.read_text(encoding="utf-8"))
+    assert stripe_source["redacted"] is True
+    assert hashlib.sha256(stripe_source_path.read_bytes()).hexdigest() == stripe_section["source_artifact_sha256"]
     assert "example_only evidence is not accepted" in load_preflight_evidence(
         Path(paths["preflight_evidence_example"])
     )["validation_issues"]

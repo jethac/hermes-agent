@@ -460,6 +460,76 @@ def build_preflight_evidence_manifest_example() -> dict[str, Any]:
     }
 
 
+def write_preflight_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
+    scaffold_dir = output_dir / "provisioning-preflight-scaffold"
+    sections_dir = scaffold_dir / "sections"
+    sources_dir = scaffold_dir / "sources"
+    sections_dir.mkdir(parents=True, exist_ok=True)
+    sources_dir.mkdir(parents=True, exist_ok=True)
+
+    evidence = build_preflight_evidence_example()
+    evidence["redaction_policy"] = "example only; replace aliases with real redacted refs and remove every example_only marker"
+    reports: dict[str, str] = {}
+    paths: dict[str, Path] = {}
+    source_names = {
+        "stripe_projects": "stripe-projects-redacted-source.json",
+        "stripe_link": "stripe-link-redacted-source.json",
+        "mpp": "nemoclaw-boundary-redacted-source.json",
+        "phone_handoff": "phone-handoff-redacted-source.json",
+        "rollback": "rollback-owners-redacted-source.json",
+    }
+    section_names = {
+        "stripe_projects": "stripe-projects-evidence.json",
+        "stripe_link": "stripe-link-evidence.json",
+        "mpp": "nemoclaw-boundary-evidence.json",
+        "phone_handoff": "phone-handoff-evidence.json",
+        "rollback": "rollback-owner-evidence.json",
+    }
+    for section_name in PREFLIGHT_EVIDENCE_SECTIONS:
+        section = dict(evidence[section_name])
+        source_path = sources_dir / source_names[section_name]
+        source_payload = {
+            "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+            "example_only": True,
+            "section": section_name,
+            "redacted": True,
+            "redaction_policy": "example only; references only, no raw secrets, tokens, cards, or full phone numbers",
+            "summary": f"Replace this with real redacted {section_name} setup evidence.",
+        }
+        _write_json(source_path, source_payload)
+        section["example_only"] = True
+        section["source_artifact"] = f"../sources/{source_path.name}"
+        section["source_artifact_kind"] = PREFLIGHT_SOURCE_ARTIFACT_KIND
+        section["source_artifact_sha256"] = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        section["source_artifact_redacted_at"] = "2026-06-29T00:00:00Z"
+        section_path = sections_dir / section_names[section_name]
+        _write_json(
+            section_path,
+            {
+                "example_only": True,
+                "redaction_policy": "example only; remove every example_only marker after replacing refs with real evidence",
+                section_name: section,
+            },
+        )
+        reports[section_name] = f"sections/{section_path.name}"
+        paths[f"scaffold_{section_name}_section"] = section_path
+        paths[f"scaffold_{section_name}_source"] = source_path
+
+    manifest_path = scaffold_dir / "provisioning-preflight-evidence.manifest.json"
+    _write_json(
+        manifest_path,
+        {
+            "schema_version": PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+            "example_only": True,
+            "redaction_policy": "example only; this scaffold is rejected until all example_only markers are removed",
+            "reports": reports,
+            "notes": "Two-layer scaffold: section reports reference separate redacted source artifacts with matching SHA-256 fields.",
+        },
+    )
+    paths["preflight_evidence_scaffold_manifest"] = manifest_path
+    return paths
+
+
 def _dot_get(payload: Mapping[str, Any], path: str) -> Any:
     current: Any = payload
     for part in path.split("."):
@@ -699,6 +769,11 @@ def _load_preflight_manifest_report(path: Path, section_name: str) -> tuple[Mapp
 
 def _with_preflight_section_source_artifact(section: Mapping[str, Any], path: Path) -> dict[str, Any]:
     section_copy = dict(section)
+    source_artifact = str(section_copy.get("source_artifact") or "").strip()
+    if source_artifact:
+        source_path = Path(source_artifact).expanduser()
+        if not source_path.is_absolute():
+            section_copy["source_artifact"] = str((path.parent / source_artifact).resolve(strict=False))
     return section_copy
 
 
@@ -1330,6 +1405,7 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                     "provisioning-preflight-evidence.template.json",
                     "provisioning-preflight-evidence.example.json",
                     "provisioning-preflight-evidence.manifest.example.json",
+                    "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
                     "setup-closure-plan.json",
                 ],
             }
@@ -1345,6 +1421,9 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
         "preflight_evidence_template": "provisioning-preflight-evidence.template.json",
         "preflight_evidence_example": "provisioning-preflight-evidence.example.json",
         "preflight_evidence_manifest_example": "provisioning-preflight-evidence.manifest.example.json",
+        "preflight_evidence_scaffold_manifest": (
+            "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
+        ),
         "evidence_contract": {
             "preflight_schema_version": PREFLIGHT_EVIDENCE_SCHEMA_VERSION,
             "manifest_schema_version": PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION,
@@ -1410,6 +1489,7 @@ def _setup_closure_markdown(plan: dict[str, Any]) -> str:
         f"- Template: `{plan['preflight_evidence_template']}`",
         f"- Example: `{plan['preflight_evidence_example']}`",
         f"- Manifest example: `{plan['preflight_evidence_manifest_example']}`",
+        f"- Two-layer scaffold: `{plan['preflight_evidence_scaffold_manifest']}`",
         "",
         "## Evidence Contract",
         "",
@@ -2071,6 +2151,7 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
     _write_json(paths["preflight_evidence_template"], build_preflight_evidence_template())
     _write_json(paths["preflight_evidence_example"], build_preflight_evidence_example())
     _write_json(paths["preflight_evidence_manifest_example"], build_preflight_evidence_manifest_example())
+    paths.update(write_preflight_evidence_scaffold(output_dir))
     _write_json(paths["setup_closure_json"], setup_closure)
     paths["setup_closure_markdown"].write_text(_setup_closure_markdown(setup_closure), encoding="utf-8")
     return {key: str(path) for key, path in paths.items()}
