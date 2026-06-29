@@ -372,7 +372,7 @@ The GUI environment page should expose provider/model/base URL settings for:
 - interface model
 - interface audio input mode
 - ASR mode: disabled, on_escalation, speculative, debug, or fallback
-- oracle override, when not using the active Hermes oracle
+- local oracle provider target and base URL, when registering a local endpoint for the active Hermes `/model` selection
 - ASR provider/model
 - TTS provider/model/voice
 - barge-in thresholds
@@ -432,7 +432,7 @@ Run Hermes's oracle through a local OpenAI-compatible server on the Spark.
 
 Deliverables:
 
-- vLLM or SGLang launch profile for the selected oracle model
+- vLLM or SGLang launch profile for the local oracle provider target used by Hermes's active `/model` selection
 - warm-start and health-check scripts
 - preflight that confirms model, context, and endpoint readiness
 - latency comparison against current cloud oracle path
@@ -515,7 +515,8 @@ The full implementation is acceptable when:
 - oracle latency is measured and visible instead of guessed
 - sidecar shutdown leaves no orphan sessions or playback
 - Discord fallback is explicit and understandable
-- all provider/model choices are configurable from config and GUI
+- all interface, ASR, TTS, routing, fallback, and local-provider target choices are configurable from config and GUI
+- Hermes oracle model selection remains the existing `/model` mechanism, not a separate realtime voice setting
 - the full stack has a documented one-DGX-Spark launch path
 
 ## Current Gap Summary
