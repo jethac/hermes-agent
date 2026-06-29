@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import hashlib
 import json
 import re
 import sys
@@ -196,7 +197,12 @@ def _valid_sha256(value: Any) -> bool:
     return len(text) == 64 and all(character in "0123456789abcdef" for character in text)
 
 
-def _collector_attestation_issues(section: Mapping[str, Any], section_name: str) -> list[str]:
+def _collector_attestation_issues(
+    section: Mapping[str, Any],
+    section_name: str,
+    *,
+    expected_redacted_sha256: str | None = None,
+) -> list[str]:
     attestation = section.get("collector_attestation") or section.get("collector_provenance")
     if not isinstance(attestation, Mapping):
         return [f"{section_name}:missing_collector_attestation"]
@@ -219,6 +225,14 @@ def _collector_attestation_issues(section: Mapping[str, Any], section_name: str)
     for field in ("raw_artifact_sha256", "redacted_artifact_sha256", "parent_manifest_sha256"):
         if not _valid_sha256(attestation.get(field)):
             issues.append(f"{section_name}:collector_attestation_invalid:{field}")
+    redacted_sha256 = str(attestation.get("redacted_artifact_sha256") or "").strip().lower()
+    if (
+        expected_redacted_sha256
+        and _valid_sha256(expected_redacted_sha256)
+        and _valid_sha256(redacted_sha256)
+        and redacted_sha256 != expected_redacted_sha256
+    ):
+        issues.append(f"{section_name}:collector_attestation_redacted_sha256_mismatch")
     return issues
 
 
@@ -673,10 +687,11 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         issues.extend(redaction_issues)
 
     discord_probe = _discord_probe_section(payload)
+    discord_source_sha256 = None
     if not str(discord_probe.get("source_artifact") or "").strip():
         issues.append("discord_live_probe:missing_source_artifact")
     else:
-        _validate_source_artifact(
+        discord_source_sha256 = _validate_source_artifact(
             discord_probe.get("source_artifact"),
             "discord_live_probe",
             paths or [],
@@ -684,7 +699,13 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         )
     if discord_probe.get("example_only") is True:
         issues.append("discord_live_probe:example_only_evidence_not_accepted")
-    issues.extend(_collector_attestation_issues(discord_probe, "discord_live_probe"))
+    issues.extend(
+        _collector_attestation_issues(
+            discord_probe,
+            "discord_live_probe",
+            expected_redacted_sha256=discord_source_sha256,
+        )
+    )
     for key in LIVE_EVIDENCE_REQUIRED_DISCORD_BOOLS:
         if discord_probe.get(key) is not True:
             issues.append(f"discord_live_probe:{key}_not_true")
@@ -711,10 +732,11 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             discord_latency_ok = False
 
     sidecar = payload.get("sidecar_session") if isinstance(payload.get("sidecar_session"), Mapping) else {}
+    sidecar_source_sha256 = None
     if not str(sidecar.get("source_artifact") or "").strip():
         issues.append("sidecar_session:missing_source_artifact")
     else:
-        _validate_source_artifact(
+        sidecar_source_sha256 = _validate_source_artifact(
             sidecar.get("source_artifact"),
             "sidecar_session",
             paths or [],
@@ -722,7 +744,13 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         )
     if sidecar.get("example_only") is True:
         issues.append("sidecar_session:example_only_evidence_not_accepted")
-    issues.extend(_collector_attestation_issues(sidecar, "sidecar_session"))
+    issues.extend(
+        _collector_attestation_issues(
+            sidecar,
+            "sidecar_session",
+            expected_redacted_sha256=sidecar_source_sha256,
+        )
+    )
     for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS:
         if sidecar.get(key) is not True:
             issues.append(f"sidecar_session:{key}_not_true")
@@ -749,10 +777,11 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         issues.append("sidecar_session:shutdown_timed_out_not_false")
 
     live_turn = payload.get("live_turn") if isinstance(payload.get("live_turn"), Mapping) else {}
+    live_turn_source_sha256 = None
     if not str(live_turn.get("source_artifact") or "").strip():
         issues.append("live_turn:missing_source_artifact")
     else:
-        _validate_source_artifact(
+        live_turn_source_sha256 = _validate_source_artifact(
             live_turn.get("source_artifact"),
             "live_turn",
             paths or [],
@@ -760,7 +789,13 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         )
     if live_turn.get("example_only") is True:
         issues.append("live_turn:example_only_evidence_not_accepted")
-    issues.extend(_collector_attestation_issues(live_turn, "live_turn"))
+    issues.extend(
+        _collector_attestation_issues(
+            live_turn,
+            "live_turn",
+            expected_redacted_sha256=live_turn_source_sha256,
+        )
+    )
     for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS:
         if live_turn.get(key) is not True:
             issues.append(f"live_turn:{key}_not_true")
@@ -839,14 +874,32 @@ def _section_ref(section: Mapping[str, Any], section_name: str) -> dict[str, str
     return ref
 
 
-def _source_artifact_exists(source_artifact: Any, evidence_paths: list[Path]) -> bool:
+def _resolve_source_artifact_path(source_artifact: Any, evidence_paths: list[Path]) -> Path | None:
     source_text = str(source_artifact or "").strip()
     if not source_text:
-        return False
+        return None
     source_path = Path(source_text).expanduser()
     if source_path.is_absolute():
-        return source_path.is_file()
-    return any((path.parent / source_text).is_file() for path in evidence_paths)
+        return source_path if source_path.is_file() else None
+    for evidence_path in evidence_paths:
+        candidate = evidence_path.parent / source_text
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _redacted_source_artifact_sha256(source_path: Path) -> str:
+    source_bytes = source_path.read_bytes()
+    try:
+        payload = json.loads(source_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return hashlib.sha256(source_bytes).hexdigest()
+    if isinstance(payload, dict):
+        payload.pop("collector_attestation", None)
+        payload.pop("collector_provenance", None)
+        canonical = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
+    return hashlib.sha256(source_bytes).hexdigest()
 
 
 def _source_artifact_candidate_paths(source_artifact: Any, evidence_paths: list[Path]) -> list[str]:
@@ -871,19 +924,25 @@ def _validate_source_artifact(
     section_name: str,
     evidence_paths: list[Path],
     issues: list[str],
-) -> None:
+) -> str | None:
     source_text = str(source_artifact or "").strip()
     source_path = Path(source_text).expanduser()
     if source_text in LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS or (
         not source_path.is_absolute() and source_path.name in LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS
     ):
         issues.append(f"{section_name}:template_source_artifact_not_accepted")
-        return
+        return None
     if evidence_paths:
-        if not _source_artifact_exists(source_text, evidence_paths):
+        resolved = _resolve_source_artifact_path(source_text, evidence_paths)
+        if resolved is None:
             issues.append(f"{section_name}:source_artifact_not_found")
             issues.append(_source_artifact_not_found_detail(section_name, source_text, evidence_paths))
-        return
+            return None
+        try:
+            return _redacted_source_artifact_sha256(resolved)
+        except OSError:
+            issues.append(f"{section_name}:source_artifact_unreadable")
+            return None
     if source_path.is_absolute():
         if not source_path.exists():
             issues.append(f"{section_name}:source_artifact_not_found")
@@ -891,8 +950,14 @@ def _validate_source_artifact(
         elif not source_path.is_file():
             issues.append(f"{section_name}:source_artifact_not_file")
             issues.append(f"{section_name}:source_artifact_not_file_path:{source_path.resolve(strict=False)}")
-        return
+        else:
+            try:
+                return _redacted_source_artifact_sha256(source_path)
+            except OSError:
+                issues.append(f"{section_name}:source_artifact_unreadable")
+        return None
     issues.append(f"{section_name}:unverified_source_artifact")
+    return None
 
 
 def _walk_live_evidence_strings(value: Any, prefix: str = "") -> list[tuple[str, str]]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -68,6 +69,27 @@ def _collector_attestation(section_name: str) -> dict:
         "redacted_artifact_sha256": "b" * 64,
         "parent_manifest_sha256": "c" * 64,
     }
+
+
+def _payload_sha256(payload: dict) -> str:
+    attested_payload = dict(payload)
+    attested_payload.pop("collector_attestation", None)
+    attested_payload.pop("collector_provenance", None)
+    raw = json.dumps(attested_payload, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _attest_section(section: dict, section_name: str) -> dict:
+    section["collector_attestation"] = _collector_attestation(section_name)
+    payload_sha256 = _payload_sha256(section)
+    section["collector_attestation"]["raw_artifact_sha256"] = payload_sha256
+    section["collector_attestation"]["redacted_artifact_sha256"] = payload_sha256
+    return section
+
+
+def _write_attested_section(path: Path, section: dict, section_name: str) -> None:
+    _attest_section(section, section_name)
+    path.write_text(json.dumps(section), encoding="utf-8")
 
 
 def _complete_live_evidence() -> dict:
@@ -396,9 +418,9 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     evidence["discord_live_probe"]["source_artifact"] = str(tmp_path / "discord-live-probe.json")
     evidence["sidecar_session"]["source_artifact"] = str(tmp_path / "sidecar-session.json")
     evidence["live_turn"]["source_artifact"] = str(tmp_path / "live-turn.json")
-    (tmp_path / "discord-live-probe.json").write_text(json.dumps(evidence["discord_live_probe"]), encoding="utf-8")
-    (tmp_path / "sidecar-session.json").write_text(json.dumps(evidence["sidecar_session"]), encoding="utf-8")
-    (tmp_path / "live-turn.json").write_text(json.dumps(evidence["live_turn"]), encoding="utf-8")
+    _write_attested_section(tmp_path / "discord-live-probe.json", evidence["discord_live_probe"], "discord_live_probe")
+    _write_attested_section(tmp_path / "sidecar-session.json", evidence["sidecar_session"], "sidecar_session")
+    _write_attested_section(tmp_path / "live-turn.json", evidence["live_turn"], "live_turn")
     live_evidence = validate_live_probe_evidence(evidence)
     report = build_voice_operator_report(_smoke_payload(), live_evidence=live_evidence)
 
@@ -410,6 +432,21 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     assert report["live_probe_required_for_completion"]["missing_gates"] == []
     assert report["proofs"]["live_evidence"]["ok"] is True
     assert not any("collector_attestation" in issue for issue in live_evidence["issues"])
+
+
+def test_live_evidence_rejects_stale_source_artifact_attestation_hash(tmp_path):
+    evidence = _complete_live_evidence()
+    source_path = tmp_path / "discord-live-probe.json"
+    evidence["discord_live_probe"]["source_artifact"] = str(source_path)
+    _write_attested_section(source_path, evidence["discord_live_probe"], "discord_live_probe")
+    source_path.write_text(
+        json.dumps({"kind": "discord_live_probe", "redacted": True, "updated": True}),
+        encoding="utf-8",
+    )
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "discord_live_probe:collector_attestation_redacted_sha256_mismatch" in live_evidence["issues"]
 
 
 def test_live_evidence_rejects_complete_hand_authored_sections_without_collector_attestation(tmp_path):
@@ -623,9 +660,9 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
         "speech_end_to_first_audio_ms": 950,
         "barge_in_stop_ms": 80,
     }
-    (tmp_path / "discord-live-probe.json").write_text(json.dumps(discord_probe), encoding="utf-8")
-    (tmp_path / "sidecar-session.json").write_text(json.dumps(sidecar), encoding="utf-8")
-    (tmp_path / "live-turn.json").write_text(json.dumps(live_turn), encoding="utf-8")
+    _write_attested_section(tmp_path / "discord-live-probe.json", discord_probe, "discord_live_probe")
+    _write_attested_section(tmp_path / "sidecar-session.json", sidecar, "sidecar_session")
+    _write_attested_section(tmp_path / "live-turn.json", live_turn, "live_turn")
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(
         json.dumps(
@@ -673,73 +710,67 @@ def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path
     discord_path = tmp_path / "actual-discord-probe.json"
     sidecar_path = tmp_path / "actual-sidecar-session.json"
     turn_path = tmp_path / "actual-live-turn.json"
-    discord_path.write_text(
-        json.dumps(
-            {
-                "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
-                "kind": "discord_live_probe",
-                "source_artifact": discord_path.name,
-                "collector_attestation": _collector_attestation("discord_live_probe"),
-                "ok": True,
-                "connect_perm": True,
-                "speak_perm": True,
-                "connected": True,
-                "opus_loaded": True,
-                "accepted_audio_source": True,
-                "played": True,
-                "playing_during_probe": True,
-                "receiver_started": True,
-                "receiver_frames": 18,
-                    "receiver_speech_start": 1,
-                    "inbound_observed": True,
-                    "disconnected": True,
-                    "require_inbound": True,
-                    "latency_metrics_ms": _complete_discord_latency_metrics(),
-                }
-            ),
-            encoding="utf-8",
+    _write_attested_section(
+        discord_path,
+        {
+            "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+            "kind": "discord_live_probe",
+            "source_artifact": discord_path.name,
+            "ok": True,
+            "connect_perm": True,
+            "speak_perm": True,
+            "connected": True,
+            "opus_loaded": True,
+            "accepted_audio_source": True,
+            "played": True,
+            "playing_during_probe": True,
+            "receiver_started": True,
+            "receiver_frames": 18,
+            "receiver_speech_start": 1,
+            "inbound_observed": True,
+            "disconnected": True,
+            "require_inbound": True,
+            "latency_metrics_ms": _complete_discord_latency_metrics(),
+        },
+        "discord_live_probe",
     )
-    sidecar_path.write_text(
-        json.dumps(
-            {
-                "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
-                "kind": "sidecar_session",
-                "source_artifact": sidecar_path.name,
-                "collector_attestation": _collector_attestation("sidecar_session"),
-                "sidecar_running": True,
-                "sidecar_healthy": True,
-                "session_started": True,
-                "session_closed": True,
-                "shutdown_bounded": True,
-                "shutdown_timed_out": False,
-                "fallback_mode_visible": True,
-                "fallback_reason": "none",
-                "sidecar_mode": "production",
-                "healthcheck_observed": True,
-                "provider_transport_observed": True,
-                "session_id_redacted": True,
-                "latency_metrics_ms": {"session_start_ms": 110, "shutdown_ms": 80},
-            }
-        ),
-        encoding="utf-8",
+    _write_attested_section(
+        sidecar_path,
+        {
+            "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+            "kind": "sidecar_session",
+            "source_artifact": sidecar_path.name,
+            "sidecar_running": True,
+            "sidecar_healthy": True,
+            "session_started": True,
+            "session_closed": True,
+            "shutdown_bounded": True,
+            "shutdown_timed_out": False,
+            "fallback_mode_visible": True,
+            "fallback_reason": "none",
+            "sidecar_mode": "production",
+            "healthcheck_observed": True,
+            "provider_transport_observed": True,
+            "session_id_redacted": True,
+            "latency_metrics_ms": {"session_start_ms": 110, "shutdown_ms": 80},
+        },
+        "sidecar_session",
     )
-    turn_path.write_text(
-        json.dumps(
-            {
-                "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
-                "kind": "live_turn",
-                "source_artifact": turn_path.name,
-                "collector_attestation": _collector_attestation("live_turn"),
-                "transcript_observed": True,
-                "assistant_audio_observed": True,
-                "barge_in_observed": True,
-                "spoken_reply_short": True,
-                "no_voice_denial_observed": True,
-                "speech_end_to_first_audio_ms": 950,
-                "barge_in_stop_ms": 80,
-            }
-        ),
-        encoding="utf-8",
+    _write_attested_section(
+        turn_path,
+        {
+            "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+            "kind": "live_turn",
+            "source_artifact": turn_path.name,
+            "transcript_observed": True,
+            "assistant_audio_observed": True,
+            "barge_in_observed": True,
+            "spoken_reply_short": True,
+            "no_voice_denial_observed": True,
+            "speech_end_to_first_audio_ms": 950,
+            "barge_in_stop_ms": 80,
+        },
+        "live_turn",
     )
 
     live_evidence = _load_live_evidence([discord_path, sidecar_path, turn_path])
@@ -936,6 +967,10 @@ def test_voice_operator_manifest_nested_report_source_artifacts_resolve_relative
     evidence["discord_live_probe"]["source_artifact"] = "raw/discord.json"
     evidence["sidecar_session"]["source_artifact"] = "raw/sidecar.json"
     evidence["live_turn"]["source_artifact"] = "raw/turn.json"
+    raw_payload_sha256 = hashlib.sha256(b"{}").hexdigest()
+    for section_name in ("discord_live_probe", "sidecar_session", "live_turn"):
+        evidence[section_name]["collector_attestation"]["raw_artifact_sha256"] = raw_payload_sha256
+        evidence[section_name]["collector_attestation"]["redacted_artifact_sha256"] = raw_payload_sha256
     combined_path = report_dir / "combined.json"
     combined_path.write_text(json.dumps(evidence), encoding="utf-8")
     manifest_path = tmp_path / "manifest.json"

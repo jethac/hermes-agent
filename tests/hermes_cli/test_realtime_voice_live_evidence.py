@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -50,6 +51,16 @@ class _FakeDiscordLiveProbeResult:
 
 
 def _write_json(path, payload):
+    if isinstance(payload, dict):
+        attestation = payload.get("collector_attestation") or payload.get("collector_provenance")
+        if isinstance(attestation, dict):
+            attested_payload = dict(payload)
+            attested_payload.pop("collector_attestation", None)
+            attested_payload.pop("collector_provenance", None)
+            raw = json.dumps(attested_payload, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
+            payload_sha256 = hashlib.sha256(raw).hexdigest()
+            attestation["raw_artifact_sha256"] = payload_sha256
+            attestation["redacted_artifact_sha256"] = payload_sha256
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path

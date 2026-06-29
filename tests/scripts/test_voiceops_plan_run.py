@@ -42,12 +42,28 @@ def _collector_attestation(section_name: str, *, redacted_sha256: str | None = N
     }
 
 
+def _live_payload_sha256(payload: dict) -> str:
+    attested_payload = dict(payload)
+    attested_payload.pop("collector_attestation", None)
+    attested_payload.pop("collector_provenance", None)
+    raw = json.dumps(attested_payload, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _write_live_section(path: Path, section_name: str, payload: dict) -> Path:
+    payload["collector_attestation"] = _collector_attestation(section_name)
+    payload_sha256 = _live_payload_sha256(payload)
+    payload["collector_attestation"]["raw_artifact_sha256"] = payload_sha256
+    payload["collector_attestation"]["redacted_artifact_sha256"] = payload_sha256
+    return _write_json(path, payload)
+
+
 def _write_live_voice_evidence(root: Path) -> Path:
-    _write_json(
+    _write_live_section(
         root / "discord-live-probe.json",
+        "discord_live_probe",
         {
             "kind": "discord_live_probe",
-            "collector_attestation": _collector_attestation("discord_live_probe"),
             "ok": True,
             "connect_perm": True,
             "speak_perm": True,
@@ -70,11 +86,11 @@ def _write_live_voice_evidence(root: Path) -> Path:
             },
         },
     )
-    _write_json(
+    _write_live_section(
         root / "sidecar-session.json",
+        "sidecar_session",
         {
             "kind": "sidecar_session",
-            "collector_attestation": _collector_attestation("sidecar_session"),
             "sidecar_running": True,
             "sidecar_healthy": True,
             "session_started": True,
@@ -90,11 +106,11 @@ def _write_live_voice_evidence(root: Path) -> Path:
             "latency_metrics_ms": {"session_start_ms": 110, "shutdown_ms": 80},
         },
     )
-    _write_json(
+    _write_live_section(
         root / "live-turn.json",
+        "live_turn",
         {
             "kind": "live_turn",
-            "collector_attestation": _collector_attestation("live_turn"),
             "transcript_observed": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,
@@ -462,6 +478,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert summary["closure_status"] == summary["closure_index"]["closure_status"]
     assert summary["closure_index"]["source_plan_run_artifact"].endswith("voiceops-plan-run.json")
     assert summary["closure_index"]["remaining_gates"] == summary["closure_index"]["gates"]
+    assert summary["ready_for_demo"] is False
     assert summary["remaining_gates"] == [
         "live_discord_voice_operator",
         "spend_and_provisioning_preflight",
@@ -489,6 +506,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "mppx_or_fallback" in blockers["provisioning_cli"]["missing"]
     assert blockers["spark_host"]["required_hardware"] == "1x NVIDIA DGX Spark"
     assert blockers["spark_host"]["blocks_artifact_generation"] is False
+    assert summary["blockers"] == {
+        "readiness_gaps": summary["readiness_gaps"],
+        "remaining_gates": summary["remaining_gates"],
+        "current_environment": blockers,
+    }
     handoff = summary["closure_index"]["operator_handoff"]
     assert handoff["schema_version"] == "voiceops.operator_handoff.v1"
     assert handoff["changes_readiness_by_itself"] is False
@@ -914,6 +936,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     handoff_markdown = Path(paths["operator_handoff_markdown"]).read_text(encoding="utf-8")
     assert payload["artifact_id"] == "voiceops-plan-run"
     assert payload["ok"] is True
+    assert payload["ready_for_demo"] is False
+    assert payload["artifacts"]["json"] == paths["json"]
+    assert payload["artifact_manifest"]["json"] == "voiceops-plan-run.json"
+    assert payload["blockers"] == summary["blockers"]
     assert payload["closure_status"] == closure["closure_status"]
     assert payload["remaining_gates"] == [gate["gate_id"] for gate in closure["remaining_gates"]]
     assert payload["next_actions"] == closure["next_actions"]

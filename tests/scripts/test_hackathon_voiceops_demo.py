@@ -96,6 +96,16 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert readiness["artifact_id"] == "voiceops-recording-readiness-report"
     assert readiness["source_demo_artifact"] == "voiceops-demo.json"
     assert readiness["readiness_closure_summary_ref"] == "readiness-closure-summary.json"
+    assert readiness["ready_for_demo"] is False
+    assert readiness["ready_for_demo"] == readiness["live_demo_ready"]
+    assert readiness["ready_for_static_recording"] is True
+    assert readiness["ready_for_static_recording"] == readiness["static_recording_ready"]
+    assert readiness["blockers"] == {
+        "live_prerequisite_failures": readiness["live_prerequisite_failures"],
+        "live_demo_missing_evidence": readiness["live_demo_missing_evidence"],
+        "all_required_check_failures": readiness["all_required_check_failures"],
+        "artifact_required_failures": readiness["artifact_required_failures"],
+    }
     assert payload["recording_readiness"]["artifact_ref"] == "readiness-report.json"
     assert payload["recording_readiness"]["ready_for_recording"] is True
     assert payload["recording_readiness"]["static_recording_ready"] is True

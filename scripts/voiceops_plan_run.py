@@ -1391,6 +1391,12 @@ async def build_plan_run_async(
         gate["gate_id"] for gate in summary["closure_index"]["remaining_gates"]
     ]
     summary["next_actions"] = summary["closure_index"]["next_actions"]
+    summary["ready_for_demo"] = summary["ok"] and not summary["readiness_gaps"]
+    summary["blockers"] = {
+        "readiness_gaps": summary["readiness_gaps"],
+        "remaining_gates": summary["remaining_gates"],
+        "current_environment": summary["closure_index"]["current_environment_blockers"],
+    }
     return summary
 
 
@@ -1505,6 +1511,8 @@ def write_plan_run(output_dir: Path, summary: dict[str, Any]) -> dict[str, str]:
         "operator_handoff_json": output_dir / "operator-handoff.json",
         "operator_handoff_markdown": output_dir / "operator-handoff.md",
     }
+    summary["artifacts"] = {key: str(path) for key, path in sorted(paths.items())}
+    summary["artifact_manifest"] = {key: path.name for key, path in sorted(paths.items())}
     _write_json(paths["json"], summary)
     paths["markdown"].write_text(_markdown(summary), encoding="utf-8")
     _write_json(paths["closure_json"], summary["closure_index"])
