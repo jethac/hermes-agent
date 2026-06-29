@@ -402,7 +402,14 @@ uv run python scripts/voiceops_provisioning_probe.py \
 ```
 
 The supplied evidence path is read-only. It may be one complete `voiceops.milestone2.preflight_evidence.v1` JSON file or a `voiceops.milestone2.preflight_evidence_manifest.v1` manifest that references separate redacted section files for Stripe Projects, Stripe Link, MPP/NemoClaw, phone handoff, and rollback ownership. It must contain account aliases, capability booleans, provider references, credential-location references, rollback owners, and a `source_artifact` for every redacted evidence section. Every section must also include `source_artifact_kind: redacted_setup_evidence`, `source_artifact_sha256`, and `source_artifact_redacted_at`; the SHA-256 must match the referenced redacted JSON source artifact, and the redaction timestamp must be parseable with timezone information. Source artifacts must exist, be UTF-8 JSON, be marked redacted or carry a redaction policy, and resolve as absolute paths or paths relative to the supplied evidence/manifest file; the validator must not fall back to unrelated files in the process working directory. It must not contain Stripe secrets, provider tokens, raw card data, full phone numbers, or proof of unapproved live spend. The generated `.example.json` and `.manifest.example.json` files show redacted completed shapes for headless setup, but they are rejected as proof while `example_only: true` remains present.
-The generated `provisioning-preflight-scaffold/` directory is the preferred operator starting point for split evidence: replace each section report and redacted source artifact with real local setup proof, update the SHA-256 fields, and remove every `example_only` marker before ingesting the manifest.
+The generated `provisioning-preflight-scaffold/` directory is the preferred operator starting point for split evidence: replace each section report and redacted source artifact with real local setup proof, refresh the SHA-256 fields, and remove every `example_only` marker before ingesting the manifest.
+
+```bash
+uv run python scripts/voiceops_provisioning_probe.py \
+  --refresh-preflight-source-hashes artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json
+```
+
+The refresh helper reads and writes only local JSON evidence files. It does not inspect env files, run command probes, perform network I/O, provision providers, spend money, retrieve credentials, send messages, or place calls.
 
 The Milestone 2 execution plan is also non-mutating. It is the post-approval contract for the first live provisioning flow: readiness gates, display-only discovery commands, approval-required Stripe/Link/phone actions, receipt schema, credential-location schema, rollback/deprovision notes, and phone-context linkage. It must never claim that spend, provisioning, credential retrieval, outbound messages, or phone calls have already executed.
 

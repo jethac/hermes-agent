@@ -21,7 +21,9 @@ from scripts.voiceops_provisioning_probe import (
     load_post_approval_receipts,
     load_preflight_evidence,
     parse_args,
+    refresh_preflight_source_hashes,
     validate_post_approval_receipts,
+    write_preflight_evidence_scaffold,
     write_probe_artifacts,
     _validate_safe_probe_command,
     _validate_readonly_discovery_command,
@@ -355,6 +357,7 @@ def test_write_probe_artifacts(tmp_path):
     assert setup_closure["evidence_contract"]["source_artifacts_must_exist"] is True
     assert "provisioning-preflight-evidence.manifest.json" in setup_closure["rerun_commands"]["with_preflight_manifest"]
     assert "--run-readonly-discovery" in setup_closure["rerun_commands"]["read_only_discovery"]
+    assert "--refresh-preflight-source-hashes" in setup_closure["rerun_commands"]["refresh_preflight_source_hashes"]
     assert setup_closure["rerun_commands"]["source_artifact_sha256"].startswith("shasum -a 256")
     assert "VoiceOps Milestone 2 Setup Closure Plan" in setup_markdown
     assert "Manifest example" in setup_markdown
@@ -570,6 +573,55 @@ def test_preflight_evidence_manifest_merges_redacted_section_files(tmp_path):
     assert loaded["missing_fields"] == []
     assert loaded["validation_issues"] == []
     assert report["ready"] is True
+
+
+def test_refresh_preflight_manifest_source_sha256_updates_section_files(tmp_path):
+    paths = write_preflight_evidence_scaffold(tmp_path)
+    manifest_path = Path(paths["preflight_evidence_scaffold_manifest"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    section_path = manifest_path.parent / manifest["reports"]["stripe_projects"]
+    section_payload = json.loads(section_path.read_text(encoding="utf-8"))
+    section = section_payload["stripe_projects"]
+    source_path = section_path.parent / section["source_artifact"]
+    source_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+                "section": "stripe_projects",
+                "redacted": True,
+                "redaction_policy": "references only; no raw secrets, tokens, cards, or full phone numbers",
+                "summary": "operator replaced this with redacted Stripe Projects setup evidence",
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    before = load_preflight_evidence(manifest_path)
+    result = refresh_preflight_source_hashes(manifest_path)
+    after_payload = json.loads(section_path.read_text(encoding="utf-8"))
+    after_section = after_payload["stripe_projects"]
+    after = load_preflight_evidence(manifest_path)
+
+    assert "stripe_projects.source_artifact_sha256: mismatch" in before["validation_issues"]
+    assert result["ok"] is True
+    assert result["schema_version"] == "voiceops.milestone2.preflight_hash_refresh.v1"
+    assert result["network_io"] is False
+    assert result["env_secret_reads"] is False
+    assert result["provider_provisioning"] is False
+    assert result["live_spend"] is False
+    assert result["manifest_mode"] is True
+    update = next(item for item in result["updates"] if item["section"] == "stripe_projects")
+    assert update["changed"] is True
+    assert after_section["source_artifact_sha256"] == hashlib.sha256(source_path.read_bytes()).hexdigest()
+    assert "stripe_projects.source_artifact_sha256: mismatch" not in after["validation_issues"]
+
+
+def test_refresh_preflight_source_hashes_refuses_forbidden_paths():
+    forbidden = Path("/Users/jethac/.hermes/hermes-agent/preflight-evidence.manifest.json")
+
+    with pytest.raises(ValueError, match="forbidden Hermes worktree"):
+        refresh_preflight_source_hashes(forbidden)
 
 
 def test_preflight_evidence_manifest_requires_explicit_section_source_sha(tmp_path):
@@ -1109,5 +1161,6 @@ def test_parse_args_defaults_to_requested_artifact_dir():
     assert args.output_dir == Path("artifacts/voiceops-provisioning/current")
     assert args.preflight_evidence is None
     assert args.post_approval_receipts is None
+    assert args.refresh_preflight_source_hashes is None
     assert args.run_command_probes is False
     assert args.run_readonly_discovery is False

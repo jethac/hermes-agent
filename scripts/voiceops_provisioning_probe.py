@@ -20,7 +20,7 @@ import subprocess
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, MutableMapping, Sequence
 
 
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-provisioning/current")
@@ -819,6 +819,150 @@ def _resolve_source_artifact_path(source_artifact: str, evidence_path: Path) -> 
     if source_path.is_absolute():
         return source_path
     return evidence_path.parent / source_artifact
+
+
+def _refresh_preflight_section_hashes(
+    payload: MutableMapping[str, Any],
+    evidence_path: Path,
+    *,
+    allowed_section: str | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    updates: list[dict[str, Any]] = []
+    issues: list[str] = []
+    section_names = [allowed_section] if allowed_section else list(PREFLIGHT_EVIDENCE_SECTIONS)
+    for section_name in section_names:
+        if section_name is None:
+            continue
+        section_candidate = payload.get(section_name)
+        section: MutableMapping[str, Any] | None
+        if isinstance(section_candidate, MutableMapping):
+            section = section_candidate
+        elif allowed_section == section_name:
+            section = payload
+        else:
+            section = None
+        if not isinstance(section, MutableMapping):
+            continue
+        source_artifact = str(section.get("source_artifact") or "").strip()
+        if not source_artifact:
+            issues.append(f"{section_name}.source_artifact: missing")
+            continue
+        source_path = _resolve_source_artifact_path(source_artifact, evidence_path)
+        if not source_path.exists():
+            issues.append(f"{section_name}.source_artifact: artifact not found")
+            continue
+        try:
+            source_bytes = source_path.read_bytes()
+        except OSError as exc:
+            issues.append(f"{section_name}.source_artifact: artifact unreadable: {exc.strerror or exc}")
+            continue
+        previous_sha256 = str(section.get("source_artifact_sha256") or "")
+        new_sha256 = hashlib.sha256(source_bytes).hexdigest()
+        section["source_artifact_sha256"] = new_sha256
+        updates.append(
+            {
+                "section": section_name,
+                "section_file": str(evidence_path),
+                "source_artifact": source_artifact,
+                "source_artifact_path": str(source_path),
+                "previous_sha256": previous_sha256,
+                "source_artifact_sha256": new_sha256,
+                "changed": previous_sha256 != new_sha256,
+            }
+        )
+    return updates, issues
+
+
+def _refresh_preflight_hashes_in_file(path: Path, *, allowed_section: str | None = None) -> tuple[list[dict[str, Any]], list[str]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return [], [f"{path}: file not found"]
+    except json.JSONDecodeError as exc:
+        return [], [f"{path}: JSON parse failed: {exc.msg}"]
+    if not isinstance(payload, MutableMapping):
+        return [], [f"{path}: root must be an object"]
+    updates, issues = _refresh_preflight_section_hashes(payload, path, allowed_section=allowed_section)
+    if updates:
+        _write_json(path, payload)
+    return updates, issues
+
+
+def refresh_preflight_source_hashes(path: Path) -> dict[str, Any]:
+    """Refresh source_artifact_sha256 fields for local redacted preflight evidence."""
+
+    resolved = path.expanduser().resolve(strict=False)
+    if resolved == FORBIDDEN_ENV_ROOT or FORBIDDEN_ENV_ROOT in resolved.parents:
+        raise ValueError(f"refusing to inspect forbidden Hermes worktree path: {resolved}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {
+            "ok": False,
+            "schema_version": "voiceops.milestone2.preflight_hash_refresh.v1",
+            "artifact_id": "voiceops-m2-preflight-hash-refresh",
+            "target_path": str(path),
+            "issues": ["target file not found"],
+            "updates": [],
+        }
+    except json.JSONDecodeError as exc:
+        return {
+            "ok": False,
+            "schema_version": "voiceops.milestone2.preflight_hash_refresh.v1",
+            "artifact_id": "voiceops-m2-preflight-hash-refresh",
+            "target_path": str(path),
+            "issues": [f"target JSON parse failed: {exc.msg}"],
+            "updates": [],
+        }
+    if not isinstance(payload, Mapping):
+        return {
+            "ok": False,
+            "schema_version": "voiceops.milestone2.preflight_hash_refresh.v1",
+            "artifact_id": "voiceops-m2-preflight-hash-refresh",
+            "target_path": str(path),
+            "issues": ["target root must be an object"],
+            "updates": [],
+        }
+
+    issues: list[str] = []
+    updates: list[dict[str, Any]] = []
+    reports = payload.get("reports")
+    if isinstance(reports, Mapping):
+        for section_name, report_path_value in reports.items():
+            if section_name not in PREFLIGHT_EVIDENCE_SECTIONS:
+                issues.append(f"preflight_evidence_manifest:{section_name}:unknown_section")
+                continue
+            report_path_text = str(report_path_value or "").strip()
+            if not report_path_text:
+                issues.append(f"preflight_evidence_manifest:{section_name}:empty_report_path")
+                continue
+            report_path = _resolve_manifest_report_path(path, report_path_text)
+            file_updates, file_issues = _refresh_preflight_hashes_in_file(report_path, allowed_section=section_name)
+            updates.extend(file_updates)
+            issues.extend(f"preflight_evidence_manifest:{section_name}:{issue}" for issue in file_issues)
+    else:
+        if not isinstance(payload, MutableMapping):
+            issues.append("target root must be mutable")
+        else:
+            updates, issues = _refresh_preflight_section_hashes(payload, path)
+            if updates:
+                _write_json(path, payload)
+
+    return {
+        "ok": not issues,
+        "schema_version": "voiceops.milestone2.preflight_hash_refresh.v1",
+        "artifact_id": "voiceops-m2-preflight-hash-refresh",
+        "generated_at": _utc_now(),
+        "target_path": str(path),
+        "manifest_mode": isinstance(reports, Mapping),
+        "non_mutating_external_systems": True,
+        "network_io": False,
+        "env_secret_reads": False,
+        "provider_provisioning": False,
+        "live_spend": False,
+        "updates": updates,
+        "issues": issues,
+    }
 
 
 def _redacted_artifact_issues(artifact_bytes: bytes) -> list[str]:
@@ -1640,6 +1784,7 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "with_preflight_manifest": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json",
             "plan_index": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
             "plan_index_manifest": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json",
+            "refresh_preflight_source_hashes": "uv run python scripts/voiceops_provisioning_probe.py --refresh-preflight-source-hashes artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
             "source_artifact_sha256": "shasum -a 256 path/to/redacted-source-artifact.json",
         },
         "operator_must_not": [
@@ -2755,6 +2900,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Opt in to exact allowlisted read-only discovery commands with redacted output artifacts.",
     )
     parser.add_argument(
+        "--refresh-preflight-source-hashes",
+        type=Path,
+        default=None,
+        help=(
+            "Refresh source_artifact_sha256 fields in a local preflight evidence file or manifest, "
+            "then exit without probing CLIs or external systems."
+        ),
+    )
+    parser.add_argument(
         "--no-command-probes",
         action="store_false",
         dest="run_command_probes",
@@ -2766,6 +2920,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.refresh_preflight_source_hashes is not None:
+        result = refresh_preflight_source_hashes(args.refresh_preflight_source_hashes)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result["ok"] else 1
     report = build_probe_report(
         env_files=args.env_file,
         preflight_evidence_path=args.preflight_evidence,
