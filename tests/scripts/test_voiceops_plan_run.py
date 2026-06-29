@@ -454,12 +454,19 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     paths = write_plan_run(output_dir, summary)
 
     assert summary["schema_version"] == "voiceops.plan_run.v1"
+    assert summary["artifact_id"] == "voiceops-plan-run"
     assert summary["artifact_only"] is True
     assert summary["ok"] is True
     assert summary["closure_index"]["schema_version"] == "voiceops.closure_index.v1"
     assert summary["closure_index"]["closure_status"] == "needs_external_evidence"
+    assert summary["closure_status"] == summary["closure_index"]["closure_status"]
     assert summary["closure_index"]["source_plan_run_artifact"].endswith("voiceops-plan-run.json")
     assert summary["closure_index"]["remaining_gates"] == summary["closure_index"]["gates"]
+    assert summary["remaining_gates"] == [
+        "live_discord_voice_operator",
+        "spend_and_provisioning_preflight",
+        "local_spark_stack_matrix",
+    ]
     assert summary["current_environment"]["schema_version"] == "voiceops.current_environment.v1"
     assert summary["current_environment"]["redaction_policy"].startswith("presence booleans only")
     assert summary["current_environment"]["discord"]["env_presence"]["DISCORD_BOT_TOKEN"] is False
@@ -490,6 +497,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert "--package-audit" in handoff["final_reindex_command"]
     next_actions = summary["closure_index"]["next_actions"]
+    assert summary["next_actions"] == next_actions
     assert [action["gate_id"] for action in next_actions] == [
         "live_discord_voice_operator",
         "spend_and_provisioning_preflight",
@@ -904,7 +912,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
     closure_markdown = Path(paths["closure_markdown"]).read_text(encoding="utf-8")
     handoff_markdown = Path(paths["operator_handoff_markdown"]).read_text(encoding="utf-8")
+    assert payload["artifact_id"] == "voiceops-plan-run"
     assert payload["ok"] is True
+    assert payload["closure_status"] == closure["closure_status"]
+    assert payload["remaining_gates"] == [gate["gate_id"] for gate in closure["remaining_gates"]]
+    assert payload["next_actions"] == closure["next_actions"]
     assert closure["artifact_id"] == "voiceops-plan-readiness-closure"
     assert closure["schema_version"] == "voiceops.closure_index.v1"
     assert handoff_payload == closure["operator_handoff"]

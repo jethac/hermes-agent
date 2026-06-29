@@ -1280,6 +1280,7 @@ async def build_plan_run_async(
     ]
     summary = {
         "schema_version": "voiceops.plan_run.v1",
+        "artifact_id": "voiceops-plan-run",
         "artifact_only": True,
         "safety": _build_safety_flags(provisioning),
         "output_dir": str(output_dir),
@@ -1291,6 +1292,11 @@ async def build_plan_run_async(
         "current_environment": _build_current_environment_snapshot(env=effective_env, env_files=env_files),
     }
     summary["closure_index"] = build_readiness_closure_index(summary)
+    summary["closure_status"] = summary["closure_index"]["closure_status"]
+    summary["remaining_gates"] = [
+        gate["gate_id"] for gate in summary["closure_index"]["remaining_gates"]
+    ]
+    summary["next_actions"] = summary["closure_index"]["next_actions"]
     return summary
 
 
