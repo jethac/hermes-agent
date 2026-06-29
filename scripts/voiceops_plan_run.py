@@ -24,7 +24,12 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.hackathon_voiceops_demo import build_demo, parse_args as parse_demo_args, write_demo
+from scripts.hackathon_voiceops_demo import (
+    _operator_handoff_preview_markdown,
+    build_demo,
+    parse_args as parse_demo_args,
+    write_demo,
+)
 from scripts.voiceops_artifact_package_audit import audit_package, write_audit as write_package_audit
 from scripts.voiceops_channel_policy import build_channel_policy, build_review_packet, validate_policy, write_channel_policy
 from scripts.voiceops_operator_state import build_operator_state, validate_operator_state, write_operator_state
@@ -470,6 +475,60 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
             "readiness_gaps is [] and closure_status is complete and package_audit.status is pass"
         ),
     }
+
+
+def _plan_model_flag_args(plan_args: dict[str, Any] | None) -> list[str]:
+    if not isinstance(plan_args, dict):
+        return []
+    flags: list[str] = []
+    active_model = plan_args.get("active_model")
+    reflex_model = plan_args.get("reflex_model")
+    if active_model:
+        flags.extend(["--active-model", str(active_model)])
+    if reflex_model:
+        flags.extend(["--reflex-model", str(reflex_model)])
+    return flags
+
+
+def _append_plan_model_flags(value: Any, model_flags: list[str]) -> Any:
+    if not model_flags:
+        return value
+    if isinstance(value, str):
+        if "scripts/voiceops_plan_run.py" not in value:
+            return value
+        if "--active-model" in value or "--reflex-model" in value:
+            return value
+        return f"{value} {shlex.join(model_flags)}"
+    if isinstance(value, list):
+        return [_append_plan_model_flags(item, model_flags) for item in value]
+    if isinstance(value, dict):
+        return {key: _append_plan_model_flags(item, model_flags) for key, item in value.items()}
+    return value
+
+
+def _sync_demo_handoff_preview(demo_dir: Path, plan_handoff: dict[str, Any]) -> None:
+    preview_path = demo_dir / "operator-handoff-preview.json"
+    markdown_path = demo_dir / "operator-handoff-preview.md"
+    preview = json.loads(preview_path.read_text(encoding="utf-8"))
+    plan_phases = {
+        str(phase.get("phase_id")): phase
+        for phase in plan_handoff.get("phases", [])
+        if isinstance(phase, dict)
+    }
+    for phase in preview.get("phases", []):
+        if not isinstance(phase, dict):
+            continue
+        plan_phase = plan_phases.get(str(phase.get("phase_id")))
+        if not isinstance(plan_phase, dict):
+            continue
+        for key in ("commands", "expected_artifacts", "success_check"):
+            phase[key] = plan_phase.get(key)
+        if plan_phase.get("first_safe_command"):
+            phase["first_safe_command"] = plan_phase["first_safe_command"]
+    for key in ("final_reindex_command", "final_package_audit_command", "final_success_signal"):
+        preview[key] = plan_handoff.get(key)
+    _write_json(preview_path, preview)
+    markdown_path.write_text(_operator_handoff_preview_markdown(preview), encoding="utf-8")
 
 
 def _build_next_actions(
@@ -1021,10 +1080,13 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "current_environment": current_environment.get("spark", {}),
         },
     ]
+    model_flags = _plan_model_flag_args(summary.get("plan_args"))
+    gates = _append_plan_model_flags(gates, model_flags)
     blockers = _build_current_environment_blockers(current_environment)
     readiness_gap_milestones = set(summary["readiness_gaps"])
     remaining_gates = [gate for gate in gates if gate["milestone"] in readiness_gap_milestones]
     handoff = _build_operator_handoff(gates, blockers)
+    handoff = _append_plan_model_flags(handoff, model_flags)
     next_actions = _build_next_actions(remaining_gates=remaining_gates, handoff=handoff, blockers=blockers)
     return {
         "schema_version": "voiceops.closure_index.v1",
@@ -1052,6 +1114,8 @@ def build_plan_run(
     artifact_root: Path = DEFAULT_ARTIFACT_ROOT,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
     budget_cents: int = 20_000,
+    active_model: str | None = None,
+    reflex_model: str | None = None,
     evidence_paths: list[Path] | None = None,
     env_files: list[Path] | None = None,
     voice_live_evidence_paths: list[Path] | None = None,
@@ -1068,6 +1132,8 @@ def build_plan_run(
             artifact_root=artifact_root,
             output_dir=output_dir,
             budget_cents=budget_cents,
+            active_model=active_model,
+            reflex_model=reflex_model,
             evidence_paths=evidence_paths,
             env_files=env_files,
             voice_live_evidence_paths=voice_live_evidence_paths,
@@ -1087,6 +1153,8 @@ async def build_plan_run_async(
     artifact_root: Path = DEFAULT_ARTIFACT_ROOT,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
     budget_cents: int = 20_000,
+    active_model: str | None = None,
+    reflex_model: str | None = None,
     evidence_paths: list[Path] | None = None,
     env_files: list[Path] | None = None,
     voice_live_evidence_paths: list[Path] | None = None,
@@ -1111,18 +1179,26 @@ async def build_plan_run_async(
 
     results: list[dict[str, Any]] = []
 
-    demo_args = parse_demo_args(["--output-dir", str(demo_dir), "--budget-cents", str(budget_cents)])
+    demo_argv = ["--output-dir", str(demo_dir), "--budget-cents", str(budget_cents)]
+    if active_model:
+        demo_argv.extend(["--active-model", active_model])
+    if reflex_model:
+        demo_argv.extend(["--reflex-model", reflex_model])
+    demo_args = parse_demo_args(demo_argv)
     demo = build_demo(demo_args)
     demo_paths = write_demo(demo_dir, demo, readiness_env_files=env_files)
     results.append(
         _milestone_result(
             milestone="milestone_0_hackathon_proof",
-            command=f"uv run python scripts/hackathon_voiceops_demo.py --output-dir {demo_dir}",
+            command=shlex.join(["uv", "run", "python", "scripts/hackathon_voiceops_demo.py", *demo_argv]),
             output_dir=demo_dir,
             artifacts=demo_paths,
             status="generated",
             details={
                 "dry_run": True,
+                "active_model": demo["sponsor_stack"]["hermes_active_model"]["active_model"],
+                "active_model_path": demo["sponsor_stack"]["hermes_active_model"]["path"],
+                "reflex_model": demo["spark_stack"]["reflex"]["model"],
                 "budget_cents": demo["spend_policy"]["limit_cents"],
                 "held_budget_cents": demo["totals"]["held_budget_cents"],
                 "ready_or_queued_cents": demo["totals"]["ready_or_queued_cents"],
@@ -1285,6 +1361,10 @@ async def build_plan_run_async(
         "safety": _build_safety_flags(provisioning),
         "output_dir": str(output_dir),
         "artifact_root": str(artifact_root),
+        "plan_args": {
+            "active_model": active_model,
+            "reflex_model": reflex_model,
+        },
         "ok": not hard_failures,
         "hard_failures": hard_failures,
         "readiness_gaps": readiness_gaps,
@@ -1292,6 +1372,7 @@ async def build_plan_run_async(
         "current_environment": _build_current_environment_snapshot(env=effective_env, env_files=env_files),
     }
     summary["closure_index"] = build_readiness_closure_index(summary)
+    _sync_demo_handoff_preview(demo_dir, summary["closure_index"]["operator_handoff"])
     summary["closure_status"] = summary["closure_index"]["closure_status"]
     summary["remaining_gates"] = [
         gate["gate_id"] for gate in summary["closure_index"]["remaining_gates"]
@@ -1613,6 +1694,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--artifact-root", type=Path, default=DEFAULT_ARTIFACT_ROOT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--budget-cents", type=int, default=20_000)
+    parser.add_argument(
+        "--active-model",
+        default=None,
+        help="Active Hermes /model value to pass into the generated hackathon demo package.",
+    )
+    parser.add_argument(
+        "--reflex-model",
+        default=None,
+        help="KAME reflex/interface model label to pass into the generated hackathon demo package.",
+    )
     parser.add_argument("--evidence", action="append", default=[], type=Path)
     parser.add_argument("--env-file", action="append", default=[], type=Path)
     parser.add_argument("--voice-live-evidence", action="append", default=[], type=Path)
@@ -1684,6 +1775,8 @@ def main(argv: list[str] | None = None) -> int:
                 artifact_root=temp_artifact_root,
                 output_dir=temp_output_dir,
                 budget_cents=args.budget_cents,
+                active_model=args.active_model,
+                reflex_model=args.reflex_model,
                 evidence_paths=args.evidence,
                 env_files=args.env_file,
                 voice_live_evidence_paths=args.voice_live_evidence,
@@ -1745,6 +1838,8 @@ def main(argv: list[str] | None = None) -> int:
         artifact_root=args.artifact_root,
         output_dir=args.output_dir,
         budget_cents=args.budget_cents,
+        active_model=args.active_model,
+        reflex_model=args.reflex_model,
         evidence_paths=args.evidence,
         env_files=args.env_file,
         voice_live_evidence_paths=args.voice_live_evidence,

@@ -1334,6 +1334,42 @@ def test_goal_doc_keeps_super_local_and_ultra_hosted():
     assert "does not prove the operator's normal local CLI auth state" in text
 
 
+def test_plan_run_propagates_active_and_reflex_model_to_demo_package(tmp_path):
+    artifact_root = tmp_path / "artifacts"
+    output_dir = artifact_root / "voiceops-plan" / "current"
+    summary = build_plan_run(
+        artifact_root=artifact_root,
+        output_dir=output_dir,
+        active_model="Nemotron 3 Super via hosted provider",
+        reflex_model="Gemma 4 E4B audio-native",
+        env={},
+    )
+
+    demo_result = next(result for result in summary["results"] if result["milestone"] == "milestone_0_hackathon_proof")
+    demo_path = artifact_root / "hackathon-voiceops-demo" / "current" / "voiceops-demo.json"
+    demo = json.loads(demo_path.read_text(encoding="utf-8"))
+
+    assert demo_result["details"]["active_model"] == "Nemotron 3 Super via hosted provider"
+    assert demo_result["details"]["active_model_path"] == "hosted_nemotron_3_super_fallback"
+    assert demo_result["details"]["reflex_model"] == "Gemma 4 E4B audio-native"
+    assert "'Nemotron 3 Super via hosted provider'" in demo_result["command"]
+    assert "'Gemma 4 E4B audio-native'" in demo_result["command"]
+    assert summary["plan_args"] == {
+        "active_model": "Nemotron 3 Super via hosted provider",
+        "reflex_model": "Gemma 4 E4B audio-native",
+    }
+    assert "--active-model 'Nemotron 3 Super via hosted provider'" in summary["closure_index"]["operator_handoff"][
+        "final_reindex_command"
+    ]
+    assert "--reflex-model 'Gemma 4 E4B audio-native'" in summary["closure_index"]["operator_handoff"][
+        "final_reindex_command"
+    ]
+    assert "--active-model 'Nemotron 3 Super via hosted provider'" in summary["next_actions"][1]["diagnostic_command"]
+    assert demo["sponsor_stack"]["hermes_active_model"]["path"] == "hosted_nemotron_3_super_fallback"
+    assert demo["spark_stack"]["current_path_local"] is False
+    assert demo["spark_stack"]["reflex"]["model"] == "Gemma 4 E4B audio-native"
+
+
 def test_plan_run_keeps_provisioning_incomplete_without_preflight_evidence(tmp_path):
     artifact_root = tmp_path / "artifacts"
     output_dir = artifact_root / "voiceops-plan" / "current"
@@ -1480,6 +1516,55 @@ def test_plan_run_cli_package_audit_writes_consistency_artifacts(tmp_path):
     assert str(artifact_root / "voiceops-package-audit" / "current") in payload["package_audit"]["artifacts"]["json"]
 
 
+def test_plan_run_cli_package_audit_accepts_hosted_model_fallback_package(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_plan_run.py"
+    artifact_root = tmp_path / "artifacts"
+    output_dir = artifact_root / "voiceops-plan" / "current"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--artifact-root",
+            str(artifact_root),
+            "--output-dir",
+            str(output_dir),
+            "--active-model",
+            "Nemotron 3 Super via hosted provider",
+            "--reflex-model",
+            "Gemma 4 E4B audio-native",
+            "--package-audit",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    demo = json.loads(
+        (artifact_root / "hackathon-voiceops-demo" / "current" / "voiceops-demo.json").read_text(encoding="utf-8")
+    )
+    plan_run = json.loads((output_dir / "voiceops-plan-run.json").read_text(encoding="utf-8"))
+    dashboard = (artifact_root / "hackathon-voiceops-demo" / "current" / "operator-dashboard.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert payload["ok"] is True
+    assert payload["package_audit"]["ok"] is True
+    assert payload["package_audit"]["issues"] == []
+    assert plan_run["plan_args"] == {
+        "active_model": "Nemotron 3 Super via hosted provider",
+        "reflex_model": "Gemma 4 E4B audio-native",
+    }
+    assert "--active-model 'Nemotron 3 Super via hosted provider'" in plan_run["closure_index"]["operator_handoff"][
+        "final_reindex_command"
+    ]
+    assert demo["sponsor_stack"]["hermes_active_model"]["path"] == "hosted_nemotron_3_super_fallback"
+    assert demo["spark_stack"]["current_path_local"] is False
+    assert demo["spark_stack"]["reflex"]["model"] == "Gemma 4 E4B audio-native"
+    assert "Hosted fallback selected, Spark-local evidence pending" in dashboard
+    assert "Spark target selected, live evidence pending" not in dashboard
+
+
 def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
     script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_plan_run.py"
     artifact_root = tmp_path / "artifacts"
@@ -1588,6 +1673,8 @@ def test_parse_args_defaults_to_plan_artifact_paths():
 
     assert args.artifact_root == Path("artifacts")
     assert args.output_dir == Path("artifacts/voiceops-plan/current")
+    assert args.active_model is None
+    assert args.reflex_model is None
     assert args.voice_live_evidence == []
     assert args.provisioning_preflight_evidence is None
     assert args.run_command_probes is False
