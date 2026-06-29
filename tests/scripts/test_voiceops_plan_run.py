@@ -438,10 +438,14 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "env_presence_inspection": True,
         "env_secret_values_emitted": False,
         "live_spend": False,
+        "mutating_network_io": False,
         "network_io": False,
+        "network_io_scope": "none",
         "outbound_calls": False,
         "outbound_sends": False,
         "provider_provisioning": False,
+        "read_only_discovery_grants_approval": False,
+        "read_only_discovery_run_requested": False,
     }
     assert {result["milestone"] for result in summary["results"]} == {
         "milestone_0_hackathon_proof",
@@ -643,10 +647,14 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
         "env_presence_inspection": True,
         "env_secret_values_emitted": False,
         "live_spend": False,
+        "mutating_network_io": False,
         "network_io": False,
+        "network_io_scope": "none",
         "outbound_calls": False,
         "outbound_sends": False,
         "provider_provisioning": False,
+        "read_only_discovery_grants_approval": False,
+        "read_only_discovery_run_requested": False,
     }
     assert summary["closure_index"]["operator_handoff"]["changes_readiness_by_itself"] is False
     assert summary["closure_index"]["operator_handoff"]["final_success_signal"] == (
@@ -658,6 +666,46 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     assert "DISCORD_BOT_TOKEN" in summary["closure_index"]["current_environment_blockers"]["discord_env"][
         "present_env_keys"
     ]
+
+
+def test_plan_run_readonly_discovery_safety_is_evidence_derived(tmp_path, monkeypatch):
+    artifact_root = tmp_path / "artifacts"
+    output_dir = artifact_root / "voiceops-plan" / "current"
+    fake_bin = tmp_path / "bin"
+    for binary in ["stripe", "link-cli", "mppx"]:
+        _write_fake_bin(fake_bin, binary)
+    fake_path = os.pathsep.join([str(fake_bin), os.environ.get("PATH", "")])
+    monkeypatch.setenv("PATH", fake_path)
+
+    summary = build_plan_run(
+        artifact_root=artifact_root,
+        output_dir=output_dir,
+        env={"PATH": fake_path},
+        run_readonly_discovery=True,
+    )
+    paths = write_plan_run(output_dir, summary)
+    provisioning_result = next(
+        result for result in summary["results"] if result["milestone"] == "milestone_2_real_spend_and_provisioning_preflight"
+    )
+    markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
+    closure_markdown = Path(paths["closure_markdown"]).read_text(encoding="utf-8")
+
+    assert provisioning_result["details"]["run_readonly_discovery"] is True
+    assert provisioning_result["details"]["read_only_discovery_status"] == "pass"
+    assert summary["safety"]["network_io"] is True
+    assert summary["safety"]["network_io_scope"] == "allowlisted_read_only_discovery"
+    assert summary["safety"]["mutating_network_io"] is False
+    assert summary["safety"]["read_only_discovery_run_requested"] is True
+    assert summary["safety"]["read_only_discovery_grants_approval"] is False
+    assert summary["safety"]["live_spend"] is False
+    assert summary["safety"]["provider_provisioning"] is False
+    assert summary["closure_index"]["safety"]["network_io"] is True
+    assert summary["closure_index"]["safety"]["network_io_scope"] == "allowlisted_read_only_discovery"
+    assert summary["closure_index"]["safety"]["mutating_network_io"] is False
+    assert summary["closure_index"]["safety"]["live_spend"] is False
+    assert summary["closure_index"]["safety"]["provider_provisioning"] is False
+    assert "read-only discovery network possible only when explicitly requested" in markdown
+    assert "read-only discovery network possible only when explicitly requested" in closure_markdown
 
 
 def test_goal_doc_lists_voiceops_closure_artifacts():

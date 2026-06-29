@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Run the headless VoiceOps plan artifact generators.
 
-This script is intentionally non-mutating. It does not perform provider
-network I/O, spend money, provision accounts, send messages, place calls, or
-read secret values. It runs the existing bounded generators and writes a single
-summary that can be used as the hackathon evidence index.
+This script is intentionally non-mutating. It does not spend money, provision
+accounts, send messages, place calls, or read secret values. It runs the
+existing bounded generators and writes a single summary that can be used as the
+hackathon evidence index. Opt-in read-only discovery may perform allowlisted
+provider status/catalog checks, but it never grants approval for live action.
 """
 
 from __future__ import annotations
@@ -37,15 +38,25 @@ DEFAULT_ARTIFACT_ROOT = Path("artifacts")
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-plan/current")
 FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
 
-SAFETY_FLAGS = {
-    "network_io": False,
-    "env_presence_inspection": True,
-    "env_secret_values_emitted": False,
-    "outbound_sends": False,
-    "outbound_calls": False,
-    "live_spend": False,
-    "provider_provisioning": False,
-}
+def _build_safety_flags(provisioning: dict[str, Any] | None = None) -> dict[str, Any]:
+    discovery = provisioning.get("read_only_discovery", {}) if isinstance(provisioning, dict) else {}
+    network_io = bool(discovery.get("network_io_possible"))
+    return {
+        "network_io": network_io,
+        "network_io_scope": "allowlisted_read_only_discovery" if network_io else "none",
+        "mutating_network_io": False,
+        "read_only_discovery_run_requested": bool(discovery.get("run_requested")),
+        "read_only_discovery_grants_approval": False,
+        "env_presence_inspection": True,
+        "env_secret_values_emitted": False,
+        "outbound_sends": False,
+        "outbound_calls": False,
+        "live_spend": False,
+        "provider_provisioning": False,
+    }
+
+
+SAFETY_FLAGS = _build_safety_flags()
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -684,11 +695,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
         "source_plan_run_artifact": source_plan_run,
         "artifact_only": True,
         "safety": {
-            "network_io": False,
-            "outbound_sends": False,
-            "live_spend": False,
-            "provider_provisioning": False,
-            "outbound_calls": False,
+            **summary.get("safety", _build_safety_flags()),
             "spark_execution": False,
             "secret_values_emitted": False,
         },
@@ -911,7 +918,7 @@ async def build_plan_run_async(
     summary = {
         "schema_version": "voiceops.plan_run.v1",
         "artifact_only": True,
-        "safety": SAFETY_FLAGS,
+        "safety": _build_safety_flags(provisioning),
         "output_dir": str(output_dir),
         "artifact_root": str(artifact_root),
         "ok": not hard_failures,
@@ -924,13 +931,34 @@ async def build_plan_run_async(
     return summary
 
 
+def _safety_summary_line(safety: dict[str, Any], *, include_spark: bool = False) -> str:
+    network = (
+        "read-only discovery network possible only when explicitly requested"
+        if safety.get("network_io")
+        else "no network I/O"
+    )
+    parts = [
+        "artifact-only",
+        network,
+        "no mutating network I/O",
+        "no secret value emission",
+        "no sends",
+        "no calls",
+        "no live spend",
+        "no provider provisioning",
+    ]
+    if include_spark:
+        parts.append("no Spark benchmark execution")
+    return "; ".join(parts)
+
+
 def _markdown(summary: dict[str, Any]) -> str:
     lines = [
         "# VoiceOps Plan Run Summary",
         "",
         f"- OK: {'yes' if summary['ok'] else 'no'}",
         f"- Artifact root: `{summary['artifact_root']}`",
-        "- Safety: artifact-only; no network I/O, secret value emission, sends, calls, live spend, or provider provisioning",
+        f"- Safety: {_safety_summary_line(summary.get('safety', {}))}",
         f"- Hard failures: {', '.join(summary['hard_failures']) if summary['hard_failures'] else 'none'}",
         f"- Readiness gaps: {', '.join(summary['readiness_gaps']) if summary['readiness_gaps'] else 'none'}",
         "",
@@ -1027,7 +1055,7 @@ def _closure_markdown(closure: dict[str, Any]) -> str:
         "# VoiceOps Readiness Closure Index",
         "",
         f"- Status: {closure['closure_status']}",
-        "- Safety: artifact-only; no network, spend, provisioning, calls, Spark benchmark execution, or secret values",
+        f"- Safety: {_safety_summary_line(closure.get('safety', {}), include_spark=True)}",
         f"- Readiness gaps: {', '.join(closure['readiness_gaps']) if closure['readiness_gaps'] else 'none'}",
         "",
         "## Current Environment",
