@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import re
+import shlex
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -562,6 +563,7 @@ def _audit_plan_consistency(
         for command in _iter_plan_run_commands(payload):
             if "--package-audit" not in command:
                 issues.append(f"{label}:plan_run_command_missing_package_audit")
+            _audit_plan_command_model_args(label=label, command=command, plan_run=plan_run, issues=issues)
 
     plan_final_command = plan_handoff.get("final_reindex_command")
     if demo_handoff.get("final_reindex_command") != plan_final_command:
@@ -611,6 +613,45 @@ def _audit_plan_model_args(*, demo: Mapping[str, Any], plan_run: Mapping[str, An
         issues.append("plan_run:active_model_arg_mismatch_demo")
     if reflex_model_arg is not None and reflex_model_arg != reflex.get("model"):
         issues.append("plan_run:reflex_model_arg_mismatch_demo")
+
+
+def _audit_plan_command_model_args(
+    *,
+    label: str,
+    command: str,
+    plan_run: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    plan_args = plan_run.get("plan_args")
+    if not isinstance(plan_args, Mapping):
+        return
+    expected = {
+        "--active-model": plan_args.get("active_model"),
+        "--reflex-model": plan_args.get("reflex_model"),
+    }
+    if all(value is None for value in expected.values()):
+        return
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        issues.append(f"{label}:plan_run_command_parse_failed")
+        return
+    for flag, expected_value in expected.items():
+        if expected_value is None:
+            continue
+        field = flag.removeprefix("--").replace("-", "_")
+        equals_prefix = f"{flag}="
+        equals_values = [part.removeprefix(equals_prefix) for part in parts if part.startswith(equals_prefix)]
+        if flag not in parts and not equals_values:
+            issues.append(f"{label}:plan_run_command_missing_{field}_arg")
+            continue
+        if equals_values:
+            observed = equals_values[0]
+        else:
+            index = parts.index(flag)
+            observed = parts[index + 1] if index + 1 < len(parts) else None
+        if observed != expected_value:
+            issues.append(f"{label}:plan_run_command_{field}_arg_mismatch")
 
 
 def _audit_plan_safety(label: str, safety: Any, issues: list[str]) -> None:

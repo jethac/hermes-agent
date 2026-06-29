@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.hackathon_voiceops_demo import (
     _operator_handoff_preview_markdown,
+    _readiness_closure_summary_markdown,
     build_demo,
     parse_args as parse_demo_args,
     write_demo,
@@ -529,6 +530,17 @@ def _sync_demo_handoff_preview(demo_dir: Path, plan_handoff: dict[str, Any]) -> 
         preview[key] = plan_handoff.get(key)
     _write_json(preview_path, preview)
     markdown_path.write_text(_operator_handoff_preview_markdown(preview), encoding="utf-8")
+
+
+def _sync_demo_closure_summary(demo_dir: Path, model_flags: list[str]) -> None:
+    if not model_flags:
+        return
+    closure_path = demo_dir / "readiness-closure-summary.json"
+    markdown_path = demo_dir / "readiness-closure-summary.md"
+    closure = json.loads(closure_path.read_text(encoding="utf-8"))
+    closure = _append_plan_model_flags(closure, model_flags)
+    _write_json(closure_path, closure)
+    markdown_path.write_text(_readiness_closure_summary_markdown(closure), encoding="utf-8")
 
 
 def _build_next_actions(
@@ -1372,6 +1384,7 @@ async def build_plan_run_async(
         "current_environment": _build_current_environment_snapshot(env=effective_env, env_files=env_files),
     }
     summary["closure_index"] = build_readiness_closure_index(summary)
+    _sync_demo_closure_summary(demo_dir, _plan_model_flag_args(summary.get("plan_args")))
     _sync_demo_handoff_preview(demo_dir, summary["closure_index"]["operator_handoff"])
     summary["closure_status"] = summary["closure_index"]["closure_status"]
     summary["remaining_gates"] = [

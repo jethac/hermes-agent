@@ -19,6 +19,16 @@ def _generate_package(tmp_path: Path, **plan_kwargs) -> Path:
     return artifact_root
 
 
+def _rewrite_json_strings(value, rewrite):
+    if isinstance(value, str):
+        return rewrite(value)
+    if isinstance(value, list):
+        return [_rewrite_json_strings(item, rewrite) for item in value]
+    if isinstance(value, dict):
+        return {key: _rewrite_json_strings(item, rewrite) for key, item in value.items()}
+    return value
+
+
 def test_package_audit_accepts_generated_headless_package(tmp_path):
     artifact_root = _generate_package(tmp_path)
 
@@ -332,6 +342,61 @@ def test_package_audit_rejects_plan_run_model_arg_drift_from_demo(tmp_path):
     assert report["ok"] is False
     assert "plan_run:active_model_arg_mismatch_demo" in report["issues"]
     assert "plan_run:reflex_model_arg_mismatch_demo" in report["issues"]
+
+
+def test_package_audit_rejects_plan_run_commands_missing_model_args(tmp_path):
+    artifact_root = _generate_package(
+        tmp_path,
+        active_model="Nemotron 3 Super via hosted provider",
+        reflex_model="Gemma 4 E4B audio-native",
+    )
+    handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"
+    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    handoff["phases"][1]["commands"][0] = (
+        "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+        "--output-dir artifacts/voiceops-plan/current --dry-audit --package-audit"
+    )
+    _write_json(handoff_path, handoff)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "operator_handoff:mismatch_with_closure" in report["issues"]
+    assert "operator_handoff:plan_run_command_missing_active_model_arg" in report["issues"]
+    assert "operator_handoff:plan_run_command_missing_reflex_model_arg" in report["issues"]
+
+
+def test_package_audit_accepts_equals_form_plan_run_model_args(tmp_path):
+    artifact_root = _generate_package(
+        tmp_path,
+        active_model="Nemotron 3 Super via hosted provider",
+        reflex_model="Gemma 4 E4B audio-native",
+    )
+
+    def rewrite(command: str) -> str:
+        return command.replace(
+            "--active-model 'Nemotron 3 Super via hosted provider'",
+            "--active-model='Nemotron 3 Super via hosted provider'",
+        ).replace(
+            "--reflex-model 'Gemma 4 E4B audio-native'",
+            "--reflex-model='Gemma 4 E4B audio-native'",
+        )
+
+    for path in (
+        artifact_root / "hackathon-voiceops-demo" / "current" / "readiness-closure-summary.json",
+        artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json",
+        artifact_root / "voiceops-plan" / "current" / "operator-handoff.json",
+        artifact_root / "voiceops-plan" / "current" / "readiness-closure-index.json",
+        artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json",
+    ):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = _rewrite_json_strings(payload, rewrite)
+        _write_json(path, payload)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is True
+    assert report["issues"] == []
 
 
 def test_package_audit_rejects_non_object_plan_args(tmp_path):
