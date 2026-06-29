@@ -42,12 +42,16 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "operator_state_events",
         "phone_context",
         "recording_runbook",
+        "readiness_closure_summary_json",
+        "readiness_closure_summary_markdown",
         "readiness_json",
         "readiness_markdown",
         "stripe_actions",
         "submission_writeup",
     }
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
+    readiness = json.loads(Path(paths["readiness_json"]).read_text(encoding="utf-8"))
+    closure_summary = json.loads(Path(paths["readiness_closure_summary_json"]).read_text(encoding="utf-8"))
     nemoclaw = json.loads(Path(paths["nemoclaw_packet"]).read_text(encoding="utf-8"))
     phone_context = json.loads(Path(paths["phone_context"]).read_text(encoding="utf-8"))
     milestone2_plan = json.loads(Path(paths["milestone2_execution_plan"]).read_text(encoding="utf-8"))
@@ -63,9 +67,17 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         if line
     ]
     action_ids = {action["action_id"] for action in payload["ops_actions"]}
+    assert payload["schema_version"] == "voiceops.demo_package.v1"
+    assert payload["artifact_id"] == "voiceops-demo"
     assert payload["artifact_manifest"]["readiness_json"] == "readiness-report.json"
+    assert payload["artifact_manifest"]["readiness_closure_summary_json"] == "readiness-closure-summary.json"
+    assert payload["artifact_manifest"]["readiness_closure_summary_markdown"] == "readiness-closure-summary.md"
     assert payload["artifact_manifest"]["operator_state"] == "operator-state.json"
     assert payload["artifact_manifest"]["milestone2_execution_plan"] == "milestone2-execution-plan.json"
+    assert readiness["schema_version"] == "voiceops.recording_readiness_report.v1"
+    assert readiness["artifact_id"] == "voiceops-recording-readiness-report"
+    assert readiness["source_demo_artifact"] == "voiceops-demo.json"
+    assert readiness["readiness_closure_summary_ref"] == "readiness-closure-summary.json"
     assert payload["recording_readiness"]["artifact_ref"] == "readiness-report.json"
     assert payload["recording_readiness"]["ready_for_recording"] is True
     assert payload["recording_readiness"]["static_recording_ready"] is True
@@ -89,8 +101,15 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "stripe_projects_cli",
         "stripe_link_cli",
     ]
-    assert payload["readiness_closure_ref"] == "artifacts/voiceops-plan/current/readiness-closure-index.json"
+    assert payload["readiness_closure_ref"] == "readiness-closure-summary.json"
+    assert payload["readiness_closure_summary_ref"] == "readiness-closure-summary.json"
+    assert payload["plan_readiness_closure_ref"] == "artifacts/voiceops-plan/current/readiness-closure-index.json"
     assert payload["readiness_closure"]["closure_status"] == "needs_external_evidence"
+    assert closure_summary["schema_version"] == "voiceops.demo_closure_summary.v1"
+    assert closure_summary["artifact_id"] == "voiceops-demo-readiness-closure-summary"
+    assert closure_summary["source_demo_artifact"] == "voiceops-demo.json"
+    assert closure_summary["source_readiness_artifact"] == "readiness-report.json"
+    assert closure_summary == payload["readiness_closure"]
     assert {gate["gate_id"] for gate in payload["readiness_closure"]["gates"]} == {
         "live_discord_voice_operator",
         "spend_and_provisioning_preflight",
@@ -338,6 +357,12 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Readiness scope: static_artifact_recording_only" in readiness_markdown
     assert "Spark-local evidence: target_selected_needs_benchmark_evidence" in readiness_markdown
     assert "Spark-local=True" not in readiness_markdown
+    closure_markdown = Path(paths["readiness_closure_summary_markdown"]).read_text(encoding="utf-8")
+    assert "VoiceOps Demo Readiness Closure Summary" in closure_markdown
+    assert "voiceops.demo_closure_summary.v1" in closure_markdown
+    assert "live_discord_voice_operator" in closure_markdown
+    assert "spend_and_provisioning_preflight" in closure_markdown
+    assert "local_spark_stack_matrix" in closure_markdown
 
 
 def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned_model():

@@ -267,6 +267,8 @@ The command writes:
 - `milestone2-execution-plan.json`
 - `readiness-report.json`
 - `readiness-report.md`
+- `readiness-closure-summary.json`
+- `readiness-closure-summary.md`
 - `operator-dashboard.html`
 - `operator-state.json`
 - `operator-state-events.jsonl`
@@ -274,7 +276,7 @@ The command writes:
 - `submission-writeup.md`
 - `stripe-actions-dry-run.sh`
 
-The generated shell script is dry-run by construction. It prints the Stripe/Projects commands instead of executing them. The readiness report is non-invasive: it checks local prerequisites and env shape from process env, repo `.env`, Hermes home `.env`, and explicit `--env-file` values by presence only. It does not print secrets, provision, purchase, call, or mutate credentials. The HTML dashboard is a static recording surface and does not require a web server.
+The generated shell script is dry-run by construction. It prints the Stripe/Projects commands instead of executing them. The demo package, readiness report, and local closure summary are schema-tagged so the Milestone 0 artifact directory can be reviewed without first opening the global plan-run index. The readiness report is non-invasive: it checks local prerequisites and env shape from process env, repo `.env`, Hermes home `.env`, and explicit `--env-file` values by presence only. It does not print secrets, provision, purchase, call, or mutate credentials. The HTML dashboard is a static recording surface and does not require a web server.
 The recording runbook gives the shot list, fallback recording path, submission checklist, and tweet draft without requiring live spend or live provisioning. The submission writeup gives concise public copy for the tweet/thread/form.
 
 ## Milestone 1: Real Voice Operator

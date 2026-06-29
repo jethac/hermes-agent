@@ -273,6 +273,9 @@ def _demo_closure_summary() -> dict[str, Any]:
     ]
     return {
         "schema_version": "voiceops.demo_closure_summary.v1",
+        "artifact_id": "voiceops-demo-readiness-closure-summary",
+        "source_demo_artifact": "voiceops-demo.json",
+        "source_readiness_artifact": "readiness-report.json",
         "closure_status": "needs_external_evidence",
         "readiness_closure_ref": "artifacts/voiceops-plan/current/readiness-closure-index.json",
         "gates": gates,
@@ -311,6 +314,22 @@ def _closure_gate_markdown_lines(closure: dict[str, Any]) -> list[str]:
             lines.append(f"- Rerun command: `{gate['rerun_command']}`")
         lines.append("")
     return lines
+
+
+def _readiness_closure_summary_markdown(closure: dict[str, Any]) -> str:
+    lines = [
+        "# VoiceOps Demo Readiness Closure Summary",
+        "",
+        f"- Artifact ID: {closure['artifact_id']}",
+        f"- Schema version: {closure['schema_version']}",
+        f"- Closure status: {closure['closure_status']}",
+        f"- Plan closure ref: `{closure['readiness_closure_ref']}`",
+        "",
+        "## Gates",
+        "",
+    ]
+    lines.extend(_closure_gate_markdown_lines(closure))
+    return "\n".join(lines)
 
 
 def _slug(value: str) -> str:
@@ -1264,6 +1283,10 @@ def build_readiness_report(
     )
     return {
         "generated_at": _utc_now(),
+        "schema_version": "voiceops.recording_readiness_report.v1",
+        "artifact_id": "voiceops-recording-readiness-report",
+        "source_demo_artifact": "voiceops-demo.json",
+        "readiness_closure_summary_ref": "readiness-closure-summary.json",
         "static_recording_ready": static_recording_ready,
         "ready_for_recording": static_recording_ready,
         "ready_for_recording_scope": "static_artifact_recording_only",
@@ -1294,6 +1317,8 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
     )
     return {
         "generated_at": _utc_now(),
+        "schema_version": "voiceops.demo_package.v1",
+        "artifact_id": "voiceops-demo",
         "demo": {
             "name": args.demo_name,
             "request": args.request,
@@ -2054,7 +2079,9 @@ def _demo_package(
         "required_failures": readiness["required_failures"],
     }
     payload["readiness_closure"] = _demo_closure_summary()
-    payload["readiness_closure_ref"] = "artifacts/voiceops-plan/current/readiness-closure-index.json"
+    payload["readiness_closure_ref"] = paths["readiness_closure_summary_json"].name
+    payload["readiness_closure_summary_ref"] = paths["readiness_closure_summary_json"].name
+    payload["plan_readiness_closure_ref"] = payload["readiness_closure"]["readiness_closure_ref"]
     payload["operator_state"] = operator_state
     payload["operator_state_ref"] = paths["operator_state"].name
     payload["operator_state_events_ref"] = paths["operator_state_events"].name
@@ -2084,6 +2111,8 @@ def write_demo(
         "phone_context": output_dir / "phone-context.json",
         "readiness_json": output_dir / "readiness-report.json",
         "readiness_markdown": output_dir / "readiness-report.md",
+        "readiness_closure_summary_json": output_dir / "readiness-closure-summary.json",
+        "readiness_closure_summary_markdown": output_dir / "readiness-closure-summary.md",
         "dashboard": output_dir / "operator-dashboard.html",
         "operator_state": output_dir / "operator-state.json",
         "operator_state_events": output_dir / "operator-state-events.jsonl",
@@ -2093,6 +2122,7 @@ def write_demo(
         "stripe_actions": output_dir / "stripe-actions-dry-run.sh",
     }
     operator_state = _operator_state_packet(demo, readiness)
+    readiness_closure = _demo_closure_summary()
     _write_json(paths["json"], _demo_package(demo, readiness=readiness, operator_state=operator_state, paths=paths))
     paths["markdown"].write_text(_markdown(demo), encoding="utf-8")
     _write_jsonl(paths["audit_ledger"], demo["audit_events"])
@@ -2101,6 +2131,11 @@ def write_demo(
     _write_json(paths["phone_context"], _phone_context_packet(demo))
     _write_json(paths["readiness_json"], readiness)
     paths["readiness_markdown"].write_text(_readiness_markdown(readiness), encoding="utf-8")
+    _write_json(paths["readiness_closure_summary_json"], readiness_closure)
+    paths["readiness_closure_summary_markdown"].write_text(
+        _readiness_closure_summary_markdown(readiness_closure),
+        encoding="utf-8",
+    )
     _write_json(paths["milestone2_execution_plan"], build_milestone2_execution_plan(_demo_milestone2_report(demo, readiness)))
     _write_json(paths["operator_state"], operator_state)
     _write_jsonl(paths["operator_state_events"], operator_state["recent_audit_events"])

@@ -143,6 +143,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(demo_result["artifacts"]["dashboard"]).exists()
     assert Path(demo_result["artifacts"]["operator_state"]).exists()
     assert Path(demo_result["artifacts"]["operator_state_events"]).exists()
+    assert Path(demo_result["artifacts"]["readiness_closure_summary_json"]).exists()
+    assert Path(demo_result["artifacts"]["readiness_closure_summary_markdown"]).exists()
 
     voice_result = next(result for result in summary["results"] if result["milestone"] == "milestone_1_real_voice_operator")
     assert voice_result["status"] == "needs_live_probe"
