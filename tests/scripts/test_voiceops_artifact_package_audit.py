@@ -30,14 +30,21 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert report["status"] == "pass"
     assert report["ok"] is True
     assert report["issues"] == []
-    assert report["checked_artifact_count"] == 17
+    assert report["checked_artifact_count"] == 20
     assert str(artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json") in report[
+        "checked_artifacts"
+    ]
+    assert str(artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.md") in report[
         "checked_artifacts"
     ]
     assert str(artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json") in report[
         "checked_artifacts"
     ]
+    assert str(artifact_root / "voiceops-plan" / "current" / "readiness-closure-index.md") in report[
+        "checked_artifacts"
+    ]
     assert str(artifact_root / "voiceops-plan" / "current" / "operator-handoff.json") in report["checked_artifacts"]
+    assert str(artifact_root / "voiceops-plan" / "current" / "operator-handoff.md") in report["checked_artifacts"]
     assert str(artifact_root / "voiceops-channel-policy" / "current" / "channel-policy.json") in report[
         "checked_artifacts"
     ]
@@ -217,6 +224,122 @@ def test_package_audit_rejects_channel_policy_review_route_drift(tmp_path):
     assert "channel_policy_review:phone_sms:approval_routes_mismatch" in report["issues"]
     assert "channel_policy_review:phone_sms:required_evidence_mismatch" in report["issues"]
     assert "channel_policy_review:phone_sms:blocked_capabilities_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_closure_markdown_safety_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    markdown_path = artifact_root / "voiceops-plan" / "current" / "readiness-closure-index.md"
+    markdown_path.write_text(
+        markdown_path.read_text(encoding="utf-8")
+        .replace("needs_external_evidence", "complete")
+        .replace("Final package audit command", "Final review command")
+        .replace("--package-audit", "--no-package-audit"),
+        encoding="utf-8",
+    )
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "closure_markdown:missing_needs_external_evidence" in report["issues"]
+    assert "closure_markdown:missing_final_package_audit_command" in report["issues"]
+    assert "closure_markdown:missing_package_audit_flag" in report["issues"]
+
+
+def test_package_audit_rejects_operator_handoff_markdown_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    markdown_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.md"
+    markdown_path.write_text(
+        markdown_path.read_text(encoding="utf-8")
+        .replace("Final package audit command", "Final review command")
+        .replace("package_audit.status is pass", "package audit optional")
+        .replace("never paste secret values into artifacts", "paste secrets into artifacts"),
+        encoding="utf-8",
+    )
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "operator_handoff_markdown:missing_final_package_audit_command" in report["issues"]
+    assert "operator_handoff_markdown:missing_package_audit_status_signal" in report["issues"]
+    assert "operator_handoff_markdown:missing_secret_policy" in report["issues"]
+
+
+def test_package_audit_rejects_demo_handoff_markdown_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    markdown_path = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.md"
+    markdown_path.write_text(
+        markdown_path.read_text(encoding="utf-8")
+        .replace("Package audit:", "Package review:")
+        .replace("--package-audit", "--no-package-audit")
+        .replace("never paste secret values into artifacts", "paste secrets into artifacts"),
+        encoding="utf-8",
+    )
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "demo_handoff_markdown:missing_package_audit_section" in report["issues"]
+    assert "demo_handoff_markdown:missing_package_audit_flag" in report["issues"]
+    assert "demo_handoff_markdown:missing_no_secret_policy" in report["issues"]
+
+
+def test_package_audit_rejects_channel_policy_review_markdown_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    markdown_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.md"
+    markdown_path.write_text(
+        markdown_path.read_text(encoding="utf-8")
+        .replace("Review status: pending_human_review", "Review status: approved")
+        .replace("Real egress enabled: False", "Real egress enabled: True")
+        .replace("--package-audit", "--no-package-audit")
+        .replace("approved_phone_handoff_call", "unapproved_phone_handoff"),
+        encoding="utf-8",
+    )
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "channel_policy_review_markdown:missing_pending_review" in report["issues"]
+    assert "channel_policy_review_markdown:missing_no_real_egress" in report["issues"]
+    assert "channel_policy_review_markdown:missing_package_audit_flag" in report["issues"]
+    assert "channel_policy_review_markdown:missing_phone_handoff_route" in report["issues"]
+
+
+def test_package_audit_rejects_channel_policy_markdown_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    markdown_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy.md"
+    markdown_path.write_text(
+        markdown_path.read_text(encoding="utf-8")
+        .replace("artifact-only; no network, secret reads, sends, SMS, or calls", "live egress allowed")
+        .replace("Validation: pass", "Validation: skipped")
+        .replace("approved_phone_handoff_call", "unapproved_phone_handoff")
+        .replace("phone_number: `<redacted-phone>`", "phone_number: `<raw-phone>`"),
+        encoding="utf-8",
+    )
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "channel_policy_markdown:missing_artifact_only_safety" in report["issues"]
+    assert "channel_policy_markdown:missing_validation_pass" in report["issues"]
+    assert "channel_policy_markdown:missing_phone_handoff_route" in report["issues"]
+    assert "channel_policy_markdown:missing_phone_redaction" in report["issues"]
+
+
+def test_package_audit_rejects_contradictory_channel_review_markdown(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    markdown_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.md"
+    markdown_path.write_text(
+        markdown_path.read_text(encoding="utf-8")
+        + "\n- Review status: approved\n- Real egress enabled: True\n- Live egress enabled: True\n",
+        encoding="utf-8",
+    )
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "channel_policy_review_markdown:contradicts_pending_review" in report["issues"]
+    assert "channel_policy_review_markdown:contradicts_no_real_egress" in report["issues"]
+    assert "channel_policy_review_markdown:contradicts_no_live_egress" in report["issues"]
 
 
 def test_package_audit_parse_args_defaults():

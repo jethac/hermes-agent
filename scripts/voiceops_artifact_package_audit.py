@@ -403,6 +403,99 @@ def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], 
         issues.append("channel_policy_review:missing_package_audit_review_command")
 
 
+def _require_markdown_tokens(label: str, markdown: str, tokens: Mapping[str, str], issues: list[str]) -> None:
+    for issue, token in tokens.items():
+        if token not in markdown:
+            issues.append(f"{label}:{issue}")
+
+
+def _reject_markdown_tokens(label: str, markdown: str, tokens: Mapping[str, str], issues: list[str]) -> None:
+    for issue, token in tokens.items():
+        if token in markdown:
+            issues.append(f"{label}:{issue}")
+
+
+def _audit_markdown_consistency(
+    *,
+    closure_markdown: str,
+    operator_handoff_markdown: str,
+    demo_handoff_markdown: str,
+    channel_policy_markdown: str,
+    channel_review_markdown: str,
+    issues: list[str],
+) -> None:
+    _require_markdown_tokens(
+        "closure_markdown",
+        closure_markdown,
+        {
+            "missing_needs_external_evidence": "needs_external_evidence",
+            "missing_artifact_only_safety": "artifact-only; no network I/O",
+            "missing_final_package_audit_command": "Final package audit command",
+            "missing_package_audit_status_signal": "package_audit.status is pass",
+            "missing_package_audit_flag": "--package-audit",
+        },
+        issues,
+    )
+    _require_markdown_tokens(
+        "operator_handoff_markdown",
+        operator_handoff_markdown,
+        {
+            "missing_final_package_audit_command": "Final package audit command",
+            "missing_package_audit_status_signal": "package_audit.status is pass",
+            "missing_package_audit_flag": "--package-audit",
+            "missing_secret_policy": "never paste secret values into artifacts",
+        },
+        issues,
+    )
+    _require_markdown_tokens(
+        "demo_handoff_markdown",
+        demo_handoff_markdown,
+        {
+            "missing_package_audit_section": "Package audit:",
+            "missing_package_audit_status_signal": "package_audit.status is pass",
+            "missing_package_audit_flag": "--package-audit",
+            "missing_no_secret_policy": "never paste secret values into artifacts",
+        },
+        issues,
+    )
+    _require_markdown_tokens(
+        "channel_policy_markdown",
+        channel_policy_markdown,
+        {
+            "missing_artifact_only_safety": "artifact-only; no network, secret reads, sends, SMS, or calls",
+            "missing_validation_pass": "Validation: pass",
+            "missing_approval_routing": "## Approval Routing",
+            "missing_customer_visible_route": "customer_visible_outbound",
+            "missing_phone_handoff_route": "approved_phone_handoff_call",
+            "missing_audit_id_continuity": "Never overwrite an existing audit_id",
+            "missing_phone_redaction": "phone_number: `<redacted-phone>`",
+        },
+        issues,
+    )
+    _require_markdown_tokens(
+        "channel_policy_review_markdown",
+        channel_review_markdown,
+        {
+            "missing_pending_review": "Review status: pending_human_review",
+            "missing_no_real_egress": "Real egress enabled: False",
+            "missing_operator_must_not_send": "send Discord, WhatsApp, SMS, or phone traffic from this generated packet",
+            "missing_package_audit_flag": "--package-audit",
+            "missing_phone_handoff_route": "approved_phone_handoff_call",
+        },
+        issues,
+    )
+    _reject_markdown_tokens(
+        "channel_policy_review_markdown",
+        channel_review_markdown,
+        {
+            "contradicts_pending_review": "Review status: approved",
+            "contradicts_no_real_egress": "Real egress enabled: True",
+            "contradicts_no_live_egress": "Live egress enabled: True",
+        },
+        issues,
+    )
+
+
 def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]:
     issues: list[str] = []
     warnings: list[str] = []
@@ -414,6 +507,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     readiness = _read_json(demo_dir / "readiness-report.json", issues, "readiness_report")
     demo_closure = _read_json(demo_dir / "readiness-closure-summary.json", issues, "demo_closure")
     demo_handoff = _read_json(demo_dir / "operator-handoff-preview.json", issues, "demo_handoff")
+    demo_handoff_markdown = _read_text(demo_dir / "operator-handoff-preview.md", issues, "demo_handoff_markdown")
     operator_state = _read_json(demo_dir / "operator-state.json", issues, "operator_state")
     packet = _read_json(demo_dir / "nemoclaw-action-packet.json", issues, "nemoclaw_packet")
     packet_validation = _read_json(
@@ -423,11 +517,17 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     )
     plan_run = _read_json(plan_dir / "voiceops-plan-run.json", issues, "plan_run")
     plan_closure = _read_json(plan_dir / "readiness-closure-index.json", issues, "plan_closure")
+    plan_closure_markdown = _read_text(plan_dir / "readiness-closure-index.md", issues, "plan_closure_markdown")
     plan_handoff = _read_json(plan_dir / "operator-handoff.json", issues, "operator_handoff")
+    plan_handoff_markdown = _read_text(plan_dir / "operator-handoff.md", issues, "operator_handoff_markdown")
     channel_policy = _read_json(channel_dir / "channel-policy.json", issues, "channel_policy")
     channel_review = _read_json(channel_dir / "channel-policy-review.json", issues, "channel_policy_review")
-    _read_text(channel_dir / "channel-policy.md", issues, "channel_policy_markdown")
-    _read_text(channel_dir / "channel-policy-review.md", issues, "channel_policy_review_markdown")
+    channel_policy_markdown = _read_text(channel_dir / "channel-policy.md", issues, "channel_policy_markdown")
+    channel_review_markdown = _read_text(
+        channel_dir / "channel-policy-review.md",
+        issues,
+        "channel_policy_review_markdown",
+    )
     dashboard_html = _read_text(demo_dir / "operator-dashboard.html", issues, "operator_dashboard")
     audit_rows = _read_jsonl(demo_dir / "audit-ledger.jsonl", issues, "audit_ledger")
     dry_run_rows = _dry_run_metadata_rows(
@@ -462,12 +562,21 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         issues=issues,
     )
     _audit_channel_policy(channel_policy, channel_review, issues)
+    _audit_markdown_consistency(
+        closure_markdown=plan_closure_markdown,
+        operator_handoff_markdown=plan_handoff_markdown,
+        demo_handoff_markdown=demo_handoff_markdown,
+        channel_policy_markdown=channel_policy_markdown,
+        channel_review_markdown=channel_review_markdown,
+        issues=issues,
+    )
 
     checked_artifacts = [
         str(demo_dir / "voiceops-demo.json"),
         str(demo_dir / "readiness-report.json"),
         str(demo_dir / "readiness-closure-summary.json"),
         str(demo_dir / "operator-handoff-preview.json"),
+        str(demo_dir / "operator-handoff-preview.md"),
         str(demo_dir / "operator-state.json"),
         str(demo_dir / "operator-dashboard.html"),
         str(demo_dir / "nemoclaw-action-packet.json"),
@@ -476,7 +585,9 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         str(demo_dir / "stripe-actions-dry-run.sh"),
         str(plan_dir / "voiceops-plan-run.json"),
         str(plan_dir / "readiness-closure-index.json"),
+        str(plan_dir / "readiness-closure-index.md"),
         str(plan_dir / "operator-handoff.json"),
+        str(plan_dir / "operator-handoff.md"),
         str(channel_dir / "channel-policy.json"),
         str(channel_dir / "channel-policy.md"),
         str(channel_dir / "channel-policy-review.json"),
