@@ -336,6 +336,11 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in closure_markdown
     assert "source_artifact" in closure_markdown
     assert "collector_attestation" in closure_markdown
+    assert "collector_name" in closure_markdown
+    assert "collector_version" in closure_markdown
+    assert "command_argv" in closure_markdown
+    assert "redacted_artifact_sha256" in closure_markdown
+    assert "parent_manifest_sha256" in closure_markdown
     assert "kind/evidence_type" in closure_markdown
     assert "--validate-live-evidence" in closure_markdown
     assert "artifacts/realtime-voice-evidence/live-current/sidecar-session.json" in closure_markdown

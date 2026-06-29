@@ -1414,7 +1414,7 @@ def _operator_runbook(plan: dict[str, Any]) -> str:
         "```",
         "",
         "3. Replace the scaffold source artifacts under `spark-benchmark-scaffold/sources/` with redacted measured raw outputs.",
-        "4. Fill `spark-benchmark-scaffold/spark-benchmark-evidence.json` with measured metrics, real `source_artifact` refs, matching `source_artifact_sha256` values, `verified: true`, and no `example_only` markers.",
+        "4. Fill `spark-benchmark-scaffold/spark-benchmark-evidence.json` with measured metrics, real `source_artifact` refs, matching `source_artifact_sha256` values, matching `collector_attestation.redacted_artifact_sha256` values, `verified: true`, and no `example_only` markers.",
         "5. Re-run the matrix validator against the measured evidence.",
         "",
         "```bash",

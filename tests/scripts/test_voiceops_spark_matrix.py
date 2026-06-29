@@ -219,6 +219,11 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "source_artifact" in closure_markdown
     assert "source_artifact_sha256" in closure_markdown
     assert "collector_attestation" in closure_markdown
+    assert "collector_name" in closure_markdown
+    assert "collector_version" in closure_markdown
+    assert "command_argv" in closure_markdown
+    assert "redacted_artifact_sha256" in closure_markdown
+    assert "parent_manifest_sha256" in closure_markdown
     assert "source_artifacts_must_exist" in closure_markdown
     assert "VoiceOps DGX Spark Operator Runbook" in operator_runbook
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in operator_runbook
@@ -226,6 +231,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "path/to/spark-benchmark-evidence.json" not in operator_runbook
     assert "uv run python scripts/voiceops_spark_matrix.py" in operator_runbook
     assert "uv run python scripts/voiceops_plan_run.py" in operator_runbook
+    assert "collector_attestation.redacted_artifact_sha256" in operator_runbook
     assert "Nemotron 3 Super is the preferred one-Spark oracle candidate" in operator_runbook
     assert "Hosted or multi-Spark Nemotron 3 Ultra evidence" in operator_runbook
     assert "`loopback_smoke_bridge`" in operator_runbook

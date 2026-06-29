@@ -335,9 +335,9 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "Discord bot token and channel env/config presence",
                     "running realtime voice sidecar",
                     f"optional hermes doctor --realtime-voice-report JSON at {REALTIME_VOICE_DOCTOR_REPORT} for offline sidecar/live-turn evidence derivation",
-                    "discord-live-probe.json with source_artifact and connect/playback/inbound/disconnect latency metrics",
-                    "sidecar-session.json with sidecar_mode=production, healthcheck_observed, provider_transport_observed, session_id_redacted, fallback_reason, and session_start/shutdown latency metrics",
-                    "live-turn.json",
+                    "discord-live-probe.json with source_artifact, collector_attestation, and connect/playback/inbound/disconnect latency metrics",
+                    "sidecar-session.json with collector_attestation, sidecar_mode=production, healthcheck_observed, provider_transport_observed, session_id_redacted, fallback_reason, and session_start/shutdown latency metrics",
+                    "live-turn.json with collector_attestation",
                 ],
                 "commands": live_commands,
                 "expected_artifacts": [
@@ -366,7 +366,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     ".env or local CLI auth for Stripe/Link/MPP/phone provider",
                     "redacted preflight evidence JSON or manifest",
                     "optional redacted post-approval receipt bundle",
-                    "redacted source artifacts with matching SHA-256",
+                    "redacted source artifacts with matching SHA-256 and collector_attestation redacted hash",
                 ],
                 "commands": provisioning_commands,
                 "command_safety": {

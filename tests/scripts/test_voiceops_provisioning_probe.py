@@ -645,6 +645,12 @@ def test_write_probe_artifacts(tmp_path):
     assert "Manifest example" in setup_markdown
     assert "Two-layer scaffold" in setup_markdown
     assert "source_artifact" in setup_markdown
+    assert "collector_attestation" in setup_markdown
+    assert "collector_name" in setup_markdown
+    assert "collector_version" in setup_markdown
+    assert "command_argv" in setup_markdown
+    assert "redacted_artifact_sha256" in setup_markdown
+    assert "parent_manifest_sha256" in setup_markdown
     assert "--read-only-discovery-evidence" in setup_markdown
     assert stale_manifest_path not in setup_markdown
     assert "`stripe_projects.account_ref`" in setup_markdown

@@ -527,7 +527,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     ]
     assert handoff["phases"][0]["can_run_here_now"] is False
     assert handoff["phases"][0]["first_safe_command"] == next_actions[0]["first_safe_command"]
-    assert "discord-live-probe.json with source_artifact" in json.dumps(handoff["phases"][0]["required_inputs"])
+    assert "discord-live-probe.json with source_artifact, collector_attestation" in json.dumps(
+        handoff["phases"][0]["required_inputs"]
+    )
     assert "sidecar_mode=production" in json.dumps(handoff["phases"][0]["required_inputs"])
     assert "healthcheck_observed" in json.dumps(handoff["phases"][0]["required_inputs"])
     assert "provider_transport_observed" in json.dumps(handoff["phases"][0]["required_inputs"])
@@ -955,8 +957,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "required_sidecar_mode" in closure_markdown
     assert "required_sidecar_latency_metrics_ms" in closure_markdown
     assert "required_discord_latency_metrics_ms" in closure_markdown
+    assert "required_collector_attestation_fields" in closure_markdown
+    assert "collector_attestation_required_for_live_readiness" in closure_markdown
+    assert "redacted_artifact_sha256" in closure_markdown
+    assert "parent_manifest_sha256" in closure_markdown
     assert "realtime_voice_report_derivation_schema_version" in closure_markdown
     assert "unverified_source_artifacts_accepted" in closure_markdown
+    assert "collector_attestation" in closure_markdown
     assert "voiceops.milestone2.preflight_evidence_manifest.v1" in closure_markdown
     scaffold_manifest_path = (
         "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/"
@@ -1178,16 +1185,22 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "Manifest ingestion is preferred because manifest reports record the actual referenced report path as provenance" in text
     assert "placeholder source paths inside referenced artifacts are not trusted as provenance" in text
     assert "Template source artifact names such as `discord-live-probe.json`, `voice-status-or-sidecar-report.json`, `sidecar-session.json`, `voice-turn-evidence.json`, and `live-turn.json` are rejected" in text
+    assert "collector_attestation" in text
+    assert "collector name/version, run id, command argv, git commit, timestamp window" in text
+    assert "raw/redacted SHA-256 hashes, and parent manifest hash" in text
     assert "source_artifact` for every redacted evidence section" in text
     assert "voiceops.milestone2.post_approval_receipts.v1" in text
     assert "`--post-approval-receipts`" in text
     assert "`--run-readonly-discovery`" in text
     assert "stripe projects list --limit 10" in text
     assert "link-cli auth status" in text
-    assert "`source_artifact_kind: redacted_setup_evidence`, `source_artifact_sha256`, and `source_artifact_redacted_at`" in text
+    assert "`source_artifact_kind: redacted_setup_evidence`, `source_artifact_sha256`, `source_artifact_redacted_at`, and `collector_attestation`" in text
     assert "SHA-256 must match the referenced redacted JSON source artifact" in text
-    assert "redaction timestamp must be parseable with timezone information" in text
+    assert "attestation redacted hash must match that SHA-256" in text
+    assert "redaction and collection timestamps must be parseable with timezone information" in text
+    assert "placeholder or `example_only` attestations are rejected" in text
     assert "all_local_stack_smoke" in text
+    assert "source_artifact_sha256` and `collector_attestation.redacted_artifact_sha256`" in text
     assert "oracle authority routes include tools/files/memory/project context" in text
     assert "reflex provider includes `vllm`" in text
     assert "`speech_end_to_first_audio_ms <= 1500`" in text
@@ -1200,12 +1213,14 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in text
     assert "spark-operator-runbook.md" in text
     assert "The operator handoff is the ordered execution runbook" in text
+    assert "required proof shape for each gate including collector attestation requirements" in text
     assert "does not change readiness by itself" in text
     assert "`--dry-audit` builds the same plan summary in a temporary artifact root" in text
     assert "ordered `next_actions`" in text
     assert "The `next_actions` records are machine-readable" in text
     assert "Its `ok` field means no hard validation failures, not readiness" in text
     assert "closure rehearsal" in text.lower()
+    assert "valid collector attestations" in text
     assert "`remaining_gates: []`" in text
     assert "local optional Stripe Skills bundle contracts" in text
     assert "optional-skills/payments/stripe-projects" in text

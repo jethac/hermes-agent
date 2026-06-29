@@ -627,7 +627,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "Stripe Projects and Link CLI setup",
                     "NemoClaw/MPP execution-boundary setup",
                     "phone provider and target references",
-                    "redacted source artifacts with matching SHA-256 fields",
+                    "redacted source artifacts with matching SHA-256 fields and collector_attestation redacted hashes",
                     "post-approval receipts only after explicit approval",
                 ],
                 "expected_artifacts": provisioning_gate["expected_artifacts"],
