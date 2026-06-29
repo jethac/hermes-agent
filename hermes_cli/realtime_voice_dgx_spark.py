@@ -41,6 +41,7 @@ DEFAULT_TTS_ADAPTER = "loopback_smoke_bridge"
 DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:latest"
 DEFAULT_HERMES_IMAGE = "ghcr.io/astral-sh/uv:python3.12-bookworm-slim"
 DEFAULT_SCRIPT_PYTHON = "python3"
+VOICEOPS_SPARK_EVIDENCE_SCHEMA_VERSION = "voiceops.spark_benchmark_evidence.v1"
 REQUIRED_DGX_SPARK_SMOKES: tuple[tuple[str, str], ...] = (
     (
         "all_local_smoke",
@@ -1322,72 +1323,84 @@ def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> li
         if not isinstance(candidate, Mapping):
             continue
         template.append(
-            {
-                "kind": "kame_benchmark_result",
-                "category": "interface",
-                "model": candidate.get("model"),
-                "input": candidate.get("input"),
-                "metrics": _null_metric_template(candidate.get("required_metrics")),
-            }
+            _with_voiceops_projection_fields(
+                {
+                    "kind": "kame_benchmark_result",
+                    "category": "interface",
+                    "model": candidate.get("model"),
+                    "input": candidate.get("input"),
+                    "metrics": _null_metric_template(candidate.get("required_metrics")),
+                }
+            )
         )
 
     for candidate in candidates.get("oracle", []) if isinstance(candidates.get("oracle"), list) else []:
         if not isinstance(candidate, Mapping):
             continue
         template.append(
-            {
-                "kind": "kame_benchmark_result",
-                "category": "oracle",
-                "model": candidate.get("model"),
-                "metrics": _null_metric_template(candidate.get("required_metrics")),
-            }
+            _with_voiceops_projection_fields(
+                {
+                    "kind": "kame_benchmark_result",
+                    "category": "oracle",
+                    "model": candidate.get("model"),
+                    "metrics": _null_metric_template(candidate.get("required_metrics")),
+                }
+            )
         )
 
     for candidate in candidates.get("oracle_outcome", []) if isinstance(candidates.get("oracle_outcome"), list) else []:
         if not isinstance(candidate, Mapping):
             continue
         template.append(
-            {
-                "kind": "kame_benchmark_result",
-                "category": "oracle_outcome",
-                "model": candidate.get("model"),
-                "asr_hypothesis": candidate.get("asr_hypothesis"),
-                "metrics": _null_metric_template(candidate.get("required_metrics")),
-            }
+            _with_voiceops_projection_fields(
+                {
+                    "kind": "kame_benchmark_result",
+                    "category": "oracle_outcome",
+                    "model": candidate.get("model"),
+                    "asr_hypothesis": candidate.get("asr_hypothesis"),
+                    "metrics": _null_metric_template(candidate.get("required_metrics")),
+                }
+            )
         )
 
     for candidate in candidates.get("speech", []) if isinstance(candidates.get("speech"), list) else []:
         if not isinstance(candidate, Mapping):
             continue
         template.append(
-            {
-                "kind": "kame_benchmark_result",
-                "category": "speech",
-                "role": candidate.get("role"),
-                "mode": candidate.get("mode"),
-                "provider": candidate.get("provider"),
-                "model": candidate.get("model"),
-                "adapter": candidate.get("adapter"),
-                "module": candidate.get("module"),
-                "protocol_smoke_only": candidate.get("protocol_smoke_only") is True,
-                "metrics": _null_metric_template(candidate.get("required_metrics")),
-            }
+            _with_voiceops_projection_fields(
+                {
+                    "kind": "kame_benchmark_result",
+                    "category": "speech",
+                    "role": candidate.get("role"),
+                    "mode": candidate.get("mode"),
+                    "provider": candidate.get("provider"),
+                    "model": candidate.get("model"),
+                    "adapter": candidate.get("adapter"),
+                    "module": candidate.get("module"),
+                    "protocol_smoke_only": candidate.get("protocol_smoke_only") is True,
+                    "metrics": _null_metric_template(candidate.get("required_metrics")),
+                }
+            )
         )
 
     for candidate in candidates.get("comparison", []) if isinstance(candidates.get("comparison"), list) else []:
         if not isinstance(candidate, Mapping):
             continue
         template.append(
-            {
-                "kind": "kame_comparison_result",
-                "name": candidate.get("name"),
-                "metrics": _null_metric_template(candidate.get("required_metrics")),
-                "notes": "Fill from a paired evaluation over the same utterance/case set.",
-            }
+            _with_voiceops_projection_fields(
+                {
+                    "kind": "kame_comparison_result",
+                    "name": candidate.get("name"),
+                    "metrics": _null_metric_template(candidate.get("required_metrics")),
+                    "notes": "Fill from a paired evaluation over the same utterance/case set.",
+                }
+            )
         )
 
     for name, notes in REQUIRED_DGX_SPARK_SMOKES:
-        entry = {"kind": "kame_smoke_result", "name": name, "ok": False, "notes": notes}
+        entry = _with_voiceops_projection_fields(
+            {"kind": "kame_smoke_result", "name": name, "ok": False, "notes": notes}
+        )
         if name == "all_local_smoke":
             entry.update(
                 {
@@ -1398,6 +1411,14 @@ def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> li
                     "oracle_authority_routes": [],
                     "interface_input_sources": [],
                     "reflex_providers": [],
+                    "oracle_selected_by": "Hermes /model",
+                    "components": {
+                        "reflex": None,
+                        "oracle": None,
+                        "asr": None,
+                        "tts": None,
+                        "sidecar": None,
+                    },
                 }
             )
         elif name == "cloud_fallback_smoke":
@@ -1433,16 +1454,36 @@ def build_dgx_spark_benchmark_evidence_template(matrix: Mapping[str, Any]) -> li
         if not isinstance(assumption, Mapping) or assumption.get("required") is not True:
             continue
         template.append(
-            {
-                "kind": "kame_model_assumption_result",
-                "name": str(name),
-                "validated_by": str(assumption.get("validated_by") or ""),
-                "model": str(assumption.get("model") or "") or None,
-                "ok": False,
-                "notes": "Set ok=true only after this model/runtime assumption has been validated on the target DGX Spark.",
-            }
+            _with_voiceops_projection_fields(
+                {
+                    "kind": "kame_model_assumption_result",
+                    "name": str(name),
+                    "validated_by": str(assumption.get("validated_by") or ""),
+                    "model": str(assumption.get("model") or "") or None,
+                    "ok": False,
+                    "notes": "Set ok=true only after this model/runtime assumption has been validated on the target DGX Spark.",
+                }
+            )
         )
     return template
+
+
+def _with_voiceops_projection_fields(entry: dict[str, Any]) -> dict[str, Any]:
+    """Add provenance fields required by the VoiceOps Spark matrix adapter."""
+
+    return {
+        "schema_version": VOICEOPS_SPARK_EVIDENCE_SCHEMA_VERSION,
+        "hardware": "1x DGX Spark",
+        "locality": "local_spark",
+        "verified": False,
+        "measured_at": None,
+        "source_artifact": None,
+        "voiceops_projection_notes": (
+            "Replace source_artifact with a redacted raw benchmark artifact path that resolves beside "
+            "the evidence file; set measured_at and verified=true only after collecting on the DGX Spark."
+        ),
+        **entry,
+    }
 
 
 def load_dgx_spark_benchmark_evidence(path: str | Path) -> list[dict[str, Any]]:
@@ -1482,6 +1523,9 @@ def validate_dgx_spark_benchmark_evidence(
         return {"ok": False, "issues": ["matrix: missing candidates mapping"], "coverage": {}}
 
     coverage: dict[str, bool] = {}
+    projection_issues = _voiceops_matrix_projection_issues(entries)
+    coverage["voiceops_matrix_projection_ready"] = not projection_issues
+    issues.extend(projection_issues)
     quality_targets = matrix.get("acceptance_targets_ms") if isinstance(matrix.get("acceptance_targets_ms"), Mapping) else {}
     interface_decision_target_ms = _positive_metric_target(quality_targets.get("local_ack_first_audio"), default=500.0)
     interface_first_audio_target_ms = _positive_metric_target(quality_targets.get("local_reply_first_audio"), default=1000.0)
@@ -1719,6 +1763,35 @@ def validate_dgx_spark_benchmark_evidence(
         "issues": issues,
         "coverage": coverage,
     }
+
+
+def _voiceops_matrix_projection_issues(entries: list[Mapping[str, Any]]) -> list[str]:
+    issues: list[str] = []
+    projected_kinds = {
+        "kame_benchmark_result",
+        "kame_comparison_result",
+        "kame_model_assumption_result",
+        "kame_smoke_result",
+    }
+    for index, entry in enumerate(entries):
+        kind = str(entry.get("kind") or "").strip()
+        if kind not in projected_kinds:
+            continue
+        label = f"voiceops_projection:{index}:{kind}"
+        if str(entry.get("schema_version") or "") != VOICEOPS_SPARK_EVIDENCE_SCHEMA_VERSION:
+            issues.append(f"{label}:missing_or_invalid_schema_version")
+        hardware = str(entry.get("hardware") or "").strip().lower()
+        if hardware not in {"1x dgx spark", "1x nvidia dgx spark", "single dgx spark"}:
+            issues.append(f"{label}:missing_or_invalid_hardware")
+        if str(entry.get("locality") or "").strip() != "local_spark":
+            issues.append(f"{label}:missing_or_invalid_locality")
+        if entry.get("verified") is not True and entry.get("ok") is not True:
+            issues.append(f"{label}:verified_not_true")
+        if not str(entry.get("measured_at") or "").strip():
+            issues.append(f"{label}:missing_measured_at")
+        if not str(entry.get("source_artifact") or "").strip():
+            issues.append(f"{label}:missing_source_artifact")
+    return issues
 
 
 def _find_benchmark_entry(

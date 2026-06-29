@@ -13,6 +13,14 @@ PRODUCTION_TTS_MODEL = "magpie-local-streaming-tts"
 PRODUCTION_ASR_ADAPTER = "nemotron_speech_streaming"
 PRODUCTION_TTS_ADAPTER = "magpie_streaming_tts"
 DEFAULT_SUPER_ORACLE_MODEL = realtime_voice_dgx_spark.DEFAULT_ORACLE_MODEL
+VOICEOPS_PROJECTION_PROVENANCE = {
+    "schema_version": "voiceops.spark_benchmark_evidence.v1",
+    "hardware": "1x DGX Spark",
+    "locality": "local_spark",
+    "verified": True,
+    "measured_at": "2026-06-29T00:00:00Z",
+    "source_artifact": "raw-kame-benchmark.json",
+}
 
 
 def _manifest(tmp_path: Path, *, production_speech: bool = False) -> dict:
@@ -140,7 +148,7 @@ def _passing_benchmark_evidence() -> list[dict]:
             "ok": True,
         },
     ]
-    return [
+    entries = [
         *interface_entries,
         *assumption_entries,
         {
@@ -273,6 +281,7 @@ def _passing_benchmark_evidence() -> list[dict]:
             "interrupted_response_committed": False,
         },
     ]
+    return [{**VOICEOPS_PROJECTION_PROVENANCE, **entry} for entry in entries]
 
 
 def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
@@ -649,6 +658,13 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
         "oracle_outcome_asr_hypothesis_delta",
     ]
     assert evidence_template[0]["kind"] == "kame_benchmark_result"
+    assert evidence_template[0]["schema_version"] == "voiceops.spark_benchmark_evidence.v1"
+    assert evidence_template[0]["hardware"] == "1x DGX Spark"
+    assert evidence_template[0]["locality"] == "local_spark"
+    assert evidence_template[0]["verified"] is False
+    assert evidence_template[0]["measured_at"] is None
+    assert evidence_template[0]["source_artifact"] is None
+    assert "voiceops_projection_notes" in evidence_template[0]
     assert evidence_template[0]["category"] == "interface"
     assert evidence_template[0]["model"] == "gemma-4-E2B-it"
     assert evidence_template[0]["input"] == "direct_audio"
@@ -661,6 +677,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     comparison_entries = [
         entry for entry in evidence_template if entry.get("kind") == "kame_comparison_result"
     ]
+    assert all(entry["schema_version"] == "voiceops.spark_benchmark_evidence.v1" for entry in comparison_entries)
     assert [entry["name"] for entry in comparison_entries] == [
         "interface_direct_audio_vs_stt_fallback",
         "oracle_outcome_asr_hypothesis_delta",
@@ -734,6 +751,29 @@ def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation
         "interface_direct_audio_vs_stt_fallback",
         "oracle_outcome_asr_hypothesis_delta",
     ]
+    assert all(
+        {
+            "schema_version",
+            "hardware",
+            "locality",
+            "verified",
+            "measured_at",
+            "source_artifact",
+        }
+        <= set(entry)
+        for entry in template
+    )
+    all_local_smoke = next(
+        entry for entry in template if entry.get("kind") == "kame_smoke_result" and entry.get("name") == "all_local_smoke"
+    )
+    assert all_local_smoke["oracle_selected_by"] == "Hermes /model"
+    assert all_local_smoke["components"] == {
+        "reflex": None,
+        "oracle": None,
+        "asr": None,
+        "tts": None,
+        "sidecar": None,
+    }
     assert {
         (entry["role"], entry["provider"], entry["model"], entry["adapter"], entry["protocol_smoke_only"])
         for entry in template
@@ -1108,6 +1148,24 @@ def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_pat
     assert result["coverage"]["cloud_fallback_smoke"] is True
     assert result["coverage"]["capability_honesty_smoke"] is True
     assert result["coverage"]["barge_in_interruption_smoke"] is True
+    assert result["coverage"]["voiceops_matrix_projection_ready"] is True
+
+
+def test_benchmark_evidence_validator_rejects_missing_voiceops_projection_provenance(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence = _passing_benchmark_evidence()
+    evidence[0].pop("source_artifact")
+    evidence[0].pop("measured_at")
+    last_entry_index = len(evidence) - 1
+    evidence[-1].pop("hardware")
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["voiceops_matrix_projection_ready"] is False
+    assert "voiceops_projection:0:kame_benchmark_result:missing_source_artifact" in result["issues"]
+    assert "voiceops_projection:0:kame_benchmark_result:missing_measured_at" in result["issues"]
+    assert f"voiceops_projection:{last_entry_index}:kame_smoke_result:missing_or_invalid_hardware" in result["issues"]
 
 
 def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):
