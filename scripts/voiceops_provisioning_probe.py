@@ -1054,7 +1054,7 @@ def _source_artifact_issues(payload: Mapping[str, Any], evidence_path: Path) -> 
             _collector_attestation_issues(
                 section,
                 section_name=section_name,
-                expected_redacted_sha256=source_sha256,
+                expected_redacted_sha256=actual_sha256,
             )
         )
         issues.extend(

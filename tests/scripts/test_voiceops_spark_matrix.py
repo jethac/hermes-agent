@@ -513,6 +513,41 @@ def test_spark_matrix_rejects_candidate_with_mismatched_source_artifact_hash(tmp
     assert matrix["role_status"]["oracle"] == "needs_evidence"
 
 
+def test_spark_matrix_rejects_candidate_with_stale_source_and_attestation_hashes(tmp_path):
+    sources_dir = tmp_path / "sources"
+    sources_dir.mkdir()
+    source_path = sources_dir / "oracle.json"
+    source_path.write_text(
+        json.dumps({"redacted": True, "source": "old oracle output"}, sort_keys=True),
+        encoding="utf-8",
+    )
+    old_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    evidence["source_artifact"] = "sources/oracle.json"
+    evidence["source_artifact_sha256"] = old_sha256
+    evidence["collector_attestation"]["redacted_artifact_sha256"] = old_sha256
+    evidence["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path = tmp_path / "spark-benchmark-evidence.json"
+    evidence_path.write_text(json.dumps({"evidence": [evidence]}, indent=2, sort_keys=True), encoding="utf-8")
+    source_path.write_text(
+        json.dumps({"redacted": True, "source": "updated oracle output"}, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "source_artifact_sha256_mismatch" in evaluation["issues"]
+    assert "collector_attestation_redacted_sha256_mismatch" in evaluation["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
 def test_spark_matrix_refresh_source_hashes_updates_candidate_attestation(tmp_path):
     sources_dir = tmp_path / "sources"
     sources_dir.mkdir()
@@ -850,6 +885,34 @@ def test_spark_matrix_rejects_stack_smoke_with_mismatched_source_artifact_hash(t
 
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "source_artifact_sha256_mismatch" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_rejects_stack_smoke_with_stale_source_and_attestation_hashes(tmp_path):
+    sources_dir = tmp_path / "sources"
+    sources_dir.mkdir()
+    source_path = sources_dir / "stack-smoke.json"
+    source_path.write_text(
+        json.dumps({"redacted": True, "source": "old stack smoke"}, sort_keys=True),
+        encoding="utf-8",
+    )
+    old_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    stack_smoke = _stack_smoke()
+    stack_smoke["source_artifact"] = "sources/stack-smoke.json"
+    stack_smoke["source_artifact_sha256"] = old_sha256
+    stack_smoke["collector_attestation"]["redacted_artifact_sha256"] = old_sha256
+    evidence_path = tmp_path / "spark-benchmark-evidence.json"
+    evidence_path.write_text(json.dumps({"evidence": [stack_smoke]}, indent=2, sort_keys=True), encoding="utf-8")
+    source_path.write_text(
+        json.dumps({"redacted": True, "source": "updated stack smoke"}, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "source_artifact_sha256_mismatch" in matrix["stack_smoke"]["issues"]
+    assert "collector_attestation_redacted_sha256_mismatch" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
 
 

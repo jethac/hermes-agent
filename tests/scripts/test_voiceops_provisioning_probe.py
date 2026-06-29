@@ -1053,6 +1053,30 @@ def test_refresh_preflight_manifest_source_sha256_updates_section_files(tmp_path
     assert "stripe_projects.collector_attestation.redacted_artifact_sha256: mismatch" not in after["validation_issues"]
 
 
+def test_preflight_evidence_rejects_stale_source_and_attestation_hashes(tmp_path):
+    evidence_path = _write_preflight_evidence(tmp_path)
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    source_path = tmp_path / evidence["stripe_projects"]["source_artifact"]
+    source_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+                "section": "stripe_projects",
+                "redacted": True,
+                "redaction_policy": "references only; no raw secrets, tokens, cards, or full phone numbers",
+                "summary": "operator replaced this with updated Stripe Projects evidence",
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "stripe_projects.source_artifact_sha256: mismatch" in loaded["validation_issues"]
+    assert "stripe_projects.collector_attestation.redacted_artifact_sha256: mismatch" in loaded["validation_issues"]
+
+
 def test_refresh_preflight_single_file_source_sha256_updates_collector_attestation(tmp_path):
     evidence_path = _write_preflight_evidence(tmp_path)
     evidence = json.loads(evidence_path.read_text(encoding="utf-8"))

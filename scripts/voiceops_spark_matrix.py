@@ -724,6 +724,11 @@ def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
         actual_sha256 = hashlib.sha256(source_bytes).hexdigest()
         if actual_sha256 != expected_sha256:
             issues.append("source_artifact_sha256_mismatch")
+        attestation = item.get("collector_attestation") or item.get("collector_provenance")
+        if isinstance(attestation, dict):
+            redacted_sha256 = str(attestation.get("redacted_artifact_sha256") or "").strip().lower()
+            if _valid_sha256(redacted_sha256) and redacted_sha256 != actual_sha256:
+                issues.append("collector_attestation_redacted_sha256_mismatch")
     return issues
 
 

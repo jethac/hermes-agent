@@ -25,6 +25,21 @@ VOICEOPS_PROJECTION_PROVENANCE = {
 }
 
 
+def _collector_attestation(redacted_sha256: str) -> dict:
+    return {
+        "collector_name": "pytest_kame_projection_fixture",
+        "collector_version": "test-v1",
+        "run_id": "test-kame-projection-run",
+        "command_argv": ["pytest", "tests/hermes_cli/test_realtime_voice_dgx_spark.py"],
+        "git_commit": "a" * 40,
+        "started_at": "2026-06-29T00:00:00Z",
+        "finished_at": "2026-06-29T00:00:01Z",
+        "raw_artifact_sha256": "b" * 64,
+        "redacted_artifact_sha256": redacted_sha256,
+        "parent_manifest_sha256": "c" * 64,
+    }
+
+
 def _manifest(tmp_path: Path, *, production_speech: bool = False) -> dict:
     speech_kwargs = (
         {
@@ -316,6 +331,7 @@ def _passing_benchmark_evidence_with_source(tmp_path: Path) -> list[dict]:
         {
             **entry,
             "source_artifact_sha256": source_artifact_sha256,
+            "collector_attestation": _collector_attestation(source_artifact_sha256),
             "_evidence_path": str(evidence_path),
         }
         for entry in _passing_benchmark_evidence()
@@ -1297,6 +1313,23 @@ def test_benchmark_evidence_validator_rejects_missing_projection_source_file(tmp
     assert result["ok"] is False
     assert result["coverage"]["voiceops_matrix_projection_ready"] is False
     assert "voiceops_projection:0:kame_benchmark_result:source_artifact_not_found" in result["issues"]
+
+
+def test_benchmark_evidence_validator_rejects_stale_projection_source_and_attestation_hashes(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence = _passing_benchmark_evidence_with_source(tmp_path)
+    raw_path = tmp_path / "raw-kame-benchmark.json"
+    raw_path.write_text(
+        json.dumps({"redacted": True, "source": "updated synthetic KAME benchmark fixture"}),
+        encoding="utf-8",
+    )
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["voiceops_matrix_projection_ready"] is False
+    assert "voiceops_projection:0:kame_benchmark_result:source_artifact_sha256_mismatch" in result["issues"]
+    assert "voiceops_projection:0:kame_benchmark_result:collector_attestation_redacted_sha256_mismatch" in result["issues"]
 
 
 def test_benchmark_evidence_validator_requires_stt_fallback_and_smoke(tmp_path):

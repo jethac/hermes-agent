@@ -1854,6 +1854,15 @@ def _projection_source_artifact_issues(entry: Mapping[str, Any]) -> list[str]:
         actual_sha256 = hashlib.sha256(source_bytes).hexdigest()
         if actual_sha256 != expected_sha256:
             issues.append("source_artifact_sha256_mismatch")
+        attestation = entry.get("collector_attestation") or entry.get("collector_provenance")
+        if isinstance(attestation, Mapping):
+            redacted_sha256 = str(attestation.get("redacted_artifact_sha256") or "").strip().lower()
+            if (
+                len(redacted_sha256) == 64
+                and all(character in "0123456789abcdef" for character in redacted_sha256)
+                and redacted_sha256 != actual_sha256
+            ):
+                issues.append("collector_attestation_redacted_sha256_mismatch")
     return issues
 
 
