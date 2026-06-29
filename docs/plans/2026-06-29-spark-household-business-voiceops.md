@@ -315,11 +315,25 @@ The default preflight is non-mutating and only checks PATH/env presence, env-key
 
 Make the same operator reachable beyond Discord:
 
+- generate and review the multi-channel policy artifact before enabling new egress surfaces
 - WhatsApp Cloud setup path validated for command and approval messages
 - phone/SMS path designed around Twilio or equivalent provisioning
 - channel-specific authorization rules
 - escalation policy for urgent household/business events
 - consistent audit IDs across Discord, WhatsApp, and phone/SMS
+
+Policy command:
+
+```bash
+uv run python scripts/voiceops_channel_policy.py --output-dir artifacts/voiceops-channel-policy/current
+```
+
+The command writes:
+
+- `channel-policy.json`
+- `channel-policy.md`
+
+The policy artifact is static and headless. It reads no secrets, performs no network I/O, sends no Discord/WhatsApp/SMS messages, and places no calls. It defines channel authorization, approval routing, escalation levels, audit ID continuity, and redaction rules for Discord, WhatsApp, and phone/SMS before those surfaces are used for real operations.
 
 ## Milestone 4: Local Spark Stack
 
