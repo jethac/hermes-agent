@@ -274,6 +274,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "stripe_actions_dry_run": "stripe-actions-dry-run.sh",
     }
     assert payload["spark_stack"]["local_first"] is True
+    assert payload["spark_stack"]["compute"] == "1x NVIDIA DGX Spark target; measured evidence pending"
+    assert payload["spark_stack"]["local_first_status"] == "strategy_target_not_readiness_claim"
+    assert payload["spark_stack"]["current_path_local"] is True
     assert payload["kame_reflex_ack"]["status"] == "scripted_static_ack_until_live_voice_evidence"
     assert payload["kame_reflex_ack"]["ack_text"].startswith("I heard you.")
     assert payload["kame_reflex_ack"]["latency_ms"] is None
@@ -439,6 +442,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "DGX Spark" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "static dry-run package" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "Spark target selected, live evidence pending" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "turns a DGX Spark into" not in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "via Hermes /model via Hermes" not in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "nemoclaw-action-packet.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "nemoclaw-action-packet.validation.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
@@ -486,6 +490,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Hermes VoiceOps Submission Writeup" in writeup
     assert "static dry-run package" in writeup
     assert "Spark target selected, live evidence pending" in writeup
+    assert "targets a DGX Spark-local household and business operator" in writeup
+    assert "turns a DGX Spark into" not in writeup
     assert "NemoClaw" in writeup
     assert "Stripe Skills" in writeup
     assert "@NousResearch" in writeup
@@ -609,6 +615,8 @@ def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned
     assert hosted_super_demo["sponsor_stack"]["hermes_active_model"]["path"] == "hosted_nemotron_3_super_fallback"
     assert hosted_super_demo["sponsor_stack"]["hermes_active_model"]["spark_local"] is False
     assert hosted_super_demo["sponsor_stack"]["hermes_active_model"]["fallback_used"] is True
+    assert hosted_super_demo["spark_stack"]["current_path_local"] is False
+    assert hosted_super_demo["spark_stack"]["local_first_status"] == "strategy_target_not_readiness_claim"
     assert hosted_super_demo["sponsor_stack"]["nemotron_3_super"]["selection"] == "not selected"
     assert hosted_super_demo["sponsor_stack"]["nemotron_3_ultra_hosted_fallback"]["selection"].startswith(
         "Nemotron 3 Super"

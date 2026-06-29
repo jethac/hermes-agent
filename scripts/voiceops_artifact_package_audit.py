@@ -767,11 +767,13 @@ def _audit_markdown_consistency(
     *,
     spark_local_target_selected: bool,
     demo_markdown: str,
+    demo_script_markdown: str,
     recording_runbook_markdown: str,
     submission_writeup_markdown: str,
     closure_markdown: str,
     operator_handoff_markdown: str,
     demo_handoff_markdown: str,
+    dashboard_html: str,
     channel_policy_markdown: str,
     channel_review_markdown: str,
     issues: list[str],
@@ -878,11 +880,21 @@ def _audit_markdown_consistency(
     )
     _reject_markdown_tokens(
         "spark_public_copy",
-        "\n".join([demo_markdown, recording_runbook_markdown, submission_writeup_markdown, demo_handoff_markdown]),
+        "\n".join(
+            [
+                demo_markdown,
+                demo_script_markdown,
+                recording_runbook_markdown,
+                submission_writeup_markdown,
+                demo_handoff_markdown,
+                dashboard_html,
+            ]
+        ),
         {
             "contradicts_active_model_path": rejected_spark_boundary,
             "claims_running_spark_appliance_without_evidence": "target appliance is one DGX Spark running",
             "claims_spark_powered_operator_without_evidence": "Spark-powered Hermes operator",
+            "claims_turns_spark_into_operator_without_evidence": "turns a DGX Spark into",
         },
         issues,
     )
@@ -911,6 +923,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
 
     demo = _read_json(demo_dir / "voiceops-demo.json", issues, "voiceops_demo")
     demo_markdown = _read_text(demo_dir / "voiceops-demo.md", issues, "voiceops_demo_markdown")
+    demo_script_markdown = _read_text(demo_dir / "demo-script.md", issues, "demo_script_markdown")
     readiness = _read_json(demo_dir / "readiness-report.json", issues, "readiness_report")
     demo_closure = _read_json(demo_dir / "readiness-closure-summary.json", issues, "demo_closure")
     demo_handoff = _read_json(demo_dir / "operator-handoff-preview.json", issues, "demo_handoff")
@@ -983,11 +996,13 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     _audit_markdown_consistency(
         spark_local_target_selected=spark_local_target_selected,
         demo_markdown=demo_markdown,
+        demo_script_markdown=demo_script_markdown,
         recording_runbook_markdown=recording_runbook_markdown,
         submission_writeup_markdown=submission_writeup_markdown,
         closure_markdown=plan_closure_markdown,
         operator_handoff_markdown=plan_handoff_markdown,
         demo_handoff_markdown=demo_handoff_markdown,
+        dashboard_html=dashboard_html,
         channel_policy_markdown=channel_policy_markdown,
         channel_review_markdown=channel_review_markdown,
         issues=issues,

@@ -1005,9 +1005,12 @@ def _sponsor_stack(active_model: str) -> dict[str, Any]:
 
 
 def _spark_stack(active_model: str, reflex_model: str) -> dict[str, Any]:
+    active_path = _active_model_path(active_model)
     return {
-        "compute": "1x NVIDIA DGX Spark target",
+        "compute": "1x NVIDIA DGX Spark target; measured evidence pending",
         "local_first": True,
+        "local_first_status": "strategy_target_not_readiness_claim",
+        "current_path_local": active_path["spark_local"],
         "reflex": {
             "model": reflex_model,
             "role": "low-latency KAME interface model for turn handling, intent triage, and floor control",
@@ -1016,7 +1019,7 @@ def _spark_stack(active_model: str, reflex_model: str) -> dict[str, Any]:
         "oracle": {
             "model": active_model,
             "selected_by": "Hermes /model",
-            "active_model_path": _active_model_path(active_model),
+            "active_model_path": active_path,
             "role": "Hermes active model selected by /model; no separate oracle_model setting",
             "interface_contract": "receives committed intent, transcript evidence, spend policy, and tool plan",
             "preferred_local_target": "Nemotron 3 Super on DGX Spark",
@@ -1915,7 +1918,7 @@ def _serious_planning_path(demo: Mapping[str, Any]) -> str:
     )
     if active_path.get("spark_local") is True:
         selection = sponsor_stack.get("nemotron_3_super", {}).get("selection", "Nemotron 3 Super")
-        return f"{selection} is the visible serious planning path."
+        return f"{selection} is the selected Spark-local target path; benchmark evidence is still pending."
     label = active_path.get("label") or active_path.get("active_model") or "Hosted /model fallback"
     return f"{label} is the visible fallback planning path; it does not count as Spark-local readiness proof."
 
@@ -1936,7 +1939,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "",
         "## One-line pitch",
         "",
-        "Hermes VoiceOps turns a DGX Spark into a local-first operator for a household and business, with Discord voice as the intended live front door and WhatsApp/phone as approval-gated follow-on paths.",
+        "Hermes VoiceOps targets a DGX Spark-local operator for a household and business, with Discord voice as the intended live front door and WhatsApp/phone as approval-gated follow-on paths.",
         f"This package is a static dry-run package: {spark_boundary}, and spend/provisioning gated by approval.",
         "",
         "## Sponsor stack",
@@ -2019,7 +2022,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         "",
         "## Short Description",
         "",
-        "Hermes VoiceOps is a local-first household and business operator targeted at one NVIDIA DGX Spark, with Discord voice as the intended live front door. In this static package, the user gives Hermes a fixed budget through Stripe Skills, Hermes prepares a NemoClaw-format dry-run plan, queues VoIP provisioning through Stripe Projects, and preserves context for a phone handoff.",
+        "Hermes VoiceOps targets a DGX Spark-local household and business operator, with Discord voice as the intended live front door. In this static package, the user gives Hermes a fixed budget through Stripe Skills, Hermes prepares a NemoClaw-format dry-run plan, queues VoIP provisioning through Stripe Projects, and preserves context for a phone handoff.",
         "",
         "## What The Demo Shows",
         "",

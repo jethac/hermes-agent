@@ -195,6 +195,7 @@ def test_package_audit_rejects_spark_readiness_claim_drift(tmp_path):
 
     assert report["ok"] is False
     assert "spark_model_claim:spark_local_true_for_hosted_model" in report["issues"]
+    assert "spark_model_claim:spark_local_true_without_local_marker" in report["issues"]
     assert "spark_model_claim:fallback_used_but_spark_local_true" in report["issues"]
     assert "spark_model_claim:spark_local_readiness_mismatch" in report["issues"]
     assert "spark_model_claim:spark_benchmark_required_mismatch" in report["issues"]
@@ -515,12 +516,22 @@ def test_package_audit_rejects_demo_handoff_markdown_drift(tmp_path):
 def test_package_audit_rejects_public_recording_copy_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     demo_markdown_path = artifact_root / "hackathon-voiceops-demo" / "current" / "voiceops-demo.md"
+    demo_script_path = artifact_root / "hackathon-voiceops-demo" / "current" / "demo-script.md"
+    dashboard_path = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-dashboard.html"
     runbook_path = artifact_root / "hackathon-voiceops-demo" / "current" / "recording-runbook.md"
     writeup_path = artifact_root / "hackathon-voiceops-demo" / "current" / "submission-writeup.md"
     demo_markdown_path.write_text(
         demo_markdown_path.read_text(encoding="utf-8").replace(
             "static dry-run package", "live demo package"
         ),
+        encoding="utf-8",
+    )
+    demo_script_path.write_text(
+        demo_script_path.read_text(encoding="utf-8") + "\nThis turns a DGX Spark into an operator.\n",
+        encoding="utf-8",
+    )
+    dashboard_path.write_text(
+        dashboard_path.read_text(encoding="utf-8") + "\nSpark-powered Hermes operator\n",
         encoding="utf-8",
     )
     runbook_path.write_text(
@@ -540,6 +551,8 @@ def test_package_audit_rejects_public_recording_copy_drift(tmp_path):
     assert "demo_markdown:missing_static_dry_run_status" in report["issues"]
     assert "recording_runbook_markdown:missing_spark_evidence_boundary" in report["issues"]
     assert "submission_writeup_markdown:missing_spend_gate" in report["issues"]
+    assert "spark_public_copy:claims_spark_powered_operator_without_evidence" in report["issues"]
+    assert "spark_public_copy:claims_turns_spark_into_operator_without_evidence" in report["issues"]
 
 
 def test_package_audit_rejects_channel_policy_review_markdown_drift(tmp_path):
