@@ -34,6 +34,7 @@ READ_ONLY_DISCOVERY_MANIFEST_SCHEMA_VERSION = "voiceops.milestone2.read_only_dis
 NEMOCLAW_ACTION_PACKET_VALIDATION_SCHEMA_VERSION = "voiceops.nemoclaw_action_packet_validation.v1"
 POST_APPROVAL_RECEIPT_STATUSES = {"executed", "failed", "held", "denied", "skipped", "rolled_back"}
 POST_APPROVAL_NON_EXECUTED_STATUSES = {"held", "denied", "skipped"}
+POST_APPROVAL_ATTEMPTED_EXECUTION_STATUSES = {"executed", "failed", "rolled_back"}
 PREFLIGHT_REDACTED_SOURCE_SCHEMA_VERSION = "voiceops.milestone2.redacted_source_artifact.v1"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -2475,6 +2476,14 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "post_approval_collector_attestation_required": True,
             "post_approval_collector_attestation_redacted_sha256_must_match": True,
             "post_approval_collector_attestation_required_fields": list(COLLECTOR_ATTESTATION_REQUIRED_FIELDS),
+            "post_approval_decision_provenance_required_fields": [
+                "decision",
+                "decision_by",
+                "decision_at",
+                "approval_decision_ref",
+                "approval_decision_sha256",
+            ],
+            "post_approval_attempted_execution_decision": "approve_once",
             "post_approval_linkage_ids_must_be_unique": [
                 "credential_locations[].credential_ref_id",
                 "rollback_receipts[].rollback_ref",
@@ -3034,8 +3043,11 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "approval_id",
                 "provider",
                 "status",
-                "approved_by",
-                "approved_at",
+                "decision",
+                "decision_by",
+                "decision_at",
+                "approval_decision_ref",
+                "approval_decision_sha256",
                 "executed_at",
                 "command_sha256",
                 "amount_cents",
@@ -3344,8 +3356,11 @@ def build_post_approval_receipts_example(plan: Mapping[str, Any]) -> dict[str, A
                 "approval_id": action["approval_id"],
                 "provider": action["provider"],
                 "status": "executed",
-                "approved_by": "operator-ref-demo",
-                "approved_at": "2026-06-29T00:00:00Z",
+                "decision": "approve_once",
+                "decision_by": "operator-ref-demo",
+                "decision_at": "2026-06-29T00:00:00Z",
+                "approval_decision_ref": f"approval-decision-ref-demo-{action_id}",
+                "approval_decision_sha256": "a" * 64,
                 "executed_at": "2026-06-29T00:00:30Z",
                 "command_sha256": action["command_sha256"],
                 "amount_cents": estimated_cents,
@@ -3617,6 +3632,19 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
             "credential_location_ref"
         ):
             issues.append(f"post_approval_receipts:{receipt_id}:credential_location_ref_mismatch")
+        decision = str(receipt.get("decision") or "")
+        allowed_decisions = action.get("approval_contract", {}).get("allowed_decisions")
+        if decision not in allowed_decisions:
+            issues.append(f"post_approval_receipts:{receipt_id}:invalid_decision")
+        expected_decision = _expected_post_approval_decision(status)
+        if expected_decision and decision != expected_decision:
+            issues.append(f"post_approval_receipts:{receipt_id}:decision_mismatch:{expected_decision}")
+        decision_ref = str(receipt.get("approval_decision_ref") or "").strip()
+        if not decision_ref:
+            issues.append(f"post_approval_receipts:{receipt_id}:missing_approval_decision_ref")
+        decision_sha256 = str(receipt.get("approval_decision_sha256") or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", decision_sha256):
+            issues.append(f"post_approval_receipts:{receipt_id}:invalid_approval_decision_sha256")
         if (
             status not in POST_APPROVAL_NON_EXECUTED_STATUSES
             and action.get("credential_location_required")
@@ -3643,11 +3671,11 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
                 issues.append(f"post_approval_receipts:{receipt_id}:audit_provider_mismatch")
         if status not in POST_APPROVAL_RECEIPT_STATUSES:
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_status")
-        approved_at = _parse_preflight_timestamp(receipt.get("approved_at"))
+        decision_at = _parse_preflight_timestamp(receipt.get("decision_at"))
         executed_at_value = receipt.get("executed_at")
         executed_at = _parse_preflight_timestamp(executed_at_value)
-        if approved_at is None:
-            issues.append(f"post_approval_receipts:{receipt_id}:invalid_approved_at")
+        if decision_at is None:
+            issues.append(f"post_approval_receipts:{receipt_id}:invalid_decision_at")
         if status not in POST_APPROVAL_NON_EXECUTED_STATUSES and executed_at is None:
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_executed_at")
         if (
@@ -3656,8 +3684,8 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
             and executed_at is None
         ):
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_executed_at")
-        if approved_at is not None and executed_at is not None and approved_at > executed_at:
-            issues.append(f"post_approval_receipts:{receipt_id}:approved_after_executed")
+        if decision_at is not None and executed_at is not None and decision_at > executed_at:
+            issues.append(f"post_approval_receipts:{receipt_id}:decision_after_executed")
         amount = receipt.get("amount_cents")
         if amount is None and status in POST_APPROVAL_NON_EXECUTED_STATUSES:
             pass
@@ -3729,6 +3757,16 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
         "audit_event_count": len(audit_events),
         "ledger_rows": ledger_rows if not issues else [],
     }
+
+
+def _expected_post_approval_decision(status: str) -> str:
+    if status in POST_APPROVAL_ATTEMPTED_EXECUTION_STATUSES:
+        return "approve_once"
+    if status == "denied":
+        return "deny"
+    if status in {"held", "skipped"}:
+        return "hold"
+    return ""
 
 
 def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str, str]:
