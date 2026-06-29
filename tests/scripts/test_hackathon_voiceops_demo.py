@@ -103,8 +103,10 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert payload["recording_readiness"]["live_demo_ready"] is False
     assert payload["recording_readiness"]["live_prerequisite_failures"] == [
         "discord_voice",
+        "nemoclaw_boundary",
         "stripe_projects_cli",
         "stripe_link_cli",
+        "phone_handoff",
     ]
     assert payload["recording_readiness"]["live_demo_missing_evidence"] == [
         "live_discord_voice_operator",
@@ -234,7 +236,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "network_possible_allowlisted_read_only"
     )
     assert operator_handoff["phases"][1]["blocked_by_current_environment"] == {
-        "missing_cli_or_config": ["stripe_projects_cli", "stripe_link_cli", "phone_handoff"],
+        "missing_cli_or_config": ["stripe_projects_cli", "stripe_link_cli", "nemoclaw_boundary", "phone_handoff"],
         "needs_read_only_discovery": True,
         "needs_redacted_setup_evidence": True,
     }
@@ -763,6 +765,29 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     assert stripe_without_projects_marker["required_failures"] == []
     assert "stripe_projects_cli" in stripe_without_projects_marker["live_prerequisite_failures"]
 
+    def fake_without_nemoclaw(command: str) -> str | None:
+        commands = {
+            "hermes": "/usr/local/bin/hermes",
+            "stripe": "/usr/local/bin/stripe",
+            "link-cli": "/usr/local/bin/link-cli",
+        }
+        return commands.get(command)
+
+    no_boundary = build_readiness_report(
+        demo,
+        env={
+            **_discord_live_env(),
+            "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+            "VOICEOPS_PHONE_PROVIDER_ACCOUNT_REF": "twilio:acct:redacted-demo",
+            "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
+        },
+        which=fake_without_nemoclaw,
+    )
+    no_boundary_checks = {check["check_id"]: check for check in no_boundary["checks"]}
+    assert no_boundary_checks["nemoclaw_boundary"]["status"] == "fail"
+    assert "nemoclaw_boundary" in no_boundary["live_prerequisite_failures"]
+    assert "mpp_agent" in build_milestone2_like_failures(demo, no_boundary)
+
     def fake_npx_only(command: str) -> str | None:
         commands = {
             "hermes": "/usr/local/bin/hermes",
@@ -798,6 +823,7 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     assert target_only_checks["phone_target"]["status"] == "pass"
     assert target_only_checks["phone_provider"]["status"] == "warn"
     assert target_only_checks["phone_handoff"]["status"] == "warn"
+    assert "phone_handoff" in target_only["live_prerequisite_failures"]
     assert "phone_provider" in build_milestone2_like_failures(demo, target_only)
 
     provider_only = build_readiness_report(
@@ -813,13 +839,14 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     assert provider_only_checks["phone_target"]["status"] == "warn"
     assert provider_only_checks["phone_provider"]["status"] == "pass"
     assert provider_only_checks["phone_handoff"]["status"] == "warn"
+    assert "phone_handoff" in provider_only["live_prerequisite_failures"]
     assert "phone_target" in build_milestone2_like_failures(demo, provider_only)
 
     not_ready = build_readiness_report(demo, env={}, which=lambda _command: None)
     assert not_ready["ready_for_recording"] is True
     assert not_ready["static_recording_ready"] is True
     assert not_ready["required_failures"] == []
-    assert {"discord_voice", "stripe_projects_cli", "stripe_link_cli"}.issubset(
+    assert {"discord_voice", "stripe_projects_cli", "stripe_link_cli", "nemoclaw_boundary", "phone_handoff"}.issubset(
         set(not_ready["live_prerequisite_failures"])
     )
 
@@ -838,6 +865,7 @@ def test_voiceops_readiness_report_loads_env_files_without_exposing_values(tmp_p
                 "DISCORD_VOICE_CHANNEL_NAME=General",
                 "WHATSAPP_ENABLED=true",
                 "VOICEOPS_DEMO_PHONE_NUMBER='+15551234567'",
+                "VOICEOPS_PHONE_PROVIDER_ACCOUNT_REF=twilio:acct:redacted-demo",
                 "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED=true",
             ]
         ),
@@ -848,6 +876,7 @@ def test_voiceops_readiness_report_loads_env_files_without_exposing_values(tmp_p
         commands = {
             "stripe": "/usr/local/bin/stripe",
             "link-cli": "/usr/local/bin/link-cli",
+            "nemoclaw": "/usr/local/bin/nemoclaw",
         }
         return commands.get(command)
 

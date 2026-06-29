@@ -102,7 +102,13 @@ class ReadinessCheck:
 
 
 STATIC_ARTIFACT_REQUIRED_CHECK_IDS = {"nemotron_3_super_spark_or_labeled_hosted_fallback"}
-LIVE_PREREQUISITE_CHECK_IDS = {"discord_voice", "stripe_projects_cli", "stripe_link_cli"}
+LIVE_PREREQUISITE_CHECK_IDS = {
+    "discord_voice",
+    "stripe_projects_cli",
+    "stripe_link_cli",
+    "nemoclaw_boundary",
+    "phone_handoff",
+}
 REQUIRED_DISCORD_LIVE_ENV_KEYS = (
     "DISCORD_BOT_TOKEN",
     "DISCORD_GUILD_ID",
@@ -554,7 +560,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
     discord_ready = _check_status(readiness, "discord_voice") == "pass"
     provisioning_ready = all(
         _check_status(readiness, check_id) == "pass"
-        for check_id in ("stripe_projects_cli", "stripe_link_cli")
+        for check_id in ("stripe_projects_cli", "stripe_link_cli", "nemoclaw_boundary")
     )
     phone_ready = _check_status(readiness, "phone_handoff") == "pass"
     spark_path = demo["sponsor_stack"]["hermes_active_model"]
@@ -619,13 +625,13 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                 "can_run_here_now": provisioning_ready and phone_ready,
                 "blocked_by_current_package": [
                     check_id
-                    for check_id in ("stripe_projects_cli", "stripe_link_cli", "phone_handoff")
+                    for check_id in ("stripe_projects_cli", "stripe_link_cli", "nemoclaw_boundary", "phone_handoff")
                     if _check_status(readiness, check_id) != "pass"
                 ],
                 "blocked_by_current_environment": {
                     "missing_cli_or_config": [
                         check_id
-                        for check_id in ("stripe_projects_cli", "stripe_link_cli", "phone_handoff")
+                        for check_id in ("stripe_projects_cli", "stripe_link_cli", "nemoclaw_boundary", "phone_handoff")
                         if _check_status(readiness, check_id) != "pass"
                     ],
                     "needs_read_only_discovery": True,
@@ -1530,7 +1536,8 @@ def _demo_milestone2_report(demo: dict[str, Any], readiness: dict[str, Any]) -> 
                     "check_id": check_id,
                     "area": area,
                     "status": "pass" if check["status"] == "pass" else "fail",
-                    "required": check["required_for_video"] or check_id in {"phone_target", "phone_provider"},
+                    "required": check["required_for_video"]
+                    or check_id in {"mpp_agent", "phone_target", "phone_provider"},
                     "detail": check["detail"],
                     "next_step": check["next_step"],
                     "evidence": {"source": "readiness-report.json"},
@@ -1664,12 +1671,12 @@ def build_readiness_report(
     checks.append(
         ReadinessCheck(
             check_id="nemoclaw_boundary",
-            status="pass" if nemoclaw_path else "warn",
+            status="pass" if nemoclaw_path else "fail",
             required_for_video=False,
             detail=(
                 f"NemoClaw/OpenShell command found at {nemoclaw_path}"
                 if nemoclaw_path
-                else "no nemoclaw or openshell command found; generated packet still demonstrates the policy boundary"
+                else "no nemoclaw or openshell command found; MPP/NemoClaw boundary is required before live spend or provisioning"
             ),
             next_step="If available, record the action packet inside NemoClaw/OpenShell; otherwise show nemoclaw-action-packet.json as the approval boundary.",
         )
