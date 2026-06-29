@@ -288,6 +288,7 @@ Make `/voice join` usable as the daily control surface:
 
 Turn the dry-run queue into controlled live operations:
 
+- run the non-mutating provisioning preflight before any live spend or provider action
 - verify Stripe Link CLI auth and approval flow
 - verify Stripe Projects plugin and catalog on the target machine
 - run `stripe projects list` and safe catalog discovery headlessly
@@ -295,6 +296,20 @@ Turn the dry-run queue into controlled live operations:
 - queue or perform one outbound phone call with a preserved context packet
 - record receipts and generated credential locations without exposing secrets
 - add rollback/deprovision notes to the ledger
+
+Preflight command:
+
+```bash
+uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current
+```
+
+The command writes:
+
+- `provisioning-readiness.json`
+- `provisioning-readiness.md`
+- `safe-command-manifest.json`
+
+The default preflight is non-mutating and only checks PATH/env presence, env-key presence, command policy, and phone-handoff configuration shape. It blocks live spend, provider provisioning, credential retrieval, outbound phone calls, account mutation, and network tunnels. If active command probing is needed, it must be explicitly enabled with `--run-command-probes`; that mode is still limited to isolated version/help subprocess probes and must not be treated as approval for `stripe projects add`, Link spend creation, card retrieval, MPP payment, SMS, or phone calls.
 
 ## Milestone 3: Multi-Channel Operations
 
