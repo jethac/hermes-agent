@@ -28,6 +28,7 @@ FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
 PREFLIGHT_EVIDENCE_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence.v1"
 PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence_manifest.v1"
 POST_APPROVAL_RECEIPTS_SCHEMA_VERSION = "voiceops.milestone2.post_approval_receipts.v1"
+PREFLIGHT_REDACTED_SOURCE_SCHEMA_VERSION = "voiceops.milestone2.redacted_source_artifact.v1"
 
 BLOCKED_CAPABILITIES = [
     "live_spend",
@@ -494,7 +495,7 @@ def write_preflight_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
         section = dict(evidence[section_name])
         source_path = sources_dir / source_names[section_name]
         source_payload = {
-            "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+            "schema_version": PREFLIGHT_REDACTED_SOURCE_SCHEMA_VERSION,
             "example_only": True,
             "section": section_name,
             "redacted": True,
@@ -739,13 +740,7 @@ def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) ->
     report_path = Path(report_path_text).expanduser()
     if report_path.is_absolute():
         return report_path
-    sibling = manifest_path.parent / report_path_text
-    if sibling.exists():
-        return sibling
-    basename_sibling = manifest_path.parent / report_path.name
-    if basename_sibling.exists():
-        return basename_sibling
-    return sibling
+    return manifest_path.parent / report_path_text
 
 
 def _load_preflight_manifest_report(path: Path, section_name: str) -> tuple[Mapping[str, Any] | None, list[str]]:
@@ -810,7 +805,10 @@ def _source_artifact_issues(payload: Mapping[str, Any], evidence_path: Path) -> 
             issues.append(f"{section_name}.source_artifact_sha256: invalid")
         elif source_sha256 != actual_sha256:
             issues.append(f"{section_name}.source_artifact_sha256: mismatch")
-        issues.extend(f"{section_name}.source_artifact:{issue}" for issue in _redacted_artifact_issues(artifact_bytes))
+        issues.extend(
+            f"{section_name}.source_artifact:{issue}"
+            for issue in _redacted_artifact_issues(artifact_bytes, section_name=section_name)
+        )
     return issues
 
 
@@ -855,6 +853,10 @@ def _refresh_preflight_section_hashes(
             source_bytes = source_path.read_bytes()
         except OSError as exc:
             issues.append(f"{section_name}.source_artifact: artifact unreadable: {exc.strerror or exc}")
+            continue
+        artifact_issues = _redacted_artifact_issues(source_bytes, section_name=section_name)
+        if artifact_issues:
+            issues.extend(f"{section_name}.source_artifact:{issue}" for issue in artifact_issues)
             continue
         previous_sha256 = str(section.get("source_artifact_sha256") or "")
         new_sha256 = hashlib.sha256(source_bytes).hexdigest()
@@ -965,7 +967,7 @@ def refresh_preflight_source_hashes(path: Path) -> dict[str, Any]:
     }
 
 
-def _redacted_artifact_issues(artifact_bytes: bytes) -> list[str]:
+def _redacted_artifact_issues(artifact_bytes: bytes, *, section_name: str | None = None) -> list[str]:
     try:
         artifact = json.loads(artifact_bytes.decode("utf-8"))
     except UnicodeDecodeError:
@@ -975,6 +977,10 @@ def _redacted_artifact_issues(artifact_bytes: bytes) -> list[str]:
     if not isinstance(artifact, Mapping):
         return ["artifact root must be an object"]
     issues: list[str] = []
+    if str(artifact.get("schema_version") or "") != PREFLIGHT_REDACTED_SOURCE_SCHEMA_VERSION:
+        issues.append("missing_or_invalid_schema_version")
+    if section_name is not None and str(artifact.get("section") or "") != section_name:
+        issues.append("section_mismatch")
     issues.extend(_example_only_presence_issues(artifact))
     redaction_policy = str(artifact.get("redaction_policy") or "").lower()
     redacted_flag = artifact.get("redacted")
