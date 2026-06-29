@@ -10,6 +10,7 @@ from scripts.voiceops_channel_policy import (
     DEFAULT_OUTPUT_DIR,
     apply_redactions,
     build_channel_policy,
+    build_review_packet,
     parse_args,
     validate_policy,
     write_channel_policy,
@@ -386,17 +387,57 @@ def test_write_channel_policy_artifacts(tmp_path):
     policy = build_channel_policy()
     paths = write_channel_policy(tmp_path, policy)
 
-    assert set(paths) == {"json", "markdown"}
+    assert set(paths) == {"json", "markdown", "review_json", "review_markdown"}
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
+    review_payload = json.loads(Path(paths["review_json"]).read_text(encoding="utf-8"))
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
+    review_markdown = Path(paths["review_markdown"]).read_text(encoding="utf-8")
     assert payload["scope"]["default_output_dir"] == str(DEFAULT_OUTPUT_DIR)
     assert payload["mode"]["outbound_calls"] is False
     assert payload["policy_id"] == "voiceops-m3-channel-policy"
+    assert review_payload["schema_version"] == "voiceops.multi_channel_policy_review.v1"
+    assert review_payload["policy_ref"] == "channel-policy.json"
+    assert review_payload["review_status"] == "pending_human_review"
+    assert review_payload["real_egress_enabled"] is False
+    assert review_payload["changes_policy"] is False
+    assert "approve_live_egress_after_external_credentials_are_bound" in review_payload["decision_options"]
+    assert {signoff["role"] for signoff in review_payload["required_signoffs"]} == {
+        "business_owner",
+        "channel_owner",
+        "privacy_reviewer",
+        "security_owner",
+    }
+    channels = {channel["channel_id"]: channel for channel in review_payload["per_channel_review"]}
+    assert set(channels) == {"discord", "whatsapp", "phone_sms"}
+    assert channels["phone_sms"]["live_egress_enabled"] is False
+    assert "approved_phone_handoff_call" in channels["phone_sms"]["approval_routes_to_confirm"]
+    assert "unapproved_voice_call" in channels["phone_sms"]["blocked_capabilities_to_confirm"]
+    assert any("source_audit_id" in gate for gate in review_payload["egress_enablement_gates"])
+    assert any("mark real_egress_enabled true" in item for item in review_payload["operator_must_not"])
     assert "VoiceOps Milestone 3 Channel Policy" in markdown
     assert "Policy ID" in markdown
     assert "Channel Authorization" in markdown
     assert "Audit ID Continuity" in markdown
     assert "Redaction Rules" in markdown
+    assert "VoiceOps Milestone 3 Channel Policy Review" in review_markdown
+    assert "Required Signoffs" in review_markdown
+    assert "Per-Channel Review" in review_markdown
+    assert "Operator Must Not" in review_markdown
+
+
+def test_channel_policy_review_packet_is_artifact_only_and_per_channel():
+    policy = build_channel_policy()
+    review = build_review_packet(policy)
+
+    assert review["artifact_only"] is True
+    assert review["real_egress_enabled"] is False
+    assert review["changes_policy"] is False
+    assert review["policy_id"] == policy["policy_id"]
+    assert review["review_status"] == policy["scope"]["review_status"]
+    assert all(channel["review_status"] == "pending_human_review" for channel in review["per_channel_review"])
+    assert all(channel["live_egress_enabled"] is False for channel in review["per_channel_review"])
+    assert any("voice call" in item for item in review["operator_must_not"])
+    assert any("spend_provisioning_or_credential" in gate for gate in review["egress_enablement_gates"])
 
 
 def test_channel_policy_cli_smoke(tmp_path):
@@ -413,6 +454,8 @@ def test_channel_policy_cli_smoke(tmp_path):
     assert payload["validation_issues"] == []
     assert Path(payload["artifacts"]["json"]).exists()
     assert Path(payload["artifacts"]["markdown"]).exists()
+    assert Path(payload["artifacts"]["review_json"]).exists()
+    assert Path(payload["artifacts"]["review_markdown"]).exists()
 
 
 def test_parse_args_defaults_to_requested_artifact_dir():

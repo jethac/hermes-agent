@@ -534,6 +534,99 @@ def build_channel_policy() -> dict[str, Any]:
     }
 
 
+def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
+    """Build the human signoff packet for enabling future live egress."""
+
+    channel_rows: list[dict[str, Any]] = []
+    for channel in policy["channel_authorization"]:
+        channel_id = channel["channel_id"]
+        route_map = policy["approval_route_map"][channel_id]
+        channel_rows.append(
+            {
+                "channel_id": channel_id,
+                "display_name": channel["display_name"],
+                "review_status": "pending_human_review",
+                "live_egress_enabled": False,
+                "required_evidence": channel["evidence_required"],
+                "approval_routes_to_confirm": {
+                    approval_item: route_map[approval_item] for approval_item in channel["approval_required_for"]
+                },
+                "blocked_capabilities_to_confirm": channel["prohibited_actions"],
+                "checklist": [
+                    "Confirm channel owner and operator-on-call identities.",
+                    "Confirm inbound source_audit_id is present before drafting outbound content.",
+                    "Confirm redaction rules are applied before display, persistence, or handoff.",
+                    "Confirm approval route before any customer-visible send or call.",
+                    "Confirm no blocked capability is executed through this channel.",
+                ],
+            }
+        )
+
+    return {
+        "generated_at": _utc_now(),
+        "schema_version": "voiceops.multi_channel_policy_review.v1",
+        "artifact_id": "voiceops-m3-channel-policy-review",
+        "milestone": policy["milestone"],
+        "policy_ref": "channel-policy.json",
+        "policy_id": policy["policy_id"],
+        "policy_version": policy["policy_version"],
+        "review_status": policy["scope"]["review_status"],
+        "real_egress_enabled": policy["scope"]["real_egress_enabled"],
+        "changes_policy": False,
+        "artifact_only": True,
+        "decision_options": [
+            "approve_artifact_for_demo_recording",
+            "approve_dry_run_only",
+            "approve_live_egress_after_external_credentials_are_bound",
+            "request_changes",
+            "deny",
+        ],
+        "required_signoffs": [
+            {
+                "role": "business_owner",
+                "required": True,
+                "reason": "Approves business-visible WhatsApp, SMS, and phone handoff behavior.",
+            },
+            {
+                "role": "channel_owner",
+                "required": True,
+                "reason": "Approves Discord, WhatsApp, and phone/SMS channel authorization boundaries.",
+            },
+            {
+                "role": "security_owner",
+                "required": True,
+                "reason": "Confirms no secret retrieval, credential echo, or provisioning bypass is enabled.",
+            },
+            {
+                "role": "privacy_reviewer",
+                "required": True,
+                "reason": "Confirms transcript, phone, email, payment, and audit redaction handling.",
+            },
+        ],
+        "per_channel_review": channel_rows,
+        "egress_enablement_gates": [
+            "review_status must be approved in a separate operator decision artifact.",
+            "real_egress_enabled must remain false in generated artifacts until credentials and runtime policy are bound.",
+            "Every live outbound event must reference source_audit_id, route_id, actor_kind, redaction_profile, and payload_digest.",
+            "Customer-visible outbound content must use customer_visible_outbound or approved_phone_handoff_call.",
+            "Sensitive context replay must use sensitive_context_replay with dual approval.",
+            "Payment, provisioning, credential, and account mutation intents must use spend_provisioning_or_credential and deny/escalate by default.",
+            "Discord, WhatsApp, SMS, and phone sends must have a post-action receipt or blocked-action audit event.",
+        ],
+        "operator_must_not": [
+            "send Discord, WhatsApp, SMS, or phone traffic from this generated packet",
+            "place a voice call without an approved_phone_handoff_call decision artifact",
+            "spend money, provision services, retrieve credentials, or echo secrets from channel context",
+            "store raw phone numbers, emails, payment cards, bearer tokens, or provider keys in review artifacts",
+            "mark real_egress_enabled true by editing generated artifacts",
+        ],
+        "review_commands": [
+            "uv run python scripts/voiceops_channel_policy.py --output-dir artifacts/voiceops-channel-policy/current",
+            "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current",
+        ],
+    }
+
+
 def validate_policy(policy: dict[str, Any]) -> list[str]:
     issues: list[str] = []
     known_channels = set(CHANNEL_IDS)
@@ -808,14 +901,76 @@ def _markdown(policy: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _review_markdown(review: dict[str, Any]) -> str:
+    lines = [
+        "# VoiceOps Milestone 3 Channel Policy Review",
+        "",
+        f"- Artifact ID: {review['artifact_id']}",
+        f"- Schema version: {review['schema_version']}",
+        f"- Policy ref: `{review['policy_ref']}`",
+        f"- Review status: {review['review_status']}",
+        f"- Real egress enabled: {review['real_egress_enabled']}",
+        f"- Changes policy: {review['changes_policy']}",
+        "- Scope: artifact-only signoff packet; it does not enable Discord, WhatsApp, SMS, or phone egress",
+        "",
+        "## Required Signoffs",
+        "",
+    ]
+    lines.extend(
+        _markdown_table(
+            ["Role", "Required", "Reason"],
+            [
+                [signoff["role"], str(signoff["required"]).lower(), signoff["reason"]]
+                for signoff in review["required_signoffs"]
+            ],
+        )
+    )
+    lines.extend(["", "## Per-Channel Review", ""])
+    for channel in review["per_channel_review"]:
+        lines.extend(
+            [
+                f"### {channel['display_name']}",
+                "",
+                f"- Channel ID: `{channel['channel_id']}`",
+                f"- Review status: {channel['review_status']}",
+                f"- Live egress enabled: {channel['live_egress_enabled']}",
+                f"- Required evidence: {', '.join(channel['required_evidence'])}",
+                f"- Blocked capabilities: {', '.join(channel['blocked_capabilities_to_confirm'])}",
+                "- Approval routes:",
+            ]
+        )
+        for approval_item, route_id in channel["approval_routes_to_confirm"].items():
+            lines.append(f"  - {approval_item}: `{route_id}`")
+        lines.append("- Checklist:")
+        for item in channel["checklist"]:
+            lines.append(f"  - {item}")
+        lines.append("")
+    lines.extend(["## Egress Enablement Gates", ""])
+    for gate in review["egress_enablement_gates"]:
+        lines.append(f"- {gate}")
+    lines.extend(["", "## Operator Must Not", ""])
+    for item in review["operator_must_not"]:
+        lines.append(f"- {item}")
+    lines.extend(["", "## Review Commands", ""])
+    for command in review["review_commands"]:
+        lines.append(f"- `{command}`")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def write_channel_policy(output_dir: Path, policy: dict[str, Any]) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    review = build_review_packet(policy)
     paths = {
         "json": output_dir / "channel-policy.json",
         "markdown": output_dir / "channel-policy.md",
+        "review_json": output_dir / "channel-policy-review.json",
+        "review_markdown": output_dir / "channel-policy-review.md",
     }
     _write_json(paths["json"], policy)
     paths["markdown"].write_text(_markdown(policy), encoding="utf-8")
+    _write_json(paths["review_json"], review)
+    paths["review_markdown"].write_text(_review_markdown(review), encoding="utf-8")
     return {key: str(path) for key, path in paths.items()}
 
 

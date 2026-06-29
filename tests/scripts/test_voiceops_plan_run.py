@@ -184,6 +184,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert channel_result["details"]["review_required_for_real_egress"] is True
     assert channel_result["details"]["review_status"] == "pending_human_review"
     assert channel_result["details"]["real_egress_enabled"] is False
+    assert channel_result["details"]["review_packet_schema_version"] == "voiceops.multi_channel_policy_review.v1"
+    assert channel_result["details"]["review_packet_status"] == "pending_human_review"
+    assert channel_result["details"]["review_packet_artifact_only"] is True
+    assert channel_result["details"]["review_packet_changes_policy"] is False
+    assert Path(channel_result["artifacts"]["review_json"]).exists()
+    assert Path(channel_result["artifacts"]["review_markdown"]).exists()
     assert "milestone_3_multi_channel_policy" not in summary["readiness_gaps"]
 
     matrix_result = next(result for result in summary["results"] if result["milestone"] == "milestone_4_local_spark_stack_matrix")

@@ -436,8 +436,10 @@ The command writes:
 
 - `channel-policy.json`
 - `channel-policy.md`
+- `channel-policy-review.json`
+- `channel-policy-review.md`
 
-The policy artifact is static and headless. It reads no secrets, performs no network I/O, sends no Discord/WhatsApp/SMS messages, and places no calls. It defines channel authorization, approval routing, escalation levels, audit ID continuity, and redaction rules for Discord, WhatsApp, and phone/SMS before those surfaces are used for real operations.
+The policy artifacts are static and headless. They read no secrets, perform no network I/O, send no Discord/WhatsApp/SMS messages, and place no calls. They define channel authorization, approval routing, escalation levels, audit ID continuity, redaction rules, and a pending human review packet for Discord, WhatsApp, and phone/SMS before those surfaces are used for real operations. The review packet does not enable egress; it records the signoffs and gates that must be satisfied before a separate runtime approval can do that.
 
 ## Milestone 4: Local Spark Stack
 

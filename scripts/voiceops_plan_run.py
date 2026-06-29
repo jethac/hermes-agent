@@ -22,7 +22,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.hackathon_voiceops_demo import build_demo, parse_args as parse_demo_args, write_demo
-from scripts.voiceops_channel_policy import build_channel_policy, validate_policy, write_channel_policy
+from scripts.voiceops_channel_policy import build_channel_policy, build_review_packet, validate_policy, write_channel_policy
 from scripts.voiceops_operator_state import build_operator_state, validate_operator_state, write_operator_state
 from scripts.voiceops_provisioning_probe import build_probe_report, write_probe_artifacts
 from scripts.voiceops_spark_matrix import build_matrix, write_matrix
@@ -808,6 +808,7 @@ async def build_plan_run_async(
     )
 
     channel_policy = build_channel_policy()
+    channel_review = build_review_packet(channel_policy)
     channel_issues = validate_policy(channel_policy)
     channel_paths = write_channel_policy(channel_policy_dir, channel_policy)
     results.append(
@@ -822,6 +823,10 @@ async def build_plan_run_async(
                 "review_required_for_real_egress": channel_policy["scope"]["review_required_for_real_egress"],
                 "review_status": channel_policy["scope"]["review_status"],
                 "real_egress_enabled": channel_policy["scope"]["real_egress_enabled"],
+                "review_packet_schema_version": channel_review["schema_version"],
+                "review_packet_status": channel_review["review_status"],
+                "review_packet_artifact_only": channel_review["artifact_only"],
+                "review_packet_changes_policy": channel_review["changes_policy"],
             },
         )
     )
