@@ -578,6 +578,7 @@ def _attach_optional_evidence_report(
         payload = json.loads(resolved.read_text(encoding="utf-8"))
     except FileNotFoundError:
         issues.append(f"{report_key}: evidence file not found")
+        issues.append(f"{report_key}: evidence file not found at {resolved.resolve(strict=False)}")
         return
     except json.JSONDecodeError as exc:
         issues.append(f"{report_key}: evidence JSON parse failed: {exc.msg}")

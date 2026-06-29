@@ -754,6 +754,23 @@ def _source_artifact_exists(source_artifact: Any, evidence_paths: list[Path]) ->
     return any((path.parent / source_text).is_file() for path in evidence_paths)
 
 
+def _source_artifact_candidate_paths(source_artifact: Any, evidence_paths: list[Path]) -> list[str]:
+    source_text = str(source_artifact or "").strip()
+    if not source_text:
+        return []
+    source_path = Path(source_text).expanduser()
+    if source_path.is_absolute():
+        return [str(source_path.resolve(strict=False))]
+    if evidence_paths:
+        return [str((path.parent / source_text).resolve(strict=False)) for path in evidence_paths]
+    return [source_text]
+
+
+def _source_artifact_not_found_detail(section_name: str, source_artifact: Any, evidence_paths: list[Path]) -> str:
+    candidates = _source_artifact_candidate_paths(source_artifact, evidence_paths)
+    return f"{section_name}:source_artifact_not_found_candidates:{';'.join(candidates) if candidates else '<empty>'}"
+
+
 def _validate_source_artifact(
     source_artifact: Any,
     section_name: str,
@@ -770,12 +787,15 @@ def _validate_source_artifact(
     if evidence_paths:
         if not _source_artifact_exists(source_text, evidence_paths):
             issues.append(f"{section_name}:source_artifact_not_found")
+            issues.append(_source_artifact_not_found_detail(section_name, source_text, evidence_paths))
         return
     if source_path.is_absolute():
         if not source_path.exists():
             issues.append(f"{section_name}:source_artifact_not_found")
+            issues.append(_source_artifact_not_found_detail(section_name, source_text, evidence_paths))
         elif not source_path.is_file():
             issues.append(f"{section_name}:source_artifact_not_file")
+            issues.append(f"{section_name}:source_artifact_not_file_path:{source_path.resolve(strict=False)}")
         return
     issues.append(f"{section_name}:unverified_source_artifact")
 

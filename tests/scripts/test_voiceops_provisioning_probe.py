@@ -597,6 +597,15 @@ def test_preflight_evidence_rejects_missing_or_invalid_schema(tmp_path):
     assert "missing_or_invalid_schema_version" in invalid_schema["validation_issues"]
 
 
+def test_preflight_evidence_missing_file_reports_path(tmp_path):
+    evidence_path = tmp_path / "missing-preflight.json"
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "preflight evidence file not found" in loaded["validation_issues"]
+    assert f"preflight evidence file not found at {evidence_path}" in loaded["validation_issues"]
+
+
 def test_preflight_evidence_rejects_complete_shape_without_source_artifacts(tmp_path):
     evidence = _complete_preflight_evidence()
     evidence_path = tmp_path / "synthetic-preflight.json"
@@ -626,6 +635,21 @@ def test_preflight_evidence_rejects_complete_shape_without_source_artifacts(tmp_
         "stripe_link_approval_capability",
         "stripe_projects_account",
     } <= set(report["required_failures"])
+
+
+def test_preflight_evidence_missing_source_artifact_reports_path(tmp_path):
+    evidence = _complete_preflight_evidence()
+    evidence_path = _write_preflight_evidence(tmp_path, evidence)
+    evidence["stripe_projects"]["source_artifact"] = "missing-stripe-projects-source.json"
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "stripe_projects.source_artifact: artifact not found" in loaded["validation_issues"]
+    assert (
+        f"stripe_projects.source_artifact: artifact not found at {tmp_path / 'missing-stripe-projects-source.json'}"
+        in loaded["validation_issues"]
+    )
 
 
 def test_preflight_evidence_rejects_synthetic_schema_valid_refs_without_provenance(tmp_path):
@@ -1032,6 +1056,10 @@ def test_preflight_evidence_manifest_does_not_fallback_to_cwd(monkeypatch, tmp_p
     loaded = load_preflight_evidence(manifest_path)
 
     assert "preflight_evidence_manifest:stripe_link:evidence file not found" in loaded["validation_issues"]
+    assert (
+        f"preflight_evidence_manifest:stripe_link:evidence file not found at {manifest_dir / 'stripe-link.json'}"
+        in loaded["validation_issues"]
+    )
     assert "stripe_link.account_ref" in loaded["missing_fields"]
 
 
@@ -1063,6 +1091,10 @@ def test_preflight_evidence_manifest_does_not_fallback_to_basename(tmp_path):
     loaded = load_preflight_evidence(manifest_path)
 
     assert "preflight_evidence_manifest:stripe_link:evidence file not found" in loaded["validation_issues"]
+    assert (
+        f"preflight_evidence_manifest:stripe_link:evidence file not found at {manifest_dir / 'sections/stripe-link.json'}"
+        in loaded["validation_issues"]
+    )
     assert "stripe_link.account_ref" in loaded["missing_fields"]
 
 

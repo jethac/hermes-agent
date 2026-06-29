@@ -873,6 +873,7 @@ def test_live_evidence_manifest_rejects_invalid_optional_evidence(monkeypatch, t
 
     assert result.ok is False
     assert "sidecar_session: evidence file not found" in result.issues
+    assert f"sidecar_session: evidence file not found at {(tmp_path / 'missing-sidecar.json').resolve()}" in result.issues
     assert "live_turn: evidence root must be an object" in result.issues
     assert "sidecar_session" not in result.reports
     assert "live_turn" not in result.reports

@@ -796,7 +796,10 @@ def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
             "path": str(path),
             "fields_present": [],
             "missing_fields": PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
-            "validation_issues": ["preflight evidence file not found"],
+            "validation_issues": [
+                "preflight evidence file not found",
+                f"preflight evidence file not found at {resolved}",
+            ],
             "voip_provider_candidate": None,
             "redaction_policy": "references_only",
         }
@@ -889,7 +892,7 @@ def _load_preflight_manifest_report(path: Path, section_name: str) -> tuple[Mapp
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return None, ["evidence file not found"]
+        return None, ["evidence file not found", f"evidence file not found at {resolved}"]
     except json.JSONDecodeError as exc:
         return None, [f"evidence JSON parse failed: {exc.msg}"]
     if not isinstance(payload, Mapping):
@@ -933,6 +936,7 @@ def _source_artifact_issues(payload: Mapping[str, Any], evidence_path: Path) -> 
         source_path = _resolve_source_artifact_path(source_artifact, evidence_path)
         if not source_path.exists():
             issues.append(f"{section_name}.source_artifact: artifact not found")
+            issues.append(f"{section_name}.source_artifact: artifact not found at {source_path.resolve(strict=False)}")
             continue
         try:
             artifact_bytes = source_path.read_bytes()
@@ -987,6 +991,7 @@ def _refresh_preflight_section_hashes(
         source_path = _resolve_source_artifact_path(source_artifact, evidence_path)
         if not source_path.exists():
             issues.append(f"{section_name}.source_artifact: artifact not found")
+            issues.append(f"{section_name}.source_artifact: artifact not found at {source_path.resolve(strict=False)}")
             continue
         try:
             source_bytes = source_path.read_bytes()

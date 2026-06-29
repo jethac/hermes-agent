@@ -476,78 +476,97 @@ def evaluate_candidate(candidate: Candidate, evidence: list[dict[str, Any]]) -> 
             "target_results": [],
         }
 
-    issues: list[str] = []
-    for item in matching:
+    record_results: list[dict[str, Any]] = []
+    for index, item in enumerate(matching):
+        item_issues: list[str] = []
         if item.get("example_only") is True:
-            issues.append("example_only_evidence_not_accepted")
+            item_issues.append("example_only_evidence_not_accepted")
         if item.get("verified") is not True:
-            issues.append("evidence_not_verified")
+            item_issues.append("evidence_not_verified")
         if str(item.get("schema_version") or "") != EVIDENCE_SCHEMA_VERSION:
-            issues.append("missing_schema_version")
+            item_issues.append("missing_schema_version")
         if not _model_matches_candidate(candidate, item.get("model")):
-            issues.append("model_mismatch")
+            item_issues.append("model_mismatch")
         if not str(item.get("source_artifact") or "").strip():
-            issues.append("missing_source_artifact")
+            item_issues.append("missing_source_artifact")
         else:
-            issues.extend(_source_artifact_issues(item))
+            item_issues.extend(_source_artifact_issues(item))
         if candidate.candidate_id == "oracle-nemotron3-super-local" and item.get("oracle_selected_by") != "Hermes /model":
-            issues.append("missing_oracle_authority_proof")
+            item_issues.append("missing_oracle_authority_proof")
         if candidate.role in {"asr", "tts"}:
             adapter = str(item.get("adapter") or "").strip()
             module = str(item.get("module") or "").strip()
             if item.get("protocol_smoke_only") is True:
-                issues.append("protocol_smoke_only_not_accepted")
+                item_issues.append("protocol_smoke_only_not_accepted")
             if adapter == "loopback_smoke_bridge" or module == "loopback_smoke_bridge":
-                issues.append("loopback_speech_evidence_not_accepted")
+                item_issues.append("loopback_speech_evidence_not_accepted")
         if not str(item.get("measured_at") or "").strip():
-            issues.append("missing_measured_at")
+            item_issues.append("missing_measured_at")
         elif not _has_parseable_timezone_timestamp(item.get("measured_at")):
-            issues.append("invalid_measured_at")
+            item_issues.append("invalid_measured_at")
         locality = str(item.get("locality") or "").strip()
         if locality != candidate.locality:
-            issues.append("locality_mismatch")
+            item_issues.append("locality_mismatch")
         if candidate.locality == "local_spark" and not _matches_hardware(item.get("hardware")):
-            issues.append("hardware_mismatch")
+            item_issues.append("hardware_mismatch")
 
-    target_results: list[dict[str, Any]] = []
-    for target in candidate.required_targets:
-        values = [
-            _coerce_number(item.get("metrics", {}).get(target.metric) if isinstance(item.get("metrics"), dict) else None)
-            for item in matching
-        ]
-        values = [value for value in values if value is not None]
-        if not values:
+        target_results: list[dict[str, Any]] = []
+        for target in candidate.required_targets:
+            metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+            actual = _coerce_number(metrics.get(target.metric))
+            if actual is None:
+                target_results.append(
+                    {
+                        "metric": target.metric,
+                        "status": "missing",
+                        "operator": target.operator,
+                        "expected": target.value,
+                        "actual": None,
+                    }
+                )
+                item_issues.append(f"missing_metric:{target.metric}")
+                continue
+            passed = _metric_passes(actual, target.operator, target.value)
             target_results.append(
                 {
                     "metric": target.metric,
-                    "status": "missing",
+                    "status": "pass" if passed else "fail",
                     "operator": target.operator,
                     "expected": target.value,
-                    "actual": None,
+                    "actual": actual,
                 }
             )
-            issues.append(f"missing_metric:{target.metric}")
-            continue
-        actual = max(values) if target.operator in {">=", ">"} else min(values)
-        passed = _metric_passes(actual, target.operator, target.value)
-        target_results.append(
+            if not passed:
+                item_issues.append(f"target_failed:{target.metric}")
+
+        record_results.append(
             {
-                "metric": target.metric,
-                "status": "pass" if passed else "fail",
-                "operator": target.operator,
-                "expected": target.value,
-                "actual": actual,
+                "record_index": index,
+                "source_evidence": item.get("_evidence_path"),
+                "status": "validated" if not item_issues else "rejected",
+                "issues": sorted(set(item_issues)),
+                "target_results": target_results,
             }
         )
-        if not passed:
-            issues.append(f"target_failed:{target.metric}")
+
+    passing_record = next((record for record in record_results if record["status"] == "validated"), None)
+    issues = [] if passing_record else sorted(
+        {
+            "no_single_evidence_record_satisfies_targets",
+            *(issue for record in record_results for issue in record["issues"]),
+        }
+    )
+    target_results = passing_record["target_results"] if passing_record else (
+        record_results[0]["target_results"] if record_results else []
+    )
 
     return {
         "candidate_id": candidate.candidate_id,
-        "status": "validated" if not issues else "fails_target",
+        "status": "validated" if passing_record else "fails_target",
         "issues": sorted(set(issues)),
         "evidence_count": len(matching),
         "target_results": target_results,
+        "record_results": record_results,
     }
 
 
@@ -645,7 +664,7 @@ def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
     if not source_path.is_absolute():
         source_path = Path(evidence_path_text).expanduser().parent / source_text
     if not source_path.exists():
-        return [*issues, "source_artifact_not_found"]
+        return [*issues, "source_artifact_not_found", f"source_artifact_not_found_path:{source_path.resolve(strict=False)}"]
     if not source_path.is_file():
         return [*issues, "source_artifact_not_file"]
     try:

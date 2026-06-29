@@ -285,6 +285,38 @@ def test_spark_matrix_validates_matching_evidence(tmp_path):
     assert closure["missing_gates"] == []
 
 
+def test_spark_matrix_requires_single_coherent_candidate_record(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    fast_decode_bad_prefill = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    fast_decode_bad_prefill["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 1000,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    fast_prefill_bad_decode = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    fast_prefill_bad_decode["metrics"] = {
+        "decode_tok_s": 10,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path.write_text(
+        json.dumps({"evidence": [fast_decode_bad_prefill, fast_prefill_bad_decode]}),
+        encoding="utf-8",
+    )
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "no_single_evidence_record_satisfies_targets" in evaluation["issues"]
+    assert "target_failed:decode_tok_s" in evaluation["issues"]
+    assert "target_failed:prefill_tok_s" in evaluation["issues"]
+    assert [record["status"] for record in evaluation["record_results"]] == ["rejected", "rejected"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
 def test_spark_matrix_example_is_not_accepted_as_proof(tmp_path):
     paths = write_matrix(tmp_path, build_matrix())
 
@@ -408,6 +440,7 @@ def test_spark_matrix_rejects_candidate_with_missing_source_artifact(tmp_path):
 
     assert evaluation["status"] == "fails_target"
     assert "source_artifact_not_found" in evaluation["issues"]
+    assert f"source_artifact_not_found_path:{tmp_path / 'missing/raw-oracle.json'}" in evaluation["issues"]
     assert matrix["role_status"]["oracle"] == "needs_evidence"
 
 
@@ -676,6 +709,7 @@ def test_spark_matrix_rejects_stack_smoke_with_missing_source_artifact(tmp_path)
 
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "source_artifact_not_found" in matrix["stack_smoke"]["issues"]
+    assert f"source_artifact_not_found_path:{tmp_path / 'missing/stack-smoke.json'}" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
 
 

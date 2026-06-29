@@ -382,6 +382,18 @@ def test_voice_operator_rejects_loaded_evidence_with_missing_source_artifact_fil
     assert "discord_live_probe:source_artifact_not_found" in live_evidence["issues"]
     assert "sidecar_session:source_artifact_not_found" in live_evidence["issues"]
     assert "live_turn:source_artifact_not_found" in live_evidence["issues"]
+    assert (
+        f"discord_live_probe:source_artifact_not_found_candidates:{tmp_path / 'missing-discord-live-probe.json'}"
+        in live_evidence["issues"]
+    )
+    assert (
+        f"sidecar_session:source_artifact_not_found_candidates:{tmp_path / 'missing-sidecar-session.json'}"
+        in live_evidence["issues"]
+    )
+    assert (
+        f"live_turn:source_artifact_not_found_candidates:{tmp_path / 'missing-live-turn.json'}"
+        in live_evidence["issues"]
+    )
     report = build_voice_operator_report(_smoke_payload(), live_evidence=live_evidence)
     assert report["status"] == "needs_live_probe"
     assert report["proofs"]["live_evidence"]["ok"] is False
@@ -423,6 +435,10 @@ def test_voice_operator_loaded_evidence_does_not_resolve_source_artifacts_from_c
     assert "discord_live_probe:source_artifact_not_found" in live_evidence["issues"]
     assert "sidecar_session:source_artifact_not_found" in live_evidence["issues"]
     assert "live_turn:source_artifact_not_found" in live_evidence["issues"]
+    assert (
+        f"discord_live_probe:source_artifact_not_found_candidates:{evidence_dir / 'cwd-discord-live-probe.json'}"
+        in live_evidence["issues"]
+    )
 
 
 def test_voice_operator_manifest_reports_do_not_resolve_from_cwd(monkeypatch, tmp_path):
