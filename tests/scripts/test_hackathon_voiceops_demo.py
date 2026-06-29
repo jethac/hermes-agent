@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from scripts.hackathon_voiceops_demo import build_demo, build_readiness_report, parse_args, write_demo
+from scripts.voiceops_operator_state import validate_operator_state
 
 
 def test_voiceops_demo_writes_headless_artifacts(tmp_path):
@@ -109,6 +110,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert operator_state["active_voice_surface"]["surface_id"] == "discord_voice"
     assert operator_state["provisioned_services"]
     assert operator_events == operator_state["recent_audit_events"]
+    assert validate_operator_state(operator_state) == []
     assert "DGX Spark" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "nemoclaw-action-packet.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "phone-context.json" in Path(paths["markdown"]).read_text(encoding="utf-8")

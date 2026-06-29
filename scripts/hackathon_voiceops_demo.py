@@ -525,47 +525,102 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
         if discord_check and discord_check["status"] != "pass"
         else "Phone/SMS voice calls remain disabled until provisioning approval and channel policy review pass."
     )
+    reserved_cents = demo["totals"]["approval_required_cents"]
+    spent_cents = 0
+    approved_budget_cents = demo["spend_policy"]["limit_cents"]
     pending_approvals = [
         {
             "approval_id": f"voiceops-demo-{action['action_id']}",
             "action_id": action["action_id"],
             "provider": action["provider"],
             "title": action["purpose"],
-            "estimated_cents": action["estimated_cents"],
+            "category": (
+                "spend"
+                if action["action_id"] == "buy-service-credit"
+                else "provisioning"
+                if action["action_id"] in {"provision-voip-provider", "call-user-phone"}
+                else "handoff"
+            ),
+            "requester_surface": "discord_voice",
+            "risk_level": "medium" if action["estimated_cents"] else "low",
+            "budget_impact_cents": action["estimated_cents"],
             "currency": demo["spend_policy"]["currency"],
+            "default_decision": "hold_for_operator",
             "status": "pending",
+            "ttl_minutes": 15 if action["action_id"] == "buy-service-credit" else 30,
             "artifact_ref": "nemoclaw-action-packet.json",
         }
         for action in demo["ops_actions"]
         if action["requires_approval"] and action["status"] == "queued"
     ]
+    status_by_action = {"ready": "planned", "queued": "approval_required", "held-budget": "blocked"}
     planned_services = [
         {
             "service_id": action["action_id"],
-            "name": action["purpose"],
+            "display_name": action["purpose"],
             "provider": action["provider"],
-            "status": action["status"],
+            "status": status_by_action.get(action["status"], "planned"),
+            "capability": action["command"],
+            "external": action["provider"] not in {"hermes-gateway", "hermes-audit-ledger"},
+            "approval_required": bool(action["requires_approval"]),
+            "notes": "Dry-run demo action; no live provider mutation or spend has executed.",
             "artifact_ref": "voiceops-demo.json",
         }
         for action in demo["ops_actions"]
         if action["action_id"] in {"provision-voip-provider", "buy-service-credit", "call-user-phone", "publish-status"}
     ]
+    source_audit_events = demo["audit_events"][-5:]
+    root_recent_audit_id = source_audit_events[0]["event_id"] if source_audit_events else None
+    audit_status_by_action = {"ready": "planned", "queued": "held", "held-budget": "blocked"}
+    recent_audit_events = [
+        {
+            "audit_id": event["event_id"],
+            "event_type": event["action"],
+            "status": audit_status_by_action.get(event["status"], "recorded"),
+            "surface": "discord_voice" if event["action"] in {"grant-spend-budget", "call-user-phone"} else "artifact",
+            "summary": event["evidence"],
+            "parent_audit_id": None if index == 0 else root_recent_audit_id,
+            "amount_cents": event["amount_cents"],
+        }
+        for index, event in enumerate(source_audit_events)
+    ]
     return {
         "schema_version": "voiceops.operator_state.v1",
+        "artifact_version": "voiceops.operator_state.v1",
         "generated_at": _utc_now(),
+        "state_id": "voiceops-demo-operator-state",
+        "milestone": "milestone_5_operator_dashboard",
         "artifact_only": True,
         "current_mode": "approval-required",
         "mode": {
             "artifact_only": True,
             "bounded": True,
-            "env_presence_inspection": True,
-            "env_secret_values_emitted": False,
+            "env_secret_reads": False,
             "headless": True,
             "live_spend": False,
             "network_io": False,
             "outbound_calls": False,
             "outbound_sends": False,
             "provisioning": False,
+        },
+        "bounds": {
+            "max_pending_approvals": 8,
+            "max_audit_events": 12,
+            "max_services_per_section": 8,
+            "max_upcoming_tasks": 12,
+        },
+        "scope": {
+            "default_output_dir": "artifacts/hackathon-voiceops-demo/current",
+            "blocked_capabilities": [
+                "network_probe",
+                "environment_secret_read",
+                "discord_send",
+                "whatsapp_send",
+                "sms_send",
+                "phone_call",
+                "spend",
+                "service_provisioning",
+            ],
         },
         "active_voice_surface": {
             "surface_id": phone_context["source_channel"],
@@ -577,26 +632,33 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
         "budget_status": {
             "currency": demo["spend_policy"]["currency"],
             "current_mode": "approval-required",
-            "limit_cents": demo["spend_policy"]["limit_cents"],
-            "approval_required_over_cents": demo["spend_policy"]["approval_required_over_cents"],
-            "queued_cents": demo["totals"]["approval_required_cents"],
-            "ready_or_queued_cents": demo["totals"]["ready_or_queued_cents"],
-            "held_budget_cents": demo["totals"]["held_budget_cents"],
-            "remaining_before_approval_cents": max(
-                0, demo["spend_policy"]["limit_cents"] - demo["totals"]["ready_or_queued_cents"]
-            ),
+            "approved_budget_cents": approved_budget_cents,
+            "reserved_cents": reserved_cents,
+            "spent_cents": spent_cents,
+            "remaining_cents": max(0, approved_budget_cents - reserved_cents - spent_cents),
             "status": "no_live_spend_without_explicit_approval",
+            "controls": [
+                "dry_run_by_default",
+                "approval_packet_required_for_any_spend",
+                "provisioning_blocked_until_operator_approval",
+            ],
+            "approval_required_over_cents": demo["spend_policy"]["approval_required_over_cents"],
+            "held_budget_cents": demo["totals"]["held_budget_cents"],
         },
         "pending_approvals": pending_approvals,
         "readiness_closure": _demo_closure_summary(),
-        "recent_audit_events": demo["audit_events"][-5:],
+        "recent_audit_events": recent_audit_events,
         "planned_services": planned_services,
         "provisioned_services": [
             {
                 "service_id": "repo_local_demo_artifacts",
-                "name": "Repo-local VoiceOps demo artifacts",
+                "display_name": "Repo-local VoiceOps demo artifacts",
                 "provider": "filesystem",
                 "status": "provisioned",
+                "capability": "static recording artifacts and operator dashboard",
+                "external": False,
+                "approval_required": False,
+                "notes": "Local artifact directory only; no external service was created.",
                 "artifact_ref": "operator-dashboard.html",
             }
         ],
@@ -606,14 +668,18 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
                 "domain": "household",
                 "title": "Review household spending requests before approval",
                 "status": "planned",
-                "requires_approval": False,
+                "required_surface": "discord_voice",
+                "approval_required": False,
+                "budget_impact_cents": 0,
             },
             {
                 "task_id": "business-phone-handoff",
                 "domain": "business",
                 "title": "Complete VoIP handoff setup after explicit approval",
-                "status": "blocked_on_approval",
-                "requires_approval": True,
+                "status": "approval_required",
+                "required_surface": "discord_voice",
+                "approval_required": True,
+                "budget_impact_cents": 0,
             },
         ],
     }
@@ -1177,7 +1243,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
             "<tr>"
             f"<td>{_h(approval['action_id'])}</td>"
             f"<td>{_h(approval['provider'])}</td>"
-            f"<td>{_h(_dollars(approval['estimated_cents']))}</td>"
+            f"<td>{_h(_dollars(approval['budget_impact_cents']))}</td>"
             f"<td>{_h(approval['title'])}</td>"
             "</tr>"
         )
@@ -1199,11 +1265,11 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
     for event in operator_state["recent_audit_events"]:
         audit_rows.append(
             "<tr>"
-            f"<td>{_h(event['event_id'])}</td>"
-            f"<td>{_h(event['action'])}</td>"
+            f"<td>{_h(event['audit_id'])}</td>"
+            f"<td>{_h(event['event_type'])}</td>"
             f"<td><span class=\"pill {_status_class(event['status'])}\">{_h(event['status'])}</span></td>"
             f"<td>{_h(_dollars(event['amount_cents']))}</td>"
-            f"<td>{_h(event['evidence'])}</td>"
+            f"<td>{_h(event['summary'])}</td>"
             "</tr>"
         )
     planned_service_rows = []
@@ -1213,7 +1279,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
             f"<td>{_h(service['service_id'])}</td>"
             f"<td>{_h(service['provider'])}</td>"
             f"<td><span class=\"pill {_status_class(service['status'])}\">{_h(service['status'])}</span></td>"
-            f"<td>{_h(service['name'])}</td>"
+            f"<td>{_h(service['display_name'])}</td>"
             "</tr>"
         )
     provisioned_service_rows = []
@@ -1223,7 +1289,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
             f"<td>{_h(service['service_id'])}</td>"
             f"<td>{_h(service['provider'])}</td>"
             f"<td><span class=\"pill {_status_class(service['status'])}\">{_h(service['status'])}</span></td>"
-            f"<td>{_h(service['name'])}</td>"
+            f"<td>{_h(service['display_name'])}</td>"
             "</tr>"
         )
     readiness_items = []
@@ -1442,11 +1508,11 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
           <h2>Budget Status</h2>
           <table>
             <tbody>
-              <tr><th>Limit</th><td>{_h(_dollars(budget_status['limit_cents']))}</td></tr>
+              <tr><th>Limit</th><td>{_h(_dollars(budget_status['approved_budget_cents']))}</td></tr>
               <tr><th>Approval threshold</th><td>{_h(_dollars(budget_status['approval_required_over_cents']))}</td></tr>
-              <tr><th>Queued approval spend</th><td>{_h(_dollars(budget_status['queued_cents']))}</td></tr>
-              <tr><th>Ready or queued spend</th><td>{_h(_dollars(budget_status['ready_or_queued_cents']))}</td></tr>
-              <tr><th>Remaining before approval</th><td>{_h(_dollars(budget_status['remaining_before_approval_cents']))}</td></tr>
+              <tr><th>Reserved approval spend</th><td>{_h(_dollars(budget_status['reserved_cents']))}</td></tr>
+              <tr><th>Spent</th><td>{_h(_dollars(budget_status['spent_cents']))}</td></tr>
+              <tr><th>Remaining before approval</th><td>{_h(_dollars(budget_status['remaining_cents']))}</td></tr>
               <tr><th>Held over budget</th><td>{_h(_dollars(budget_status['held_budget_cents']))} ({_h(held_action_text)})</td></tr>
             </tbody>
           </table>

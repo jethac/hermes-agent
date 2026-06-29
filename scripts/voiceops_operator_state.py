@@ -31,6 +31,23 @@ REQUIRED_MODE_FALSE_FLAGS = {
     "live_spend",
     "provisioning",
 }
+REQUIRED_BLOCKED_CAPABILITIES = {
+    "network_probe",
+    "environment_secret_read",
+    "discord_send",
+    "whatsapp_send",
+    "sms_send",
+    "phone_call",
+    "spend",
+    "service_provisioning",
+}
+APPROVAL_REQUIRED_CATEGORIES = {"spend", "provisioning"}
+APPROVAL_REQUIRED_SERVICE_PROVIDERS = {"stripe_projects", "twilio_or_vapi", "whatsapp_cloud"}
+ALLOWED_APPROVAL_STATUSES = {"pending", "approved", "denied", "expired"}
+ALLOWED_APPROVAL_DECISIONS = {"hold_for_operator", "deny", "approved_after_operator_review"}
+ALLOWED_AUDIT_STATUSES = {"recorded", "held", "planned", "blocked", "approved", "denied"}
+ALLOWED_SERVICE_STATUSES = {"planned", "provisioned", "blocked", "approval_required"}
+ALLOWED_TASK_STATUSES = {"queued", "planned", "approval_required", "blocked_on_approval"}
 
 
 @dataclass(frozen=True)
@@ -348,6 +365,10 @@ def validate_operator_state(state: dict[str, Any]) -> list[str]:
         issues.append("unsafe_mode:bounded")
     if mode.get("artifact_only") is not True:
         issues.append("unsafe_mode:artifact_only")
+    blocked_capabilities = set(state.get("scope", {}).get("blocked_capabilities") or [])
+    missing_blocked = REQUIRED_BLOCKED_CAPABILITIES - blocked_capabilities
+    if missing_blocked:
+        issues.append(f"missing_blocked_capabilities:{','.join(sorted(missing_blocked))}")
 
     voice_surface = state.get("active_voice_surface", {})
     if not voice_surface.get("surface_id"):
@@ -369,22 +390,115 @@ def validate_operator_state(state: dict[str, Any]) -> list[str]:
         issues.append("unsafe_budget_status")
     if budget.get("current_mode") != state.get("current_mode"):
         issues.append("current_mode_mismatch")
+    controls = set(budget.get("controls") or [])
+    for required_control in (
+        "dry_run_by_default",
+        "approval_packet_required_for_any_spend",
+        "provisioning_blocked_until_operator_approval",
+    ):
+        if required_control not in controls:
+            issues.append(f"missing_budget_control:{required_control}")
 
-    if len(state.get("pending_approvals", [])) > MAX_PENDING_APPROVALS:
+    pending_approvals = state.get("pending_approvals", [])
+    approval_ids = [str(approval.get("approval_id") or "") for approval in pending_approvals]
+    duplicate_approvals = sorted(approval_id for approval_id in set(approval_ids) if approval_ids.count(approval_id) > 1)
+    if duplicate_approvals:
+        issues.append(f"duplicate_pending_approval_ids:{','.join(duplicate_approvals)}")
+    pending_budget_total = 0
+    for approval in pending_approvals:
+        approval_id = str(approval.get("approval_id") or "unknown")
+        category = str(approval.get("category") or "")
+        status = str(approval.get("status") or "")
+        decision = str(approval.get("default_decision") or "")
+        impact = approval.get("budget_impact_cents")
+        if not approval_id or approval_id == "unknown":
+            issues.append("missing_pending_approval_id")
+        if category in APPROVAL_REQUIRED_CATEGORIES and decision != "hold_for_operator":
+            issues.append(f"unsafe_approval_decision:{approval_id}")
+        if status not in ALLOWED_APPROVAL_STATUSES:
+            issues.append(f"invalid_approval_status:{approval_id}:{status}")
+        if decision not in ALLOWED_APPROVAL_DECISIONS:
+            issues.append(f"invalid_approval_decision:{approval_id}:{decision}")
+        if not isinstance(impact, int) or impact < 0:
+            issues.append(f"invalid_approval_budget_impact:{approval_id}")
+        else:
+            pending_budget_total += impact
+    if isinstance(reserved, int) and pending_budget_total != reserved:
+        issues.append("pending_approval_budget_mismatch")
+
+    if len(pending_approvals) > MAX_PENDING_APPROVALS:
         issues.append("bounds_exceeded:pending_approvals")
-    if len(state.get("recent_audit_events", [])) > MAX_AUDIT_EVENTS:
+    recent_audit_events = state.get("recent_audit_events", [])
+    if len(recent_audit_events) > MAX_AUDIT_EVENTS:
         issues.append("bounds_exceeded:recent_audit_events")
-    if len(state.get("planned_services", [])) > MAX_SERVICES_PER_SECTION:
+    planned_services = state.get("planned_services", [])
+    if len(planned_services) > MAX_SERVICES_PER_SECTION:
         issues.append("bounds_exceeded:planned_services")
-    if len(state.get("provisioned_services", [])) > MAX_SERVICES_PER_SECTION:
+    provisioned_services = state.get("provisioned_services", [])
+    if len(provisioned_services) > MAX_SERVICES_PER_SECTION:
         issues.append("bounds_exceeded:provisioned_services")
-    if len(state.get("upcoming_tasks", [])) > MAX_UPCOMING_TASKS:
+    upcoming_tasks = state.get("upcoming_tasks", [])
+    if len(upcoming_tasks) > MAX_UPCOMING_TASKS:
         issues.append("bounds_exceeded:upcoming_tasks")
 
-    domains = {task.get("domain") for task in state.get("upcoming_tasks", [])}
+    audit_ids = [str(event.get("audit_id") or "") for event in recent_audit_events]
+    duplicate_audits = sorted(audit_id for audit_id in set(audit_ids) if audit_ids.count(audit_id) > 1)
+    if duplicate_audits:
+        issues.append(f"duplicate_audit_ids:{','.join(duplicate_audits)}")
+    audit_id_set = set(audit_ids)
+    for event in recent_audit_events:
+        audit_id = str(event.get("audit_id") or "unknown")
+        status = str(event.get("status") or "")
+        parent = event.get("parent_audit_id")
+        if not audit_id or audit_id == "unknown":
+            issues.append("missing_audit_id")
+        if status not in ALLOWED_AUDIT_STATUSES:
+            issues.append(f"invalid_audit_status:{audit_id}:{status}")
+        if parent is not None and parent not in audit_id_set:
+            issues.append(f"audit_parent_missing:{audit_id}:{parent}")
+
+    service_ids = [
+        str(service.get("service_id") or "") for service in [*planned_services, *provisioned_services]
+    ]
+    duplicate_services = sorted(service_id for service_id in set(service_ids) if service_ids.count(service_id) > 1)
+    if duplicate_services:
+        issues.append(f"duplicate_service_ids:{','.join(duplicate_services)}")
+    for service in planned_services:
+        service_id = str(service.get("service_id") or "unknown")
+        provider = str(service.get("provider") or "")
+        status = str(service.get("status") or "")
+        if status not in ALLOWED_SERVICE_STATUSES:
+            issues.append(f"invalid_service_status:{service_id}:{status}")
+        if provider in APPROVAL_REQUIRED_SERVICE_PROVIDERS and service.get("approval_required") is not True:
+            issues.append(f"external_service_missing_approval:{service_id}")
+        if service.get("external") is True and status == "provisioned":
+            issues.append(f"external_service_claimed_provisioned:{service_id}")
+    for service in provisioned_services:
+        service_id = str(service.get("service_id") or "unknown")
+        status = str(service.get("status") or "")
+        if status not in ALLOWED_SERVICE_STATUSES:
+            issues.append(f"invalid_service_status:{service_id}:{status}")
+        if service.get("external") is True:
+            issues.append(f"external_service_claimed_provisioned:{service_id}")
+
+    domains = {task.get("domain") for task in upcoming_tasks}
     for required_domain in ("household", "business"):
         if required_domain not in domains:
             issues.append(f"missing_task_domain:{required_domain}")
+    task_ids = [str(task.get("task_id") or "") for task in upcoming_tasks]
+    duplicate_tasks = sorted(task_id for task_id in set(task_ids) if task_ids.count(task_id) > 1)
+    if duplicate_tasks:
+        issues.append(f"duplicate_task_ids:{','.join(duplicate_tasks)}")
+    for task in upcoming_tasks:
+        task_id = str(task.get("task_id") or "unknown")
+        status = str(task.get("status") or "")
+        impact = task.get("budget_impact_cents")
+        if status not in ALLOWED_TASK_STATUSES:
+            issues.append(f"invalid_task_status:{task_id}:{status}")
+        if not isinstance(impact, int) or impact < 0:
+            issues.append(f"invalid_task_budget_impact:{task_id}")
+        if isinstance(impact, int) and impact > 0 and task.get("approval_required") is not True:
+            issues.append(f"task_budget_without_approval:{task_id}")
 
     for section in ("pending_approvals", "recent_audit_events", "planned_services", "provisioned_services"):
         if section not in state:
