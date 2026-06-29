@@ -1500,6 +1500,12 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         "artifact_id": "voiceops-artifact-package-audit",
         "artifact_root": str(artifact_root),
         "mode": "local_static_package_audit_only",
+        "readiness_claim": False,
+        "readiness_scope": "static_package_consistency_only",
+        "readiness_note": (
+            "Package audit pass means generated artifacts are internally consistent and secret-safe; "
+            "it does not satisfy live Discord, spend/provisioning, or DGX Spark evidence gates."
+        ),
         "safety": {
             "env_files_read": False,
             "secret_values_emitted": False,
@@ -1525,6 +1531,9 @@ def _markdown(report: Mapping[str, Any]) -> str:
         "# VoiceOps Artifact Package Audit",
         "",
         f"- Status: {report['status']}",
+        f"- Readiness claim: {'yes' if report.get('readiness_claim') else 'no'}",
+        f"- Readiness scope: `{report.get('readiness_scope', 'static_package_consistency_only')}`",
+        f"- Note: {report.get('readiness_note', '')}",
         f"- Artifact root: `{report['artifact_root']}`",
         f"- Checked artifacts: {report['checked_artifact_count']}",
         "- Network I/O: no",

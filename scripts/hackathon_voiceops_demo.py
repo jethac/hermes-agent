@@ -664,7 +664,8 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "needs_read_only_discovery": True,
                     "needs_redacted_setup_evidence": True,
                 },
-                "first_safe_command": provisioning_gate["collection_commands"]["presence_only"],
+                "first_safe_command": provisioning_gate["rerun_commands"]["plan_index_dry_audit"],
+                "first_evidence_command": provisioning_gate["collection_commands"]["presence_only"],
                 "commands": [
                     provisioning_gate["rerun_commands"]["plan_index_dry_audit"],
                     provisioning_gate["collection_commands"]["presence_only"],
@@ -868,6 +869,20 @@ def _which_any(which: Callable[[str], str | None], commands: Iterable[str]) -> s
         if path:
             return path
     return None
+
+
+def _command_found_detail(label: str, path: str | None) -> str:
+    if not path:
+        return f"{label} not found on PATH"
+    return f"{label} found on PATH as `{Path(path).name}`"
+
+
+def _readiness_requirement_scope(check_id: str) -> str:
+    if check_id in STATIC_ARTIFACT_REQUIRED_CHECK_IDS:
+        return "static_recording"
+    if check_id in LIVE_PREREQUISITE_CHECK_IDS:
+        return "live_demo"
+    return "optional"
 
 
 def _parse_env_file(path: Path) -> dict[str, str]:
@@ -1680,7 +1695,7 @@ def build_readiness_report(
             check_id="hermes_cli",
             status="pass" if hermes_path else "warn",
             required_for_video=False,
-            detail=f"hermes command found at {hermes_path}" if hermes_path else "hermes command not found on PATH",
+            detail=_command_found_detail("hermes command", hermes_path),
             next_step="Use this repo with uv for artifacts, or install/point the system hermes command at this branch.",
         )
     )
@@ -1724,7 +1739,7 @@ def build_readiness_report(
             status="pass" if nemoclaw_path else "fail",
             required_for_video=False,
             detail=(
-                f"NemoClaw/OpenShell command found at {nemoclaw_path}"
+                _command_found_detail("NemoClaw/OpenShell command", nemoclaw_path)
                 if nemoclaw_path
                 else "no nemoclaw or openshell command found; MPP/NemoClaw boundary is required before live spend or provisioning"
             ),
@@ -1740,9 +1755,9 @@ def build_readiness_report(
             status="pass" if stripe_path and stripe_projects_verified else "fail",
             required_for_video=True,
             detail=(
-                f"stripe CLI found at {stripe_path}; Projects help verification marker is present"
+                f"{_command_found_detail('stripe CLI', stripe_path)}; Projects help verification marker is present"
                 if stripe_path and stripe_projects_verified
-                else "stripe CLI found, but VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED is not set"
+                else f"{_command_found_detail('stripe CLI', stripe_path)}, but VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED is not set"
                 if stripe_path
                 else "stripe CLI not found"
             ),
@@ -1760,7 +1775,7 @@ def build_readiness_report(
             status="pass" if link_path else "fail",
             required_for_video=True,
             detail=(
-                f"link-cli found at {link_path}"
+                _command_found_detail("link-cli", link_path)
                 if link_path
                 else "link-cli not found on PATH; npx is not treated as ready because it may fetch packages"
             ),
@@ -1834,6 +1849,11 @@ def build_readiness_report(
     )
 
     check_dicts = [asdict(check) for check in checks]
+    for check in check_dicts:
+        check_id = str(check["check_id"])
+        check["required_for_static_recording"] = check_id in STATIC_ARTIFACT_REQUIRED_CHECK_IDS
+        check["required_for_live_demo"] = check_id in LIVE_PREREQUISITE_CHECK_IDS
+        check["requirement_scope"] = _readiness_requirement_scope(check_id)
     all_required_failures = [
         check["check_id"] for check in check_dicts if check["required_for_video"] and check["status"] != "pass"
     ]
@@ -2161,7 +2181,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
             "- Live prerequisite failures: "
             f"{', '.join(live_prerequisite_failures) if live_prerequisite_failures else 'none'}"
         ),
-        f"- Required failures: {', '.join(failures) if failures else 'none'}",
+        f"- Static recording required failures: {', '.join(failures) if failures else 'none'}",
         f"- Recording fallback: {fallback}",
         f"- Plan closure status: {closure['closure_status']}",
         f"- Closure index: `{closure['readiness_closure_ref']}`",
@@ -2171,13 +2191,23 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "## Plan Closure Gates",
         "",
         *_closure_gate_markdown_lines(closure),
-        "## Spoken Demo Prompt",
+        "## Static Submission Shot List",
         "",
-        "Say this in Discord voice:",
+        "Use this path when live Discord voice, provisioning preflight, or DGX evidence is still open:",
+        "",
+        "1. Open `operator-dashboard.html` and show the static dry-run VoiceOps package status.",
+        "2. Show the scripted Discord voice request and KAME-style acknowledgement in `demo-script.md` or the dashboard.",
+        "3. Show Nemotron 3 Super selected through Hermes' normal `/model` flow or visible in the generated dashboard; label any hosted fallback clearly.",
+        "4. Show `nemoclaw-action-packet.json`, `nemoclaw-action-packet.validation.json`, or the dashboard NemoClaw section before any billable/network-capable action.",
+        "5. Show queued Stripe Projects VoIP provisioning and Link-gated service-credit spend in `stripe-actions-dry-run.sh` or the dashboard approval queue.",
+        "6. Show `phone-context.json` and narrate that the same Discord context is preserved for the outbound call.",
+        f"7. {spark_story}",
+        "",
+        "## Live Upgrade Shot List",
+        "",
+        "Use this only after live evidence gates pass. Say this in Discord voice:",
         "",
         f"> {demo['demo']['request']}",
-        "",
-        "## Shot List",
         "",
         "1. Discord voice: join the voice channel and say the prompt above.",
         "2. Reflex response: show Hermes acknowledging the budget immediately and stating that billable actions require approval.",
@@ -2248,13 +2278,15 @@ def _readiness_markdown(report: dict[str, Any]) -> str:
         "",
     ])
     for check in report["checks"]:
-        required = "required" if check["required_for_video"] else "optional"
+        scope = str(check.get("requirement_scope") or _readiness_requirement_scope(str(check["check_id"])))
         lines.extend(
             [
                 f"### {check['check_id']}",
                 "",
                 f"- Status: {check['status']}",
-                f"- Scope: {required}",
+                f"- Scope: {scope}",
+                f"- Required for static recording: {'yes' if check.get('required_for_static_recording') else 'no'}",
+                f"- Required for live demo: {'yes' if check.get('required_for_live_demo') else 'no'}",
                 f"- Detail: {check['detail']}",
                 f"- Next step: {check['next_step']}",
                 "",
@@ -2354,12 +2386,12 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         )
     readiness_items = []
     for check in readiness["checks"]:
-        required = "required" if check["required_for_video"] else "optional"
+        scope = str(check.get("requirement_scope") or _readiness_requirement_scope(str(check["check_id"])))
         readiness_items.append(
             "<li>"
             f"<span class=\"pill {_status_class(check['status'])}\">{_h(check['status'])}</span>"
             f"<strong>{_h(check['check_id'])}</strong>"
-            f"<small>{_h(required)} - {_h(check['detail'])}</small>"
+            f"<small>{_h(scope)} - {_h(check['detail'])}</small>"
             "</li>"
         )
     closure_items = []
@@ -2763,7 +2795,7 @@ def _stripe_script(actions: Iterable[dict[str, Any]]) -> str:
             "provider_command_executes": False,
         }
         lines.append(f"# voiceops-action-metadata {json.dumps(metadata, sort_keys=True)}")
-        quoted = shlex.quote(command)
+        quoted = shlex.quote(f"DRY RUN ONLY: {command}")
         lines.append(f"printf '%s\\n' {quoted}")
     lines.append("")
     return "\n".join(lines)

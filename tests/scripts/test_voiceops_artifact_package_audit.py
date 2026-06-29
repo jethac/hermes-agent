@@ -40,6 +40,9 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert report["status"] == "pass"
     assert report["ok"] is True
     assert report["issues"] == []
+    assert report["readiness_claim"] is False
+    assert report["readiness_scope"] == "static_package_consistency_only"
+    assert "does not satisfy live Discord" in report["readiness_note"]
     assert report["checked_artifact_count"] == 90
     assert str(artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json") in report[
         "checked_artifacts"
@@ -85,7 +88,10 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
         "spark_execution": False,
     }
     assert Path(paths["json"]).exists()
-    assert Path(paths["markdown"]).read_text(encoding="utf-8").startswith("# VoiceOps Artifact Package Audit")
+    audit_markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert audit_markdown.startswith("# VoiceOps Artifact Package Audit")
+    assert "Readiness claim: no" in audit_markdown
+    assert "static_package_consistency_only" in audit_markdown
 
 
 def test_package_audit_rejects_missing_promised_runbook(tmp_path):

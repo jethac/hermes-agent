@@ -258,6 +258,10 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert operator_handoff["phases"][1]["command_safety"]["read_only_discovery"] == (
         "network_possible_allowlisted_read_only"
     )
+    assert "--dry-audit" in operator_handoff["phases"][1]["first_safe_command"]
+    assert "voiceops_provisioning_probe.py" in operator_handoff["phases"][1]["first_evidence_command"]
+    assert operator_handoff["phases"][1]["commands"][0] == operator_handoff["phases"][1]["first_safe_command"]
+    assert operator_handoff["phases"][1]["commands"][1] == operator_handoff["phases"][1]["first_evidence_command"]
     assert operator_handoff["phases"][1]["blocked_by_current_environment"] == {
         "missing_cli_or_config": ["stripe_projects_cli", "stripe_link_cli", "nemoclaw_boundary", "phone_handoff"],
         "needs_read_only_discovery": True,
@@ -481,7 +485,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "VoiceOps Recording Runbook" in runbook
     assert "static dry-run VoiceOps package" in runbook
     assert "Spark target selected, live evidence pending" in runbook
-    assert "Shot List" in runbook
+    assert "Static Submission Shot List" in runbook
+    assert "Live Upgrade Shot List" in runbook
     assert "@NousResearch" in runbook
     assert "Do not show terminal panes or files that contain secrets" in runbook
     assert "Plan Closure Gates" in runbook
@@ -570,6 +575,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Readiness scope: static_artifact_recording_only" in readiness_markdown
     assert "Spark-local evidence: target_selected_needs_benchmark_evidence" in readiness_markdown
     assert "Spark-local=True" not in readiness_markdown
+    assert "Required for static recording:" in readiness_markdown
+    assert "Required for live demo:" in readiness_markdown
     closure_markdown = Path(paths["readiness_closure_summary_markdown"]).read_text(encoding="utf-8")
     assert "VoiceOps Demo Readiness Closure Summary" in closure_markdown
     assert "voiceops.demo_closure_summary.v1" in closure_markdown
@@ -704,6 +711,7 @@ def test_voiceops_demo_dry_run_does_not_execute_live_stripe(tmp_path):
     ]
 
     assert "printf '%s\\n'" in text
+    assert "DRY RUN ONLY:" in text
     assert "voiceops-action-metadata" in text
     assert "stripe projects add twilio/voice" in text
     assert "link-cli spend-request create" in text
@@ -805,6 +813,12 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     assert ready["live_prerequisite_failures"] == []
     assert ready["all_required_check_failures"] == []
     checks = {check["check_id"]: check for check in ready["checks"]}
+    assert checks["nemotron_3_super_spark_or_labeled_hosted_fallback"]["required_for_static_recording"] is True
+    assert checks["discord_voice"]["required_for_static_recording"] is False
+    assert checks["discord_voice"]["required_for_live_demo"] is True
+    assert checks["discord_voice"]["requirement_scope"] == "live_demo"
+    assert checks["hermes_cli"]["detail"] == "hermes command found on PATH as `hermes`"
+    assert "/usr/local/bin/hermes" not in json.dumps(ready)
     assert checks["phone_target"]["status"] == "pass"
     assert checks["phone_provider"]["status"] == "pass"
     assert checks["phone_handoff"]["status"] == "pass"

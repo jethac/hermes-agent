@@ -581,10 +581,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "mppx_or_fallback",
     ]
     assert next_actions[1]["blocked_by_current_environment"]["needs_read_only_discovery"] is True
-    assert "--dry-audit" in next_actions[1]["diagnostic_command"]
-    assert "voiceops_provisioning_probe.py" in next_actions[1]["first_safe_command"]
-    assert "--run-readonly-discovery" not in next_actions[1]["first_safe_command"]
-    assert next_actions[1]["first_evidence_command"] == next_actions[1]["first_safe_command"]
+    assert "--dry-audit" in next_actions[1]["first_safe_command"]
+    assert "--package-audit" in next_actions[1]["first_safe_command"]
+    assert "voiceops_provisioning_probe.py" in next_actions[1]["first_evidence_command"]
+    assert "--run-readonly-discovery" not in next_actions[1]["first_evidence_command"]
     assert next_actions[2]["blocked_by_current_environment"]["required_hardware"] == "1x NVIDIA DGX Spark"
     assert next_actions[2]["blocked_by_current_environment"]["needs_measured_spark_evidence"] is True
     assert "--lint-evidence" in next_actions[2]["first_safe_command"]
@@ -645,8 +645,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--run-command-probes" in json.dumps(handoff["phases"][1]["commands"])
     assert "--dry-audit" in handoff["phases"][1]["commands"][0]
     assert "--package-audit" in handoff["phases"][1]["commands"][0]
-    assert handoff["phases"][1]["diagnostic_command"] == next_actions[1]["diagnostic_command"]
     assert handoff["phases"][1]["first_safe_command"] == next_actions[1]["first_safe_command"]
+    assert handoff["phases"][1]["first_evidence_command"] == next_actions[1]["first_evidence_command"]
     assert handoff["phases"][1]["blocked_by_current_environment"] == {
         "missing_cli": next_actions[1]["blocked_by_current_environment"]["missing_cli"],
         "present_cli": blockers["provisioning_cli"]["present"],
@@ -1471,7 +1471,7 @@ def test_plan_run_propagates_active_and_reflex_model_to_demo_package(tmp_path):
     assert "--reflex-model 'Gemma 4 E4B audio-native'" in summary["closure_index"]["operator_handoff"][
         "final_reindex_command"
     ]
-    assert "--active-model 'Nemotron 3 Super via hosted provider'" in summary["next_actions"][1]["diagnostic_command"]
+    assert "--active-model 'Nemotron 3 Super via hosted provider'" in summary["next_actions"][1]["first_safe_command"]
     assert demo["sponsor_stack"]["hermes_active_model"]["path"] == "hosted_nemotron_3_super_fallback"
     assert demo["spark_stack"]["current_path_local"] is False
     assert demo["spark_stack"]["reflex"]["model"] == "Gemma 4 E4B audio-native"
@@ -1621,6 +1621,11 @@ def test_plan_run_cli_package_audit_writes_consistency_artifacts(tmp_path):
     assert Path(payload["package_audit"]["artifacts"]["json"]).exists()
     assert Path(payload["package_audit"]["artifacts"]["markdown"]).exists()
     assert str(artifact_root / "voiceops-package-audit" / "current") in payload["package_audit"]["artifacts"]["json"]
+    plan_run = json.loads((output_dir / "voiceops-plan-run.json").read_text(encoding="utf-8"))
+    assert plan_run["package_audit"] == payload["package_audit"]
+    plan_markdown = (output_dir / "voiceops-plan-run.md").read_text(encoding="utf-8")
+    assert "Package audit: pass" in plan_markdown
+    assert "Package audit issues: none" in plan_markdown
 
 
 def test_plan_run_cli_package_audit_accepts_hosted_model_fallback_package(tmp_path):
@@ -1714,9 +1719,8 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
         "uv run python -m hermes_cli.realtime_voice_live_evidence"
     )
     assert "--run-doctor-report" in payload["next_actions"][0]["first_evidence_command"]
-    assert "--dry-audit" in payload["next_actions"][1]["diagnostic_command"]
-    assert "voiceops_provisioning_probe.py" in payload["next_actions"][1]["first_safe_command"]
-    assert payload["next_actions"][1]["first_evidence_command"] == payload["next_actions"][1]["first_safe_command"]
+    assert "--dry-audit" in payload["next_actions"][1]["first_safe_command"]
+    assert "voiceops_provisioning_probe.py" in payload["next_actions"][1]["first_evidence_command"]
     assert "--lint-evidence" in payload["next_actions"][2]["first_safe_command"]
     assert payload["next_actions"][2]["first_evidence_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
     assert not output_dir.exists()

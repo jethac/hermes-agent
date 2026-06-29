@@ -399,8 +399,8 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "needs_read_only_discovery": provisioning_gate["status"] != "ready",
                     "needs_redacted_setup_evidence": provisioning_gate["status"] != "ready",
                 },
-                "diagnostic_command": provisioning_commands[0],
-                "first_safe_command": provisioning_commands[1],
+                "first_safe_command": provisioning_commands[0],
+                "first_evidence_command": provisioning_commands[1],
                 "required_inputs": [
                     ".env or local CLI auth for Stripe/Link/MPP/phone provider",
                     "redacted preflight evidence JSON or manifest",
@@ -646,18 +646,13 @@ def _build_next_actions(
                 "the separate doctor-report and derivation commands only for debugging or replaying an existing report."
             )
         elif gate_id == "spend_and_provisioning_preflight":
-            if isinstance(commands, list) and len(commands) > 1:
-                first_command = commands[1]
-                first_evidence_command = first_command
-            if isinstance(phase, dict) and phase.get("diagnostic_command"):
-                diagnostic_command = phase.get("diagnostic_command")
             blocked_by = {
                 "missing_cli": blockers.get("provisioning_cli", {}).get("missing", []),
                 "needs_read_only_discovery": True,
                 "needs_redacted_setup_evidence": True,
             }
             operator_step = (
-                "Run the no-write dry audit for status if needed, then collect local provisioning presence evidence, "
+                "Start with the no-write dry audit, then collect local provisioning presence evidence, "
                 "read-only discovery, and redacted setup evidence."
             )
         elif gate_id == "local_spark_stack_matrix":
@@ -1553,6 +1548,7 @@ def _safety_summary_line(safety: dict[str, Any], *, include_spark: bool = False)
 
 
 def _markdown(summary: dict[str, Any]) -> str:
+    package_audit = summary.get("package_audit")
     lines = [
         "# VoiceOps Plan Run Summary",
         "",
@@ -1561,6 +1557,14 @@ def _markdown(summary: dict[str, Any]) -> str:
         f"- Safety: {_safety_summary_line(summary.get('safety', {}))}",
         f"- Hard failures: {', '.join(summary['hard_failures']) if summary['hard_failures'] else 'none'}",
         f"- Readiness gaps: {', '.join(summary['readiness_gaps']) if summary['readiness_gaps'] else 'none'}",
+        *(
+            [
+                f"- Package audit: {package_audit.get('status', 'unknown')}",
+                f"- Package audit issues: {', '.join(package_audit.get('issues') or []) if package_audit.get('issues') else 'none'}",
+            ]
+            if isinstance(package_audit, dict)
+            else []
+        ),
         "",
         "## Current Environment",
         "",
@@ -1971,6 +1975,25 @@ def _package_audit_output_dir(args: argparse.Namespace) -> Path:
     return args.artifact_root / DEFAULT_PACKAGE_AUDIT_RELATIVE_OUTPUT_DIR
 
 
+def _package_audit_summary(
+    package_audit_report: dict[str, Any],
+    package_audit_paths: dict[str, str] | None = None,
+    *,
+    persistent_writes: bool | None = None,
+) -> dict[str, Any]:
+    summary = {
+        "ok": package_audit_report["ok"],
+        "status": package_audit_report["status"],
+        "issues": package_audit_report["issues"],
+        "checked_artifact_count": package_audit_report["checked_artifact_count"],
+    }
+    if package_audit_paths is not None:
+        summary["artifacts"] = package_audit_paths
+    if persistent_writes is not None:
+        summary["persistent_writes"] = persistent_writes
+    return summary
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.dry_audit:
@@ -2037,13 +2060,10 @@ def main(argv: list[str] | None = None) -> int:
                         "review_actions": summary["closure_index"]["review_actions"],
                         **(
                             {
-                                "package_audit": {
-                                    "ok": package_audit_report["ok"],
-                                    "status": package_audit_report["status"],
-                                    "issues": package_audit_report["issues"],
-                                    "checked_artifact_count": package_audit_report["checked_artifact_count"],
-                                    "persistent_writes": False,
-                                }
+                                "package_audit": _package_audit_summary(
+                                    package_audit_report,
+                                    persistent_writes=False,
+                                )
                             }
                             if package_audit_report is not None
                             else {}
@@ -2077,6 +2097,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.package_audit:
         package_audit_report = audit_package(args.artifact_root)
         package_audit_paths = write_package_audit(_package_audit_output_dir(args), package_audit_report)
+        summary["package_audit"] = _package_audit_summary(package_audit_report, package_audit_paths)
+        paths = write_plan_run(args.output_dir, summary)
     print(
         json.dumps(
             {
@@ -2084,15 +2106,7 @@ def main(argv: list[str] | None = None) -> int:
                 "output_dir": str(args.output_dir),
                 "artifacts": paths,
                 **(
-                    {
-                        "package_audit": {
-                            "ok": package_audit_report["ok"],
-                            "status": package_audit_report["status"],
-                            "issues": package_audit_report["issues"],
-                            "checked_artifact_count": package_audit_report["checked_artifact_count"],
-                            "artifacts": package_audit_paths,
-                        }
-                    }
+                    {"package_audit": summary["package_audit"]}
                     if package_audit_report is not None and package_audit_paths is not None
                     else {}
                 ),
