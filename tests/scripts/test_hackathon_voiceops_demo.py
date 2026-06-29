@@ -43,8 +43,11 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert payload["spark_stack"]["local_first"] is True
     assert payload["sponsor_stack"]["hermes_active_model"]["path"] == "spark_local_nemotron_3_super"
     assert payload["sponsor_stack"]["hermes_active_model"]["selected_by"] == "Hermes /model"
+    assert payload["sponsor_stack"]["hermes_active_model"]["spark_local"] is True
     assert payload["sponsor_stack"]["nemotron_3_super"]["selection"].startswith("Nemotron 3 Super")
-    assert payload["sponsor_stack"]["nemotron_3_ultra_hosted_fallback"]["selection"].startswith("available fallback")
+    assert payload["sponsor_stack"]["nemotron_3_ultra_hosted_fallback"]["selection"].startswith(
+        "Nemotron 3 Ultra hosted fallback"
+    )
     assert payload["spark_stack"]["oracle"]["preferred_local_target"] == "Nemotron 3 Super on DGX Spark"
     assert payload["spark_stack"]["oracle"]["hosted_fallback"].startswith("Nemotron 3 Ultra")
     assert payload["spark_stack"]["oracle"]["active_model_path"]["path"] == "spark_local_nemotron_3_super"
@@ -150,9 +153,10 @@ def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned
     )
 
     assert ultra_demo["sponsor_stack"]["hermes_active_model"]["path"] == "hosted_nemotron_3_ultra_fallback"
+    assert ultra_demo["sponsor_stack"]["hermes_active_model"]["spark_local"] is False
     assert ultra_demo["sponsor_stack"]["nemotron_3_super"]["selection"] == "not selected"
     assert ultra_demo["sponsor_stack"]["nemotron_3_ultra_hosted_fallback"]["selection"].startswith("Nemotron 3 Ultra")
-    assert "nemotron_3_super_or_ultra_active_model" not in ultra_ready["required_failures"]
+    assert "nemotron_3_super_spark_or_labeled_ultra_hosted_fallback" not in ultra_ready["required_failures"]
 
     kimi_args = parse_args(["--active-model", "Kimi K2.6"])
     kimi_demo = build_demo(kimi_args)
@@ -168,7 +172,8 @@ def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned
     )
 
     assert kimi_demo["sponsor_stack"]["hermes_active_model"]["path"] == "non_nvidia_fallback"
-    assert "nemotron_3_super_or_ultra_active_model" in kimi_ready["required_failures"]
+    assert kimi_demo["sponsor_stack"]["hermes_active_model"]["spark_local"] is False
+    assert "nemotron_3_super_spark_or_labeled_ultra_hosted_fallback" in kimi_ready["required_failures"]
 
 
 def test_voiceops_demo_dry_run_does_not_execute_live_stripe(tmp_path):
