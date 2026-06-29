@@ -13,6 +13,8 @@ import argparse
 import asyncio
 import json
 import os
+import platform
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -76,11 +78,125 @@ def _result_by_milestone(results: list[dict[str, Any]], milestone: str) -> dict[
     return next(result for result in results if result["milestone"] == milestone)
 
 
+def _env_present(env: dict[str, str], keys: list[str]) -> dict[str, bool]:
+    return {key: bool(str(env.get(key) or "").strip()) for key in keys}
+
+
+def _binary_present(name: str, env: dict[str, str]) -> bool:
+    return shutil.which(name, path=env.get("PATH", "")) is not None
+
+
+def _build_current_environment_snapshot(
+    *,
+    env: dict[str, str],
+    env_files: list[Path],
+) -> dict[str, Any]:
+    discord_env_keys = [
+        "DISCORD_BOT_TOKEN",
+        "DISCORD_GUILD_ID",
+        "DISCORD_HOME_CHANNEL",
+        "DISCORD_VOICE_CHANNEL_ID",
+        "DISCORD_VOICE_CHANNEL_NAME",
+    ]
+    provisioning_env_keys = [
+        "VOICEOPS_DEMO_PHONE_NUMBER",
+        "TWILIO_PHONE_NUMBER",
+        "VAPI_PHONE_NUMBER_ID",
+        "TWILIO_ACCOUNT_SID",
+        "TWILIO_AUTH_TOKEN",
+        "TWILIO_PHONE_NUMBER_SID",
+        "VAPI_API_KEY",
+    ]
+    provisioning_binaries = ["stripe", "link-cli", "mppx", "mpp", "mpp-agent", "nemoclaw", "openshell", "twilio", "vapi", "bland"]
+    system = platform.system()
+    machine = platform.machine()
+    nvidia_smi_present = _binary_present("nvidia-smi", env)
+    return {
+        "schema_version": "voiceops.current_environment.v1",
+        "redaction_policy": "presence booleans only; no env values, tokens, command output, or phone numbers",
+        "env_files": [
+            {
+                "path": str(path),
+                "exists": path.expanduser().is_file(),
+            }
+            for path in env_files
+        ],
+        "discord": {
+            "env_presence": _env_present(env, discord_env_keys),
+            "live_probe_can_run_here": all(_env_present(env, discord_env_keys[:4]).values()),
+            "sidecar_evidence_files_expected": [
+                "artifacts/realtime-voice-evidence/live-current/sidecar-session.json",
+                "artifacts/realtime-voice-evidence/live-current/live-turn.json",
+            ],
+        },
+        "provisioning": {
+            "env_presence": _env_present(env, provisioning_env_keys),
+            "binary_presence": {binary: _binary_present(binary, env) for binary in provisioning_binaries},
+            "required_cli_presence": {
+                "stripe": _binary_present("stripe", env),
+                "link-cli": _binary_present("link-cli", env),
+                "mppx": _binary_present("mppx", env),
+            },
+            "optional_phone_cli_presence": {
+                "twilio": _binary_present("twilio", env),
+                "vapi": _binary_present("vapi", env),
+                "bland": _binary_present("bland", env),
+            },
+        },
+        "spark": {
+            "host_system": system,
+            "host_machine": machine,
+            "nvidia_smi_present": nvidia_smi_present,
+            "dgx_spark_likely": system == "Linux" and machine in {"aarch64", "arm64"} and nvidia_smi_present,
+            "hardware_claim": "not_verified_by_plan_run",
+        },
+    }
+
+
+def _build_current_environment_blockers(environment: dict[str, Any]) -> dict[str, Any]:
+    discord_presence = environment.get("discord", {}).get("env_presence", {})
+    provisioning = environment.get("provisioning", {})
+    required_cli_presence = provisioning.get("required_cli_presence", {})
+    binary_presence = provisioning.get("binary_presence", {})
+    spark = environment.get("spark", {})
+    mpp_fallback_present = any(
+        bool(binary_presence.get(binary))
+        for binary in ("mppx", "mpp", "mpp-agent", "nemoclaw", "openshell")
+    )
+    provisioning_missing = [
+        binary
+        for binary in ("stripe", "link-cli")
+        if required_cli_presence.get(binary) is not True
+    ]
+    if not mpp_fallback_present:
+        provisioning_missing.append("mppx_or_fallback")
+    return {
+        "hard_failure": False,
+        "secret_values_emitted": False,
+        "diagnostic_only": True,
+        "discord_env": {
+            "missing_env_keys": sorted(key for key, present in discord_presence.items() if not present),
+            "present_env_keys": sorted(key for key, present in discord_presence.items() if present),
+        },
+        "provisioning_cli": {
+            "missing": provisioning_missing,
+            "present": sorted(key for key, present in binary_presence.items() if present),
+        },
+        "spark_host": {
+            "required_hardware": "1x NVIDIA DGX Spark",
+            "current_host_hint": "dgx_spark_candidate" if spark.get("dgx_spark_likely") is True else "not_dgx_collection_host",
+            "blocks_local_collection_here": spark.get("dgx_spark_likely") is not True,
+            "blocks_artifact_generation": False,
+        },
+    }
+
+
 def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
     results = summary["results"]
     voice = _result_by_milestone(results, "milestone_1_real_voice_operator")
     provisioning = _result_by_milestone(results, "milestone_2_real_spend_and_provisioning_preflight")
     spark = _result_by_milestone(results, "milestone_4_local_spark_stack_matrix")
+    current_environment = summary.get("current_environment", {})
     source_plan_run = str(Path(summary["output_dir"]) / "voiceops-plan-run.json")
     voice_missing = voice["details"].get("live_probe_missing_gates", [])
     provisioning_missing = provisioning["details"].get("required_failures", [])
@@ -169,6 +285,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "claim production readiness from the headless loopback smoke alone",
             ],
             "completion_signal": "live_probe_missing_gates becomes [] and live_probe_status is live_evidence_supplied_not_readiness_claim",
+            "current_environment": current_environment.get("discord", {}),
         },
         {
             "milestone": provisioning["milestone"],
@@ -271,6 +388,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "run mutating Stripe Projects, Link spend, provider provisioning, or phone-call commands before approval",
             ],
             "completion_signal": "required_failures becomes [] and milestone status becomes ready",
+            "current_environment": current_environment.get("provisioning", {}),
         },
         {
             "milestone": spark["milestone"],
@@ -355,6 +473,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "treat the matrix template as measured evidence",
             ],
             "completion_signal": "ready_for_one_spark_demo is true, role_status values are validated, and all_local_stack_smoke is validated",
+            "current_environment": current_environment.get("spark", {}),
         },
     ]
     return {
@@ -372,6 +491,8 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "secret_values_emitted": False,
         },
         "readiness_gaps": summary["readiness_gaps"],
+        "current_environment": current_environment,
+        "current_environment_blockers": _build_current_environment_blockers(current_environment),
         "closure_status": "needs_external_evidence" if summary["readiness_gaps"] else "complete",
         "remaining_gates": gates,
         "gates": gates,
@@ -422,6 +543,7 @@ async def build_plan_run_async(
 ) -> dict[str, Any]:
     evidence_paths = evidence_paths or []
     env_files = env_files or []
+    effective_env = dict(os.environ if env is None else env)
 
     demo_dir = artifact_root / "hackathon-voiceops-demo" / "current"
     voice_operator_dir = artifact_root / "voiceops-voice-operator" / "current"
@@ -479,7 +601,7 @@ async def build_plan_run_async(
     )
 
     provisioning = build_probe_report(
-        env=os.environ if env is None else env,
+        env=effective_env,
         env_files=env_files,
         preflight_evidence_path=provisioning_preflight_evidence,
         run_commands=run_command_probes,
@@ -574,6 +696,7 @@ async def build_plan_run_async(
         "hard_failures": hard_failures,
         "readiness_gaps": readiness_gaps,
         "results": results,
+        "current_environment": _build_current_environment_snapshot(env=effective_env, env_files=env_files),
     }
     summary["closure_index"] = build_readiness_closure_index(summary)
     return summary
@@ -588,6 +711,14 @@ def _markdown(summary: dict[str, Any]) -> str:
         "- Safety: artifact-only; no network I/O, secret value emission, sends, calls, live spend, or provider provisioning",
         f"- Hard failures: {', '.join(summary['hard_failures']) if summary['hard_failures'] else 'none'}",
         f"- Readiness gaps: {', '.join(summary['readiness_gaps']) if summary['readiness_gaps'] else 'none'}",
+        "",
+        "## Current Environment",
+        "",
+        _environment_markdown(summary.get("current_environment", {})),
+        "",
+        "## Current Environment Blockers",
+        "",
+        _environment_blockers_markdown(summary.get("closure_index", {}).get("current_environment_blockers", {})),
         "",
         "## Milestones",
         "",
@@ -666,6 +797,14 @@ def _closure_markdown(closure: dict[str, Any]) -> str:
         "- Safety: artifact-only; no network, spend, provisioning, calls, Spark benchmark execution, or secret values",
         f"- Readiness gaps: {', '.join(closure['readiness_gaps']) if closure['readiness_gaps'] else 'none'}",
         "",
+        "## Current Environment",
+        "",
+        _environment_markdown(closure.get("current_environment", {})),
+        "",
+        "## Current Environment Blockers",
+        "",
+        _environment_blockers_markdown(closure.get("current_environment_blockers", {})),
+        "",
         "## Gates",
         "",
     ]
@@ -695,7 +834,50 @@ def _closure_markdown(closure: dict[str, Any]) -> str:
             lines.append("- Evidence contract:")
             for key, value in sorted(contract.items()):
                 lines.append(f"  - `{key}`: `{value}`")
+        current = gate.get("current_environment")
+        if isinstance(current, dict) and current:
+            lines.append("- Current environment:")
+            for key, value in sorted(current.items()):
+                lines.append(f"  - `{key}`: `{value}`")
         lines.append("")
+    return "\n".join(lines)
+
+
+def _environment_markdown(environment: dict[str, Any]) -> str:
+    if not environment:
+        return "- Not captured"
+    lines = [
+        f"- Redaction policy: {environment.get('redaction_policy', 'presence booleans only')}",
+    ]
+    env_files = environment.get("env_files")
+    if isinstance(env_files, list):
+        lines.append("- Env files:")
+        for item in env_files:
+            if isinstance(item, dict):
+                lines.append(f"  - `{item.get('path')}`: exists={item.get('exists')}")
+    for section_name in ("discord", "provisioning", "spark"):
+        section = environment.get(section_name)
+        if isinstance(section, dict):
+            lines.append(f"- {section_name}:")
+            for key, value in sorted(section.items()):
+                lines.append(f"  - `{key}`: `{value}`")
+    return "\n".join(lines)
+
+
+def _environment_blockers_markdown(blockers: dict[str, Any]) -> str:
+    if not blockers:
+        return "- Not captured"
+    lines = [
+        "- Diagnostic only: does not change OK, hard failures, readiness statuses, or safety policy",
+        f"- Hard failure: {blockers.get('hard_failure')}",
+        f"- Secret values emitted: {blockers.get('secret_values_emitted')}",
+    ]
+    for section_name in ("discord_env", "provisioning_cli", "spark_host"):
+        section = blockers.get(section_name)
+        if isinstance(section, dict):
+            lines.append(f"- {section_name}:")
+            for key, value in sorted(section.items()):
+                lines.append(f"  - `{key}`: `{value}`")
     return "\n".join(lines)
 
 

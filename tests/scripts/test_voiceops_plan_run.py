@@ -24,6 +24,28 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert summary["closure_index"]["closure_status"] == "needs_external_evidence"
     assert summary["closure_index"]["source_plan_run_artifact"].endswith("voiceops-plan-run.json")
     assert summary["closure_index"]["remaining_gates"] == summary["closure_index"]["gates"]
+    assert summary["current_environment"]["schema_version"] == "voiceops.current_environment.v1"
+    assert summary["current_environment"]["redaction_policy"].startswith("presence booleans only")
+    assert summary["current_environment"]["discord"]["env_presence"]["DISCORD_BOT_TOKEN"] is False
+    assert summary["current_environment"]["discord"]["live_probe_can_run_here"] is False
+    assert summary["current_environment"]["provisioning"]["required_cli_presence"] == {
+        "stripe": False,
+        "link-cli": False,
+        "mppx": False,
+    }
+    assert summary["current_environment"]["spark"]["hardware_claim"] == "not_verified_by_plan_run"
+    assert "dgx_spark_likely" in summary["current_environment"]["spark"]
+    assert summary["closure_index"]["current_environment"] == summary["current_environment"]
+    blockers = summary["closure_index"]["current_environment_blockers"]
+    assert blockers["hard_failure"] is False
+    assert blockers["secret_values_emitted"] is False
+    assert blockers["diagnostic_only"] is True
+    assert "DISCORD_BOT_TOKEN" in blockers["discord_env"]["missing_env_keys"]
+    assert "stripe" in blockers["provisioning_cli"]["missing"]
+    assert "link-cli" in blockers["provisioning_cli"]["missing"]
+    assert "mppx_or_fallback" in blockers["provisioning_cli"]["missing"]
+    assert blockers["spark_host"]["required_hardware"] == "1x NVIDIA DGX Spark"
+    assert blockers["spark_host"]["blocks_artifact_generation"] is False
     gates = {gate["gate_id"]: gate for gate in summary["closure_index"]["gates"]}
     assert set(gates) == {
         "live_discord_voice_operator",
@@ -45,6 +67,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "python -m hermes_cli.realtime_voice_live_evidence" in gates["live_discord_voice_operator"]["collection_commands"]["collect_live_manifest"]
     assert "--sidecar-session-evidence" in gates["live_discord_voice_operator"]["collection_commands"]["collect_live_manifest"]
     assert "--live-turn-evidence" in gates["live_discord_voice_operator"]["collection_commands"]["collect_live_manifest"]
+    assert gates["live_discord_voice_operator"]["current_environment"]["env_presence"]["DISCORD_BOT_TOKEN"] is False
     assert "missing_preflight_fields" in gates["spend_and_provisioning_preflight"]
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["preflight_schema_version"] == (
         "voiceops.milestone2.preflight_evidence.v1"
@@ -62,6 +85,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["example_only_accepted"] is False
     assert "provisioning-preflight-evidence.manifest.json" in gates["spend_and_provisioning_preflight"]["collection_commands"]["ingest_preflight_manifest"]
+    assert gates["spend_and_provisioning_preflight"]["current_environment"]["required_cli_presence"]["stripe"] is False
     assert "required_candidate_fields" in gates["local_spark_stack_matrix"]
     assert "schema_version" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["hosted_fallback_counts_for_one_spark_readiness"] is False
@@ -73,6 +97,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "all_local_stack_smoke:needs_evidence" in gates["local_spark_stack_matrix"]["missing"]
     assert "all_local_stack_smoke is validated" in gates["local_spark_stack_matrix"]["completion_signal"]
     assert gates["local_spark_stack_matrix"]["collection_commands"]["dgx_eval"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
+    assert "host_system" in gates["local_spark_stack_matrix"]["current_environment"]
     assert summary["hard_failures"] == []
     assert "milestone_1_real_voice_operator" in summary["readiness_gaps"]
     assert "milestone_2_real_spend_and_provisioning_preflight" in summary["readiness_gaps"]
@@ -156,7 +181,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert spark_gate["closure_artifact"].endswith("spark-matrix-closure-plan.md")
     assert "VoiceOps Plan Run Summary" in markdown
     assert "Readiness Closure" in markdown
+    assert "Current Environment" in markdown
+    assert "Current Environment Blockers" in markdown
     assert "VoiceOps Readiness Closure Index" in closure_markdown
+    assert "presence booleans only" in closure_markdown
+    assert "Diagnostic only" in closure_markdown
     assert "live_discord_voice_operator" in closure_markdown
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in closure_markdown
     assert "python -m hermes_cli.realtime_voice_live_evidence" in closure_markdown
@@ -231,6 +260,7 @@ def test_plan_run_keeps_provisioning_incomplete_without_preflight_evidence(tmp_p
         output_dir=output_dir,
         env={
             "PATH": "",
+            "DISCORD_BOT_TOKEN": "discord-secret-token",
             "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
             "TWILIO_ACCOUNT_SID": "AC123456789abcdef",
             "STRIPE_SECRET_KEY": "sk_live_123456789abcdef",
@@ -243,6 +273,12 @@ def test_plan_run_keeps_provisioning_incomplete_without_preflight_evidence(tmp_p
     serialized = json.dumps(summary)
     assert "sk_live_123456789abcdef" not in serialized
     assert "+15551234567" not in serialized
+    assert "discord-secret-token" not in serialized
+    assert summary["closure_index"]["current_environment_blockers"]["discord_env"]["present_env_keys"] == [
+        "DISCORD_BOT_TOKEN"
+    ]
+    assert summary["current_environment"]["provisioning"]["env_presence"]["VOICEOPS_DEMO_PHONE_NUMBER"] is True
+    assert "STRIPE_SECRET_KEY" not in summary["current_environment"]["provisioning"]["env_presence"]
     assert provisioning_result["status"] == "needs_setup"
     assert provisioning_result["details"]["preflight_evidence_loaded"] is False
     assert "stripe_projects_account" in provisioning_result["details"]["required_failures"]
