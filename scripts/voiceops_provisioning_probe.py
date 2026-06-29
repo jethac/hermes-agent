@@ -511,7 +511,7 @@ def _expand_preflight_evidence_manifest(path: Path, payload: Mapping[str, Any]) 
 
 def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) -> Path:
     report_path = Path(report_path_text).expanduser()
-    if report_path.is_absolute() or report_path.exists():
+    if report_path.is_absolute():
         return report_path
     sibling = manifest_path.parent / report_path_text
     if sibling.exists():
@@ -519,6 +519,8 @@ def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) ->
     basename_sibling = manifest_path.parent / report_path.name
     if basename_sibling.exists():
         return basename_sibling
+    if report_path.exists():
+        return report_path
     return report_path
 
 
@@ -1064,6 +1066,9 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "evidence_artifacts": [
                     "provisioning-readiness.json",
                     "provisioning-readiness.md",
+                    "provisioning-preflight-evidence.template.json",
+                    "provisioning-preflight-evidence.example.json",
+                    "provisioning-preflight-evidence.manifest.example.json",
                     "setup-closure-plan.json",
                 ],
             }
@@ -1076,6 +1081,9 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
         "ready": report["ready"],
         "remaining_failures": report["required_failures"],
         "source_readiness_artifact": "provisioning-readiness.json",
+        "preflight_evidence_template": "provisioning-preflight-evidence.template.json",
+        "preflight_evidence_example": "provisioning-preflight-evidence.example.json",
+        "preflight_evidence_manifest_example": "provisioning-preflight-evidence.manifest.example.json",
         "mode": {
             "artifact_only": True,
             "headless": True,
@@ -1092,7 +1100,10 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
         "rerun_commands": {
             "presence_only": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env",
             "bounded_version_help": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --run-command-probes",
-            "plan_index": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env",
+            "with_preflight_evidence": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
+            "with_preflight_manifest": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json",
+            "plan_index": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
+            "plan_index_manifest": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json",
         },
         "operator_must_not": [
             "paste secret values into chat or artifact files",
@@ -1111,6 +1122,12 @@ def _setup_closure_markdown(plan: dict[str, Any]) -> str:
         f"- Remaining failures: {', '.join(plan['remaining_failures']) if plan['remaining_failures'] else 'none'}",
         "- Mode: artifact-only, headless, non-mutating, no secret values emitted",
         f"- Source readiness: `{plan['source_readiness_artifact']}`",
+        "",
+        "## Evidence Artifacts",
+        "",
+        f"- Template: `{plan['preflight_evidence_template']}`",
+        f"- Example: `{plan['preflight_evidence_example']}`",
+        f"- Manifest example: `{plan['preflight_evidence_manifest_example']}`",
         "",
         "## Rerun Commands",
         "",

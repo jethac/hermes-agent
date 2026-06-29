@@ -225,7 +225,12 @@ def test_write_probe_artifacts(tmp_path):
     assert "phone-context.json" in json.dumps(execution_plan)
     assert "VoiceOps Milestone 2 Execution Plan" in execution_markdown
     assert setup_closure["schema_version"] == "voiceops.milestone2.setup_closure.v1"
+    assert setup_closure["preflight_evidence_template"] == "provisioning-preflight-evidence.template.json"
+    assert setup_closure["preflight_evidence_example"] == "provisioning-preflight-evidence.example.json"
+    assert setup_closure["preflight_evidence_manifest_example"] == "provisioning-preflight-evidence.manifest.example.json"
+    assert "provisioning-preflight-evidence.manifest.json" in setup_closure["rerun_commands"]["with_preflight_manifest"]
     assert "VoiceOps Milestone 2 Setup Closure Plan" in setup_markdown
+    assert "Manifest example" in setup_markdown
     assert preflight_example["example_only"] is True
     assert preflight_manifest_example["example_only"] is True
     assert preflight_manifest_example["reports"]["stripe_projects"].endswith("stripe-projects-evidence.json")
@@ -302,6 +307,33 @@ def test_preflight_evidence_manifest_merges_redacted_section_files(tmp_path):
     assert loaded["missing_fields"] == []
     assert loaded["validation_issues"] == []
     assert report["ready"] is True
+
+
+def test_preflight_evidence_manifest_prefers_manifest_relative_paths(monkeypatch, tmp_path):
+    manifest_dir = tmp_path / "manifest-dir"
+    cwd_dir = tmp_path / "cwd"
+    manifest_dir.mkdir()
+    cwd_dir.mkdir()
+    manifest_section = {"account_ref": "stripe-link-account-ref-demo", "approval_capability_confirmed": True, "max_approved_cents": 20_000, "currency": "usd"}
+    cwd_section = {"account_ref": "sk_live_wrong_file_should_not_load", "approval_capability_confirmed": True, "max_approved_cents": 20_000, "currency": "usd"}
+    (manifest_dir / "stripe-link.json").write_text(json.dumps(manifest_section), encoding="utf-8")
+    (cwd_dir / "stripe-link.json").write_text(json.dumps(cwd_section), encoding="utf-8")
+    manifest_path = manifest_dir / "preflight-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+                "reports": {"stripe_link": "stripe-link.json"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(cwd_dir)
+
+    loaded = load_preflight_evidence(manifest_path)
+
+    assert "stripe_link.account_ref" in loaded["fields_present"]
+    assert not any("secret-like value" in issue for issue in loaded["validation_issues"])
 
 
 def test_preflight_evidence_manifest_rejects_example_or_invalid_sections(tmp_path):

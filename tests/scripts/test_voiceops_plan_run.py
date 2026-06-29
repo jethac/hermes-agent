@@ -100,6 +100,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert payload["ok"] is True
     assert closure["artifact_id"] == "voiceops-plan-readiness-closure"
     assert closure["schema_version"] == "voiceops.closure_index.v1"
+    provisioning_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "spend_and_provisioning_preflight")
+    assert provisioning_gate["evidence_manifest_example"].endswith(
+        "provisioning-preflight-evidence.manifest.example.json"
+    )
+    assert "provisioning-preflight-evidence.manifest.json" in provisioning_gate["rerun_commands"]["plan_index_manifest"]
     spark_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "local_spark_stack_matrix")
     assert spark_gate["closure_plan"].endswith("spark-matrix-closure-plan.json")
     assert spark_gate["closure_artifact"].endswith("spark-matrix-closure-plan.md")

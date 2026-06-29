@@ -151,6 +151,8 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "missing": provisioning_missing,
             "evidence_template": provisioning["artifacts"].get("preflight_evidence_template"),
             "template_artifact": provisioning["artifacts"].get("preflight_evidence_template"),
+            "evidence_example": provisioning["artifacts"].get("preflight_evidence_example"),
+            "evidence_manifest_example": provisioning["artifacts"].get("preflight_evidence_manifest_example"),
             "closure_plan": provisioning["artifacts"].get("setup_closure_json"),
             "closure_artifact": provisioning["artifacts"].get("setup_closure_markdown"),
             "requirement_fields_per_gate": [
@@ -182,6 +184,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current --env-file .env "
                     "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json"
+                ),
+                "plan_index_manifest": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json"
                 ),
             },
             "rerun_command": (
