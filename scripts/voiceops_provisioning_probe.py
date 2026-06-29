@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -1533,7 +1534,7 @@ def _build_readonly_discovery_report(
     status = "not_requested"
     if run_discovery:
         status = "fail" if failed else "needs_tools" if missing else "pass"
-    return {
+    report = {
         "schema_version": READ_ONLY_DISCOVERY_SCHEMA_VERSION,
         "generated_at": _utc_now(),
         "run_requested": run_discovery,
@@ -1551,6 +1552,8 @@ def _build_readonly_discovery_report(
         "blocked_capabilities": BLOCKED_CAPABILITIES,
         "probes": probes,
     }
+    report["collector_attestation"] = _readonly_discovery_collector_attestation(report)
+    return report
 
 
 def _readonly_discovery_not_loaded() -> dict[str, Any]:
@@ -1562,10 +1565,41 @@ def _readonly_discovery_not_loaded() -> dict[str, Any]:
     )
 
 
+def _readonly_discovery_report_redacted_sha256(discovery: Mapping[str, Any]) -> str:
+    attested_payload = dict(discovery)
+    attested_payload.pop("collector_attestation", None)
+    encoded = json.dumps(attested_payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _readonly_discovery_collector_attestation(discovery: Mapping[str, Any]) -> dict[str, Any]:
+    redacted_sha256 = _readonly_discovery_report_redacted_sha256(discovery)
+    timestamp = _utc_now()
+    return {
+        "collector_name": "scripts.voiceops_provisioning_probe",
+        "collector_version": "voiceops.milestone2.read_only_discovery.v1",
+        "run_id": f"read-only-discovery-{redacted_sha256[:12]}",
+        "command_argv": [sys.executable, "scripts/voiceops_provisioning_probe.py"],
+        "git_commit": "unavailable",
+        "started_at": str(discovery.get("generated_at") or timestamp),
+        "finished_at": timestamp,
+        "raw_artifact_sha256": redacted_sha256,
+        "redacted_artifact_sha256": redacted_sha256,
+        "parent_manifest_sha256": redacted_sha256,
+    }
+
+
 def _readonly_discovery_validation_issues(discovery: Mapping[str, Any]) -> list[str]:
     issues: list[str] = []
     if str(discovery.get("schema_version") or "") != READ_ONLY_DISCOVERY_SCHEMA_VERSION:
         issues.append("read_only_discovery:missing_or_invalid_schema_version")
+    issues.extend(
+        _collector_attestation_issues(
+            discovery,
+            section_name="read_only_discovery",
+            expected_redacted_sha256=_readonly_discovery_report_redacted_sha256(discovery),
+        )
+    )
     required_flags = {
         "non_mutating": True,
         "does_not_grant_approval": True,
@@ -1629,8 +1663,20 @@ def _load_readonly_discovery_report(path: Path) -> tuple[Mapping[str, Any] | Non
         if not report_ref:
             return None, ["read_only_discovery_manifest:missing_report"]
         report_path = _resolve_manifest_report_path(path, report_ref)
-        report, issues = _load_readonly_discovery_report(report_path)
+        expected_report_sha256 = str(payload.get("report_sha256") or "").strip().lower()
         manifest_issues: list[str] = []
+        if not expected_report_sha256:
+            manifest_issues.append("read_only_discovery_manifest:report_sha256:missing")
+        elif not _valid_sha256(expected_report_sha256):
+            manifest_issues.append("read_only_discovery_manifest:report_sha256:invalid")
+        else:
+            try:
+                actual_report_sha256 = _file_sha256(report_path)
+            except OSError:
+                actual_report_sha256 = None
+            if actual_report_sha256 is not None and expected_report_sha256 != actual_report_sha256:
+                manifest_issues.append("read_only_discovery_manifest:report_sha256:mismatch")
+        report, issues = _load_readonly_discovery_report(report_path)
         if str(payload.get("status") or "") != "pass":
             manifest_issues.append("read_only_discovery_manifest:status_not_pass")
         if payload.get("does_not_grant_approval") is not True:
@@ -2191,6 +2237,10 @@ def build_probe_report(
 
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -3140,11 +3190,12 @@ def _read_only_discovery_markdown(discovery: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _read_only_discovery_manifest(discovery: dict[str, Any]) -> dict[str, Any]:
+def _read_only_discovery_manifest(discovery: dict[str, Any], *, report_sha256: str) -> dict[str, Any]:
     return {
         "schema_version": "voiceops.milestone2.read_only_discovery_manifest.v1",
         "generated_at": _utc_now(),
         "report": "read-only-discovery.json",
+        "report_sha256": report_sha256,
         "markdown": "read-only-discovery.md",
         "audit_ledger": "audit-ledger.read-only-discovery.jsonl",
         "run_requested": discovery["run_requested"],
@@ -3648,11 +3699,18 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
     paths["markdown"].write_text(_markdown(report), encoding="utf-8")
     _write_json(paths["command_manifest"], _safe_command_manifest_json())
     _write_json(paths["read_only_discovery_json"], report["read_only_discovery"])
+    read_only_discovery_report_sha256 = _file_sha256(paths["read_only_discovery_json"])
     paths["read_only_discovery_markdown"].write_text(
         _read_only_discovery_markdown(report["read_only_discovery"]),
         encoding="utf-8",
     )
-    _write_json(paths["read_only_discovery_manifest"], _read_only_discovery_manifest(report["read_only_discovery"]))
+    _write_json(
+        paths["read_only_discovery_manifest"],
+        _read_only_discovery_manifest(
+            report["read_only_discovery"],
+            report_sha256=read_only_discovery_report_sha256,
+        ),
+    )
     _write_jsonl(
         paths["read_only_discovery_audit_ledger"],
         _read_only_discovery_ledger_rows(report["read_only_discovery"]),

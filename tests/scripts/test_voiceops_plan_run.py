@@ -290,59 +290,66 @@ def _write_post_approval_receipts(root: Path) -> Path:
 
 def _write_readonly_discovery_evidence(root: Path) -> Path:
     commands = [["link-cli", "auth", "status"], ["stripe", "projects", "list", "--limit", "10"]]
-    report_path = _write_json(
-        root / "read-only-discovery.json",
-        {
-            "schema_version": "voiceops.milestone2.read_only_discovery.v1",
-            "generated_at": "2026-06-29T00:00:00Z",
-            "run_requested": True,
-            "non_mutating": True,
-            "does_not_grant_approval": True,
-            "redacted_outputs_only": True,
-            "required_for_live_provisioning_approval": True,
-            "auth_context": "isolated_home",
-            "proves_existing_local_auth": False,
-            "network_io_possible": True,
-            "status": "pass",
-            "failed_probe_ids": [],
-            "missing_probe_ids": [],
-            "allowlisted_commands": commands,
-            "blocked_capabilities": [
-                "live_spend",
-                "provider_provisioning",
-                "credential_retrieval",
-                "outbound_phone_calls",
-                "account_mutation",
-                "network_tunnels",
-            ],
-            "probes": [
-                {
-                    "probe_id": "stripe_projects_catalog_list",
-                    "area": "stripe_projects",
-                    "argv": ["stripe", "projects", "list", "--limit", "10"],
-                    "status": "pass",
-                    "executed": True,
-                    "found": True,
-                    "purpose": "display-only Projects catalog visibility",
-                },
-                {
-                    "probe_id": "stripe_link_auth_status",
-                    "area": "stripe_link",
-                    "argv": ["link-cli", "auth", "status"],
-                    "status": "pass",
-                    "executed": True,
-                    "found": True,
-                    "purpose": "display-only Link auth status",
-                },
-            ],
-        },
+    payload = {
+        "schema_version": "voiceops.milestone2.read_only_discovery.v1",
+        "generated_at": "2026-06-29T00:00:00Z",
+        "run_requested": True,
+        "non_mutating": True,
+        "does_not_grant_approval": True,
+        "redacted_outputs_only": True,
+        "required_for_live_provisioning_approval": True,
+        "auth_context": "isolated_home",
+        "proves_existing_local_auth": False,
+        "network_io_possible": True,
+        "status": "pass",
+        "failed_probe_ids": [],
+        "missing_probe_ids": [],
+        "allowlisted_commands": commands,
+        "blocked_capabilities": [
+            "live_spend",
+            "provider_provisioning",
+            "credential_retrieval",
+            "outbound_phone_calls",
+            "account_mutation",
+            "network_tunnels",
+        ],
+        "probes": [
+            {
+                "probe_id": "stripe_projects_catalog_list",
+                "area": "stripe_projects",
+                "argv": ["stripe", "projects", "list", "--limit", "10"],
+                "status": "pass",
+                "executed": True,
+                "found": True,
+                "purpose": "display-only Projects catalog visibility",
+            },
+            {
+                "probe_id": "stripe_link_auth_status",
+                "area": "stripe_link",
+                "argv": ["link-cli", "auth", "status"],
+                "status": "pass",
+                "executed": True,
+                "found": True,
+                "purpose": "display-only Link auth status",
+            },
+        ],
+    }
+    attested_payload = dict(payload)
+    redacted_sha256 = hashlib.sha256(
+        json.dumps(attested_payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+    payload["collector_attestation"] = _collector_attestation(
+        "read_only_discovery",
+        redacted_sha256=redacted_sha256,
     )
+    report_path = _write_json(root / "read-only-discovery.json", payload)
     return _write_json(
         root / "read-only-discovery.manifest.json",
         {
             "schema_version": "voiceops.milestone2.read_only_discovery_manifest.v1",
             "generated_at": "2026-06-29T00:00:00Z",
             "report": report_path.name,
+            "report_sha256": hashlib.sha256(report_path.read_bytes()).hexdigest(),
             "markdown": "read-only-discovery.md",
             "audit_ledger": "audit-ledger.read-only-discovery.jsonl",
             "run_requested": True,

@@ -22,6 +22,7 @@ from scripts.voiceops_provisioning_probe import (
     load_payment_skill_bundle_evidence,
     load_post_approval_receipts,
     load_preflight_evidence,
+    load_readonly_discovery_evidence,
     parse_args,
     refresh_preflight_source_hashes,
     validate_nemoclaw_action_packet,
@@ -148,6 +149,13 @@ def _with_post_approval_attestation(payload: dict[str, object]) -> dict[str, obj
         _post_approval_redacted_sha256(payload),
     )
     return payload
+
+
+def _readonly_discovery_redacted_sha256(payload: dict[str, object]) -> str:
+    attested_payload = dict(payload)
+    attested_payload.pop("collector_attestation", None)
+    encoded = json.dumps(attested_payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _write_preflight_evidence(tmp_path: Path, payload: dict[str, object] | None = None) -> Path:
@@ -556,8 +564,15 @@ def test_write_probe_artifacts(tmp_path):
     assert discovery["schema_version"] == "voiceops.milestone2.read_only_discovery.v1"
     assert discovery["run_requested"] is False
     assert discovery["does_not_grant_approval"] is True
+    assert discovery["collector_attestation"]["collector_name"] == "scripts.voiceops_provisioning_probe"
+    assert discovery["collector_attestation"]["redacted_artifact_sha256"] == _readonly_discovery_redacted_sha256(
+        discovery
+    )
     assert discovery_manifest["schema_version"] == "voiceops.milestone2.read_only_discovery_manifest.v1"
     assert discovery_manifest["audit_ledger"] == "audit-ledger.read-only-discovery.jsonl"
+    assert discovery_manifest["report_sha256"] == hashlib.sha256(
+        Path(paths["read_only_discovery_json"]).read_bytes()
+    ).hexdigest()
     assert Path(paths["read_only_discovery_audit_ledger"]).read_text(encoding="utf-8") == ""
     assert manifest["schema_version"] == "voiceops.milestone2.safe_command_manifest.v1"
     assert "read_only_discovery_commands" in manifest
@@ -1029,9 +1044,104 @@ def test_readonly_discovery_evidence_closes_gate_without_running_discovery(tmp_p
     assert report["ready"] is True
     assert report["required_failures"] == []
     assert report["read_only_discovery"]["status"] == "pass"
+    assert report["read_only_discovery"]["validation_issues"] == []
     assert report["read_only_discovery"]["loaded_from_evidence"] is True
     assert report["read_only_discovery"]["network_io_possible"] is False
     assert report["read_only_discovery"]["source_network_io_possible"] is True
+
+
+def test_readonly_discovery_manifest_rejects_missing_report_sha256(tmp_path):
+    discovery_report = build_probe_report(
+        env={},
+        env_files=[],
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+    paths = write_probe_artifacts(tmp_path / "discovery", discovery_report)
+    manifest_path = Path(paths["read_only_discovery_manifest"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("report_sha256")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    loaded = load_readonly_discovery_evidence(manifest_path)
+
+    assert loaded["status"] == "fail"
+    assert "read_only_discovery_manifest:report_sha256:missing" in loaded["validation_issues"]
+
+
+def test_readonly_discovery_manifest_rejects_stale_report_sha256(tmp_path):
+    discovery_report = build_probe_report(
+        env={},
+        env_files=[],
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+    paths = write_probe_artifacts(tmp_path / "discovery", discovery_report)
+    manifest_path = Path(paths["read_only_discovery_manifest"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["report_sha256"] = "0" * 64
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    loaded = load_readonly_discovery_evidence(manifest_path)
+
+    assert loaded["status"] == "fail"
+    assert "read_only_discovery_manifest:report_sha256:mismatch" in loaded["validation_issues"]
+
+
+def test_readonly_discovery_report_rejects_missing_collector_attestation(tmp_path):
+    discovery_report = build_probe_report(
+        env={},
+        env_files=[],
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+    paths = write_probe_artifacts(tmp_path / "discovery", discovery_report)
+    report_path = Path(paths["read_only_discovery_json"])
+    manifest_path = Path(paths["read_only_discovery_manifest"])
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report.pop("collector_attestation")
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["report_sha256"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    loaded = load_readonly_discovery_evidence(manifest_path)
+
+    assert loaded["status"] == "fail"
+    assert "read_only_discovery.collector_attestation: missing" in loaded["validation_issues"]
+
+
+def test_readonly_discovery_report_rejects_stale_collector_attestation_hash(tmp_path):
+    discovery_report = build_probe_report(
+        env={},
+        env_files=[],
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+    paths = write_probe_artifacts(tmp_path / "discovery", discovery_report)
+    report_path = Path(paths["read_only_discovery_json"])
+    manifest_path = Path(paths["read_only_discovery_manifest"])
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["collector_attestation"]["redacted_artifact_sha256"] = "0" * 64
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["report_sha256"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    loaded = load_readonly_discovery_evidence(manifest_path)
+
+    assert loaded["status"] == "fail"
+    assert "read_only_discovery.collector_attestation.redacted_artifact_sha256: mismatch" in loaded[
+        "validation_issues"
+    ]
 
 
 def test_refresh_preflight_manifest_source_sha256_updates_section_files(tmp_path):
