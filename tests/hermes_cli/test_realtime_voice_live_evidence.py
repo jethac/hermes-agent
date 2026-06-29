@@ -39,6 +39,71 @@ def test_live_evidence_collects_loopback_and_readiness_reports(monkeypatch, tmp_
     assert manifest["evidence_context"]["env_presence"]["GEMINI_API_KEY"] is False
 
 
+def test_live_evidence_manifest_references_optional_sidecar_and_turn_evidence(monkeypatch, tmp_path):
+    async def fake_loopback():
+        return _FakeProbeResult(ok=True)
+
+    async def fake_live(_args):
+        return _FakeProbeResult(ok=True)
+
+    sidecar_path = tmp_path / "sidecar-session.json"
+    live_turn_path = tmp_path / "live-turn.json"
+    sidecar_path.write_text(json.dumps({"sidecar_running": True}), encoding="utf-8")
+    live_turn_path.write_text(json.dumps({"transcript_observed": True}), encoding="utf-8")
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", fake_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", fake_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+            "--live-turn-evidence",
+            str(live_turn_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    assert result.ok is True
+    assert result.reports["sidecar_session"] == str(sidecar_path)
+    assert result.reports["live_turn"] == str(live_turn_path)
+    manifest = json.loads((tmp_path / "bundle" / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["reports"]["sidecar_session"] == str(sidecar_path)
+    assert manifest["reports"]["live_turn"] == str(live_turn_path)
+
+
+def test_live_evidence_manifest_rejects_invalid_optional_evidence(monkeypatch, tmp_path):
+    async def fake_loopback():
+        return _FakeProbeResult(ok=True)
+
+    async def fake_live(_args):
+        return _FakeProbeResult(ok=True)
+
+    bad_turn_path = tmp_path / "live-turn.json"
+    bad_turn_path.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", fake_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", fake_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--sidecar-session-evidence",
+            str(tmp_path / "missing-sidecar.json"),
+            "--live-turn-evidence",
+            str(bad_turn_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    assert result.ok is False
+    assert "sidecar_session: evidence file not found" in result.issues
+    assert "live_turn: evidence root must be an object" in result.issues
+    assert "sidecar_session" not in result.reports
+    assert "live_turn" not in result.reports
+
+
 def test_live_evidence_strict_mode_requires_live_discord_and_openai(monkeypatch, tmp_path):
     async def fake_loopback():
         return _FakeProbeResult(ok=True)

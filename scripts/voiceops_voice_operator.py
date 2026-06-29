@@ -637,7 +637,9 @@ def build_voice_operator_report(smoke: dict[str, Any], *, live_evidence: dict[st
             "recommended_command": (
                 "uv run python -m hermes_cli.realtime_voice_live_evidence "
                 "--output-dir artifacts/realtime-voice-evidence/live-current "
-                "--require-live-discord --require-inbound --wait-seconds 5"
+                "--require-live-discord --require-inbound --wait-seconds 5 "
+                "--sidecar-session-evidence path/to/sidecar-session.json "
+                "--live-turn-evidence path/to/live-turn.json"
             ),
             "ingest_command": (
                 "uv run python scripts/voiceops_voice_operator.py "

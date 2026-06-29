@@ -56,6 +56,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Require inbound speech frames during the Discord live probe",
     )
+    parser.add_argument(
+        "--sidecar-session-evidence",
+        type=Path,
+        help="Optional read-only sidecar session evidence JSON to reference from the manifest",
+    )
+    parser.add_argument(
+        "--live-turn-evidence",
+        type=Path,
+        help="Optional read-only live turn evidence JSON to reference from the manifest",
+    )
     return parser
 
 
@@ -87,6 +97,19 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
     if args.require_live_discord and not getattr(live_result, "ok", False):
         issues.append(f"discord_live_probe: {getattr(live_result, 'error', '') or 'failed'}")
 
+    _attach_optional_evidence_report(
+        reports=reports,
+        issues=issues,
+        report_key="sidecar_session",
+        path=getattr(args, "sidecar_session_evidence", None),
+    )
+    _attach_optional_evidence_report(
+        reports=reports,
+        issues=issues,
+        report_key="live_turn",
+        path=getattr(args, "live_turn_evidence", None),
+    )
+
     if args.require_openai_realtime and not _openai_realtime_key_present():
         issues.append("openai_realtime: OPENAI_API_KEY or HERMES_OPENAI_REALTIME_API_KEY is required")
     if args.require_gemini_live and not _gemini_live_key_present():
@@ -104,6 +127,30 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
     )
     _write_json(output_dir / "manifest.json", asdict(result))
     return result
+
+
+def _attach_optional_evidence_report(
+    *,
+    reports: dict[str, str],
+    issues: list[str],
+    report_key: str,
+    path: Path | None,
+) -> None:
+    if path is None:
+        return
+    resolved = path.expanduser()
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        issues.append(f"{report_key}: evidence file not found")
+        return
+    except json.JSONDecodeError as exc:
+        issues.append(f"{report_key}: evidence JSON parse failed: {exc.msg}")
+        return
+    if not isinstance(payload, dict):
+        issues.append(f"{report_key}: evidence root must be an object")
+        return
+    reports[report_key] = str(resolved)
 
 
 async def _run_discord_loopback_smoke() -> Any:

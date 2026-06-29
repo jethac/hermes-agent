@@ -313,7 +313,9 @@ uv run python -m hermes_cli.realtime_voice_live_evidence \
   --output-dir artifacts/realtime-voice-evidence/live-current \
   --require-live-discord \
   --require-inbound \
-  --wait-seconds 5
+  --wait-seconds 5 \
+  --sidecar-session-evidence path/to/sidecar-session.json \
+  --live-turn-evidence path/to/live-turn.json
 ```
 
 ```bash
