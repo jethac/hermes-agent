@@ -12,8 +12,18 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     demo = build_demo(args)
     paths = write_demo(tmp_path, demo)
 
-    assert set(paths) == {"json", "markdown", "audit_ledger", "demo_script", "stripe_actions"}
+    assert set(paths) == {
+        "json",
+        "markdown",
+        "audit_ledger",
+        "demo_script",
+        "nemoclaw_packet",
+        "phone_context",
+        "stripe_actions",
+    }
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
+    nemoclaw = json.loads(Path(paths["nemoclaw_packet"]).read_text(encoding="utf-8"))
+    phone_context = json.loads(Path(paths["phone_context"]).read_text(encoding="utf-8"))
     action_ids = {action["action_id"] for action in payload["ops_actions"]}
     assert payload["spark_stack"]["local_first"] is True
     assert payload["sponsor_stack"]["nemotron_3_ultra"]["selection"].startswith("Nemotron 3 Ultra")
@@ -23,7 +33,16 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "provision-voip-provider" in action_ids
     assert "call-user-phone" in action_ids
     assert payload["totals"]["held_budget_cents"] > 0
+    assert nemoclaw["runtime"] == "NemoClaw"
+    assert nemoclaw["mode"] == "dry_run_until_user_approval"
+    assert "unapproved_purchase" in nemoclaw["blocked_capabilities"]
+    assert "stripe projects add twilio/voice" in nemoclaw["dry_run_commands"]
+    assert phone_context["target_channel"] == "phone"
+    assert phone_context["status"] == "queued_requires_approval"
+    assert phone_context["pending_approvals"]
     assert "DGX Spark" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "nemoclaw-action-packet.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "phone-context.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "spoken in Discord" in Path(paths["demo_script"]).read_text(encoding="utf-8")
     assert "outbound phone call" in Path(paths["demo_script"]).read_text(encoding="utf-8")
 

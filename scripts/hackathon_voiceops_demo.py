@@ -246,6 +246,66 @@ def _audit_events(actions: Iterable[OpsAction]) -> list[AuditEvent]:
     return events
 
 
+def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
+    approval_actions = [action for action in demo["ops_actions"] if action["requires_approval"]]
+    return {
+        "packet_id": "voiceops-nemoclaw-demo-001",
+        "runtime": "NemoClaw",
+        "mode": "dry_run_until_user_approval",
+        "source_channel": "discord_voice",
+        "oracle_model": demo["sponsor_stack"]["nemotron_3_ultra"]["selection"],
+        "spend_policy": demo["spend_policy"],
+        "allowed_capabilities": [
+            "stripe_projects_catalog",
+            "stripe_projects_voip_provisioning_after_approval",
+            "stripe_link_spend_request_after_approval",
+            "phone_call_queue_after_approval",
+            "discord_and_whatsapp_status_post",
+        ],
+        "blocked_capabilities": [
+            "raw_card_data_in_model_context",
+            "unapproved_purchase",
+            "unapproved_recurring_charge",
+            "unapproved_credential_deletion",
+            "unbounded_network_access",
+        ],
+        "approval_required_actions": approval_actions,
+        "dry_run_commands": [action["command"] for action in approval_actions],
+        "audit_event_ids": [event["event_id"] for event in demo["audit_events"]],
+    }
+
+
+def _phone_context_packet(demo: dict[str, Any]) -> dict[str, Any]:
+    approval_actions = [action for action in demo["ops_actions"] if action["requires_approval"]]
+    return {
+        "handoff_id": "voiceops-phone-handoff-001",
+        "source_channel": "discord_voice",
+        "target_channel": "phone",
+        "status": "queued_requires_approval",
+        "context_summary": (
+            "The user gave Hermes a 200 dollar Stripe Skills budget in Discord voice, "
+            "asked Hermes to provision a VoIP provider account, and asked Hermes to "
+            "call their phone with the same context."
+        ),
+        "spoken_opening": (
+            "I am continuing from Discord. You gave me a 200 dollar budget to "
+            "provision VoIP through Stripe Skills, and I am waiting on your approval "
+            "before live spend."
+        ),
+        "budget": demo["spend_policy"],
+        "pending_approvals": [
+            {
+                "action_id": action["action_id"],
+                "provider": action["provider"],
+                "estimated_cents": action["estimated_cents"],
+                "purpose": action["purpose"],
+            }
+            for action in approval_actions
+        ],
+        "audit_event_ids": [event["event_id"] for event in demo["audit_events"]],
+    }
+
+
 def build_demo(args: argparse.Namespace) -> dict[str, Any]:
     actions = _ops_actions(args.budget_cents)
     approval_total = sum(action.estimated_cents for action in actions if action.requires_approval and action.status == "queued")
@@ -336,6 +396,11 @@ def _markdown(demo: dict[str, Any]) -> str:
         )
     lines.extend([
         "",
+        "## Evidence artifacts",
+        "",
+        "- `nemoclaw-action-packet.json`: sandbox and approval frame for billable/network-capable actions",
+        "- `phone-context.json`: outbound phone-call handoff context preserved from Discord",
+        "",
         "## 90-second video beat sheet",
         "",
         "1. Join Discord voice and give Hermes a fixed Stripe Skills budget.",
@@ -402,12 +467,16 @@ def write_demo(output_dir: Path, demo: dict[str, Any]) -> dict[str, str]:
         "markdown": output_dir / "voiceops-demo.md",
         "audit_ledger": output_dir / "audit-ledger.jsonl",
         "demo_script": output_dir / "demo-script.md",
+        "nemoclaw_packet": output_dir / "nemoclaw-action-packet.json",
+        "phone_context": output_dir / "phone-context.json",
         "stripe_actions": output_dir / "stripe-actions-dry-run.sh",
     }
     _write_json(paths["json"], demo)
     paths["markdown"].write_text(_markdown(demo), encoding="utf-8")
     _write_jsonl(paths["audit_ledger"], demo["audit_events"])
     paths["demo_script"].write_text(_demo_script(demo), encoding="utf-8")
+    _write_json(paths["nemoclaw_packet"], _nemoclaw_action_packet(demo))
+    _write_json(paths["phone_context"], _phone_context_packet(demo))
     paths["stripe_actions"].write_text(_stripe_script(demo["ops_actions"]), encoding="utf-8")
     paths["stripe_actions"].chmod(0o755)
     return {key: str(path) for key, path in paths.items()}
