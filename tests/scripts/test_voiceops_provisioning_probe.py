@@ -22,6 +22,13 @@ from scripts.voiceops_provisioning_probe import (
 )
 
 
+def _dot_get(payload, ref):
+    cursor = payload
+    for part in ref.split("."):
+        cursor = cursor[part]
+    return cursor
+
+
 def _complete_preflight_evidence() -> dict[str, object]:
     evidence = build_preflight_evidence_template()
     evidence["stripe_projects"].update(
@@ -625,9 +632,12 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
     assert "receipt_id" in plan["receipt_schema"]["required_fields"]
     assert "credential_ref_id" in plan["credential_location_schema"]["required_fields"]
     assert "raw_secret" in plan["credential_location_schema"]["forbidden_fields"]
-    assert {"deprovision_voip_provider", "refund_or_cancel_service_credit", "cancel_or_end_phone_handoff"} <= set(
-        plan["rollback_plan"]
-    )
+    assert {
+        "deprovision_voip_provider",
+        "refund_or_cancel_service_credit",
+        "cancel_or_end_phone_handoff",
+        "correct_or_remove_status_message",
+    } <= set(plan["rollback_plan"])
 
     risky_steps = [
         step
@@ -643,6 +653,38 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
         "stripe-link-spend",
         "stripe-projects-provisioning",
     }
+    assert {step["step_id"] for step in risky_steps} <= {
+        action["action_id"] for action in plan["approval_required_actions"]
+    }
+    assert set(plan["approval_contracts"]) == {
+        action["action_id"] for action in plan["approval_required_actions"]
+    }
+    for action in plan["approval_required_actions"]:
+        receipt_slot = _dot_get(plan, action["expected_receipt_ref"])
+        rollback_slot = _dot_get(plan, action["rollback_ref"])
+        assert receipt_slot["status"] == "not_executed"
+        assert receipt_slot["schema_ref"] == "receipt_schema"
+        assert rollback_slot
+        contract = action["approval_contract"]
+        assert contract == plan["approval_contracts"][action["action_id"]]
+        assert len(contract["command_sha256"]) == 64
+        assert contract["approved_by_ref"] is None
+        assert contract["allowed_decisions"] == ["approve_once", "deny", "hold"]
+        if action["credential_location_required"]:
+            credential_slot = _dot_get(plan, action["credential_location_ref"])
+            assert action["credential_location_schema_ref"] == "credential_location_schema"
+            assert credential_slot["status"] == "not_created"
+            assert credential_slot["schema_ref"] == "credential_location_schema"
+        else:
+            assert action["credential_location_ref"] is None
+            assert action["credential_location_schema_ref"] is None
+    assert set(plan["expected_post_approval_evidence"]) == {
+        action["action_id"] for action in plan["approval_required_actions"]
+    }
+    assert all(
+        evidence["execution_status"] == "not_executed"
+        for evidence in plan["expected_post_approval_evidence"].values()
+    )
 
     serialized = json.dumps(plan)
     assert "sk_live_123456789abcdef" not in serialized

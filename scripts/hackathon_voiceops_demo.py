@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import html
 import json
 import os
@@ -64,9 +65,21 @@ class AuditEvent:
     event_id: str
     actor: str
     action: str
+    provider: str
     amount_cents: int
     status: str
     evidence: str
+    requested_by: str
+    proposed_by: str
+    budget_policy_ref: str
+    command: str
+    approval_required: bool
+    approval_status: str
+    result: str
+    receipt_ref: str | None
+    credential_location_ref: str | None
+    rollback_ref: str | None
+    notification_channel: str
 
 
 @dataclass(frozen=True)
@@ -477,6 +490,60 @@ def _ops_actions(total_budget_cents: int) -> list[OpsAction]:
     return selected
 
 
+def _action_ref_slug(action_id: str) -> str:
+    return action_id.replace("-", "_")
+
+
+def _approval_status(action: OpsAction | Mapping[str, Any]) -> str:
+    requires_approval = bool(action["requires_approval"] if isinstance(action, Mapping) else action.requires_approval)
+    status = str(action["status"] if isinstance(action, Mapping) else action.status)
+    if not requires_approval:
+        return "not_required"
+    if status == "queued":
+        return "pending_operator_approval"
+    if status == "held-budget":
+        return "held_budget"
+    return "approval_required"
+
+
+def _action_result(action: OpsAction | Mapping[str, Any]) -> str:
+    status = str(action["status"] if isinstance(action, Mapping) else action.status)
+    if status == "ready":
+        return "planned_not_executed"
+    if status == "queued":
+        return "blocked_until_explicit_approval"
+    if status == "held-budget":
+        return "blocked_by_budget_cap"
+    return "recorded_not_executed"
+
+
+def _rollback_ref(action_id: str) -> str | None:
+    mapping = {
+        "grant-spend-budget": "audit_requirements.superseding_spend_policy_event",
+        "provision-voip-provider": "rollback_plan.deprovision_voip_provider",
+        "buy-service-credit": "rollback_plan.refund_or_cancel_service_credit",
+        "persist-call-context": "audit_requirements.corrected_context_packet",
+        "call-user-phone": "rollback_plan.cancel_or_end_phone_handoff",
+        "draft-status": "audit_requirements.redacted_status_correction",
+    }
+    return mapping.get(action_id)
+
+
+def _credential_location_ref(action_id: str) -> str | None:
+    mapping = {
+        "provision-voip-provider": "credential_locations.voip_provider",
+        "buy-service-credit": "credential_locations.stripe_link",
+        "call-user-phone": "credential_locations.phone_bridge",
+    }
+    return mapping.get(action_id)
+
+
+def _receipt_ref(action_id: str) -> str | None:
+    if action_id in {"provision-voip-provider", "buy-service-credit", "call-user-phone", "draft-status"}:
+        return f"receipts.{_action_ref_slug(action_id)}"
+    return None
+
+
 def _audit_events(actions: Iterable[OpsAction]) -> list[AuditEvent]:
     events: list[AuditEvent] = []
     for index, action in enumerate(actions, start=1):
@@ -485,16 +552,58 @@ def _audit_events(actions: Iterable[OpsAction]) -> list[AuditEvent]:
                 event_id=f"evt-{index:03d}",
                 actor="hermes-voiceops",
                 action=action.action_id,
+                provider=action.provider,
                 amount_cents=action.estimated_cents,
                 status=action.status,
                 evidence=f"action:{action.provider}:{action.action_id}",
+                requested_by="discord_voice:jetha",
+                proposed_by=f"{action.provider}:dry_run_planner",
+                budget_policy_ref="spend_policy.household-business-daily-ops",
+                command=action.command,
+                approval_required=action.requires_approval,
+                approval_status=_approval_status(action),
+                result=_action_result(action),
+                receipt_ref=_receipt_ref(action.action_id),
+                credential_location_ref=_credential_location_ref(action.action_id),
+                rollback_ref=_rollback_ref(action.action_id),
+                notification_channel="discord_text_status",
             )
         )
     return events
 
 
+def _approval_contract(action: Mapping[str, Any]) -> dict[str, Any]:
+    preflight_by_action = {
+        "provision-voip-provider": ["stripe_cli", "stripe_projects_cli", "mpp_agent"],
+        "buy-service-credit": ["stripe_link_cli", "mpp_agent"],
+        "call-user-phone": ["phone_target", "phone_provider", "mpp_agent", "channel_policy"],
+    }
+    ttl_by_action = {
+        "buy-service-credit": 900,
+        "call-user-phone": 900,
+    }
+    command = str(action["command"])
+    return {
+        "approval_id": f"voiceops-demo-{action['action_id']}",
+        "action_id": action["action_id"],
+        "approval_channel": "discord_voice_operator_confirmation",
+        "approval_artifact": "nemoclaw-action-packet.json",
+        "approved_by_ref": None,
+        "command_sha256": hashlib.sha256(command.encode("utf-8")).hexdigest(),
+        "required_preflight_gates": preflight_by_action.get(str(action["action_id"]), ["mpp_agent"]),
+        "allowed_decisions": ["approve_once", "deny", "hold"],
+        "default_decision": "hold",
+        "ttl_seconds": ttl_by_action.get(str(action["action_id"]), 1800),
+        "status": "pending" if action["status"] == "queued" else "blocked",
+    }
+
+
 def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
-    approval_actions = [action for action in demo["ops_actions"] if action["requires_approval"]]
+    approval_actions = [
+        {**action, "approval_contract": _approval_contract(action)}
+        for action in demo["ops_actions"]
+        if action["requires_approval"]
+    ]
     return {
         "packet_id": "voiceops-nemoclaw-demo-001",
         "runtime": "NemoClaw",
@@ -519,6 +628,10 @@ def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
             "discord_or_whatsapp_send_without_channel_policy_approval",
         ],
         "approval_required_actions": approval_actions,
+        "approval_contracts": {
+            action["action_id"]: action["approval_contract"]
+            for action in approval_actions
+        },
         "dry_run_commands": [action["command"] for action in approval_actions],
         "audit_event_ids": [event["event_id"] for event in demo["audit_events"]],
     }
@@ -548,6 +661,7 @@ def _phone_context_packet(demo: dict[str, Any]) -> dict[str, Any]:
                 "provider": action["provider"],
                 "estimated_cents": action["estimated_cents"],
                 "purpose": action["purpose"],
+                "approval_contract": _approval_contract(action),
             }
             for action in approval_actions
         ],
@@ -587,6 +701,7 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
             "status": "pending",
             "ttl_minutes": 15 if action["action_id"] == "buy-service-credit" else 30,
             "artifact_ref": "nemoclaw-action-packet.json",
+            "approval_contract": _approval_contract(action),
         }
         for action in demo["ops_actions"]
         if action["requires_approval"] and action["status"] == "queued"
@@ -619,6 +734,10 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
             "summary": event["evidence"],
             "parent_audit_id": None if index == 0 else root_recent_audit_id,
             "amount_cents": event["amount_cents"],
+            "approval_status": event["approval_status"],
+            "receipt_ref": event["receipt_ref"],
+            "credential_location_ref": event["credential_location_ref"],
+            "rollback_ref": event["rollback_ref"],
         }
         for index, event in enumerate(source_audit_events)
     ]
@@ -730,26 +849,29 @@ def _demo_milestone2_report(demo: dict[str, Any], readiness: dict[str, Any]) -> 
             "stripe_projects_cli",
             "stripe_link_cli",
             "nemoclaw_boundary",
-            "phone_handoff",
+            "phone_target",
+            "phone_provider",
         }:
             area = {
                 "stripe_projects_cli": "stripe_projects",
                 "stripe_link_cli": "stripe_link",
                 "nemoclaw_boundary": "mpp",
-                "phone_handoff": "phone_handoff",
+                "phone_target": "phone_handoff",
+                "phone_provider": "phone_handoff",
             }[check["check_id"]]
             check_id = {
                 "stripe_projects_cli": "stripe_projects_cli",
                 "stripe_link_cli": "stripe_link_cli",
                 "nemoclaw_boundary": "mpp_agent",
-                "phone_handoff": "phone_target",
+                "phone_target": "phone_target",
+                "phone_provider": "phone_provider",
             }[check["check_id"]]
             checks.append(
                 {
                     "check_id": check_id,
                     "area": area,
                     "status": "pass" if check["status"] == "pass" else "fail",
-                    "required": check["required_for_video"] or check_id in {"phone_target"},
+                    "required": check["required_for_video"] or check_id in {"phone_target", "phone_provider"},
                     "detail": check["detail"],
                     "next_step": check["next_step"],
                     "evidence": {"source": "readiness-report.json"},
@@ -769,19 +891,6 @@ def _demo_milestone2_report(demo: dict[str, Any], readiness: dict[str, Any]) -> 
                 "next_step": stripe_projects["next_step"],
                 "evidence": {"source": "readiness-report.json"},
             },
-        )
-    if "phone_provider" not in existing:
-        phone_ready = next(check for check in checks if check["check_id"] == "phone_target")
-        checks.append(
-            {
-                "check_id": "phone_provider",
-                "area": "phone_handoff",
-                "status": phone_ready["status"],
-                "required": True,
-                "detail": "demo provider readiness follows phone handoff readiness",
-                "next_step": "Run the provisioning preflight before any approved live phone handoff.",
-                "evidence": {"source": "readiness-report.json"},
-            }
         )
     required_failures = [check["check_id"] for check in checks if check["required"] and check["status"] != "pass"]
     return {
@@ -806,6 +915,9 @@ def _demo_milestone2_report(demo: dict[str, Any], readiness: dict[str, Any]) -> 
             "phone_context": "phone-context.json",
             "nemoclaw_packet": "nemoclaw-action-packet.json",
             "budget_cents": demo["spend_policy"]["limit_cents"],
+            "approval_threshold_cents": demo["spend_policy"]["approval_required_over_cents"],
+            "queued_cents": demo["totals"]["approval_required_cents"],
+            "held_cents": demo["totals"]["held_budget_cents"],
         },
     }
 
@@ -932,18 +1044,51 @@ def build_readiness_report(
         )
     )
 
-    phone_ready = _env_present(env, "VOICEOPS_DEMO_PHONE_NUMBER") or _env_present(env, "TWILIO_ACCOUNT_SID")
+    phone_target_ready = _env_present(env, "VOICEOPS_DEMO_PHONE_NUMBER") or _env_present(
+        env, "VOICEOPS_PHONE_TARGET_REF"
+    )
+    checks.append(
+        ReadinessCheck(
+            check_id="phone_target",
+            status="pass" if phone_target_ready else "warn",
+            required_for_video=False,
+            detail=(
+                "phone target reference is present"
+                if phone_target_ready
+                else "no VOICEOPS_DEMO_PHONE_NUMBER or VOICEOPS_PHONE_TARGET_REF; generated phone-context.json remains dry-run evidence"
+            ),
+            next_step="Set VOICEOPS_DEMO_PHONE_NUMBER or a redacted target reference before attempting a live call.",
+        )
+    )
+
+    phone_provider_ready = _env_present(env, "TWILIO_ACCOUNT_SID") or _env_present(
+        env, "VOICEOPS_PHONE_PROVIDER_ACCOUNT_REF"
+    )
+    checks.append(
+        ReadinessCheck(
+            check_id="phone_provider",
+            status="pass" if phone_provider_ready else "warn",
+            required_for_video=False,
+            detail=(
+                "phone provider account reference is present"
+                if phone_provider_ready
+                else "no TWILIO_ACCOUNT_SID or VOICEOPS_PHONE_PROVIDER_ACCOUNT_REF; provider readiness must come from provisioning evidence"
+            ),
+            next_step="Complete approved VoIP provider setup and record a redacted provider account reference before live phone handoff.",
+        )
+    )
+
     checks.append(
         ReadinessCheck(
             check_id="phone_handoff",
-            status="pass" if phone_ready else "warn",
+            status="pass" if phone_target_ready and phone_provider_ready else "warn",
             required_for_video=False,
             detail=(
-                "phone target/provider env is present"
-                if phone_ready
-                else "no VOICEOPS_DEMO_PHONE_NUMBER or TWILIO_ACCOUNT_SID; generated phone-context.json remains dry-run evidence"
+                "phone target and provider account references are both present"
+                if phone_target_ready and phone_provider_ready
+                else "phone handoff is not live-ready until both target and provider account references are present"
             ),
-            next_step="Set VOICEOPS_DEMO_PHONE_NUMBER and complete approved VoIP provisioning before attempting a live call.",
+            next_step="Treat phone-context.json as dry-run until both target and provider evidence are available.",
         )
     )
 

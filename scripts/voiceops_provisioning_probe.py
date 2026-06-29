@@ -1422,8 +1422,82 @@ def _safe_command_manifest_json() -> dict[str, Any]:
     }
 
 
+def _command_sha256(command: str) -> str:
+    return hashlib.sha256(command.encode("utf-8")).hexdigest()
+
+
+def _execution_approval_contract(
+    *,
+    action_id: str,
+    command: str,
+    required_preflight_gates: list[str],
+    approval_artifact: str,
+    ttl_seconds: int = 1800,
+) -> dict[str, Any]:
+    return {
+        "approval_id": f"voiceops-m2-{action_id}",
+        "action_id": action_id,
+        "approval_channel": "discord_voice_operator_confirmation",
+        "approval_artifact": approval_artifact,
+        "approved_by_ref": None,
+        "command_sha256": _command_sha256(command),
+        "required_preflight_gates": required_preflight_gates,
+        "allowed_decisions": ["approve_once", "deny", "hold"],
+        "default_decision": "hold",
+        "ttl_seconds": ttl_seconds,
+        "status": "not_approved",
+    }
+
+
+def _expected_post_approval_evidence(action: Mapping[str, Any]) -> dict[str, Any]:
+    action_id = str(action["action_id"])
+    receipt_ref = str(action["expected_receipt_ref"])
+    rollback_ref = str(action["rollback_ref"])
+    credential_location_ref = {
+        "provision-voip-provider": "credential_locations.voip_provider",
+        "buy-service-credit": "credential_locations.stripe_link",
+        "call-user-phone": "credential_locations.phone_bridge",
+    }.get(action_id)
+    required_schemas = ["receipt_schema", rollback_ref]
+    if credential_location_ref:
+        required_schemas.append("credential_location_schema")
+    return {
+        "action_id": action_id,
+        "execution_status": "not_executed",
+        "expected_receipt_ref": receipt_ref,
+        "receipt": None,
+        "credential_location_ref": credential_location_ref,
+        "credential_location": None,
+        "rollback_ref": rollback_ref,
+        "rollback_receipt": None,
+        "required_schemas": required_schemas,
+        "audit_update_required": True,
+        "secret_policy": "redacted references only; no raw tokens, card data, credentials, or full phone numbers",
+    }
+
+
 def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
     checks = {check["check_id"]: check for check in report["checks"]}
+    demo_refs = {
+        "voiceops_demo": "voiceops-demo.json",
+        "nemoclaw_packet": "nemoclaw-action-packet.json",
+        "phone_context": "phone-context.json",
+        "audit_ledger": "audit-ledger.jsonl",
+        "stripe_actions_dry_run": "stripe-actions-dry-run.sh",
+    }
+    supplied_demo_refs = report.get("demo_refs")
+    if isinstance(supplied_demo_refs, Mapping):
+        demo_refs.update(
+            {
+                key: value
+                for key, value in supplied_demo_refs.items()
+                if isinstance(key, str) and isinstance(value, (str, int))
+            }
+        )
+    budget_cap_cents = int(demo_refs.get("budget_cents") or 20_000)
+    approval_threshold_cents = int(demo_refs.get("approval_threshold_cents") or 1_000)
+    queued_cents = int(demo_refs.get("queued_cents") or 7_400)
+    held_cents = int(demo_refs.get("held_cents") or 0)
     gates = [
         {
             "gate_id": check_id,
@@ -1441,6 +1515,94 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
             "phone_target",
             "phone_provider",
         )
+    ]
+    provision_command = "stripe projects add twilio/voice"
+    spend_command = (
+        "link-cli spend-request create --merchant-name ExampleOps "
+        "--merchant-url https://example.invalid --amount 4900 --request-approval"
+    )
+    call_command = "queue outbound call --context phone-context.json"
+    publish_command = "post redacted approval and handoff status to configured channels"
+    approval_required_actions = [
+        {
+            "action_id": "provision-voip-provider",
+            "provider": "stripe-projects",
+            "command": provision_command,
+            "status": "blocked_until_explicit_approval",
+            "requires": ["stripe_cli", "stripe_projects_cli", "mpp_agent"],
+            "approval_artifact": "nemoclaw-action-packet.json",
+            "expected_receipt_ref": "receipts.provision_voip_provider",
+            "credential_location_ref": "credential_locations.voip_provider",
+            "credential_location_required": True,
+            "credential_location_schema_ref": "credential_location_schema",
+            "rollback_ref": "rollback_plan.deprovision_voip_provider",
+            "approval_contract": _execution_approval_contract(
+                action_id="provision-voip-provider",
+                command=provision_command,
+                required_preflight_gates=["stripe_cli", "stripe_projects_cli", "mpp_agent"],
+                approval_artifact="nemoclaw-action-packet.json",
+            ),
+        },
+        {
+            "action_id": "buy-service-credit",
+            "provider": "stripe-link-cli",
+            "command": spend_command,
+            "status": "blocked_until_explicit_approval",
+            "requires": ["stripe_link_cli", "mpp_agent"],
+            "approval_artifact": "nemoclaw-action-packet.json",
+            "expected_receipt_ref": "receipts.buy_service_credit",
+            "credential_location_ref": "credential_locations.stripe_link",
+            "credential_location_required": True,
+            "credential_location_schema_ref": "credential_location_schema",
+            "rollback_ref": "rollback_plan.refund_or_cancel_service_credit",
+            "approval_contract": _execution_approval_contract(
+                action_id="buy-service-credit",
+                command=spend_command,
+                required_preflight_gates=["stripe_link_cli", "mpp_agent"],
+                approval_artifact="nemoclaw-action-packet.json",
+                ttl_seconds=900,
+            ),
+        },
+        {
+            "action_id": "call-user-phone",
+            "provider": "voiceops-phone-bridge",
+            "command": call_command,
+            "status": "blocked_until_explicit_approval",
+            "requires": ["phone_target", "phone_provider", "mpp_agent"],
+            "approval_artifact": "phone-context.json",
+            "expected_receipt_ref": "receipts.call_user_phone",
+            "credential_location_ref": "credential_locations.phone_bridge",
+            "credential_location_required": True,
+            "credential_location_schema_ref": "credential_location_schema",
+            "rollback_ref": "rollback_plan.cancel_or_end_phone_handoff",
+            "approval_contract": _execution_approval_contract(
+                action_id="call-user-phone",
+                command=call_command,
+                required_preflight_gates=["phone_target", "phone_provider", "mpp_agent", "channel_policy"],
+                approval_artifact="phone-context.json",
+                ttl_seconds=900,
+            ),
+        },
+        {
+            "action_id": "publish-status",
+            "provider": "hermes-gateway",
+            "command": publish_command,
+            "status": "blocked_until_explicit_approval",
+            "requires": ["channel_policy", "mpp_agent"],
+            "approval_artifact": "channel-policy.json",
+            "expected_receipt_ref": "receipts.publish_status",
+            "credential_location_ref": None,
+            "credential_location_required": False,
+            "credential_location_schema_ref": None,
+            "rollback_ref": "rollback_plan.correct_or_remove_status_message",
+            "approval_contract": _execution_approval_contract(
+                action_id="publish-status",
+                command=publish_command,
+                required_preflight_gates=["channel_policy", "mpp_agent"],
+                approval_artifact="channel-policy.json",
+                ttl_seconds=900,
+            ),
+        },
     ]
     return {
         "generated_at": _utc_now(),
@@ -1494,19 +1656,13 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
             "active_probe_policy": "version_help_only",
             "run_command_probes_does_not_grant_approval": True,
         },
-        "demo_refs": {
-            "voiceops_demo": "voiceops-demo.json",
-            "nemoclaw_packet": "nemoclaw-action-packet.json",
-            "phone_context": "phone-context.json",
-            "audit_ledger": "audit-ledger.jsonl",
-            "stripe_actions_dry_run": "stripe-actions-dry-run.sh",
-        },
+        "demo_refs": demo_refs,
         "spend_policy": {
             "currency": "usd",
-            "budget_cap_cents": 20_000,
-            "approval_threshold_cents": 1_000,
-            "queued_cents": 7_400,
-            "held_cents": 0,
+            "budget_cap_cents": budget_cap_cents,
+            "approval_threshold_cents": approval_threshold_cents,
+            "queued_cents": queued_cents,
+            "held_cents": held_cents,
             "status": "no_live_spend_without_explicit_approval",
         },
         "readiness_gates": gates,
@@ -1530,38 +1686,34 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "records_to": "audit-ledger.jsonl",
             },
         ],
-        "approval_required_actions": [
-            {
-                "action_id": "provision-voip-provider",
-                "provider": "stripe-projects",
-                "command": "stripe projects add twilio/voice",
-                "status": "blocked_until_explicit_approval",
-                "requires": ["stripe_cli", "stripe_projects_cli", "mpp_agent"],
-                "approval_artifact": "nemoclaw-action-packet.json",
-                "expected_receipt_ref": "receipts.provision_voip_provider",
-                "rollback_ref": "rollback_plan.deprovision_voip_provider",
-            },
-            {
-                "action_id": "buy-service-credit",
-                "provider": "stripe-link-cli",
-                "command": "link-cli spend-request create --merchant-name ExampleOps --merchant-url https://example.invalid --amount 4900 --request-approval",
-                "status": "blocked_until_explicit_approval",
-                "requires": ["stripe_link_cli", "mpp_agent"],
-                "approval_artifact": "nemoclaw-action-packet.json",
-                "expected_receipt_ref": "receipts.buy_service_credit",
-                "rollback_ref": "rollback_plan.refund_or_cancel_service_credit",
-            },
-            {
-                "action_id": "call-user-phone",
-                "provider": "voiceops-phone-bridge",
-                "command": "queue outbound call --context phone-context.json",
-                "status": "blocked_until_explicit_approval",
-                "requires": ["phone_target", "phone_provider", "mpp_agent"],
-                "approval_artifact": "phone-context.json",
-                "expected_receipt_ref": "receipts.call_user_phone",
-                "rollback_ref": "rollback_plan.cancel_or_end_phone_handoff",
-            },
-        ],
+        "approval_required_actions": approval_required_actions,
+        "approval_contracts": {
+            action["action_id"]: action["approval_contract"]
+            for action in approval_required_actions
+        },
+        "receipts": {
+            action["expected_receipt_ref"].split(".", 1)[1]: {
+                "status": "not_executed",
+                "receipt": None,
+                "schema_ref": "receipt_schema",
+                "action_id": action["action_id"],
+            }
+            for action in approval_required_actions
+        },
+        "credential_locations": {
+            str(action["credential_location_ref"]).split(".", 1)[1]: {
+                "status": "not_created",
+                "credential_location": None,
+                "schema_ref": "credential_location_schema",
+                "action_id": action["action_id"],
+            }
+            for action in approval_required_actions
+            if action.get("credential_location_ref")
+        },
+        "expected_post_approval_evidence": {
+            action["action_id"]: _expected_post_approval_evidence(action)
+            for action in approval_required_actions
+        },
         "execution_steps": [
             {
                 "step_id": "bind-spend-policy",
@@ -1712,6 +1864,11 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "Cancel queued call if not started.",
                 "If connected, end the call and preserve the call receipt id.",
                 "Post redacted status to Discord/WhatsApp according to channel policy.",
+            ],
+            "correct_or_remove_status_message": [
+                "Record the message id from the status-post receipt.",
+                "Post a correction or remove the message according to channel policy.",
+                "Append the correction/removal receipt to audit-ledger.jsonl.",
             ],
         },
         "audit_requirements": [

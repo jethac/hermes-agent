@@ -4,8 +4,25 @@ import json
 import subprocess
 from pathlib import Path
 
-from scripts.hackathon_voiceops_demo import build_demo, build_readiness_report, parse_args, write_demo
+from scripts.hackathon_voiceops_demo import (
+    _demo_milestone2_report,
+    build_demo,
+    build_readiness_report,
+    parse_args,
+    write_demo,
+)
 from scripts.voiceops_operator_state import validate_operator_state
+
+
+def _dot_get(payload, ref):
+    cursor = payload
+    for part in ref.split("."):
+        cursor = cursor[part]
+    return cursor
+
+
+def build_milestone2_like_failures(demo, readiness):
+    return _demo_milestone2_report(demo, readiness)["required_failures"]
 
 
 def test_voiceops_demo_writes_headless_artifacts(tmp_path):
@@ -34,6 +51,11 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     nemoclaw = json.loads(Path(paths["nemoclaw_packet"]).read_text(encoding="utf-8"))
     phone_context = json.loads(Path(paths["phone_context"]).read_text(encoding="utf-8"))
     milestone2_plan = json.loads(Path(paths["milestone2_execution_plan"]).read_text(encoding="utf-8"))
+    audit_events = [
+        json.loads(line)
+        for line in Path(paths["audit_ledger"]).read_text(encoding="utf-8").splitlines()
+        if line
+    ]
     operator_state = json.loads(Path(paths["operator_state"]).read_text(encoding="utf-8"))
     operator_events = [
         json.loads(line)
@@ -113,11 +135,50 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "draft" in status_action["command"]
     assert "post summary" not in status_action["command"]
     assert "stripe projects add twilio/voice" in nemoclaw["dry_run_commands"]
+    assert len(audit_events) == len(payload["ops_actions"])
+    required_audit_fields = {
+        "requested_by",
+        "proposed_by",
+        "budget_policy_ref",
+        "command",
+        "approval_required",
+        "approval_status",
+        "result",
+        "receipt_ref",
+        "credential_location_ref",
+        "rollback_ref",
+        "notification_channel",
+    }
+    assert all(required_audit_fields <= set(event) for event in audit_events)
+    assert {event["approval_status"] for event in audit_events if event["approval_required"]} >= {
+        "pending_operator_approval",
+        "held_budget",
+    }
+    assert all(event["result"] != "executed" for event in audit_events)
+    approval_contracts = nemoclaw["approval_contracts"]
+    assert set(approval_contracts) == {action["action_id"] for action in nemoclaw["approval_required_actions"]}
+    for action in nemoclaw["approval_required_actions"]:
+        contract = action["approval_contract"]
+        assert contract == approval_contracts[action["action_id"]]
+        assert len(contract["command_sha256"]) == 64
+        assert contract["approval_channel"] == "discord_voice_operator_confirmation"
+        assert contract["allowed_decisions"] == ["approve_once", "deny", "hold"]
+        assert contract["approved_by_ref"] is None
+        assert contract["required_preflight_gates"]
     assert phone_context["target_channel"] == "phone"
     assert phone_context["status"] == "queued_requires_approval"
     assert phone_context["pending_approvals"]
+    assert all("approval_contract" in approval for approval in phone_context["pending_approvals"])
     assert milestone2_plan["schema_version"] == "voiceops.milestone2.execution_plan.v1"
     assert milestone2_plan["demo_refs"]["phone_context"] == "phone-context.json"
+    assert milestone2_plan["spend_policy"] == {
+        "currency": "usd",
+        "budget_cap_cents": 7000,
+        "approval_threshold_cents": 1000,
+        "queued_cents": payload["totals"]["approval_required_cents"],
+        "held_cents": payload["totals"]["held_budget_cents"],
+        "status": "no_live_spend_without_explicit_approval",
+    }
     assert milestone2_plan["source_readiness_artifact"] == "provisioning-readiness.json"
     assert {step["step_id"] for step in milestone2_plan["execution_steps"]} >= {
         "provision-voip-provider",
@@ -130,6 +191,28 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "phone-call-handoff",
     }
     assert "deprovision_voip_provider" in milestone2_plan["rollback_plan"]
+    approval_step_ids = {
+        step["step_id"]
+        for step in milestone2_plan["execution_steps"]
+        if step["requires_approval"]
+    }
+    approval_action_ids = {action["action_id"] for action in milestone2_plan["approval_required_actions"]}
+    assert approval_step_ids <= approval_action_ids
+    assert "publish-status" in approval_action_ids
+    for action in milestone2_plan["approval_required_actions"]:
+        assert _dot_get(milestone2_plan, action["expected_receipt_ref"])["schema_ref"] == "receipt_schema"
+        assert _dot_get(milestone2_plan, action["rollback_ref"])
+        if action["credential_location_required"]:
+            assert action["credential_location_schema_ref"] == "credential_location_schema"
+            assert _dot_get(milestone2_plan, action["credential_location_ref"])["schema_ref"] == (
+                "credential_location_schema"
+            )
+        else:
+            assert action["credential_location_ref"] is None
+        evidence = milestone2_plan["expected_post_approval_evidence"][action["action_id"]]
+        assert evidence["execution_status"] == "not_executed"
+        assert evidence["receipt"] is None
+        assert evidence["rollback_receipt"] is None
     assert operator_state["schema_version"] == "voiceops.operator_state.v1"
     assert payload["operator_state"] == operator_state
     assert operator_state["readiness_closure"]["closure_status"] == "needs_external_evidence"
@@ -313,6 +396,7 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
             "DISCORD_VOICE_CHANNEL_ID": "123",
             "WHATSAPP_ENABLED": "true",
             "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+            "VOICEOPS_PHONE_PROVIDER_ACCOUNT_REF": "twilio:acct:redacted-demo",
             "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
         },
         which=fake_which,
@@ -328,6 +412,10 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     ]
     assert ready["spark_local_evidence_status"] == "target_selected_needs_benchmark_evidence"
     assert ready["required_failures"] == []
+    checks = {check["check_id"]: check for check in ready["checks"]}
+    assert checks["phone_target"]["status"] == "pass"
+    assert checks["phone_provider"]["status"] == "pass"
+    assert checks["phone_handoff"]["status"] == "pass"
 
     stripe_without_projects_marker = build_readiness_report(
         demo,
@@ -361,6 +449,38 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     )
     assert npx_not_ready["ready_for_recording"] is False
     assert "stripe_link_cli" in npx_not_ready["required_failures"]
+
+    target_only = build_readiness_report(
+        demo,
+        env={
+            "DISCORD_BOT_TOKEN": "set",
+            "DISCORD_VOICE_CHANNEL_ID": "123",
+            "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+            "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
+        },
+        which=fake_which,
+    )
+    target_only_checks = {check["check_id"]: check for check in target_only["checks"]}
+    assert target_only_checks["phone_target"]["status"] == "pass"
+    assert target_only_checks["phone_provider"]["status"] == "warn"
+    assert target_only_checks["phone_handoff"]["status"] == "warn"
+    assert "phone_provider" in build_milestone2_like_failures(demo, target_only)
+
+    provider_only = build_readiness_report(
+        demo,
+        env={
+            "DISCORD_BOT_TOKEN": "set",
+            "DISCORD_VOICE_CHANNEL_ID": "123",
+            "VOICEOPS_PHONE_PROVIDER_ACCOUNT_REF": "twilio:acct:redacted-demo",
+            "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
+        },
+        which=fake_which,
+    )
+    provider_only_checks = {check["check_id"]: check for check in provider_only["checks"]}
+    assert provider_only_checks["phone_target"]["status"] == "warn"
+    assert provider_only_checks["phone_provider"]["status"] == "pass"
+    assert provider_only_checks["phone_handoff"]["status"] == "warn"
+    assert "phone_target" in build_milestone2_like_failures(demo, provider_only)
 
     not_ready = build_readiness_report(demo, env={}, which=lambda _command: None)
     assert not_ready["ready_for_recording"] is False
