@@ -39,6 +39,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "dashboard",
         "milestone2_execution_plan",
         "nemoclaw_packet",
+        "operator_handoff_preview_json",
+        "operator_handoff_preview_markdown",
         "operator_state",
         "operator_state_events",
         "phone_context",
@@ -56,6 +58,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     nemoclaw = json.loads(Path(paths["nemoclaw_packet"]).read_text(encoding="utf-8"))
     phone_context = json.loads(Path(paths["phone_context"]).read_text(encoding="utf-8"))
     milestone2_plan = json.loads(Path(paths["milestone2_execution_plan"]).read_text(encoding="utf-8"))
+    operator_handoff = json.loads(Path(paths["operator_handoff_preview_json"]).read_text(encoding="utf-8"))
     audit_events = [
         json.loads(line)
         for line in Path(paths["audit_ledger"]).read_text(encoding="utf-8").splitlines()
@@ -73,6 +76,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert payload["artifact_manifest"]["readiness_json"] == "readiness-report.json"
     assert payload["artifact_manifest"]["readiness_closure_summary_json"] == "readiness-closure-summary.json"
     assert payload["artifact_manifest"]["readiness_closure_summary_markdown"] == "readiness-closure-summary.md"
+    assert payload["artifact_manifest"]["operator_handoff_preview_json"] == "operator-handoff-preview.json"
+    assert payload["artifact_manifest"]["operator_handoff_preview_markdown"] == "operator-handoff-preview.md"
     assert payload["artifact_manifest"]["operator_state"] == "operator-state.json"
     assert payload["artifact_manifest"]["milestone2_execution_plan"] == "milestone2-execution-plan.json"
     assert readiness["schema_version"] == "voiceops.recording_readiness_report.v1"
@@ -123,6 +128,14 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert closure_gates["live_discord_voice_operator"]["evidence_contract"]["strict_validation_schema_version"] == (
         "voiceops.realtime_voice_live_evidence_validation.v1"
     )
+    assert closure_gates["live_discord_voice_operator"]["evidence_contract"]["required_sidecar_mode"] == "production"
+    assert (
+        closure_gates["live_discord_voice_operator"]["evidence_contract"][
+            "doctor_report_derivation_overclaims_production"
+        ]
+        is False
+    )
+    assert "derive_from_realtime_voice_report" in closure_gates["live_discord_voice_operator"]["collection_commands"]
     assert "--validate-live-evidence" in closure_gates["live_discord_voice_operator"]["collection_commands"][
         "validate_live_manifest_offline"
     ]
@@ -162,7 +175,28 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     ]
     assert payload["operator_state_ref"] == "operator-state.json"
     assert payload["operator_state_events_ref"] == "operator-state-events.jsonl"
+    assert payload["operator_handoff_preview_ref"] == "operator-handoff-preview.json"
     assert payload["milestone2_execution_plan_ref"] == "milestone2-execution-plan.json"
+    assert operator_handoff["schema_version"] == "voiceops.operator_handoff_preview.v1"
+    assert operator_handoff["changes_readiness_by_itself"] is False
+    assert operator_handoff["readiness_closure_ref"] == "readiness-closure-summary.json"
+    assert [phase["phase_id"] for phase in operator_handoff["phases"]] == [
+        "live_discord_voice",
+        "spend_and_provisioning_preflight",
+        "local_spark_stack",
+    ]
+    assert operator_handoff["phases"][0]["first_safe_command"].startswith(
+        "uv run python -m hermes_cli.realtime_voice_live_evidence"
+    )
+    assert "derive_from_realtime_voice_report" in operator_handoff["phases"][0]["command_safety"]
+    assert "production realtime voice sidecar session evidence" in operator_handoff["phases"][0]["required_inputs"]
+    assert operator_handoff["phases"][1]["command_safety"]["read_only_discovery"].startswith("allowlisted")
+    assert "local_spark_stack_matrix" in operator_handoff["phases"][2]["blocked_by_current_package"]
+    assert any("oracle_model" in item for item in operator_handoff["phases"][2]["must_not"])
+    assert "--voice-live-evidence" in operator_handoff["final_reindex_command"]
+    handoff_markdown = Path(paths["operator_handoff_preview_markdown"]).read_text(encoding="utf-8")
+    assert "VoiceOps Operator Handoff Preview" in handoff_markdown
+    assert "Final Reindex" in handoff_markdown
     assert payload["safety_boundary_refs"] == {
         "nemoclaw_action_packet": "nemoclaw-action-packet.json",
         "phone_context": "phone-context.json",
@@ -310,6 +344,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "operator-dashboard.html" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "operator-state.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "operator-state-events.jsonl" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "operator-handoff-preview.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "recording-runbook.md" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "submission-writeup.md" in Path(paths["markdown"]).read_text(encoding="utf-8")
     demo_script = Path(paths["demo_script"]).read_text(encoding="utf-8")
@@ -337,6 +372,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "voiceops.milestone2.read_only_discovery.v1" in runbook
     assert "--run-readonly-discovery" in runbook
     assert "read-only-discovery.json" in runbook
+    assert "operator-handoff-preview.json" in runbook
     assert "audit-ledger.read-only-discovery.jsonl" in runbook
     assert "spark-matrix-closure-plan.md" in runbook
     assert "Closure artifact: `spark-model-matrix.md`" not in runbook
@@ -360,6 +396,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Hosted fallback does not count as Spark-local readiness proof" in dashboard
     assert "NemoClaw Blocks" in dashboard
     assert "Plan Closure Gates" in dashboard
+    assert "Operator Handoff" in dashboard
+    assert "operator-handoff-preview.json" in dashboard
     assert "read_only_discovery" in dashboard
     assert "audit-ledger.read-only-discovery.jsonl" in dashboard
     assert "live_discord_voice_operator" in dashboard

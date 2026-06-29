@@ -116,6 +116,11 @@ def _demo_closure_summary() -> dict[str, Any]:
             "template_artifact": "live-voice-evidence-template.json",
             "closure_artifact": "live-probe-closure-plan.md",
             "collection_commands": {
+                "derive_from_realtime_voice_report": (
+                    "uv run python -m hermes_cli.realtime_voice_live_evidence "
+                    "--output-dir artifacts/realtime-voice-evidence/live-current "
+                    "--from-realtime-voice-report path/to/realtime-voice-report.json"
+                ),
                 "collect_live_manifest": (
                     "uv run python -m hermes_cli.realtime_voice_live_evidence "
                     "--output-dir artifacts/realtime-voice-evidence/live-current "
@@ -141,6 +146,9 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "artifacts/realtime-voice-evidence/live-current/manifest.json",
                 "artifacts/realtime-voice-evidence/live-current/sidecar-session.json",
                 "artifacts/realtime-voice-evidence/live-current/live-turn.json",
+                "artifacts/realtime-voice-evidence/live-current/sidecar-session.from-realtime-report.json",
+                "artifacts/realtime-voice-evidence/live-current/live-turn.from-realtime-report.json",
+                "artifacts/realtime-voice-evidence/live-current/realtime-voice-report-validation.json",
                 "artifacts/realtime-voice-evidence/live-current/live-evidence-validation.json",
                 "artifacts/voiceops-voice-operator/current/live-voice-evidence-scaffold/manifest.json",
             ],
@@ -151,6 +159,8 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "expanded_evidence_schema_version": "voiceops.milestone1.live_voice_evidence.v1",
                 "required_sections": ["discord_live_probe", "sidecar_session", "live_turn"],
                 "required_section_refs": ["source_artifact", "section"],
+                "required_sidecar_mode": "production",
+                "doctor_report_derivation_overclaims_production": False,
                 "source_artifacts_must_exist": True,
                 "example_only_accepted": False,
             },
@@ -344,6 +354,204 @@ def _readiness_closure_summary_markdown(closure: dict[str, Any]) -> str:
         "",
     ]
     lines.extend(_closure_gate_markdown_lines(closure))
+    return "\n".join(lines)
+
+
+def _check_status(readiness: dict[str, Any], check_id: str) -> str:
+    for check in readiness.get("checks", []):
+        if check.get("check_id") == check_id:
+            return str(check.get("status") or "unknown")
+    return "unknown"
+
+
+def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -> dict[str, Any]:
+    closure = _demo_closure_summary()
+    gates = {gate["gate_id"]: gate for gate in closure["gates"]}
+    discord_ready = _check_status(readiness, "discord_voice") == "pass"
+    provisioning_ready = all(
+        _check_status(readiness, check_id) == "pass"
+        for check_id in ("stripe_projects_cli", "stripe_link_cli")
+    )
+    phone_ready = _check_status(readiness, "phone_handoff") == "pass"
+    spark_path = demo["sponsor_stack"]["hermes_active_model"]
+    live_gate = gates["live_discord_voice_operator"]
+    provisioning_gate = gates["spend_and_provisioning_preflight"]
+    spark_gate = gates["local_spark_stack_matrix"]
+    return {
+        "schema_version": "voiceops.operator_handoff_preview.v1",
+        "source": "hackathon_voiceops_demo",
+        "purpose": "Standalone Milestone 0 operator sequence for closing external evidence without hand-editing artifacts.",
+        "changes_readiness_by_itself": False,
+        "readiness_closure_ref": "readiness-closure-summary.json",
+        "secret_policy": "Use local env/config files and provider CLIs only; never paste secret values into artifacts.",
+        "phases": [
+            {
+                "phase_id": "live_discord_voice",
+                "gate_id": live_gate["gate_id"],
+                "can_run_here_now": discord_ready,
+                "blocked_by_current_package": [] if discord_ready else ["discord_voice"],
+                "first_safe_command": live_gate["collection_commands"]["derive_from_realtime_voice_report"],
+                "commands": [
+                    live_gate["collection_commands"]["derive_from_realtime_voice_report"],
+                    live_gate["collection_commands"]["collect_live_manifest"],
+                    live_gate["collection_commands"]["validate_live_manifest_offline"],
+                    live_gate["collection_commands"]["ingest_live_manifest"],
+                    live_gate["rerun_command"],
+                ],
+                "command_safety": {
+                    "derive_from_realtime_voice_report": "local_file_derivation_only_no_discord_network",
+                    "collect_live_manifest": "discord_live_probe_requires_config_no_secret_values_in_artifacts",
+                    "validate_live_manifest_offline": "local_file_validation_only",
+                    "ingest_live_manifest": "local_file_ingest_only",
+                    "plan_reindex": "local_reindex_only",
+                },
+                "required_inputs": [
+                    "Discord bot token and channel config for live collection",
+                    "production realtime voice sidecar session evidence",
+                    "one real live turn with assistant audio, barge-in, and no voice-capability denial",
+                    "optional hermes doctor realtime voice report for partial sidecar/live-turn derivation",
+                ],
+                "expected_artifacts": live_gate["expected_artifacts"],
+                "success_check": live_gate["completion_signal"],
+                "must_not": [
+                    "claim production readiness from managed_loopback or diagnostic sidecar modes",
+                    "include Discord/provider tokens or raw private transcripts in evidence artifacts",
+                    "treat silent receiver packets as barge-in proof without speech evidence",
+                ],
+            },
+            {
+                "phase_id": "spend_and_provisioning_preflight",
+                "gate_id": provisioning_gate["gate_id"],
+                "can_run_here_now": provisioning_ready and phone_ready,
+                "blocked_by_current_package": [
+                    check_id
+                    for check_id in ("stripe_projects_cli", "stripe_link_cli", "phone_handoff")
+                    if _check_status(readiness, check_id) != "pass"
+                ],
+                "first_safe_command": provisioning_gate["collection_commands"]["presence_only"],
+                "commands": [
+                    provisioning_gate["collection_commands"]["presence_only"],
+                    provisioning_gate["collection_commands"]["bounded_version_help"],
+                    provisioning_gate["collection_commands"]["read_only_discovery"],
+                    provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
+                    provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
+                    provisioning_gate["rerun_command"],
+                ],
+                "command_safety": {
+                    "presence_only": "offline_presence_only",
+                    "bounded_version_help": "local_subprocess_only_no_live_spend",
+                    "read_only_discovery": "allowlisted_display_only_network_possible_no_approval",
+                    "ingest_preflight_manifest": "local_redacted_evidence_validation_only",
+                    "validate_post_approval_receipts": "local_receipt_validation_only_no_provider_commands",
+                    "plan_reindex": "local_reindex_only",
+                },
+                "required_inputs": [
+                    "Stripe Projects and Link CLI setup",
+                    "NemoClaw/MPP execution-boundary setup",
+                    "phone provider and target references",
+                    "redacted source artifacts with matching SHA-256 fields",
+                    "post-approval receipts only after explicit approval",
+                ],
+                "expected_artifacts": provisioning_gate["expected_artifacts"],
+                "success_check": provisioning_gate["completion_signal"],
+                "must_not": [
+                    "run Stripe Projects provisioning, Link spend, phone calls, messages, or credential retrieval before approval",
+                    "store raw card data, provider tokens, or full phone numbers in artifacts",
+                    "treat read-only discovery as approval for live actions",
+                ],
+            },
+            {
+                "phase_id": "local_spark_stack",
+                "gate_id": spark_gate["gate_id"],
+                "can_run_here_now": False,
+                "blocked_by_current_package": ["local_spark_stack_matrix"],
+                "first_safe_command": spark_gate["collection_commands"]["dgx_eval"],
+                "commands": [
+                    spark_gate["collection_commands"]["dgx_eval"],
+                    spark_gate["collection_commands"]["with_evidence"],
+                    spark_gate["collection_commands"]["plan_index"],
+                ],
+                "command_safety": {
+                    "dgx_eval": "requires_dgx_spark_local_benchmark_collection",
+                    "with_evidence": "local_benchmark_evidence_validation",
+                    "plan_index": "local_reindex_only",
+                },
+                "required_inputs": [
+                    "1x NVIDIA DGX Spark",
+                    "Gemma 4 E2B/E4B-style native-audio reflex evidence",
+                    "Hermes /model-selected oracle evidence, preferably Nemotron 3 Super",
+                    "local ASR/TTS evidence",
+                    "all-local stack smoke with KAME routing metrics",
+                ],
+                "expected_artifacts": spark_gate["expected_artifacts"],
+                "success_check": spark_gate["completion_signal"],
+                "must_not": [
+                    "count hosted fallback models as Spark-local readiness proof",
+                    "count loopback protocol smoke as local ASR/TTS proof",
+                    "introduce a separate VoiceOps oracle_model setting",
+                ],
+                "active_model_path": spark_path,
+            },
+        ],
+        "final_reindex_command": (
+            "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+            "--output-dir artifacts/voiceops-plan/current "
+            "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json "
+            "--env-file .env "
+            "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
+            "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json "
+            "--evidence path/to/spark-benchmark-evidence.json"
+        ),
+        "final_success_signal": "readiness_gaps is [] and closure_status is complete",
+    }
+
+
+def _operator_handoff_preview_markdown(handoff: dict[str, Any]) -> str:
+    lines = [
+        "# VoiceOps Operator Handoff Preview",
+        "",
+        f"- Schema version: {handoff['schema_version']}",
+        f"- Changes readiness by itself: {'yes' if handoff['changes_readiness_by_itself'] else 'no'}",
+        f"- Readiness closure ref: `{handoff['readiness_closure_ref']}`",
+        f"- Secret policy: {handoff['secret_policy']}",
+        "",
+        "## Phases",
+        "",
+    ]
+    for phase in handoff["phases"]:
+        lines.extend(
+            [
+                f"### {phase['phase_id']}",
+                "",
+                f"- Gate: `{phase['gate_id']}`",
+                f"- Can run here now: {'yes' if phase['can_run_here_now'] else 'no'}",
+                f"- Blocked by current package: {', '.join(phase['blocked_by_current_package']) if phase['blocked_by_current_package'] else 'none'}",
+                f"- First safe command: `{phase['first_safe_command']}`",
+                f"- Success check: {phase['success_check']}",
+                "- Command safety:",
+            ]
+        )
+        for label, safety in sorted(phase["command_safety"].items()):
+            lines.append(f"  - `{label}`: {safety}")
+        lines.append("- Required inputs:")
+        lines.extend(f"  - {item}" for item in phase["required_inputs"])
+        lines.append("- Must not:")
+        lines.extend(f"  - {item}" for item in phase["must_not"])
+        lines.append("- Commands:")
+        lines.extend(f"  - `{command}`" for command in phase["commands"])
+        lines.append("")
+    lines.extend(
+        [
+            "## Final Reindex",
+            "",
+            "```bash",
+            handoff["final_reindex_command"],
+            "```",
+            "",
+            f"Success signal: {handoff['final_success_signal']}",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -1441,6 +1649,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "- `phone-context.json`: outbound phone-call handoff context preserved from Discord",
         "- `readiness-report.json`: local recording prerequisite report",
         "- `milestone2-execution-plan.json`: post-approval execution contract for VoIP provisioning, spend request, call receipt, credential reference, and rollback",
+        "- `operator-handoff-preview.json`: ordered safe evidence-collection sequence for closing live Discord, provisioning, and Spark gates",
         "- `operator-dashboard.html`: static recording dashboard for budget, approvals, guardrails, and handoff state",
         "- `operator-state.json`: machine-readable current mode, surface, budget, approval, service, and task state",
         "- `operator-state-events.jsonl`: append-friendly view of recent operator audit events",
@@ -1595,6 +1804,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "- `stripe-actions-dry-run.sh` for non-mutating Stripe/Projects commands",
         "- `phone-context.json` for the handoff context",
         "- `milestone2-execution-plan.json` for receipts, credential references, approval gates, and rollback/deprovision notes",
+        "- `operator-handoff-preview.json` for the ordered safe evidence-collection sequence",
         "- `audit-ledger.jsonl` for durable action evidence",
         "",
         "## Submission Checklist",
@@ -1682,6 +1892,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
     nemoclaw = _nemoclaw_action_packet(demo)
     phone_context = _phone_context_packet(demo)
     operator_state = _operator_state_packet(demo, readiness)
+    operator_handoff = _operator_handoff_preview(demo, readiness)
     closure = _demo_closure_summary()
     kame_ack = demo["kame_reflex_ack"]
     budget_status = operator_state["budget_status"]
@@ -1768,6 +1979,18 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
             f"<small>Template: {_h(gate['template_artifact'])}; closure: {_h(gate['closure_artifact'])}</small>"
             f"<small>Commands: {_h(command_labels or 'none')}</small>"
             f"<small>Artifacts: {_h(artifact_labels or 'none')}</small>"
+            "</li>"
+        )
+    handoff_items = []
+    for phase in operator_handoff["phases"]:
+        handoff_items.append(
+            "<li>"
+            f"<span class=\"pill {_status_class('pass' if phase['can_run_here_now'] else 'warn')}\">"
+            f"{_h('can run' if phase['can_run_here_now'] else 'needs inputs')}</span>"
+            f"<strong>{_h(phase['phase_id'])}</strong>"
+            f"<small>Gate: {_h(phase['gate_id'])}</small>"
+            f"<small>First safe command: {_h(phase['first_safe_command'])}</small>"
+            f"<small>Blocked by: {_h(', '.join(phase['blocked_by_current_package']) if phase['blocked_by_current_package'] else 'none')}</small>"
             "</li>"
         )
     guardrail_items = "".join(f"<li>{_h(item)}</li>" for item in nemoclaw["blocked_capabilities"])
@@ -2039,6 +2262,11 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
           <ul>{''.join(closure_items)}</ul>
         </div>
         <div class="panel">
+          <h2>Operator Handoff</h2>
+          <p><a href="operator-handoff-preview.json">operator-handoff-preview.json</a> lists the ordered safe evidence-collection sequence and final reindex command.</p>
+          <ul>{''.join(handoff_items)}</ul>
+        </div>
+        <div class="panel">
           <h2>Model Strategy</h2>
           <ul>
             <li><span>Active</span><strong>{_h(demo['sponsor_stack']['hermes_active_model']['label'])}</strong><small>Selected through Hermes /model.</small></li>
@@ -2170,6 +2398,7 @@ def _demo_package(
     payload["operator_state"] = operator_state
     payload["operator_state_ref"] = paths["operator_state"].name
     payload["operator_state_events_ref"] = paths["operator_state_events"].name
+    payload["operator_handoff_preview_ref"] = paths["operator_handoff_preview_json"].name
     payload["milestone2_execution_plan_ref"] = paths["milestone2_execution_plan"].name
     payload["safety_boundary_refs"] = {
         "nemoclaw_action_packet": paths["nemoclaw_packet"].name,
@@ -2198,6 +2427,8 @@ def write_demo(
         "readiness_markdown": output_dir / "readiness-report.md",
         "readiness_closure_summary_json": output_dir / "readiness-closure-summary.json",
         "readiness_closure_summary_markdown": output_dir / "readiness-closure-summary.md",
+        "operator_handoff_preview_json": output_dir / "operator-handoff-preview.json",
+        "operator_handoff_preview_markdown": output_dir / "operator-handoff-preview.md",
         "dashboard": output_dir / "operator-dashboard.html",
         "operator_state": output_dir / "operator-state.json",
         "operator_state_events": output_dir / "operator-state-events.jsonl",
@@ -2208,6 +2439,7 @@ def write_demo(
     }
     operator_state = _operator_state_packet(demo, readiness)
     readiness_closure = _demo_closure_summary()
+    operator_handoff = _operator_handoff_preview(demo, readiness)
     _write_json(paths["json"], _demo_package(demo, readiness=readiness, operator_state=operator_state, paths=paths))
     paths["markdown"].write_text(_markdown(demo), encoding="utf-8")
     _write_jsonl(paths["audit_ledger"], demo["audit_events"])
@@ -2219,6 +2451,11 @@ def write_demo(
     _write_json(paths["readiness_closure_summary_json"], readiness_closure)
     paths["readiness_closure_summary_markdown"].write_text(
         _readiness_closure_summary_markdown(readiness_closure),
+        encoding="utf-8",
+    )
+    _write_json(paths["operator_handoff_preview_json"], operator_handoff)
+    paths["operator_handoff_preview_markdown"].write_text(
+        _operator_handoff_preview_markdown(operator_handoff),
         encoding="utf-8",
     )
     _write_json(paths["milestone2_execution_plan"], build_milestone2_execution_plan(_demo_milestone2_report(demo, readiness)))
