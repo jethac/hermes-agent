@@ -17,6 +17,9 @@ from typing import Any, Iterable
 
 
 SPARK_HARDWARE_TARGET = "1x NVIDIA DGX Spark"
+PREFERRED_LOCAL_ORACLE_CANDIDATE_ID = "oracle-nemotron3-super-local"
+PREFERRED_LOCAL_ORACLE_MODEL = "Nemotron 3 Super"
+NON_COUNTING_FALLBACK_ORACLE_MODELS = ("Nemotron 3 Ultra",)
 EVIDENCE_SCHEMA_VERSION = "voiceops.spark_benchmark_evidence.v1"
 STACK_SMOKE_KIND = "voiceops_spark_stack_smoke"
 STACK_SMOKE_REQUIRED_COMPONENTS = ("reflex", "oracle", "asr", "tts", "sidecar")
@@ -927,6 +930,9 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
         ],
         "evidence_contract": {
             "schema_version": EVIDENCE_SCHEMA_VERSION,
+            "preferred_local_oracle_candidate_id": PREFERRED_LOCAL_ORACLE_CANDIDATE_ID,
+            "preferred_local_oracle_model": PREFERRED_LOCAL_ORACLE_MODEL,
+            "non_counting_fallback_oracle_models": list(NON_COUNTING_FALLBACK_ORACLE_MODELS),
             "source_artifacts_must_exist": True,
             "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",
             "source_artifact_readable": True,
@@ -1042,7 +1048,7 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "dgx_eval": "scripts/dgx_spark_gemma4_voice_eval.sh",
         },
         "operator_must_not": [
-            "claim one-Spark readiness from hosted Nemotron 3 Ultra fallback evidence or cloud TTS fallback evidence",
+            "claim one-Spark readiness from hosted or multi-Spark Nemotron 3 Ultra fallback evidence or cloud TTS fallback evidence",
             "mark benchmark evidence verified without raw source artifacts",
             "treat the matrix template or example as measured evidence",
         ],
@@ -1132,7 +1138,8 @@ def _operator_runbook(plan: dict[str, Any]) -> str:
         "",
         "- This runbook does not install models, start servers, read secrets, spend money, provision services, send messages, or place calls.",
         "- It records how to collect and ingest local DGX Spark benchmark evidence.",
-        "- Hosted Nemotron 3 Ultra or cloud TTS evidence can be useful fallback context, but it cannot satisfy one-Spark readiness.",
+        "- Nemotron 3 Super is the preferred one-Spark oracle candidate for this plan.",
+        "- Hosted or multi-Spark Nemotron 3 Ultra evidence can be useful fallback context, but it cannot satisfy one-Spark readiness.",
         "",
         "## Collection Sequence",
         "",

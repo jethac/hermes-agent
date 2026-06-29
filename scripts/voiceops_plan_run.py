@@ -712,6 +712,9 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "required_locality_for_one_spark": "local_spark",
                 "required_hardware": "1x NVIDIA DGX Spark",
                 "required_oracle_selection": "Hermes /model",
+                "preferred_local_oracle_candidate_id": "oracle-nemotron3-super-local",
+                "preferred_local_oracle_model": "Nemotron 3 Super",
+                "non_counting_fallback_oracle_models": ["Nemotron 3 Ultra"],
                 "required_stack_components": ["reflex", "oracle", "asr", "tts", "sidecar"],
                 "source_artifacts_must_exist": True,
                 "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",
@@ -728,7 +731,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "--evidence path/to/spark-benchmark-evidence.json"
             ),
             "operator_must_not": [
-                "claim one-Spark readiness from hosted Nemotron 3 Ultra fallback evidence or cloud TTS fallback evidence",
+                "claim one-Spark readiness from hosted or multi-Spark Nemotron 3 Ultra fallback evidence or cloud TTS fallback evidence",
                 "mark benchmark evidence verified without raw source artifacts",
                 "treat the matrix template as measured evidence",
                 "treat loopback_smoke_bridge protocol smoke checks as verified local ASR/TTS evidence",

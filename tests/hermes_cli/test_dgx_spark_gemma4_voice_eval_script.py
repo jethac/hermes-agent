@@ -26,6 +26,7 @@ def test_dgx_spark_eval_script_generates_full_kame_launch_pack():
     assert '--output-dir "$VOICEOPS_MATRIX_DIR"' in text
     assert '--evidence "$DGX_SPARK_KAME_BENCHMARK_EVIDENCE"' in text
     assert "track 0 VoiceOps Spark matrix verdict generated" in text
+    assert "track 0 VoiceOps local one-Spark readiness verdict" in text
     assert "ready_for_one_spark_demo" in text
     assert "KAME benchmark matrix: $KAME_STACK_DIR/benchmark-matrix.json" in text
     assert "KAME benchmark evidence template: $KAME_STACK_DIR/benchmark-evidence-template.json" in text
@@ -48,6 +49,8 @@ def test_dgx_spark_eval_script_generates_full_kame_launch_pack():
     assert "Full KAME stack pack: $KAME_STACK_DIR" in text
     assert "python -m hermes_cli.realtime_voice_oracle_probe" in text
     assert "--output \"$ARTIFACT_DIR/oracle-probe.json\"" in text
+    assert "Track A: configured oracle probe, diagnostic only" in text
+    assert "track A configured oracle probe, diagnostic only" in text
     assert "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4" in text
     assert "gemma-4-26B-A4B-it" not in text
     assert "gemma-4-26b-a4b-it" not in text
@@ -58,7 +61,7 @@ def test_dgx_spark_eval_script_generates_full_kame_launch_pack():
     assert "Recommendation JSON: $ARTIFACT_DIR/recommendation.json" in text
     assert "Recommendation Markdown: $ARTIFACT_DIR/recommendation.md" in text
     assert "CARTESIA_API_KEY" not in text.split("Track 0: full KAME DGX Spark launch pack", 1)[1].split(
-        "Track A: configured oracle probe",
+        "Track A: configured oracle probe, diagnostic only",
         1,
     )[0]
 

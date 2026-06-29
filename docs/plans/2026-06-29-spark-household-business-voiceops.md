@@ -31,7 +31,7 @@ There are two related but distinct model strategies.
 
 Use Nemotron 3 Super visibly as the preferred Spark-local Hermes oracle/model path for the demo because it is sponsor-aligned, has a credible one-Spark serving path, and communicates serious agentic reasoning on the NVIDIA target. The demo should show Nemotron 3 Super as the planner behind the budgeted VoIP provisioning workflow when the local Spark path is available.
 
-This does not mean VoiceOps adds a separate model selector. Nemotron 3 Super should still be selected through Hermes's normal `/model` flow. If the local Super endpoint is not ready, a hosted model is acceptable only as a clearly labeled `/model` fallback. The goal is to prove that Hermes can carry a Discord voice request into a safe, budgeted, tool-using business operation with NVIDIA/Stripe integrations visible.
+This does not mean VoiceOps adds a separate model selector. Nemotron 3 Super should still be selected through Hermes's normal `/model` flow. If the local Super endpoint is not ready, a hosted model is acceptable only as a clearly labeled `/model` fallback. The goal is to prove the VoiceOps workflow shape: Hermes can carry a Discord voice request into a safe, budgeted, tool-using business operation with NVIDIA/Stripe integrations visible. One-Spark readiness still requires measured local Spark benchmark evidence.
 
 Hackathon stack:
 
@@ -118,7 +118,7 @@ The reflex is not the brain and should not gain broad tool authority early.
 
 ### Oracle
 
-The oracle is Hermes's active model, selected through the existing Hermes `/model` flow. There should not be a separate `oracle_model` setting for VoiceOps. If the user points Hermes at Nemotron 3 Super, hosted Nemotron 3 Ultra, Kimi, or another provider, that is the oracle.
+The oracle is Hermes's active model, selected through the existing Hermes `/model` flow. There should not be a separate `oracle_model` setting for VoiceOps. If the user points Hermes at Nemotron 3 Super, hosted Nemotron 3 Ultra, Kimi, or another provider, that is the active Hermes oracle for that run. Hosted selections do not count as Spark-local readiness evidence.
 
 Target:
 

@@ -115,7 +115,7 @@ else
   record_fail "track 0 full KAME DGX Spark launch pack" "KAME stack artifact generation or preflight failed"
 fi
 
-note "Track A: configured oracle probe"
+note "Track A: configured oracle probe, diagnostic only"
 ORACLE_PROBE_MODEL="${DGX_SPARK_ORACLE_MODEL:-${DGX_SPARK_KAME_ORACLE_MODEL:-nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4}}"
 if [[ -n "${DGX_SPARK_ORACLE_BASE_URL:-}" && -n "$ORACLE_PROBE_MODEL" ]]; then
   if run uv run python -m hermes_cli.realtime_voice_oracle_probe \
@@ -123,12 +123,12 @@ if [[ -n "${DGX_SPARK_ORACLE_BASE_URL:-}" && -n "$ORACLE_PROBE_MODEL" ]]; then
     --base-url "$DGX_SPARK_ORACLE_BASE_URL" \
     --model "$ORACLE_PROBE_MODEL"
   then
-    record_pass "track A configured oracle probe"
+    record_pass "track A configured oracle probe, diagnostic only"
   else
-    record_fail "track A configured oracle probe" "OpenAI-compatible oracle probe failed"
+    record_fail "track A configured oracle probe, diagnostic only" "OpenAI-compatible oracle probe failed"
   fi
 else
-  record_skip "track A configured oracle probe" "set DGX_SPARK_ORACLE_BASE_URL"
+  record_skip "track A configured oracle probe, diagnostic only" "set DGX_SPARK_ORACLE_BASE_URL"
 fi
 
 note "Track B: Cartesia cloud voice bridge baseline"
@@ -223,9 +223,9 @@ payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 raise SystemExit(0 if payload.get("ready_for_one_spark_demo") is True else 1)
 PY
         then
-          record_pass "track 0 VoiceOps one-Spark readiness verdict"
+          record_pass "track 0 VoiceOps local one-Spark readiness verdict"
         else
-          record_fail "track 0 VoiceOps one-Spark readiness verdict" "Matrix parsed the evidence but did not mark ready_for_one_spark_demo=true"
+          record_fail "track 0 VoiceOps local one-Spark readiness verdict" "Matrix parsed the evidence but did not mark ready_for_one_spark_demo=true"
         fi
       else
         record_fail "track 0 VoiceOps Spark matrix verdict" "VoiceOps matrix could not parse or write the benchmark evidence verdict"

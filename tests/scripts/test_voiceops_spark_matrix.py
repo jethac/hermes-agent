@@ -153,6 +153,9 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
         "metrics.oracle_bound_oracle_calls",
     } <= set(closure["required_stack_smoke_fields"])
     assert closure["all_local_stack_smoke"]["required_components"] == ["reflex", "oracle", "asr", "tts", "sidecar"]
+    assert closure["evidence_contract"]["preferred_local_oracle_candidate_id"] == "oracle-nemotron3-super-local"
+    assert closure["evidence_contract"]["preferred_local_oracle_model"] == "Nemotron 3 Super"
+    assert closure["evidence_contract"]["non_counting_fallback_oracle_models"] == ["Nemotron 3 Ultra"]
     assert closure["evidence_contract"]["source_artifacts_must_exist"] is True
     assert closure["evidence_contract"]["source_artifact_readable"] is True
     assert closure["evidence_contract"]["source_artifact_resolution"].endswith("supplied benchmark evidence file")
@@ -162,7 +165,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" == closure["rerun_commands"]["dgx_eval"]
     assert "VoiceOps Milestone 4 Spark Matrix Closure" in closure_markdown
     assert "spark-benchmark-scaffold/spark-benchmark-evidence.json" in closure_markdown
-    assert "hosted Nemotron 3 Ultra fallback evidence" in closure_markdown
+    assert "hosted or multi-Spark Nemotron 3 Ultra fallback evidence" in closure_markdown
     assert '"evidence": [' in closure_markdown
     assert "voiceops.spark_benchmark_evidence.v1" in closure_markdown
     assert "oracle_authority_routes" in closure_markdown
@@ -173,7 +176,8 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "spark-benchmark-scaffold/spark-benchmark-evidence.json" in operator_runbook
     assert "uv run python scripts/voiceops_spark_matrix.py" in operator_runbook
     assert "uv run python scripts/voiceops_plan_run.py" in operator_runbook
-    assert "Hosted Nemotron 3 Ultra or cloud TTS evidence" in operator_runbook
+    assert "Nemotron 3 Super is the preferred one-Spark oracle candidate" in operator_runbook
+    assert "Hosted or multi-Spark Nemotron 3 Ultra evidence" in operator_runbook
     assert "`loopback_smoke_bridge`" in operator_runbook
     assert "protocol-only smoke checks" in operator_runbook
     assert "HERMES_DGX_SPARK_ASR_MODULE" in operator_runbook

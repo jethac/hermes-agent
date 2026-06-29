@@ -451,6 +451,14 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert gates["spend_and_provisioning_preflight"]["current_environment"]["required_cli_presence"]["stripe"] is False
     assert "required_candidate_fields" in gates["local_spark_stack_matrix"]
     assert "schema_version" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
+    assert (
+        gates["local_spark_stack_matrix"]["evidence_contract"]["preferred_local_oracle_candidate_id"]
+        == "oracle-nemotron3-super-local"
+    )
+    assert gates["local_spark_stack_matrix"]["evidence_contract"]["preferred_local_oracle_model"] == "Nemotron 3 Super"
+    assert gates["local_spark_stack_matrix"]["evidence_contract"]["non_counting_fallback_oracle_models"] == [
+        "Nemotron 3 Ultra"
+    ]
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["hosted_fallback_counts_for_one_spark_readiness"] is False
     assert (
         gates["local_spark_stack_matrix"]["evidence_contract"][
@@ -833,6 +841,8 @@ def test_goal_doc_keeps_super_local_and_ultra_hosted():
     assert "A clearly labeled hosted `/model` fallback is acceptable only when the local Spark path is unavailable" in text
     assert "Ultra is only an optional hosted/upstream fallback" in text
     assert "must not be used as Spark-local readiness proof" in text
+    assert "One-Spark readiness still requires measured local Spark benchmark evidence" in text
+    assert "Hosted selections do not count as Spark-local readiness evidence" in text
     assert "There should not be a separate `oracle_model` setting for VoiceOps" in text
     assert "`/model` remains authoritative" in text
 
