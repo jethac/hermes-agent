@@ -1,6 +1,6 @@
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from hermes_cli import realtime_voice_live_evidence
@@ -29,6 +29,14 @@ class _FakeDiscordLiveProbeResult:
     inbound_observed: bool = True
     disconnected: bool = True
     require_inbound: bool = True
+    latency_metrics_ms: dict[str, int] = field(
+        default_factory=lambda: {
+            "connect_ms": 420,
+            "playback_observed_ms": 180,
+            "inbound_observed_ms": 900,
+            "disconnect_ms": 120,
+        }
+    )
 
 
 def _write_json(path, payload):
@@ -54,6 +62,12 @@ def _complete_discord_probe():
         "inbound_observed": True,
         "disconnected": True,
         "require_inbound": True,
+        "latency_metrics_ms": {
+            "connect_ms": 420,
+            "playback_observed_ms": 180,
+            "inbound_observed_ms": 900,
+            "disconnect_ms": 120,
+        },
     }
 
 
@@ -65,9 +79,14 @@ def _complete_sidecar_session():
         "session_started": True,
         "session_closed": True,
         "fallback_mode_visible": True,
+        "fallback_reason": "none",
+        "sidecar_mode": "production",
+        "healthcheck_observed": True,
+        "provider_transport_observed": True,
+        "session_id_redacted": True,
         "shutdown_bounded": True,
         "shutdown_timed_out": False,
-        "latency_metrics_ms": {"shutdown_ms": 80},
+        "latency_metrics_ms": {"session_start_ms": 110, "shutdown_ms": 80},
     }
 
 
@@ -130,7 +149,7 @@ def test_live_evidence_manifest_references_optional_sidecar_and_turn_evidence(mo
         return _FakeProbeResult(ok=True)
 
     async def fake_live(_args):
-        return _FakeProbeResult(ok=True)
+        return _FakeDiscordLiveProbeResult()
 
     sidecar_path = tmp_path / "sidecar-session.json"
     live_turn_path = tmp_path / "live-turn.json"
@@ -286,12 +305,47 @@ def test_live_evidence_validate_mode_surfaces_strict_ingester_issues(monkeypatch
     assert "live_evidence_validation:live_turn.assistant_text:voice_capability_denial_text" in result.issues
 
 
+def test_live_evidence_collection_strict_validates_optional_evidence_without_validate_flag(monkeypatch, tmp_path):
+    async def fake_loopback():
+        return _FakeProbeResult(ok=True)
+
+    async def fake_live(_args):
+        return _FakeDiscordLiveProbeResult()
+
+    bad_turn = _complete_live_turn()
+    bad_turn["barge_in_stop_ms"] = 999
+    bad_turn["assistant_text"] = "I cannot hear you in Discord voice."
+    sidecar_path = _write_json(tmp_path / "sidecar-session.json", _complete_sidecar_session())
+    live_turn_path = _write_json(tmp_path / "live-turn.json", bad_turn)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", fake_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", fake_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+            "--live-turn-evidence",
+            str(live_turn_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    assert result.ok is False
+    assert result.validate_live_evidence is False
+    assert result.strict_validation["overall_status"] == "partial_live_evidence"
+    assert "live_evidence_validation:live_turn:barge_in_stop_ms_over_target" in result.issues
+    assert "live_evidence_validation:live_turn.assistant_text:voice_capability_denial_text" in result.issues
+    assert (tmp_path / "bundle" / "live-evidence-validation.json").is_file()
+
+
 def test_live_evidence_manifest_rejects_anonymous_optional_evidence(monkeypatch, tmp_path):
     async def fake_loopback():
         return _FakeProbeResult(ok=True)
 
     async def fake_live(_args):
-        return _FakeProbeResult(ok=True)
+        return _FakeDiscordLiveProbeResult()
 
     sidecar_path = tmp_path / "sidecar-session.json"
     sidecar_path.write_text(json.dumps({"sidecar_running": True}), encoding="utf-8")

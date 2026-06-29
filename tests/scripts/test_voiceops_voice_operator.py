@@ -73,6 +73,12 @@ def _complete_live_evidence() -> dict:
             "inbound_observed": True,
             "disconnected": True,
             "require_inbound": True,
+            "latency_metrics_ms": {
+                "connect_ms": 420,
+                "playback_observed_ms": 180,
+                "inbound_observed_ms": 900,
+                "disconnect_ms": 120,
+            },
         }
     )
     evidence["sidecar_session"].update(
@@ -84,7 +90,12 @@ def _complete_live_evidence() -> dict:
             "shutdown_bounded": True,
             "shutdown_timed_out": False,
             "fallback_mode_visible": True,
-            "latency_metrics_ms": {"shutdown_ms": 80},
+            "fallback_reason": "none",
+            "sidecar_mode": "production",
+            "healthcheck_observed": True,
+            "provider_transport_observed": True,
+            "session_id_redacted": True,
+            "latency_metrics_ms": {"session_start_ms": 110, "shutdown_ms": 80},
         }
     )
     evidence["live_turn"].update(
@@ -99,6 +110,33 @@ def _complete_live_evidence() -> dict:
         }
     )
     return evidence
+
+
+def _complete_discord_latency_metrics() -> dict:
+    return {
+        "connect_ms": 420,
+        "playback_observed_ms": 180,
+        "inbound_observed_ms": 900,
+        "disconnect_ms": 120,
+    }
+
+
+def _complete_sidecar_session_fields() -> dict:
+    return {
+        "sidecar_running": True,
+        "sidecar_healthy": True,
+        "session_started": True,
+        "session_closed": True,
+        "shutdown_bounded": True,
+        "shutdown_timed_out": False,
+        "fallback_mode_visible": True,
+        "fallback_reason": "none",
+        "sidecar_mode": "production",
+        "healthcheck_observed": True,
+        "provider_transport_observed": True,
+        "session_id_redacted": True,
+        "latency_metrics_ms": {"session_start_ms": 110, "shutdown_ms": 80},
+    }
 
 
 def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
@@ -234,6 +272,12 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert live_closure["evidence_shapes"]["sidecar_session"]["source_artifact"] == "sidecar-session.json"
     assert live_closure["evidence_shapes"]["sidecar_session"]["shutdown_bounded"] is True
     assert live_closure["evidence_shapes"]["sidecar_session"]["shutdown_timed_out"] is False
+    assert live_closure["evidence_shapes"]["sidecar_session"]["sidecar_mode"] == "production"
+    assert live_closure["evidence_shapes"]["sidecar_session"]["fallback_reason"] == "none"
+    assert live_closure["evidence_shapes"]["sidecar_session"]["healthcheck_observed"] is True
+    assert live_closure["evidence_shapes"]["sidecar_session"]["provider_transport_observed"] is True
+    assert live_closure["evidence_shapes"]["sidecar_session"]["session_id_redacted"] is True
+    assert live_closure["evidence_shapes"]["sidecar_session"]["latency_metrics_ms"]["session_start_ms"] == 110
     assert live_closure["evidence_shapes"]["sidecar_session"]["latency_metrics_ms"]["shutdown_ms"] == 80
     assert live_closure["evidence_shapes"]["live_turn"]["kind"] == "live_turn"
     assert live_closure["evidence_shapes"]["live_turn"]["source_artifact"] == "live-turn.json"
@@ -474,17 +518,11 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
         "inbound_observed": True,
         "disconnected": True,
         "require_inbound": True,
+        "latency_metrics_ms": _complete_discord_latency_metrics(),
     }
     sidecar = {
         "kind": "sidecar_session",
-        "sidecar_running": True,
-        "sidecar_healthy": True,
-        "session_started": True,
-        "session_closed": True,
-        "shutdown_bounded": True,
-        "shutdown_timed_out": False,
-        "fallback_mode_visible": True,
-        "latency_metrics_ms": {"shutdown_ms": 80},
+        **_complete_sidecar_session_fields(),
     }
     live_turn = {
         "kind": "live_turn",
@@ -559,13 +597,14 @@ def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path
                 "playing_during_probe": True,
                 "receiver_started": True,
                 "receiver_frames": 18,
-                "receiver_speech_start": 1,
-                "inbound_observed": True,
-                "disconnected": True,
-                "require_inbound": True,
-            }
-        ),
-        encoding="utf-8",
+                    "receiver_speech_start": 1,
+                    "inbound_observed": True,
+                    "disconnected": True,
+                    "require_inbound": True,
+                    "latency_metrics_ms": _complete_discord_latency_metrics(),
+                }
+            ),
+            encoding="utf-8",
     )
     sidecar_path.write_text(
         json.dumps(
@@ -580,7 +619,12 @@ def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path
                 "shutdown_bounded": True,
                 "shutdown_timed_out": False,
                 "fallback_mode_visible": True,
-                "latency_metrics_ms": {"shutdown_ms": 80},
+                "fallback_reason": "none",
+                "sidecar_mode": "production",
+                "healthcheck_observed": True,
+                "provider_transport_observed": True,
+                "session_id_redacted": True,
+                "latency_metrics_ms": {"session_start_ms": 110, "shutdown_ms": 80},
             }
         ),
         encoding="utf-8",
@@ -674,6 +718,39 @@ def test_voice_operator_rejects_combined_manifest_missing_nested_source_artifact
     assert "live_turn:missing_source_artifact" in live_evidence["issues"]
 
 
+def test_voice_operator_manifest_nested_report_source_artifacts_resolve_relative_to_report(tmp_path):
+    report_dir = tmp_path / "reports"
+    raw_dir = report_dir / "raw"
+    raw_dir.mkdir(parents=True)
+    for name in ("discord.json", "sidecar.json", "turn.json"):
+        (raw_dir / name).write_text("{}", encoding="utf-8")
+    evidence = _complete_live_evidence()
+    evidence["discord_live_probe"]["source_artifact"] = "raw/discord.json"
+    evidence["sidecar_session"]["source_artifact"] = "raw/sidecar.json"
+    evidence["live_turn"]["source_artifact"] = "raw/turn.json"
+    combined_path = report_dir / "combined.json"
+    combined_path.write_text(json.dumps(evidence), encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "ok": True,
+                "reports": {
+                    "combined": "reports/combined.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert live_evidence["overall_status"] == "live_evidence_supplied_not_readiness_claim"
+    assert live_evidence["issues"] == []
+    assert live_evidence["section_refs"]["sidecar_session"]["source_artifact"] == str(raw_dir / "sidecar.json")
+
+
 def test_live_evidence_rejects_complete_payload_without_schema_and_source_artifacts():
     evidence = build_live_probe_evidence_template()
     evidence.pop("schema_version")
@@ -696,18 +773,12 @@ def test_live_evidence_rejects_complete_payload_without_schema_and_source_artifa
             "inbound_observed": True,
             "disconnected": True,
             "require_inbound": True,
+            "latency_metrics_ms": _complete_discord_latency_metrics(),
         }
     )
     evidence["sidecar_session"].update(
         {
-            "sidecar_running": True,
-            "sidecar_healthy": True,
-            "session_started": True,
-            "session_closed": True,
-            "shutdown_bounded": True,
-            "shutdown_timed_out": False,
-            "fallback_mode_visible": True,
-            "latency_metrics_ms": {"shutdown_ms": 80},
+            **_complete_sidecar_session_fields(),
         }
     )
     evidence["live_turn"].update(
@@ -739,14 +810,7 @@ def test_voice_operator_rejects_manifest_with_example_only_referenced_section(tm
     sidecar = build_live_probe_evidence_template()["sidecar_session"]
     sidecar.update(
         {
-            "sidecar_running": True,
-            "sidecar_healthy": True,
-            "session_started": True,
-            "session_closed": True,
-            "shutdown_bounded": True,
-            "shutdown_timed_out": False,
-            "fallback_mode_visible": True,
-            "latency_metrics_ms": {"shutdown_ms": 80},
+            **_complete_sidecar_session_fields(),
         }
     )
     live_turn = build_live_probe_evidence_template()["live_turn"]
@@ -793,14 +857,7 @@ def test_voice_operator_rejects_manifest_with_missing_or_invalid_schema(tmp_path
     sidecar = build_live_probe_evidence_template()["sidecar_session"]
     sidecar.update(
         {
-            "sidecar_running": True,
-            "sidecar_healthy": True,
-            "session_started": True,
-            "session_closed": True,
-            "shutdown_bounded": True,
-            "shutdown_timed_out": False,
-            "fallback_mode_visible": True,
-            "latency_metrics_ms": {"shutdown_ms": 80},
+            **_complete_sidecar_session_fields(),
         }
     )
     live_turn = build_live_probe_evidence_template()["live_turn"]
@@ -864,14 +921,7 @@ def test_live_evidence_rejects_nested_example_only_sections():
     evidence["sidecar_session"].update(
         {
             "example_only": True,
-            "sidecar_running": True,
-            "sidecar_healthy": True,
-            "session_started": True,
-            "session_closed": True,
-            "shutdown_bounded": True,
-            "shutdown_timed_out": False,
-            "fallback_mode_visible": True,
-            "latency_metrics_ms": {"shutdown_ms": 80},
+            **_complete_sidecar_session_fields(),
         }
     )
     evidence["live_turn"].update(
@@ -921,6 +971,39 @@ def test_live_evidence_requires_bounded_sidecar_shutdown():
     assert "sidecar_session:missing_shutdown_ms" in result["issues"]
     assert "sidecar_session:shutdown_bounded_not_true" in result["issues"]
     assert "sidecar_session:shutdown_timed_out_not_false" in result["issues"]
+    assert result["sidecar_session"]["ok"] is False
+
+
+def test_live_evidence_requires_sidecar_production_provenance_and_fallback_reason():
+    evidence = _complete_live_evidence()
+    evidence["sidecar_session"].pop("sidecar_mode")
+    evidence["sidecar_session"]["healthcheck_observed"] = False
+    evidence["sidecar_session"]["provider_transport_observed"] = False
+    evidence["sidecar_session"]["session_id_redacted"] = False
+    evidence["sidecar_session"]["fallback_reason"] = ""
+
+    result = validate_live_probe_evidence(evidence)
+
+    assert "sidecar_session:sidecar_mode_not_production" in result["issues"]
+    assert "sidecar_session:healthcheck_observed_not_true" in result["issues"]
+    assert "sidecar_session:provider_transport_observed_not_true" in result["issues"]
+    assert "sidecar_session:session_id_redacted_not_true" in result["issues"]
+    assert "sidecar_session:missing_fallback_reason" in result["issues"]
+    assert result["sidecar_session"]["ok"] is False
+
+
+def test_live_evidence_requires_discord_and_sidecar_session_start_latencies():
+    evidence = _complete_live_evidence()
+    evidence["discord_live_probe"]["latency_metrics_ms"].pop("connect_ms")
+    evidence["discord_live_probe"]["latency_metrics_ms"]["disconnect_ms"] = -1
+    evidence["sidecar_session"]["latency_metrics_ms"].pop("session_start_ms")
+
+    result = validate_live_probe_evidence(evidence)
+
+    assert "discord_live_probe:missing_connect_ms" in result["issues"]
+    assert "discord_live_probe:missing_disconnect_ms" in result["issues"]
+    assert "sidecar_session:missing_session_start_ms" in result["issues"]
+    assert result["discord_live_probe"]["latency_ok"] is False
     assert result["sidecar_session"]["ok"] is False
 
 

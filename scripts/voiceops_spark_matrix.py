@@ -247,26 +247,36 @@ def _base_adapted_evidence(
         "measured_at": _measured_at(source),
         "source_artifact": _source_artifact(source),
         "metrics": metrics,
+        "adapter": source.get("adapter"),
+        "module": source.get("module"),
+        "provider": source.get("provider"),
+        "protocol_smoke_only": source.get("protocol_smoke_only") is True,
         "example_only": source.get("example_only") is True,
         "adapted_from": str(source.get("kind") or ""),
         "_evidence_path": source.get("_evidence_path"),
     }
 
 
-def _oracle_model_from_kame(entries: list[dict[str, Any]]) -> str:
+def _oracle_authority_from_kame(entries: list[dict[str, Any]]) -> dict[str, Any]:
     for entry in entries:
         if (
             entry.get("kind") == "kame_model_assumption_result"
             and entry.get("name") == "oracle_authority"
+            and entry.get("validated_by") == "oracle_models_probe"
             and str(entry.get("model") or "").strip()
             and _verified(entry)
         ):
-            return str(entry["model"])
-    return ""
+            return {
+                "model": str(entry["model"]),
+                "oracle_selected_by": "Hermes /model",
+                "validated_by": entry.get("validated_by"),
+            }
+    return {}
 
 
 def _adapt_kame_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    oracle_model = _oracle_model_from_kame(entries)
+    oracle_authority = _oracle_authority_from_kame(entries)
+    oracle_model = str(oracle_authority.get("model") or "")
     adapted: list[dict[str, Any]] = []
     for entry in entries:
         if entry.get("kind") == STACK_SMOKE_KIND:
@@ -314,21 +324,26 @@ def _adapt_kame_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 )
             )
         elif category == "oracle":
-            adapted.append(
-                _base_adapted_evidence(
-                    entry,
-                    candidate_id="oracle-nemotron3-super-local",
-                    model=str(entry.get("model") or oracle_model),
-                    engine=str(entry.get("engine") or "Hermes /model to local NVIDIA Spark endpoint"),
-                    metrics={
-                        "decode_tok_s": metrics.get("decode_tok_s"),
-                        "prefill_tok_s": metrics.get("prefill_tok_s"),
-                        "first_token_ms": metrics.get("oracle_accepted_to_first_token_ms"),
-                        "steady_state_memory_gb": metrics.get("steady_state_memory_gb")
-                        or metrics.get("memory_gb"),
-                    },
-                )
+            oracle_evidence = _base_adapted_evidence(
+                entry,
+                candidate_id="oracle-nemotron3-super-local",
+                model=str(entry.get("model") or oracle_model),
+                engine=str(entry.get("engine") or "Hermes /model to local NVIDIA Spark endpoint"),
+                metrics={
+                    "decode_tok_s": metrics.get("decode_tok_s"),
+                    "prefill_tok_s": metrics.get("prefill_tok_s"),
+                    "first_token_ms": metrics.get("oracle_accepted_to_first_token_ms"),
+                    "steady_state_memory_gb": metrics.get("steady_state_memory_gb")
+                    or metrics.get("memory_gb"),
+                },
             )
+            oracle_evidence.update(
+                {
+                    "oracle_selected_by": oracle_authority.get("oracle_selected_by"),
+                    "oracle_authority_validated_by": oracle_authority.get("validated_by"),
+                }
+            )
+            adapted.append(oracle_evidence)
         elif category == "speech" and entry.get("role") == "oracle_verbatim_asr":
             literal_accuracy = _coerce_number(metrics.get("literal_accuracy_names_numbers_code"))
             adapted.append(
@@ -451,6 +466,15 @@ def evaluate_candidate(candidate: Candidate, evidence: list[dict[str, Any]]) -> 
             issues.append("missing_source_artifact")
         else:
             issues.extend(_source_artifact_issues(item))
+        if candidate.candidate_id == "oracle-nemotron3-super-local" and item.get("oracle_selected_by") != "Hermes /model":
+            issues.append("missing_oracle_authority_proof")
+        if candidate.role in {"asr", "tts"}:
+            adapter = str(item.get("adapter") or "").strip()
+            module = str(item.get("module") or "").strip()
+            if item.get("protocol_smoke_only") is True:
+                issues.append("protocol_smoke_only_not_accepted")
+            if adapter == "loopback_smoke_bridge" or module == "loopback_smoke_bridge":
+                issues.append("loopback_speech_evidence_not_accepted")
         if not str(item.get("measured_at") or "").strip():
             issues.append("missing_measured_at")
         elif not _has_parseable_timezone_timestamp(item.get("measured_at")):

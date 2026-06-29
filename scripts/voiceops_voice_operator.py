@@ -67,6 +67,12 @@ LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS = (
     "fallback_mode_visible",
 )
 
+LIVE_EVIDENCE_REQUIRED_SIDECAR_PROVENANCE_BOOLS = (
+    "healthcheck_observed",
+    "provider_transport_observed",
+    "session_id_redacted",
+)
+
 LIVE_EVIDENCE_REQUIRED_TURN_BOOLS = (
     "transcript_observed",
     "assistant_audio_observed",
@@ -78,8 +84,17 @@ LIVE_EVIDENCE_REQUIRED_TURN_BOOLS = (
 LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS = {
     "discord-live-probe.json",
     "voice-status-or-sidecar-report.json",
+    "sidecar-session.json",
     "voice-turn-evidence.json",
+    "live-turn.json",
 }
+
+LIVE_EVIDENCE_REQUIRED_DISCORD_LATENCIES_MS = (
+    "connect_ms",
+    "playback_observed_ms",
+    "inbound_observed_ms",
+    "disconnect_ms",
+)
 
 LIVE_EVIDENCE_FORBIDDEN_TEXT_FIELDS = {
     "assistant_text",
@@ -210,6 +225,10 @@ def build_live_probe_evidence_template() -> dict[str, Any]:
             "shutdown_timed_out": None,
             "fallback_mode_visible": False,
             "fallback_reason": None,
+            "sidecar_mode": None,
+            "healthcheck_observed": False,
+            "provider_transport_observed": False,
+            "session_id_redacted": False,
             "latency_metrics_ms": {
                 "session_start_ms": None,
                 "shutdown_ms": None,
@@ -265,6 +284,10 @@ def build_live_probe_evidence_example() -> dict[str, Any]:
             "shutdown_timed_out": False,
             "fallback_mode_visible": True,
             "fallback_reason": "none",
+            "sidecar_mode": "production",
+            "healthcheck_observed": True,
+            "provider_transport_observed": True,
+            "session_id_redacted": True,
             "latency_metrics_ms": {
                 "session_start_ms": 110,
                 "shutdown_ms": 80,
@@ -445,6 +468,11 @@ def _with_manifest_report_provenance(payload: Mapping[str, Any], report_path: Pa
             section_provenance = {"wrapper_artifact": source_artifact, "section": section_name}
             if previous_section_source:
                 section_provenance["reported_source_artifact"] = previous_section_source
+                if previous_section_source not in LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS:
+                    previous_path = Path(previous_section_source).expanduser()
+                    if not previous_path.is_absolute():
+                        previous_path = report_path.parent / previous_path
+                    section_copy["source_artifact"] = str(previous_path.resolve())
             section_copy["provenance"] = section_provenance
             enriched[section_name] = section_copy
     return enriched
@@ -550,6 +578,16 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
     )
     if not inbound:
         issues.append("discord_live_probe:inbound_not_observed")
+    discord_latency = (
+        discord_probe.get("latency_metrics_ms")
+        if isinstance(discord_probe.get("latency_metrics_ms"), Mapping)
+        else {}
+    )
+    discord_latency_ok = True
+    for key in LIVE_EVIDENCE_REQUIRED_DISCORD_LATENCIES_MS:
+        if _non_negative_number(discord_latency.get(key)) is None:
+            issues.append(f"discord_live_probe:missing_{key}")
+            discord_latency_ok = False
 
     sidecar = payload.get("sidecar_session") if isinstance(payload.get("sidecar_session"), Mapping) else {}
     if not str(sidecar.get("source_artifact") or "").strip():
@@ -566,7 +604,20 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
     for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS:
         if sidecar.get(key) is not True:
             issues.append(f"sidecar_session:{key}_not_true")
+    for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_PROVENANCE_BOOLS:
+        if sidecar.get(key) is not True:
+            issues.append(f"sidecar_session:{key}_not_true")
+    if str(sidecar.get("sidecar_mode") or "").strip() != "production":
+        issues.append("sidecar_session:sidecar_mode_not_production")
+    fallback_reason = str(sidecar.get("fallback_reason") or "").strip()
+    if sidecar.get("fallback_mode_visible") is True and not fallback_reason:
+        issues.append("sidecar_session:missing_fallback_reason")
+    elif fallback_reason and _looks_secret_or_phone(fallback_reason):
+        issues.append("sidecar_session:fallback_reason_secret_or_phone_like_value")
     sidecar_latency = sidecar.get("latency_metrics_ms") if isinstance(sidecar.get("latency_metrics_ms"), Mapping) else {}
+    session_start_ms = _non_negative_number(sidecar_latency.get("session_start_ms"))
+    if session_start_ms is None:
+        issues.append("sidecar_session:missing_session_start_ms")
     shutdown_ms = _non_negative_number(sidecar_latency.get("shutdown_ms"))
     if shutdown_ms is None:
         issues.append("sidecar_session:missing_shutdown_ms")
@@ -618,14 +669,21 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             "join_ok": all(discord_probe.get(key) is True for key in ("connect_perm", "speak_perm", "connected", "opus_loaded", "disconnected")),
             "playback_ok": all(discord_probe.get(key) is True for key in ("accepted_audio_source", "played", "playing_during_probe")),
             "inbound_observed": inbound,
+            "latency_ok": discord_latency_ok,
             "receiver_frames": _positive_int(discord_probe.get("receiver_frames")),
             "receiver_speech_start": _positive_int(discord_probe.get("receiver_speech_start")),
         },
         "sidecar_session": {
             "ok": all(sidecar.get(key) is True for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS)
+            and all(sidecar.get(key) is True for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_PROVENANCE_BOOLS)
+            and str(sidecar.get("sidecar_mode") or "").strip() == "production"
+            and (sidecar.get("fallback_mode_visible") is not True or bool(fallback_reason))
+            and not _looks_secret_or_phone(fallback_reason)
+            and session_start_ms is not None
             and shutdown_ms is not None
             and sidecar.get("shutdown_bounded") is True
             and sidecar.get("shutdown_timed_out") is False,
+            "session_start_ms": session_start_ms,
             "shutdown_ms": shutdown_ms,
             "shutdown_bounded": sidecar.get("shutdown_bounded") is True,
             "shutdown_timed_out": sidecar.get("shutdown_timed_out") is True,
@@ -1033,8 +1091,10 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "validate_bundle_offline": report["live_probe_required_for_completion"]["validate_command"],
             "sidecar_session": (
                 "Write sidecar-session.json with kind=sidecar_session, sidecar_running, sidecar_healthy, "
-                "session_started, session_closed, fallback_mode_visible, shutdown_bounded=true, "
-                "shutdown_timed_out=false, latency_metrics_ms.shutdown_ms, and source_artifact."
+                "session_started, session_closed, fallback_mode_visible, fallback_reason, sidecar_mode=production, "
+                "healthcheck_observed, provider_transport_observed, session_id_redacted, shutdown_bounded=true, "
+                "shutdown_timed_out=false, latency_metrics_ms.session_start_ms, latency_metrics_ms.shutdown_ms, "
+                "and source_artifact."
             ),
             "live_turn": "Write live-turn.json with kind=live_turn, transcript_observed, assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, speech_end_to_first_audio_ms, barge_in_stop_ms, and source_artifact.",
             "ingest": report["live_probe_required_for_completion"]["ingest_command"],
@@ -1057,6 +1117,12 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "inbound_observed": True,
                 "disconnected": True,
                 "require_inbound": True,
+                "latency_metrics_ms": {
+                    "connect_ms": 420,
+                    "playback_observed_ms": 180,
+                    "inbound_observed_ms": 900,
+                    "disconnect_ms": 120,
+                },
             },
             "sidecar_session": {
                 "kind": "sidecar_session",
@@ -1066,9 +1132,14 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "session_started": True,
                 "session_closed": True,
                 "fallback_mode_visible": True,
+                "fallback_reason": "none",
+                "sidecar_mode": "production",
+                "healthcheck_observed": True,
+                "provider_transport_observed": True,
+                "session_id_redacted": True,
                 "shutdown_bounded": True,
                 "shutdown_timed_out": False,
-                "latency_metrics_ms": {"shutdown_ms": 80},
+                "latency_metrics_ms": {"session_start_ms": 110, "shutdown_ms": 80},
             },
             "live_turn": {
                 "kind": "live_turn",

@@ -177,7 +177,11 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
     )
     manifest_path = output_dir / "manifest.json"
     _write_json(manifest_path, asdict(result))
-    if getattr(args, "validate_live_evidence", False):
+    optional_evidence_supplied = any(
+        getattr(args, attr, None) is not None
+        for attr in ("discord_live_probe_evidence", "sidecar_session_evidence", "live_turn_evidence")
+    )
+    if getattr(args, "validate_live_evidence", False) or optional_evidence_supplied:
         strict_validation = _strict_live_evidence_validation(manifest_path)
         strict_issues = [f"live_evidence_validation:{issue}" for issue in strict_validation.get("issues", [])]
         if strict_issues:
@@ -194,7 +198,7 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
             live_probe_ok=live_probe_ok,
             live_probe_status=live_probe_status,
             evidence_context=context,
-            validate_live_evidence=True,
+            validate_live_evidence=bool(getattr(args, "validate_live_evidence", False)),
             strict_validation=strict_validation,
         )
         _write_json(output_dir / "live-evidence-validation.json", strict_validation)
@@ -269,8 +273,13 @@ def _optional_evidence_structural_issues(report_key: str, payload: dict[str, Any
                 "session_closed",
                 "fallback_mode_visible",
                 "shutdown_bounded",
+                "healthcheck_observed",
+                "provider_transport_observed",
+                "session_id_redacted",
             ),
-            nested_numbers=("latency_metrics_ms.shutdown_ms",),
+            exact_fields={"sidecar_mode": "production"},
+            required_strings=("fallback_reason",),
+            nested_numbers=("latency_metrics_ms.session_start_ms", "latency_metrics_ms.shutdown_ms"),
             false_fields=("shutdown_timed_out",),
         )
     if report_key == "live_turn":
@@ -325,6 +334,8 @@ def _missing_required_optional_fields(
     payload: dict[str, Any],
     true_fields: tuple[str, ...],
     *,
+    exact_fields: dict[str, str] | None = None,
+    required_strings: tuple[str, ...] = (),
     nested_numbers: tuple[str, ...] = (),
     false_fields: tuple[str, ...] = (),
 ) -> list[str]:
@@ -335,6 +346,12 @@ def _missing_required_optional_fields(
     for field in false_fields:
         if payload.get(field) is not False:
             issues.append(f"{field} must be false")
+    for field, expected in (exact_fields or {}).items():
+        if str(payload.get(field) or "").strip() != expected:
+            issues.append(f"{field} must be {expected}")
+    for field in required_strings:
+        if not str(payload.get(field) or "").strip():
+            issues.append(f"{field} must be a non-empty redacted string")
     for field in nested_numbers:
         value: Any = payload
         for part in field.split("."):

@@ -1827,7 +1827,7 @@ def _voiceops_matrix_projection_issues(entries: list[Mapping[str, Any]]) -> list
 def _projection_source_artifact_issues(entry: Mapping[str, Any]) -> list[str]:
     evidence_path_text = str(entry.get("_evidence_path") or "").strip()
     if not evidence_path_text:
-        return []
+        return ["source_artifact_unverified"]
     source_path = Path(str(entry.get("source_artifact") or "").strip()).expanduser()
     if not source_path.is_absolute():
         source_path = Path(evidence_path_text).expanduser().parent / source_path

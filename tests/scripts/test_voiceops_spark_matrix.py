@@ -24,7 +24,7 @@ def _spark_raw_source_artifacts(tmp_path):
 
 
 def _base_evidence(candidate_id: str, *, model: str, locality: str = "local_spark") -> dict:
-    return {
+    evidence = {
         "schema_version": "voiceops.spark_benchmark_evidence.v1",
         "candidate_id": candidate_id,
         "hardware": "1x NVIDIA DGX Spark" if locality == "local_spark" else "hosted",
@@ -36,6 +36,9 @@ def _base_evidence(candidate_id: str, *, model: str, locality: str = "local_spar
         "source_artifact": "artifacts/test/raw.json",
         "metrics": {},
     }
+    if candidate_id == "oracle-nemotron3-super-local":
+        evidence["oracle_selected_by"] = "Hermes /model"
+    return evidence
 
 
 def _stack_smoke() -> dict:
@@ -694,6 +697,7 @@ def test_spark_matrix_adapts_kame_benchmark_evidence_with_provenance(tmp_path):
                     **common,
                     "kind": "kame_model_assumption_result",
                     "name": "oracle_authority",
+                    "validated_by": "oracle_models_probe",
                     "model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
                     "ok": True,
                 },
@@ -781,6 +785,93 @@ def test_spark_matrix_adapts_kame_benchmark_evidence_with_provenance(tmp_path):
     assert evaluations["tts-magpie-local"]["status"] == "validated"
     assert matrix["stack_smoke"]["status"] == "validated"
     assert matrix["ready_for_one_spark_demo"] is True
+
+
+def test_spark_matrix_rejects_protocol_only_kame_speech_evidence(tmp_path):
+    evidence_path = tmp_path / "kame-evidence.json"
+    common = {
+        "hardware": "1x DGX Spark",
+        "locality": "local_spark",
+        "verified": True,
+        "measured_at": "2026-06-29T00:00:00Z",
+        "source_artifact": "artifacts/kame/raw.json",
+        "adapter": "loopback_smoke_bridge",
+        "protocol_smoke_only": True,
+    }
+    evidence_path.write_text(
+        json.dumps(
+            [
+                {
+                    **common,
+                    "kind": "kame_benchmark_result",
+                    "category": "speech",
+                    "role": "oracle_verbatim_asr",
+                    "model": "Nemotron Speech streaming",
+                    "metrics": {
+                        "speech_end_to_asr_final_ms": 80,
+                        "speech_end_to_asr_final_p90_ms": 150,
+                        "literal_accuracy_names_numbers_code": 0.9,
+                    },
+                },
+                {
+                    **common,
+                    "kind": "kame_benchmark_result",
+                    "category": "speech",
+                    "role": "tts",
+                    "model": "Magpie local TTS",
+                    "metrics": {
+                        "tts_request_to_first_audio_ms": 180,
+                        "underrun_count": 0,
+                    },
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    matrix = build_matrix([evidence_path])
+    evaluations = {evaluation["candidate_id"]: evaluation for evaluation in matrix["evaluations"]}
+
+    assert evaluations["asr-nemotron-speech"]["status"] == "fails_target"
+    assert "protocol_smoke_only_not_accepted" in evaluations["asr-nemotron-speech"]["issues"]
+    assert "loopback_speech_evidence_not_accepted" in evaluations["asr-nemotron-speech"]["issues"]
+    assert evaluations["tts-magpie-local"]["status"] == "fails_target"
+    assert matrix["role_status"]["asr"] == "needs_evidence"
+    assert matrix["role_status"]["tts"] == "needs_evidence"
+
+
+def test_spark_matrix_rejects_kame_oracle_benchmark_without_hermes_model_authority(tmp_path):
+    evidence_path = tmp_path / "kame-evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            [
+                {
+                    "hardware": "1x DGX Spark",
+                    "locality": "local_spark",
+                    "verified": True,
+                    "measured_at": "2026-06-29T00:00:00Z",
+                    "source_artifact": "artifacts/kame/raw.json",
+                    "kind": "kame_benchmark_result",
+                    "category": "oracle",
+                    "model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+                    "metrics": {
+                        "decode_tok_s": 24,
+                        "prefill_tok_s": 3100,
+                        "oracle_accepted_to_first_token_ms": 1200,
+                        "steady_state_memory_gb": 92,
+                    },
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    matrix = build_matrix([evidence_path])
+    oracle = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert oracle["status"] == "fails_target"
+    assert "missing_oracle_authority_proof" in oracle["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
 
 
 def test_spark_matrix_rejects_kame_evidence_without_explicit_spark_locality_and_routing(tmp_path):

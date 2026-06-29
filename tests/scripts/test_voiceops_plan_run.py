@@ -46,6 +46,12 @@ def _write_live_voice_evidence(root: Path) -> Path:
             "inbound_observed": True,
             "disconnected": True,
             "require_inbound": True,
+            "latency_metrics_ms": {
+                "connect_ms": 420,
+                "playback_observed_ms": 180,
+                "inbound_observed_ms": 900,
+                "disconnect_ms": 120,
+            },
         },
     )
     _write_json(
@@ -59,7 +65,12 @@ def _write_live_voice_evidence(root: Path) -> Path:
             "shutdown_bounded": True,
             "shutdown_timed_out": False,
             "fallback_mode_visible": True,
-            "latency_metrics_ms": {"shutdown_ms": 80},
+            "fallback_reason": "none",
+            "sidecar_mode": "production",
+            "healthcheck_observed": True,
+            "provider_transport_observed": True,
+            "session_id_redacted": True,
+            "latency_metrics_ms": {"session_start_ms": 110, "shutdown_ms": 80},
         },
     )
     _write_json(
@@ -232,7 +243,7 @@ def _write_post_approval_receipts(root: Path) -> Path:
 
 
 def _base_spark_evidence(candidate_id: str, *, model: str, source_artifact: str) -> dict:
-    return {
+    evidence = {
         "schema_version": "voiceops.spark_benchmark_evidence.v1",
         "candidate_id": candidate_id,
         "hardware": "1x NVIDIA DGX Spark",
@@ -244,6 +255,9 @@ def _base_spark_evidence(candidate_id: str, *, model: str, source_artifact: str)
         "source_artifact": source_artifact,
         "metrics": {},
     }
+    if candidate_id == "oracle-nemotron3-super-local":
+        evidence["oracle_selected_by"] = "Hermes /model"
+    return evidence
 
 
 def _write_spark_evidence(root: Path) -> Path:
@@ -828,7 +842,7 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "kind` or `evidence_type` values such as `discord_live_probe`, `sidecar_session`, or `live_turn`" in text
     assert "Manifest ingestion is preferred because manifest reports record the actual referenced report path as provenance" in text
     assert "placeholder source paths inside referenced artifacts are not trusted as provenance" in text
-    assert "Template source artifact names such as `discord-live-probe.json`, `voice-status-or-sidecar-report.json`, and `voice-turn-evidence.json` are rejected" in text
+    assert "Template source artifact names such as `discord-live-probe.json`, `voice-status-or-sidecar-report.json`, `sidecar-session.json`, `voice-turn-evidence.json`, and `live-turn.json` are rejected" in text
     assert "source_artifact` for every redacted evidence section" in text
     assert "voiceops.milestone2.post_approval_receipts.v1" in text
     assert "`--post-approval-receipts`" in text

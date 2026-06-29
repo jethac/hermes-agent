@@ -303,6 +303,16 @@ def _passing_benchmark_evidence() -> list[dict]:
     return [{**VOICEOPS_PROJECTION_PROVENANCE, **entry} for entry in entries]
 
 
+def _passing_benchmark_evidence_with_source(tmp_path: Path) -> list[dict]:
+    evidence_path = tmp_path / "kame-evidence.json"
+    raw_path = tmp_path / "raw-kame-benchmark.json"
+    raw_path.write_text(
+        json.dumps({"redacted": True, "source": "synthetic KAME benchmark fixture"}),
+        encoding="utf-8",
+    )
+    return [{**entry, "_evidence_path": str(evidence_path)} for entry in _passing_benchmark_evidence()]
+
+
 def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     manifest = _manifest(tmp_path)
 
@@ -1146,7 +1156,7 @@ def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_pat
 
     result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(
         matrix,
-        _passing_benchmark_evidence(),
+        _passing_benchmark_evidence_with_source(tmp_path),
     )
 
     assert result["ok"] is True
@@ -1174,17 +1184,13 @@ def test_benchmark_evidence_validator_accepts_complete_comparison_matrix(tmp_pat
 
 def test_benchmark_evidence_validator_accepts_voiceops_closing_kame_evidence(tmp_path):
     matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
-    evidence = _passing_benchmark_evidence()
+    evidence = _passing_benchmark_evidence_with_source(tmp_path)
 
     kame_result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
 
     assert kame_result["ok"] is True
 
     evidence_path = tmp_path / "kame-evidence.json"
-    (tmp_path / "raw-kame-benchmark.json").write_text(
-        json.dumps({"redacted": True, "source": "synthetic KAME benchmark fixture"}),
-        encoding="utf-8",
-    )
     evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
 
     voiceops_matrix = build_matrix([evidence_path])
@@ -1213,6 +1219,17 @@ def test_benchmark_evidence_validator_rejects_missing_voiceops_projection_proven
     assert "voiceops_projection:0:kame_benchmark_result:missing_source_artifact" in result["issues"]
     assert "voiceops_projection:0:kame_benchmark_result:missing_measured_at" in result["issues"]
     assert f"voiceops_projection:{last_entry_index}:kame_smoke_result:missing_or_invalid_hardware" in result["issues"]
+
+
+def test_benchmark_evidence_validator_rejects_direct_entries_without_evidence_path(tmp_path):
+    matrix = realtime_voice_dgx_spark.build_dgx_spark_benchmark_matrix(_manifest(tmp_path, production_speech=True))
+    evidence = _passing_benchmark_evidence()
+
+    result = realtime_voice_dgx_spark.validate_dgx_spark_benchmark_evidence(matrix, evidence)
+
+    assert result["ok"] is False
+    assert result["coverage"]["voiceops_matrix_projection_ready"] is False
+    assert "voiceops_projection:0:kame_benchmark_result:source_artifact_unverified" in result["issues"]
 
 
 def test_benchmark_evidence_validator_rejects_invalid_voiceops_projection_timestamp(tmp_path):
