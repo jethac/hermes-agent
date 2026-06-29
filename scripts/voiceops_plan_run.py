@@ -658,6 +658,8 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
         },
     ]
     blockers = _build_current_environment_blockers(current_environment)
+    readiness_gap_milestones = set(summary["readiness_gaps"])
+    remaining_gates = [gate for gate in gates if gate["milestone"] in readiness_gap_milestones]
     return {
         "schema_version": "voiceops.closure_index.v1",
         "artifact_id": "voiceops-plan-readiness-closure",
@@ -677,7 +679,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
         "current_environment_blockers": blockers,
         "operator_handoff": _build_operator_handoff(gates, blockers),
         "closure_status": "needs_external_evidence" if summary["readiness_gaps"] else "complete",
-        "remaining_gates": gates,
+        "remaining_gates": remaining_gates,
         "gates": gates,
     }
 

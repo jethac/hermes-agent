@@ -541,6 +541,8 @@ The readiness closure index is the top-level next-action map for the remaining e
 
 The operator handoff is the ordered execution runbook derived from the closure index. It must list the live Discord voice, spend/provisioning preflight, and local Spark stack phases in order, include exact collection and re-index commands, identify expected artifacts and success checks, and state that the handoff does not change readiness by itself.
 
+The test suite includes a closure rehearsal with redacted local fixtures for all three remaining gates. It proves that supplied live voice evidence, provisioning preflight evidence, and Spark benchmark evidence can drive `readiness_gaps: []`, `closure_status: complete`, and `remaining_gates: []` without credentials, live Discord, provider actions, phone calls, network I/O, or DGX Spark execution. Real readiness still requires replacing those fixtures with actual collected evidence.
+
 When evidence exists, rerun the same indexer with the relevant read-only artifacts instead of hand-editing the index:
 
 ```bash

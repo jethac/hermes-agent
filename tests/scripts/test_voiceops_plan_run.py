@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +11,240 @@ from scripts.voiceops_plan_run import build_plan_run, parse_args, write_plan_run
 
 
 GOAL_DOC = Path(__file__).resolve().parents[2] / "docs" / "plans" / "2026-06-29-spark-household-business-voiceops.md"
+
+
+def _write_json(path: Path, payload: dict) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def _write_fake_bin(bin_dir: Path, name: str) -> None:
+    path = bin_dir / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/usr/bin/env sh\nprintf '%s\\n' mock\n", encoding="utf-8")
+    path.chmod(0o755)
+
+
+def _write_live_voice_evidence(root: Path) -> Path:
+    _write_json(
+        root / "discord-live-probe.json",
+        {
+            "kind": "discord_live_probe",
+            "ok": True,
+            "connect_perm": True,
+            "speak_perm": True,
+            "connected": True,
+            "opus_loaded": True,
+            "accepted_audio_source": True,
+            "played": True,
+            "playing_during_probe": True,
+            "receiver_started": True,
+            "receiver_frames": 12,
+            "receiver_speech_start": 1,
+            "inbound_observed": True,
+            "disconnected": True,
+            "require_inbound": True,
+        },
+    )
+    _write_json(
+        root / "sidecar-session.json",
+        {
+            "kind": "sidecar_session",
+            "sidecar_running": True,
+            "sidecar_healthy": True,
+            "session_started": True,
+            "session_closed": True,
+            "shutdown_bounded": True,
+            "shutdown_timed_out": False,
+            "fallback_mode_visible": True,
+            "latency_metrics_ms": {"shutdown_ms": 80},
+        },
+    )
+    _write_json(
+        root / "live-turn.json",
+        {
+            "kind": "live_turn",
+            "transcript_observed": True,
+            "assistant_audio_observed": True,
+            "barge_in_observed": True,
+            "spoken_reply_short": True,
+            "no_voice_denial_observed": True,
+            "speech_end_to_first_audio_ms": 900,
+            "barge_in_stop_ms": 90,
+        },
+    )
+    return _write_json(
+        root / "manifest.json",
+        {
+            "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+            "reports": {
+                "discord_live_probe": "discord-live-probe.json",
+                "sidecar_session": "sidecar-session.json",
+                "live_turn": "live-turn.json",
+            },
+        },
+    )
+
+
+def _write_preflight_evidence(root: Path) -> Path:
+    sections_dir = root / "sections"
+    sources_dir = root / "sources"
+    section_payloads = {
+        "stripe_projects": {
+            "account_ref": "stripe-projects-account-ref-demo",
+            "projects_catalog_checked_at": "2026-06-29T00:00:00Z",
+            "voip_provider_candidate": "twilio/voice",
+            "can_create_project_after_approval": True,
+        },
+        "stripe_link": {
+            "account_ref": "stripe-link-account-ref-demo",
+            "approval_capability_confirmed": True,
+            "max_approved_cents": 20_000,
+            "currency": "usd",
+        },
+        "mpp": {
+            "boundary_tool": "nemoclaw",
+            "policy_ref": "nemoclaw-policy-ref-demo",
+            "approval_packet_ref": "nemoclaw-action-packet.json",
+        },
+        "phone_handoff": {
+            "provider": "twilio",
+            "provider_account_ref": "twilio-account-ref-demo",
+            "phone_target_ref": "operator-phone-ref-demo",
+            "credential_location_ref": "1password://VoiceOps/Twilio Demo Credential Ref",
+        },
+        "rollback": {
+            "deprovision_owner": "operator-ref-demo",
+            "refund_or_cancel_owner": "operator-ref-demo",
+            "call_cancel_owner": "operator-ref-demo",
+        },
+    }
+    report_names = {
+        "stripe_projects": "stripe-projects-evidence.json",
+        "stripe_link": "stripe-link-evidence.json",
+        "mpp": "nemoclaw-boundary-evidence.json",
+        "phone_handoff": "phone-handoff-evidence.json",
+        "rollback": "rollback-owner-evidence.json",
+    }
+    reports = {}
+    for section_name, payload in section_payloads.items():
+        source_path = _write_json(
+            sources_dir / f"{section_name}-source.json",
+            {
+                "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+                "section": section_name,
+                "redacted": True,
+                "redaction_policy": "references only; no raw secrets, tokens, cards, or full phone numbers",
+                "summary": f"redacted local rehearsal source for {section_name}",
+            },
+        )
+        section = {
+            **payload,
+            "source_artifact": f"../sources/{source_path.name}",
+            "source_artifact_kind": "redacted_setup_evidence",
+            "source_artifact_sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
+            "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
+        }
+        report_path = _write_json(sections_dir / report_names[section_name], {section_name: section})
+        reports[section_name] = f"sections/{report_path.name}"
+    return _write_json(
+        root / "provisioning-preflight-evidence.manifest.json",
+        {
+            "schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+            "reports": reports,
+        },
+    )
+
+
+def _base_spark_evidence(candidate_id: str, *, model: str, source_artifact: str) -> dict:
+    return {
+        "schema_version": "voiceops.spark_benchmark_evidence.v1",
+        "candidate_id": candidate_id,
+        "hardware": "1x NVIDIA DGX Spark",
+        "locality": "local_spark",
+        "model": model,
+        "engine": "local rehearsal engine",
+        "verified": True,
+        "measured_at": "2026-06-29T00:00:00Z",
+        "source_artifact": source_artifact,
+        "metrics": {},
+    }
+
+
+def _write_spark_evidence(root: Path) -> Path:
+    sources = root / "sources"
+    for name in ["reflex", "oracle", "asr", "tts", "stack-smoke"]:
+        _write_json(
+            sources / f"{name}.json",
+            {"redacted": True, "source": name, "summary": "local DGX Spark rehearsal source"},
+        )
+    return _write_json(
+        root / "spark-benchmark-evidence.json",
+        {
+            "evidence": [
+                {
+                    **_base_spark_evidence(
+                        "reflex-gemma4-e2b",
+                        model="Gemma 4 E2B audio-native",
+                        source_artifact="sources/reflex.json",
+                    ),
+                    "metrics": {"first_token_ms": 700, "intent_latency_ms": 1100, "steady_state_memory_gb": 20},
+                },
+                {
+                    **_base_spark_evidence(
+                        "oracle-nemotron3-super-local",
+                        model="Nemotron 3 Super",
+                        source_artifact="sources/oracle.json",
+                    ),
+                    "metrics": {
+                        "decode_tok_s": 24,
+                        "prefill_tok_s": 3100,
+                        "first_token_ms": 2100,
+                        "steady_state_memory_gb": 86,
+                    },
+                },
+                {
+                    **_base_spark_evidence(
+                        "asr-nemotron-speech",
+                        model="Nemotron Speech streaming",
+                        source_artifact="sources/asr.json",
+                    ),
+                    "metrics": {"asr_delta_ms": 30, "final_transcript_ms": 600, "word_error_rate": 0.08},
+                },
+                {
+                    **_base_spark_evidence(
+                        "tts-magpie-local",
+                        model="Magpie local TTS",
+                        source_artifact="sources/tts.json",
+                    ),
+                    "metrics": {"tts_first_audio_ms": 200, "underrun_count": 0},
+                },
+                {
+                    "schema_version": "voiceops.spark_benchmark_evidence.v1",
+                    "kind": "voiceops_spark_stack_smoke",
+                    "hardware": "1x NVIDIA DGX Spark",
+                    "locality": "local_spark",
+                    "verified": True,
+                    "measured_at": "2026-06-29T00:00:00Z",
+                    "source_artifact": "sources/stack-smoke.json",
+                    "oracle_selected_by": "Hermes /model",
+                    "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
+                    "interface_input_sources": ["native_audio"],
+                    "reflex_providers": ["vllm"],
+                    "components": {"reflex": True, "oracle": True, "asr": True, "tts": True, "sidecar": True},
+                    "metrics": {
+                        "speech_end_to_first_audio_ms": 900,
+                        "barge_in_stop_ms": 90,
+                        "local_turns": 2,
+                        "local_turn_oracle_calls": 0,
+                        "oracle_bound_turns": 4,
+                        "oracle_bound_oracle_calls": 4,
+                    },
+                },
+            ]
+        },
+    )
 
 
 def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
@@ -272,6 +508,66 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "milestone_0_hackathon_proof" in markdown
 
 
+def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, monkeypatch):
+    artifact_root = tmp_path / "artifacts"
+    output_dir = artifact_root / "voiceops-plan" / "current"
+    fake_bin = tmp_path / "bin"
+    for binary in ["stripe", "link-cli", "mppx"]:
+        _write_fake_bin(fake_bin, binary)
+    monkeypatch.setenv("PATH", str(fake_bin))
+    live_evidence = _write_live_voice_evidence(tmp_path / "live-voice")
+    preflight_evidence = _write_preflight_evidence(tmp_path / "preflight")
+    spark_evidence = _write_spark_evidence(tmp_path / "spark")
+
+    summary = build_plan_run(
+        artifact_root=artifact_root,
+        output_dir=output_dir,
+        env={
+            "PATH": str(fake_bin),
+            "DISCORD_BOT_TOKEN": "present-redacted",
+            "DISCORD_GUILD_ID": "guild-ref-demo",
+            "DISCORD_HOME_CHANNEL": "channel-ref-demo",
+            "DISCORD_VOICE_CHANNEL_ID": "voice-channel-ref-demo",
+            "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+            "TWILIO_ACCOUNT_SID": "AC123",
+        },
+        voice_live_evidence_paths=[live_evidence],
+        provisioning_preflight_evidence=preflight_evidence,
+        evidence_paths=[spark_evidence],
+    )
+
+    statuses = {result["milestone"]: result["status"] for result in summary["results"]}
+    serialized = json.dumps(summary)
+
+    assert summary["ok"] is True
+    assert summary["hard_failures"] == []
+    assert summary["readiness_gaps"] == []
+    assert summary["closure_index"]["closure_status"] == "complete"
+    assert summary["closure_index"]["remaining_gates"] == []
+    assert statuses["milestone_1_real_voice_operator"] == "live_evidence_supplied"
+    assert statuses["milestone_2_real_spend_and_provisioning_preflight"] == "ready"
+    assert statuses["milestone_4_local_spark_stack_matrix"] == "validated"
+    assert summary["safety"] == {
+        "env_presence_inspection": True,
+        "env_secret_values_emitted": False,
+        "live_spend": False,
+        "network_io": False,
+        "outbound_calls": False,
+        "outbound_sends": False,
+        "provider_provisioning": False,
+    }
+    assert summary["closure_index"]["operator_handoff"]["changes_readiness_by_itself"] is False
+    assert summary["closure_index"]["operator_handoff"]["final_success_signal"] == (
+        "readiness_gaps is [] and closure_status is complete"
+    )
+    assert "present-redacted" not in serialized
+    assert "+15551234567" not in serialized
+    assert "sk_live" not in serialized
+    assert "DISCORD_BOT_TOKEN" in summary["closure_index"]["current_environment_blockers"]["discord_env"][
+        "present_env_keys"
+    ]
+
+
 def test_goal_doc_lists_voiceops_closure_artifacts():
     text = GOAL_DOC.read_text(encoding="utf-8")
 
@@ -336,6 +632,8 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "spark-operator-runbook.md" in text
     assert "The operator handoff is the ordered execution runbook" in text
     assert "does not change readiness by itself" in text
+    assert "closure rehearsal" in text.lower()
+    assert "`remaining_gates: []`" in text
 
 
 def test_goal_doc_keeps_super_local_and_ultra_hosted():
