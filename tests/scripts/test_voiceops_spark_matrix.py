@@ -320,6 +320,34 @@ def test_spark_matrix_rejects_unproven_all_local_stack_smoke(tmp_path):
     assert matrix["ready_for_one_spark_demo"] is False
 
 
+def test_spark_matrix_rejects_stack_smoke_without_provenance(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    incomplete = _stack_smoke()
+    incomplete.pop("source_artifact")
+    incomplete.pop("measured_at")
+    evidence_path.write_text(json.dumps({"evidence": [incomplete]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "missing_source_artifact" in matrix["stack_smoke"]["issues"]
+    assert "missing_measured_at" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_rejects_stack_smoke_above_closure_first_audio_target(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    too_slow = _stack_smoke()
+    too_slow["metrics"]["speech_end_to_first_audio_ms"] = 1501
+    evidence_path.write_text(json.dumps({"evidence": [too_slow]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "target_failed:speech_end_to_first_audio_ms" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
 def test_spark_matrix_adapts_kame_benchmark_evidence_with_provenance(tmp_path):
     evidence_path = tmp_path / "kame-evidence.json"
     common = {

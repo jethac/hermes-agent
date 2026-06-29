@@ -479,6 +479,10 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
             issues.append("evidence_not_verified")
         if str(item.get("schema_version") or "") != EVIDENCE_SCHEMA_VERSION:
             issues.append("missing_schema_version")
+        if not str(item.get("source_artifact") or "").strip():
+            issues.append("missing_source_artifact")
+        if not str(item.get("measured_at") or "").strip():
+            issues.append("missing_measured_at")
         if not _matches_hardware(item.get("hardware")):
             issues.append("hardware_mismatch")
         if str(item.get("locality") or "") != "local_spark":
@@ -493,7 +497,7 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
         first_audio_ms = _coerce_number(metrics.get("speech_end_to_first_audio_ms"))
         if first_audio_ms is None:
             issues.append("missing_metric:speech_end_to_first_audio_ms")
-        elif first_audio_ms > 3000:
+        elif first_audio_ms > 1500:
             issues.append("target_failed:speech_end_to_first_audio_ms")
         barge_in_ms = _coerce_number(metrics.get("barge_in_stop_ms"))
         if barge_in_ms is None:
