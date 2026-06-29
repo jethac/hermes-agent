@@ -258,6 +258,10 @@ def test_package_audit_rejects_plan_run_top_level_mirror_drift(tmp_path):
     plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
     plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
     plan_run["artifact_id"] = "voiceops-plan-run-copy"
+    plan_run["artifact_only"] = False
+    plan_run["ok"] = False
+    plan_run["hard_failures"] = ["milestone_0_hackathon_demo"]
+    plan_run["readiness_gaps"] = []
     plan_run["closure_status"] = "complete"
     plan_run["remaining_gates"] = []
     plan_run["next_actions"] = plan_run["next_actions"][:-1]
@@ -267,9 +271,45 @@ def test_package_audit_rejects_plan_run_top_level_mirror_drift(tmp_path):
 
     assert report["ok"] is False
     assert "plan_run:artifact_id_mismatch" in report["issues"]
+    assert "plan_run:artifact_only_not_true" in report["issues"]
+    assert "plan_run:ok_not_true" in report["issues"]
+    assert "plan_run:hard_failures_not_empty" in report["issues"]
+    assert "plan_run:readiness_gaps_mismatch" in report["issues"]
     assert "plan_run:closure_status_mismatch" in report["issues"]
     assert "plan_run:remaining_gates_mismatch" in report["issues"]
     assert "plan_run:next_actions_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_plan_safety_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    closure_path = artifact_root / "voiceops-plan" / "current" / "readiness-closure-index.json"
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    closure = json.loads(closure_path.read_text(encoding="utf-8"))
+    plan_run["safety"]["mutating_network_io"] = True
+    plan_run["safety"]["network_io"] = True
+    plan_run["safety"]["network_io_scope"] = "provider_mutation"
+    plan_run["safety"]["live_spend"] = True
+    plan_run["safety"]["provider_provisioning"] = True
+    plan_run["safety"]["outbound_calls"] = True
+    plan_run["safety"]["outbound_sends"] = True
+    plan_run["safety"]["read_only_discovery_grants_approval"] = True
+    closure["safety"]["spark_execution"] = True
+    _write_json(plan_run_path, plan_run)
+    _write_json(closure_path, closure)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "plan_run:closure_index_mismatch" in report["issues"]
+    assert "plan_run:safety_mutating_network_io_not_false" in report["issues"]
+    assert "plan_run:safety_network_io_scope_invalid" in report["issues"]
+    assert "plan_run:safety_live_spend_not_false" in report["issues"]
+    assert "plan_run:safety_provider_provisioning_not_false" in report["issues"]
+    assert "plan_run:safety_outbound_calls_not_false" in report["issues"]
+    assert "plan_run:safety_outbound_sends_not_false" in report["issues"]
+    assert "plan_run:safety_read_only_discovery_grants_approval_not_false" in report["issues"]
+    assert "plan_closure:safety_spark_execution_not_false" in report["issues"]
 
 
 def test_package_audit_rejects_unaudited_operator_handoff_reindex(tmp_path):

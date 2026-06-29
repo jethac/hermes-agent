@@ -472,10 +472,20 @@ def _audit_plan_consistency(
 ) -> None:
     if plan_run.get("artifact_id") != "voiceops-plan-run":
         issues.append("plan_run:artifact_id_mismatch")
+    if plan_run.get("artifact_only") is not True:
+        issues.append("plan_run:artifact_only_not_true")
+    if plan_closure.get("artifact_only") is not True:
+        issues.append("plan_closure:artifact_only_not_true")
+    if plan_run.get("ok") is not True:
+        issues.append("plan_run:ok_not_true")
+    if plan_run.get("hard_failures") != []:
+        issues.append("plan_run:hard_failures_not_empty")
     if plan_run.get("closure_index") != plan_closure:
         issues.append("plan_run:closure_index_mismatch")
     if plan_run.get("closure_status") != plan_closure.get("closure_status"):
         issues.append("plan_run:closure_status_mismatch")
+    if plan_run.get("readiness_gaps") != plan_closure.get("readiness_gaps"):
+        issues.append("plan_run:readiness_gaps_mismatch")
     expected_remaining_gate_ids = [
         str(gate.get("gate_id"))
         for gate in plan_closure.get("remaining_gates", [])
@@ -485,6 +495,8 @@ def _audit_plan_consistency(
         issues.append("plan_run:remaining_gates_mismatch")
     if plan_run.get("next_actions") != plan_closure.get("next_actions"):
         issues.append("plan_run:next_actions_mismatch")
+    _audit_plan_safety("plan_run", plan_run.get("safety"), issues)
+    _audit_plan_safety("plan_closure", plan_closure.get("safety"), issues)
     if plan_handoff != plan_closure.get("operator_handoff"):
         issues.append("operator_handoff:mismatch_with_closure")
     for label, payload in (
@@ -522,6 +534,35 @@ def _audit_plan_consistency(
         for key in ("order", "commands", "expected_artifacts", "success_check"):
             if demo_phase.get(key) != plan_phase.get(key):
                 issues.append(f"demo_handoff:{phase_id}:{key}_mismatch")
+
+
+def _audit_plan_safety(label: str, safety: Any, issues: list[str]) -> None:
+    if not isinstance(safety, Mapping):
+        issues.append(f"{label}:safety_missing")
+        return
+    for key in (
+        "env_secret_values_emitted",
+        "mutating_network_io",
+        "live_spend",
+        "provider_provisioning",
+        "outbound_calls",
+    ):
+        if safety.get(key) is not False:
+            issues.append(f"{label}:safety_{key}_not_false")
+    if safety.get("outbound_sends", safety.get("outbound_messages", False)) is not False:
+        issues.append(f"{label}:safety_outbound_sends_not_false")
+    if safety.get("read_only_discovery_grants_approval") is not False:
+        issues.append(f"{label}:safety_read_only_discovery_grants_approval_not_false")
+    network_io = safety.get("network_io")
+    network_scope = safety.get("network_io_scope")
+    if network_io not in {False, True}:
+        issues.append(f"{label}:safety_network_io_not_boolean")
+    elif network_io is True and network_scope != "allowlisted_read_only_discovery":
+        issues.append(f"{label}:safety_network_io_scope_invalid")
+    elif network_io is False and network_scope != "none":
+        issues.append(f"{label}:safety_network_io_scope_invalid")
+    if label == "plan_closure" and safety.get("spark_execution") is not False:
+        issues.append(f"{label}:safety_spark_execution_not_false")
 
 
 def _handoff_phases_by_id(handoff: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
