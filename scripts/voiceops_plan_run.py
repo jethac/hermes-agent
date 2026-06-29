@@ -882,11 +882,18 @@ def write_plan_run(output_dir: Path, summary: dict[str, Any]) -> dict[str, str]:
         "markdown": output_dir / "voiceops-plan-run.md",
         "closure_json": output_dir / "readiness-closure-index.json",
         "closure_markdown": output_dir / "readiness-closure-index.md",
+        "operator_handoff_json": output_dir / "operator-handoff.json",
+        "operator_handoff_markdown": output_dir / "operator-handoff.md",
     }
     _write_json(paths["json"], summary)
     paths["markdown"].write_text(_markdown(summary), encoding="utf-8")
     _write_json(paths["closure_json"], summary["closure_index"])
     paths["closure_markdown"].write_text(_closure_markdown(summary["closure_index"]), encoding="utf-8")
+    _write_json(paths["operator_handoff_json"], summary["closure_index"]["operator_handoff"])
+    paths["operator_handoff_markdown"].write_text(
+        "# VoiceOps Operator Handoff\n\n" + _operator_handoff_markdown(summary["closure_index"]["operator_handoff"]) + "\n",
+        encoding="utf-8",
+    )
     return {key: str(path) for key, path in paths.items()}
 
 

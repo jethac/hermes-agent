@@ -181,11 +181,15 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
 
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     closure = json.loads(Path(paths["closure_json"]).read_text(encoding="utf-8"))
+    handoff_payload = json.loads(Path(paths["operator_handoff_json"]).read_text(encoding="utf-8"))
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
     closure_markdown = Path(paths["closure_markdown"]).read_text(encoding="utf-8")
+    handoff_markdown = Path(paths["operator_handoff_markdown"]).read_text(encoding="utf-8")
     assert payload["ok"] is True
     assert closure["artifact_id"] == "voiceops-plan-readiness-closure"
     assert closure["schema_version"] == "voiceops.closure_index.v1"
+    assert handoff_payload == closure["operator_handoff"]
+    assert handoff_payload["schema_version"] == "voiceops.operator_handoff.v1"
     provisioning_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "spend_and_provisioning_preflight")
     assert provisioning_gate["evidence_manifest_example"].endswith(
         "provisioning-preflight-evidence.manifest.example.json"
@@ -214,6 +218,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "voiceops.spark_benchmark_evidence.v1" in closure_markdown
     assert "spark-benchmark-evidence.example.json" in closure_markdown
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in closure_markdown
+    assert "VoiceOps Operator Handoff" in handoff_markdown
+    assert "live_discord_voice" in handoff_markdown
+    assert "Final reindex command" in handoff_markdown
     assert "milestone_0_hackathon_proof" in markdown
 
 
@@ -236,6 +243,8 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
         "spark-matrix-closure-plan.md",
         "readiness-closure-index.json",
         "readiness-closure-index.md",
+        "operator-handoff.json",
+        "operator-handoff.md",
     ]:
         assert f"`{artifact}`" in text
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in text
@@ -257,6 +266,8 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "`local_turn_oracle_calls == 0`" in text
     assert "`oracle_bound_oracle_calls >= oracle_bound_turns`" in text
     assert "local reflex turns must not call the oracle" in text
+    assert "The operator handoff is the ordered execution runbook" in text
+    assert "does not change readiness by itself" in text
 
 
 def test_goal_doc_keeps_super_local_and_ultra_hosted():
@@ -327,6 +338,8 @@ def test_plan_run_cli_smoke(tmp_path):
     assert Path(payload["artifacts"]["markdown"]).exists()
     assert Path(payload["artifacts"]["closure_json"]).exists()
     assert Path(payload["artifacts"]["closure_markdown"]).exists()
+    assert Path(payload["artifacts"]["operator_handoff_json"]).exists()
+    assert Path(payload["artifacts"]["operator_handoff_markdown"]).exists()
 
 
 def test_parse_args_defaults_to_plan_artifact_paths():

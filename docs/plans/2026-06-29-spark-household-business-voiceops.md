@@ -485,10 +485,14 @@ The command writes:
 - `voiceops-plan-run.md`
 - `readiness-closure-index.json`
 - `readiness-closure-index.md`
+- `operator-handoff.json`
+- `operator-handoff.md`
 
 The plan run is artifact-only. It should surface readiness gaps such as missing Stripe/phone local setup or missing DGX Spark benchmark evidence, but those gaps must not cause live spend, provider provisioning, outbound messaging, calls, or secret reads.
 
 The readiness closure index is the top-level next-action map for the remaining external evidence gates. It must keep live Discord voice evidence, Stripe/MPP/phone provisioning evidence, and DGX Spark benchmark evidence separate, list the required proof shape for each gate, point at the relevant evidence templates and closure plans, and continue to report `needs_external_evidence` until supplied artifacts prove the live gates. It must never collapse missing live evidence into a single ready claim.
+
+The operator handoff is the ordered execution runbook derived from the closure index. It must list the live Discord voice, spend/provisioning preflight, and local Spark stack phases in order, include exact collection and re-index commands, identify expected artifacts and success checks, and state that the handoff does not change readiness by itself.
 
 When evidence exists, rerun the same indexer with the relevant read-only artifacts instead of hand-editing the index:
 
