@@ -244,6 +244,10 @@ def test_write_probe_artifacts(tmp_path):
     assert "VoiceOps Milestone 2 Setup Closure Plan" in setup_markdown
     assert "Manifest example" in setup_markdown
     assert "source_artifact" in setup_markdown
+    assert "`stripe_projects.account_ref`" in setup_markdown
+    assert "`stripe_link.max_approved_cents`" in setup_markdown
+    assert "`phone_handoff.credential_location_ref`" in setup_markdown
+    assert "`rollback.deprovision_owner`" in setup_markdown
     assert preflight_example["example_only"] is True
     assert preflight_manifest_example["example_only"] is True
     assert preflight_manifest_example["reports"]["stripe_projects"].endswith("stripe-projects-evidence.json")

@@ -116,9 +116,16 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
         "reflex_providers",
     } <= set(closure["required_stack_smoke_fields"])
     assert closure["all_local_stack_smoke"]["required_components"] == ["reflex", "oracle", "asr", "tts", "sidecar"]
+    assert closure["benchmark_evidence_shape"]["evidence"][0]["schema_version"] == "voiceops.spark_benchmark_evidence.v1"
+    assert closure["benchmark_evidence_shape"]["evidence"][0]["candidate_id"] == "oracle-nemotron3-super-local"
+    assert closure["benchmark_evidence_shape"]["evidence"][1]["kind"] == "voiceops_spark_stack_smoke"
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" == closure["rerun_commands"]["dgx_eval"]
     assert "VoiceOps Milestone 4 Spark Matrix Closure" in closure_markdown
     assert "hosted Nemotron 3 Ultra fallback evidence" in closure_markdown
+    assert '"evidence": [' in closure_markdown
+    assert "voiceops.spark_benchmark_evidence.v1" in closure_markdown
+    assert "oracle_authority_routes" in closure_markdown
+    assert "source_artifact" in closure_markdown
     assert example["example_only"] is True
     assert all(item["example_only"] is True for item in example["evidence"])
     assert template["evidence"][0]["verified"] is False

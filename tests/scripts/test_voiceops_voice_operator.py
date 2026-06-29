@@ -200,6 +200,13 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert live_example["example_only"] is True
     assert "example_only_evidence_not_accepted" in validate_live_probe_evidence(live_example)["issues"]
     assert live_closure["schema_version"] == "voiceops.milestone1.live_probe_closure.v1"
+    assert live_closure["evidence_contract"]["manifest_schema_version"] == (
+        "voiceops.realtime_voice_live_evidence_manifest.v1"
+    )
+    assert live_closure["evidence_contract"]["required_section_field"] == "source_artifact"
+    assert live_closure["evidence_contract"]["source_artifacts_must_exist"] is True
+    assert live_closure["evidence_shapes"]["sidecar_session"]["source_artifact"] == "sidecar-session.json"
+    assert live_closure["evidence_shapes"]["live_turn"]["source_artifact"] == "live-turn.json"
     assert "hermes_cli.realtime_voice_live_evidence" in live_closure["recommended_collection"]["live_bundle_manifest"]
     assert "manifest.json" in live_closure["recommended_collection"]["ingest"]
     assert json.loads(events[0])["event_id"] == "voice-m1-001"
@@ -208,6 +215,12 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert "Live Probe Boundary" in markdown
     assert "Supplied Live Evidence" in markdown
     assert "VoiceOps Milestone 1 Live Probe Closure" in closure_markdown
+    assert "voiceops.realtime_voice_live_evidence_manifest.v1" in closure_markdown
+    assert "source_artifact" in closure_markdown
+    assert "sidecar-session.json" in closure_markdown
+    assert "raw transcript text" in closure_markdown
+    assert "hand-edit manifest.json" in closure_markdown
+    assert "example_only" in closure_markdown
 
 
 def test_live_evidence_classifies_partial_discord_probe_without_inbound():
@@ -271,6 +284,25 @@ def test_voice_operator_rejects_loaded_evidence_with_missing_source_artifact_fil
     live_evidence = _load_live_evidence([evidence_path])
 
     assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "discord_live_probe:source_artifact_not_found" in live_evidence["issues"]
+    assert "sidecar_session:source_artifact_not_found" in live_evidence["issues"]
+    assert "live_turn:source_artifact_not_found" in live_evidence["issues"]
+
+
+def test_voice_operator_loaded_evidence_does_not_resolve_source_artifacts_from_cwd(monkeypatch, tmp_path):
+    evidence_dir = tmp_path / "evidence-dir"
+    cwd_dir = tmp_path / "cwd"
+    evidence_dir.mkdir()
+    cwd_dir.mkdir()
+    for name in ("discord-live-probe.json", "voice-status-or-sidecar-report.json", "voice-turn-evidence.json"):
+        (cwd_dir / name).write_text("{}", encoding="utf-8")
+    evidence = _complete_live_evidence()
+    evidence_path = evidence_dir / "live-evidence.json"
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+    monkeypatch.chdir(cwd_dir)
+
+    live_evidence = _load_live_evidence([evidence_path])
+
     assert "discord_live_probe:source_artifact_not_found" in live_evidence["issues"]
     assert "sidecar_session:source_artifact_not_found" in live_evidence["issues"]
     assert "live_turn:source_artifact_not_found" in live_evidence["issues"]

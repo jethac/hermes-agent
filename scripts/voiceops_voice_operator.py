@@ -492,8 +492,6 @@ def _source_artifact_exists(source_artifact: Any, evidence_paths: list[Path]) ->
     source_path = Path(source_text).expanduser()
     if source_path.is_absolute():
         return source_path.exists()
-    if source_path.exists():
-        return True
     return any((path.parent / source_text).exists() for path in evidence_paths)
 
 
@@ -821,15 +819,47 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
         "status": report["live_probe_required_for_completion"]["status"],
         "missing_gates": report["live_probe_required_for_completion"]["missing_gates"],
         "live_evidence_template": "live-voice-evidence-template.json",
+        "evidence_contract": {
+            "manifest_schema_version": LIVE_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+            "expanded_evidence_schema_version": LIVE_EVIDENCE_SCHEMA_VERSION,
+            "required_sections": ["discord_live_probe", "sidecar_session", "live_turn"],
+            "required_section_field": "source_artifact",
+            "required_section_refs": ["source_artifact", "section"],
+            "source_artifacts_must_exist": True,
+            "source_artifact_resolution": "absolute paths or paths relative to supplied live-evidence files",
+            "example_only_accepted": False,
+        },
         "recommended_collection": {
             "live_bundle_manifest": report["live_probe_required_for_completion"]["recommended_command"],
-            "sidecar_session": "Capture a redacted /voice status or sidecar report with sidecar_running, sidecar_healthy, session_started, and session_closed.",
-            "live_turn": "Capture a redacted live turn evidence JSON with transcript_observed, assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, speech_end_to_first_audio_ms, and barge_in_stop_ms.",
+            "sidecar_session": "Write sidecar-session.json with sidecar_running, sidecar_healthy, session_started, session_closed, fallback_mode_visible, and source_artifact.",
+            "live_turn": "Write live-turn.json with transcript_observed, assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, speech_end_to_first_audio_ms, barge_in_stop_ms, and source_artifact.",
             "ingest": report["live_probe_required_for_completion"]["ingest_command"],
+        },
+        "evidence_shapes": {
+            "sidecar_session": {
+                "source_artifact": "sidecar-session.json",
+                "sidecar_running": True,
+                "sidecar_healthy": True,
+                "session_started": True,
+                "session_closed": True,
+                "fallback_mode_visible": True,
+            },
+            "live_turn": {
+                "source_artifact": "live-turn.json",
+                "transcript_observed": True,
+                "assistant_audio_observed": True,
+                "barge_in_observed": True,
+                "spoken_reply_short": True,
+                "no_voice_denial_observed": True,
+                "speech_end_to_first_audio_ms": 900,
+                "barge_in_stop_ms": 90,
+            },
         },
         "do_not": [
             "paste Discord bot tokens or provider tokens into evidence files",
             "include full phone numbers or private transcript content with secrets",
+            "include raw transcript text; record only redacted booleans, latency numbers, and artifact references",
+            "hand-edit manifest.json or example_only evidence to claim a passing live probe",
             "claim production readiness from the headless loopback smoke alone",
         ],
     }
@@ -844,11 +874,28 @@ def _live_probe_closure_markdown(plan: dict[str, Any]) -> str:
         f"- Template: `{plan['live_evidence_template']}`",
         "- Mode: supplied artifacts only; this file does not run Discord or read credentials",
         "",
-        "## Collection",
+        "## Evidence Contract",
         "",
     ]
+    for key, value in sorted(plan["evidence_contract"].items()):
+        lines.append(f"- `{key}`: `{value}`")
+    lines.extend(
+        [
+            "",
+        "## Collection",
+        "",
+        ]
+    )
     for label, command in plan["recommended_collection"].items():
         lines.append(f"- {label}: {command}")
+    lines.extend(["", "## Evidence Shapes", ""])
+    for label, shape in plan["evidence_shapes"].items():
+        lines.append(f"### {label}")
+        lines.append("")
+        lines.append("```json")
+        lines.append(json.dumps(shape, indent=2, sort_keys=True))
+        lines.append("```")
+        lines.append("")
     lines.extend(["", "## Do Not", ""])
     lines.extend(f"- {item}" for item in plan["do_not"])
     lines.append("")

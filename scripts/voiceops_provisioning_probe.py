@@ -1137,6 +1137,8 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "accepted_env_keys": closure["accepted_env_keys"],
                 "safe_probe_commands": closure["safe_probe_commands"],
                 "proof": closure["proof"],
+                "required_fields": check.get("evidence", {}).get("required_fields", []),
+                "missing_fields": check.get("evidence", {}).get("missing_fields", []),
                 "evidence_artifacts": [
                     "provisioning-readiness.json",
                     "provisioning-readiness.md",
@@ -1246,6 +1248,10 @@ def _setup_closure_markdown(plan: dict[str, Any]) -> str:
                 f"- Accepted env keys: {', '.join(requirement['accepted_env_keys']) or 'none'}",
             ]
         )
+        if requirement["required_fields"]:
+            lines.append(f"- Required fields: {', '.join(f'`{field}`' for field in requirement['required_fields'])}")
+        if requirement["missing_fields"]:
+            lines.append(f"- Missing fields: {', '.join(f'`{field}`' for field in requirement['missing_fields'])}")
         if requirement["safe_probe_commands"]:
             commands = [" ".join(command) for command in requirement["safe_probe_commands"]]
             lines.append(f"- Safe probe commands: {', '.join(f'`{command}`' for command in commands)}")

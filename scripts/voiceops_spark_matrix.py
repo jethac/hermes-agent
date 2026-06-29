@@ -863,6 +863,45 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
                 "barge_in_stop_ms": {"operator": "<=", "value": 150, "unit": "ms"},
             },
         },
+        "benchmark_evidence_shape": {
+            "evidence": [
+                {
+                    "schema_version": EVIDENCE_SCHEMA_VERSION,
+                    "candidate_id": "oracle-nemotron3-super-local",
+                    "hardware": SPARK_HARDWARE_TARGET,
+                    "locality": "local_spark",
+                    "model": "Nemotron 3 Super",
+                    "engine": "Hermes /model to local NVIDIA Spark endpoint",
+                    "verified": True,
+                    "measured_at": "2026-06-29T00:00:00Z",
+                    "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/oracle-raw.json",
+                    "metrics": {
+                        "decode_tok_s": 24,
+                        "prefill_tok_s": 3100,
+                        "first_token_ms": 2100,
+                        "steady_state_memory_gb": 86,
+                    },
+                },
+                {
+                    "schema_version": EVIDENCE_SCHEMA_VERSION,
+                    "kind": STACK_SMOKE_KIND,
+                    "hardware": SPARK_HARDWARE_TARGET,
+                    "locality": "local_spark",
+                    "verified": True,
+                    "measured_at": "2026-06-29T00:00:00Z",
+                    "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/all-local-stack-smoke.json",
+                    "oracle_selected_by": "Hermes /model",
+                    "oracle_authority_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
+                    "interface_input_sources": ["native_audio"],
+                    "reflex_providers": ["vllm"],
+                    "components": {name: True for name in STACK_SMOKE_REQUIRED_COMPONENTS},
+                    "metrics": {
+                        "speech_end_to_first_audio_ms": 900,
+                        "barge_in_stop_ms": 90,
+                    },
+                },
+            ]
+        },
         "rerun_commands": {
             "matrix_only": "uv run python scripts/voiceops_spark_matrix.py --output-dir artifacts/voiceops-spark-matrix/current",
             "with_evidence": (
@@ -931,6 +970,9 @@ def _closure_markdown(plan: dict[str, Any]) -> str:
     lines.append(f"- Oracle routes: {', '.join(smoke['required_oracle_routes'])}")
     lines.append(f"- Interface input source: {smoke['required_interface_input_source']}")
     lines.append(f"- Reflex provider: {smoke['required_reflex_provider']}")
+    lines.extend(["", "## Benchmark Evidence Shape", "", "```json"])
+    lines.append(json.dumps(plan["benchmark_evidence_shape"], indent=2, sort_keys=True))
+    lines.extend(["```"])
     lines.extend(["", "## Rerun Commands", ""])
     for label, command in plan["rerun_commands"].items():
         lines.append(f"- {label}: `{command}`")
