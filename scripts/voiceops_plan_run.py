@@ -484,6 +484,49 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "must_not": spark_gate["operator_must_not"],
             },
         ],
+        "review_phases": [
+            {
+                "order": 1,
+                "phase_id": "multi_channel_policy_review",
+                "milestone": "milestone_3_multi_channel_policy",
+                "status": "pending_human_review",
+                "changes_readiness_by_itself": False,
+                "changes_policy_by_itself": False,
+                "real_egress_enabled": False,
+                "can_run_here_now": True,
+                "blocked_by_current_environment": {},
+                "review_artifacts": [
+                    "artifacts/voiceops-channel-policy/current/channel-policy.json",
+                    "artifacts/voiceops-channel-policy/current/channel-policy.md",
+                    "artifacts/voiceops-channel-policy/current/channel-policy-review.json",
+                    "artifacts/voiceops-channel-policy/current/channel-policy-review.md",
+                ],
+                "first_safe_command": (
+                    "uv run python scripts/voiceops_channel_policy.py "
+                    "--output-dir artifacts/voiceops-channel-policy/current"
+                ),
+                "review_command": (
+                    "uv run python scripts/voiceops_channel_policy.py "
+                    "--output-dir artifacts/voiceops-channel-policy/current"
+                ),
+                "required_review": [
+                    "business_owner",
+                    "channel_owner",
+                    "privacy_reviewer",
+                    "security_owner",
+                ],
+                "success_check": (
+                    "channel-policy-review.json remains artifact_only, real_egress_enabled is false, "
+                    "and a separate future operator decision records explicit approval before any WhatsApp, SMS, or phone egress"
+                ),
+                "must_not": [
+                    "treat pending_human_review as approval",
+                    "enable WhatsApp, SMS, phone, or customer-visible Discord egress from this artifact alone",
+                    "send outbound messages or place calls from the policy generator",
+                    "mark real_egress_enabled true without a separate operator decision artifact",
+                ],
+            }
+        ],
         "final_reindex_command": (
             "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
             "--output-dir artifacts/voiceops-plan/current "
@@ -554,6 +597,7 @@ def _sync_demo_handoff_preview(demo_dir: Path, plan_handoff: dict[str, Any]) -> 
         for key in ("diagnostic_command", "first_safe_command", "first_evidence_command", "command_safety"):
             if plan_phase.get(key):
                 phase[key] = plan_phase[key]
+    preview["review_phases"] = plan_handoff.get("review_phases", [])
     for key in ("final_reindex_command", "final_package_audit_command", "final_success_signal"):
         preview[key] = plan_handoff.get(key)
     _write_json(preview_path, preview)
@@ -643,6 +687,36 @@ def _build_next_actions(
                 "success_check": phase.get("success_check") if isinstance(phase, dict) else gate.get("completion_signal"),
                 "operator_step": operator_step,
                 "secret_policy": "presence booleans and redacted artifact refs only; never include secret values",
+            }
+        )
+    return actions
+
+
+def _build_review_actions(handoff: dict[str, Any]) -> list[dict[str, Any]]:
+    review_phases = handoff.get("review_phases")
+    if not isinstance(review_phases, list):
+        return []
+    actions: list[dict[str, Any]] = []
+    for phase in review_phases:
+        if not isinstance(phase, dict):
+            continue
+        actions.append(
+            {
+                "order": phase.get("order"),
+                "phase_id": phase.get("phase_id"),
+                "milestone": phase.get("milestone"),
+                "status": phase.get("status"),
+                "can_run_here_now": phase.get("can_run_here_now"),
+                "blocked_by_current_environment": phase.get("blocked_by_current_environment", {}),
+                "first_safe_command": phase.get("first_safe_command"),
+                "review_command": phase.get("review_command"),
+                "review_artifacts": phase.get("review_artifacts", []),
+                "required_review": phase.get("required_review", []),
+                "success_check": phase.get("success_check"),
+                "changes_readiness_by_itself": phase.get("changes_readiness_by_itself"),
+                "changes_policy_by_itself": phase.get("changes_policy_by_itself"),
+                "real_egress_enabled": phase.get("real_egress_enabled"),
+                "secret_policy": "review artifacts contain policy shape only; never paste channel credentials or message recipient values",
             }
         )
     return actions
@@ -1153,6 +1227,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
     handoff = _build_operator_handoff(gates, blockers)
     handoff = _append_plan_model_flags(handoff, model_flags)
     next_actions = _build_next_actions(remaining_gates=remaining_gates, handoff=handoff, blockers=blockers)
+    review_actions = _build_review_actions(handoff)
     return {
         "schema_version": "voiceops.closure_index.v1",
         "artifact_id": "voiceops-plan-readiness-closure",
@@ -1168,6 +1243,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
         "current_environment_blockers": blockers,
         "operator_handoff": handoff,
         "next_actions": next_actions,
+        "review_actions": review_actions,
         "closure_status": "needs_external_evidence" if summary["readiness_gaps"] else "complete",
         "remaining_gates": remaining_gates,
         "gates": gates,
@@ -1444,10 +1520,12 @@ async def build_plan_run_async(
         gate["gate_id"] for gate in summary["closure_index"]["remaining_gates"]
     ]
     summary["next_actions"] = summary["closure_index"]["next_actions"]
+    summary["review_actions"] = summary["closure_index"]["review_actions"]
     summary["ready_for_demo"] = summary["ok"] and not summary["readiness_gaps"]
     summary["blockers"] = {
         "readiness_gaps": summary["readiness_gaps"],
         "remaining_gates": summary["remaining_gates"],
+        "review_actions": summary["review_actions"],
         "current_environment": summary["closure_index"]["current_environment_blockers"],
     }
     return summary
@@ -1499,6 +1577,10 @@ def _markdown(summary: dict[str, Any]) -> str:
         "## Next Actions",
         "",
         _next_actions_markdown(summary.get("closure_index", {}).get("next_actions", [])),
+        "",
+        "## Review Actions",
+        "",
+        _review_actions_markdown(summary.get("closure_index", {}).get("review_actions", [])),
         "",
         "## Milestones",
         "",
@@ -1601,6 +1683,10 @@ def _closure_markdown(closure: dict[str, Any]) -> str:
         "## Next Actions",
         "",
         _next_actions_markdown(closure.get("next_actions", [])),
+        "",
+        "## Review Actions",
+        "",
+        _review_actions_markdown(closure.get("review_actions", [])),
         "",
         "## Gates",
         "",
@@ -1712,6 +1798,35 @@ def _next_actions_markdown(actions: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _review_actions_markdown(actions: list[dict[str, Any]]) -> str:
+    if not actions:
+        return "- No pending review actions"
+    lines: list[str] = []
+    for action in actions:
+        lines.extend(
+            [
+                f"### {action.get('order')}. {action.get('phase_id')}",
+                f"- Milestone: `{action.get('milestone')}`",
+                f"- Status: `{action.get('status')}`",
+                f"- Can run here now: {action.get('can_run_here_now')}",
+                f"- First safe command: `{action.get('first_safe_command')}`",
+                f"- Review command: `{action.get('review_command')}`",
+                f"- Changes readiness by itself: {action.get('changes_readiness_by_itself')}",
+                f"- Changes policy by itself: {action.get('changes_policy_by_itself')}",
+                f"- Real egress enabled: {action.get('real_egress_enabled')}",
+                f"- Success check: {action.get('success_check')}",
+                f"- Secret policy: {action.get('secret_policy')}",
+            ]
+        )
+        for label in ("review_artifacts", "required_review"):
+            items = action.get(label)
+            if isinstance(items, list):
+                lines.append(f"- {label}:")
+                for item in items:
+                    lines.append(f"  - `{item}`")
+    return "\n".join(lines)
+
+
 def _operator_handoff_markdown(handoff: dict[str, Any]) -> str:
     if not handoff:
         return "- Not captured"
@@ -1762,6 +1877,32 @@ def _operator_handoff_markdown(handoff: dict[str, Any]) -> str:
                 lines.append("- command_safety:")
                 for label, value in sorted(command_safety.items()):
                     lines.append(f"  - `{label}`: `{value}`")
+    review_phases = handoff.get("review_phases")
+    if isinstance(review_phases, list):
+        lines.append("## Review Phases")
+        for phase in review_phases:
+            if not isinstance(phase, dict):
+                continue
+            lines.extend(
+                [
+                    f"### {phase.get('order')}. {phase.get('phase_id')}",
+                    f"- Milestone: `{phase.get('milestone')}`",
+                    f"- Status: `{phase.get('status')}`",
+                    f"- Can run here now: {phase.get('can_run_here_now')}",
+                    f"- First safe command: `{phase.get('first_safe_command')}`",
+                    f"- Review command: `{phase.get('review_command')}`",
+                    f"- Changes readiness by itself: {phase.get('changes_readiness_by_itself')}",
+                    f"- Changes policy by itself: {phase.get('changes_policy_by_itself')}",
+                    f"- Real egress enabled: {phase.get('real_egress_enabled')}",
+                    f"- Success check: {phase.get('success_check')}",
+                ]
+            )
+            for label in ("review_artifacts", "required_review", "must_not"):
+                items = phase.get(label)
+                if isinstance(items, list):
+                    lines.append(f"- {label}:")
+                    for item in items:
+                        lines.append(f"  - `{item}`" if label == "review_artifacts" else f"  - {item}")
     lines.append(f"- Final reindex command: `{handoff.get('final_reindex_command')}`")
     lines.append(f"- Final package audit command: `{handoff.get('final_package_audit_command')}`")
     lines.append(f"- Final success signal: {handoff.get('final_success_signal')}")
@@ -1893,6 +2034,7 @@ def main(argv: list[str] | None = None) -> int:
                         "safety": summary["safety"],
                         "current_environment_blockers": summary["closure_index"]["current_environment_blockers"],
                         "next_actions": summary["closure_index"]["next_actions"],
+                        "review_actions": summary["closure_index"]["review_actions"],
                         **(
                             {
                                 "package_audit": {

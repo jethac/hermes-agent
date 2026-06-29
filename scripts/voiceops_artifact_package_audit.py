@@ -31,6 +31,9 @@ EXPECTED_HANDOFF_PHASES = (
     (2, "spend_and_provisioning_preflight"),
     (3, "local_spark_stack"),
 )
+EXPECTED_REVIEW_PHASES = (
+    (1, "multi_channel_policy_review"),
+)
 LOCAL_MODEL_MARKERS = ("local", "dgx", "spark", "localhost", "127.0.0.1", "vllm")
 HOSTED_MODEL_MARKERS = ("hosted", "cloud", "provider", "remote", "api", "nous")
 SECRET_SCAN_PATTERNS = (
@@ -549,8 +552,12 @@ def _audit_plan_consistency(
         issues.append("plan_run:remaining_gates_mismatch")
     if plan_run.get("next_actions") != plan_closure.get("next_actions"):
         issues.append("plan_run:next_actions_mismatch")
+    if plan_run.get("review_actions") != plan_closure.get("review_actions"):
+        issues.append("plan_run:review_actions_mismatch")
     _audit_next_action_command_order("plan_run", plan_run.get("next_actions"), issues)
     _audit_next_action_command_order("plan_closure", plan_closure.get("next_actions"), issues)
+    _audit_review_actions("plan_run", plan_run.get("review_actions"), issues)
+    _audit_review_actions("plan_closure", plan_closure.get("review_actions"), issues)
     _audit_plan_safety("plan_run", plan_run.get("safety"), issues)
     _audit_plan_safety("plan_closure", plan_closure.get("safety"), issues)
     if plan_handoff != plan_closure.get("operator_handoff"):
@@ -582,6 +589,10 @@ def _audit_plan_consistency(
         issues.append("demo_handoff:final_success_signal_mismatch")
     _audit_handoff_phase_contract("operator_handoff", plan_handoff, issues)
     _audit_handoff_phase_contract("demo_handoff", demo_handoff, issues)
+    _audit_handoff_review_phase_contract("operator_handoff", plan_handoff, issues)
+    _audit_handoff_review_phase_contract("demo_handoff", demo_handoff, issues)
+    if demo_handoff.get("review_phases") != plan_handoff.get("review_phases"):
+        issues.append("demo_handoff:review_phases_mismatch")
     demo_phases = _handoff_phases_by_id(demo_handoff)
     plan_phases = _handoff_phases_by_id(plan_handoff)
     if set(demo_phases) != set(plan_phases):
@@ -696,6 +707,17 @@ def _handoff_phases_by_id(handoff: Mapping[str, Any]) -> dict[str, Mapping[str, 
     }
 
 
+def _handoff_review_phases_by_id(handoff: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    phases = handoff.get("review_phases")
+    if not isinstance(phases, list):
+        return {}
+    return {
+        str(phase.get("phase_id")): phase
+        for phase in phases
+        if isinstance(phase, Mapping) and str(phase.get("phase_id") or "").strip()
+    }
+
+
 def _audit_handoff_phase_contract(label: str, handoff: Mapping[str, Any], issues: list[str]) -> None:
     phases = handoff.get("phases")
     if not isinstance(phases, list):
@@ -725,6 +747,42 @@ def _audit_handoff_phase_contract(label: str, handoff: Mapping[str, Any], issues
         if not isinstance(phase.get("blocked_by_current_environment"), Mapping):
             issues.append(f"{label}:{expected_phase_id}:missing_environment_blockers")
         _audit_handoff_command_order(label, expected_phase_id, phase, issues)
+
+
+def _audit_handoff_review_phase_contract(label: str, handoff: Mapping[str, Any], issues: list[str]) -> None:
+    phases = handoff.get("review_phases")
+    if not isinstance(phases, list):
+        issues.append(f"{label}:review_phases_missing")
+        return
+    observed = [
+        (phase.get("order"), phase.get("phase_id"))
+        for phase in phases
+        if isinstance(phase, Mapping)
+    ]
+    if observed != list(EXPECTED_REVIEW_PHASES):
+        issues.append(f"{label}:review_phase_order_mismatch")
+    phase = _handoff_review_phases_by_id(handoff).get("multi_channel_policy_review")
+    if not isinstance(phase, Mapping):
+        issues.append(f"{label}:missing_channel_policy_review_phase")
+        return
+    if phase.get("changes_readiness_by_itself") is not False:
+        issues.append(f"{label}:channel_policy_review_changes_readiness")
+    if phase.get("changes_policy_by_itself") is not False:
+        issues.append(f"{label}:channel_policy_review_changes_policy")
+    if phase.get("real_egress_enabled") is not False:
+        issues.append(f"{label}:channel_policy_review_enables_egress")
+    review_command = str(phase.get("review_command") or "")
+    first_safe_command = str(phase.get("first_safe_command") or "")
+    if "voiceops_channel_policy.py" not in first_safe_command:
+        issues.append(f"{label}:channel_policy_review_first_safe_command_invalid")
+    if review_command != first_safe_command:
+        issues.append(f"{label}:channel_policy_review_command_mismatch")
+    artifacts = phase.get("review_artifacts")
+    if not isinstance(artifacts, list) or "artifacts/voiceops-channel-policy/current/channel-policy-review.json" not in artifacts:
+        issues.append(f"{label}:channel_policy_review_artifact_missing")
+    required_review = set(phase.get("required_review") or [])
+    if required_review != {"business_owner", "channel_owner", "privacy_reviewer", "security_owner"}:
+        issues.append(f"{label}:channel_policy_review_signoffs_mismatch")
 
 
 def _audit_handoff_command_order(
@@ -860,6 +918,32 @@ def _audit_next_action_command_order(label: str, actions: Any, issues: list[str]
             issues.append(f"{label}:local_spark_stack_matrix:first_evidence_command_not_dgx_eval")
         if spark_safe == spark_evidence:
             issues.append(f"{label}:local_spark_stack_matrix:first_safe_command_equals_first_evidence")
+
+
+def _audit_review_actions(label: str, actions: Any, issues: list[str]) -> None:
+    if not isinstance(actions, list):
+        issues.append(f"{label}:review_actions_missing")
+        return
+    actions_by_phase = {
+        str(action.get("phase_id")): action
+        for action in actions
+        if isinstance(action, Mapping)
+    }
+    action = actions_by_phase.get("multi_channel_policy_review")
+    if not isinstance(action, Mapping):
+        issues.append(f"{label}:missing_channel_policy_review_action")
+        return
+    if action.get("status") != "pending_human_review":
+        issues.append(f"{label}:channel_policy_review_status_not_pending")
+    if action.get("changes_readiness_by_itself") is not False:
+        issues.append(f"{label}:channel_policy_review_changes_readiness")
+    if action.get("changes_policy_by_itself") is not False:
+        issues.append(f"{label}:channel_policy_review_changes_policy")
+    if action.get("real_egress_enabled") is not False:
+        issues.append(f"{label}:channel_policy_review_enables_egress")
+    command = str(action.get("review_command") or "")
+    if "voiceops_channel_policy.py" not in command:
+        issues.append(f"{label}:channel_policy_review_command_invalid")
 
 
 def _audit_ordered_handoff_command(

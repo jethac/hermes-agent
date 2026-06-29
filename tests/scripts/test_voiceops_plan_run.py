@@ -539,6 +539,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert summary["blockers"] == {
         "readiness_gaps": summary["readiness_gaps"],
         "remaining_gates": summary["remaining_gates"],
+        "review_actions": summary["review_actions"],
         "current_environment": blockers,
     }
     handoff = summary["closure_index"]["operator_handoff"]
@@ -550,6 +551,16 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--package-audit" in handoff["final_reindex_command"]
     next_actions = summary["closure_index"]["next_actions"]
     assert summary["next_actions"] == next_actions
+    review_actions = summary["closure_index"]["review_actions"]
+    assert summary["review_actions"] == review_actions
+    assert [action["phase_id"] for action in review_actions] == ["multi_channel_policy_review"]
+    assert review_actions[0]["milestone"] == "milestone_3_multi_channel_policy"
+    assert review_actions[0]["status"] == "pending_human_review"
+    assert review_actions[0]["changes_readiness_by_itself"] is False
+    assert review_actions[0]["changes_policy_by_itself"] is False
+    assert review_actions[0]["real_egress_enabled"] is False
+    assert "voiceops_channel_policy.py" in review_actions[0]["review_command"]
+    assert any("channel-policy-review.json" in artifact for artifact in review_actions[0]["review_artifacts"])
     assert [action["gate_id"] for action in next_actions] == [
         "live_discord_voice_operator",
         "spend_and_provisioning_preflight",
@@ -584,6 +595,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "spend_and_provisioning_preflight",
         "local_spark_stack",
     ]
+    assert [phase["phase_id"] for phase in handoff["review_phases"]] == ["multi_channel_policy_review"]
+    assert handoff["review_phases"][0]["status"] == "pending_human_review"
+    assert handoff["review_phases"][0]["changes_readiness_by_itself"] is False
+    assert handoff["review_phases"][0]["changes_policy_by_itself"] is False
+    assert handoff["review_phases"][0]["real_egress_enabled"] is False
+    assert any("channel-policy-review.json" in artifact for artifact in handoff["review_phases"][0]["review_artifacts"])
+    assert "voiceops_channel_policy.py" in handoff["review_phases"][0]["first_safe_command"]
     assert [phase["order"] for phase in handoff["phases"]] == [1, 2, 3]
     assert [phase["status"] for phase in handoff["phases"]] == [
         "needs_live_probe",
@@ -983,11 +1001,18 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert payload["closure_status"] == closure["closure_status"]
     assert payload["remaining_gates"] == [gate["gate_id"] for gate in closure["remaining_gates"]]
     assert payload["next_actions"] == closure["next_actions"]
+    assert payload["review_actions"] == closure["review_actions"]
     assert closure["artifact_id"] == "voiceops-plan-readiness-closure"
     assert closure["schema_version"] == "voiceops.closure_index.v1"
     assert handoff_payload == closure["operator_handoff"]
     assert handoff_payload["schema_version"] == "voiceops.operator_handoff.v1"
     assert [phase["order"] for phase in handoff_payload["phases"]] == [1, 2, 3]
+    assert [phase["phase_id"] for phase in handoff_payload["review_phases"]] == ["multi_channel_policy_review"]
+    assert handoff_payload["review_phases"][0]["status"] == "pending_human_review"
+    assert handoff_payload["review_phases"][0]["real_egress_enabled"] is False
+    assert [action["phase_id"] for action in payload["review_actions"]] == ["multi_channel_policy_review"]
+    assert payload["review_actions"][0]["status"] == "pending_human_review"
+    assert payload["review_actions"][0]["real_egress_enabled"] is False
     assert [phase["first_safe_command"] for phase in handoff_payload["phases"]] == [
         closure["next_actions"][0]["first_safe_command"],
         closure["next_actions"][1]["first_safe_command"],
@@ -1090,6 +1115,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "voiceops_artifact_package_audit.py" in closure_markdown
     assert "--package-audit" in closure_markdown
     assert "Next Actions" in closure_markdown
+    assert "Review Actions" in closure_markdown
+    assert "multi_channel_policy_review" in closure_markdown
     assert "First safe command" in closure_markdown
     assert "needs_external_live_probe" in closure_markdown
     assert "live_discord_voice_operator" in closure_markdown
@@ -1679,6 +1706,9 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
         "local_spark_stack_matrix",
     ]
     assert [action["gate_id"] for action in payload["next_actions"]] == payload["remaining_gates"]
+    assert [action["phase_id"] for action in payload["review_actions"]] == ["multi_channel_policy_review"]
+    assert payload["review_actions"][0]["status"] == "pending_human_review"
+    assert payload["review_actions"][0]["real_egress_enabled"] is False
     assert "--audit-only" in payload["next_actions"][0]["first_safe_command"]
     assert payload["next_actions"][0]["first_evidence_command"].startswith(
         "uv run python -m hermes_cli.realtime_voice_live_evidence"

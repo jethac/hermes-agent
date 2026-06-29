@@ -325,6 +325,39 @@ def test_package_audit_rejects_plan_run_top_level_mirror_drift(tmp_path):
     assert "plan_run:next_actions_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_missing_channel_policy_review_action(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    closure_path = artifact_root / "voiceops-plan" / "current" / "readiness-closure-index.json"
+    handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"
+    demo_handoff_path = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json"
+
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    closure = json.loads(closure_path.read_text(encoding="utf-8"))
+    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    demo_handoff = json.loads(demo_handoff_path.read_text(encoding="utf-8"))
+
+    closure["review_actions"] = []
+    closure["operator_handoff"]["review_phases"] = []
+    plan_run["closure_index"] = closure
+    plan_run["review_actions"] = []
+    handoff["review_phases"] = []
+    demo_handoff["review_phases"] = []
+
+    _write_json(plan_run_path, plan_run)
+    _write_json(closure_path, closure)
+    _write_json(handoff_path, handoff)
+    _write_json(demo_handoff_path, demo_handoff)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "plan_run:missing_channel_policy_review_action" in report["issues"]
+    assert "plan_closure:missing_channel_policy_review_action" in report["issues"]
+    assert "operator_handoff:missing_channel_policy_review_phase" in report["issues"]
+    assert "demo_handoff:missing_channel_policy_review_phase" in report["issues"]
+
+
 def test_package_audit_rejects_plan_run_model_arg_drift_from_demo(tmp_path):
     artifact_root = _generate_package(
         tmp_path,
