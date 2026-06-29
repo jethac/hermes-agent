@@ -111,6 +111,26 @@ def _demo_closure_summary() -> dict[str, Any]:
             "missing": ["discord_join", "discord_playback", "live_receiver", "production_sidecar", "live_turn"],
             "template_artifact": "live-voice-evidence-template.json",
             "closure_artifact": "live-probe-closure-plan.md",
+            "collection_commands": {
+                "collect_live_manifest": (
+                    "uv run python -m hermes_cli.realtime_voice_live_evidence "
+                    "--output-dir artifacts/realtime-voice-evidence/live-current "
+                    "--require-live-discord --require-inbound --wait-seconds 5 "
+                    "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
+                    "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
+                ),
+                "ingest_live_manifest": (
+                    "uv run python scripts/voiceops_voice_operator.py "
+                    "--output-dir artifacts/voiceops-voice-operator/current "
+                    "--live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json"
+                ),
+            },
+            "expected_artifacts": [
+                "artifacts/realtime-voice-evidence/live-current/manifest.json",
+                "artifacts/realtime-voice-evidence/live-current/sidecar-session.json",
+                "artifacts/realtime-voice-evidence/live-current/live-turn.json",
+                "artifacts/voiceops-voice-operator/current/live-voice-evidence-scaffold/manifest.json",
+            ],
             "completion_signal": "live_probe_missing_gates becomes [] and live_probe_status is live_evidence_supplied_not_readiness_claim",
             "evidence_contract": {
                 "manifest_schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
@@ -120,6 +140,11 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "source_artifacts_must_exist": True,
                 "example_only_accepted": False,
             },
+            "rerun_command": (
+                "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                "--output-dir artifacts/voiceops-plan/current "
+                "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json"
+            ),
         },
         {
             "gate_id": "spend_and_provisioning_preflight",
@@ -140,15 +165,55 @@ def _demo_closure_summary() -> dict[str, Any]:
             ],
             "template_artifact": "provisioning-preflight-evidence.template.json",
             "closure_artifact": "setup-closure-plan.md",
+            "collection_commands": {
+                "presence_only": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env"
+                ),
+                "bounded_version_help": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-command-probes"
+                ),
+                "read_only_discovery": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-readonly-discovery"
+                ),
+                "ingest_preflight_manifest": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
+                    "--preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
+                ),
+                "validate_post_approval_receipts": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
+                    "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json"
+                ),
+            },
+            "expected_artifacts": [
+                "artifacts/voiceops-provisioning/current/read-only-discovery.json",
+                "artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json",
+                "artifacts/voiceops-provisioning/current/audit-ledger.read-only-discovery.jsonl",
+                "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
+                "artifacts/voiceops-provisioning/current/post-approval-receipts.validation.json",
+                "artifacts/voiceops-provisioning/current/audit-ledger.post-approval.jsonl",
+            ],
             "completion_signal": "required_failures becomes [] and milestone status becomes ready",
             "evidence_contract": {
                 "preflight_schema_version": "voiceops.milestone2.preflight_evidence.v1",
                 "manifest_schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+                "read_only_discovery_schema_version": "voiceops.milestone2.read_only_discovery.v1",
+                "read_only_discovery_grants_approval": False,
+                "post_approval_receipts_schema_version": "voiceops.milestone2.post_approval_receipts.v1",
                 "required_sections": ["stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback"],
                 "required_section_field": "source_artifact",
                 "source_artifacts_must_exist": True,
                 "example_only_accepted": False,
             },
+            "rerun_command": (
+                "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
+            ),
         },
         {
             "gate_id": "local_spark_stack_matrix",
@@ -162,6 +227,28 @@ def _demo_closure_summary() -> dict[str, Any]:
             ],
             "template_artifact": "spark-benchmark-evidence-template.json",
             "closure_artifact": "spark-matrix-closure-plan.md",
+            "collection_commands": {
+                "matrix_only": (
+                    "uv run python scripts/voiceops_spark_matrix.py "
+                    "--output-dir artifacts/voiceops-spark-matrix/current"
+                ),
+                "with_evidence": (
+                    "uv run python scripts/voiceops_spark_matrix.py "
+                    "--output-dir artifacts/voiceops-spark-matrix/current "
+                    "--evidence path/to/spark-benchmark-evidence.json"
+                ),
+                "plan_index": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current "
+                    "--evidence path/to/spark-benchmark-evidence.json"
+                ),
+                "dgx_eval": "scripts/dgx_spark_gemma4_voice_eval.sh",
+            },
+            "expected_artifacts": [
+                "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json",
+                "artifacts/voiceops-spark-matrix/current/spark-model-matrix.json",
+                "artifacts/voiceops-spark-matrix/current/spark-matrix-closure-plan.md",
+            ],
             "completion_signal": "ready_for_one_spark_demo is true, role_status values are validated, and all_local_stack_smoke is validated",
             "evidence_contract": {
                 "benchmark_schema_version": "voiceops.spark_benchmark_evidence.v1",
@@ -173,6 +260,11 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "hosted_fallback_counts_for_one_spark_readiness": False,
                 "example_only_accepted": False,
             },
+            "rerun_command": (
+                "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                "--output-dir artifacts/voiceops-plan/current "
+                "--evidence path/to/spark-benchmark-evidence.json"
+            ),
         },
     ]
     return {
@@ -202,6 +294,17 @@ def _closure_gate_markdown_lines(closure: dict[str, Any]) -> list[str]:
             lines.append("- Evidence contract:")
             for key, value in sorted(contract.items()):
                 lines.append(f"  - `{key}`: `{value}`")
+        commands = gate.get("collection_commands")
+        if isinstance(commands, dict):
+            lines.append("- Collection commands:")
+            for label, command in sorted(commands.items()):
+                lines.append(f"  - `{label}`: `{command}`")
+        expected = gate.get("expected_artifacts")
+        if isinstance(expected, list):
+            lines.append("- Expected artifacts:")
+            lines.extend(f"  - `{artifact}`" for artifact in expected)
+        if gate.get("rerun_command"):
+            lines.append(f"- Rerun command: `{gate['rerun_command']}`")
         lines.append("")
     return lines
 
@@ -919,6 +1022,9 @@ def _demo_milestone2_report(demo: dict[str, Any], readiness: dict[str, Any]) -> 
             "non_mutating": True,
             "bounded": True,
             "run_commands": False,
+            "run_readonly_discovery": False,
+            "active_probe_policy": "version_help_only",
+            "read_only_discovery_policy": "exact_allowlist_only",
             "blocked_capabilities": [
                 "live_spend",
                 "provider_provisioning",
@@ -926,6 +1032,29 @@ def _demo_milestone2_report(demo: dict[str, Any], readiness: dict[str, Any]) -> 
                 "outbound_phone_calls",
                 "account_mutation",
             ],
+        },
+        "read_only_discovery": {
+            "schema_version": "voiceops.milestone2.read_only_discovery.v1",
+            "run_requested": False,
+            "status": "not_requested",
+            "non_mutating": True,
+            "does_not_grant_approval": True,
+            "redacted_outputs_only": True,
+            "network_io_possible": False,
+            "failed_probe_ids": [],
+            "missing_probe_ids": [],
+            "allowlisted_commands": [
+                ["link-cli", "auth", "status"],
+                ["stripe", "projects", "list", "--limit", "10"],
+            ],
+            "blocked_capabilities": [
+                "live_spend",
+                "provider_provisioning",
+                "credential_retrieval",
+                "outbound_phone_calls",
+                "account_mutation",
+            ],
+            "probes": [],
         },
         "demo_refs": {
             "phone_context": "phone-context.json",
@@ -1529,12 +1658,16 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         )
     closure_items = []
     for gate in closure["gates"]:
+        command_labels = ", ".join(sorted((gate.get("collection_commands") or {}).keys()))
+        artifact_labels = ", ".join(str(artifact) for artifact in gate.get("expected_artifacts", [])[:3])
         closure_items.append(
             "<li>"
             f"<span class=\"pill {_status_class(gate['status'])}\">{_h(gate['status'])}</span>"
             f"<strong>{_h(gate['gate_id'])}</strong>"
             f"<small>Missing: {_h(', '.join(gate['missing']))}</small>"
             f"<small>Template: {_h(gate['template_artifact'])}; closure: {_h(gate['closure_artifact'])}</small>"
+            f"<small>Commands: {_h(command_labels or 'none')}</small>"
+            f"<small>Artifacts: {_h(artifact_labels or 'none')}</small>"
             "</li>"
         )
     guardrail_items = "".join(f"<li>{_h(item)}</li>" for item in nemoclaw["blocked_capabilities"])

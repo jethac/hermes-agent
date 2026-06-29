@@ -95,6 +95,19 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         closure_gates["local_spark_stack_matrix"]["evidence_contract"]["hosted_fallback_counts_for_one_spark_readiness"]
         is False
     )
+    assert "--run-readonly-discovery" in closure_gates["spend_and_provisioning_preflight"]["collection_commands"][
+        "read_only_discovery"
+    ]
+    assert (
+        closure_gates["spend_and_provisioning_preflight"]["evidence_contract"]["read_only_discovery_grants_approval"]
+        is False
+    )
+    assert "artifacts/voiceops-provisioning/current/read-only-discovery.json" in closure_gates[
+        "spend_and_provisioning_preflight"
+    ]["expected_artifacts"]
+    assert "scripts/dgx_spark_gemma4_voice_eval.sh" in closure_gates["local_spark_stack_matrix"]["collection_commands"][
+        "dgx_eval"
+    ]
     assert payload["operator_state_ref"] == "operator-state.json"
     assert payload["operator_state_events_ref"] == "operator-state-events.jsonl"
     assert payload["milestone2_execution_plan_ref"] == "milestone2-execution-plan.json"
@@ -191,6 +204,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "phone-call-handoff",
     }
     assert "deprovision_voip_provider" in milestone2_plan["rollback_plan"]
+    assert {step["records_to"] for step in milestone2_plan["read_only_discovery"]} == {
+        "audit-ledger.read-only-discovery.jsonl"
+    }
     approval_step_ids = {
         step["step_id"]
         for step in milestone2_plan["execution_steps"]
@@ -252,6 +268,10 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "all_local_stack_smoke:needs_evidence" in runbook
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in runbook
     assert "voiceops.milestone2.preflight_evidence.v1" in runbook
+    assert "voiceops.milestone2.read_only_discovery.v1" in runbook
+    assert "--run-readonly-discovery" in runbook
+    assert "read-only-discovery.json" in runbook
+    assert "audit-ledger.read-only-discovery.jsonl" in runbook
     assert "spark-matrix-closure-plan.md" in runbook
     assert "Closure artifact: `spark-model-matrix.md`" not in runbook
     writeup = Path(paths["submission_writeup"]).read_text(encoding="utf-8")
@@ -264,12 +284,15 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "spend_and_provisioning_preflight" in writeup
     assert "local_spark_stack_matrix" in writeup
     assert "all_local_stack_smoke:needs_evidence" in writeup
+    assert "read-only-discovery.json" in Path(paths["dashboard"]).read_text(encoding="utf-8")
     dashboard = Path(paths["dashboard"]).read_text(encoding="utf-8")
     assert "Nemotron 3 Super" in dashboard
     assert "Nemotron 3 Ultra hosted fallback" in dashboard
     assert "Ultra does not count as Spark-local readiness proof" in dashboard
     assert "NemoClaw Blocks" in dashboard
     assert "Plan Closure Gates" in dashboard
+    assert "read_only_discovery" in dashboard
+    assert "audit-ledger.read-only-discovery.jsonl" in dashboard
     assert "live_discord_voice_operator" in dashboard
     assert "spend_and_provisioning_preflight" in dashboard
     assert "local_spark_stack_matrix" in dashboard
