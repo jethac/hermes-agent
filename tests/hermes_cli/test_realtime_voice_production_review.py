@@ -161,6 +161,32 @@ def test_production_review_requires_desktop_reconnect_recovery_check(tmp_path, c
     assert "review_check_missing:desktop_reconnect_recovery" in capsys.readouterr().err
 
 
+def test_production_review_requires_kame_dgx_benchmark_evidence_check(tmp_path, capsys):
+    report_path = tmp_path / "review.json"
+    checks = {
+        key: True
+        for key in REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
+        if key != "kame_dgx_benchmark_evidence"
+    }
+    report_path.write_text(
+        json.dumps(
+            {
+                "kind": "realtime_voice_production_review",
+                "reviewer": "qa@example.test",
+                "reviewed_at": "2026-06-08T00:00:00Z",
+                "checks": checks,
+                "evidence": _review_evidence(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = realtime_voice_production_review.main([str(report_path)])
+
+    assert result == 1
+    assert "review_check_missing:kame_dgx_benchmark_evidence" in capsys.readouterr().err
+
+
 def test_production_review_validation_requires_evidence_for_passed_checks(tmp_path, capsys):
     report_path = tmp_path / "review.json"
     report_path.write_text(

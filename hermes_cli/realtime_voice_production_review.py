@@ -26,6 +26,21 @@ REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS = {
     "accessibility_review": "Accessibility review for captions, mute, fallback, and interruption passed",
     "security_review": "Credential, transport, and remote-sidecar security review passed",
     "operator_docs_review": "Operator setup, fallback, and incident docs reviewed",
+    "kame_dgx_benchmark_evidence": (
+        "DGX Spark KAME benchmark evidence passed the generated benchmark matrix validator"
+    ),
+    "kame_e2b_direct_audio_launch": (
+        "Gemma 4 E2B direct-audio reflex launch was validated on the target DGX Spark runtime"
+    ),
+    "kame_oracle_asr_hypothesis_comparison": (
+        "Oracle outcomes were compared with and without oracle-verbatim ASR transcript hypotheses"
+    ),
+    "kame_all_local_dgx_spark_smoke": (
+        "All-local DGX Spark smoke passed with interface, oracle, ASR, TTS, and sidecar running together"
+    ),
+    "kame_live_discord_full_path_smoke": (
+        "Live Discord smoke passed the full KAME path with production credentials"
+    ),
 }
 
 

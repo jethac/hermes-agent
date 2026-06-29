@@ -344,9 +344,11 @@ asr_mode = "on_escalation"
 
 [voice.realtime.oracle]
 mode = "hermes_active_oracle"
-preferred_local_model = "gemma-4-26B-A4B-it"
 timeout_ms = 60000
 max_spoken_sentences = 2
+
+# The local DGX Spark oracle endpoint is registered in Hermes's normal model
+# provider config and selected with `/model`, not through realtime voice.
 
 [voice.realtime.routing]
 allow_local_greetings = true
@@ -501,6 +503,15 @@ Manual smoke tests:
 - user speech during bot playback stops audio quickly
 - interrupted assistant response is not committed as complete
 - local/cloud fallback reason is visible and accurate
+
+Production review must also include KAME-specific evidence checks. A generic
+voice production review is not enough for this branch. Required KAME gates are:
+
+- DGX Spark benchmark evidence accepted by the generated KAME matrix validator
+- Gemma 4 E2B direct-audio reflex launch evidence from the target DGX Spark runtime
+- oracle outcome comparison with and without oracle-verbatim ASR transcript hypotheses
+- all-local DGX Spark smoke with oracle, interface, ASR, TTS, and sidecar together
+- live Discord smoke for the full KAME path under production credentials
 
 ## Acceptance Criteria
 
