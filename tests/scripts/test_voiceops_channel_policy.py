@@ -349,13 +349,16 @@ def test_redaction_rules_compile_only_apply_to_known_channels_and_keep_safe_orde
 
 
 def test_redaction_rules_mask_raw_provider_tokens_and_payment_urls():
+    discord_token = "MTAxMjM0NTY3ODkwMTIzNDU2Nw" + ".Gabcdef." + "abcdefghijklmnopqrstuvwxyzABCDE"
+    twilio_sid = "AC" + "0123456789abcdef0123456789abcdef"
+    twilio_auth_token = "0123456789abcdef0123456789abcdef"
     text = (
         "discord webhook https://discord.com/api/webhooks/123456789012345678/"
         "abcdefghijklmnopqrstuvwxyzABCDEF "
-        "discord token DISCORD_TOKEN_FIXTURE_REDACTED "
+        f"discord token {discord_token} "
         "whatsapp EAAGm0PX4ZCpsBANZCZA1234567890 "
-        "twilio TWILIO_ACCOUNT_SID_FIXTURE_REDACTED "
-        "twilio auth token 0123456789abcdef0123456789abcdef "
+        f"twilio {twilio_sid} "
+        f"twilio auth token {twilio_auth_token} "
         "stripe sk_live_51ABCDEF123456789 whsec_123456789abcdef "
         "checkout https://checkout.stripe.com/c/pay/cs_live_123456789 "
         "link https://buy.stripe.com/test_123456789"
@@ -364,10 +367,10 @@ def test_redaction_rules_mask_raw_provider_tokens_and_payment_urls():
     redacted = apply_redactions(text)
 
     assert "discord.com/api/webhooks" not in redacted
-    assert "DISCORD_TOKEN_FIXTURE_REDACTED" not in redacted
+    assert discord_token not in redacted
     assert "EAAGm0PX4ZCpsBANZCZA1234567890" not in redacted
-    assert "TWILIO_ACCOUNT_SID_FIXTURE_REDACTED" not in redacted
-    assert "0123456789abcdef0123456789abcdef" not in redacted
+    assert twilio_sid not in redacted
+    assert twilio_auth_token not in redacted
     assert "sk_live_51ABCDEF123456789" not in redacted
     assert "whsec_123456789abcdef" not in redacted
     assert "checkout.stripe.com" not in redacted
