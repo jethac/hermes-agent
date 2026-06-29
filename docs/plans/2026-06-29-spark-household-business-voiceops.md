@@ -309,6 +309,20 @@ Move as much of the stack as possible onto one DGX Spark:
 - all-local smoke with oracle, interface, ASR, TTS, and sidecar together
 - benchmark evidence accepted by the generated DGX Spark matrix validator
 
+Headless command:
+
+```bash
+uv run python scripts/voiceops_spark_matrix.py --output-dir artifacts/voiceops-spark-matrix/current
+```
+
+The command writes:
+
+- `spark-model-matrix.json`
+- `spark-model-matrix.md`
+- `spark-benchmark-evidence-template.json`
+
+When benchmark evidence exists, pass it with repeated `--evidence path/to/evidence.json` arguments. Until measured evidence is supplied, the matrix must mark local Spark roles as needing evidence rather than claiming readiness.
+
 ## Milestone 5: Operator Dashboard
 
 Add an inspectable operations surface:
