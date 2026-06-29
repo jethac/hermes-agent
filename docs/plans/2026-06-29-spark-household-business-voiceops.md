@@ -406,6 +406,15 @@ uv run python scripts/voiceops_provisioning_probe.py \
   --run-readonly-discovery
 ```
 
+After a read-only discovery run exists, later closure/index runs should ingest the redacted manifest instead of rerunning network-capable discovery:
+
+```bash
+uv run python scripts/voiceops_provisioning_probe.py \
+  --output-dir artifacts/voiceops-provisioning/current \
+  --env-file .env \
+  --read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json
+```
+
 When local setup and account/capability evidence exists, ingest supplied evidence without running live spend or provider mutations:
 
 ```bash
@@ -445,7 +454,7 @@ uv run python scripts/voiceops_provisioning_probe.py \
   --post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json
 ```
 
-The receipt bundle uses `voiceops.milestone2.post_approval_receipts.v1` and must contain redacted `receipts`, `credential_locations`, `rollback_receipts`, and `audit_events`. The validator rejects `example_only`, raw secret/token/card/phone fields, command hash mismatches, unknown action ids, duplicate credential-location refs, duplicate rollback refs, duplicate audit event ids, missing credential-location refs, missing rollback refs, and missing audit events. A valid bundle writes `post-approval-receipts.validation.json` and `audit-ledger.post-approval.jsonl`; it still does not execute spend, provisioning, credential retrieval, messages, or calls.
+The receipt bundle uses `voiceops.milestone2.post_approval_receipts.v1` and must contain redacted `receipts`, `credential_locations`, `rollback_receipts`, and `audit_events`. The validator rejects `example_only`, raw secret/token/card/phone fields, command hash mismatches, unknown action ids, duplicate credential-location refs, duplicate rollback refs, duplicate audit event ids, missing audit events, and missing credential-location or rollback refs for executed actions. Held, denied, and skipped decision receipts may omit execution-only credential and rollback artifacts. A valid bundle writes `post-approval-receipts.validation.json` and `audit-ledger.post-approval.jsonl`; it still does not execute spend, provisioning, credential retrieval, messages, or calls.
 
 ## Milestone 3: Multi-Channel Operations
 
@@ -588,6 +597,7 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
   --env-file .env \
+  --read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json \
   --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json
 ```
 
@@ -595,6 +605,7 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
   --env-file .env \
+  --read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json \
   --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json
 ```
 
@@ -602,6 +613,7 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
   --env-file .env \
+  --read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json \
   --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json \
   --post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json
 ```

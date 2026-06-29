@@ -28,6 +28,8 @@ FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
 PREFLIGHT_EVIDENCE_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence.v1"
 PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence_manifest.v1"
 POST_APPROVAL_RECEIPTS_SCHEMA_VERSION = "voiceops.milestone2.post_approval_receipts.v1"
+READ_ONLY_DISCOVERY_SCHEMA_VERSION = "voiceops.milestone2.read_only_discovery.v1"
+READ_ONLY_DISCOVERY_MANIFEST_SCHEMA_VERSION = "voiceops.milestone2.read_only_discovery_manifest.v1"
 POST_APPROVAL_RECEIPT_STATUSES = {"executed", "failed", "held", "denied", "skipped", "rolled_back"}
 POST_APPROVAL_NON_EXECUTED_STATUSES = {"held", "denied", "skipped"}
 PREFLIGHT_REDACTED_SOURCE_SCHEMA_VERSION = "voiceops.milestone2.redacted_source_artifact.v1"
@@ -1408,7 +1410,7 @@ def _build_readonly_discovery_report(
     if run_discovery:
         status = "fail" if failed else "needs_tools" if missing else "pass"
     return {
-        "schema_version": "voiceops.milestone2.read_only_discovery.v1",
+        "schema_version": READ_ONLY_DISCOVERY_SCHEMA_VERSION,
         "generated_at": _utc_now(),
         "run_requested": run_discovery,
         "non_mutating": True,
@@ -1427,6 +1429,116 @@ def _build_readonly_discovery_report(
     }
 
 
+def _readonly_discovery_not_loaded() -> dict[str, Any]:
+    return _build_readonly_discovery_report(
+        which=lambda _command: None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=127),
+        timeout_seconds=0,
+        run_discovery=False,
+    )
+
+
+def _readonly_discovery_validation_issues(discovery: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    if str(discovery.get("schema_version") or "") != READ_ONLY_DISCOVERY_SCHEMA_VERSION:
+        issues.append("read_only_discovery:missing_or_invalid_schema_version")
+    required_flags = {
+        "non_mutating": True,
+        "does_not_grant_approval": True,
+        "redacted_outputs_only": True,
+        "required_for_live_provisioning_approval": True,
+        "proves_existing_local_auth": False,
+    }
+    for key, expected in required_flags.items():
+        if discovery.get(key) is not expected:
+            issues.append(f"read_only_discovery:{key}_must_be_{str(expected).lower()}")
+    if str(discovery.get("auth_context") or "") != "isolated_home":
+        issues.append("read_only_discovery:auth_context_must_be_isolated_home")
+    if str(discovery.get("status") or "") != "pass":
+        issues.append("read_only_discovery:status_not_pass")
+    if list(discovery.get("blocked_capabilities") or []) != BLOCKED_CAPABILITIES:
+        issues.append("read_only_discovery:blocked_capabilities_mismatch")
+    allowlisted = [list(command) for command in sorted(READONLY_DISCOVERY_ARGV_TUPLES)]
+    if discovery.get("allowlisted_commands") != allowlisted:
+        issues.append("read_only_discovery:allowlisted_commands_mismatch")
+    probes = discovery.get("probes")
+    if not isinstance(probes, list):
+        return [*issues, "read_only_discovery:probes_not_list"]
+    expected_by_id = {probe.probe_id: probe for probe in _readonly_discovery_manifest()}
+    seen: set[str] = set()
+    for index, probe in enumerate(probes):
+        if not isinstance(probe, Mapping):
+            issues.append(f"read_only_discovery:probes[{index}]:not_object")
+            continue
+        probe_id = str(probe.get("probe_id") or "")
+        expected = expected_by_id.get(probe_id)
+        if expected is None:
+            issues.append(f"read_only_discovery:{probe_id or index}:unknown_probe_id")
+            continue
+        seen.add(probe_id)
+        if list(probe.get("argv") or []) != list(expected.argv):
+            issues.append(f"read_only_discovery:{probe_id}:argv_mismatch")
+        if str(probe.get("status") or "") != "pass":
+            issues.append(f"read_only_discovery:{probe_id}:status_not_pass")
+        if probe.get("executed") is not True:
+            issues.append(f"read_only_discovery:{probe_id}:not_executed")
+    missing = sorted(set(expected_by_id) - seen)
+    if missing:
+        issues.append(f"read_only_discovery:missing_probes:{','.join(missing)}")
+    return issues
+
+
+def _load_readonly_discovery_report(path: Path) -> tuple[Mapping[str, Any] | None, list[str]]:
+    resolved = path.expanduser().resolve(strict=False)
+    if resolved == FORBIDDEN_ENV_ROOT or FORBIDDEN_ENV_ROOT in resolved.parents:
+        raise ValueError(f"refusing to inspect forbidden Hermes worktree path: {resolved}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None, ["read_only_discovery:file_not_found"]
+    except json.JSONDecodeError as exc:
+        return None, [f"read_only_discovery:json_parse_failed:{exc.msg}"]
+    if not isinstance(payload, Mapping):
+        return None, ["read_only_discovery:root_must_be_object"]
+    if str(payload.get("schema_version") or "") == READ_ONLY_DISCOVERY_MANIFEST_SCHEMA_VERSION:
+        report_ref = str(payload.get("report") or "").strip()
+        if not report_ref:
+            return None, ["read_only_discovery_manifest:missing_report"]
+        report_path = _resolve_manifest_report_path(path, report_ref)
+        report, issues = _load_readonly_discovery_report(report_path)
+        manifest_issues: list[str] = []
+        if str(payload.get("status") or "") != "pass":
+            manifest_issues.append("read_only_discovery_manifest:status_not_pass")
+        if payload.get("does_not_grant_approval") is not True:
+            manifest_issues.append("read_only_discovery_manifest:does_not_grant_approval_must_be_true")
+        if payload.get("redacted_outputs_only") is not True:
+            manifest_issues.append("read_only_discovery_manifest:redacted_outputs_only_must_be_true")
+        return report, [*manifest_issues, *issues]
+    return payload, _readonly_discovery_validation_issues(payload)
+
+
+def load_readonly_discovery_evidence(path: Path | None) -> dict[str, Any]:
+    if path is None:
+        return _readonly_discovery_not_loaded()
+    report, issues = _load_readonly_discovery_report(path)
+    if report is None:
+        discovery = _readonly_discovery_not_loaded()
+        discovery["status"] = "fail"
+        discovery["validation_issues"] = issues
+        discovery["evidence_path"] = str(path)
+        return discovery
+    discovery = dict(report)
+    source_network_io_possible = bool(discovery.get("network_io_possible"))
+    discovery["loaded_from_evidence"] = True
+    discovery["evidence_path"] = str(path)
+    discovery["source_network_io_possible"] = source_network_io_possible
+    discovery["network_io_possible"] = False
+    discovery["validation_issues"] = issues
+    if issues:
+        discovery["status"] = "fail"
+    return discovery
+
+
 def _probe_by_id(command_results: list[dict[str, Any]], probe_id: str) -> dict[str, Any]:
     return next(item for item in command_results if item["probe_id"] == probe_id)
 
@@ -1443,6 +1555,7 @@ def build_probe_report(
     env_files: Iterable[Path] | None = None,
     repo_root: Path = REPO_ROOT,
     preflight_evidence_path: Path | None = None,
+    read_only_discovery_evidence_path: Path | None = None,
     post_approval_receipts_path: Path | None = None,
     which: Callable[[str], str | None] = shutil.which,
     runner: CommandRunner = _subprocess_runner,
@@ -1463,11 +1576,15 @@ def build_probe_report(
         )
         for probe in _command_manifest()
     ]
-    readonly_discovery = _build_readonly_discovery_report(
-        which=which,
-        runner=readonly_discovery_runner,
-        timeout_seconds=timeout_seconds,
-        run_discovery=run_readonly_discovery,
+    readonly_discovery = (
+        load_readonly_discovery_evidence(read_only_discovery_evidence_path)
+        if read_only_discovery_evidence_path is not None
+        else _build_readonly_discovery_report(
+            which=which,
+            runner=readonly_discovery_runner,
+            timeout_seconds=timeout_seconds,
+            run_discovery=run_readonly_discovery,
+        )
     )
 
     checks: list[ReadinessCheck] = []
@@ -1727,6 +1844,7 @@ def build_probe_report(
             "bounded": True,
             "run_commands": run_commands,
             "run_readonly_discovery": run_readonly_discovery,
+            "read_only_discovery_evidence_path": str(read_only_discovery_evidence_path) if read_only_discovery_evidence_path else None,
             "timeout_seconds": timeout_seconds,
             "active_probe_policy": "version_help_only",
             "read_only_discovery_policy": "exact_allowlist_only",
@@ -3230,6 +3348,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Read-only redacted post-approval receipt bundle; validates receipts and writes local ledger artifacts only.",
     )
+    parser.add_argument(
+        "--read-only-discovery-evidence",
+        "--readonly-discovery-evidence",
+        type=Path,
+        default=None,
+        dest="read_only_discovery_evidence",
+        help=(
+            "Read-only redacted discovery report or manifest from a prior allowlisted discovery run; "
+            "ingests evidence without running discovery commands."
+        ),
+    )
     parser.add_argument("--timeout-seconds", type=int, default=3)
     parser.add_argument(
         "--run-command-probes",
@@ -3271,6 +3400,7 @@ def main(argv: list[str] | None = None) -> int:
     report = build_probe_report(
         env_files=args.env_file,
         preflight_evidence_path=args.preflight_evidence,
+        read_only_discovery_evidence_path=args.read_only_discovery_evidence,
         post_approval_receipts_path=args.post_approval_receipts,
         run_commands=args.run_command_probes,
         run_readonly_discovery=args.run_readonly_discovery,

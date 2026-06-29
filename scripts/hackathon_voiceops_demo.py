@@ -227,6 +227,11 @@ def _demo_closure_summary() -> dict[str, Any]:
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-readonly-discovery"
                 ),
+                "ingest_read_only_discovery_evidence": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
+                    "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json"
+                ),
                 "ingest_preflight_evidence": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
@@ -313,9 +318,15 @@ def _demo_closure_summary() -> dict[str, Any]:
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current --env-file .env --run-readonly-discovery"
                 ),
+                "plan_index_read_only_discovery_evidence": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json"
+                ),
                 "plan_index_manifest_and_post_approval_receipts": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json "
                     "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
                     "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json"
                 ),
@@ -534,6 +545,8 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     provisioning_gate["rerun_commands"]["plan_index_command_probes"],
                     provisioning_gate["collection_commands"]["read_only_discovery"],
                     provisioning_gate["rerun_commands"]["plan_index_read_only_discovery"],
+                    provisioning_gate["collection_commands"]["ingest_read_only_discovery_evidence"],
+                    provisioning_gate["rerun_commands"]["plan_index_read_only_discovery_evidence"],
                     provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"],
                     provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
                     provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
@@ -546,6 +559,8 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "plan_index_command_probes": "local_subprocess_only_no_network_intent",
                     "read_only_discovery": "network_possible_allowlisted_read_only",
                     "plan_index_read_only_discovery": "network_possible_allowlisted_read_only",
+                    "ingest_read_only_discovery_evidence": "local_redacted_discovery_validation_only",
+                    "plan_index_read_only_discovery_evidence": "local_reindex_only",
                     "refresh_preflight_source_hashes": "local_file_hashing_only",
                     "ingest_preflight_manifest": "local_file_validation_only",
                     "validate_post_approval_receipts": "post_approval_local_validation_only",
@@ -608,6 +623,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
             "--output-dir artifacts/voiceops-plan/current "
             "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json "
             "--env-file .env "
+            "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json "
             "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
             "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json "
             "--evidence path/to/spark-benchmark-evidence.json"

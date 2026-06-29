@@ -47,12 +47,13 @@ FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
 
 def _build_safety_flags(provisioning: dict[str, Any] | None = None) -> dict[str, Any]:
     discovery = provisioning.get("read_only_discovery", {}) if isinstance(provisioning, dict) else {}
-    network_io = bool(discovery.get("network_io_possible"))
+    loaded_from_evidence = bool(discovery.get("loaded_from_evidence"))
+    network_io = bool(discovery.get("network_io_possible")) and not loaded_from_evidence
     return {
         "network_io": network_io,
         "network_io_scope": "allowlisted_read_only_discovery" if network_io else "none",
         "mutating_network_io": False,
-        "read_only_discovery_run_requested": bool(discovery.get("run_requested")),
+        "read_only_discovery_run_requested": bool(discovery.get("run_requested")) and not loaded_from_evidence,
         "read_only_discovery_grants_approval": False,
         "env_presence_inspection": True,
         "env_secret_values_emitted": False,
@@ -98,6 +99,7 @@ def _provisioning_probe_command(
     output_dir: Path,
     env_files: list[Path],
     preflight_evidence: Path | None,
+    read_only_discovery_evidence: Path | None,
     post_approval_receipts: Path | None,
     run_command_probes: bool,
     run_readonly_discovery: bool,
@@ -114,6 +116,8 @@ def _provisioning_probe_command(
         argv.extend(["--env-file", str(env_file)])
     if preflight_evidence is not None:
         argv.extend(["--preflight-evidence", str(preflight_evidence)])
+    if read_only_discovery_evidence is not None:
+        argv.extend(["--read-only-discovery-evidence", str(read_only_discovery_evidence)])
     if post_approval_receipts is not None:
         argv.extend(["--post-approval-receipts", str(post_approval_receipts)])
     if run_command_probes:
@@ -326,6 +330,8 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     provisioning_gate["rerun_commands"]["plan_index_command_probes"],
                     provisioning_gate["collection_commands"]["read_only_discovery"],
                     provisioning_gate["rerun_commands"]["plan_index_read_only_discovery"],
+                    provisioning_gate["collection_commands"]["ingest_read_only_discovery_evidence"],
+                    provisioning_gate["rerun_commands"]["plan_index_read_only_discovery_evidence"],
                     provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"],
                     provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
                     provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
@@ -338,6 +344,8 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "plan_index_command_probes": "local_subprocess_only_no_network_intent",
                     "read_only_discovery": "network_possible_allowlisted_read_only",
                     "plan_index_read_only_discovery": "network_possible_allowlisted_read_only",
+                    "ingest_read_only_discovery_evidence": "local_redacted_discovery_validation_only",
+                    "plan_index_read_only_discovery_evidence": "local_reindex_only",
                     "refresh_preflight_source_hashes": "local_file_hashing_only",
                     "ingest_preflight_manifest": "local_file_validation_only",
                     "validate_post_approval_receipts": "post_approval_local_validation_only",
@@ -395,6 +403,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
             "--output-dir artifacts/voiceops-plan/current "
             "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json "
             "--env-file .env "
+            "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json "
             "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
             "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json "
             "--evidence path/to/spark-benchmark-evidence.json"
@@ -644,6 +653,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-readonly-discovery"
                 ),
+                "ingest_read_only_discovery_evidence": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
+                    "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json"
+                ),
                 "ingest_preflight_evidence": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
@@ -739,6 +753,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current --env-file .env --run-readonly-discovery"
                 ),
+                "plan_index_read_only_discovery_evidence": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json"
+                ),
                 "plan_index": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current --env-file .env "
@@ -752,6 +771,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "plan_index_manifest_and_post_approval_receipts": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json "
                     "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
                     "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json"
                 ),
@@ -918,6 +938,7 @@ def build_plan_run(
     env_files: list[Path] | None = None,
     voice_live_evidence_paths: list[Path] | None = None,
     provisioning_preflight_evidence: Path | None = None,
+    read_only_discovery_evidence: Path | None = None,
     post_approval_receipts: Path | None = None,
     run_command_probes: bool = False,
     run_readonly_discovery: bool = False,
@@ -933,6 +954,7 @@ def build_plan_run(
             env_files=env_files,
             voice_live_evidence_paths=voice_live_evidence_paths,
             provisioning_preflight_evidence=provisioning_preflight_evidence,
+            read_only_discovery_evidence=read_only_discovery_evidence,
             post_approval_receipts=post_approval_receipts,
             run_command_probes=run_command_probes,
             run_readonly_discovery=run_readonly_discovery,
@@ -951,6 +973,7 @@ async def build_plan_run_async(
     env_files: list[Path] | None = None,
     voice_live_evidence_paths: list[Path] | None = None,
     provisioning_preflight_evidence: Path | None = None,
+    read_only_discovery_evidence: Path | None = None,
     post_approval_receipts: Path | None = None,
     run_command_probes: bool = False,
     run_readonly_discovery: bool = False,
@@ -1020,6 +1043,7 @@ async def build_plan_run_async(
         env=effective_env,
         env_files=env_files,
         preflight_evidence_path=provisioning_preflight_evidence,
+        read_only_discovery_evidence_path=read_only_discovery_evidence,
         post_approval_receipts_path=post_approval_receipts,
         run_commands=run_command_probes,
         run_readonly_discovery=run_readonly_discovery,
@@ -1033,6 +1057,7 @@ async def build_plan_run_async(
                 output_dir=provisioning_dir,
                 env_files=env_files,
                 preflight_evidence=provisioning_preflight_evidence,
+                read_only_discovery_evidence=read_only_discovery_evidence,
                 post_approval_receipts=post_approval_receipts,
                 run_command_probes=run_command_probes,
                 run_readonly_discovery=run_readonly_discovery,
@@ -1045,6 +1070,7 @@ async def build_plan_run_async(
                 "input_paths": {
                     "env_files": [str(path) for path in env_files],
                     "preflight_evidence": str(provisioning_preflight_evidence) if provisioning_preflight_evidence else None,
+                    "read_only_discovery_evidence": str(read_only_discovery_evidence) if read_only_discovery_evidence else None,
                     "post_approval_receipts": str(post_approval_receipts) if post_approval_receipts else None,
                 },
                 "required_failures": provisioning["required_failures"],
@@ -1447,6 +1473,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--env-file", action="append", default=[], type=Path)
     parser.add_argument("--voice-live-evidence", action="append", default=[], type=Path)
     parser.add_argument("--provisioning-preflight-evidence", type=Path, default=None)
+    parser.add_argument("--read-only-discovery-evidence", "--readonly-discovery-evidence", type=Path, default=None)
     parser.add_argument("--post-approval-receipts", type=Path, default=None)
     parser.add_argument("--timeout-seconds", type=int, default=3)
     parser.add_argument(
@@ -1500,6 +1527,7 @@ def main(argv: list[str] | None = None) -> int:
                 env_files=args.env_file,
                 voice_live_evidence_paths=args.voice_live_evidence,
                 provisioning_preflight_evidence=args.provisioning_preflight_evidence,
+                read_only_discovery_evidence=args.read_only_discovery_evidence,
                 post_approval_receipts=args.post_approval_receipts,
                 run_command_probes=False,
                 run_readonly_discovery=False,
@@ -1542,6 +1570,7 @@ def main(argv: list[str] | None = None) -> int:
         env_files=args.env_file,
         voice_live_evidence_paths=args.voice_live_evidence,
         provisioning_preflight_evidence=args.provisioning_preflight_evidence,
+        read_only_discovery_evidence=args.read_only_discovery_evidence,
         post_approval_receipts=args.post_approval_receipts,
         run_command_probes=args.run_command_probes,
         run_readonly_discovery=args.run_readonly_discovery,

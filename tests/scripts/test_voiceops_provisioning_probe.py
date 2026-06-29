@@ -785,6 +785,41 @@ def test_preflight_evidence_manifest_merges_redacted_section_files(tmp_path):
     assert report["read_only_discovery"]["status"] == "pass"
 
 
+def test_readonly_discovery_evidence_closes_gate_without_running_discovery(tmp_path):
+    preflight_dir = tmp_path / "preflight"
+    preflight_dir.mkdir()
+    preflight_path = _write_preflight_evidence(preflight_dir)
+    discovery_report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
+        env_files=[],
+        preflight_evidence_path=preflight_path,
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
+    )
+    paths = write_probe_artifacts(tmp_path / "discovery", discovery_report)
+
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
+        env_files=[],
+        preflight_evidence_path=preflight_path,
+        read_only_discovery_evidence_path=Path(paths["read_only_discovery_manifest"]),
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: (_ for _ in ()).throw(
+            AssertionError("read-only discovery runner should not be called")
+        ),
+    )
+
+    assert report["ready"] is True
+    assert report["required_failures"] == []
+    assert report["read_only_discovery"]["status"] == "pass"
+    assert report["read_only_discovery"]["loaded_from_evidence"] is True
+    assert report["read_only_discovery"]["network_io_possible"] is False
+    assert report["read_only_discovery"]["source_network_io_possible"] is True
+
+
 def test_refresh_preflight_manifest_source_sha256_updates_section_files(tmp_path):
     paths = write_preflight_evidence_scaffold(tmp_path)
     manifest_path = Path(paths["preflight_evidence_scaffold_manifest"])

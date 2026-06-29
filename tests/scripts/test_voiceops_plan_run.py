@@ -242,6 +242,77 @@ def _write_post_approval_receipts(root: Path) -> Path:
     )
 
 
+def _write_readonly_discovery_evidence(root: Path) -> Path:
+    commands = [["link-cli", "auth", "status"], ["stripe", "projects", "list", "--limit", "10"]]
+    report_path = _write_json(
+        root / "read-only-discovery.json",
+        {
+            "schema_version": "voiceops.milestone2.read_only_discovery.v1",
+            "generated_at": "2026-06-29T00:00:00Z",
+            "run_requested": True,
+            "non_mutating": True,
+            "does_not_grant_approval": True,
+            "redacted_outputs_only": True,
+            "required_for_live_provisioning_approval": True,
+            "auth_context": "isolated_home",
+            "proves_existing_local_auth": False,
+            "network_io_possible": True,
+            "status": "pass",
+            "failed_probe_ids": [],
+            "missing_probe_ids": [],
+            "allowlisted_commands": commands,
+            "blocked_capabilities": [
+                "live_spend",
+                "provider_provisioning",
+                "credential_retrieval",
+                "outbound_phone_calls",
+                "account_mutation",
+                "network_tunnels",
+            ],
+            "probes": [
+                {
+                    "probe_id": "stripe_projects_catalog_list",
+                    "area": "stripe_projects",
+                    "argv": ["stripe", "projects", "list", "--limit", "10"],
+                    "status": "pass",
+                    "executed": True,
+                    "found": True,
+                    "purpose": "display-only Projects catalog visibility",
+                },
+                {
+                    "probe_id": "stripe_link_auth_status",
+                    "area": "stripe_link",
+                    "argv": ["link-cli", "auth", "status"],
+                    "status": "pass",
+                    "executed": True,
+                    "found": True,
+                    "purpose": "display-only Link auth status",
+                },
+            ],
+        },
+    )
+    return _write_json(
+        root / "read-only-discovery.manifest.json",
+        {
+            "schema_version": "voiceops.milestone2.read_only_discovery_manifest.v1",
+            "generated_at": "2026-06-29T00:00:00Z",
+            "report": report_path.name,
+            "markdown": "read-only-discovery.md",
+            "audit_ledger": "audit-ledger.read-only-discovery.jsonl",
+            "run_requested": True,
+            "status": "pass",
+            "failed_probe_ids": [],
+            "missing_probe_ids": [],
+            "does_not_grant_approval": True,
+            "redacted_outputs_only": True,
+            "probes": [
+                {"probe_id": "stripe_projects_catalog_list", "command": commands[1], "status": "pass", "executed": True},
+                {"probe_id": "stripe_link_auth_status", "command": commands[0], "status": "pass", "executed": True},
+            ],
+        },
+    )
+
+
 def _base_spark_evidence(
     candidate_id: str,
     *,
@@ -804,6 +875,7 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     monkeypatch.setenv("PATH", fake_path)
     live_evidence = _write_live_voice_evidence(tmp_path / "live-voice")
     preflight_evidence = _write_preflight_evidence(tmp_path / "preflight")
+    read_only_discovery_evidence = _write_readonly_discovery_evidence(tmp_path / "read-only-discovery")
     post_approval_receipts = _write_post_approval_receipts(tmp_path / "post-approval")
     spark_evidence = _write_spark_evidence(tmp_path / "spark")
 
@@ -821,9 +893,9 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
         },
         voice_live_evidence_paths=[live_evidence],
         provisioning_preflight_evidence=preflight_evidence,
+        read_only_discovery_evidence=read_only_discovery_evidence,
         post_approval_receipts=post_approval_receipts,
         evidence_paths=[spark_evidence],
-        run_readonly_discovery=True,
     )
 
     statuses = {result["milestone"]: result["status"] for result in summary["results"]}
@@ -845,26 +917,29 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     assert provisioning_result["details"]["post_approval_receipt_count"] == 4
     assert provisioning_result["details"]["post_approval_receipts_validation_issues"] == []
     assert provisioning_result["details"]["read_only_discovery_status"] == "pass"
-    assert provisioning_result["details"]["run_readonly_discovery"] is True
-    assert "--run-readonly-discovery" in provisioning_result["command"]
+    assert provisioning_result["details"]["run_readonly_discovery"] is False
+    assert "--run-readonly-discovery" not in provisioning_result["command"]
+    assert "--read-only-discovery-evidence" in provisioning_result["command"]
     assert "--preflight-evidence" in provisioning_result["command"]
     assert str(preflight_evidence) in provisioning_result["command"]
+    assert str(read_only_discovery_evidence) in provisioning_result["command"]
     assert "--post-approval-receipts" in provisioning_result["command"]
     assert str(post_approval_receipts) in provisioning_result["command"]
     assert provisioning_result["details"]["input_paths"]["preflight_evidence"] == str(preflight_evidence)
+    assert provisioning_result["details"]["input_paths"]["read_only_discovery_evidence"] == str(read_only_discovery_evidence)
     assert provisioning_result["details"]["input_paths"]["post_approval_receipts"] == str(post_approval_receipts)
     assert summary["safety"] == {
         "env_presence_inspection": True,
         "env_secret_values_emitted": False,
         "live_spend": False,
         "mutating_network_io": False,
-        "network_io": True,
-        "network_io_scope": "allowlisted_read_only_discovery",
+        "network_io": False,
+        "network_io_scope": "none",
         "outbound_calls": False,
         "outbound_sends": False,
         "provider_provisioning": False,
         "read_only_discovery_grants_approval": False,
-        "read_only_discovery_run_requested": True,
+        "read_only_discovery_run_requested": False,
     }
     assert summary["closure_index"]["operator_handoff"]["changes_readiness_by_itself"] is False
     assert summary["closure_index"]["operator_handoff"]["final_success_signal"] == (
