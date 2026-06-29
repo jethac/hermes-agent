@@ -563,10 +563,17 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
         "secret_policy": "Use local env/config files and provider CLIs only; never paste secret values into artifacts.",
         "phases": [
             {
+                "order": 1,
                 "phase_id": "live_discord_voice",
                 "gate_id": live_gate["gate_id"],
                 "can_run_here_now": discord_ready,
                 "blocked_by_current_package": [] if discord_ready else ["discord_voice"],
+                "blocked_by_current_environment": {
+                    "missing_env_or_config": []
+                    if discord_ready
+                    else ["DISCORD_BOT_TOKEN", "DISCORD_VOICE_CHANNEL_ID_or_DISCORD_VOICE_CHANNEL_NAME"],
+                    "needs_external_live_probe": True,
+                },
                 "first_safe_command": live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
                 "commands": [
                     live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
@@ -601,6 +608,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                 ],
             },
             {
+                "order": 2,
                 "phase_id": "spend_and_provisioning_preflight",
                 "gate_id": provisioning_gate["gate_id"],
                 "can_run_here_now": provisioning_ready and phone_ready,
@@ -609,6 +617,15 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     for check_id in ("stripe_projects_cli", "stripe_link_cli", "phone_handoff")
                     if _check_status(readiness, check_id) != "pass"
                 ],
+                "blocked_by_current_environment": {
+                    "missing_cli_or_config": [
+                        check_id
+                        for check_id in ("stripe_projects_cli", "stripe_link_cli", "phone_handoff")
+                        if _check_status(readiness, check_id) != "pass"
+                    ],
+                    "needs_read_only_discovery": True,
+                    "needs_redacted_setup_evidence": True,
+                },
                 "first_safe_command": provisioning_gate["collection_commands"]["presence_only"],
                 "commands": [
                     provisioning_gate["rerun_commands"]["plan_index_dry_audit"],
@@ -656,10 +673,16 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                 ],
             },
             {
+                "order": 3,
                 "phase_id": "local_spark_stack",
                 "gate_id": spark_gate["gate_id"],
                 "can_run_here_now": False,
                 "blocked_by_current_package": ["local_spark_stack_matrix"],
+                "blocked_by_current_environment": {
+                    "required_hardware": "1x NVIDIA DGX Spark",
+                    "current_host_hint": "not_verified_by_demo_package",
+                    "needs_measured_spark_evidence": True,
+                },
                 "first_safe_command": spark_gate["collection_commands"]["dgx_eval"],
                 "commands": [
                     spark_gate["collection_commands"]["dgx_eval"],
@@ -732,7 +755,7 @@ def _operator_handoff_preview_markdown(handoff: dict[str, Any]) -> str:
     for phase in handoff["phases"]:
         lines.extend(
             [
-                f"### {phase['phase_id']}",
+                f"### {phase['order']}. {phase['phase_id']}",
                 "",
                 f"- Gate: `{phase['gate_id']}`",
                 f"- Can run here now: {'yes' if phase['can_run_here_now'] else 'no'}",
@@ -742,6 +765,11 @@ def _operator_handoff_preview_markdown(handoff: dict[str, Any]) -> str:
                 "- Command safety:",
             ]
         )
+        blocked_by = phase.get("blocked_by_current_environment")
+        if isinstance(blocked_by, dict) and blocked_by:
+            lines.append("- Blocked by current environment:")
+            for key, value in sorted(blocked_by.items()):
+                lines.append(f"  - `{key}`: {value}")
         for label, safety in sorted(phase["command_safety"].items()):
             lines.append(f"  - `{label}`: {safety}")
         lines.append("- Required inputs:")
@@ -2235,7 +2263,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
             "<li>"
             f"<span class=\"pill {_status_class('pass' if phase['can_run_here_now'] else 'warn')}\">"
             f"{_h('can run' if phase['can_run_here_now'] else 'needs inputs')}</span>"
-            f"<strong>{_h(phase['phase_id'])}</strong>"
+            f"<strong>{_h(str(phase['order']) + '. ' + phase['phase_id'])}</strong>"
             f"<small>Gate: {_h(phase['gate_id'])}</small>"
             f"<small>First safe command: {_h(phase['first_safe_command'])}</small>"
             f"<small>Blocked by: {_h(', '.join(phase['blocked_by_current_package']) if phase['blocked_by_current_package'] else 'none')}</small>"

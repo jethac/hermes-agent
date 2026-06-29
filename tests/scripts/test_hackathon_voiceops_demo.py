@@ -200,6 +200,11 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "spend_and_provisioning_preflight",
         "local_spark_stack",
     ]
+    assert [phase["order"] for phase in operator_handoff["phases"]] == [1, 2, 3]
+    assert operator_handoff["phases"][0]["blocked_by_current_environment"] == {
+        "missing_env_or_config": ["DISCORD_BOT_TOKEN", "DISCORD_VOICE_CHANNEL_ID_or_DISCORD_VOICE_CHANNEL_NAME"],
+        "needs_external_live_probe": True,
+    }
     assert operator_handoff["phases"][0]["first_safe_command"].startswith("uv run --extra dev --extra voice hermes doctor")
     assert "realtime-voice-doctor-report.json" in operator_handoff["phases"][0]["first_safe_command"]
     assert "path/to/realtime-voice-report.json" not in json.dumps(operator_handoff["phases"][0]["commands"])
@@ -212,7 +217,17 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert operator_handoff["phases"][1]["command_safety"]["read_only_discovery"] == (
         "network_possible_allowlisted_read_only"
     )
+    assert operator_handoff["phases"][1]["blocked_by_current_environment"] == {
+        "missing_cli_or_config": ["stripe_projects_cli", "stripe_link_cli", "phone_handoff"],
+        "needs_read_only_discovery": True,
+        "needs_redacted_setup_evidence": True,
+    }
     assert "local_spark_stack_matrix" in operator_handoff["phases"][2]["blocked_by_current_package"]
+    assert operator_handoff["phases"][2]["blocked_by_current_environment"] == {
+        "required_hardware": "1x NVIDIA DGX Spark",
+        "current_host_hint": "not_verified_by_demo_package",
+        "needs_measured_spark_evidence": True,
+    }
     assert "--refresh-source-hashes" in operator_handoff["phases"][2]["commands"][1]
     assert "--lint-evidence" in operator_handoff["phases"][2]["commands"][2]
     assert operator_handoff["phases"][2]["command_safety"]["refresh_source_hashes"] == "local_file_hashing_only"
@@ -221,6 +236,10 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "--voice-live-evidence" in operator_handoff["final_reindex_command"]
     handoff_markdown = Path(paths["operator_handoff_preview_markdown"]).read_text(encoding="utf-8")
     assert "VoiceOps Operator Handoff Preview" in handoff_markdown
+    assert "### 1. live_discord_voice" in handoff_markdown
+    assert "### 2. spend_and_provisioning_preflight" in handoff_markdown
+    assert "### 3. local_spark_stack" in handoff_markdown
+    assert "Blocked by current environment" in handoff_markdown
     assert "Final Reindex" in handoff_markdown
     assert payload["safety_boundary_refs"] == {
         "nemoclaw_action_packet": "nemoclaw-action-packet.json",
@@ -537,9 +556,11 @@ def test_voiceops_demo_closure_and_handoff_track_plan_run_contracts(tmp_path):
     assert set(demo_phases) == set(plan_phases)
     for phase_id, plan_phase in plan_phases.items():
         demo_phase = demo_phases[phase_id]
+        assert demo_phase["order"] == plan_phase["order"]
         assert demo_phase["commands"] == plan_phase["commands"]
         assert demo_phase["expected_artifacts"] == plan_phase["expected_artifacts"]
         assert demo_phase["success_check"] == plan_phase["success_check"]
+        assert isinstance(demo_phase["blocked_by_current_environment"], dict)
 
 
 def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned_model():

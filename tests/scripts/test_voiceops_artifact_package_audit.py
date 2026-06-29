@@ -201,6 +201,29 @@ def test_package_audit_rejects_unaudited_operator_handoff_reindex(tmp_path):
     assert "operator_handoff:plan_run_command_missing_package_audit" in report["issues"]
 
 
+def test_package_audit_rejects_handoff_phase_order_and_blocker_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    demo_handoff_path = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json"
+    demo_handoff = json.loads(demo_handoff_path.read_text(encoding="utf-8"))
+    demo_handoff["phases"][0]["order"] = None
+    demo_handoff["phases"][2].pop("blocked_by_current_environment")
+    _write_json(demo_handoff_path, demo_handoff)
+
+    plan_handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"
+    plan_handoff = json.loads(plan_handoff_path.read_text(encoding="utf-8"))
+    plan_handoff["phases"][1].pop("blocked_by_current_environment")
+    _write_json(plan_handoff_path, plan_handoff)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "operator_handoff:mismatch_with_closure" in report["issues"]
+    assert "operator_handoff:spend_and_provisioning_preflight:missing_environment_blockers" in report["issues"]
+    assert "demo_handoff:phase_order_mismatch" in report["issues"]
+    assert "demo_handoff:live_discord_voice:order_mismatch" in report["issues"]
+    assert "demo_handoff:local_spark_stack:missing_environment_blockers" in report["issues"]
+
+
 def test_package_audit_rejects_channel_policy_live_egress_claim(tmp_path):
     artifact_root = _generate_package(tmp_path)
     policy_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy.json"

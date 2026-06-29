@@ -24,6 +24,11 @@ from scripts.voiceops_channel_policy import CHANNEL_IDS, validate_policy
 DEFAULT_ARTIFACT_ROOT = Path("artifacts")
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-package-audit/current")
 AUDIT_SCHEMA_VERSION = "voiceops.artifact_package_audit.v1"
+EXPECTED_HANDOFF_PHASES = (
+    (1, "live_discord_voice"),
+    (2, "spend_and_provisioning_preflight"),
+    (3, "local_spark_stack"),
+)
 EXPECTED_PACKAGE_ARTIFACTS = (
     "hackathon-voiceops-demo/current/audit-ledger.jsonl",
     "hackathon-voiceops-demo/current/demo-script.md",
@@ -419,6 +424,59 @@ def _audit_plan_consistency(
         issues.append("operator_handoff:final_success_signal_missing_package_audit")
     if demo_handoff.get("final_success_signal") != plan_handoff.get("final_success_signal"):
         issues.append("demo_handoff:final_success_signal_mismatch")
+    _audit_handoff_phase_contract("operator_handoff", plan_handoff, issues)
+    _audit_handoff_phase_contract("demo_handoff", demo_handoff, issues)
+    demo_phases = _handoff_phases_by_id(demo_handoff)
+    plan_phases = _handoff_phases_by_id(plan_handoff)
+    if set(demo_phases) != set(plan_phases):
+        issues.append("demo_handoff:phase_ids_mismatch")
+        return
+    for phase_id, plan_phase in plan_phases.items():
+        demo_phase = demo_phases[phase_id]
+        for key in ("order", "commands", "expected_artifacts", "success_check"):
+            if demo_phase.get(key) != plan_phase.get(key):
+                issues.append(f"demo_handoff:{phase_id}:{key}_mismatch")
+
+
+def _handoff_phases_by_id(handoff: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    phases = handoff.get("phases")
+    if not isinstance(phases, list):
+        return {}
+    return {
+        str(phase.get("phase_id")): phase
+        for phase in phases
+        if isinstance(phase, Mapping) and str(phase.get("phase_id") or "").strip()
+    }
+
+
+def _audit_handoff_phase_contract(label: str, handoff: Mapping[str, Any], issues: list[str]) -> None:
+    phases = handoff.get("phases")
+    if not isinstance(phases, list):
+        issues.append(f"{label}:phases_missing")
+        return
+    observed = [
+        (phase.get("order"), phase.get("phase_id"))
+        for phase in phases
+        if isinstance(phase, Mapping)
+    ]
+    if observed != list(EXPECTED_HANDOFF_PHASES):
+        issues.append(f"{label}:phase_order_mismatch")
+    for expected_order, expected_phase_id in EXPECTED_HANDOFF_PHASES:
+        phase = next(
+            (
+                item
+                for item in phases
+                if isinstance(item, Mapping)
+                and item.get("order") == expected_order
+                and item.get("phase_id") == expected_phase_id
+            ),
+            None,
+        )
+        if not isinstance(phase, Mapping):
+            issues.append(f"{label}:{expected_phase_id}:phase_missing")
+            continue
+        if not isinstance(phase.get("blocked_by_current_environment"), Mapping):
+            issues.append(f"{label}:{expected_phase_id}:missing_environment_blockers")
 
 
 def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], issues: list[str]) -> None:
