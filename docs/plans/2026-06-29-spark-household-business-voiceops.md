@@ -266,6 +266,8 @@ The command writes:
 - `readiness-report.json`
 - `readiness-report.md`
 - `operator-dashboard.html`
+- `operator-state.json`
+- `operator-state-events.jsonl`
 - `recording-runbook.md`
 - `submission-writeup.md`
 - `stripe-actions-dry-run.sh`
@@ -373,6 +375,22 @@ Add an inspectable operations surface:
 - upcoming household/business tasks
 
 The dashboard should support the operator workflow. It should not become a marketing page.
+
+Headless command:
+
+```bash
+uv run python scripts/voiceops_operator_state.py --output-dir artifacts/voiceops-operator-state/current
+```
+
+The command writes:
+
+- `operator-state.json`
+- `operator-state.md`
+- `operator-state-events.jsonl`
+
+The operator-state generator is artifact-only. It does not read environment secrets, perform network I/O, send Discord/WhatsApp/SMS messages, place calls, provision services, or spend money. It gives the recording dashboard and future GUI a durable state contract for current mode, active/fallback voice surface, budget status, pending approvals, audit events, planned/provisioned services, and household/business tasks.
+
+For the hackathon demo, the generated `operator-dashboard.html` from Milestone 0 should visibly show the same operator state shape: current mode, active voice surface, fallback reason, full budget status, pending approvals, recent audit events, planned services, and a link to `operator-state.json`.
 
 ## Success Criteria
 

@@ -403,6 +403,106 @@ def _phone_context_packet(demo: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> dict[str, Any]:
+    phone_context = _phone_context_packet(demo)
+    discord_check = next((check for check in readiness["checks"] if check["check_id"] == "discord_voice"), None)
+    fallback_reason = (
+        discord_check["detail"]
+        if discord_check and discord_check["status"] != "pass"
+        else "Phone/SMS voice calls remain disabled until provisioning approval and channel policy review pass."
+    )
+    pending_approvals = [
+        {
+            "approval_id": f"voiceops-demo-{action['action_id']}",
+            "action_id": action["action_id"],
+            "provider": action["provider"],
+            "title": action["purpose"],
+            "estimated_cents": action["estimated_cents"],
+            "currency": demo["spend_policy"]["currency"],
+            "status": "pending",
+            "artifact_ref": "nemoclaw-action-packet.json",
+        }
+        for action in demo["ops_actions"]
+        if action["requires_approval"] and action["status"] == "queued"
+    ]
+    planned_services = [
+        {
+            "service_id": action["action_id"],
+            "name": action["purpose"],
+            "provider": action["provider"],
+            "status": action["status"],
+            "artifact_ref": "voiceops-demo.json",
+        }
+        for action in demo["ops_actions"]
+        if action["action_id"] in {"provision-voip-provider", "buy-service-credit", "call-user-phone", "publish-status"}
+    ]
+    return {
+        "schema_version": "voiceops.operator_state.v1",
+        "generated_at": _utc_now(),
+        "artifact_only": True,
+        "current_mode": "approval-required",
+        "mode": {
+            "artifact_only": True,
+            "bounded": True,
+            "env_secret_reads": False,
+            "headless": True,
+            "live_spend": False,
+            "network_io": False,
+            "outbound_calls": False,
+            "outbound_sends": False,
+            "provisioning": False,
+        },
+        "active_voice_surface": {
+            "surface_id": phone_context["source_channel"],
+            "display_name": "Discord voice",
+            "status": "active_for_demo" if readiness["ready_for_recording"] else "needs_setup",
+            "fallback_surface_id": phone_context["target_channel"],
+            "fallback_reason": fallback_reason,
+        },
+        "budget_status": {
+            "currency": demo["spend_policy"]["currency"],
+            "current_mode": "approval-required",
+            "limit_cents": demo["spend_policy"]["limit_cents"],
+            "approval_required_over_cents": demo["spend_policy"]["approval_required_over_cents"],
+            "queued_cents": demo["totals"]["approval_required_cents"],
+            "ready_or_queued_cents": demo["totals"]["ready_or_queued_cents"],
+            "held_budget_cents": demo["totals"]["held_budget_cents"],
+            "remaining_before_approval_cents": max(
+                0, demo["spend_policy"]["limit_cents"] - demo["totals"]["ready_or_queued_cents"]
+            ),
+            "status": "no_live_spend_without_explicit_approval",
+        },
+        "pending_approvals": pending_approvals,
+        "recent_audit_events": demo["audit_events"][-5:],
+        "planned_services": planned_services,
+        "provisioned_services": [
+            {
+                "service_id": "repo_local_demo_artifacts",
+                "name": "Repo-local VoiceOps demo artifacts",
+                "provider": "filesystem",
+                "status": "provisioned",
+                "artifact_ref": "operator-dashboard.html",
+            }
+        ],
+        "upcoming_tasks": [
+            {
+                "task_id": "household-budget-review",
+                "domain": "household",
+                "title": "Review household spending requests before approval",
+                "status": "planned",
+                "requires_approval": False,
+            },
+            {
+                "task_id": "business-phone-handoff",
+                "domain": "business",
+                "title": "Complete VoIP handoff setup after explicit approval",
+                "status": "blocked_on_approval",
+                "requires_approval": True,
+            },
+        ],
+    }
+
+
 def build_readiness_report(
     demo: dict[str, Any],
     *,
@@ -635,6 +735,8 @@ def _markdown(demo: dict[str, Any]) -> str:
         "- `phone-context.json`: outbound phone-call handoff context preserved from Discord",
         "- `readiness-report.json`: local recording prerequisite report",
         "- `operator-dashboard.html`: static recording dashboard for budget, approvals, guardrails, and handoff state",
+        "- `operator-state.json`: machine-readable current mode, surface, budget, approval, service, and task state",
+        "- `operator-state-events.jsonl`: append-friendly view of recent operator audit events",
         "- `recording-runbook.md`: shot list, fallback plan, and submission checklist",
         "- `submission-writeup.md`: public submission copy for the tweet/thread/form",
         "",
@@ -826,10 +928,28 @@ def _status_class(status: Any) -> str:
 
 
 def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
+    nemoclaw = _nemoclaw_action_packet(demo)
+    phone_context = _phone_context_packet(demo)
+    operator_state = _operator_state_packet(demo, readiness)
+    budget_status = operator_state["budget_status"]
+    voice_surface = operator_state["active_voice_surface"]
     approval_cents = demo["totals"]["approval_required_cents"]
     limit_cents = max(int(demo["spend_policy"]["limit_cents"] or 0), 1)
     approval_percent = min(100, int(round((approval_cents / limit_cents) * 100)))
     readiness_label = "Ready" if readiness["ready_for_recording"] else "Needs setup"
+    held_actions = [action for action in demo["ops_actions"] if action["status"] == "held-budget"]
+    pending_rows = []
+    for approval in operator_state["pending_approvals"]:
+        pending_rows.append(
+            "<tr>"
+            f"<td>{_h(approval['action_id'])}</td>"
+            f"<td>{_h(approval['provider'])}</td>"
+            f"<td>{_h(_dollars(approval['estimated_cents']))}</td>"
+            f"<td>{_h(approval['title'])}</td>"
+            "</tr>"
+        )
+    if not pending_rows:
+        pending_rows.append("<tr><td colspan=\"4\">No queued approvals.</td></tr>")
     action_rows = []
     for action in demo["ops_actions"]:
         approval = "approval required" if action["requires_approval"] else "no approval"
@@ -842,6 +962,37 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
             f"<td>{_h(approval)}</td>"
             "</tr>"
         )
+    audit_rows = []
+    for event in operator_state["recent_audit_events"]:
+        audit_rows.append(
+            "<tr>"
+            f"<td>{_h(event['event_id'])}</td>"
+            f"<td>{_h(event['action'])}</td>"
+            f"<td><span class=\"pill {_status_class(event['status'])}\">{_h(event['status'])}</span></td>"
+            f"<td>{_h(_dollars(event['amount_cents']))}</td>"
+            f"<td>{_h(event['evidence'])}</td>"
+            "</tr>"
+        )
+    planned_service_rows = []
+    for service in operator_state["planned_services"]:
+        planned_service_rows.append(
+            "<tr>"
+            f"<td>{_h(service['service_id'])}</td>"
+            f"<td>{_h(service['provider'])}</td>"
+            f"<td><span class=\"pill {_status_class(service['status'])}\">{_h(service['status'])}</span></td>"
+            f"<td>{_h(service['name'])}</td>"
+            "</tr>"
+        )
+    provisioned_service_rows = []
+    for service in operator_state["provisioned_services"]:
+        provisioned_service_rows.append(
+            "<tr>"
+            f"<td>{_h(service['service_id'])}</td>"
+            f"<td>{_h(service['provider'])}</td>"
+            f"<td><span class=\"pill {_status_class(service['status'])}\">{_h(service['status'])}</span></td>"
+            f"<td>{_h(service['name'])}</td>"
+            "</tr>"
+        )
     readiness_items = []
     for check in readiness["checks"]:
         required = "required" if check["required_for_video"] else "optional"
@@ -852,10 +1003,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
             f"<small>{_h(required)} - {_h(check['detail'])}</small>"
             "</li>"
         )
-    guardrail_items = "".join(
-        f"<li>{_h(item)}</li>" for item in _nemoclaw_action_packet(demo)["blocked_capabilities"]
-    )
-    phone_context = _phone_context_packet(demo)
+    guardrail_items = "".join(f"<li>{_h(item)}</li>" for item in nemoclaw["blocked_capabilities"])
     surfaces = "".join(
         "<li>"
         f"<span>{_h(surface['channel'])}</span>"
@@ -864,6 +1012,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "</li>"
         for surface in demo["voice_surfaces"]
     )
+    held_action_text = ", ".join(action["action_id"] for action in held_actions) if held_actions else "none"
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -1035,7 +1184,39 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
           <p>{_h(demo['demo']['request'])}</p>
         </div>
         <div class="panel">
-          <h2>Approval Queue</h2>
+          <h2>Current Mode</h2>
+          <table>
+            <tbody>
+              <tr><th>NemoClaw Mode</th><td>{_h(nemoclaw['mode'])}</td></tr>
+              <tr><th>Operator State</th><td>{_h(operator_state['current_mode'])}</td></tr>
+              <tr><th>Active Voice Surface</th><td>{_h(voice_surface['surface_id'])}</td></tr>
+              <tr><th>Target Surface</th><td>{_h(voice_surface['fallback_surface_id'])}</td></tr>
+              <tr><th>Fallback Reason</th><td>{_h(voice_surface['fallback_reason'])}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h2>Budget Status</h2>
+          <table>
+            <tbody>
+              <tr><th>Limit</th><td>{_h(_dollars(budget_status['limit_cents']))}</td></tr>
+              <tr><th>Approval threshold</th><td>{_h(_dollars(budget_status['approval_required_over_cents']))}</td></tr>
+              <tr><th>Queued approval spend</th><td>{_h(_dollars(budget_status['queued_cents']))}</td></tr>
+              <tr><th>Ready or queued spend</th><td>{_h(_dollars(budget_status['ready_or_queued_cents']))}</td></tr>
+              <tr><th>Remaining before approval</th><td>{_h(_dollars(budget_status['remaining_before_approval_cents']))}</td></tr>
+              <tr><th>Held over budget</th><td>{_h(_dollars(budget_status['held_budget_cents']))} ({_h(held_action_text)})</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h2>Pending Approvals</h2>
+          <table>
+            <thead><tr><th>Action</th><th>Provider</th><th>Spend</th><th>Purpose</th></tr></thead>
+            <tbody>{''.join(pending_rows)}</tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h2>Action Ledger</h2>
           <table>
             <thead><tr><th>Action</th><th>Provider</th><th>Status</th><th>Spend</th><th>Gate</th></tr></thead>
             <tbody>{''.join(action_rows)}</tbody>
@@ -1045,9 +1226,30 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
           <h2>Voice Surfaces</h2>
           <ul>{surfaces}</ul>
         </div>
+        <div class="panel">
+          <h2>Recent Audit Events</h2>
+          <table>
+            <thead><tr><th>Event</th><th>Action</th><th>Status</th><th>Amount</th><th>Evidence</th></tr></thead>
+            <tbody>{''.join(audit_rows)}</tbody>
+          </table>
+        </div>
       </div>
 
       <aside class="side">
+        <div class="panel">
+          <h2>Planned Services</h2>
+          <table>
+            <thead><tr><th>Action</th><th>Provider</th><th>Status</th><th>Purpose</th></tr></thead>
+            <tbody>{''.join(planned_service_rows)}</tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h2>Provisioned Services</h2>
+          <table>
+            <thead><tr><th>Service</th><th>Provider</th><th>Status</th><th>Capability</th></tr></thead>
+            <tbody>{''.join(provisioned_service_rows)}</tbody>
+          </table>
+        </div>
         <div class="panel">
           <h2>Readiness</h2>
           <ul>{''.join(readiness_items)}</ul>
@@ -1059,6 +1261,10 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         <div class="panel">
           <h2>Phone Handoff</h2>
           <p>{_h(phone_context['spoken_opening'])}</p>
+        </div>
+        <div class="panel">
+          <h2>Upcoming Tasks</h2>
+          <p>Persistent household and business task state is bundled in <a href="operator-state.json">operator-state.json</a> and can also be generated independently by the Milestone 5 operator-state command.</p>
         </div>
       </aside>
     </section>
@@ -1132,6 +1338,8 @@ def write_demo(
         "readiness_json": output_dir / "readiness-report.json",
         "readiness_markdown": output_dir / "readiness-report.md",
         "dashboard": output_dir / "operator-dashboard.html",
+        "operator_state": output_dir / "operator-state.json",
+        "operator_state_events": output_dir / "operator-state-events.jsonl",
         "recording_runbook": output_dir / "recording-runbook.md",
         "submission_writeup": output_dir / "submission-writeup.md",
         "stripe_actions": output_dir / "stripe-actions-dry-run.sh",
@@ -1144,6 +1352,9 @@ def write_demo(
     _write_json(paths["phone_context"], _phone_context_packet(demo))
     _write_json(paths["readiness_json"], readiness)
     paths["readiness_markdown"].write_text(_readiness_markdown(readiness), encoding="utf-8")
+    operator_state = _operator_state_packet(demo, readiness)
+    _write_json(paths["operator_state"], operator_state)
+    _write_jsonl(paths["operator_state_events"], operator_state["recent_audit_events"])
     paths["dashboard"].write_text(_dashboard_html(demo, readiness), encoding="utf-8")
     paths["recording_runbook"].write_text(_recording_runbook(demo, readiness), encoding="utf-8")
     paths["submission_writeup"].write_text(_submission_writeup(demo), encoding="utf-8")

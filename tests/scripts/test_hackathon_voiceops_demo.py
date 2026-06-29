@@ -19,6 +19,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "demo_script",
         "dashboard",
         "nemoclaw_packet",
+        "operator_state",
+        "operator_state_events",
         "phone_context",
         "recording_runbook",
         "readiness_json",
@@ -29,6 +31,12 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     nemoclaw = json.loads(Path(paths["nemoclaw_packet"]).read_text(encoding="utf-8"))
     phone_context = json.loads(Path(paths["phone_context"]).read_text(encoding="utf-8"))
+    operator_state = json.loads(Path(paths["operator_state"]).read_text(encoding="utf-8"))
+    operator_events = [
+        json.loads(line)
+        for line in Path(paths["operator_state_events"]).read_text(encoding="utf-8").splitlines()
+        if line
+    ]
     action_ids = {action["action_id"] for action in payload["ops_actions"]}
     assert payload["spark_stack"]["local_first"] is True
     assert payload["sponsor_stack"]["nemotron_3_super"]["selection"].startswith("Nemotron 3 Super")
@@ -51,11 +59,18 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert phone_context["target_channel"] == "phone"
     assert phone_context["status"] == "queued_requires_approval"
     assert phone_context["pending_approvals"]
+    assert operator_state["schema_version"] == "voiceops.operator_state.v1"
+    assert operator_state["current_mode"] == "approval-required"
+    assert operator_state["active_voice_surface"]["surface_id"] == "discord_voice"
+    assert operator_state["provisioned_services"]
+    assert operator_events == operator_state["recent_audit_events"]
     assert "DGX Spark" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "nemoclaw-action-packet.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "phone-context.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "readiness-report.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "operator-dashboard.html" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "operator-state.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "operator-state-events.jsonl" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "recording-runbook.md" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "submission-writeup.md" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "spoken in Discord" in Path(paths["demo_script"]).read_text(encoding="utf-8")
@@ -73,7 +88,27 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     dashboard = Path(paths["dashboard"]).read_text(encoding="utf-8")
     assert "Nemotron 3 Super" in dashboard
     assert "NemoClaw Blocks" in dashboard
-    assert "Approval Queue" in dashboard
+    assert "Current Mode" in dashboard
+    assert "dry_run_until_user_approval" in dashboard
+    assert "approval-required" in dashboard
+    assert "Active Voice Surface" in dashboard
+    assert "discord_voice" in dashboard
+    assert "Budget Status" in dashboard
+    assert "$70.00" in dashboard
+    assert "$10.00" in dashboard
+    assert "held-budget" in dashboard
+    assert "Pending Approvals" in dashboard
+    assert "provision-voip-provider" in dashboard
+    assert "call-user-phone" in dashboard
+    assert "Action Ledger" in dashboard
+    assert "Recent Audit Events" in dashboard
+    assert "evt-006" in dashboard
+    assert "Planned Services" in dashboard
+    assert "Provisioned Services" in dashboard
+    assert "repo_local_demo_artifacts" in dashboard
+    assert "stripe-projects" in dashboard
+    assert "Upcoming Tasks" in dashboard
+    assert "operator-state.json" in dashboard
     assert "Phone Handoff" in dashboard
     assert Path(paths["readiness_json"]).exists()
     assert "VoiceOps Recording Readiness" in Path(paths["readiness_markdown"]).read_text(encoding="utf-8")
