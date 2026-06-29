@@ -352,6 +352,10 @@ The command writes:
 - `provisioning-readiness.json`
 - `provisioning-readiness.md`
 - `safe-command-manifest.json`
+- `read-only-discovery.json`
+- `read-only-discovery.md`
+- `read-only-discovery.manifest.json`
+- `audit-ledger.read-only-discovery.jsonl`
 - `milestone2-execution-plan.json`
 - `milestone2-execution-plan.md`
 - `provisioning-preflight-evidence.template.json`
@@ -367,6 +371,15 @@ The command writes:
 - `setup-closure-plan.md`
 
 The default preflight is non-mutating and only checks PATH/env presence, env-key presence, command policy, and phone-handoff configuration shape. It blocks live spend, provider provisioning, credential retrieval, outbound phone calls, account mutation, and network tunnels. If active command probing is needed, it must be explicitly enabled with `--run-command-probes`; that mode is still limited to isolated version/help subprocess probes and must not be treated as approval for `stripe projects add`, Link spend creation, card retrieval, MPP payment, SMS, or phone calls.
+
+Authenticated display-only discovery is a separate opt-in path. Use `--run-readonly-discovery` only for the exact allowlisted commands `stripe projects list --limit 10` and `link-cli auth status`. The probe redacts command output, writes `read-only-discovery.json`, `read-only-discovery.md`, `read-only-discovery.manifest.json`, and `audit-ledger.read-only-discovery.jsonl`, and still does not grant approval for spend, provisioning, credential retrieval, messages, or calls.
+
+```bash
+uv run python scripts/voiceops_provisioning_probe.py \
+  --output-dir artifacts/voiceops-provisioning/current \
+  --env-file .env \
+  --run-readonly-discovery
+```
 
 When local setup and account/capability evidence exists, ingest supplied evidence without running live spend or provider mutations:
 
@@ -557,6 +570,15 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
   --env-file .env \
   --run-command-probes
+```
+
+If local setup discovery needs authenticated display-only catalog/auth checks, keep it separate from version/help probes and run the exact read-only allowlist:
+
+```bash
+uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
+  --output-dir artifacts/voiceops-plan/current \
+  --env-file .env \
+  --run-readonly-discovery
 ```
 
 ## Success Criteria

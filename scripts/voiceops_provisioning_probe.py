@@ -64,6 +64,10 @@ SAFE_PROBE_ARGV_TUPLES = {
     ("mppx", "--version"),
     ("twilio", "--version"),
 }
+READONLY_DISCOVERY_ARGV_TUPLES = {
+    ("stripe", "projects", "list", "--limit", "10"),
+    ("link-cli", "auth", "status"),
+}
 SETUP_CLOSURE_REQUIREMENTS: dict[str, dict[str, Any]] = {
     "stripe_cli": {
         "category": "local_tooling",
@@ -892,8 +896,23 @@ def _validate_safe_probe_command(argv: Sequence[str]) -> None:
         raise ValueError(f"probe command must match the allowlisted manifest exactly: {joined}")
 
 
-def _subprocess_runner(argv: Sequence[str], timeout_seconds: int) -> CommandResult:
-    _validate_safe_probe_command(argv)
+def _validate_readonly_discovery_command(argv: Sequence[str]) -> None:
+    if not argv:
+        raise ValueError("empty read-only discovery command")
+    joined = " ".join(argv).lower()
+    if tuple(argv) not in READONLY_DISCOVERY_ARGV_TUPLES:
+        raise ValueError(f"read-only discovery command must match the allowlisted manifest exactly: {joined}")
+    for pattern in MUTATING_COMMAND_PATTERNS:
+        if pattern in joined and pattern not in {"token", "secret", "credential", "login", "whoami"}:
+            raise ValueError(f"refusing mutating discovery command: {joined}")
+
+
+def _isolated_subprocess_runner(
+    argv: Sequence[str],
+    timeout_seconds: int,
+    validator: Callable[[Sequence[str]], None],
+) -> CommandResult:
+    validator(argv)
     with tempfile.TemporaryDirectory(prefix="voiceops-probe-home-") as home:
         env = {
             "PATH": os.environ.get("PATH", ""),
@@ -927,6 +946,14 @@ def _subprocess_runner(argv: Sequence[str], timeout_seconds: int) -> CommandResu
         except OSError as exc:
             return CommandResult(exit_code=127, stderr=str(exc))
     return CommandResult(exit_code=completed.returncode, stdout=completed.stdout, stderr=completed.stderr)
+
+
+def _subprocess_runner(argv: Sequence[str], timeout_seconds: int) -> CommandResult:
+    return _isolated_subprocess_runner(argv, timeout_seconds, _validate_safe_probe_command)
+
+
+def _readonly_discovery_subprocess_runner(argv: Sequence[str], timeout_seconds: int) -> CommandResult:
+    return _isolated_subprocess_runner(argv, timeout_seconds, _validate_readonly_discovery_command)
 
 
 def _command_manifest() -> list[CommandProbe]:
@@ -965,6 +992,25 @@ def _command_manifest() -> list[CommandProbe]:
             argv=["twilio", "--version"],
             required=False,
             purpose="Optionally confirm a phone provider CLI is callable without calls or messages.",
+        ),
+    ]
+
+
+def _readonly_discovery_manifest() -> list[CommandProbe]:
+    return [
+        CommandProbe(
+            probe_id="stripe_projects_catalog_list",
+            area="stripe_projects",
+            argv=["stripe", "projects", "list", "--limit", "10"],
+            required=False,
+            purpose="Optionally confirm visible Stripe Projects catalog entries without creating a project.",
+        ),
+        CommandProbe(
+            probe_id="stripe_link_auth_status",
+            area="stripe_link",
+            argv=["link-cli", "auth", "status"],
+            required=False,
+            purpose="Optionally confirm Link auth/account status without creating a spend request.",
         ),
     ]
 
@@ -1010,6 +1056,87 @@ def _run_probe(
     return result
 
 
+def _run_readonly_discovery_probe(
+    probe: CommandProbe,
+    *,
+    which: Callable[[str], str | None],
+    runner: CommandRunner,
+    timeout_seconds: int,
+    run_discovery: bool,
+) -> dict[str, Any]:
+    _validate_readonly_discovery_command(probe.argv)
+    executable = probe.argv[0]
+    path = which(executable)
+    result: dict[str, Any] = {
+        "probe_id": probe.probe_id,
+        "area": probe.area,
+        "argv": probe.argv,
+        "required": probe.required,
+        "purpose": probe.purpose,
+        "found": bool(path),
+        "path": path,
+        "executed": False,
+        "status": "missing" if not path else "not_requested",
+        "non_mutating": True,
+        "does_not_grant_approval": True,
+        "redacted_outputs_only": True,
+    }
+    if not path or not run_discovery:
+        return result
+    command_result = runner(probe.argv, timeout_seconds)
+    result.update(
+        {
+            "executed": True,
+            "exit_code": command_result.exit_code,
+            "timed_out": command_result.timed_out,
+            "stdout_excerpt": _excerpt(command_result.stdout),
+            "stderr_excerpt": _excerpt(command_result.stderr),
+            "status": "pass" if command_result.exit_code == 0 and not command_result.timed_out else "fail",
+        }
+    )
+    return result
+
+
+def _build_readonly_discovery_report(
+    *,
+    which: Callable[[str], str | None],
+    runner: CommandRunner,
+    timeout_seconds: int,
+    run_discovery: bool,
+) -> dict[str, Any]:
+    probes = [
+        _run_readonly_discovery_probe(
+            probe,
+            which=which,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            run_discovery=run_discovery,
+        )
+        for probe in _readonly_discovery_manifest()
+    ]
+    executed = [probe for probe in probes if probe["executed"]]
+    failed = [probe["probe_id"] for probe in executed if probe["status"] != "pass"]
+    missing = [probe["probe_id"] for probe in probes if probe["status"] == "missing"]
+    status = "not_requested"
+    if run_discovery:
+        status = "fail" if failed else "needs_tools" if missing else "pass"
+    return {
+        "schema_version": "voiceops.milestone2.read_only_discovery.v1",
+        "generated_at": _utc_now(),
+        "run_requested": run_discovery,
+        "non_mutating": True,
+        "does_not_grant_approval": True,
+        "redacted_outputs_only": True,
+        "network_io_possible": run_discovery,
+        "status": status,
+        "failed_probe_ids": failed,
+        "missing_probe_ids": missing,
+        "allowlisted_commands": [list(command) for command in sorted(READONLY_DISCOVERY_ARGV_TUPLES)],
+        "blocked_capabilities": BLOCKED_CAPABILITIES,
+        "probes": probes,
+    }
+
+
 def _probe_by_id(command_results: list[dict[str, Any]], probe_id: str) -> dict[str, Any]:
     return next(item for item in command_results if item["probe_id"] == probe_id)
 
@@ -1028,7 +1155,9 @@ def build_probe_report(
     post_approval_receipts_path: Path | None = None,
     which: Callable[[str], str | None] = shutil.which,
     runner: CommandRunner = _subprocess_runner,
+    readonly_discovery_runner: CommandRunner = _readonly_discovery_subprocess_runner,
     run_commands: bool = False,
+    run_readonly_discovery: bool = False,
     timeout_seconds: int = 3,
 ) -> dict[str, Any]:
     env, env_sources = _merge_env_sources(os.environ if env is None else env, _default_env_files() if env_files is None else env_files)
@@ -1042,6 +1171,12 @@ def build_probe_report(
         )
         for probe in _command_manifest()
     ]
+    readonly_discovery = _build_readonly_discovery_report(
+        which=which,
+        runner=readonly_discovery_runner,
+        timeout_seconds=timeout_seconds,
+        run_discovery=run_readonly_discovery,
+    )
 
     checks: list[ReadinessCheck] = []
     stripe_cli = _probe_by_id(command_results, "stripe_cli_version")
@@ -1294,8 +1429,10 @@ def build_probe_report(
             "non_mutating": True,
             "bounded": True,
             "run_commands": run_commands,
+            "run_readonly_discovery": run_readonly_discovery,
             "timeout_seconds": timeout_seconds,
             "active_probe_policy": "version_help_only",
+            "read_only_discovery_policy": "exact_allowlist_only",
             "blocked_capabilities": BLOCKED_CAPABILITIES,
         },
         "status": "ready" if ready else "needs_setup",
@@ -1308,6 +1445,7 @@ def build_probe_report(
         "env_sources": env_sources,
         "checks": check_dicts,
         "command_probes": command_results,
+        "read_only_discovery": readonly_discovery,
     }
     execution_plan = build_milestone2_execution_plan(report)
     report["post_approval_receipts"] = load_post_approval_receipts(post_approval_receipts_path, execution_plan)
@@ -1328,6 +1466,7 @@ def _markdown(report: dict[str, Any]) -> str:
         "",
         f"- Ready: {'yes' if report['ready'] else 'no'}",
         "- Mode: non-mutating, bounded, PATH/env presence by default; version/help probes only when explicitly enabled",
+        f"- Read-only discovery requested: {'yes' if report['read_only_discovery']['run_requested'] else 'no'}",
         f"- Required failures: {', '.join(report['required_failures']) if report['required_failures'] else 'none'}",
         "",
         "## Safety Boundary",
@@ -1388,6 +1527,20 @@ def _markdown(report: dict[str, Any]) -> str:
         )
     lines.extend(["## Command Probes", ""])
     for probe in report["command_probes"]:
+        executed = "executed" if probe["executed"] else "not executed"
+        lines.append(f"- {probe['probe_id']}: {probe['status']} ({executed}) `{' '.join(probe['argv'])}`")
+    lines.extend(["", "## Read-Only Discovery", ""])
+    discovery = report["read_only_discovery"]
+    lines.extend(
+        [
+            f"- Status: {discovery['status']}",
+            f"- Requested: {'yes' if discovery['run_requested'] else 'no'}",
+            f"- Does not grant approval: {'yes' if discovery['does_not_grant_approval'] else 'no'}",
+            f"- Redacted outputs only: {'yes' if discovery['redacted_outputs_only'] else 'no'}",
+            f"- Missing probes: {', '.join(discovery['missing_probe_ids']) if discovery['missing_probe_ids'] else 'none'}",
+        ]
+    )
+    for probe in discovery["probes"]:
         executed = "executed" if probe["executed"] else "not executed"
         lines.append(f"- {probe['probe_id']}: {probe['status']} ({executed}) `{' '.join(probe['argv'])}`")
     lines.append("")
@@ -1463,6 +1616,8 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "example_only_accepted": False,
             "secret_like_values_accepted": False,
             "full_phone_numbers_accepted": False,
+            "read_only_discovery_schema_version": "voiceops.milestone2.read_only_discovery.v1",
+            "read_only_discovery_grants_approval": False,
         },
         "mode": {
             "artifact_only": True,
@@ -1480,6 +1635,7 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
         "rerun_commands": {
             "presence_only": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env",
             "bounded_version_help": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --run-command-probes",
+            "read_only_discovery": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --run-readonly-discovery",
             "with_preflight_evidence": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
             "with_preflight_manifest": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.manifest.json",
             "plan_index": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
@@ -1558,9 +1714,17 @@ def _setup_closure_markdown(plan: dict[str, Any]) -> str:
 
 def _safe_command_manifest_json() -> dict[str, Any]:
     return {
-        "policy": "Default mode executes no vendor commands. If enabled, only isolated HOME version/help probes are allowed. Mutating, spend, provisioning, credential, and call commands are refused.",
+        "policy": "Default mode executes no vendor commands. If enabled, isolated HOME version/help probes and separately opted-in exact read-only discovery commands are allowed. Mutating, spend, provisioning, credential, and call commands are refused.",
         "blocked_patterns": MUTATING_COMMAND_PATTERNS,
         "commands": [asdict(probe) for probe in _command_manifest()],
+        "version_help_commands": [asdict(probe) for probe in _command_manifest()],
+        "read_only_discovery_commands": [asdict(probe) for probe in _readonly_discovery_manifest()],
+        "read_only_discovery_policy": {
+            "requires_explicit_flag": "--run-readonly-discovery",
+            "exact_argv_allowlist_only": True,
+            "does_not_grant_approval": True,
+            "redacted_outputs_only": True,
+        },
     }
 
 
@@ -1819,7 +1983,7 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "requires": ["stripe_cli", "stripe_projects_cli", "mpp_agent"],
                 "purpose": "Confirm available Projects catalog entries before choosing a VoIP provider.",
                 "allowed_after": "operator opts into a read-only discovery run",
-                "records_to": "audit-ledger.jsonl",
+                "records_to": "audit-ledger.read-only-discovery.jsonl",
             },
             {
                 "step_id": "stripe-link-auth-status",
@@ -1828,7 +1992,7 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "requires": ["stripe_link_cli", "mpp_agent"],
                 "purpose": "Confirm Link approval capability without creating a spend request.",
                 "allowed_after": "operator opts into a read-only auth-status run",
-                "records_to": "audit-ledger.jsonl",
+                "records_to": "audit-ledger.read-only-discovery.jsonl",
             },
         ],
         "approval_required_actions": approval_required_actions,
@@ -2147,6 +2311,88 @@ def _execution_plan_markdown(plan: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _read_only_discovery_markdown(discovery: dict[str, Any]) -> str:
+    lines = [
+        "# VoiceOps Read-Only Discovery",
+        "",
+        f"- Schema: `{discovery['schema_version']}`",
+        f"- Status: {discovery['status']}",
+        f"- Requested: {'yes' if discovery['run_requested'] else 'no'}",
+        f"- Non-mutating: {'yes' if discovery['non_mutating'] else 'no'}",
+        f"- Does not grant approval: {'yes' if discovery['does_not_grant_approval'] else 'no'}",
+        f"- Redacted outputs only: {'yes' if discovery['redacted_outputs_only'] else 'no'}",
+        f"- Failed probes: {', '.join(discovery['failed_probe_ids']) if discovery['failed_probe_ids'] else 'none'}",
+        f"- Missing probes: {', '.join(discovery['missing_probe_ids']) if discovery['missing_probe_ids'] else 'none'}",
+        "",
+        "## Probes",
+        "",
+    ]
+    for probe in discovery["probes"]:
+        executed = "executed" if probe["executed"] else "not executed"
+        lines.extend(
+            [
+                f"### {probe['probe_id']}",
+                "",
+                f"- Area: {probe['area']}",
+                f"- Status: {probe['status']}",
+                f"- Command: `{' '.join(probe['argv'])}`",
+                f"- Execution: {executed}",
+                f"- Purpose: {_redact(probe['purpose'])}",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _read_only_discovery_manifest(discovery: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": "voiceops.milestone2.read_only_discovery_manifest.v1",
+        "generated_at": _utc_now(),
+        "report": "read-only-discovery.json",
+        "markdown": "read-only-discovery.md",
+        "audit_ledger": "audit-ledger.read-only-discovery.jsonl",
+        "run_requested": discovery["run_requested"],
+        "status": discovery["status"],
+        "failed_probe_ids": discovery["failed_probe_ids"],
+        "missing_probe_ids": discovery["missing_probe_ids"],
+        "does_not_grant_approval": discovery["does_not_grant_approval"],
+        "redacted_outputs_only": discovery["redacted_outputs_only"],
+        "probes": [
+            {
+                "probe_id": probe["probe_id"],
+                "command": probe["argv"],
+                "status": probe["status"],
+                "executed": probe["executed"],
+            }
+            for probe in discovery["probes"]
+        ],
+    }
+
+
+def _read_only_discovery_ledger_rows(discovery: dict[str, Any]) -> list[dict[str, Any]]:
+    if not discovery["run_requested"]:
+        return []
+    rows: list[dict[str, Any]] = []
+    for probe in discovery["probes"]:
+        if not probe["executed"]:
+            continue
+        rows.append(
+            {
+                "audit_event_id": f"readonly-{probe['probe_id']}",
+                "event_type": "read_only_discovery_probe",
+                "probe_id": probe["probe_id"],
+                "command_sha256": _command_sha256(" ".join(probe["argv"])),
+                "status": probe["status"],
+                "executed": probe["executed"],
+                "timed_out": probe.get("timed_out", False),
+                "does_not_grant_approval": True,
+                "redacted_outputs_only": True,
+                "artifact_ref": "read-only-discovery.json",
+            }
+        )
+    return rows
+
+
 def build_post_approval_receipts_template(plan: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": POST_APPROVAL_RECEIPTS_SCHEMA_VERSION,
@@ -2434,6 +2680,10 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
         "json": output_dir / "provisioning-readiness.json",
         "markdown": output_dir / "provisioning-readiness.md",
         "command_manifest": output_dir / "safe-command-manifest.json",
+        "read_only_discovery_json": output_dir / "read-only-discovery.json",
+        "read_only_discovery_markdown": output_dir / "read-only-discovery.md",
+        "read_only_discovery_manifest": output_dir / "read-only-discovery.manifest.json",
+        "read_only_discovery_audit_ledger": output_dir / "audit-ledger.read-only-discovery.jsonl",
         "execution_plan_json": output_dir / "milestone2-execution-plan.json",
         "execution_plan_markdown": output_dir / "milestone2-execution-plan.md",
         "post_approval_receipts_template": output_dir / "post-approval-receipts.template.json",
@@ -2449,6 +2699,16 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
     _write_json(paths["json"], report)
     paths["markdown"].write_text(_markdown(report), encoding="utf-8")
     _write_json(paths["command_manifest"], _safe_command_manifest_json())
+    _write_json(paths["read_only_discovery_json"], report["read_only_discovery"])
+    paths["read_only_discovery_markdown"].write_text(
+        _read_only_discovery_markdown(report["read_only_discovery"]),
+        encoding="utf-8",
+    )
+    _write_json(paths["read_only_discovery_manifest"], _read_only_discovery_manifest(report["read_only_discovery"]))
+    _write_jsonl(
+        paths["read_only_discovery_audit_ledger"],
+        _read_only_discovery_ledger_rows(report["read_only_discovery"]),
+    )
     _write_json(paths["execution_plan_json"], execution_plan)
     paths["execution_plan_markdown"].write_text(_execution_plan_markdown(execution_plan), encoding="utf-8")
     _write_json(paths["post_approval_receipts_template"], build_post_approval_receipts_template(execution_plan))
@@ -2488,6 +2748,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Opt in to isolated version/help subprocess probes. Default inspects PATH/env presence only.",
     )
     parser.add_argument(
+        "--run-readonly-discovery",
+        "--run-read-only-discovery",
+        action="store_true",
+        dest="run_readonly_discovery",
+        help="Opt in to exact allowlisted read-only discovery commands with redacted output artifacts.",
+    )
+    parser.add_argument(
         "--no-command-probes",
         action="store_false",
         dest="run_command_probes",
@@ -2504,6 +2771,7 @@ def main(argv: list[str] | None = None) -> int:
         preflight_evidence_path=args.preflight_evidence,
         post_approval_receipts_path=args.post_approval_receipts,
         run_commands=args.run_command_probes,
+        run_readonly_discovery=args.run_readonly_discovery,
         timeout_seconds=args.timeout_seconds,
     )
     paths = write_probe_artifacts(args.output_dir, report)

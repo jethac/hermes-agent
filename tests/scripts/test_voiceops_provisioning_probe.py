@@ -24,6 +24,7 @@ from scripts.voiceops_provisioning_probe import (
     validate_post_approval_receipts,
     write_probe_artifacts,
     _validate_safe_probe_command,
+    _validate_readonly_discovery_command,
 )
 
 
@@ -153,6 +154,45 @@ def test_probe_passes_with_safe_local_tools_and_redacts_outputs(tmp_path):
     assert "<redacted" in serialized
 
 
+def test_readonly_discovery_runs_exact_allowlist_and_does_not_grant_readiness(tmp_path):
+    calls: list[list[str]] = []
+
+    def fake_which(command: str) -> str | None:
+        return f"/usr/local/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None
+
+    def fake_readonly_runner(argv: Sequence[str], _timeout_seconds: int) -> CommandResult:
+        calls.append(list(argv))
+        return CommandResult(
+            exit_code=0,
+            stdout="catalog twilio sk_live_123456789abcdef phone +15551234567",
+            stderr="Bearer token_123456789abcdef",
+        )
+
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
+        env_files=[],
+        which=fake_which,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=fake_readonly_runner,
+        run_readonly_discovery=True,
+    )
+
+    assert calls == [
+        ["stripe", "projects", "list", "--limit", "10"],
+        ["link-cli", "auth", "status"],
+    ]
+    assert report["read_only_discovery"]["run_requested"] is True
+    assert report["read_only_discovery"]["does_not_grant_approval"] is True
+    assert report["read_only_discovery"]["status"] == "pass"
+    assert report["ready"] is False
+    assert "stripe_projects_account" in report["required_failures"]
+    serialized = json.dumps(report)
+    assert "sk_live_123456789abcdef" not in serialized
+    assert "+15551234567" not in serialized
+    assert "token_123456789abcdef" not in serialized
+    assert "<redacted" in serialized
+
+
 def test_probe_reports_required_failures_without_running_missing_tools():
     calls: list[list[str]] = []
 
@@ -244,6 +284,10 @@ def test_write_probe_artifacts(tmp_path):
         "preflight_evidence_manifest_example",
         "preflight_evidence_scaffold_manifest",
         "preflight_evidence_template",
+        "read_only_discovery_audit_ledger",
+        "read_only_discovery_json",
+        "read_only_discovery_manifest",
+        "read_only_discovery_markdown",
         "setup_closure_json",
         "setup_closure_markdown",
     }
@@ -258,6 +302,8 @@ def test_write_probe_artifacts(tmp_path):
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     execution_plan = json.loads(Path(paths["execution_plan_json"]).read_text(encoding="utf-8"))
     manifest = json.loads(Path(paths["command_manifest"]).read_text(encoding="utf-8"))
+    discovery = json.loads(Path(paths["read_only_discovery_json"]).read_text(encoding="utf-8"))
+    discovery_manifest = json.loads(Path(paths["read_only_discovery_manifest"]).read_text(encoding="utf-8"))
     setup_closure = json.loads(Path(paths["setup_closure_json"]).read_text(encoding="utf-8"))
     post_approval_template = json.loads(Path(paths["post_approval_receipts_template"]).read_text(encoding="utf-8"))
     post_approval_example = json.loads(Path(paths["post_approval_receipts_example"]).read_text(encoding="utf-8"))
@@ -273,6 +319,14 @@ def test_write_probe_artifacts(tmp_path):
     setup_markdown = Path(paths["setup_closure_markdown"]).read_text(encoding="utf-8")
     assert payload["probe"]["non_mutating"] is True
     assert payload["preflight_evidence"]["loaded"] is False
+    assert discovery["schema_version"] == "voiceops.milestone2.read_only_discovery.v1"
+    assert discovery["run_requested"] is False
+    assert discovery["does_not_grant_approval"] is True
+    assert discovery_manifest["schema_version"] == "voiceops.milestone2.read_only_discovery_manifest.v1"
+    assert discovery_manifest["audit_ledger"] == "audit-ledger.read-only-discovery.jsonl"
+    assert Path(paths["read_only_discovery_audit_ledger"]).read_text(encoding="utf-8") == ""
+    assert "read_only_discovery_commands" in manifest
+    assert "version_help_commands" in manifest
     assert "VoiceOps Provisioning Readiness Probe" in markdown
     assert execution_plan["schema_version"] == "voiceops.milestone2.execution_plan.v1"
     assert "stripe_projects_account" in execution_plan["preflight"]["required_evidence"]
@@ -296,9 +350,11 @@ def test_write_probe_artifacts(tmp_path):
         == "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
     )
     assert setup_closure["evidence_contract"]["preflight_schema_version"] == "voiceops.milestone2.preflight_evidence.v1"
+    assert setup_closure["evidence_contract"]["read_only_discovery_grants_approval"] is False
     assert setup_closure["evidence_contract"]["required_section_field"] == "source_artifact"
     assert setup_closure["evidence_contract"]["source_artifacts_must_exist"] is True
     assert "provisioning-preflight-evidence.manifest.json" in setup_closure["rerun_commands"]["with_preflight_manifest"]
+    assert "--run-readonly-discovery" in setup_closure["rerun_commands"]["read_only_discovery"]
     assert setup_closure["rerun_commands"]["source_artifact_sha256"].startswith("shasum -a 256")
     assert "VoiceOps Milestone 2 Setup Closure Plan" in setup_markdown
     assert "Manifest example" in setup_markdown
@@ -731,6 +787,9 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
     assert "credential_ref_id" in plan["credential_location_schema"]["required_fields"]
     assert "raw_secret" in plan["credential_location_schema"]["forbidden_fields"]
     assert {
+        "audit-ledger.read-only-discovery.jsonl",
+    } == {step["records_to"] for step in plan["read_only_discovery"]}
+    assert {
         "deprovision_voip_provider",
         "refund_or_cancel_service_credit",
         "cancel_or_end_phone_handoff",
@@ -1019,6 +1078,16 @@ def test_command_probe_validation_requires_exact_manifest_argv():
         _validate_safe_probe_command(["unknown-cli", "--version"])
 
 
+def test_readonly_discovery_validation_requires_exact_manifest_argv():
+    _validate_readonly_discovery_command(["stripe", "projects", "list", "--limit", "10"])
+    _validate_readonly_discovery_command(["link-cli", "auth", "status"])
+
+    with pytest.raises(ValueError, match="allowlisted manifest exactly"):
+        _validate_readonly_discovery_command(["stripe", "projects", "add", "twilio/voice"])
+    with pytest.raises(ValueError, match="allowlisted manifest exactly"):
+        _validate_readonly_discovery_command(["link-cli", "auth", "status", "--json"])
+
+
 def test_probe_cli_smoke_no_command_probes(tmp_path):
     script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_provisioning_probe.py"
     result = subprocess.run(
@@ -1041,3 +1110,4 @@ def test_parse_args_defaults_to_requested_artifact_dir():
     assert args.preflight_evidence is None
     assert args.post_approval_receipts is None
     assert args.run_command_probes is False
+    assert args.run_readonly_discovery is False

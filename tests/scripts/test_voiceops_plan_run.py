@@ -163,11 +163,17 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert provisioning_result["status"] == "needs_setup"
     assert provisioning_result["details"]["required_failures"]
     assert provisioning_result["details"]["run_command_probes"] is False
+    assert provisioning_result["details"]["run_readonly_discovery"] is False
+    assert provisioning_result["details"]["read_only_discovery_status"] == "not_requested"
     assert Path(provisioning_result["artifacts"]["execution_plan_json"]).exists()
     assert Path(provisioning_result["artifacts"]["execution_plan_markdown"]).exists()
     assert Path(provisioning_result["artifacts"]["post_approval_receipts_template"]).exists()
     assert Path(provisioning_result["artifacts"]["post_approval_receipts_validation"]).exists()
     assert Path(provisioning_result["artifacts"]["post_approval_audit_ledger"]).exists()
+    assert Path(provisioning_result["artifacts"]["read_only_discovery_json"]).exists()
+    assert Path(provisioning_result["artifacts"]["read_only_discovery_markdown"]).exists()
+    assert Path(provisioning_result["artifacts"]["read_only_discovery_manifest"]).exists()
+    assert Path(provisioning_result["artifacts"]["read_only_discovery_audit_ledger"]).exists()
     assert Path(provisioning_result["artifacts"]["preflight_evidence_example"]).exists()
     assert Path(provisioning_result["artifacts"]["preflight_evidence_manifest_example"]).exists()
     assert Path(provisioning_result["artifacts"]["preflight_evidence_scaffold_manifest"]).exists()
@@ -213,6 +219,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
     )
     assert "validate_post_approval_receipts" in provisioning_gate["collection_commands"]
+    assert "read_only_discovery" in provisioning_gate["collection_commands"]
+    assert "--run-readonly-discovery" in provisioning_gate["collection_commands"]["read_only_discovery"]
+    assert "--run-readonly-discovery" in provisioning_gate["rerun_commands"]["plan_index_read_only_discovery"]
+    assert provisioning_gate["evidence_contract"]["read_only_discovery_grants_approval"] is False
     assert "voiceops.milestone2.post_approval_receipts.v1" == provisioning_gate["evidence_contract"][
         "post_approval_receipts_schema_version"
     ]
@@ -262,6 +272,10 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
         "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
         "setup-closure-plan.json",
         "setup-closure-plan.md",
+        "read-only-discovery.json",
+        "read-only-discovery.md",
+        "read-only-discovery.manifest.json",
+        "audit-ledger.read-only-discovery.jsonl",
         "post-approval-receipts.template.json",
         "post-approval-receipts.example.json",
         "post-approval-receipts.validation.json",
@@ -288,6 +302,9 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "source_artifact` for every redacted evidence section" in text
     assert "voiceops.milestone2.post_approval_receipts.v1" in text
     assert "`--post-approval-receipts`" in text
+    assert "`--run-readonly-discovery`" in text
+    assert "stripe projects list --limit 10" in text
+    assert "link-cli auth status" in text
     assert "`source_artifact_kind: redacted_setup_evidence`, `source_artifact_sha256`, and `source_artifact_redacted_at`" in text
     assert "SHA-256 must match the referenced redacted JSON source artifact" in text
     assert "redaction timestamp must be parseable with timezone information" in text
@@ -416,3 +433,4 @@ def test_parse_args_defaults_to_plan_artifact_paths():
     assert args.voice_live_evidence == []
     assert args.provisioning_preflight_evidence is None
     assert args.run_command_probes is False
+    assert args.run_readonly_discovery is False

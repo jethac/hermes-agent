@@ -274,11 +274,16 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "commands": [
                     provisioning_gate["collection_commands"]["presence_only"],
                     provisioning_gate["collection_commands"]["bounded_version_help"],
+                    provisioning_gate["collection_commands"]["read_only_discovery"],
                     provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
                     provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
                     provisioning_gate["rerun_commands"]["plan_index_manifest"],
                 ],
                 "expected_artifacts": [
+                    "artifacts/voiceops-provisioning/current/read-only-discovery.json",
+                    "artifacts/voiceops-provisioning/current/read-only-discovery.md",
+                    "artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json",
+                    "artifacts/voiceops-provisioning/current/audit-ledger.read-only-discovery.jsonl",
                     "artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
                     "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
                     "artifacts/voiceops-provisioning/current/post-approval-receipts.validation.json",
@@ -444,6 +449,10 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-command-probes"
                 ),
+                "read_only_discovery": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-readonly-discovery"
+                ),
                 "ingest_preflight_evidence": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
@@ -496,6 +505,8 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "example_only_accepted": False,
                 "secret_like_values_accepted": False,
                 "full_phone_numbers_accepted": False,
+                "read_only_discovery_schema_version": "voiceops.milestone2.read_only_discovery.v1",
+                "read_only_discovery_grants_approval": False,
                 "post_approval_receipts_schema_version": "voiceops.milestone2.post_approval_receipts.v1",
             },
             "rerun_commands": {
@@ -506,6 +517,14 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "bounded_version_help": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-command-probes"
+                ),
+                "read_only_discovery": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-readonly-discovery"
+                ),
+                "plan_index_read_only_discovery": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current --env-file .env --run-readonly-discovery"
                 ),
                 "plan_index": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
@@ -661,6 +680,7 @@ def build_plan_run(
     provisioning_preflight_evidence: Path | None = None,
     post_approval_receipts: Path | None = None,
     run_command_probes: bool = False,
+    run_readonly_discovery: bool = False,
     timeout_seconds: int = 3,
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -675,6 +695,7 @@ def build_plan_run(
             provisioning_preflight_evidence=provisioning_preflight_evidence,
             post_approval_receipts=post_approval_receipts,
             run_command_probes=run_command_probes,
+            run_readonly_discovery=run_readonly_discovery,
             timeout_seconds=timeout_seconds,
             env=env,
         )
@@ -692,6 +713,7 @@ async def build_plan_run_async(
     provisioning_preflight_evidence: Path | None = None,
     post_approval_receipts: Path | None = None,
     run_command_probes: bool = False,
+    run_readonly_discovery: bool = False,
     timeout_seconds: int = 3,
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -760,6 +782,7 @@ async def build_plan_run_async(
         preflight_evidence_path=provisioning_preflight_evidence,
         post_approval_receipts_path=post_approval_receipts,
         run_commands=run_command_probes,
+        run_readonly_discovery=run_readonly_discovery,
         timeout_seconds=timeout_seconds,
     )
     provisioning_paths = write_probe_artifacts(provisioning_dir, provisioning)
@@ -776,6 +799,8 @@ async def build_plan_run_async(
                 "preflight_evidence_loaded": provisioning["preflight_evidence"]["loaded"],
                 "preflight_evidence_missing_fields": provisioning["preflight_evidence"]["missing_fields"],
                 "run_command_probes": run_command_probes,
+                "run_readonly_discovery": run_readonly_discovery,
+                "read_only_discovery_status": provisioning["read_only_discovery"]["status"],
             },
         )
     )
@@ -1106,6 +1131,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Opt into isolated version/help subprocess probes for provisioning readiness.",
     )
+    parser.add_argument(
+        "--run-readonly-discovery",
+        "--run-read-only-discovery",
+        action="store_true",
+        dest="run_readonly_discovery",
+        help="Opt into exact allowlisted read-only discovery commands for provisioning readiness artifacts.",
+    )
     return parser.parse_args(argv)
 
 
@@ -1121,6 +1153,7 @@ def main(argv: list[str] | None = None) -> int:
         provisioning_preflight_evidence=args.provisioning_preflight_evidence,
         post_approval_receipts=args.post_approval_receipts,
         run_command_probes=args.run_command_probes,
+        run_readonly_discovery=args.run_readonly_discovery,
         timeout_seconds=args.timeout_seconds,
     )
     paths = write_plan_run(args.output_dir, summary)
