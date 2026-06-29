@@ -253,6 +253,58 @@ def _audit_service_claims(operator_state: Mapping[str, Any], issues: list[str]) 
             issues.append(f"provisioned_services:{service.get('service_id')}:execution_status_invalid")
 
 
+def _iter_plan_run_commands(value: Any) -> list[str]:
+    commands: list[str] = []
+    if isinstance(value, str):
+        if "scripts/voiceops_plan_run.py" in value:
+            commands.append(value)
+    elif isinstance(value, Mapping):
+        for nested in value.values():
+            commands.extend(_iter_plan_run_commands(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            commands.extend(_iter_plan_run_commands(nested))
+    return commands
+
+
+def _audit_plan_consistency(
+    *,
+    demo_closure: Mapping[str, Any],
+    demo_handoff: Mapping[str, Any],
+    plan_run: Mapping[str, Any],
+    plan_closure: Mapping[str, Any],
+    plan_handoff: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    if plan_run.get("closure_index") != plan_closure:
+        issues.append("plan_run:closure_index_mismatch")
+    if plan_handoff != plan_closure.get("operator_handoff"):
+        issues.append("operator_handoff:mismatch_with_closure")
+    for label, payload in (
+        ("demo_closure", demo_closure),
+        ("demo_handoff", demo_handoff),
+        ("plan_closure", plan_closure),
+        ("operator_handoff", plan_handoff),
+    ):
+        for command in _iter_plan_run_commands(payload):
+            if "--package-audit" not in command:
+                issues.append(f"{label}:plan_run_command_missing_package_audit")
+
+    plan_final_command = plan_handoff.get("final_reindex_command")
+    if demo_handoff.get("final_reindex_command") != plan_final_command:
+        issues.append("demo_handoff:final_reindex_command_mismatch")
+    package_audit_command = plan_handoff.get("final_package_audit_command")
+    if not package_audit_command or "voiceops_artifact_package_audit.py" not in str(package_audit_command):
+        issues.append("operator_handoff:missing_final_package_audit_command")
+    if demo_handoff.get("final_package_audit_command") != package_audit_command:
+        issues.append("demo_handoff:final_package_audit_command_mismatch")
+    final_success_signal = str(plan_handoff.get("final_success_signal") or "")
+    if "package_audit.status is pass" not in final_success_signal:
+        issues.append("operator_handoff:final_success_signal_missing_package_audit")
+    if demo_handoff.get("final_success_signal") != plan_handoff.get("final_success_signal"):
+        issues.append("demo_handoff:final_success_signal_mismatch")
+
+
 def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]:
     issues: list[str] = []
     warnings: list[str] = []
@@ -262,6 +314,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     demo = _read_json(demo_dir / "voiceops-demo.json", issues, "voiceops_demo")
     readiness = _read_json(demo_dir / "readiness-report.json", issues, "readiness_report")
     demo_closure = _read_json(demo_dir / "readiness-closure-summary.json", issues, "demo_closure")
+    demo_handoff = _read_json(demo_dir / "operator-handoff-preview.json", issues, "demo_handoff")
     operator_state = _read_json(demo_dir / "operator-state.json", issues, "operator_state")
     packet = _read_json(demo_dir / "nemoclaw-action-packet.json", issues, "nemoclaw_packet")
     packet_validation = _read_json(
@@ -269,7 +322,9 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         issues,
         "nemoclaw_packet_validation",
     )
+    plan_run = _read_json(plan_dir / "voiceops-plan-run.json", issues, "plan_run")
     plan_closure = _read_json(plan_dir / "readiness-closure-index.json", issues, "plan_closure")
+    plan_handoff = _read_json(plan_dir / "operator-handoff.json", issues, "operator_handoff")
     dashboard_html = _read_text(demo_dir / "operator-dashboard.html", issues, "operator_dashboard")
     audit_rows = _read_jsonl(demo_dir / "audit-ledger.jsonl", issues, "audit_ledger")
     dry_run_rows = _dry_run_metadata_rows(
@@ -295,18 +350,29 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         issues=issues,
     )
     _audit_service_claims(operator_state, issues)
+    _audit_plan_consistency(
+        demo_closure=demo_closure,
+        demo_handoff=demo_handoff,
+        plan_run=plan_run,
+        plan_closure=plan_closure,
+        plan_handoff=plan_handoff,
+        issues=issues,
+    )
 
     checked_artifacts = [
         str(demo_dir / "voiceops-demo.json"),
         str(demo_dir / "readiness-report.json"),
         str(demo_dir / "readiness-closure-summary.json"),
+        str(demo_dir / "operator-handoff-preview.json"),
         str(demo_dir / "operator-state.json"),
         str(demo_dir / "operator-dashboard.html"),
         str(demo_dir / "nemoclaw-action-packet.json"),
         str(demo_dir / "nemoclaw-action-packet.validation.json"),
         str(demo_dir / "audit-ledger.jsonl"),
         str(demo_dir / "stripe-actions-dry-run.sh"),
+        str(plan_dir / "voiceops-plan-run.json"),
         str(plan_dir / "readiness-closure-index.json"),
+        str(plan_dir / "operator-handoff.json"),
     ]
     return {
         "schema_version": AUDIT_SCHEMA_VERSION,

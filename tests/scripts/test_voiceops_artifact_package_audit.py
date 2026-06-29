@@ -30,6 +30,14 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert report["status"] == "pass"
     assert report["ok"] is True
     assert report["issues"] == []
+    assert report["checked_artifact_count"] == 13
+    assert str(artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json") in report[
+        "checked_artifacts"
+    ]
+    assert str(artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json") in report[
+        "checked_artifacts"
+    ]
+    assert str(artifact_root / "voiceops-plan" / "current" / "operator-handoff.json") in report["checked_artifacts"]
     assert report["safety"] == {
         "discord_io": False,
         "env_files_read": False,
@@ -104,6 +112,33 @@ def test_package_audit_rejects_closure_gate_mismatch(tmp_path):
 
     assert report["ok"] is False
     assert "closure:gates_mismatch_between_demo_and_plan" in report["issues"]
+
+
+def test_package_audit_rejects_plan_run_closure_mismatch(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    plan_run["closure_index"]["remaining_gates"] = []
+    _write_json(plan_run_path, plan_run)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "plan_run:closure_index_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_unaudited_operator_handoff_reindex(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"
+    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    handoff["final_reindex_command"] = handoff["final_reindex_command"].replace(" --package-audit", "")
+    _write_json(handoff_path, handoff)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "operator_handoff:mismatch_with_closure" in report["issues"]
+    assert "operator_handoff:plan_run_command_missing_package_audit" in report["issues"]
 
 
 def test_package_audit_parse_args_defaults():
