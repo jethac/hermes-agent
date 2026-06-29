@@ -165,6 +165,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert provisioning_result["details"]["run_command_probes"] is False
     assert Path(provisioning_result["artifacts"]["execution_plan_json"]).exists()
     assert Path(provisioning_result["artifacts"]["execution_plan_markdown"]).exists()
+    assert Path(provisioning_result["artifacts"]["post_approval_receipts_template"]).exists()
+    assert Path(provisioning_result["artifacts"]["post_approval_receipts_validation"]).exists()
+    assert Path(provisioning_result["artifacts"]["post_approval_audit_ledger"]).exists()
     assert Path(provisioning_result["artifacts"]["preflight_evidence_example"]).exists()
     assert Path(provisioning_result["artifacts"]["preflight_evidence_manifest_example"]).exists()
     assert Path(provisioning_result["artifacts"]["preflight_evidence_scaffold_manifest"]).exists()
@@ -209,6 +212,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert provisioning_gate["evidence_scaffold"].endswith(
         "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
     )
+    assert "validate_post_approval_receipts" in provisioning_gate["collection_commands"]
+    assert "voiceops.milestone2.post_approval_receipts.v1" == provisioning_gate["evidence_contract"][
+        "post_approval_receipts_schema_version"
+    ]
+    assert "--post-approval-receipts" in provisioning_gate["rerun_commands"]["plan_index_post_approval_receipts"]
     spark_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "local_spark_stack_matrix")
     assert spark_gate["closure_plan"].endswith("spark-matrix-closure-plan.json")
     assert spark_gate["closure_artifact"].endswith("spark-matrix-closure-plan.md")
@@ -254,6 +262,11 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
         "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
         "setup-closure-plan.json",
         "setup-closure-plan.md",
+        "post-approval-receipts.template.json",
+        "post-approval-receipts.example.json",
+        "post-approval-receipts.validation.json",
+        "post-approval-receipts-scaffold/post-approval-receipts.json",
+        "audit-ledger.post-approval.jsonl",
         "spark-benchmark-evidence-template.json",
         "spark-benchmark-evidence.example.json",
         "spark-benchmark-scaffold/spark-benchmark-evidence.json",
@@ -273,6 +286,8 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "placeholder source paths inside referenced artifacts are not trusted as provenance" in text
     assert "Template source artifact names such as `discord-live-probe.json`, `voice-status-or-sidecar-report.json`, and `voice-turn-evidence.json` are rejected" in text
     assert "source_artifact` for every redacted evidence section" in text
+    assert "voiceops.milestone2.post_approval_receipts.v1" in text
+    assert "`--post-approval-receipts`" in text
     assert "`source_artifact_kind: redacted_setup_evidence`, `source_artifact_sha256`, and `source_artifact_redacted_at`" in text
     assert "SHA-256 must match the referenced redacted JSON source artifact" in text
     assert "redaction timestamp must be parseable with timezone information" in text

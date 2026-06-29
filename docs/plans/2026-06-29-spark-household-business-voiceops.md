@@ -358,6 +358,11 @@ The command writes:
 - `provisioning-preflight-evidence.example.json`
 - `provisioning-preflight-evidence.manifest.example.json`
 - `provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json`
+- `post-approval-receipts.template.json`
+- `post-approval-receipts.example.json`
+- `post-approval-receipts.validation.json`
+- `post-approval-receipts-scaffold/post-approval-receipts.json`
+- `audit-ledger.post-approval.jsonl`
 - `setup-closure-plan.json`
 - `setup-closure-plan.md`
 
@@ -385,6 +390,17 @@ The supplied evidence path is read-only. It may be one complete `voiceops.milest
 The generated `provisioning-preflight-scaffold/` directory is the preferred operator starting point for split evidence: replace each section report and redacted source artifact with real local setup proof, update the SHA-256 fields, and remove every `example_only` marker before ingesting the manifest.
 
 The Milestone 2 execution plan is also non-mutating. It is the post-approval contract for the first live provisioning flow: readiness gates, display-only discovery commands, approval-required Stripe/Link/phone actions, receipt schema, credential-location schema, rollback/deprovision notes, and phone-context linkage. It must never claim that spend, provisioning, credential retrieval, outbound messages, or phone calls have already executed.
+
+When approved actions have real redacted post-approval evidence, ingest the receipt bundle with `--post-approval-receipts` without running provider commands:
+
+```bash
+uv run python scripts/voiceops_provisioning_probe.py \
+  --output-dir artifacts/voiceops-provisioning/current \
+  --env-file .env \
+  --post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json
+```
+
+The receipt bundle uses `voiceops.milestone2.post_approval_receipts.v1` and must contain redacted `receipts`, `credential_locations`, `rollback_receipts`, and `audit_events`. The validator rejects `example_only`, raw secret/token/card/phone fields, command hash mismatches, unknown action ids, missing credential-location refs, missing rollback refs, and missing audit events. A valid bundle writes `post-approval-receipts.validation.json` and `audit-ledger.post-approval.jsonl`; it still does not execute spend, provisioning, credential retrieval, messages, or calls.
 
 ## Milestone 3: Multi-Channel Operations
 
@@ -519,6 +535,13 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
   --env-file .env \
   --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json
+```
+
+```bash
+uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
+  --output-dir artifacts/voiceops-plan/current \
+  --env-file .env \
+  --post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json
 ```
 
 ```bash

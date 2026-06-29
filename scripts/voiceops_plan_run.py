@@ -268,17 +268,21 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "required_inputs": [
                     ".env or local CLI auth for Stripe/Link/MPP/phone provider",
                     "redacted preflight evidence JSON or manifest",
+                    "optional redacted post-approval receipt bundle",
                     "redacted source artifacts with matching SHA-256",
                 ],
                 "commands": [
                     provisioning_gate["collection_commands"]["presence_only"],
                     provisioning_gate["collection_commands"]["bounded_version_help"],
                     provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
+                    provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
                     provisioning_gate["rerun_commands"]["plan_index_manifest"],
                 ],
                 "expected_artifacts": [
                     "artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
                     "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
+                    "artifacts/voiceops-provisioning/current/post-approval-receipts.validation.json",
+                    "artifacts/voiceops-provisioning/current/audit-ledger.post-approval.jsonl",
                     "artifacts/voiceops-provisioning/current/provisioning-readiness.json",
                 ],
                 "success_check": provisioning_gate["completion_signal"],
@@ -450,6 +454,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
                     "--preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
                 ),
+                "validate_post_approval_receipts": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
+                    "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json"
+                ),
             },
             "requirement_fields_per_gate": [
                 "schema_version",
@@ -487,6 +496,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "example_only_accepted": False,
                 "secret_like_values_accepted": False,
                 "full_phone_numbers_accepted": False,
+                "post_approval_receipts_schema_version": "voiceops.milestone2.post_approval_receipts.v1",
             },
             "rerun_commands": {
                 "presence_only": (
@@ -506,6 +516,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current --env-file .env "
                     "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
+                ),
+                "plan_index_post_approval_receipts": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json"
                 ),
             },
             "rerun_command": (
@@ -644,6 +659,7 @@ def build_plan_run(
     env_files: list[Path] | None = None,
     voice_live_evidence_paths: list[Path] | None = None,
     provisioning_preflight_evidence: Path | None = None,
+    post_approval_receipts: Path | None = None,
     run_command_probes: bool = False,
     timeout_seconds: int = 3,
     env: dict[str, str] | None = None,
@@ -657,6 +673,7 @@ def build_plan_run(
             env_files=env_files,
             voice_live_evidence_paths=voice_live_evidence_paths,
             provisioning_preflight_evidence=provisioning_preflight_evidence,
+            post_approval_receipts=post_approval_receipts,
             run_command_probes=run_command_probes,
             timeout_seconds=timeout_seconds,
             env=env,
@@ -673,6 +690,7 @@ async def build_plan_run_async(
     env_files: list[Path] | None = None,
     voice_live_evidence_paths: list[Path] | None = None,
     provisioning_preflight_evidence: Path | None = None,
+    post_approval_receipts: Path | None = None,
     run_command_probes: bool = False,
     timeout_seconds: int = 3,
     env: dict[str, str] | None = None,
@@ -740,6 +758,7 @@ async def build_plan_run_async(
         env=effective_env,
         env_files=env_files,
         preflight_evidence_path=provisioning_preflight_evidence,
+        post_approval_receipts_path=post_approval_receipts,
         run_commands=run_command_probes,
         timeout_seconds=timeout_seconds,
     )
@@ -1080,6 +1099,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--env-file", action="append", default=[], type=Path)
     parser.add_argument("--voice-live-evidence", action="append", default=[], type=Path)
     parser.add_argument("--provisioning-preflight-evidence", type=Path, default=None)
+    parser.add_argument("--post-approval-receipts", type=Path, default=None)
     parser.add_argument("--timeout-seconds", type=int, default=3)
     parser.add_argument(
         "--run-command-probes",
@@ -1099,6 +1119,7 @@ def main(argv: list[str] | None = None) -> int:
         env_files=args.env_file,
         voice_live_evidence_paths=args.voice_live_evidence,
         provisioning_preflight_evidence=args.provisioning_preflight_evidence,
+        post_approval_receipts=args.post_approval_receipts,
         run_command_probes=args.run_command_probes,
         timeout_seconds=args.timeout_seconds,
     )

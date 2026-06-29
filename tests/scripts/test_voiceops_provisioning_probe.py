@@ -15,9 +15,13 @@ from scripts.voiceops_provisioning_probe import (
     build_preflight_evidence_manifest_example,
     build_preflight_evidence_template,
     build_milestone2_execution_plan,
+    build_post_approval_receipts_example,
+    build_post_approval_receipts_template,
     build_probe_report,
+    load_post_approval_receipts,
     load_preflight_evidence,
     parse_args,
+    validate_post_approval_receipts,
     write_probe_artifacts,
     _validate_safe_probe_command,
 )
@@ -231,6 +235,11 @@ def test_write_probe_artifacts(tmp_path):
         "execution_plan_markdown",
         "json",
         "markdown",
+        "post_approval_audit_ledger",
+        "post_approval_receipts_example",
+        "post_approval_receipts_scaffold",
+        "post_approval_receipts_template",
+        "post_approval_receipts_validation",
         "preflight_evidence_example",
         "preflight_evidence_manifest_example",
         "preflight_evidence_scaffold_manifest",
@@ -250,6 +259,10 @@ def test_write_probe_artifacts(tmp_path):
     execution_plan = json.loads(Path(paths["execution_plan_json"]).read_text(encoding="utf-8"))
     manifest = json.loads(Path(paths["command_manifest"]).read_text(encoding="utf-8"))
     setup_closure = json.loads(Path(paths["setup_closure_json"]).read_text(encoding="utf-8"))
+    post_approval_template = json.loads(Path(paths["post_approval_receipts_template"]).read_text(encoding="utf-8"))
+    post_approval_example = json.loads(Path(paths["post_approval_receipts_example"]).read_text(encoding="utf-8"))
+    post_approval_scaffold = json.loads(Path(paths["post_approval_receipts_scaffold"]).read_text(encoding="utf-8"))
+    post_approval_validation = json.loads(Path(paths["post_approval_receipts_validation"]).read_text(encoding="utf-8"))
     preflight_example = json.loads(Path(paths["preflight_evidence_example"]).read_text(encoding="utf-8"))
     preflight_manifest_example = json.loads(Path(paths["preflight_evidence_manifest_example"]).read_text(encoding="utf-8"))
     preflight_scaffold_manifest_path = Path(paths["preflight_evidence_scaffold_manifest"])
@@ -265,6 +278,15 @@ def test_write_probe_artifacts(tmp_path):
     assert "stripe_projects_account" in execution_plan["preflight"]["required_evidence"]
     assert "phone-context.json" in json.dumps(execution_plan)
     assert "VoiceOps Milestone 2 Execution Plan" in execution_markdown
+    assert post_approval_template["schema_version"] == "voiceops.milestone2.post_approval_receipts.v1"
+    assert post_approval_template["receipts"] == []
+    assert post_approval_example["example_only"] is True
+    assert "example_only evidence is not accepted" in " ".join(
+        validate_post_approval_receipts(post_approval_example, execution_plan)["validation_issues"]
+    )
+    assert post_approval_scaffold["example_only"] is True
+    assert post_approval_validation["status"] == "not_supplied"
+    assert Path(paths["post_approval_audit_ledger"]).read_text(encoding="utf-8") == ""
     assert setup_closure["schema_version"] == "voiceops.milestone2.setup_closure.v1"
     assert setup_closure["preflight_evidence_template"] == "provisioning-preflight-evidence.template.json"
     assert setup_closure["preflight_evidence_example"] == "provisioning-preflight-evidence.example.json"
@@ -784,6 +806,109 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
     assert "secret-token" not in serialized
 
 
+def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_path):
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    action = next(item for item in plan["approval_required_actions"] if item["action_id"] == "provision-voip-provider")
+    payload = {
+        "schema_version": "voiceops.milestone2.post_approval_receipts.v1",
+        "redaction_policy": "references only",
+        "receipts": [
+            {
+                "receipt_id": "receipt-provision-voip-provider-001",
+                "action_id": action["action_id"],
+                "approval_id": action["approval_id"],
+                "provider": action["provider"],
+                "status": "executed",
+                "approved_by": "operator-ref-demo",
+                "approved_at": "2026-06-29T00:00:00Z",
+                "executed_at": "2026-06-29T00:00:30Z",
+                "command_sha256": action["command_sha256"],
+                "amount_cents": 0,
+                "currency": "usd",
+                "external_reference": "provider-resource-ref-demo",
+                "credential_location_ref": action["credential_location_ref"],
+                "rollback_ref": action["rollback_ref"],
+                "audit_event_id": "audit-provision-voip-provider-001",
+            }
+        ],
+        "credential_locations": [
+            {
+                "credential_ref_id": action["credential_location_ref"],
+                "provider": action["provider"],
+                "service_id": "provider-resource-ref-demo",
+                "storage_backend": "provider_managed",
+                "secret_name_or_path": "credential-location-ref-demo",
+                "created_by_action_id": action["action_id"],
+                "rotation_due": "2026-09-29T00:00:00Z",
+            }
+        ],
+        "rollback_receipts": [
+            {
+                "rollback_ref": action["rollback_ref"],
+                "status": "not_run",
+                "owner_ref": "operator-ref-demo",
+                "notes": "No rollback run.",
+            }
+        ],
+        "audit_events": [
+            {
+                "audit_event_id": "audit-provision-voip-provider-001",
+                "action_id": action["action_id"],
+                "receipt_id": "receipt-provision-voip-provider-001",
+                "status": "executed",
+                "artifact_ref": "post-approval-receipts.json",
+                "operator_next_step": "Review provider dashboard and rollback window.",
+            }
+        ],
+    }
+    receipt_path = tmp_path / "post-approval-receipts.json"
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = load_post_approval_receipts(receipt_path, plan)
+    report_with_receipts = build_probe_report(
+        env={},
+        env_files=[],
+        post_approval_receipts_path=receipt_path,
+        which=lambda _command: None,
+    )
+    paths = write_probe_artifacts(tmp_path / "out", report_with_receipts)
+    ledger_rows = Path(paths["post_approval_audit_ledger"]).read_text(encoding="utf-8").splitlines()
+
+    assert loaded["status"] == "valid"
+    assert loaded["validation_issues"] == []
+    assert loaded["receipt_count"] == 1
+    assert loaded["ledger_rows"][0]["receipt_id"] == "receipt-provision-voip-provider-001"
+    assert report_with_receipts["post_approval_receipts"]["status"] == "valid"
+    assert len(ledger_rows) == 1
+    assert json.loads(ledger_rows[0])["audit_event_id"] == "audit-provision-voip-provider-001"
+    assert "+15551234567" not in json.dumps(loaded)
+
+
+def test_post_approval_receipts_reject_examples_secrets_and_mismatches():
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    example = build_post_approval_receipts_example(plan)
+    bad = json.loads(json.dumps(example))
+    bad.pop("example_only")
+    bad["receipts"][0]["command_sha256"] = "0" * 64
+    bad["receipts"][0]["external_reference"] = "sk_live_123456789abcdef"
+    bad["credential_locations"][0]["raw_secret"] = "secret"
+
+    example_result = validate_post_approval_receipts(example, plan)
+    bad_result = validate_post_approval_receipts(bad, plan)
+
+    assert example_result["status"] == "invalid"
+    assert any("example_only evidence is not accepted" in issue for issue in example_result["validation_issues"])
+    assert bad_result["status"] == "invalid"
+    assert "post_approval_receipts:receipt-example-provision-voip-provider:command_sha256_mismatch" in bad_result[
+        "validation_issues"
+    ]
+    assert any("secret-like value" in issue for issue in bad_result["validation_issues"])
+    assert any("forbidden_raw_field" in issue for issue in bad_result["validation_issues"])
+    assert bad_result["ledger_rows"] == []
+
+
 def test_probe_loads_env_file_key_presence_without_values(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text(
@@ -914,4 +1039,5 @@ def test_parse_args_defaults_to_requested_artifact_dir():
 
     assert args.output_dir == Path("artifacts/voiceops-provisioning/current")
     assert args.preflight_evidence is None
+    assert args.post_approval_receipts is None
     assert args.run_command_probes is False

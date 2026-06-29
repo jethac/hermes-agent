@@ -27,6 +27,7 @@ DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-provisioning/current")
 FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
 PREFLIGHT_EVIDENCE_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence.v1"
 PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence_manifest.v1"
+POST_APPROVAL_RECEIPTS_SCHEMA_VERSION = "voiceops.milestone2.post_approval_receipts.v1"
 
 BLOCKED_CAPABILITIES = [
     "live_spend",
@@ -1024,6 +1025,7 @@ def build_probe_report(
     env: Mapping[str, str] | None = None,
     env_files: Iterable[Path] | None = None,
     preflight_evidence_path: Path | None = None,
+    post_approval_receipts_path: Path | None = None,
     which: Callable[[str], str | None] = shutil.which,
     runner: CommandRunner = _subprocess_runner,
     run_commands: bool = False,
@@ -1285,7 +1287,7 @@ def build_probe_report(
         area_checks = [check for check in check_dicts if check["area"] == area]
         area_status[area] = "pass" if all(check["status"] == "pass" for check in area_checks if check["required"]) else "fail"
     ready = not required_failures
-    return {
+    report = {
         "generated_at": _utc_now(),
         "probe": {
             "name": "voiceops_provisioning_readiness",
@@ -1307,10 +1309,17 @@ def build_probe_report(
         "checks": check_dicts,
         "command_probes": command_results,
     }
+    execution_plan = build_milestone2_execution_plan(report)
+    report["post_approval_receipts"] = load_post_approval_receipts(post_approval_receipts_path, execution_plan)
+    return report
 
 
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8")
 
 
 def _markdown(report: dict[str, Any]) -> str:
@@ -1347,6 +1356,17 @@ def _markdown(report: dict[str, Any]) -> str:
             + (
                 ", ".join(_redact(issue) for issue in report["preflight_evidence"]["validation_issues"])
                 if report["preflight_evidence"]["validation_issues"]
+                else "none"
+            ),
+            "",
+            "## Post-Approval Receipts",
+            "",
+            f"- Loaded: {'yes' if report['post_approval_receipts']['loaded'] else 'no'}",
+            f"- Status: {report['post_approval_receipts']['status']}",
+            f"- Validation issues: "
+            + (
+                ", ".join(_redact(issue) for issue in report["post_approval_receipts"]["validation_issues"])
+                if report["post_approval_receipts"]["validation_issues"]
                 else "none"
             ),
         ]
@@ -2127,6 +2147,285 @@ def _execution_plan_markdown(plan: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def build_post_approval_receipts_template(plan: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": POST_APPROVAL_RECEIPTS_SCHEMA_VERSION,
+        "redaction_policy": "references and redacted summaries only; no raw credentials, tokens, card data, or full phone numbers",
+        "receipts": [],
+        "credential_locations": [],
+        "rollback_receipts": [],
+        "audit_events": [],
+        "expected_actions": sorted(plan.get("approval_contracts", {}).keys()),
+        "notes": "Populate only after explicit approval and execution; this validator is read-only and does not execute provider actions.",
+    }
+
+
+def build_post_approval_receipts_example(plan: Mapping[str, Any]) -> dict[str, Any]:
+    example = build_post_approval_receipts_template(plan)
+    example["example_only"] = True
+    action = next(iter(plan["approval_required_actions"]))
+    credential_ref = action.get("credential_location_ref")
+    example["receipts"] = [
+        {
+            "receipt_id": "receipt-example-provision-voip-provider",
+            "action_id": action["action_id"],
+            "approval_id": action["approval_id"],
+            "provider": action["provider"],
+            "status": "executed",
+            "approved_by": "operator-ref-demo",
+            "approved_at": "2026-06-29T00:00:00Z",
+            "executed_at": "2026-06-29T00:00:30Z",
+            "command_sha256": action["command_sha256"],
+            "amount_cents": 0,
+            "currency": "usd",
+            "external_reference": "provider-resource-ref-demo",
+            "credential_location_ref": credential_ref,
+            "rollback_ref": action["rollback_ref"],
+            "audit_event_id": "audit-example-provision-voip-provider",
+            "redacted_summary": "Example only; replace with real redacted receipt refs.",
+        }
+    ]
+    example["credential_locations"] = [
+        {
+            "credential_ref_id": credential_ref,
+            "provider": action["provider"],
+            "service_id": "provider-resource-ref-demo",
+            "storage_backend": "provider_managed",
+            "secret_name_or_path": "credential-location-ref-demo",
+            "created_by_action_id": action["action_id"],
+            "rotation_due": "2026-09-29T00:00:00Z",
+            "redacted": True,
+        }
+    ]
+    example["rollback_receipts"] = [
+        {
+            "rollback_ref": action["rollback_ref"],
+            "status": "not_run",
+            "owner_ref": "operator-ref-demo",
+            "notes": "Example only; rollback not needed for this sample.",
+        }
+    ]
+    example["audit_events"] = [
+        {
+            "audit_event_id": "audit-example-provision-voip-provider",
+            "action_id": action["action_id"],
+            "receipt_id": "receipt-example-provision-voip-provider",
+            "status": "executed",
+            "artifact_ref": "post-approval-receipts.example.json",
+            "operator_next_step": "Replace this example with real redacted post-approval evidence.",
+        }
+    ]
+    return example
+
+
+def write_post_approval_receipts_scaffold(output_dir: Path, plan: Mapping[str, Any]) -> dict[str, Path]:
+    scaffold_dir = output_dir / "post-approval-receipts-scaffold"
+    scaffold_dir.mkdir(parents=True, exist_ok=True)
+    scaffold_path = scaffold_dir / "post-approval-receipts.json"
+    payload = build_post_approval_receipts_example(plan)
+    payload["notes"] = "Scaffold only; replace with real redacted post-approval receipts and remove every example_only marker."
+    _write_json(scaffold_path, payload)
+    return {"post_approval_receipts_scaffold": scaffold_path}
+
+
+def load_post_approval_receipts(path: Path | None, plan: Mapping[str, Any]) -> dict[str, Any]:
+    if path is None:
+        return {
+            "loaded": False,
+            "path": None,
+            "status": "not_supplied",
+            "validation_issues": [],
+            "ledger_rows": [],
+            "redaction_policy": "not_loaded",
+        }
+    resolved = path.expanduser().resolve(strict=False)
+    if resolved == FORBIDDEN_ENV_ROOT or FORBIDDEN_ENV_ROOT in resolved.parents:
+        raise ValueError(f"refusing to inspect forbidden Hermes worktree path: {resolved}")
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {
+            "loaded": False,
+            "path": str(path),
+            "status": "not_found",
+            "validation_issues": ["post_approval_receipts:file_not_found"],
+            "ledger_rows": [],
+            "redaction_policy": "references_only",
+        }
+    except json.JSONDecodeError as exc:
+        return {
+            "loaded": False,
+            "path": str(path),
+            "status": "invalid",
+            "validation_issues": [f"post_approval_receipts:json_parse_failed:{exc.msg}"],
+            "ledger_rows": [],
+            "redaction_policy": "references_only",
+        }
+    if not isinstance(payload, Mapping):
+        return {
+            "loaded": False,
+            "path": str(path),
+            "status": "invalid",
+            "validation_issues": ["post_approval_receipts:root_must_be_object"],
+            "ledger_rows": [],
+            "redaction_policy": "references_only",
+        }
+    report = validate_post_approval_receipts(payload, plan)
+    report["loaded"] = True
+    report["path"] = str(path)
+    report["redaction_policy"] = "references_only"
+    return report
+
+
+def _post_approval_receipt_secret_issues(payload: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    forbidden_names = {"raw_secret", "raw_token", "raw_card_data", "raw_phone_number"}
+    for path, value in _walk_strings(payload):
+        name = path.rsplit(".", 1)[-1].split("[", 1)[0]
+        if name in forbidden_names:
+            issues.append(f"{path}:forbidden_raw_field")
+            continue
+        if BEARER_RE.search(value) or PREFLIGHT_SECRET_VALUE_RE.search(value) or SECRET_VALUE_RE.search(value):
+            issues.append(f"{path}:secret-like value")
+        elif not (name.endswith("_at") or name.endswith("_due")) and PHONE_RE.search(value):
+            issues.append(f"{path}:phone-like value")
+    return issues
+
+
+def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[str, Any]) -> dict[str, Any]:
+    issues: list[str] = []
+    if str(payload.get("schema_version") or "") != POST_APPROVAL_RECEIPTS_SCHEMA_VERSION:
+        issues.append("post_approval_receipts:missing_or_invalid_schema_version")
+    issues.extend(f"post_approval_receipts:{issue}" for issue in _example_only_presence_issues(payload))
+    issues.extend(f"post_approval_receipts:{issue}" for issue in _post_approval_receipt_secret_issues(payload))
+
+    receipts = payload.get("receipts")
+    credential_locations = payload.get("credential_locations")
+    rollback_receipts = payload.get("rollback_receipts")
+    audit_events = payload.get("audit_events")
+    if not isinstance(receipts, list):
+        issues.append("post_approval_receipts:receipts_not_list")
+        receipts = []
+    if not isinstance(credential_locations, list):
+        issues.append("post_approval_receipts:credential_locations_not_list")
+        credential_locations = []
+    if not isinstance(rollback_receipts, list):
+        issues.append("post_approval_receipts:rollback_receipts_not_list")
+        rollback_receipts = []
+    if not isinstance(audit_events, list):
+        issues.append("post_approval_receipts:audit_events_not_list")
+        audit_events = []
+
+    actions = {action["action_id"]: action for action in plan["approval_required_actions"]}
+    required_receipt_fields = set(plan["receipt_schema"]["required_fields"])
+    required_credential_fields = set(plan["credential_location_schema"]["required_fields"])
+    forbidden_credential_fields = set(plan["credential_location_schema"]["forbidden_fields"])
+    credential_by_ref = {
+        str(item.get("credential_ref_id") or ""): item
+        for item in credential_locations
+        if isinstance(item, Mapping)
+    }
+    rollback_refs = {
+        str(item.get("rollback_ref") or "")
+        for item in rollback_receipts
+        if isinstance(item, Mapping)
+    }
+    audit_by_id = {
+        str(item.get("audit_event_id") or ""): item
+        for item in audit_events
+        if isinstance(item, Mapping)
+    }
+    receipt_ids: list[str] = []
+    ledger_rows: list[dict[str, Any]] = []
+    for index, receipt in enumerate(receipts):
+        if not isinstance(receipt, Mapping):
+            issues.append(f"post_approval_receipts:receipts[{index}]:not_object")
+            continue
+        receipt_id = str(receipt.get("receipt_id") or "")
+        receipt_ids.append(receipt_id)
+        action_id = str(receipt.get("action_id") or "")
+        action = actions.get(action_id)
+        missing = sorted(field for field in required_receipt_fields if field not in receipt)
+        if missing:
+            issues.append(f"post_approval_receipts:{receipt_id or index}:missing_fields:{','.join(missing)}")
+        if action is None:
+            issues.append(f"post_approval_receipts:{receipt_id or index}:unknown_action_id")
+            continue
+        if receipt.get("approval_id") != action["approval_id"]:
+            issues.append(f"post_approval_receipts:{receipt_id}:approval_id_mismatch")
+        if receipt.get("command_sha256") != action["command_sha256"]:
+            issues.append(f"post_approval_receipts:{receipt_id}:command_sha256_mismatch")
+        if receipt.get("rollback_ref") != action["rollback_ref"]:
+            issues.append(f"post_approval_receipts:{receipt_id}:rollback_ref_mismatch")
+        if receipt.get("credential_location_ref") != action.get("credential_location_ref"):
+            issues.append(f"post_approval_receipts:{receipt_id}:credential_location_ref_mismatch")
+        if action.get("credential_location_required") and str(receipt.get("credential_location_ref") or "") not in credential_by_ref:
+            issues.append(f"post_approval_receipts:{receipt_id}:missing_credential_location")
+        if str(receipt.get("rollback_ref") or "") not in rollback_refs:
+            issues.append(f"post_approval_receipts:{receipt_id}:missing_rollback_receipt")
+        audit_id = str(receipt.get("audit_event_id") or "")
+        if audit_id not in audit_by_id:
+            issues.append(f"post_approval_receipts:{receipt_id}:missing_audit_event")
+        status = str(receipt.get("status") or "")
+        if status not in {"executed", "failed", "held", "denied", "skipped", "rolled_back"}:
+            issues.append(f"post_approval_receipts:{receipt_id}:invalid_status")
+        if _parse_preflight_timestamp(receipt.get("approved_at")) is None:
+            issues.append(f"post_approval_receipts:{receipt_id}:invalid_approved_at")
+        if _parse_preflight_timestamp(receipt.get("executed_at")) is None:
+            issues.append(f"post_approval_receipts:{receipt_id}:invalid_executed_at")
+        amount = receipt.get("amount_cents")
+        if not isinstance(amount, int) or amount < 0:
+            issues.append(f"post_approval_receipts:{receipt_id}:invalid_amount_cents")
+        ledger_rows.append(
+            {
+                "audit_event_id": audit_id,
+                "receipt_id": receipt_id,
+                "action_id": action_id,
+                "approval_id": str(receipt.get("approval_id") or ""),
+                "status": status,
+                "provider": str(receipt.get("provider") or ""),
+                "external_reference": str(receipt.get("external_reference") or ""),
+                "credential_location_ref": str(receipt.get("credential_location_ref") or ""),
+                "rollback_ref": str(receipt.get("rollback_ref") or ""),
+            }
+        )
+
+    duplicate_receipts = sorted(receipt_id for receipt_id in set(receipt_ids) if receipt_id and receipt_ids.count(receipt_id) > 1)
+    if duplicate_receipts:
+        issues.append(f"post_approval_receipts:duplicate_receipt_ids:{','.join(duplicate_receipts)}")
+    for index, credential in enumerate(credential_locations):
+        if not isinstance(credential, Mapping):
+            issues.append(f"post_approval_receipts:credential_locations[{index}]:not_object")
+            continue
+        credential_id = str(credential.get("credential_ref_id") or f"index-{index}")
+        missing = sorted(field for field in required_credential_fields if field not in credential)
+        if missing:
+            issues.append(f"post_approval_receipts:{credential_id}:missing_credential_fields:{','.join(missing)}")
+        forbidden_present = sorted(field for field in forbidden_credential_fields if field in credential)
+        if forbidden_present:
+            issues.append(f"post_approval_receipts:{credential_id}:forbidden_credential_fields:{','.join(forbidden_present)}")
+        if credential.get("storage_backend") not in plan["credential_location_schema"]["allowed_storage_backends"]:
+            issues.append(f"post_approval_receipts:{credential_id}:invalid_storage_backend")
+    for audit_id, event in audit_by_id.items():
+        if not audit_id:
+            issues.append("post_approval_receipts:audit_event_missing_id")
+            continue
+        if not str(event.get("artifact_ref") or "").strip():
+            issues.append(f"post_approval_receipts:{audit_id}:missing_artifact_ref")
+        if not str(event.get("operator_next_step") or "").strip():
+            issues.append(f"post_approval_receipts:{audit_id}:missing_operator_next_step")
+
+    return {
+        "status": "valid" if not issues else "invalid",
+        "validation_issues": sorted(set(issues)),
+        "receipt_count": len(receipts),
+        "credential_location_count": len(credential_locations),
+        "rollback_receipt_count": len(rollback_receipts),
+        "audit_event_count": len(audit_events),
+        "ledger_rows": ledger_rows if not issues else [],
+    }
+
+
 def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
     execution_plan = build_milestone2_execution_plan(report)
@@ -2137,6 +2436,10 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
         "command_manifest": output_dir / "safe-command-manifest.json",
         "execution_plan_json": output_dir / "milestone2-execution-plan.json",
         "execution_plan_markdown": output_dir / "milestone2-execution-plan.md",
+        "post_approval_receipts_template": output_dir / "post-approval-receipts.template.json",
+        "post_approval_receipts_example": output_dir / "post-approval-receipts.example.json",
+        "post_approval_receipts_validation": output_dir / "post-approval-receipts.validation.json",
+        "post_approval_audit_ledger": output_dir / "audit-ledger.post-approval.jsonl",
         "preflight_evidence_template": output_dir / "provisioning-preflight-evidence.template.json",
         "preflight_evidence_example": output_dir / "provisioning-preflight-evidence.example.json",
         "preflight_evidence_manifest_example": output_dir / "provisioning-preflight-evidence.manifest.example.json",
@@ -2148,6 +2451,11 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
     _write_json(paths["command_manifest"], _safe_command_manifest_json())
     _write_json(paths["execution_plan_json"], execution_plan)
     paths["execution_plan_markdown"].write_text(_execution_plan_markdown(execution_plan), encoding="utf-8")
+    _write_json(paths["post_approval_receipts_template"], build_post_approval_receipts_template(execution_plan))
+    _write_json(paths["post_approval_receipts_example"], build_post_approval_receipts_example(execution_plan))
+    paths.update(write_post_approval_receipts_scaffold(output_dir, execution_plan))
+    _write_json(paths["post_approval_receipts_validation"], report["post_approval_receipts"])
+    _write_jsonl(paths["post_approval_audit_ledger"], report["post_approval_receipts"].get("ledger_rows", []))
     _write_json(paths["preflight_evidence_template"], build_preflight_evidence_template())
     _write_json(paths["preflight_evidence_example"], build_preflight_evidence_example())
     _write_json(paths["preflight_evidence_manifest_example"], build_preflight_evidence_manifest_example())
@@ -2166,6 +2474,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=None,
         help="Redacted Milestone 2 account/capability evidence JSON; values must be refs only, never secrets.",
+    )
+    parser.add_argument(
+        "--post-approval-receipts",
+        type=Path,
+        default=None,
+        help="Read-only redacted post-approval receipt bundle; validates receipts and writes local ledger artifacts only.",
     )
     parser.add_argument("--timeout-seconds", type=int, default=3)
     parser.add_argument(
@@ -2188,6 +2502,7 @@ def main(argv: list[str] | None = None) -> int:
     report = build_probe_report(
         env_files=args.env_file,
         preflight_evidence_path=args.preflight_evidence,
+        post_approval_receipts_path=args.post_approval_receipts,
         run_commands=args.run_command_probes,
         timeout_seconds=args.timeout_seconds,
     )
