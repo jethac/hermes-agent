@@ -32,6 +32,7 @@ class RealtimeVoiceLiveEvidenceResult:
     evidence_context: dict[str, Any] = field(default_factory=dict)
     validate_live_evidence: bool = False
     strict_validation: dict[str, Any] = field(default_factory=dict)
+    doctor_report: dict[str, Any] = field(default_factory=dict)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -105,6 +106,21 @@ def build_parser() -> argparse.ArgumentParser:
             "hermes doctor --realtime-voice-report"
         ),
     )
+    parser.add_argument(
+        "--run-realtime-voice-doctor-report",
+        "--run-doctor-report",
+        dest="run_realtime_voice_doctor_report",
+        action="store_true",
+        help=(
+            "Run hermes doctor --realtime-voice-report into --output-dir/realtime-voice-doctor-report.json, "
+            "then derive and strict-validate the live evidence bundle"
+        ),
+    )
+    parser.add_argument(
+        "--doctor-report",
+        type=Path,
+        help="Path to write when --run-doctor-report/--run-realtime-voice-doctor-report is used",
+    )
     return parser
 
 
@@ -132,6 +148,8 @@ def audit_realtime_voice_live_evidence(args: argparse.Namespace) -> dict[str, An
     issues: list[str] = []
     if getattr(args, "from_realtime_voice_report", None) is not None:
         issues.append("audit_only: --from-realtime-voice-report is not supported because derivation writes files")
+    if getattr(args, "run_realtime_voice_doctor_report", False):
+        issues.append("audit_only: --run-realtime-voice-doctor-report is not supported because it runs doctor and writes files")
     if not reports:
         issues.append("audit_only: at least one live evidence file is required")
 
@@ -192,10 +210,31 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
     context = _evidence_context(args)
     derived_report_paths: dict[str, Path] = {}
     derived_evidence_supplied = False
+    doctor_report: dict[str, Any] = {
+        "run_requested": bool(getattr(args, "run_realtime_voice_doctor_report", False)),
+        "ran": False,
+    }
 
-    if getattr(args, "from_realtime_voice_report", None) is not None:
+    realtime_voice_report_path = (
+        Path(args.from_realtime_voice_report)
+        if getattr(args, "from_realtime_voice_report", None) is not None
+        else None
+    )
+    if getattr(args, "run_realtime_voice_doctor_report", False):
+        if realtime_voice_report_path is not None:
+            issues.append("realtime_voice_doctor_report: cannot combine --run-realtime-voice-doctor-report with --from-realtime-voice-report")
+        else:
+            realtime_voice_report_path = Path(
+                getattr(args, "doctor_report", None) or output_dir / "realtime-voice-doctor-report.json"
+            )
+            doctor_report, doctor_issues = _run_realtime_voice_doctor_report(args, realtime_voice_report_path)
+            issues.extend(doctor_issues)
+
+    if realtime_voice_report_path is not None and not any(
+        issue.startswith("realtime_voice_doctor_report:") for issue in issues
+    ):
         derived_report_paths, derived_issues = _derive_live_evidence_from_realtime_voice_report(
-            Path(args.from_realtime_voice_report),
+            realtime_voice_report_path,
             output_dir=output_dir,
         )
         issues.extend(derived_issues)
@@ -209,6 +248,8 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
         derived_evidence_supplied = any(
             key in derived_report_paths for key in ("discord_live_probe", "sidecar_session", "live_turn")
         )
+    elif getattr(args, "run_realtime_voice_doctor_report", False):
+        pass
     elif getattr(args, "validate_live_evidence", False):
         if getattr(args, "discord_live_probe_evidence", None) is None:
             issues.append("discord_live_probe: evidence file is required for --validate-live-evidence")
@@ -283,6 +324,7 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
         evidence_context=context,
         validate_live_evidence=bool(getattr(args, "validate_live_evidence", False)),
         strict_validation=strict_validation,
+        doctor_report=doctor_report,
     )
     manifest_path = output_dir / "manifest.json"
     _write_json(manifest_path, asdict(result))
@@ -309,6 +351,7 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
             evidence_context=context,
             validate_live_evidence=bool(getattr(args, "validate_live_evidence", False)),
             strict_validation=strict_validation,
+            doctor_report=doctor_report,
         )
         _write_json(output_dir / "live-evidence-validation.json", strict_validation)
         _write_json(manifest_path, asdict(result))
@@ -398,6 +441,100 @@ def _derive_live_evidence_from_realtime_voice_report(
 
     _write_json(output_dir / "realtime-voice-report-validation.json", validation_payload)
     return reports, issues
+
+
+def _run_realtime_voice_doctor_report(args: argparse.Namespace, report_path: Path) -> tuple[dict[str, Any], list[str]]:
+    command = _realtime_voice_doctor_report_command(args, report_path)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=max(30.0, float(getattr(args, "wait_seconds", 2.0) or 0.0) + 90.0),
+        )
+    except subprocess.TimeoutExpired as exc:
+        return (
+            {
+                "run_requested": True,
+                "ran": True,
+                "ok": False,
+                "timed_out": True,
+                "returncode": None,
+                "report_path": str(report_path),
+                "command_argv": command,
+                "stdout_present": bool(exc.stdout),
+                "stderr_present": bool(exc.stderr),
+                "report_exists": report_path.exists(),
+            },
+            ["realtime_voice_doctor_report: command timed out"],
+        )
+    except OSError as exc:
+        return (
+            {
+                "run_requested": True,
+                "ran": False,
+                "ok": False,
+                "timed_out": False,
+                "returncode": None,
+                "report_path": str(report_path),
+                "command_argv": command,
+                "stdout_present": False,
+                "stderr_present": False,
+                "report_exists": report_path.exists(),
+            },
+            [f"realtime_voice_doctor_report: failed to start: {exc}"],
+        )
+
+    issues: list[str] = []
+    if completed.returncode != 0:
+        issues.append(f"realtime_voice_doctor_report: command exited {completed.returncode}")
+    if not report_path.exists():
+        issues.append("realtime_voice_doctor_report: report file was not written")
+    return (
+        {
+            "run_requested": True,
+            "ran": True,
+            "ok": not issues,
+            "timed_out": False,
+            "returncode": completed.returncode,
+            "report_path": str(report_path),
+            "command_argv": command,
+            "stdout_present": bool(completed.stdout),
+            "stderr_present": bool(completed.stderr),
+            "report_exists": report_path.exists(),
+        },
+        issues,
+    )
+
+
+def _realtime_voice_doctor_report_command(args: argparse.Namespace, report_path: Path) -> list[str]:
+    command = [
+        "uv",
+        "run",
+        "--extra",
+        "dev",
+        "--extra",
+        "voice",
+        "hermes",
+        "doctor",
+        "--realtime-voice",
+        "--realtime-voice-smoke",
+        "--discord-voice-live-probe",
+        "--discord-voice-live-probe-wait-seconds",
+        str(max(0.0, float(getattr(args, "wait_seconds", 2.0) or 0.0))),
+    ]
+    if getattr(args, "require_inbound", False):
+        command.append("--discord-voice-live-probe-require-inbound")
+    voice_channel_id = str(getattr(args, "voice_channel_id", "") or "").strip()
+    if voice_channel_id:
+        command.extend(["--discord-voice-live-probe-channel-id", voice_channel_id])
+    voice_channel_name = str(getattr(args, "voice_channel_name", "") or "").strip()
+    if voice_channel_name:
+        command.extend(["--discord-voice-live-probe-channel-name", voice_channel_name])
+    command.extend(["--realtime-voice-report", str(report_path)])
+    return command
 
 
 def _format_report_issue(issue: object) -> str:

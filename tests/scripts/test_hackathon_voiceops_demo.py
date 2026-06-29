@@ -243,9 +243,11 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     }
     assert "--audit-only" in operator_handoff["phases"][0]["first_safe_command"]
     assert operator_handoff["phases"][0]["first_evidence_command"].startswith(
-        "uv run --extra dev --extra voice hermes doctor"
+        "uv run python -m hermes_cli.realtime_voice_live_evidence"
     )
-    assert "realtime-voice-doctor-report.json" in operator_handoff["phases"][0]["first_evidence_command"]
+    assert "--run-doctor-report" in operator_handoff["phases"][0]["first_evidence_command"]
+    assert operator_handoff["phases"][0]["commands"][2].startswith("uv run --extra dev --extra voice hermes doctor")
+    assert "realtime-voice-doctor-report.json" in operator_handoff["phases"][0]["commands"][2]
     assert "path/to/realtime-voice-report.json" not in json.dumps(operator_handoff["phases"][0]["commands"])
     assert "run_realtime_voice_doctor_report" in operator_handoff["phases"][0]["command_safety"]
     assert "derive_from_realtime_voice_report" in operator_handoff["phases"][0]["command_safety"]

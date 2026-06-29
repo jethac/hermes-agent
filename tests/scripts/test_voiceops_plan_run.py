@@ -558,11 +558,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "DISCORD_BOT_TOKEN" in next_actions[0]["blocked_by_current_environment"]["missing_env_keys"]
     assert "--audit-only" in next_actions[0]["first_safe_command"]
     assert "hermes_cli.realtime_voice_live_evidence" in next_actions[0]["first_safe_command"]
-    assert "hermes doctor" in next_actions[0]["first_evidence_command"]
-    assert (
-        "--realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json"
-        in next_actions[0]["first_evidence_command"]
-    )
+    assert "hermes_cli.realtime_voice_live_evidence" in next_actions[0]["first_evidence_command"]
+    assert "--run-doctor-report" in next_actions[0]["first_evidence_command"]
+    assert "--require-inbound" in next_actions[0]["first_evidence_command"]
     assert next_actions[1]["blocked_by_current_environment"]["missing_cli"] == [
         "stripe",
         "link-cli",
@@ -594,8 +592,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert handoff["phases"][0]["first_evidence_command"] == next_actions[0]["first_evidence_command"]
     assert "--audit-only" in handoff["phases"][0]["commands"][0]
     assert handoff["phases"][0]["commands"][1] == next_actions[0]["first_evidence_command"]
-    assert "hermes doctor" in handoff["phases"][0]["commands"][1]
-    assert "--validate-live-evidence" in handoff["phases"][0]["commands"][4]
+    assert "--run-doctor-report" in handoff["phases"][0]["commands"][1]
+    assert "hermes_cli.realtime_voice_live_evidence" in handoff["phases"][0]["commands"][1]
     assert handoff["phases"][0]["blocked_by_current_environment"] == {
         "missing_env_keys": next_actions[0]["blocked_by_current_environment"]["missing_env_keys"],
         "present_env_keys": blockers["discord_env"]["present_env_keys"],
@@ -611,13 +609,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "fallback_reason" in json.dumps(handoff["phases"][0]["required_inputs"])
     assert "sidecar-session.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
     assert "live-evidence-validation.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
-    assert "hermes doctor" in handoff["phases"][0]["commands"][1]
-    assert "--realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in handoff["phases"][0]["commands"][1]
-    assert "python -m hermes_cli.realtime_voice_live_evidence" in handoff["phases"][0]["commands"][2]
-    assert "--from-realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in handoff["phases"][0]["commands"][2]
+    assert "hermes doctor" in handoff["phases"][0]["commands"][2]
+    assert "--realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in handoff["phases"][0]["commands"][2]
+    assert "python -m hermes_cli.realtime_voice_live_evidence" in handoff["phases"][0]["commands"][3]
+    assert "--from-realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in handoff["phases"][0]["commands"][3]
     assert "path/to/realtime-voice-report.json" not in json.dumps(handoff["phases"][0]["commands"])
-    assert "--require-live-discord" in handoff["phases"][0]["commands"][3]
-    assert "--validate-live-evidence" in handoff["phases"][0]["commands"][4]
+    assert "--require-live-discord" in handoff["phases"][0]["commands"][4]
+    assert "--validate-live-evidence" in handoff["phases"][0]["commands"][5]
     assert "--validate-live-evidence" in json.dumps(handoff["phases"][0]["commands"])
     assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in json.dumps(
         handoff["phases"][1]
@@ -1679,8 +1677,10 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
     ]
     assert [action["gate_id"] for action in payload["next_actions"]] == payload["remaining_gates"]
     assert "--audit-only" in payload["next_actions"][0]["first_safe_command"]
-    assert payload["next_actions"][0]["first_evidence_command"].startswith("uv run --extra dev --extra voice hermes doctor")
-    assert "realtime-voice-doctor-report.json" in payload["next_actions"][0]["first_evidence_command"]
+    assert payload["next_actions"][0]["first_evidence_command"].startswith(
+        "uv run python -m hermes_cli.realtime_voice_live_evidence"
+    )
+    assert "--run-doctor-report" in payload["next_actions"][0]["first_evidence_command"]
     assert "--dry-audit" in payload["next_actions"][1]["diagnostic_command"]
     assert "voiceops_provisioning_probe.py" in payload["next_actions"][1]["first_safe_command"]
     assert payload["next_actions"][1]["first_evidence_command"] == payload["next_actions"][1]["first_safe_command"]

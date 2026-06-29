@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -347,6 +348,138 @@ def test_live_evidence_parser_accepts_realtime_voice_report_source(tmp_path):
     )
 
     assert args.from_realtime_voice_report == tmp_path / "report.json"
+
+
+def test_live_evidence_parser_accepts_realtime_voice_doctor_report_runner(tmp_path):
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--run-realtime-voice-doctor-report",
+            "--require-inbound",
+            "--wait-seconds",
+            "5",
+            "--voice-channel-id",
+            "voice-channel-ref-demo",
+        ]
+    )
+
+    assert args.run_realtime_voice_doctor_report is True
+    assert args.require_inbound is True
+    assert args.wait_seconds == 5
+    assert args.voice_channel_id == "voice-channel-ref-demo"
+
+
+def test_live_evidence_closure_runs_doctor_report_derives_and_validates(monkeypatch, tmp_path):
+    async def unexpected_loopback():
+        raise AssertionError("loopback probe should not run when closure mode runs doctor")
+
+    async def unexpected_live(_args):
+        raise AssertionError("live Discord probe should not run directly when closure mode runs doctor")
+
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        if isinstance(command, list) and command[:8] == [
+            "uv",
+            "run",
+            "--extra",
+            "dev",
+            "--extra",
+            "voice",
+            "hermes",
+            "doctor",
+        ]:
+            commands.append(command)
+            report_path = Path(command[-1])
+            _write_json(report_path, _alpha_realtime_voice_report(include_discord=True))
+            return subprocess.CompletedProcess(command, 0, stdout="doctor output redacted", stderr="")
+        return subprocess.CompletedProcess(command, 0, stdout="git-ref", stderr="")
+
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", unexpected_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", unexpected_live)
+    monkeypatch.setattr(realtime_voice_live_evidence.subprocess, "run", fake_run)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--run-realtime-voice-doctor-report",
+            "--require-inbound",
+            "--wait-seconds",
+            "5",
+            "--voice-channel-id",
+            "voice-channel-ref-demo",
+            "--voice-channel-name",
+            "General",
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    assert result.ok is True
+    assert result.doctor_report["ok"] is True
+    assert result.doctor_report["stdout_present"] is True
+    assert result.doctor_report["stderr_present"] is False
+    assert result.doctor_report["report_exists"] is True
+    assert result.strict_validation["overall_status"] == "live_evidence_supplied_not_readiness_claim"
+    assert result.strict_validation["missing_gates"] == []
+    assert result.reports["discord_live_probe"].endswith("discord-live-probe.from-realtime-report.json")
+    assert result.reports["sidecar_session"].endswith("sidecar-session.from-realtime-report.json")
+    assert result.reports["live_turn"].endswith("live-turn.from-realtime-report.json")
+    assert len(commands) == 1
+    command = commands[0]
+    assert command[:8] == ["uv", "run", "--extra", "dev", "--extra", "voice", "hermes", "doctor"]
+    assert "--discord-voice-live-probe-require-inbound" in command
+    assert command[command.index("--discord-voice-live-probe-wait-seconds") + 1] == "5.0"
+    assert command[command.index("--discord-voice-live-probe-channel-id") + 1] == "voice-channel-ref-demo"
+    assert command[command.index("--discord-voice-live-probe-channel-name") + 1] == "General"
+    assert command[-2:] == [
+        "--realtime-voice-report",
+        str(tmp_path / "bundle" / "realtime-voice-doctor-report.json"),
+    ]
+
+
+def test_live_evidence_closure_reports_doctor_failure_without_derivation(monkeypatch, tmp_path):
+    async def unexpected_loopback():
+        raise AssertionError("loopback probe should not run when closure mode runs doctor")
+
+    async def unexpected_live(_args):
+        raise AssertionError("live Discord probe should not run directly when closure mode runs doctor")
+
+    def fake_run(command, **_kwargs):
+        if isinstance(command, list) and command[:8] == [
+            "uv",
+            "run",
+            "--extra",
+            "dev",
+            "--extra",
+            "voice",
+            "hermes",
+            "doctor",
+        ]:
+            return subprocess.CompletedProcess(command, 17, stdout="", stderr="doctor error redacted")
+        return subprocess.CompletedProcess(command, 0, stdout="git-ref", stderr="")
+
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", unexpected_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", unexpected_live)
+    monkeypatch.setattr(realtime_voice_live_evidence.subprocess, "run", fake_run)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--run-realtime-voice-doctor-report",
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    assert result.ok is False
+    assert result.reports == {}
+    assert result.doctor_report["returncode"] == 17
+    assert result.doctor_report["stderr_present"] is True
+    assert "realtime_voice_doctor_report: command exited 17" in result.issues
+    assert "realtime_voice_doctor_report: report file was not written" in result.issues
+    assert not (tmp_path / "bundle" / "live-evidence-validation.json").exists()
 
 
 def test_live_evidence_manifest_references_optional_sidecar_and_turn_evidence(monkeypatch, tmp_path):

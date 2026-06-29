@@ -41,6 +41,13 @@ REALTIME_VOICE_DOCTOR_REPORT_COMMAND = (
     "--discord-voice-live-probe-wait-seconds 5 "
     f"--realtime-voice-report {REALTIME_VOICE_DOCTOR_REPORT}"
 )
+REALTIME_VOICE_LIVE_EVIDENCE_CLOSURE_COMMAND = (
+    "uv run python -m hermes_cli.realtime_voice_live_evidence "
+    "--output-dir artifacts/realtime-voice-evidence/live-current "
+    "--run-doctor-report "
+    "--require-inbound "
+    "--wait-seconds 5"
+)
 
 
 @dataclass(frozen=True)
@@ -141,6 +148,7 @@ def _demo_closure_summary() -> dict[str, Any]:
             "template_artifact": "live-voice-evidence-template.json",
             "closure_artifact": "live-probe-closure-plan.md",
             "collection_commands": {
+                "run_doctor_report_and_derive_live_bundle": REALTIME_VOICE_LIVE_EVIDENCE_CLOSURE_COMMAND,
                 "run_realtime_voice_doctor_report": REALTIME_VOICE_DOCTOR_REPORT_COMMAND,
                 "derive_from_realtime_voice_report": (
                     "uv run python -m hermes_cli.realtime_voice_live_evidence "
@@ -602,9 +610,10 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "needs_external_live_probe": True,
                 },
                 "first_safe_command": live_gate["collection_commands"]["audit_live_manifest_no_write"],
-                "first_evidence_command": live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
+                "first_evidence_command": live_gate["collection_commands"]["run_doctor_report_and_derive_live_bundle"],
                 "commands": [
                     live_gate["collection_commands"]["audit_live_manifest_no_write"],
+                    live_gate["collection_commands"]["run_doctor_report_and_derive_live_bundle"],
                     live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
                     live_gate["collection_commands"]["derive_from_realtime_voice_report"],
                     live_gate["collection_commands"]["collect_live_manifest"],
@@ -614,6 +623,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                 ],
                 "command_safety": {
                     "audit_live_manifest_no_write": "no_write_existing_artifact_audit",
+                    "run_doctor_report_and_derive_live_bundle": "live_discord_sidecar_collection_plus_local_derivation",
                     "run_realtime_voice_doctor_report": "live_discord_sidecar_collection",
                     "derive_from_realtime_voice_report": "local_file_derivation_only_no_discord_network",
                     "collect_live_manifest": "discord_live_probe_requires_config_no_secret_values_in_artifacts",

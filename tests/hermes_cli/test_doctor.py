@@ -267,6 +267,12 @@ class TestRealtimeVoiceReadiness:
                 disconnected=True,
                 require_inbound=True,
                 wait_seconds=5.0,
+                latency_metrics_ms={
+                    "connect_ms": 420,
+                    "playback_observed_ms": 180,
+                    "inbound_observed_ms": 900,
+                    "disconnect_ms": 120,
+                },
                 failure_reason="",
                 error="",
             )
@@ -278,6 +284,12 @@ class TestRealtimeVoiceReadiness:
         assert payload["voice_channel_name"] == "General"
         assert payload["receiver_frames"] == 12
         assert payload["inbound_observed"] is True
+        assert payload["latency_metrics_ms"] == {
+            "connect_ms": 420,
+            "playback_observed_ms": 180,
+            "inbound_observed_ms": 900,
+            "disconnect_ms": 120,
+        }
         assert payload["failure_reason"] is None
         assert payload["error"] is None
 

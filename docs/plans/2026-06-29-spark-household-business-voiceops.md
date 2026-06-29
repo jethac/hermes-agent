@@ -313,7 +313,17 @@ The command writes:
 
 The voice-operator artifact runs the in-memory Discord realtime voice loopback smoke. It verifies lifecycle, receiver callback wiring, PCM conversion, mixer playback, barge-in signaling, latency metrics, and sidecar shutdown without Discord network access, provider sidecar network access, credential reads, sends, or calls. It must still report that a live Discord `/voice join` probe is required before claiming production readiness.
 
-If an existing `hermes doctor --realtime-voice-report` JSON file exists, derive sidecar and live-turn VoiceOps evidence from it without running Discord probes:
+After Discord env/config and the production sidecar are ready, run the one-shot live-evidence closure command. It invokes `hermes doctor --realtime-voice-report`, derives sidecar/live-turn evidence from that report, writes a manifest, and strict-validates the bundle:
+
+```bash
+uv run python -m hermes_cli.realtime_voice_live_evidence \
+  --output-dir artifacts/realtime-voice-evidence/live-current \
+  --run-doctor-report \
+  --require-inbound \
+  --wait-seconds 5
+```
+
+If an existing `hermes doctor --realtime-voice-report` JSON file already exists, derive sidecar and live-turn VoiceOps evidence from it without rerunning Discord probes:
 
 ```bash
 uv run --extra dev --extra voice hermes doctor \

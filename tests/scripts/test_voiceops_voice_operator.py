@@ -344,9 +344,8 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert live_closure["evidence_shapes"]["live_turn"]["source_artifact"] == "live-turn.json"
     assert live_closure["evidence_shapes"]["live_turn"]["collector_attestation"]["example_only"] is True
     assert "hermes_cli.realtime_voice_live_evidence" in live_closure["recommended_collection"]["live_bundle_manifest"]
-    assert "artifacts/realtime-voice-evidence/live-current/sidecar-session.json" in live_closure[
-        "recommended_collection"
-    ]["live_bundle_manifest"]
+    assert "--run-doctor-report" in live_closure["recommended_collection"]["live_bundle_manifest"]
+    assert "--require-inbound" in live_closure["recommended_collection"]["live_bundle_manifest"]
     assert "--audit-only" in live_closure["recommended_collection"]["audit_bundle_no_write"]
     assert "--discord-live-probe-evidence" in live_closure["recommended_collection"]["audit_bundle_no_write"]
     assert "--validate-live-evidence" in live_closure["recommended_collection"]["validate_bundle_offline"]

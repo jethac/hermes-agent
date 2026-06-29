@@ -62,6 +62,13 @@ REALTIME_VOICE_DOCTOR_REPORT_COMMAND = (
     "--discord-voice-live-probe-wait-seconds 5 "
     f"--realtime-voice-report {REALTIME_VOICE_DOCTOR_REPORT}"
 )
+REALTIME_VOICE_LIVE_EVIDENCE_CLOSURE_COMMAND = (
+    "uv run python -m hermes_cli.realtime_voice_live_evidence "
+    "--output-dir artifacts/realtime-voice-evidence/live-current "
+    "--run-doctor-report "
+    "--require-inbound "
+    "--wait-seconds 5"
+)
 
 def _build_safety_flags(provisioning: dict[str, Any] | None = None) -> dict[str, Any]:
     discovery = provisioning.get("read_only_discovery", {}) if isinstance(provisioning, dict) else {}
@@ -296,6 +303,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
     spark_gate = gate_by_id["local_spark_stack_matrix"]
     live_commands = [
         live_gate["collection_commands"]["audit_live_manifest_no_write"],
+        live_gate["collection_commands"]["run_doctor_report_and_derive_live_bundle"],
         live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
         live_gate["collection_commands"]["derive_from_realtime_voice_report"],
         live_gate["collection_commands"]["collect_live_manifest"],
@@ -344,7 +352,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "needs_external_live_probe": live_gate["status"] != "live_evidence_supplied_not_readiness_claim",
                 },
                 "first_safe_command": live_commands[0],
-                "first_evidence_command": live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
+                "first_evidence_command": live_gate["collection_commands"]["run_doctor_report_and_derive_live_bundle"],
                 "required_inputs": [
                     "Discord bot token and channel env/config presence",
                     "running realtime voice sidecar",
@@ -356,6 +364,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "commands": live_commands,
                 "command_safety": {
                     "audit_live_manifest_no_write": "no_write_existing_artifact_audit",
+                    "run_doctor_report_and_derive_live_bundle": "live_discord_sidecar_collection_plus_local_derivation",
                     "validate_live_manifest_offline": "local_validation_writes_validation_artifact",
                     "run_realtime_voice_doctor_report": "live_discord_sidecar_collection",
                     "derive_from_realtime_voice_report": "local_derivation_from_doctor_report",
@@ -588,9 +597,9 @@ def _build_next_actions(
                 "needs_external_live_probe": True,
             }
             operator_step = (
-                "Start with the no-write live evidence audit if artifacts already exist, then run the realtime voice doctor "
-                "report into the live evidence artifact directory, derive sidecar/live-turn evidence from that report, and "
-                "run the live Discord evidence collector after Discord env/config and production sidecar are ready."
+                "Start with the no-write live evidence audit if artifacts already exist, then run the one-shot realtime "
+                "voice live-evidence closure command after Discord env/config and the production sidecar are ready. Use "
+                "the separate doctor-report and derivation commands only for debugging or replaying an existing report."
             )
         elif gate_id == "spend_and_provisioning_preflight":
             if isinstance(commands, list) and len(commands) > 1:
@@ -674,6 +683,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "closure_plan": voice["artifacts"].get("live_probe_closure_json"),
             "closure_artifact": voice["artifacts"].get("live_probe_closure_markdown"),
             "collection_commands": {
+                "run_doctor_report_and_derive_live_bundle": REALTIME_VOICE_LIVE_EVIDENCE_CLOSURE_COMMAND,
                 "run_realtime_voice_doctor_report": REALTIME_VOICE_DOCTOR_REPORT_COMMAND,
                 "derive_from_realtime_voice_report": (
                     "uv run python -m hermes_cli.realtime_voice_live_evidence "

@@ -957,6 +957,7 @@ def _discord_voice_live_probe_report_payload(result: Any, **extra: Any) -> dict[
         "disconnected": _bool_field("disconnected"),
         "require_inbound": _bool_field("require_inbound"),
         "wait_seconds": float(mapping.get("wait_seconds", getattr(result, "wait_seconds", 0.0)) or 0.0),
+        "latency_metrics_ms": dict(mapping.get("latency_metrics_ms", getattr(result, "latency_metrics_ms", {})) or {}),
         "failure_reason": _str_field("failure_reason") or None,
         "error": _str_field("error") or None,
     }

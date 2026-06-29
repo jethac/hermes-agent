@@ -761,8 +761,8 @@ def _audit_handoff_command_order(
             phase_id,
             command_texts,
             first_evidence_command,
-            required_marker="hermes doctor",
-            issue_suffix="first_evidence_command_not_live_doctor",
+            required_marker="--run-doctor-report",
+            issue_suffix="first_evidence_command_not_live_closure",
             issues=issues,
         )
         _audit_handoff_command_precedence(
@@ -846,8 +846,8 @@ def _audit_next_action_command_order(label: str, actions: Any, issues: list[str]
         live_evidence = str(live.get("first_evidence_command") or "")
         if "--audit-only" not in live_safe:
             issues.append(f"{label}:live_discord_voice_operator:first_safe_command_not_no_write_audit")
-        if "hermes doctor" not in live_evidence:
-            issues.append(f"{label}:live_discord_voice_operator:first_evidence_command_not_realtime_voice_doctor")
+        if "--run-doctor-report" not in live_evidence:
+            issues.append(f"{label}:live_discord_voice_operator:first_evidence_command_not_realtime_voice_closure")
         if live_safe == live_evidence:
             issues.append(f"{label}:live_discord_voice_operator:first_safe_command_equals_first_evidence")
     spark = actions_by_gate.get("local_spark_stack_matrix")
