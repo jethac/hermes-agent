@@ -120,6 +120,16 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert closure_gates["live_discord_voice_operator"]["evidence_contract"]["manifest_schema_version"] == (
         "voiceops.realtime_voice_live_evidence_manifest.v1"
     )
+    assert closure_gates["live_discord_voice_operator"]["evidence_contract"]["strict_validation_schema_version"] == (
+        "voiceops.realtime_voice_live_evidence_validation.v1"
+    )
+    assert "--validate-live-evidence" in closure_gates["live_discord_voice_operator"]["collection_commands"][
+        "validate_live_manifest_offline"
+    ]
+    assert any(
+        artifact.endswith("live-evidence-validation.json")
+        for artifact in closure_gates["live_discord_voice_operator"]["expected_artifacts"]
+    )
     assert closure_gates["spend_and_provisioning_preflight"]["evidence_contract"]["required_section_field"] == "source_artifact"
     assert "all_local_stack_smoke:needs_evidence" in closure_gates["local_spark_stack_matrix"]["missing"]
     assert (
@@ -298,6 +308,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "local_spark_stack_matrix" in runbook
     assert "all_local_stack_smoke:needs_evidence" in runbook
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in runbook
+    assert "voiceops.realtime_voice_live_evidence_validation.v1" in runbook
+    assert "--validate-live-evidence" in runbook
     assert "voiceops.milestone2.preflight_evidence.v1" in runbook
     assert "voiceops.milestone2.read_only_discovery.v1" in runbook
     assert "--run-readonly-discovery" in runbook

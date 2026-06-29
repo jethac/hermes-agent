@@ -355,7 +355,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     ]
     assert handoff["phases"][0]["can_run_here_now"] is False
     assert "sidecar-session.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
+    assert "live-evidence-validation.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
     assert "python -m hermes_cli.realtime_voice_live_evidence" in handoff["phases"][0]["commands"][0]
+    assert "--validate-live-evidence" in json.dumps(handoff["phases"][0]["commands"])
     assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in json.dumps(
         handoff["phases"][1]
     )
@@ -377,6 +379,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "transcript_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert gates["live_discord_voice_operator"]["evidence_contract"] == {
         "manifest_schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+        "strict_validation_schema_version": "voiceops.realtime_voice_live_evidence_validation.v1",
         "expanded_evidence_schema_version": "voiceops.milestone1.live_voice_evidence.v1",
         "required_sections": ["discord_live_probe", "sidecar_session", "live_turn"],
         "required_section_refs": ["source_artifact", "section"],
@@ -386,6 +389,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "operator_must_not" in gates["live_discord_voice_operator"]
     assert "manifest.json" in gates["live_discord_voice_operator"]["rerun_command"]
     assert "python -m hermes_cli.realtime_voice_live_evidence" in gates["live_discord_voice_operator"]["collection_commands"]["collect_live_manifest"]
+    assert "--validate-live-evidence" in gates["live_discord_voice_operator"]["collection_commands"][
+        "validate_live_manifest_offline"
+    ]
+    assert "--discord-live-probe-evidence" in gates["live_discord_voice_operator"]["collection_commands"][
+        "validate_live_manifest_offline"
+    ]
     assert "--sidecar-session-evidence" in gates["live_discord_voice_operator"]["collection_commands"]["collect_live_manifest"]
     assert "--live-turn-evidence" in gates["live_discord_voice_operator"]["collection_commands"]["collect_live_manifest"]
     assert gates["live_discord_voice_operator"]["current_environment"]["env_presence"]["DISCORD_BOT_TOKEN"] is False
@@ -688,6 +697,9 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     ]:
         assert f"`{artifact}`" in text
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in text
+    assert "voiceops.realtime_voice_live_evidence_validation.v1" in text
+    assert "`--validate-live-evidence`" in text
+    assert "performs no Discord network call" in text
     assert "voiceops.milestone1.live_voice_evidence.v1" in text
     assert "For non-manifest ingestion, pass one `--live-evidence` per section or combined file" in text
     assert "kind` or `evidence_type` values such as `discord_live_probe`, `sidecar_session`, or `live_turn`" in text

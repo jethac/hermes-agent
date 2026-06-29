@@ -23,6 +23,8 @@ class RealtimeVoiceLiveEvidenceResult:
     reports: dict[str, str] = field(default_factory=dict)
     issues: list[str] = field(default_factory=list)
     evidence_context: dict[str, Any] = field(default_factory=dict)
+    validate_live_evidence: bool = False
+    strict_validation: dict[str, Any] = field(default_factory=dict)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,6 +60,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Require inbound speech frames during the Discord live probe",
     )
     parser.add_argument(
+        "--validate-live-evidence",
+        action="store_true",
+        help=(
+            "Validate supplied Discord/sidecar/turn evidence with the strict VoiceOps ingester contract "
+            "without connecting to Discord or requiring credentials"
+        ),
+    )
+    parser.add_argument(
+        "--discord-live-probe-evidence",
+        type=Path,
+        help="Optional read-only Discord live probe evidence JSON to reference from the manifest",
+    )
+    parser.add_argument(
         "--sidecar-session-evidence",
         type=Path,
         help="Optional read-only sidecar session evidence JSON to reference from the manifest",
@@ -84,25 +99,35 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
     issues: list[str] = []
     context = _evidence_context(args)
 
-    loopback_report = output_dir / "discord-loopback.json"
-    loopback_result = await _run_discord_loopback_smoke()
-    _write_json(
-        loopback_report,
-        _with_report_identity(asdict(loopback_result), kind="discord_loopback", report_path=loopback_report),
-    )
-    reports["discord_loopback"] = str(loopback_report)
-    if not getattr(loopback_result, "ok", False):
-        issues.append(f"discord_loopback: {getattr(loopback_result, 'error', '') or 'failed'}")
+    if getattr(args, "validate_live_evidence", False):
+        if getattr(args, "discord_live_probe_evidence", None) is None:
+            issues.append("discord_live_probe: evidence file is required for --validate-live-evidence")
+        _attach_optional_evidence_report(
+            reports=reports,
+            issues=issues,
+            report_key="discord_live_probe",
+            path=getattr(args, "discord_live_probe_evidence", None),
+        )
+    else:
+        loopback_report = output_dir / "discord-loopback.json"
+        loopback_result = await _run_discord_loopback_smoke()
+        _write_json(
+            loopback_report,
+            _with_report_identity(asdict(loopback_result), kind="discord_loopback", report_path=loopback_report),
+        )
+        reports["discord_loopback"] = str(loopback_report)
+        if not getattr(loopback_result, "ok", False):
+            issues.append(f"discord_loopback: {getattr(loopback_result, 'error', '') or 'failed'}")
 
-    live_report = output_dir / "discord-live-probe.json"
-    live_result = await _run_discord_live_probe(args)
-    _write_json(
-        live_report,
-        _with_report_identity(asdict(live_result), kind="discord_live_probe", report_path=live_report),
-    )
-    reports["discord_live_probe"] = str(live_report)
-    if args.require_live_discord and not getattr(live_result, "ok", False):
-        issues.append(f"discord_live_probe: {getattr(live_result, 'error', '') or 'failed'}")
+        live_report = output_dir / "discord-live-probe.json"
+        live_result = await _run_discord_live_probe(args)
+        _write_json(
+            live_report,
+            _with_report_identity(asdict(live_result), kind="discord_live_probe", report_path=live_report),
+        )
+        reports["discord_live_probe"] = str(live_report)
+        if args.require_live_discord and not getattr(live_result, "ok", False):
+            issues.append(f"discord_live_probe: {getattr(live_result, 'error', '') or 'failed'}")
 
     _attach_optional_evidence_report(
         reports=reports,
@@ -122,6 +147,7 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
     if args.require_gemini_live and not _gemini_live_key_present():
         issues.append("gemini_live: GEMINI_API_KEY or HERMES_GEMINI_LIVE_API_KEY is required")
 
+    strict_validation: dict[str, Any] = {}
     result = RealtimeVoiceLiveEvidenceResult(
         ok=not issues,
         output_dir=str(output_dir),
@@ -131,8 +157,30 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
         reports=reports,
         issues=issues,
         evidence_context=context,
+        validate_live_evidence=bool(getattr(args, "validate_live_evidence", False)),
+        strict_validation=strict_validation,
     )
-    _write_json(output_dir / "manifest.json", asdict(result))
+    manifest_path = output_dir / "manifest.json"
+    _write_json(manifest_path, asdict(result))
+    if getattr(args, "validate_live_evidence", False):
+        strict_validation = _strict_live_evidence_validation(manifest_path)
+        strict_issues = [f"live_evidence_validation:{issue}" for issue in strict_validation.get("issues", [])]
+        if strict_issues:
+            issues.extend(strict_issues)
+        result = RealtimeVoiceLiveEvidenceResult(
+            ok=not issues and strict_validation.get("overall_status") == "live_evidence_supplied_not_readiness_claim",
+            output_dir=str(output_dir),
+            require_live_discord=bool(args.require_live_discord),
+            require_openai_realtime=bool(args.require_openai_realtime),
+            require_gemini_live=bool(args.require_gemini_live),
+            reports=reports,
+            issues=sorted(set(issues)),
+            evidence_context=context,
+            validate_live_evidence=True,
+            strict_validation=strict_validation,
+        )
+        _write_json(output_dir / "live-evidence-validation.json", strict_validation)
+        _write_json(manifest_path, asdict(result))
     return result
 
 
@@ -184,6 +232,8 @@ def _optional_evidence_has_identity(report_key: str, payload: dict[str, Any]) ->
 def _optional_evidence_structural_issues(report_key: str, payload: dict[str, Any]) -> list[str]:
     if payload.get("example_only") is True:
         return ["example_only evidence is not accepted"]
+    if report_key == "discord_live_probe":
+        return []
     if report_key == "sidecar_session":
         return _missing_required_optional_fields(
             payload,
@@ -211,6 +261,39 @@ def _optional_evidence_structural_issues(report_key: str, payload: dict[str, Any
             nested_numbers=("speech_end_to_first_audio_ms", "barge_in_stop_ms"),
         )
     return []
+
+
+def _strict_live_evidence_validation(manifest_path: Path) -> dict[str, Any]:
+    from scripts.voiceops_voice_operator import _load_live_evidence
+
+    evidence = _load_live_evidence([manifest_path])
+    return {
+        "schema_version": "voiceops.realtime_voice_live_evidence_validation.v1",
+        "manifest": str(manifest_path),
+        "loaded": evidence.get("loaded") is True,
+        "overall_status": str(evidence.get("overall_status") or "partial_live_evidence"),
+        "issues": list(evidence.get("issues") or []),
+        "section_refs": evidence.get("section_refs") or {},
+        "missing_gates": _strict_live_evidence_missing_gates(evidence),
+    }
+
+
+def _strict_live_evidence_missing_gates(evidence: dict[str, Any]) -> list[str]:
+    missing: list[str] = []
+    discord = evidence.get("discord_live_probe") if isinstance(evidence.get("discord_live_probe"), dict) else {}
+    if discord.get("join_ok") is not True:
+        missing.append("discord_join")
+    if discord.get("playback_ok") is not True:
+        missing.append("discord_playback")
+    if discord.get("inbound_observed") is not True:
+        missing.append("live_receiver")
+    sidecar = evidence.get("sidecar_session") if isinstance(evidence.get("sidecar_session"), dict) else {}
+    if sidecar.get("ok") is not True:
+        missing.append("production_sidecar")
+    live_turn = evidence.get("live_turn") if isinstance(evidence.get("live_turn"), dict) else {}
+    if live_turn.get("ok") is not True:
+        missing.append("live_turn")
+    return sorted(set(missing))
 
 
 def _missing_required_optional_fields(

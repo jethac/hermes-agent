@@ -248,6 +248,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 ],
                 "commands": [
                     live_gate["collection_commands"]["collect_live_manifest"],
+                    live_gate["collection_commands"]["validate_live_manifest_offline"],
                     live_gate["collection_commands"]["ingest_live_manifest"],
                     live_gate["rerun_command"],
                 ],
@@ -256,6 +257,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "artifacts/realtime-voice-evidence/live-current/discord-live-probe.json",
                     "artifacts/realtime-voice-evidence/live-current/sidecar-session.json",
                     "artifacts/realtime-voice-evidence/live-current/live-turn.json",
+                    "artifacts/realtime-voice-evidence/live-current/live-evidence-validation.json",
                     "artifacts/voiceops-voice-operator/current/live-voice-evidence-scaffold/manifest.json",
                 ],
                 "success_check": live_gate["completion_signal"],
@@ -375,6 +377,14 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
                     "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
                 ),
+                "validate_live_manifest_offline": (
+                    "uv run python -m hermes_cli.realtime_voice_live_evidence "
+                    "--output-dir artifacts/realtime-voice-evidence/live-current "
+                    "--validate-live-evidence "
+                    "--discord-live-probe-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json "
+                    "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
+                    "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
+                ),
                 "ingest_live_manifest": (
                     "uv run python scripts/voiceops_voice_operator.py "
                     "--output-dir artifacts/voiceops-voice-operator/current "
@@ -411,6 +421,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             ],
             "evidence_contract": {
                 "manifest_schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "strict_validation_schema_version": "voiceops.realtime_voice_live_evidence_validation.v1",
                 "expanded_evidence_schema_version": "voiceops.milestone1.live_voice_evidence.v1",
                 "required_sections": ["discord_live_probe", "sidecar_session", "live_turn"],
                 "required_section_refs": ["source_artifact", "section"],

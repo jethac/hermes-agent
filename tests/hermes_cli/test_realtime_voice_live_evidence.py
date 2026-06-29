@@ -11,6 +11,59 @@ class _FakeProbeResult:
     error: str = ""
 
 
+def _write_json(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _complete_discord_probe():
+    return {
+        "kind": "discord_live_probe",
+        "ok": True,
+        "connect_perm": True,
+        "speak_perm": True,
+        "connected": True,
+        "opus_loaded": True,
+        "accepted_audio_source": True,
+        "played": True,
+        "playing_during_probe": True,
+        "receiver_started": True,
+        "receiver_frames": 18,
+        "receiver_speech_start": 1,
+        "inbound_observed": True,
+        "disconnected": True,
+        "require_inbound": True,
+    }
+
+
+def _complete_sidecar_session():
+    return {
+        "kind": "sidecar_session",
+        "sidecar_running": True,
+        "sidecar_healthy": True,
+        "session_started": True,
+        "session_closed": True,
+        "fallback_mode_visible": True,
+        "shutdown_bounded": True,
+        "shutdown_timed_out": False,
+        "latency_metrics_ms": {"shutdown_ms": 80},
+    }
+
+
+def _complete_live_turn():
+    return {
+        "kind": "live_turn",
+        "transcript_observed": True,
+        "assistant_audio_observed": True,
+        "barge_in_observed": True,
+        "spoken_reply_short": True,
+        "no_voice_denial_observed": True,
+        "speech_end_to_first_audio_ms": 950,
+        "barge_in_stop_ms": 80,
+    }
+
+
 def test_live_evidence_collects_loopback_and_readiness_reports(monkeypatch, tmp_path):
     async def fake_loopback():
         return _FakeProbeResult(ok=True)
@@ -55,37 +108,8 @@ def test_live_evidence_manifest_references_optional_sidecar_and_turn_evidence(mo
 
     sidecar_path = tmp_path / "sidecar-session.json"
     live_turn_path = tmp_path / "live-turn.json"
-    sidecar_path.write_text(
-        json.dumps(
-            {
-                "kind": "sidecar_session",
-                "sidecar_running": True,
-                "sidecar_healthy": True,
-                "session_started": True,
-                "session_closed": True,
-                "fallback_mode_visible": True,
-                "shutdown_bounded": True,
-                "shutdown_timed_out": False,
-                "latency_metrics_ms": {"shutdown_ms": 80},
-            }
-        ),
-        encoding="utf-8",
-    )
-    live_turn_path.write_text(
-        json.dumps(
-            {
-                "kind": "live_turn",
-                "transcript_observed": True,
-                "assistant_audio_observed": True,
-                "barge_in_observed": True,
-                "spoken_reply_short": True,
-                "no_voice_denial_observed": True,
-                "speech_end_to_first_audio_ms": 950,
-                "barge_in_stop_ms": 80,
-            }
-        ),
-        encoding="utf-8",
-    )
+    _write_json(sidecar_path, _complete_sidecar_session())
+    _write_json(live_turn_path, _complete_live_turn())
     monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", fake_loopback)
     monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", fake_live)
 
@@ -107,6 +131,89 @@ def test_live_evidence_manifest_references_optional_sidecar_and_turn_evidence(mo
     manifest = json.loads((tmp_path / "bundle" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["reports"]["sidecar_session"] == str(sidecar_path)
     assert manifest["reports"]["live_turn"] == str(live_turn_path)
+
+
+def test_live_evidence_validate_mode_does_not_call_discord_probes(monkeypatch, tmp_path):
+    async def unexpected_loopback():
+        raise AssertionError("loopback probe should not run in validation mode")
+
+    async def unexpected_live(_args):
+        raise AssertionError("live Discord probe should not run in validation mode")
+
+    discord_path = _write_json(tmp_path / "discord-live-probe.json", _complete_discord_probe())
+    sidecar_path = _write_json(tmp_path / "sidecar-session.json", _complete_sidecar_session())
+    live_turn_path = _write_json(tmp_path / "live-turn.json", _complete_live_turn())
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", unexpected_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", unexpected_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--validate-live-evidence",
+            "--discord-live-probe-evidence",
+            str(discord_path),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+            "--live-turn-evidence",
+            str(live_turn_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    assert result.ok is True
+    assert result.validate_live_evidence is True
+    assert result.issues == []
+    assert result.reports == {
+        "discord_live_probe": str(discord_path),
+        "sidecar_session": str(sidecar_path),
+        "live_turn": str(live_turn_path),
+    }
+    assert result.strict_validation["overall_status"] == "live_evidence_supplied_not_readiness_claim"
+    assert result.strict_validation["missing_gates"] == []
+    assert not (tmp_path / "bundle" / "discord-loopback.json").exists()
+    assert not (tmp_path / "bundle" / "discord-live-probe.json").exists()
+    validation = json.loads((tmp_path / "bundle" / "live-evidence-validation.json").read_text(encoding="utf-8"))
+    assert validation["schema_version"] == "voiceops.realtime_voice_live_evidence_validation.v1"
+
+
+def test_live_evidence_validate_mode_surfaces_strict_ingester_issues(monkeypatch, tmp_path):
+    async def unexpected_loopback():
+        raise AssertionError("loopback probe should not run in validation mode")
+
+    async def unexpected_live(_args):
+        raise AssertionError("live Discord probe should not run in validation mode")
+
+    bad_turn = _complete_live_turn()
+    bad_turn["barge_in_stop_ms"] = 999
+    bad_turn["assistant_text"] = "I cannot hear you in Discord voice."
+    discord_path = _write_json(tmp_path / "discord-live-probe.json", _complete_discord_probe())
+    sidecar_path = _write_json(tmp_path / "sidecar-session.json", _complete_sidecar_session())
+    live_turn_path = _write_json(tmp_path / "live-turn.json", bad_turn)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", unexpected_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", unexpected_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--validate-live-evidence",
+            "--discord-live-probe-evidence",
+            str(discord_path),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+            "--live-turn-evidence",
+            str(live_turn_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    assert result.ok is False
+    assert result.strict_validation["overall_status"] == "partial_live_evidence"
+    assert "live_turn" in result.strict_validation["missing_gates"]
+    assert "live_evidence_validation:live_turn:barge_in_stop_ms_over_target" in result.issues
+    assert "live_evidence_validation:live_turn.assistant_text:forbidden_evidence_field" in result.issues
+    assert "live_evidence_validation:live_turn.assistant_text:voice_capability_denial_text" in result.issues
 
 
 def test_live_evidence_manifest_rejects_anonymous_optional_evidence(monkeypatch, tmp_path):
