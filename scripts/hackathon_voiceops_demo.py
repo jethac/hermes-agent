@@ -11,10 +11,12 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import shlex
+import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, Mapping
 
 
 DEFAULT_REQUEST = (
@@ -61,6 +63,15 @@ class AuditEvent:
     evidence: str
 
 
+@dataclass(frozen=True)
+class ReadinessCheck:
+    check_id: str
+    status: str
+    required_for_video: bool
+    detail: str
+    next_step: str
+
+
 def _utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -77,6 +88,22 @@ def _slug(value: str) -> str:
         elif chars and chars[-1] != "-":
             chars.append("-")
     return "".join(chars).strip("-") or "voiceops"
+
+
+def _env_present(env: Mapping[str, str], key: str) -> bool:
+    return bool(str(env.get(key) or "").strip())
+
+
+def _env_truthy(env: Mapping[str, str], key: str) -> bool:
+    return str(env.get(key) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _which_any(which: Callable[[str], str | None], commands: Iterable[str]) -> str | None:
+    for command in commands:
+        path = which(command)
+        if path:
+            return path
+    return None
 
 
 def _surface_matrix() -> list[VoiceSurface]:
@@ -306,6 +333,139 @@ def _phone_context_packet(demo: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_readiness_report(
+    demo: dict[str, Any],
+    *,
+    env: Mapping[str, str] | None = None,
+    which: Callable[[str], str | None] = shutil.which,
+) -> dict[str, Any]:
+    env = os.environ if env is None else env
+    checks: list[ReadinessCheck] = []
+
+    hermes_path = _which_any(which, ["hermes"])
+    checks.append(
+        ReadinessCheck(
+            check_id="hermes_cli",
+            status="pass" if hermes_path else "warn",
+            required_for_video=False,
+            detail=f"hermes command found at {hermes_path}" if hermes_path else "hermes command not found on PATH",
+            next_step="Use this repo with uv for artifacts, or install/point the system hermes command at this branch.",
+        )
+    )
+
+    discord_ok = _env_present(env, "DISCORD_BOT_TOKEN") and (
+        _env_present(env, "DISCORD_VOICE_CHANNEL_ID") or _env_present(env, "DISCORD_VOICE_CHANNEL_NAME")
+    )
+    checks.append(
+        ReadinessCheck(
+            check_id="discord_voice",
+            status="pass" if discord_ok else "fail",
+            required_for_video=True,
+            detail=(
+                "DISCORD_BOT_TOKEN and a voice channel selector are present"
+                if discord_ok
+                else "missing DISCORD_BOT_TOKEN or DISCORD_VOICE_CHANNEL_ID/DISCORD_VOICE_CHANNEL_NAME"
+            ),
+            next_step="Set Discord gateway env, restart Hermes gateway, then use /voice join in the recording server.",
+        )
+    )
+
+    checks.append(
+        ReadinessCheck(
+            check_id="nemotron_3_ultra_model",
+            status="pass",
+            required_for_video=True,
+            detail=f"demo oracle path is {demo['sponsor_stack']['nemotron_3_ultra']['selection']}",
+            next_step="Before recording, switch Hermes with /model so the visible model path is Nemotron 3 Ultra.",
+        )
+    )
+
+    nemoclaw_path = _which_any(which, ["nemoclaw", "openshell"])
+    checks.append(
+        ReadinessCheck(
+            check_id="nemoclaw_boundary",
+            status="pass" if nemoclaw_path else "warn",
+            required_for_video=False,
+            detail=(
+                f"NemoClaw/OpenShell command found at {nemoclaw_path}"
+                if nemoclaw_path
+                else "no nemoclaw or openshell command found; generated packet still demonstrates the policy boundary"
+            ),
+            next_step="If available, record the action packet inside NemoClaw/OpenShell; otherwise show nemoclaw-action-packet.json as the approval boundary.",
+        )
+    )
+
+    stripe_path = _which_any(which, ["stripe"])
+    checks.append(
+        ReadinessCheck(
+            check_id="stripe_projects_cli",
+            status="pass" if stripe_path else "fail",
+            required_for_video=True,
+            detail=f"stripe CLI found at {stripe_path}" if stripe_path else "stripe CLI not found",
+            next_step="Install the Stripe CLI and run `stripe plugin install projects` before attempting live VoIP provisioning.",
+        )
+    )
+
+    link_path = _which_any(which, ["link-cli"])
+    npx_path = _which_any(which, ["npx"])
+    checks.append(
+        ReadinessCheck(
+            check_id="stripe_link_cli",
+            status="pass" if (link_path or npx_path) else "fail",
+            required_for_video=True,
+            detail=(
+                f"link-cli found at {link_path}"
+                if link_path
+                else f"npx found at {npx_path}; can invoke @stripe/link-cli ad hoc"
+                if npx_path
+                else "neither link-cli nor npx found"
+            ),
+            next_step="Install @stripe/link-cli or ensure npx can run it, then authenticate Link before any live spend.",
+        )
+    )
+
+    whatsapp_ready = _env_truthy(env, "WHATSAPP_ENABLED") or (
+        _env_present(env, "WHATSAPP_CLOUD_PHONE_NUMBER_ID") and _env_present(env, "WHATSAPP_CLOUD_ACCESS_TOKEN")
+    )
+    checks.append(
+        ReadinessCheck(
+            check_id="whatsapp_followup",
+            status="pass" if whatsapp_ready else "warn",
+            required_for_video=False,
+            detail=(
+                "WhatsApp env indicates a configured bridge or Cloud API path"
+                if whatsapp_ready
+                else "WhatsApp is not configured; keep it as a roadmap/follow-on surface in the demo"
+            ),
+            next_step="Run `hermes whatsapp` or the WhatsApp Cloud setup if mobile follow-up will be shown live.",
+        )
+    )
+
+    phone_ready = _env_present(env, "VOICEOPS_DEMO_PHONE_NUMBER") or _env_present(env, "TWILIO_ACCOUNT_SID")
+    checks.append(
+        ReadinessCheck(
+            check_id="phone_handoff",
+            status="pass" if phone_ready else "warn",
+            required_for_video=False,
+            detail=(
+                "phone target/provider env is present"
+                if phone_ready
+                else "no VOICEOPS_DEMO_PHONE_NUMBER or TWILIO_ACCOUNT_SID; generated phone-context.json remains dry-run evidence"
+            ),
+            next_step="Set VOICEOPS_DEMO_PHONE_NUMBER and complete approved VoIP provisioning before attempting a live call.",
+        )
+    )
+
+    check_dicts = [asdict(check) for check in checks]
+    required_failures = [check for check in check_dicts if check["required_for_video"] and check["status"] != "pass"]
+    return {
+        "generated_at": _utc_now(),
+        "ready_for_recording": not required_failures,
+        "required_failures": [check["check_id"] for check in required_failures],
+        "checks": check_dicts,
+    }
+
+
 def build_demo(args: argparse.Namespace) -> dict[str, Any]:
     actions = _ops_actions(args.budget_cents)
     approval_total = sum(action.estimated_cents for action in actions if action.requires_approval and action.status == "queued")
@@ -400,6 +560,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "",
         "- `nemoclaw-action-packet.json`: sandbox and approval frame for billable/network-capable actions",
         "- `phone-context.json`: outbound phone-call handoff context preserved from Discord",
+        "- `readiness-report.json`: local recording prerequisite report",
         "",
         "## 90-second video beat sheet",
         "",
@@ -411,6 +572,32 @@ def _markdown(demo: dict[str, Any]) -> str:
         "6. Close by continuing the same task from the phone-call surface.",
         "",
     ])
+    return "\n".join(lines)
+
+
+def _readiness_markdown(report: dict[str, Any]) -> str:
+    lines = [
+        "# VoiceOps Recording Readiness",
+        "",
+        f"- Ready for recording: {'yes' if report['ready_for_recording'] else 'no'}",
+        f"- Required failures: {', '.join(report['required_failures']) if report['required_failures'] else 'none'}",
+        "",
+        "## Checks",
+        "",
+    ]
+    for check in report["checks"]:
+        required = "required" if check["required_for_video"] else "optional"
+        lines.extend(
+            [
+                f"### {check['check_id']}",
+                "",
+                f"- Status: {check['status']}",
+                f"- Scope: {required}",
+                f"- Detail: {check['detail']}",
+                f"- Next step: {check['next_step']}",
+                "",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -462,6 +649,7 @@ def _stripe_script(actions: Iterable[dict[str, Any]]) -> str:
 
 def write_demo(output_dir: Path, demo: dict[str, Any]) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    readiness = build_readiness_report(demo)
     paths = {
         "json": output_dir / "voiceops-demo.json",
         "markdown": output_dir / "voiceops-demo.md",
@@ -469,6 +657,8 @@ def write_demo(output_dir: Path, demo: dict[str, Any]) -> dict[str, str]:
         "demo_script": output_dir / "demo-script.md",
         "nemoclaw_packet": output_dir / "nemoclaw-action-packet.json",
         "phone_context": output_dir / "phone-context.json",
+        "readiness_json": output_dir / "readiness-report.json",
+        "readiness_markdown": output_dir / "readiness-report.md",
         "stripe_actions": output_dir / "stripe-actions-dry-run.sh",
     }
     _write_json(paths["json"], demo)
@@ -477,6 +667,8 @@ def write_demo(output_dir: Path, demo: dict[str, Any]) -> dict[str, str]:
     paths["demo_script"].write_text(_demo_script(demo), encoding="utf-8")
     _write_json(paths["nemoclaw_packet"], _nemoclaw_action_packet(demo))
     _write_json(paths["phone_context"], _phone_context_packet(demo))
+    _write_json(paths["readiness_json"], readiness)
+    paths["readiness_markdown"].write_text(_readiness_markdown(readiness), encoding="utf-8")
     paths["stripe_actions"].write_text(_stripe_script(demo["ops_actions"]), encoding="utf-8")
     paths["stripe_actions"].chmod(0o755)
     return {key: str(path) for key, path in paths.items()}

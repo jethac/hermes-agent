@@ -253,9 +253,13 @@ The command writes:
 - `voiceops-demo.md`
 - `audit-ledger.jsonl`
 - `demo-script.md`
+- `nemoclaw-action-packet.json`
+- `phone-context.json`
+- `readiness-report.json`
+- `readiness-report.md`
 - `stripe-actions-dry-run.sh`
 
-The generated shell script is dry-run by construction. It prints the Stripe/Projects commands instead of executing them.
+The generated shell script is dry-run by construction. It prints the Stripe/Projects commands instead of executing them. The readiness report is non-invasive: it checks local prerequisites and env shape, but it does not provision, purchase, call, or mutate credentials.
 
 ## Milestone 1: Real Voice Operator
 

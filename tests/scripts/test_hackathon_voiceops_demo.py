@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from scripts.hackathon_voiceops_demo import build_demo, parse_args, write_demo
+from scripts.hackathon_voiceops_demo import build_demo, build_readiness_report, parse_args, write_demo
 
 
 def test_voiceops_demo_writes_headless_artifacts(tmp_path):
@@ -19,6 +19,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "demo_script",
         "nemoclaw_packet",
         "phone_context",
+        "readiness_json",
+        "readiness_markdown",
         "stripe_actions",
     }
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
@@ -43,8 +45,11 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "DGX Spark" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "nemoclaw-action-packet.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "phone-context.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "readiness-report.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "spoken in Discord" in Path(paths["demo_script"]).read_text(encoding="utf-8")
     assert "outbound phone call" in Path(paths["demo_script"]).read_text(encoding="utf-8")
+    assert Path(paths["readiness_json"]).exists()
+    assert "VoiceOps Recording Readiness" in Path(paths["readiness_markdown"]).read_text(encoding="utf-8")
 
 
 def test_voiceops_demo_dry_run_does_not_execute_live_stripe(tmp_path):
@@ -72,3 +77,34 @@ def test_voiceops_demo_cli_smoke(tmp_path):
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
     assert Path(payload["artifacts"]["json"]).exists()
+
+
+def test_voiceops_readiness_report_distinguishes_required_failures():
+    args = parse_args([])
+    demo = build_demo(args)
+
+    def fake_which(command: str) -> str | None:
+        commands = {
+            "hermes": "/usr/local/bin/hermes",
+            "stripe": "/usr/local/bin/stripe",
+            "link-cli": "/usr/local/bin/link-cli",
+            "nemoclaw": "/usr/local/bin/nemoclaw",
+        }
+        return commands.get(command)
+
+    ready = build_readiness_report(
+        demo,
+        env={
+            "DISCORD_BOT_TOKEN": "set",
+            "DISCORD_VOICE_CHANNEL_ID": "123",
+            "WHATSAPP_ENABLED": "true",
+            "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+        },
+        which=fake_which,
+    )
+    assert ready["ready_for_recording"] is True
+    assert ready["required_failures"] == []
+
+    not_ready = build_readiness_report(demo, env={}, which=lambda _command: None)
+    assert not_ready["ready_for_recording"] is False
+    assert {"discord_voice", "stripe_projects_cli", "stripe_link_cli"}.issubset(set(not_ready["required_failures"]))
