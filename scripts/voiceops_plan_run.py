@@ -18,6 +18,7 @@ import platform
 import shlex
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -1315,11 +1316,73 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         dest="run_readonly_discovery",
         help="Opt into exact allowlisted read-only discovery commands for provisioning readiness artifacts.",
     )
+    parser.add_argument(
+        "--dry-audit",
+        action="store_true",
+        help=(
+            "Build the plan summary in a temporary artifact root and print the audit without writing "
+            "persistent artifacts. Refuses command probes and read-only discovery."
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.dry_audit:
+        if args.run_command_probes or args.run_readonly_discovery:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "dry_audit": True,
+                        "error": "--dry-audit refuses --run-command-probes and --run-readonly-discovery",
+                        "persistent_writes": False,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 2
+        with tempfile.TemporaryDirectory(prefix="voiceops-plan-dry-audit-") as tmpdir:
+            temp_artifact_root = Path(tmpdir) / "artifacts"
+            temp_output_dir = temp_artifact_root / "voiceops-plan" / "current"
+            summary = build_plan_run(
+                artifact_root=temp_artifact_root,
+                output_dir=temp_output_dir,
+                budget_cents=args.budget_cents,
+                evidence_paths=args.evidence,
+                env_files=args.env_file,
+                voice_live_evidence_paths=args.voice_live_evidence,
+                provisioning_preflight_evidence=args.provisioning_preflight_evidence,
+                post_approval_receipts=args.post_approval_receipts,
+                run_command_probes=False,
+                run_readonly_discovery=False,
+                timeout_seconds=args.timeout_seconds,
+            )
+            print(
+                json.dumps(
+                    {
+                        "ok": summary["ok"],
+                        "dry_audit": True,
+                        "persistent_writes": False,
+                        "temporary_artifacts_removed_on_exit": True,
+                        "requested_artifact_root": str(args.artifact_root),
+                        "requested_output_dir": str(args.output_dir),
+                        "readiness_gaps": summary["readiness_gaps"],
+                        "hard_failures": summary["hard_failures"],
+                        "closure_status": summary["closure_index"]["closure_status"],
+                        "remaining_gates": [
+                            gate["gate_id"] for gate in summary["closure_index"]["remaining_gates"]
+                        ],
+                        "safety": summary["safety"],
+                        "current_environment_blockers": summary["closure_index"]["current_environment_blockers"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0 if summary["ok"] else 1
     summary = build_plan_run(
         artifact_root=args.artifact_root,
         output_dir=args.output_dir,

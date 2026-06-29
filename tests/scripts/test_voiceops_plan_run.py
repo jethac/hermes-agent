@@ -1052,6 +1052,65 @@ def test_plan_run_cli_smoke(tmp_path):
     assert Path(payload["artifacts"]["operator_handoff_markdown"]).exists()
 
 
+def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_plan_run.py"
+    artifact_root = tmp_path / "artifacts"
+    output_dir = artifact_root / "voiceops-plan" / "current"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--artifact-root",
+            str(artifact_root),
+            "--output-dir",
+            str(output_dir),
+            "--dry-audit",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["dry_audit"] is True
+    assert payload["persistent_writes"] is False
+    assert payload["temporary_artifacts_removed_on_exit"] is True
+    assert payload["requested_artifact_root"] == str(artifact_root)
+    assert payload["requested_output_dir"] == str(output_dir)
+    assert payload["remaining_gates"] == [
+        "live_discord_voice_operator",
+        "spend_and_provisioning_preflight",
+        "local_spark_stack_matrix",
+    ]
+    assert not output_dir.exists()
+    assert not artifact_root.exists()
+
+
+def test_plan_run_cli_dry_audit_refuses_probe_execution(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_plan_run.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--artifact-root",
+            str(tmp_path / "artifacts"),
+            "--dry-audit",
+            "--run-readonly-discovery",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["ok"] is False
+    assert payload["dry_audit"] is True
+    assert payload["persistent_writes"] is False
+    assert "refuses" in payload["error"]
+
+
 def test_parse_args_defaults_to_plan_artifact_paths():
     args = parse_args([])
 
@@ -1061,3 +1120,4 @@ def test_parse_args_defaults_to_plan_artifact_paths():
     assert args.provisioning_preflight_evidence is None
     assert args.run_command_probes is False
     assert args.run_readonly_discovery is False
+    assert args.dry_audit is False
