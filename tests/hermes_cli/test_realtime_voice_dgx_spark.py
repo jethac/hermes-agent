@@ -1,5 +1,6 @@
-import json
 import argparse
+import hashlib
+import json
 from pathlib import Path
 
 from hermes_cli import realtime_voice_dgx_spark
@@ -310,7 +311,15 @@ def _passing_benchmark_evidence_with_source(tmp_path: Path) -> list[dict]:
         json.dumps({"redacted": True, "source": "synthetic KAME benchmark fixture"}),
         encoding="utf-8",
     )
-    return [{**entry, "_evidence_path": str(evidence_path)} for entry in _passing_benchmark_evidence()]
+    source_artifact_sha256 = hashlib.sha256(raw_path.read_bytes()).hexdigest()
+    return [
+        {
+            **entry,
+            "source_artifact_sha256": source_artifact_sha256,
+            "_evidence_path": str(evidence_path),
+        }
+        for entry in _passing_benchmark_evidence()
+    ]
 
 
 def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
@@ -790,6 +799,7 @@ def test_benchmark_evidence_template_matches_matrix_and_does_not_pass_validation
             "verified",
             "measured_at",
             "source_artifact",
+            "source_artifact_sha256",
         }
         <= set(entry)
         for entry in template
@@ -1229,6 +1239,7 @@ def test_benchmark_evidence_validator_rejects_direct_entries_without_evidence_pa
 
     assert result["ok"] is False
     assert result["coverage"]["voiceops_matrix_projection_ready"] is False
+    assert "voiceops_projection:0:kame_benchmark_result:missing_source_artifact_sha256" in result["issues"]
     assert "voiceops_projection:0:kame_benchmark_result:source_artifact_unverified" in result["issues"]
 
 
@@ -1555,8 +1566,7 @@ def test_benchmark_evidence_validator_rejects_asr_hypothesis_regression(tmp_path
 
 def test_main_validates_benchmark_evidence_file(tmp_path, capsys):
     evidence_path = tmp_path / "evidence.json"
-    (tmp_path / "raw-kame-benchmark.json").write_text(json.dumps({"redacted": True}), encoding="utf-8")
-    evidence_path.write_text(json.dumps(_passing_benchmark_evidence()), encoding="utf-8")
+    evidence_path.write_text(json.dumps(_passing_benchmark_evidence_with_source(tmp_path)), encoding="utf-8")
 
     exit_code = realtime_voice_dgx_spark.main(
         [

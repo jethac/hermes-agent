@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -262,6 +263,7 @@ def _base_adapted_evidence(
         "verified": _verified(source),
         "measured_at": _measured_at(source),
         "source_artifact": _source_artifact(source),
+        "source_artifact_sha256": source.get("source_artifact_sha256"),
         "metrics": metrics,
         "adapter": source.get("adapter"),
         "module": source.get("module"),
@@ -307,6 +309,7 @@ def _adapt_kame_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "verified": _verified(entry),
                     "measured_at": _measured_at(entry),
                     "source_artifact": _source_artifact(entry),
+                    "source_artifact_sha256": entry.get("source_artifact_sha256"),
                     "oracle_selected_by": entry.get("oracle_selected_by"),
                     "components": _adapt_kame_stack_components(entry),
                     "metrics": _adapt_kame_stack_metrics(entry),
@@ -625,23 +628,34 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
     source_text = str(item.get("source_artifact") or "").strip()
     evidence_path_text = str(item.get("_evidence_path") or "").strip()
+    expected_sha256 = str(item.get("source_artifact_sha256") or "").strip().lower()
+    if not expected_sha256:
+        issues.append("missing_source_artifact_sha256")
+    elif len(expected_sha256) != 64 or any(character not in "0123456789abcdef" for character in expected_sha256):
+        issues.append("invalid_source_artifact_sha256")
     if not evidence_path_text:
-        return ["source_artifact_unverified"]
+        return [*issues, "source_artifact_unverified"]
     source_path = Path(source_text).expanduser()
     if not source_path.is_absolute():
         source_path = Path(evidence_path_text).expanduser().parent / source_text
     if not source_path.exists():
-        return ["source_artifact_not_found"]
+        return [*issues, "source_artifact_not_found"]
     if not source_path.is_file():
-        return ["source_artifact_not_file"]
+        return [*issues, "source_artifact_not_file"]
     try:
-        with source_path.open("rb") as handle:
-            handle.read(1)
+        source_bytes = source_path.read_bytes()
     except OSError:
-        return ["source_artifact_unreadable"]
-    return []
+        return [*issues, "source_artifact_unreadable"]
+    if expected_sha256 and len(expected_sha256) == 64 and all(
+        character in "0123456789abcdef" for character in expected_sha256
+    ):
+        actual_sha256 = hashlib.sha256(source_bytes).hexdigest()
+        if actual_sha256 != expected_sha256:
+            issues.append("source_artifact_sha256_mismatch")
+    return issues
 
 
 def build_matrix(evidence_paths: Iterable[Path] = ()) -> dict[str, Any]:
@@ -743,6 +757,7 @@ def _evidence_template(candidates: list[dict[str, Any]]) -> dict[str, Any]:
                 "verified": False,
                 "measured_at": None,
                 "source_artifact": None,
+                "source_artifact_sha256": None,
                 "metrics": {target["metric"]: None for target in candidate["required_targets"]},
                 "notes": (
                     "replace null metrics with measured values from the benchmark run; "
@@ -763,6 +778,7 @@ def _evidence_template(candidates: list[dict[str, Any]]) -> dict[str, Any]:
                 "verified": False,
                 "measured_at": None,
                 "source_artifact": None,
+                "source_artifact_sha256": None,
                 "oracle_selected_by": "Hermes /model",
                 "oracle_authority_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
                 "interface_input_sources": ["native_audio"],
@@ -798,6 +814,7 @@ def _evidence_example() -> dict[str, Any]:
                 "verified": True,
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/reflex-raw.json",
+                "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
                 "metrics": {
                     "first_token_ms": 700,
                     "intent_latency_ms": 1100,
@@ -815,6 +832,7 @@ def _evidence_example() -> dict[str, Any]:
                 "verified": True,
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/reflex-e4b-raw.json",
+                "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
                 "metrics": {
                     "first_token_ms": 850,
                     "intent_latency_ms": 1250,
@@ -832,6 +850,7 @@ def _evidence_example() -> dict[str, Any]:
                 "verified": True,
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/oracle-raw.json",
+                "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
                 "metrics": {
                     "decode_tok_s": 24,
                     "prefill_tok_s": 3100,
@@ -850,6 +869,7 @@ def _evidence_example() -> dict[str, Any]:
                 "verified": True,
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/asr-raw.json",
+                "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
                 "metrics": {
                     "asr_delta_ms": 30,
                     "final_transcript_ms": 600,
@@ -867,6 +887,7 @@ def _evidence_example() -> dict[str, Any]:
                 "verified": True,
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/tts-raw.json",
+                "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
                 "metrics": {
                     "tts_first_audio_ms": 200,
                     "underrun_count": 0,
@@ -881,6 +902,7 @@ def _evidence_example() -> dict[str, Any]:
                 "verified": True,
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/all-local-stack-smoke.json",
+                "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
                 "oracle_selected_by": "Hermes /model",
                 "oracle_authority_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
                 "interface_input_sources": ["native_audio"],
@@ -931,6 +953,7 @@ def write_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
         }
         _write_json(source_path, source_payload)
         item["source_artifact"] = f"sources/{source_name}"
+        item["source_artifact_sha256"] = hashlib.sha256(source_path.read_bytes()).hexdigest()
         paths[f"scaffold_source_{source_key}"] = source_path
 
     scaffold_path = scaffold_dir / "spark-benchmark-evidence.json"
@@ -986,6 +1009,7 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "measured_at",
             "metrics",
             "source_artifact",
+            "source_artifact_sha256",
             "verified",
         ],
         "evidence_contract": {
@@ -996,6 +1020,7 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "source_artifacts_must_exist": True,
             "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",
             "source_artifact_readable": True,
+            "source_artifact_sha256_must_match": True,
             "measured_at_timezone_required": True,
             "example_only_accepted": False,
             "hosted_fallback_counts_for_one_spark_readiness": False,
@@ -1018,6 +1043,7 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "metrics.oracle_bound_turns",
             "metrics.oracle_bound_oracle_calls",
             "source_artifact",
+            "source_artifact_sha256",
             "verified",
         ],
         "candidate_closure": [

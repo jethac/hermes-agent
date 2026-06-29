@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -7,6 +8,11 @@ from pathlib import Path
 import pytest
 
 from scripts.voiceops_spark_matrix import build_matrix, parse_args, write_matrix
+
+
+def _source_artifact_sha256(relative: str) -> str:
+    payload = json.dumps({"redacted": True, "source": relative}).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +40,7 @@ def _base_evidence(candidate_id: str, *, model: str, locality: str = "local_spar
         "verified": True,
         "measured_at": "2026-06-29T00:00:00Z",
         "source_artifact": "artifacts/test/raw.json",
+        "source_artifact_sha256": _source_artifact_sha256("artifacts/test/raw.json"),
         "metrics": {},
     }
     if candidate_id == "oracle-nemotron3-super-local":
@@ -50,6 +57,7 @@ def _stack_smoke() -> dict:
         "verified": True,
         "measured_at": "2026-06-29T00:00:00Z",
         "source_artifact": "artifacts/test/stack-smoke.json",
+        "source_artifact_sha256": _source_artifact_sha256("artifacts/test/stack-smoke.json"),
         "oracle_selected_by": "Hermes /model",
         "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
         "interface_input_sources": ["native_audio"],
@@ -167,6 +175,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert closure["evidence_contract"]["non_counting_fallback_oracle_models"] == ["Nemotron 3 Ultra"]
     assert closure["evidence_contract"]["source_artifacts_must_exist"] is True
     assert closure["evidence_contract"]["source_artifact_readable"] is True
+    assert closure["evidence_contract"]["source_artifact_sha256_must_match"] is True
     assert closure["evidence_contract"]["source_artifact_resolution"].endswith("supplied benchmark evidence file")
     assert closure["benchmark_evidence_shape"]["evidence"][0]["schema_version"] == "voiceops.spark_benchmark_evidence.v1"
     assert closure["benchmark_evidence_shape"]["evidence"][0]["candidate_id"] == "oracle-nemotron3-super-local"
@@ -179,6 +188,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "voiceops.spark_benchmark_evidence.v1" in closure_markdown
     assert "oracle_authority_routes" in closure_markdown
     assert "source_artifact" in closure_markdown
+    assert "source_artifact_sha256" in closure_markdown
     assert "source_artifacts_must_exist" in closure_markdown
     assert "VoiceOps DGX Spark Operator Runbook" in operator_runbook
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in operator_runbook
@@ -216,6 +226,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert template["evidence"][0]["verified"] is False
     assert template["evidence"][0]["schema_version"] == "voiceops.spark_benchmark_evidence.v1"
     assert template["evidence"][0]["model"]
+    assert "source_artifact_sha256" in template["evidence"][0]
     assert template["evidence"][-1]["kind"] == "voiceops_spark_stack_smoke"
     assert "replace null metrics" in template["evidence"][0]["notes"]
 
@@ -355,6 +366,7 @@ def test_spark_matrix_fails_unverified_or_slow_evidence(tmp_path):
                 "verified": False,
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/test/raw.json",
+                "source_artifact_sha256": _source_artifact_sha256("artifacts/test/raw.json"),
                 "metrics": {
                     "decode_tok_s": 10,
                     "prefill_tok_s": 1000,
@@ -393,6 +405,26 @@ def test_spark_matrix_rejects_candidate_with_missing_source_artifact(tmp_path):
 
     assert evaluation["status"] == "fails_target"
     assert "source_artifact_not_found" in evaluation["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
+def test_spark_matrix_rejects_candidate_with_mismatched_source_artifact_hash(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    evidence["source_artifact_sha256"] = "0" * 64
+    evidence["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "source_artifact_sha256_mismatch" in evaluation["issues"]
     assert matrix["role_status"]["oracle"] == "needs_evidence"
 
 
@@ -478,6 +510,7 @@ def test_spark_matrix_hosted_ultra_does_not_validate_local_oracle_role(tmp_path)
                 "verified": True,
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/test/hosted.json",
+                "source_artifact_sha256": _source_artifact_sha256("artifacts/test/hosted.json"),
                 "metrics": {
                     "first_token_ms": 900,
                     "tool_plan_quality": 5,
@@ -509,6 +542,7 @@ def test_spark_matrix_cartesia_fallback_does_not_validate_local_tts_role(tmp_pat
                 "verified": True,
                 "measured_at": "2026-06-29T00:00:00Z",
                 "source_artifact": "artifacts/test/cartesia.json",
+                "source_artifact_sha256": _source_artifact_sha256("artifacts/test/cartesia.json"),
                 "metrics": {
                     "tts_first_audio_ms": 250,
                     "cutoff_count": 0,
@@ -618,6 +652,19 @@ def test_spark_matrix_rejects_stack_smoke_with_missing_source_artifact(tmp_path)
     assert matrix["ready_for_one_spark_demo"] is False
 
 
+def test_spark_matrix_rejects_stack_smoke_with_mismatched_source_artifact_hash(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    incomplete = _stack_smoke()
+    incomplete["source_artifact_sha256"] = "f" * 64
+    evidence_path.write_text(json.dumps({"evidence": [incomplete]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "source_artifact_sha256_mismatch" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
 def test_spark_matrix_rejects_stack_smoke_with_timezone_less_measured_at(tmp_path):
     evidence_path = tmp_path / "evidence.json"
     incomplete = _stack_smoke()
@@ -697,6 +744,7 @@ def test_spark_matrix_adapts_kame_benchmark_evidence_with_provenance(tmp_path):
         "verified": True,
         "measured_at": "2026-06-29T00:00:00Z",
         "source_artifact": "artifacts/kame/raw.json",
+        "source_artifact_sha256": _source_artifact_sha256("artifacts/kame/raw.json"),
     }
     evidence_path.write_text(
         json.dumps(
@@ -809,6 +857,7 @@ def test_spark_matrix_adapts_kame_e4b_interface_evidence(tmp_path):
                     "verified": True,
                     "measured_at": "2026-06-29T00:00:00Z",
                     "source_artifact": "artifacts/kame/raw.json",
+                    "source_artifact_sha256": _source_artifact_sha256("artifacts/kame/raw.json"),
                     "metrics": {
                         "kame_interface_model_request_ms": 350,
                         "speech_end_to_interface_decision_p90_ms": 900,
@@ -837,6 +886,7 @@ def test_spark_matrix_rejects_protocol_only_kame_speech_evidence(tmp_path):
         "verified": True,
         "measured_at": "2026-06-29T00:00:00Z",
         "source_artifact": "artifacts/kame/raw.json",
+        "source_artifact_sha256": _source_artifact_sha256("artifacts/kame/raw.json"),
         "adapter": "loopback_smoke_bridge",
         "protocol_smoke_only": True,
     }
@@ -893,6 +943,7 @@ def test_spark_matrix_rejects_kame_oracle_benchmark_without_hermes_model_authori
                     "verified": True,
                     "measured_at": "2026-06-29T00:00:00Z",
                     "source_artifact": "artifacts/kame/raw.json",
+                    "source_artifact_sha256": _source_artifact_sha256("artifacts/kame/raw.json"),
                     "kind": "kame_benchmark_result",
                     "category": "oracle",
                     "model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
@@ -922,6 +973,7 @@ def test_spark_matrix_rejects_kame_evidence_without_explicit_spark_locality_and_
         "verified": True,
         "measured_at": "2026-06-29T00:00:00Z",
         "source_artifact": "artifacts/kame/raw.json",
+        "source_artifact_sha256": _source_artifact_sha256("artifacts/kame/raw.json"),
     }
     evidence_path.write_text(
         json.dumps(
@@ -982,6 +1034,7 @@ def test_spark_matrix_rejects_unverified_kame_oracle_model_assumption(tmp_path):
         "verified": True,
         "measured_at": "2026-06-29T00:00:00Z",
         "source_artifact": "artifacts/kame/raw.json",
+        "source_artifact_sha256": _source_artifact_sha256("artifacts/kame/raw.json"),
     }
     evidence_path.write_text(
         json.dumps(
@@ -1024,6 +1077,7 @@ def test_spark_matrix_rejects_kame_smoke_without_reflex_bypass_and_oracle_author
         "verified": True,
         "measured_at": "2026-06-29T00:00:00Z",
         "source_artifact": "artifacts/kame/raw.json",
+        "source_artifact_sha256": _source_artifact_sha256("artifacts/kame/raw.json"),
     }
     passing_entries = [
         {

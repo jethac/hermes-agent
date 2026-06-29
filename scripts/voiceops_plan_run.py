@@ -811,6 +811,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "measured_at",
                 "metrics",
                 "source_artifact",
+                "source_artifact_sha256",
                 "verified",
             ],
             "required_stack_smoke_fields": [
@@ -823,6 +824,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "metrics.speech_end_to_first_audio_ms",
                 "metrics.barge_in_stop_ms",
                 "source_artifact",
+                "source_artifact_sha256",
                 "oracle_authority_routes",
                 "interface_input_sources",
                 "reflex_providers",
@@ -845,6 +847,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "source_artifacts_must_exist": True,
                 "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",
                 "source_artifact_readable": True,
+                "source_artifact_sha256_must_match": True,
                 "hosted_fallback_counts_for_one_spark_readiness": False,
                 "example_only_accepted": False,
                 "scaffold_is_example_only": True,

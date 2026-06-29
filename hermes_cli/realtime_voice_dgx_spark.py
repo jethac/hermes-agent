@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime as dt
+import hashlib
 import json
 import os
 import sys
@@ -1494,9 +1495,11 @@ def _with_voiceops_projection_fields(entry: dict[str, Any]) -> dict[str, Any]:
         "verified": False,
         "measured_at": None,
         "source_artifact": None,
+        "source_artifact_sha256": None,
         "voiceops_projection_notes": (
             "Replace source_artifact with a redacted raw benchmark artifact path that resolves beside "
-            "the evidence file; set measured_at and verified=true only after collecting on the DGX Spark."
+            "the evidence file; set source_artifact_sha256 to that file's SHA-256; set measured_at and "
+            "verified=true only after collecting on the DGX Spark."
         ),
         **entry,
     }
@@ -1825,22 +1828,33 @@ def _voiceops_matrix_projection_issues(entries: list[Mapping[str, Any]]) -> list
 
 
 def _projection_source_artifact_issues(entry: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    expected_sha256 = str(entry.get("source_artifact_sha256") or "").strip().lower()
+    if not expected_sha256:
+        issues.append("missing_source_artifact_sha256")
+    elif len(expected_sha256) != 64 or any(character not in "0123456789abcdef" for character in expected_sha256):
+        issues.append("invalid_source_artifact_sha256")
     evidence_path_text = str(entry.get("_evidence_path") or "").strip()
     if not evidence_path_text:
-        return ["source_artifact_unverified"]
+        return [*issues, "source_artifact_unverified"]
     source_path = Path(str(entry.get("source_artifact") or "").strip()).expanduser()
     if not source_path.is_absolute():
         source_path = Path(evidence_path_text).expanduser().parent / source_path
     if not source_path.exists():
-        return ["source_artifact_not_found"]
+        return [*issues, "source_artifact_not_found"]
     if not source_path.is_file():
-        return ["source_artifact_not_file"]
+        return [*issues, "source_artifact_not_file"]
     try:
-        with source_path.open("rb") as handle:
-            handle.read(1)
+        source_bytes = source_path.read_bytes()
     except OSError:
-        return ["source_artifact_unreadable"]
-    return []
+        return [*issues, "source_artifact_unreadable"]
+    if expected_sha256 and len(expected_sha256) == 64 and all(
+        character in "0123456789abcdef" for character in expected_sha256
+    ):
+        actual_sha256 = hashlib.sha256(source_bytes).hexdigest()
+        if actual_sha256 != expected_sha256:
+            issues.append("source_artifact_sha256_mismatch")
+    return issues
 
 
 def _has_parseable_timezone_timestamp(value: Any) -> bool:

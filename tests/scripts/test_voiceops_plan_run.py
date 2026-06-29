@@ -242,7 +242,13 @@ def _write_post_approval_receipts(root: Path) -> Path:
     )
 
 
-def _base_spark_evidence(candidate_id: str, *, model: str, source_artifact: str) -> dict:
+def _base_spark_evidence(
+    candidate_id: str,
+    *,
+    model: str,
+    source_artifact: str,
+    source_artifact_sha256: str,
+) -> dict:
     evidence = {
         "schema_version": "voiceops.spark_benchmark_evidence.v1",
         "candidate_id": candidate_id,
@@ -253,6 +259,7 @@ def _base_spark_evidence(candidate_id: str, *, model: str, source_artifact: str)
         "verified": True,
         "measured_at": "2026-06-29T00:00:00Z",
         "source_artifact": source_artifact,
+        "source_artifact_sha256": source_artifact_sha256,
         "metrics": {},
     }
     if candidate_id == "oracle-nemotron3-super-local":
@@ -262,11 +269,13 @@ def _base_spark_evidence(candidate_id: str, *, model: str, source_artifact: str)
 
 def _write_spark_evidence(root: Path) -> Path:
     sources = root / "sources"
+    source_sha256: dict[str, str] = {}
     for name in ["reflex", "oracle", "asr", "tts", "stack-smoke"]:
-        _write_json(
+        source_path = _write_json(
             sources / f"{name}.json",
             {"redacted": True, "source": name, "summary": "local DGX Spark rehearsal source"},
         )
+        source_sha256[name] = hashlib.sha256(source_path.read_bytes()).hexdigest()
     return _write_json(
         root / "spark-benchmark-evidence.json",
         {
@@ -276,6 +285,7 @@ def _write_spark_evidence(root: Path) -> Path:
                         "reflex-gemma4-e2b",
                         model="Gemma 4 E2B audio-native",
                         source_artifact="sources/reflex.json",
+                        source_artifact_sha256=source_sha256["reflex"],
                     ),
                     "metrics": {"first_token_ms": 700, "intent_latency_ms": 1100, "steady_state_memory_gb": 20},
                 },
@@ -284,6 +294,7 @@ def _write_spark_evidence(root: Path) -> Path:
                         "oracle-nemotron3-super-local",
                         model="Nemotron 3 Super",
                         source_artifact="sources/oracle.json",
+                        source_artifact_sha256=source_sha256["oracle"],
                     ),
                     "metrics": {
                         "decode_tok_s": 24,
@@ -297,6 +308,7 @@ def _write_spark_evidence(root: Path) -> Path:
                         "asr-nemotron-speech",
                         model="Nemotron Speech streaming",
                         source_artifact="sources/asr.json",
+                        source_artifact_sha256=source_sha256["asr"],
                     ),
                     "metrics": {"asr_delta_ms": 30, "final_transcript_ms": 600, "word_error_rate": 0.08},
                 },
@@ -305,6 +317,7 @@ def _write_spark_evidence(root: Path) -> Path:
                         "tts-magpie-local",
                         model="Magpie local TTS",
                         source_artifact="sources/tts.json",
+                        source_artifact_sha256=source_sha256["tts"],
                     ),
                     "metrics": {"tts_first_audio_ms": 200, "underrun_count": 0},
                 },
@@ -316,6 +329,7 @@ def _write_spark_evidence(root: Path) -> Path:
                     "verified": True,
                     "measured_at": "2026-06-29T00:00:00Z",
                     "source_artifact": "sources/stack-smoke.json",
+                    "source_artifact_sha256": source_sha256["stack-smoke"],
                     "oracle_selected_by": "Hermes /model",
                     "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
                     "interface_input_sources": ["native_audio"],
@@ -553,6 +567,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert gates["spend_and_provisioning_preflight"]["current_environment"]["required_cli_presence"]["stripe"] is False
     assert "required_candidate_fields" in gates["local_spark_stack_matrix"]
     assert "schema_version" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
+    assert "source_artifact_sha256" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
+    assert "source_artifact_sha256" in gates["local_spark_stack_matrix"]["required_stack_smoke_fields"]
     assert (
         gates["local_spark_stack_matrix"]["evidence_contract"]["preferred_local_oracle_candidate_id"]
         == "oracle-nemotron3-super-local"
@@ -577,6 +593,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["local_speech_requires_production_provider"] is True
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["source_artifacts_must_exist"] is True
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["source_artifact_readable"] is True
+    assert gates["local_spark_stack_matrix"]["evidence_contract"]["source_artifact_sha256_must_match"] is True
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["source_artifact_resolution"].endswith(
         "supplied benchmark evidence file"
     )
