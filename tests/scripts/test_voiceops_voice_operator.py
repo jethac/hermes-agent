@@ -678,6 +678,103 @@ def test_voice_operator_manifest_reports_do_not_fallback_to_basename(tmp_path):
     assert "live_evidence_manifest:discord_live_probe:live_evidence_file_not_found" in live_evidence["issues"]
 
 
+def test_voice_operator_manifest_rejects_absolute_report_path(tmp_path):
+    discord_probe = _complete_live_evidence()["discord_live_probe"]
+    discord_probe["kind"] = "discord_live_probe"
+    report_path = tmp_path / "discord-live-probe.json"
+    report_path.write_text(json.dumps(discord_probe), encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "reports": {
+                    "discord_live_probe": str(report_path),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert "live_evidence_manifest:discord_live_probe:report_path:absolute_path_not_allowed" in live_evidence["issues"]
+
+
+def test_voice_operator_manifest_rejects_parent_escape_report_path(tmp_path):
+    manifest_dir = tmp_path / "manifest"
+    manifest_dir.mkdir()
+    report_path = tmp_path / "discord-live-probe.json"
+    discord_probe = _complete_live_evidence()["discord_live_probe"]
+    discord_probe["kind"] = "discord_live_probe"
+    report_path.write_text(json.dumps(discord_probe), encoding="utf-8")
+    manifest_path = manifest_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "reports": {
+                    "discord_live_probe": "../discord-live-probe.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert (
+        "live_evidence_manifest:discord_live_probe:report_path:parent_traversal_not_allowed"
+        in live_evidence["issues"]
+    )
+
+
+def test_voice_operator_manifest_rejects_user_home_report_path(tmp_path):
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "reports": {
+                    "discord_live_probe": "~/discord-live-probe.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert "live_evidence_manifest:discord_live_probe:report_path:user_home_not_allowed" in live_evidence["issues"]
+
+
+def test_voice_operator_manifest_rejects_symlink_escape_report_path(tmp_path):
+    manifest_dir = tmp_path / "manifest"
+    sections_dir = manifest_dir / "sections"
+    sections_dir.mkdir(parents=True)
+    outside_report = tmp_path / "discord-live-probe.json"
+    discord_probe = _complete_live_evidence()["discord_live_probe"]
+    discord_probe["kind"] = "discord_live_probe"
+    outside_report.write_text(json.dumps(discord_probe), encoding="utf-8")
+    (sections_dir / "discord-live-probe.json").symlink_to(outside_report)
+    manifest_path = manifest_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "reports": {
+                    "discord_live_probe": "sections/discord-live-probe.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert "live_evidence_manifest:discord_live_probe:report_path:path_escape_not_allowed" in live_evidence["issues"]
+
+
 def test_voice_operator_manifest_cycle_returns_validation_issue(tmp_path):
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(
@@ -1083,6 +1180,102 @@ def test_voice_operator_manifest_nested_report_source_artifacts_resolve_relative
     assert live_evidence["section_refs"]["sidecar_session"]["source_artifact"] == str(raw_dir / "sidecar.json")
     assert live_evidence["section_refs"]["sidecar_session"]["wrapper_artifact"] == str(report_dir / "combined.json")
     assert live_evidence["section_refs"]["sidecar_session"]["reported_source_artifact"] == "raw/sidecar.json"
+
+
+def test_voice_operator_manifest_rejects_nested_source_artifact_parent_escape(tmp_path):
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+    evidence = _complete_live_evidence()
+    evidence["sidecar_session"]["source_artifact"] = "../sidecar-raw.json"
+    combined_path = report_dir / "combined.json"
+    combined_path.write_text(json.dumps(evidence), encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "ok": True,
+                "reports": {
+                    "combined": "reports/combined.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert (
+        "live_evidence_manifest:combined:sidecar_session.source_artifact:parent_traversal_not_allowed"
+        in live_evidence["issues"]
+    )
+
+
+def test_voice_operator_manifest_rejects_nested_source_artifact_absolute_and_home_refs(tmp_path):
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+    evidence = _complete_live_evidence()
+    evidence["discord_live_probe"]["source_artifact"] = str(report_dir / "raw" / "discord.json")
+    evidence["sidecar_session"]["source_artifact"] = "~/sidecar-raw.json"
+    combined_path = report_dir / "combined.json"
+    combined_path.write_text(json.dumps(evidence), encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "ok": True,
+                "reports": {
+                    "combined": "reports/combined.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert (
+        "live_evidence_manifest:combined:discord_live_probe.source_artifact:absolute_path_not_allowed"
+        in live_evidence["issues"]
+    )
+    assert (
+        "live_evidence_manifest:combined:sidecar_session.source_artifact:user_home_not_allowed"
+        in live_evidence["issues"]
+    )
+
+
+def test_voice_operator_manifest_rejects_nested_source_artifact_symlink_escape(tmp_path):
+    report_dir = tmp_path / "reports"
+    raw_dir = report_dir / "raw"
+    raw_dir.mkdir(parents=True)
+    outside_source = tmp_path / "turn-raw.json"
+    outside_source.write_text("{}", encoding="utf-8")
+    (raw_dir / "turn.json").symlink_to(outside_source)
+    evidence = _complete_live_evidence()
+    evidence["live_turn"]["source_artifact"] = "raw/turn.json"
+    combined_path = report_dir / "combined.json"
+    combined_path.write_text(json.dumps(evidence), encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "ok": True,
+                "reports": {
+                    "combined": "reports/combined.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert (
+        "live_evidence_manifest:combined:live_turn.source_artifact:path_escape_not_allowed"
+        in live_evidence["issues"]
+    )
 
 
 def test_live_evidence_rejects_complete_payload_without_schema_and_source_artifacts():

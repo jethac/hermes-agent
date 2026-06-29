@@ -511,11 +511,13 @@ def test_live_evidence_manifest_references_optional_sidecar_and_turn_evidence(mo
     assert result.ok is True
     assert result.live_probe_ok is True
     assert result.live_probe_status == "passed"
-    assert result.reports["sidecar_session"] == str(sidecar_path)
-    assert result.reports["live_turn"] == str(live_turn_path)
+    assert result.reports["sidecar_session"] == "sidecar-session.json"
+    assert result.reports["live_turn"] == "live-turn.json"
+    assert (tmp_path / "bundle" / "sidecar-session.json").is_file()
+    assert (tmp_path / "bundle" / "live-turn.json").is_file()
     manifest = json.loads((tmp_path / "bundle" / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["reports"]["sidecar_session"] == str(sidecar_path)
-    assert manifest["reports"]["live_turn"] == str(live_turn_path)
+    assert manifest["reports"]["sidecar_session"] == "sidecar-session.json"
+    assert manifest["reports"]["live_turn"] == "live-turn.json"
 
 
 def test_live_evidence_manifest_with_relative_output_dir_is_reingestable(monkeypatch, tmp_path):
@@ -592,14 +594,16 @@ def test_live_evidence_validate_mode_does_not_call_discord_probes(monkeypatch, t
     assert result.live_probe_status == "not_run"
     assert result.issues == []
     assert result.reports == {
-        "discord_live_probe": str(discord_path),
-        "sidecar_session": str(sidecar_path),
-        "live_turn": str(live_turn_path),
+        "discord_live_probe": "discord-live-probe.json",
+        "sidecar_session": "sidecar-session.json",
+        "live_turn": "live-turn.json",
     }
+    assert (tmp_path / "bundle" / "discord-live-probe.json").is_file()
+    assert (tmp_path / "bundle" / "sidecar-session.json").is_file()
+    assert (tmp_path / "bundle" / "live-turn.json").is_file()
     assert result.strict_validation["overall_status"] == "live_evidence_supplied_not_readiness_claim"
     assert result.strict_validation["missing_gates"] == []
     assert not (tmp_path / "bundle" / "discord-loopback.json").exists()
-    assert not (tmp_path / "bundle" / "discord-live-probe.json").exists()
     validation = json.loads((tmp_path / "bundle" / "live-evidence-validation.json").read_text(encoding="utf-8"))
     assert validation["schema_version"] == "voiceops.realtime_voice_live_evidence_validation.v1"
 

@@ -566,6 +566,12 @@ def _expand_live_evidence_manifest(
         if not report_path_text:
             issues.append(f"live_evidence_manifest:{report_name}:empty_report_path")
             continue
+        report_path_issues = _relative_live_artifact_ref_issues(report_path_text, base_path=path)
+        if report_path_issues:
+            issues.extend(
+                f"live_evidence_manifest:{report_name}:report_path:{issue}" for issue in report_path_issues
+            )
+            continue
         report_path = _resolve_manifest_report_path(path, report_path_text)
         loaded = _load_live_evidence_file(report_path, visited=visited, standalone=False)
         if loaded["issues"]:
@@ -574,7 +580,8 @@ def _expand_live_evidence_manifest(
         if isinstance(report_payload, Mapping):
             if not _manifest_report_has_identity(report_name, report_payload):
                 issues.append(f"live_evidence_manifest:{report_name}:missing_report_identity")
-            report_payload = _with_manifest_report_provenance(report_payload, report_path)
+            report_payload, provenance_issues = _with_manifest_report_provenance(report_payload, report_path)
+            issues.extend(f"live_evidence_manifest:{report_name}:{issue}" for issue in provenance_issues)
             if report_payload.get("example_only") is True:
                 issues.append(f"live_evidence_manifest:{report_name}:example_only_evidence_not_accepted")
                 expanded["example_only"] = True
@@ -582,7 +589,7 @@ def _expand_live_evidence_manifest(
     return expanded if expanded else payload, issues
 
 
-def _with_manifest_report_provenance(payload: Mapping[str, Any], report_path: Path) -> dict[str, Any]:
+def _with_manifest_report_provenance(payload: Mapping[str, Any], report_path: Path) -> tuple[dict[str, Any], list[str]]:
     enriched = dict(payload)
     source_artifact = str(report_path.resolve())
     previous_source_artifact = str(enriched.get("source_artifact") or "")
@@ -591,6 +598,7 @@ def _with_manifest_report_provenance(payload: Mapping[str, Any], report_path: Pa
     if previous_source_artifact:
         provenance["reported_source_artifact"] = previous_source_artifact
     enriched["provenance"] = provenance
+    issues: list[str] = []
     for section_name in ("discord_live_probe", "sidecar_session", "live_turn"):
         section = enriched.get(section_name)
         if isinstance(section, Mapping):
@@ -600,20 +608,47 @@ def _with_manifest_report_provenance(payload: Mapping[str, Any], report_path: Pa
             if previous_section_source:
                 section_provenance["reported_source_artifact"] = previous_section_source
                 if previous_section_source not in LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS:
-                    previous_path = Path(previous_section_source).expanduser()
-                    if not previous_path.is_absolute():
-                        previous_path = report_path.parent / previous_path
-                    section_copy["source_artifact"] = str(previous_path.resolve())
+                    source_path_issues = _relative_live_artifact_ref_issues(
+                        previous_section_source,
+                        base_path=report_path,
+                    )
+                    if source_path_issues:
+                        issues.extend(f"{section_name}.source_artifact:{issue}" for issue in source_path_issues)
+                    else:
+                        section_copy["source_artifact"] = str((report_path.parent / previous_section_source).resolve())
             section_copy["provenance"] = section_provenance
             enriched[section_name] = section_copy
-    return enriched
+    return enriched, issues
 
 
 def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) -> Path:
-    report_path = Path(report_path_text).expanduser()
-    if report_path.is_absolute():
-        return report_path
     return manifest_path.parent / report_path_text
+
+
+def _relative_live_artifact_ref_issues(ref_text: str, *, base_path: Path) -> list[str]:
+    issues: list[str] = []
+    ref = str(ref_text or "").strip()
+    if not ref:
+        return ["empty"]
+    if ref.startswith("~"):
+        issues.append("user_home_not_allowed")
+    ref_path = Path(ref)
+    if ref_path.is_absolute():
+        issues.append("absolute_path_not_allowed")
+    if ".." in ref_path.parts:
+        issues.append("parent_traversal_not_allowed")
+    if issues:
+        return sorted(set(issues))
+    base_dir = base_path.expanduser().resolve(strict=False).parent
+    candidate = base_dir / ref
+    try:
+        resolved_candidate = candidate.resolve(strict=True)
+    except OSError:
+        resolved_candidate = candidate.resolve(strict=False)
+    resolved_base = base_dir.resolve(strict=False)
+    if resolved_candidate != resolved_base and resolved_base not in resolved_candidate.parents:
+        issues.append("path_escape_not_allowed")
+    return sorted(set(issues))
 
 
 def _manifest_report_has_identity(report_name: str, payload: Mapping[str, Any]) -> bool:
@@ -1391,7 +1426,7 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "manifest_report_identity": "per-section reports must include kind/evidence_type matching discord_live_probe, sidecar_session, or live_turn unless they use the expanded live evidence schema",
             "standalone_report_identity": "standalone non-expanded evidence files must include kind/evidence_type matching discord_live_probe, sidecar_session, or live_turn",
             "source_artifacts_must_exist": True,
-            "source_artifact_resolution": "absolute paths or paths relative to supplied live-evidence files",
+            "source_artifact_resolution": "manifest report paths and nested source_artifact refs are package-contained relative paths; absolute paths, user-home expansion, parent traversal, symlink escapes, and process cwd fallback are rejected for manifest packages; explicitly supplied standalone evidence files remain accepted as direct operator inputs",
             "source_artifacts_must_be_json": True,
             "source_artifacts_reject_secret_or_phone_values": True,
             "source_artifacts_reject_voice_capability_denials": True,

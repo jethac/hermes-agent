@@ -8,12 +8,20 @@ import datetime as dt
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+
+OPTIONAL_EVIDENCE_PACKAGE_FILENAMES = {
+    "discord_live_probe": "discord-live-probe.json",
+    "sidecar_session": "sidecar-session.json",
+    "live_turn": "live-turn.json",
+}
 
 
 @dataclass(frozen=True)
@@ -156,15 +164,22 @@ def audit_realtime_voice_live_evidence(args: argparse.Namespace) -> dict[str, An
     strict_validation: dict[str, Any]
     if reports:
         with tempfile.TemporaryDirectory(prefix="hermes-live-evidence-audit-") as tmpdir:
+            package_reports: dict[str, str] = {}
+            package_dir = Path(tmpdir)
+            for report_key, evidence_path in reports.items():
+                _attach_optional_evidence_report(
+                    reports=package_reports,
+                    issues=issues,
+                    report_key=report_key,
+                    path=evidence_path,
+                    output_dir=package_dir,
+                )
             manifest_path = Path(tmpdir) / "manifest.json"
             _write_json(
                 manifest_path,
                 {
                     "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
-                    "reports": {
-                        report_key: str(evidence_path.expanduser().resolve(strict=False))
-                        for report_key, evidence_path in reports.items()
-                    },
+                    "reports": package_reports,
                 },
             )
             strict_validation = _strict_live_evidence_validation(manifest_path)
@@ -244,6 +259,7 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
                 issues=issues,
                 report_key="discord_live_probe",
                 path=derived_report_paths["discord_live_probe"],
+                output_dir=output_dir,
             )
         derived_evidence_supplied = any(
             key in derived_report_paths for key in ("discord_live_probe", "sidecar_session", "live_turn")
@@ -258,6 +274,7 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
             issues=issues,
             report_key="discord_live_probe",
             path=getattr(args, "discord_live_probe_evidence", None),
+            output_dir=output_dir,
         )
     else:
         loopback_report = output_dir / "discord-loopback.json"
@@ -296,12 +313,14 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
         issues=issues,
         report_key="sidecar_session",
         path=derived_report_paths.get("sidecar_session") or getattr(args, "sidecar_session_evidence", None),
+        output_dir=output_dir,
     )
     _attach_optional_evidence_report(
         reports=reports,
         issues=issues,
         report_key="live_turn",
         path=derived_report_paths.get("live_turn") or getattr(args, "live_turn_evidence", None),
+        output_dir=output_dir,
     )
 
     if args.require_openai_realtime and not _openai_realtime_key_present():
@@ -834,7 +853,11 @@ def _report_ref(output_dir: Path, report_path: Path) -> str:
     try:
         return str(report_path.relative_to(output_dir))
     except ValueError:
-        return str(report_path.resolve())
+        pass
+    try:
+        return str(report_path.resolve(strict=False).relative_to(output_dir.resolve(strict=False)))
+    except ValueError:
+        return str(report_path.resolve(strict=False))
 
 
 def _attach_optional_evidence_report(
@@ -843,15 +866,16 @@ def _attach_optional_evidence_report(
     issues: list[str],
     report_key: str,
     path: Path | None,
+    output_dir: Path | None = None,
 ) -> None:
     if path is None:
         return
-    resolved = path.expanduser()
+    expanded = path.expanduser()
     try:
-        payload = json.loads(resolved.read_text(encoding="utf-8"))
+        payload = json.loads(expanded.read_text(encoding="utf-8"))
     except FileNotFoundError:
         issues.append(f"{report_key}: evidence file not found")
-        issues.append(f"{report_key}: evidence file not found at {resolved.resolve(strict=False)}")
+        issues.append(f"{report_key}: evidence file not found at {expanded.resolve(strict=False)}")
         return
     except json.JSONDecodeError as exc:
         issues.append(f"{report_key}: evidence JSON parse failed: {exc.msg}")
@@ -866,7 +890,33 @@ def _attach_optional_evidence_report(
     if structural_issues:
         issues.extend(f"{report_key}: {issue}" for issue in structural_issues)
         return
-    reports[report_key] = str(resolved.resolve())
+    report_path = expanded.resolve(strict=False)
+    if output_dir is not None:
+        try:
+            report_path = _package_optional_evidence_report(report_key, expanded, output_dir)
+        except OSError as exc:
+            issues.append(f"{report_key}: failed to package evidence: {exc}")
+            return
+        reports[report_key] = _report_ref(output_dir, report_path)
+    else:
+        reports[report_key] = str(report_path)
+
+
+def _package_optional_evidence_report(report_key: str, source_path: Path, output_dir: Path) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_source = source_path.expanduser().resolve(strict=False)
+    resolved_output_dir = output_dir.resolve(strict=False)
+    if resolved_source == resolved_output_dir or resolved_output_dir in resolved_source.parents:
+        return source_path
+    package_filename = OPTIONAL_EVIDENCE_PACKAGE_FILENAMES.get(report_key, f"{report_key}.json")
+    packaged_path = output_dir / package_filename
+    if packaged_path.exists() or packaged_path.is_symlink():
+        if not packaged_path.is_symlink() and packaged_path.resolve(strict=False) == resolved_source:
+            return packaged_path
+        if packaged_path.is_file() or packaged_path.is_symlink():
+            packaged_path.unlink()
+    shutil.copyfile(resolved_source, packaged_path)
+    return packaged_path
 
 
 def _optional_evidence_has_identity(report_key: str, payload: dict[str, Any]) -> bool:
