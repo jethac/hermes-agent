@@ -23,6 +23,37 @@ Hermes VoiceOps is a local-first operator for daily life and business:
 
 The hackathon entry is Milestone 0: a public proof that this shape is useful, viable, and presentable.
 
+## Spark Model Strategy
+
+There are two related but distinct model strategies.
+
+### Hackathon Strategy
+
+Use Nemotron 3 Ultra visibly as the Hermes oracle/model path for the demo because it is sponsor-aligned and communicates serious agentic reasoning. The demo should show Nemotron 3 Ultra as the planner behind the budgeted VoIP provisioning workflow.
+
+This does not mean VoiceOps adds a separate model selector. Nemotron 3 Ultra should still be selected through Hermes's normal `/model` flow. The goal is to prove that Hermes can carry a Discord voice request into a safe, budgeted, tool-using business operation with NVIDIA/Stripe integrations visible.
+
+Hackathon stack:
+
+- Nemotron 3 Ultra as the serious reasoning/planning path
+- NemoClaw as the safe execution boundary
+- Stripe Skills as the spend and provisioning rail
+- Discord voice as the live interface
+- DGX Spark as the target local operating base and NVIDIA story
+
+### One-Spark Local Strategy
+
+For the long-term household/business appliance, do not assume Nemotron 3 Ultra is the local one-Spark brain unless NVIDIA provides a practical serving path for this hardware. The actual one-Spark local oracle must be chosen by benchmark and operational feel.
+
+Target KAME layout:
+
+- Reflex/interface: Gemma 4 E2B or E4B-style audio-native model, always warm, optimized for turn-taking and routing.
+- Oracle/brain: whatever Hermes `/model` selects, with Gemma 4 26B-A4B as the first preferred local candidate to evaluate on DGX Spark.
+- Speech: local ASR/TTS where practical, with ASR used as oracle evidence rather than reflex input in full KAME mode.
+- Fallbacks: hosted Nemotron, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
+
+The public demo can use Nemotron 3 Ultra for sponsor fit while the private appliance roadmap benchmarks Gemma 4 26B-A4B and other Spark-friendly models for the local brain.
+
 ## Operating Domains
 
 ### Household Operations
@@ -83,9 +114,9 @@ The oracle is Hermes's active model, selected through the existing Hermes `/mode
 
 Target:
 
-- Nemotron 3 Ultra for the hackathon demo and sponsor-aligned planning path
+- Nemotron 3 Ultra for the hackathon demo and sponsor-aligned planning path, selected through `/model`
 - current cloud model for bring-up if needed
-- local Gemma 4 26B-A4B on DGX Spark when it proves good enough for Hermes work
+- local Gemma 4 26B-A4B on DGX Spark when it proves good enough for Hermes work and beats alternatives on latency, quality, and reliability
 - owns memory, tools, files, long reasoning, project context, and durable task execution
 
 ### Speech
