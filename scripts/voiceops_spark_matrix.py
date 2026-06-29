@@ -1177,6 +1177,11 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
                 "--output-dir artifacts/voiceops-spark-matrix/current "
                 f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
             ),
+            "lint_evidence": (
+                "uv run python scripts/voiceops_spark_matrix.py "
+                "--lint-evidence "
+                f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
+            ),
             "plan_index": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                 "--output-dir artifacts/voiceops-plan/current "
@@ -1393,18 +1398,57 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/voiceops-spark-matrix/current"))
     parser.add_argument(
+        "--lint-evidence",
+        action="store_true",
+        help="Validate supplied benchmark evidence and print a no-write readiness summary.",
+    )
+    parser.add_argument(
         "--evidence",
         action="append",
         default=[],
         type=Path,
         help="Benchmark evidence JSON file to validate against the matrix. May be repeated.",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.lint_evidence and not args.evidence:
+        parser.error("--lint-evidence requires at least one --evidence path")
+    return args
+
+
+def _lint_summary(matrix: dict[str, Any], evidence_paths: Iterable[Path]) -> dict[str, Any]:
+    return {
+        "schema_version": "voiceops.spark_evidence_lint.v1",
+        "artifact_writes": False,
+        "network_io": False,
+        "spark_execution": False,
+        "ok": bool(matrix.get("ready_for_one_spark_demo")),
+        "ready_for_one_spark_demo": matrix.get("ready_for_one_spark_demo"),
+        "evidence_paths": [str(path) for path in evidence_paths],
+        "evidence_load_issues": matrix.get("evidence_load_issues", []),
+        "role_status": matrix.get("role_status", {}),
+        "stack_smoke": {
+            "status": matrix.get("stack_smoke", {}).get("status"),
+            "issues": matrix.get("stack_smoke", {}).get("issues", []),
+        },
+        "candidate_results": [
+            {
+                "candidate_id": evaluation.get("candidate_id"),
+                "role": evaluation.get("role"),
+                "status": evaluation.get("status"),
+                "issues": evaluation.get("issues", []),
+            }
+            for evaluation in matrix.get("evaluations", [])
+        ],
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     matrix = build_matrix(args.evidence)
+    if args.lint_evidence:
+        summary = _lint_summary(matrix, args.evidence)
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0 if summary["ok"] else 1
     paths = write_matrix(args.output_dir, matrix)
     ok = not matrix.get("evidence_load_issues")
     print(

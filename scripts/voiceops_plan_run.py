@@ -307,6 +307,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
     ]
     spark_commands = [
         spark_gate["collection_commands"]["dgx_eval"],
+        spark_gate["collection_commands"]["lint_evidence"],
         spark_gate["collection_commands"]["with_evidence"],
         spark_gate["collection_commands"]["plan_index"],
     ]
@@ -850,6 +851,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "with_evidence": (
                     "uv run python scripts/voiceops_spark_matrix.py "
                     "--output-dir artifacts/voiceops-spark-matrix/current "
+                    f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
+                ),
+                "lint_evidence": (
+                    "uv run python scripts/voiceops_spark_matrix.py "
+                    "--lint-evidence "
                     f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
                 ),
                 "plan_index": (

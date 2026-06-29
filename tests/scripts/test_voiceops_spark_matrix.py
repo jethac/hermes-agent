@@ -182,6 +182,8 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert closure["benchmark_evidence_shape"]["evidence"][0]["candidate_id"] == "oracle-nemotron3-super-local"
     assert closure["benchmark_evidence_shape"]["evidence"][1]["kind"] == "voiceops_spark_stack_smoke"
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" == closure["rerun_commands"]["dgx_eval"]
+    assert "--lint-evidence" in closure["rerun_commands"]["lint_evidence"]
+    assert "spark-benchmark-scaffold/spark-benchmark-evidence.json" in closure["rerun_commands"]["lint_evidence"]
     assert "VoiceOps Milestone 4 Spark Matrix Closure" in closure_markdown
     assert "spark-benchmark-scaffold/spark-benchmark-evidence.json" in closure_markdown
     assert "path/to/spark-benchmark-evidence.json" not in closure_markdown
@@ -1293,9 +1295,109 @@ def test_spark_matrix_cli_writes_artifacts_for_missing_evidence_file(tmp_path):
     assert matrix["ready_for_one_spark_demo"] is False
 
 
+def test_spark_matrix_lint_evidence_is_no_write_for_valid_evidence(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_spark_matrix.py"
+    evidence_path = tmp_path / "evidence.json"
+    output_dir = tmp_path / "matrix"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "evidence": [
+                    {
+                        **_base_evidence("reflex-gemma4-e2b", model="Gemma 4 E2B audio-native"),
+                        "metrics": {"first_token_ms": 700, "intent_latency_ms": 1100, "steady_state_memory_gb": 20},
+                    },
+                    {
+                        **_base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super"),
+                        "metrics": {
+                            "decode_tok_s": 24,
+                            "prefill_tok_s": 3100,
+                            "first_token_ms": 2100,
+                            "steady_state_memory_gb": 86,
+                        },
+                    },
+                    {
+                        **_base_evidence("asr-nemotron-speech", model="Nemotron Speech streaming"),
+                        "metrics": {"asr_delta_ms": 30, "final_transcript_ms": 600, "word_error_rate": 0.08},
+                    },
+                    {
+                        **_base_evidence("tts-magpie-local", model="Magpie local TTS"),
+                        "metrics": {"tts_first_audio_ms": 200, "underrun_count": 0},
+                    },
+                    _stack_smoke(),
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python",
+            str(script),
+            "--lint-evidence",
+            "--output-dir",
+            str(output_dir),
+            "--evidence",
+            str(evidence_path),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == "voiceops.spark_evidence_lint.v1"
+    assert payload["ok"] is True
+    assert payload["artifact_writes"] is False
+    assert payload["ready_for_one_spark_demo"] is True
+    assert payload["role_status"] == {
+        "asr": "validated",
+        "oracle": "validated",
+        "reflex": "validated",
+        "tts": "validated",
+    }
+    assert payload["stack_smoke"]["status"] == "validated"
+    assert not output_dir.exists()
+
+
+def test_spark_matrix_lint_evidence_reports_missing_file_without_writes(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_spark_matrix.py"
+    missing_evidence = tmp_path / "missing-evidence.json"
+    output_dir = tmp_path / "matrix"
+
+    result = subprocess.run(
+        [
+            "python",
+            str(script),
+            "--lint-evidence",
+            "--output-dir",
+            str(output_dir),
+            "--evidence",
+            str(missing_evidence),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert payload["ok"] is False
+    assert payload["artifact_writes"] is False
+    assert payload["evidence_load_issues"] == [f"evidence_file_not_found:{missing_evidence}"]
+    assert payload["ready_for_one_spark_demo"] is False
+    assert not output_dir.exists()
+
+
 def test_spark_matrix_parse_args_accepts_repeated_evidence(tmp_path):
     first = tmp_path / "first.json"
     second = tmp_path / "second.json"
     args = parse_args(["--evidence", str(first), "--evidence", str(second)])
 
     assert args.evidence == [first, second]
+
+
+def test_spark_matrix_parse_args_lint_requires_evidence():
+    with pytest.raises(SystemExit):
+        parse_args(["--lint-evidence"])

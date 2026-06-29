@@ -371,6 +371,11 @@ def _demo_closure_summary() -> dict[str, Any]:
                     "--output-dir artifacts/voiceops-spark-matrix/current "
                     f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
                 ),
+                "lint_evidence": (
+                    "uv run python scripts/voiceops_spark_matrix.py "
+                    "--lint-evidence "
+                    f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
+                ),
                 "plan_index": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current "
@@ -603,11 +608,13 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                 "first_safe_command": spark_gate["collection_commands"]["dgx_eval"],
                 "commands": [
                     spark_gate["collection_commands"]["dgx_eval"],
+                    spark_gate["collection_commands"]["lint_evidence"],
                     spark_gate["collection_commands"]["with_evidence"],
                     spark_gate["collection_commands"]["plan_index"],
                 ],
                 "command_safety": {
                     "dgx_eval": "requires_dgx_spark_local_benchmark_collection",
+                    "lint_evidence": "no_write_benchmark_evidence_lint",
                     "with_evidence": "local_benchmark_evidence_validation",
                     "plan_index": "local_reindex_only",
                 },

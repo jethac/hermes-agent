@@ -532,6 +532,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert handoff["phases"][2]["first_safe_command"] == next_actions[2]["first_safe_command"]
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in handoff["phases"][2]["commands"]
+    assert "--lint-evidence" in handoff["phases"][2]["commands"][1]
     assert "asr-nemotron-speech-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
     assert "tts-magpie-local-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
     assert "all-local-stack-smoke-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
@@ -696,6 +697,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "all_local_stack_smoke:needs_evidence" in gates["local_spark_stack_matrix"]["missing"]
     assert "all_local_stack_smoke is validated" in gates["local_spark_stack_matrix"]["completion_signal"]
     assert gates["local_spark_stack_matrix"]["collection_commands"]["dgx_eval"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
+    assert "--lint-evidence" in gates["local_spark_stack_matrix"]["collection_commands"]["lint_evidence"]
     assert "host_system" in gates["local_spark_stack_matrix"]["current_environment"]
     assert summary["hard_failures"] == []
     assert "milestone_1_real_voice_operator" in summary["readiness_gaps"]
@@ -1102,6 +1104,8 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "`local_turn_oracle_calls == 0`" in text
     assert "`oracle_bound_oracle_calls >= oracle_bound_turns`" in text
     assert "local reflex turns must not call the oracle" in text
+    assert "`--lint-evidence --evidence path/to/evidence.json`" in text
+    assert "voiceops.spark_evidence_lint.v1" in text
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in text
     assert "spark-operator-runbook.md" in text
     assert "The operator handoff is the ordered execution runbook" in text
