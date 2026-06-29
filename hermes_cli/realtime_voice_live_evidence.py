@@ -154,6 +154,10 @@ def _attach_optional_evidence_report(
     if not _optional_evidence_has_identity(report_key, payload):
         issues.append(f"{report_key}: evidence file must include kind, evidence_type, or live evidence schema")
         return
+    structural_issues = _optional_evidence_structural_issues(report_key, payload)
+    if structural_issues:
+        issues.extend(f"{report_key}: {issue}" for issue in structural_issues)
+        return
     reports[report_key] = str(resolved)
 
 
@@ -162,6 +166,71 @@ def _optional_evidence_has_identity(report_key: str, payload: dict[str, Any]) ->
         return True
     kind = str(payload.get("kind") or payload.get("evidence_type") or "").strip()
     return kind == report_key
+
+
+def _optional_evidence_structural_issues(report_key: str, payload: dict[str, Any]) -> list[str]:
+    if payload.get("example_only") is True:
+        return ["example_only evidence is not accepted"]
+    if report_key == "sidecar_session":
+        return _missing_required_optional_fields(
+            payload,
+            (
+                "sidecar_running",
+                "sidecar_healthy",
+                "session_started",
+                "session_closed",
+                "fallback_mode_visible",
+                "shutdown_bounded",
+            ),
+            nested_numbers=("latency_metrics_ms.shutdown_ms",),
+            false_fields=("shutdown_timed_out",),
+        )
+    if report_key == "live_turn":
+        return _missing_required_optional_fields(
+            payload,
+            (
+                "transcript_observed",
+                "assistant_audio_observed",
+                "barge_in_observed",
+                "spoken_reply_short",
+                "no_voice_denial_observed",
+            ),
+            nested_numbers=("speech_end_to_first_audio_ms", "barge_in_stop_ms"),
+        )
+    return []
+
+
+def _missing_required_optional_fields(
+    payload: dict[str, Any],
+    true_fields: tuple[str, ...],
+    *,
+    nested_numbers: tuple[str, ...] = (),
+    false_fields: tuple[str, ...] = (),
+) -> list[str]:
+    issues: list[str] = []
+    for field in true_fields:
+        if payload.get(field) is not True:
+            issues.append(f"{field} must be true")
+    for field in false_fields:
+        if payload.get(field) is not False:
+            issues.append(f"{field} must be false")
+    for field in nested_numbers:
+        value: Any = payload
+        for part in field.split("."):
+            value = value.get(part) if isinstance(value, dict) else None
+        if _non_negative_number(value) is None:
+            issues.append(f"{field} must be a non-negative number")
+    return issues
+
+
+def _non_negative_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
 
 
 async def _run_discord_loopback_smoke() -> Any:

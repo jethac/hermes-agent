@@ -49,8 +49,37 @@ def test_live_evidence_manifest_references_optional_sidecar_and_turn_evidence(mo
 
     sidecar_path = tmp_path / "sidecar-session.json"
     live_turn_path = tmp_path / "live-turn.json"
-    sidecar_path.write_text(json.dumps({"kind": "sidecar_session", "sidecar_running": True}), encoding="utf-8")
-    live_turn_path.write_text(json.dumps({"kind": "live_turn", "transcript_observed": True}), encoding="utf-8")
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "kind": "sidecar_session",
+                "sidecar_running": True,
+                "sidecar_healthy": True,
+                "session_started": True,
+                "session_closed": True,
+                "fallback_mode_visible": True,
+                "shutdown_bounded": True,
+                "shutdown_timed_out": False,
+                "latency_metrics_ms": {"shutdown_ms": 80},
+            }
+        ),
+        encoding="utf-8",
+    )
+    live_turn_path.write_text(
+        json.dumps(
+            {
+                "kind": "live_turn",
+                "transcript_observed": True,
+                "assistant_audio_observed": True,
+                "barge_in_observed": True,
+                "spoken_reply_short": True,
+                "no_voice_denial_observed": True,
+                "speech_end_to_first_audio_ms": 950,
+                "barge_in_stop_ms": 80,
+            }
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", fake_loopback)
     monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", fake_live)
 
@@ -98,6 +127,77 @@ def test_live_evidence_manifest_rejects_anonymous_optional_evidence(monkeypatch,
 
     assert result.ok is False
     assert "sidecar_session: evidence file must include kind, evidence_type, or live evidence schema" in result.issues
+    assert "sidecar_session" not in result.reports
+
+
+def test_live_evidence_manifest_rejects_example_only_optional_evidence(monkeypatch, tmp_path):
+    async def fake_loopback():
+        return _FakeProbeResult(ok=True)
+
+    async def fake_live(_args):
+        return _FakeProbeResult(ok=True)
+
+    sidecar_path = tmp_path / "sidecar-session.json"
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "kind": "sidecar_session",
+                "example_only": True,
+                "sidecar_running": True,
+                "sidecar_healthy": True,
+                "session_started": True,
+                "session_closed": True,
+                "fallback_mode_visible": True,
+                "shutdown_bounded": True,
+                "shutdown_timed_out": False,
+                "latency_metrics_ms": {"shutdown_ms": 80},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", fake_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", fake_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    assert result.ok is False
+    assert "sidecar_session: example_only evidence is not accepted" in result.issues
+    assert "sidecar_session" not in result.reports
+
+
+def test_live_evidence_manifest_rejects_incomplete_optional_evidence(monkeypatch, tmp_path):
+    async def fake_loopback():
+        return _FakeProbeResult(ok=True)
+
+    async def fake_live(_args):
+        return _FakeProbeResult(ok=True)
+
+    sidecar_path = tmp_path / "sidecar-session.json"
+    sidecar_path.write_text(json.dumps({"kind": "sidecar_session", "sidecar_running": True}), encoding="utf-8")
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", fake_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", fake_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    assert result.ok is False
+    assert "sidecar_session: sidecar_healthy must be true" in result.issues
+    assert "sidecar_session: latency_metrics_ms.shutdown_ms must be a non-negative number" in result.issues
     assert "sidecar_session" not in result.reports
 
 

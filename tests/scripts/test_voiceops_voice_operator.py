@@ -81,7 +81,10 @@ def _complete_live_evidence() -> dict:
             "sidecar_healthy": True,
             "session_started": True,
             "session_closed": True,
+            "shutdown_bounded": True,
+            "shutdown_timed_out": False,
             "fallback_mode_visible": True,
+            "latency_metrics_ms": {"shutdown_ms": 80},
         }
     )
     evidence["live_turn"].update(
@@ -362,7 +365,10 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
         "sidecar_healthy": True,
         "session_started": True,
         "session_closed": True,
+        "shutdown_bounded": True,
+        "shutdown_timed_out": False,
         "fallback_mode_visible": True,
+        "latency_metrics_ms": {"shutdown_ms": 80},
     }
     live_turn = {
         "kind": "live_turn",
@@ -455,7 +461,10 @@ def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path
                 "sidecar_healthy": True,
                 "session_started": True,
                 "session_closed": True,
+                "shutdown_bounded": True,
+                "shutdown_timed_out": False,
                 "fallback_mode_visible": True,
+                "latency_metrics_ms": {"shutdown_ms": 80},
             }
         ),
         encoding="utf-8",
@@ -498,7 +507,7 @@ def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path
     }
 
 
-def test_voice_operator_overrides_manifest_report_placeholder_source_artifacts(tmp_path):
+def test_voice_operator_rejects_combined_manifest_placeholder_source_artifacts(tmp_path):
     evidence = _complete_live_evidence()
     (tmp_path / "all-live-evidence.json").write_text(json.dumps(evidence), encoding="utf-8")
     manifest_path = tmp_path / "manifest.json"
@@ -517,22 +526,36 @@ def test_voice_operator_overrides_manifest_report_placeholder_source_artifacts(t
 
     live_evidence = _load_live_evidence([manifest_path])
 
-    source_artifact = str(tmp_path / "all-live-evidence.json")
-    assert live_evidence["issues"] == []
-    assert live_evidence["section_refs"] == {
-        "discord_live_probe": {
-            "source_artifact": source_artifact,
-            "section": "discord_live_probe",
-        },
-        "sidecar_session": {
-            "source_artifact": source_artifact,
-            "section": "sidecar_session",
-        },
-        "live_turn": {
-            "source_artifact": source_artifact,
-            "section": "live_turn",
-        },
-    }
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "discord_live_probe:template_source_artifact_not_accepted" in live_evidence["issues"]
+    assert "sidecar_session:template_source_artifact_not_accepted" in live_evidence["issues"]
+    assert "live_turn:template_source_artifact_not_accepted" in live_evidence["issues"]
+
+
+def test_voice_operator_rejects_combined_manifest_missing_nested_source_artifact(tmp_path):
+    evidence = _complete_live_evidence()
+    evidence["live_turn"].pop("source_artifact")
+    evidence["discord_live_probe"]["source_artifact"] = str(tmp_path / "all-live-evidence.json")
+    evidence["sidecar_session"]["source_artifact"] = str(tmp_path / "all-live-evidence.json")
+    (tmp_path / "all-live-evidence.json").write_text(json.dumps(evidence), encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "ok": True,
+                "reports": {
+                    "combined": "all-live-evidence.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "live_turn:missing_source_artifact" in live_evidence["issues"]
 
 
 def test_live_evidence_rejects_complete_payload_without_schema_and_source_artifacts():
@@ -565,7 +588,10 @@ def test_live_evidence_rejects_complete_payload_without_schema_and_source_artifa
             "sidecar_healthy": True,
             "session_started": True,
             "session_closed": True,
+            "shutdown_bounded": True,
+            "shutdown_timed_out": False,
             "fallback_mode_visible": True,
+            "latency_metrics_ms": {"shutdown_ms": 80},
         }
     )
     evidence["live_turn"].update(
@@ -601,7 +627,10 @@ def test_voice_operator_rejects_manifest_with_example_only_referenced_section(tm
             "sidecar_healthy": True,
             "session_started": True,
             "session_closed": True,
+            "shutdown_bounded": True,
+            "shutdown_timed_out": False,
             "fallback_mode_visible": True,
+            "latency_metrics_ms": {"shutdown_ms": 80},
         }
     )
     live_turn = build_live_probe_evidence_template()["live_turn"]
@@ -652,7 +681,10 @@ def test_voice_operator_rejects_manifest_with_missing_or_invalid_schema(tmp_path
             "sidecar_healthy": True,
             "session_started": True,
             "session_closed": True,
+            "shutdown_bounded": True,
+            "shutdown_timed_out": False,
             "fallback_mode_visible": True,
+            "latency_metrics_ms": {"shutdown_ms": 80},
         }
     )
     live_turn = build_live_probe_evidence_template()["live_turn"]
@@ -720,7 +752,10 @@ def test_live_evidence_rejects_nested_example_only_sections():
             "sidecar_healthy": True,
             "session_started": True,
             "session_closed": True,
+            "shutdown_bounded": True,
+            "shutdown_timed_out": False,
             "fallback_mode_visible": True,
+            "latency_metrics_ms": {"shutdown_ms": 80},
         }
     )
     evidence["live_turn"].update(
@@ -741,6 +776,61 @@ def test_live_evidence_rejects_nested_example_only_sections():
     assert "discord_live_probe:example_only_evidence_not_accepted" in result["issues"]
     assert "sidecar_session:example_only_evidence_not_accepted" in result["issues"]
     assert "live_turn:example_only_evidence_not_accepted" in result["issues"]
+
+
+def test_live_evidence_rejects_raw_text_secret_and_denial_fields():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"]["assistant_text"] = "I cannot hear voice. I only process typed text."
+    evidence["live_turn"]["raw_transcript"] = "call me at +15551234567"
+    evidence["sidecar_session"]["api_key"] = "sk-car-exampletoken123456"
+
+    result = validate_live_probe_evidence(evidence)
+
+    assert "live_turn.assistant_text:forbidden_evidence_field" in result["issues"]
+    assert "live_turn.assistant_text:voice_capability_denial_text" in result["issues"]
+    assert "live_turn.raw_transcript:forbidden_evidence_field" in result["issues"]
+    assert "live_turn.raw_transcript:secret_or_phone_like_value" in result["issues"]
+    assert "sidecar_session.api_key:forbidden_evidence_field" in result["issues"]
+    assert "sidecar_session.api_key:secret_or_phone_like_value" in result["issues"]
+
+
+def test_live_evidence_requires_bounded_sidecar_shutdown():
+    evidence = _complete_live_evidence()
+    evidence["sidecar_session"].pop("shutdown_bounded")
+    evidence["sidecar_session"]["shutdown_timed_out"] = True
+    evidence["sidecar_session"]["latency_metrics_ms"] = {}
+
+    result = validate_live_probe_evidence(evidence)
+
+    assert "sidecar_session:missing_shutdown_ms" in result["issues"]
+    assert "sidecar_session:shutdown_bounded_not_true" in result["issues"]
+    assert "sidecar_session:shutdown_timed_out_not_false" in result["issues"]
+    assert result["sidecar_session"]["ok"] is False
+
+
+def test_live_turn_latency_boundaries_are_exact():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"]["speech_end_to_first_audio_ms"] = 3000
+    evidence["live_turn"]["barge_in_stop_ms"] = 150
+
+    boundary = validate_live_probe_evidence(evidence)
+
+    assert "live_turn:speech_end_to_first_audio_ms_over_target" not in boundary["issues"]
+    assert "live_turn:barge_in_stop_ms_over_target" not in boundary["issues"]
+
+    evidence["live_turn"]["speech_end_to_first_audio_ms"] = 3000.1
+    evidence["live_turn"]["barge_in_stop_ms"] = 150.1
+    over = validate_live_probe_evidence(evidence)
+
+    assert "live_turn:speech_end_to_first_audio_ms_over_target" in over["issues"]
+    assert "live_turn:barge_in_stop_ms_over_target" in over["issues"]
+
+    evidence["live_turn"]["speech_end_to_first_audio_ms"] = -1
+    evidence["live_turn"]["barge_in_stop_ms"] = "not-a-number"
+    invalid = validate_live_probe_evidence(evidence)
+
+    assert "live_turn:missing_speech_end_to_first_audio_ms" in invalid["issues"]
+    assert "live_turn:missing_barge_in_stop_ms" in invalid["issues"]
 
 
 def test_voice_operator_cli_smoke(tmp_path):

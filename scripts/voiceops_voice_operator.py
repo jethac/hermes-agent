@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -80,6 +81,41 @@ LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS = {
     "voice-turn-evidence.json",
 }
 
+LIVE_EVIDENCE_FORBIDDEN_TEXT_FIELDS = {
+    "assistant_text",
+    "assistant_reply",
+    "assistant_transcript",
+    "raw_transcript",
+    "reply_text",
+    "transcript_text",
+    "user_transcript",
+}
+
+LIVE_EVIDENCE_SECRET_FIELD_MARKERS = (
+    "api_key",
+    "authorization",
+    "auth_token",
+    "bearer",
+    "phone",
+    "secret",
+    "token",
+)
+
+LIVE_EVIDENCE_DENIAL_PHRASES = (
+    "cannot hear voice",
+    "cannot hear you",
+    "cannot speak in discord",
+    "do not have any ability to join discord voice",
+    "i only process text",
+    "i only process typed text",
+)
+
+SECRET_VALUE_RE = re.compile(
+    r"(?i)(sk[-_][a-z0-9]{8,}|pk[-_][a-z0-9]{8,}|rk[-_][a-z0-9]{8,}|"
+    r"whsec_[a-z0-9]{8,}|xox[aboprs]-[a-z0-9-]{8,}|gh[pousr]_[a-z0-9_]{8,}|"
+    r"mfa\.[a-z0-9_-]{20,}|[a-z0-9_-]{23,}\.[a-z0-9_-]{6,}\.[a-z0-9_-]{20,})"
+)
+
 
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -111,11 +147,29 @@ def _non_negative_number(value: Any) -> float | None:
 def _looks_secret_or_phone(value: Any) -> bool:
     text = str(value or "")
     lowered = text.lower()
-    secret_markers = ("sk_", "pk_", "rk_", "whsec_", "xoxb", "xoxp", "ghp_", "bearer ")
+    secret_markers = ("sk_", "pk_", "rk_", "whsec_", "xoxb", "xoxp", "ghp_", "bearer ", "sk-", "pk-", "rk-")
     if any(marker in lowered for marker in secret_markers):
         return True
+    if SECRET_VALUE_RE.search(text):
+        return True
     digits = "".join(ch for ch in text if ch.isdigit())
-    return text.strip().startswith("+") and len(digits) >= 8
+    return "+" in text and len(digits) >= 8
+
+
+def _live_evidence_key_name(path: str) -> str:
+    return path.rsplit(".", 1)[-1].split("[", 1)[0].lower()
+
+
+def _looks_like_forbidden_live_evidence_field(path: str) -> bool:
+    name = _live_evidence_key_name(path)
+    if name in LIVE_EVIDENCE_FORBIDDEN_TEXT_FIELDS:
+        return True
+    return any(marker in name for marker in LIVE_EVIDENCE_SECRET_FIELD_MARKERS)
+
+
+def _looks_like_voice_denial_text(value: str) -> bool:
+    lowered = value.lower()
+    return any(phrase in lowered for phrase in LIVE_EVIDENCE_DENIAL_PHRASES)
 
 
 def build_live_probe_evidence_template() -> dict[str, Any]:
@@ -152,6 +206,8 @@ def build_live_probe_evidence_template() -> dict[str, Any]:
             "sidecar_healthy": False,
             "session_started": False,
             "session_closed": False,
+            "shutdown_bounded": False,
+            "shutdown_timed_out": None,
             "fallback_mode_visible": False,
             "fallback_reason": None,
             "latency_metrics_ms": {
@@ -205,6 +261,8 @@ def build_live_probe_evidence_example() -> dict[str, Any]:
             "sidecar_healthy": True,
             "session_started": True,
             "session_closed": True,
+            "shutdown_bounded": True,
+            "shutdown_timed_out": False,
             "fallback_mode_visible": True,
             "fallback_reason": "none",
             "latency_metrics_ms": {
@@ -317,9 +375,10 @@ def _with_manifest_report_provenance(payload: Mapping[str, Any], report_path: Pa
     enriched = dict(payload)
     source_artifact = str(report_path)
     previous_source_artifact = str(enriched.get("source_artifact") or "")
-    enriched["source_artifact"] = source_artifact
-    provenance = {"source_artifact": source_artifact}
-    if previous_source_artifact and previous_source_artifact != source_artifact:
+    if not previous_source_artifact or previous_source_artifact in LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS:
+        enriched["source_artifact"] = source_artifact
+    provenance = {"wrapper_artifact": source_artifact}
+    if previous_source_artifact:
         provenance["reported_source_artifact"] = previous_source_artifact
     enriched["provenance"] = provenance
     for section_name in ("discord_live_probe", "sidecar_session", "live_turn"):
@@ -327,9 +386,8 @@ def _with_manifest_report_provenance(payload: Mapping[str, Any], report_path: Pa
         if isinstance(section, Mapping):
             section_copy = dict(section)
             previous_section_source = str(section_copy.get("source_artifact") or "")
-            section_copy["source_artifact"] = source_artifact
-            section_provenance = {"source_artifact": source_artifact, "section": section_name}
-            if previous_section_source and previous_section_source != source_artifact:
+            section_provenance = {"wrapper_artifact": source_artifact, "section": section_name}
+            if previous_section_source:
                 section_provenance["reported_source_artifact"] = previous_section_source
             section_copy["provenance"] = section_provenance
             enriched[section_name] = section_copy
@@ -407,6 +465,10 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         issues.append("example_only_evidence_not_accepted")
     redaction_issues: list[str] = []
     for key, value in _walk_live_evidence_strings(payload):
+        if _looks_like_forbidden_live_evidence_field(key):
+            redaction_issues.append(f"{key}:forbidden_evidence_field")
+        if _looks_like_voice_denial_text(value):
+            redaction_issues.append(f"{key}:voice_capability_denial_text")
         if _looks_secret_or_phone(value):
             redaction_issues.append(f"{key}:secret_or_phone_like_value")
     if redaction_issues:
@@ -454,6 +516,14 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
     for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS:
         if sidecar.get(key) is not True:
             issues.append(f"sidecar_session:{key}_not_true")
+    sidecar_latency = sidecar.get("latency_metrics_ms") if isinstance(sidecar.get("latency_metrics_ms"), Mapping) else {}
+    shutdown_ms = _non_negative_number(sidecar_latency.get("shutdown_ms"))
+    if shutdown_ms is None:
+        issues.append("sidecar_session:missing_shutdown_ms")
+    if sidecar.get("shutdown_bounded") is not True:
+        issues.append("sidecar_session:shutdown_bounded_not_true")
+    if sidecar.get("shutdown_timed_out") is not False:
+        issues.append("sidecar_session:shutdown_timed_out_not_false")
 
     live_turn = payload.get("live_turn") if isinstance(payload.get("live_turn"), Mapping) else {}
     if not str(live_turn.get("source_artifact") or "").strip():
@@ -502,7 +572,13 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             "receiver_speech_start": _positive_int(discord_probe.get("receiver_speech_start")),
         },
         "sidecar_session": {
-            "ok": all(sidecar.get(key) is True for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS),
+            "ok": all(sidecar.get(key) is True for key in LIVE_EVIDENCE_REQUIRED_SIDECAR_BOOLS)
+            and shutdown_ms is not None
+            and sidecar.get("shutdown_bounded") is True
+            and sidecar.get("shutdown_timed_out") is False,
+            "shutdown_ms": shutdown_ms,
+            "shutdown_bounded": sidecar.get("shutdown_bounded") is True,
+            "shutdown_timed_out": sidecar.get("shutdown_timed_out") is True,
         },
         "live_turn": {
             "ok": all(live_turn.get(key) is True for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS)

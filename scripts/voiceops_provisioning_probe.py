@@ -56,7 +56,13 @@ MUTATING_COMMAND_PATTERNS = [
     "token",
 ]
 
-SAFE_PROBE_ARGS = {"--version", "-v", "version", "--help", "-h", "help"}
+SAFE_PROBE_ARGV_TUPLES = {
+    ("stripe", "--version"),
+    ("stripe", "projects", "--help"),
+    ("link-cli", "--version"),
+    ("mppx", "--version"),
+    ("twilio", "--version"),
+}
 SETUP_CLOSURE_REQUIREMENTS: dict[str, dict[str, Any]] = {
     "stripe_cli": {
         "category": "local_tooling",
@@ -221,6 +227,15 @@ PREFLIGHT_SECRET_VALUE_RE = re.compile(
     r"\b(?:sk|pk|rk|whsec|xox[baprs]|gh[pousr])[_-][A-Za-z0-9][A-Za-z0-9_\-]{8,}\b|"
     r"\bAC[A-Za-z0-9]{8,}\b|"
     r"\bSG[A-Za-z0-9]{8,}\b"
+)
+GENERIC_SECRET_REF_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9])(?:api[-_]?key|token|secret|password|auth)"
+    r"(?:[\s:=/._-]+)[A-Za-z0-9][A-Za-z0-9._\-]{7,}"
+)
+SECRET_PATH_RE = re.compile(r"(?i)(?:^|[.\[\]_-])(?:credential|auth|token|secret|key|password)(?:$|[.\[\]_-])")
+SENSITIVE_PATH_SECRET_VALUE_RE = re.compile(
+    r"(?i)\b(?:live|prod|secret|token|api[-_]?key|auth)[._-][A-Za-z0-9][A-Za-z0-9._\-]{11,}\b|"
+    r"\b[A-Za-z0-9+/=_-]{32,}\b"
 )
 BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-]{8,}")
 PHONE_RE = re.compile(r"(?<!\d)\+?[1-9]\d[\d .()\-]{7,}\d(?!\d)")
@@ -479,7 +494,13 @@ def _walk_strings(value: Any, prefix: str = "") -> Iterable[tuple[str, str]]:
 def _preflight_secret_issues(payload: Mapping[str, Any]) -> list[str]:
     issues: list[str] = []
     for path, value in _walk_strings(payload):
-        if SECRET_KEY_RE.search(f"{path}={value}") or BEARER_RE.search(value) or PREFLIGHT_SECRET_VALUE_RE.search(value):
+        if (
+            SECRET_KEY_RE.search(f"{path}={value}")
+            or BEARER_RE.search(value)
+            or PREFLIGHT_SECRET_VALUE_RE.search(value)
+            or GENERIC_SECRET_REF_RE.search(value)
+            or _secret_like_sensitive_path_value(path, value)
+        ):
             issues.append(f"{path}: secret-like value")
         elif (
             not path.endswith("_checked_at")
@@ -488,6 +509,35 @@ def _preflight_secret_issues(payload: Mapping[str, Any]) -> list[str]:
             and PHONE_RE.search(value)
         ):
             issues.append(f"{path}: phone-like value")
+    return issues
+
+
+def _secret_like_sensitive_path_value(path: str, value: str) -> bool:
+    if path.endswith("_checked_at") or path.endswith("_redacted_at") or path.endswith("_sha256"):
+        return False
+    if not SECRET_PATH_RE.search(path):
+        return False
+    return bool(SENSITIVE_PATH_SECRET_VALUE_RE.search(value))
+
+
+def _example_only_presence_issues(value: Any, prefix: str = "") -> list[str]:
+    issues: list[str] = []
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            key_text = str(key)
+            child_prefix = f"{prefix}.{key_text}" if prefix else key_text
+            if key_text == "example_only":
+                if not prefix:
+                    issues.append("example_only evidence is not accepted")
+                elif prefix in PREFLIGHT_EVIDENCE_SECTIONS:
+                    issues.append(f"{prefix}: example_only evidence is not accepted")
+                else:
+                    issues.append(f"{child_prefix}: example_only field is not accepted")
+            issues.extend(_example_only_presence_issues(child, child_prefix))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            child_prefix = f"{prefix}[{index}]"
+            issues.extend(_example_only_presence_issues(child, child_prefix))
     return issues
 
 
@@ -568,9 +618,7 @@ def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
     validation_issues = [*manifest_issues, *_preflight_secret_issues(raw_payload), *_timestamp_issues(raw_payload)]
     if str(raw_payload.get("schema_version") or "") != PREFLIGHT_EVIDENCE_SCHEMA_VERSION:
         validation_issues.append("missing_or_invalid_schema_version")
-    if raw_payload.get("example_only") is True:
-        validation_issues.append("example_only evidence is not accepted")
-    validation_issues.extend(_nested_example_only_issues(raw_payload))
+    validation_issues.extend(_example_only_presence_issues(raw_payload))
     validation_issues.extend(_source_artifact_issues(raw_payload, path))
     return {
         "loaded": True,
@@ -594,8 +642,8 @@ def _expand_preflight_evidence_manifest(path: Path, payload: Mapping[str, Any]) 
         issues.append("preflight_evidence_manifest:missing_schema_version")
     elif manifest_schema != PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION:
         issues.append("preflight_evidence_manifest:invalid_schema_version")
-    if payload.get("example_only") is True:
-        expanded["example_only"] = True
+    if "example_only" in payload:
+        expanded["example_only"] = payload["example_only"]
     for section_name, report_path_value in reports.items():
         if section_name not in PREFLIGHT_EVIDENCE_SECTIONS:
             issues.append(f"preflight_evidence_manifest:{section_name}:unknown_section")
@@ -638,39 +686,19 @@ def _load_preflight_manifest_report(path: Path, section_name: str) -> tuple[Mapp
     if not isinstance(payload, Mapping):
         return None, ["evidence root must be an object"]
     issues: list[str] = []
-    if payload.get("example_only") is True:
+    if "example_only" in payload:
         issues.append("example_only evidence is not accepted")
     section = payload.get(section_name)
     if isinstance(section, Mapping):
         section = _with_preflight_section_source_artifact(section, path)
-        if section.get("example_only") is True:
+        if "example_only" in section:
             issues.append("example_only evidence is not accepted")
         return section, issues
     return _with_preflight_section_source_artifact(payload, path), issues
 
 
-def _nested_example_only_issues(payload: Mapping[str, Any]) -> list[str]:
-    return [
-        f"{section_name}: example_only evidence is not accepted"
-        for section_name in PREFLIGHT_EVIDENCE_SECTIONS
-        if isinstance(payload.get(section_name), Mapping) and payload[section_name].get("example_only") is True
-    ]
-
-
 def _with_preflight_section_source_artifact(section: Mapping[str, Any], path: Path) -> dict[str, Any]:
     section_copy = dict(section)
-    reported_source = str(section_copy.get("source_artifact") or "")
-    source_artifact = str(path)
-    section_copy["source_artifact"] = source_artifact
-    if not str(section_copy.get("source_artifact_kind") or "").strip():
-        section_copy["source_artifact_kind"] = PREFLIGHT_SOURCE_ARTIFACT_KIND
-    try:
-        if not str(section_copy.get("source_artifact_sha256") or "").strip():
-            section_copy["source_artifact_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        pass
-    if reported_source and reported_source != source_artifact:
-        section_copy["reported_source_artifact"] = reported_source
     return section_copy
 
 
@@ -723,14 +751,28 @@ def _redacted_artifact_issues(artifact_bytes: bytes) -> list[str]:
     if not isinstance(artifact, Mapping):
         return ["artifact root must be an object"]
     issues: list[str] = []
-    if artifact.get("example_only") is True:
-        issues.append("example_only evidence is not accepted")
+    issues.extend(_example_only_presence_issues(artifact))
     redaction_policy = str(artifact.get("redaction_policy") or "").lower()
-    redacted_flag = artifact.get("redacted") is True
-    if not redacted_flag and "redact" not in redaction_policy:
+    redacted_flag = artifact.get("redacted")
+    if redacted_flag is not True and not (redacted_flag is None and _strict_affirmative_redaction_policy(redaction_policy)):
         issues.append("artifact is not marked redacted")
     issues.extend(_preflight_secret_issues(artifact))
     return issues
+
+
+def _strict_affirmative_redaction_policy(policy: str) -> bool:
+    policy = " ".join(policy.lower().split())
+    if not policy:
+        return False
+    if re.search(r"\b(?:not redacted|unredacted|no redaction|without redaction)\b", policy):
+        return False
+    has_reference_scope = any(phrase in policy for phrase in ("references only", "refs only", "aliases only", "redacted"))
+    has_no_raw = any(phrase in policy for phrase in ("no raw", "never raw", "without raw"))
+    has_sensitive_scope = any(
+        term in policy
+        for term in ("secret", "token", "credential", "card", "phone", "password", "api key", "api-key")
+    )
+    return has_reference_scope and has_no_raw and has_sensitive_scope
 
 
 def _default_env_files() -> list[Path]:
@@ -770,8 +812,8 @@ def _validate_safe_probe_command(argv: Sequence[str]) -> None:
     for pattern in MUTATING_COMMAND_PATTERNS:
         if pattern in joined:
             raise ValueError(f"refusing mutating or credential-sensitive probe command: {joined}")
-    if not any(arg in SAFE_PROBE_ARGS for arg in argv[1:]):
-        raise ValueError(f"probe command must be version/help only: {joined}")
+    if tuple(argv) not in SAFE_PROBE_ARGV_TUPLES:
+        raise ValueError(f"probe command must match the allowlisted manifest exactly: {joined}")
 
 
 def _subprocess_runner(argv: Sequence[str], timeout_seconds: int) -> CommandResult:
@@ -1453,16 +1495,16 @@ def _expected_post_approval_evidence(action: Mapping[str, Any]) -> dict[str, Any
     action_id = str(action["action_id"])
     receipt_ref = str(action["expected_receipt_ref"])
     rollback_ref = str(action["rollback_ref"])
-    credential_location_ref = {
-        "provision-voip-provider": "credential_locations.voip_provider",
-        "buy-service-credit": "credential_locations.stripe_link",
-        "call-user-phone": "credential_locations.phone_bridge",
-    }.get(action_id)
+    approval_contract = action["approval_contract"]
+    credential_location_ref = action.get("credential_location_ref")
     required_schemas = ["receipt_schema", rollback_ref]
     if credential_location_ref:
         required_schemas.append("credential_location_schema")
     return {
         "action_id": action_id,
+        "approval_id": approval_contract["approval_id"],
+        "approval_contract_ref": f"approval_contracts.{action_id}",
+        "command_sha256": approval_contract["command_sha256"],
         "execution_status": "not_executed",
         "expected_receipt_ref": receipt_ref,
         "receipt": None,
@@ -1604,6 +1646,9 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
             ),
         },
     ]
+    for action in approval_required_actions:
+        action["approval_id"] = action["approval_contract"]["approval_id"]
+        action["command_sha256"] = action["approval_contract"]["command_sha256"]
     return {
         "generated_at": _utc_now(),
         "schema_version": "voiceops.milestone2.execution_plan.v1",
@@ -1697,6 +1742,11 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "receipt": None,
                 "schema_ref": "receipt_schema",
                 "action_id": action["action_id"],
+                "approval_id": action["approval_id"],
+                "command_sha256": action["command_sha256"],
+                "credential_location_ref": action["credential_location_ref"],
+                "rollback_ref": action["rollback_ref"],
+                "approval_contract_ref": f"approval_contracts.{action['action_id']}",
             }
             for action in approval_required_actions
         },
@@ -1823,14 +1873,18 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
             "required_fields": [
                 "receipt_id",
                 "action_id",
+                "approval_id",
                 "provider",
                 "status",
                 "approved_by",
                 "approved_at",
                 "executed_at",
+                "command_sha256",
                 "amount_cents",
                 "currency",
                 "external_reference",
+                "credential_location_ref",
+                "rollback_ref",
                 "audit_event_id",
             ],
             "secret_policy": "receipts must contain references and redacted summaries only; never raw credentials, card data, tokens, or full phone numbers",

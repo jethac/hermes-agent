@@ -19,6 +19,7 @@ from scripts.voiceops_provisioning_probe import (
     load_preflight_evidence,
     parse_args,
     write_probe_artifacts,
+    _validate_safe_probe_command,
 )
 
 
@@ -408,9 +409,18 @@ def test_preflight_evidence_rejects_invalid_timestamps(tmp_path):
 
 def test_preflight_evidence_manifest_merges_redacted_section_files(tmp_path):
     sections = _complete_preflight_evidence()
-    for section in sections.values():
-        if isinstance(section, dict):
-            section["source_artifact_redacted_at"] = "2026-06-29T00:00:00Z"
+    for section_name, section in sections.items():
+        if not isinstance(section, dict):
+            continue
+        source_path = tmp_path / f"{section_name}-source.json"
+        source_bytes = json.dumps(
+            {"section": section_name, "redacted": True, "redaction_policy": "references only; no raw secrets or tokens"},
+            sort_keys=True,
+        ).encode("utf-8")
+        source_path.write_bytes(source_bytes)
+        section["source_artifact"] = source_path.name
+        section["source_artifact_sha256"] = hashlib.sha256(source_bytes).hexdigest()
+        section["source_artifact_redacted_at"] = "2026-06-29T00:00:00Z"
     (tmp_path / "stripe-projects.json").write_text(
         json.dumps({"redacted": True, "stripe_projects": sections["stripe_projects"]}),
         encoding="utf-8",
@@ -451,6 +461,31 @@ def test_preflight_evidence_manifest_merges_redacted_section_files(tmp_path):
     assert report["ready"] is True
 
 
+def test_preflight_evidence_manifest_requires_explicit_section_source_sha(tmp_path):
+    sections = _complete_preflight_evidence()
+    sections["stripe_projects"]["source_artifact_redacted_at"] = "2026-06-29T00:00:00Z"
+    (tmp_path / "stripe-projects.json").write_text(
+        json.dumps({"stripe_projects": sections["stripe_projects"]}),
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "preflight-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+                "reports": {"stripe_projects": "stripe-projects.json"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_preflight_evidence(manifest_path)
+
+    assert "stripe_projects.source_artifact" in loaded["missing_fields"]
+    assert "stripe_projects.source_artifact_sha256" in loaded["missing_fields"]
+    assert "stripe_projects.source_artifact: missing" in loaded["validation_issues"]
+
+
 def test_preflight_evidence_manifest_rejects_missing_or_invalid_schema(tmp_path):
     sections = _complete_preflight_evidence()
     (tmp_path / "stripe-link.json").write_text(json.dumps(sections["stripe_link"]), encoding="utf-8")
@@ -472,15 +507,16 @@ def test_preflight_evidence_manifest_rejects_missing_or_invalid_schema(tmp_path)
 
 def test_preflight_evidence_manifest_rejects_example_only_referenced_sections(tmp_path):
     sections = _complete_preflight_evidence()
-    sections["stripe_link"]["example_only"] = True
+    sections["stripe_link"]["example_only"] = False
     (tmp_path / "stripe-link.json").write_text(json.dumps(sections["stripe_link"]), encoding="utf-8")
-    sections["mpp"]["example_only"] = True
+    sections["mpp"]["example_only"] = False
     (tmp_path / "mpp.json").write_text(json.dumps({"mpp": sections["mpp"]}), encoding="utf-8")
     manifest_path = tmp_path / "preflight-manifest.json"
     manifest_path.write_text(
         json.dumps(
             {
                 "schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+                "example_only": False,
                 "reports": {
                     "stripe_link": "stripe-link.json",
                     "mpp": "mpp.json",
@@ -492,6 +528,7 @@ def test_preflight_evidence_manifest_rejects_example_only_referenced_sections(tm
 
     loaded = load_preflight_evidence(manifest_path)
 
+    assert "example_only evidence is not accepted" in loaded["validation_issues"]
     assert "preflight_evidence_manifest:stripe_link:example_only evidence is not accepted" in loaded["validation_issues"]
     assert "preflight_evidence_manifest:mpp:example_only evidence is not accepted" in loaded["validation_issues"]
     assert "stripe_link: example_only evidence is not accepted" in loaded["validation_issues"]
@@ -629,7 +666,13 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
         "stripe_actions_dry_run": "stripe-actions-dry-run.sh",
         "voiceops_demo": "voiceops-demo.json",
     }
-    assert "receipt_id" in plan["receipt_schema"]["required_fields"]
+    assert {
+        "approval_id",
+        "command_sha256",
+        "credential_location_ref",
+        "receipt_id",
+        "rollback_ref",
+    } <= set(plan["receipt_schema"]["required_fields"])
     assert "credential_ref_id" in plan["credential_location_schema"]["required_fields"]
     assert "raw_secret" in plan["credential_location_schema"]["forbidden_fields"]
     assert {
@@ -664,9 +707,18 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
         rollback_slot = _dot_get(plan, action["rollback_ref"])
         assert receipt_slot["status"] == "not_executed"
         assert receipt_slot["schema_ref"] == "receipt_schema"
+        assert receipt_slot["action_id"] == action["action_id"]
+        assert receipt_slot["approval_id"] == action["approval_id"]
+        assert receipt_slot["command_sha256"] == hashlib.sha256(action["command"].encode("utf-8")).hexdigest()
+        assert receipt_slot["command_sha256"] == action["command_sha256"]
+        assert receipt_slot["credential_location_ref"] == action["credential_location_ref"]
+        assert receipt_slot["rollback_ref"] == action["rollback_ref"]
         assert rollback_slot
         contract = action["approval_contract"]
         assert contract == plan["approval_contracts"][action["action_id"]]
+        assert action["approval_id"] == contract["approval_id"]
+        assert action["command_sha256"] == contract["command_sha256"]
+        assert contract["command_sha256"] == hashlib.sha256(action["command"].encode("utf-8")).hexdigest()
         assert len(contract["command_sha256"]) == 64
         assert contract["approved_by_ref"] is None
         assert contract["allowed_decisions"] == ["approve_once", "deny", "hold"]
@@ -685,6 +737,13 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
         evidence["execution_status"] == "not_executed"
         for evidence in plan["expected_post_approval_evidence"].values()
     )
+    for action_id, evidence in plan["expected_post_approval_evidence"].items():
+        action = next(item for item in plan["approval_required_actions"] if item["action_id"] == action_id)
+        assert evidence["approval_id"] == action["approval_id"]
+        assert evidence["command_sha256"] == action["command_sha256"]
+        assert evidence["expected_receipt_ref"] == action["expected_receipt_ref"]
+        assert evidence["credential_location_ref"] == action["credential_location_ref"]
+        assert evidence["rollback_ref"] == action["rollback_ref"]
 
     serialized = json.dumps(plan)
     assert "sk_live_123456789abcdef" not in serialized
@@ -755,6 +814,51 @@ def test_preflight_evidence_rejects_secret_like_values(tmp_path):
     assert "+15551234567" not in serialized
     assert "secret-like value" in serialized
     assert "phone-like value" in serialized
+
+
+def test_preflight_evidence_rejects_generic_secret_shaped_refs(tmp_path):
+    evidence = _complete_preflight_evidence()
+    evidence["phone_handoff"]["credential_location_ref"] = "api-key-live-abcdefghijklmnopqrstuvwxyz"
+    evidence["mpp"]["policy_ref"] = "auth-token-prod-abcdefghijklmnopqrstuvwxyz"
+    evidence_path = _write_preflight_evidence(tmp_path, evidence)
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "phone_handoff.credential_location_ref: secret-like value" in loaded["validation_issues"]
+    assert "mpp.policy_ref: secret-like value" in loaded["validation_issues"]
+
+
+def test_preflight_evidence_rejects_not_redacted_artifacts_and_nested_example_only(tmp_path):
+    evidence = _complete_preflight_evidence()
+    evidence_path = _write_preflight_evidence(tmp_path, evidence)
+    stripe_source = tmp_path / "stripe_projects-source.json"
+    stripe_source.write_text(
+        json.dumps(
+            {
+                "redacted": False,
+                "redaction_policy": "not redacted",
+                "nested": {"example_only": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    evidence["stripe_projects"]["source_artifact_sha256"] = hashlib.sha256(stripe_source.read_bytes()).hexdigest()
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "stripe_projects.source_artifact:artifact is not marked redacted" in loaded["validation_issues"]
+    assert "stripe_projects.source_artifact:nested.example_only: example_only field is not accepted" in loaded["validation_issues"]
+
+
+def test_command_probe_validation_requires_exact_manifest_argv():
+    _validate_safe_probe_command(["stripe", "--version"])
+    _validate_safe_probe_command(["stripe", "projects", "--help"])
+
+    with pytest.raises(ValueError, match="allowlisted manifest exactly"):
+        _validate_safe_probe_command(["stripe", "customers", "--help"])
+    with pytest.raises(ValueError, match="allowlisted manifest exactly"):
+        _validate_safe_probe_command(["unknown-cli", "--version"])
 
 
 def test_probe_cli_smoke_no_command_probes(tmp_path):
