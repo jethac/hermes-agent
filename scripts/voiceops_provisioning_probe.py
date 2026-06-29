@@ -54,12 +54,147 @@ MUTATING_COMMAND_PATTERNS = [
 ]
 
 SAFE_PROBE_ARGS = {"--version", "-v", "version", "--help", "-h", "help"}
+SETUP_CLOSURE_REQUIREMENTS: dict[str, dict[str, Any]] = {
+    "stripe_cli": {
+        "category": "local_tooling",
+        "accepted_binaries": ["stripe"],
+        "safe_probe_commands": [["stripe", "--version"]],
+        "accepted_env_keys": [],
+        "operator_action": "Install the Stripe CLI on PATH.",
+        "proof": "A rerun records stripe_cli_version as found or pass.",
+    },
+    "stripe_projects_cli": {
+        "category": "local_tooling",
+        "accepted_binaries": ["stripe"],
+        "safe_probe_commands": [["stripe", "projects", "--help"]],
+        "accepted_env_keys": [],
+        "operator_action": "Install or enable the Stripe Projects plugin/subcommand.",
+        "proof": "A rerun records stripe_projects_help as found or pass.",
+    },
+    "stripe_link_cli": {
+        "category": "local_tooling",
+        "accepted_binaries": ["link-cli"],
+        "safe_probe_commands": [["link-cli", "--version"]],
+        "accepted_env_keys": [],
+        "operator_action": "Install a pinned Stripe Link CLI binary on PATH.",
+        "proof": "A rerun records stripe_link_cli_version as found or pass.",
+    },
+    "mpp_agent": {
+        "category": "execution_boundary",
+        "accepted_binaries": ["mppx", "mpp", "mpp-agent", "nemoclaw", "openshell"],
+        "safe_probe_commands": [["mppx", "--version"]],
+        "accepted_env_keys": [],
+        "operator_action": "Install the MPP/NemoClaw boundary CLI on PATH.",
+        "proof": "A rerun records mppx_version as found/pass or an accepted fallback boundary CLI.",
+    },
+    "phone_target": {
+        "category": "configuration",
+        "accepted_binaries": [],
+        "safe_probe_commands": [],
+        "accepted_env_keys": [
+            "VOICEOPS_DEMO_PHONE_NUMBER",
+            "TWILIO_PHONE_NUMBER",
+            "VAPI_PHONE_NUMBER_ID",
+            "BLAND_PHONE_NUMBER",
+        ],
+        "operator_action": "Set one phone handoff target env key in a repo-local env file or launch environment.",
+        "proof": "A rerun records at least one accepted phone target key as present without emitting its value.",
+    },
+    "phone_provider": {
+        "category": "configuration_or_tooling",
+        "accepted_binaries": ["twilio", "vapi", "bland"],
+        "safe_probe_commands": [["twilio", "--version"]],
+        "accepted_env_keys": [
+            "TWILIO_ACCOUNT_SID",
+            "TWILIO_AUTH_TOKEN",
+            "TWILIO_PHONE_NUMBER_SID",
+            "VAPI_API_KEY",
+            "VAPI_PHONE_NUMBER_ID",
+            "BLAND_API_KEY",
+        ],
+        "operator_action": "Configure a phone provider env key set or install an accepted provider CLI.",
+        "proof": "A rerun records accepted provider env-key presence or provider CLI availability.",
+    },
+    "stripe_projects_account": {
+        "category": "redacted_preflight_evidence",
+        "accepted_binaries": [],
+        "safe_probe_commands": [],
+        "accepted_env_keys": [],
+        "operator_action": "Fill the Stripe Projects account/capability section in the preflight evidence file.",
+        "proof": "A rerun loads preflight evidence with Stripe Projects account ref, catalog timestamp, VoIP candidate, and approval-gated create capability.",
+    },
+    "stripe_link_approval_capability": {
+        "category": "redacted_preflight_evidence",
+        "accepted_binaries": [],
+        "safe_probe_commands": [],
+        "accepted_env_keys": [],
+        "operator_action": "Fill the Stripe Link account and approval capability section in the preflight evidence file.",
+        "proof": "A rerun loads preflight evidence with Link account ref, approval capability confirmed, currency, and budget coverage.",
+    },
+    "mpp_approval_boundary": {
+        "category": "redacted_preflight_evidence",
+        "accepted_binaries": [],
+        "safe_probe_commands": [],
+        "accepted_env_keys": [],
+        "operator_action": "Fill the MPP/NemoClaw approval-boundary section in the preflight evidence file.",
+        "proof": "A rerun loads preflight evidence with boundary tool, policy ref, and approval packet ref.",
+    },
+    "phone_provider_account": {
+        "category": "redacted_preflight_evidence",
+        "accepted_binaries": [],
+        "safe_probe_commands": [],
+        "accepted_env_keys": [],
+        "operator_action": "Fill the phone provider account and target-reference section in the preflight evidence file.",
+        "proof": "A rerun loads preflight evidence with provider, provider account ref, and phone target ref.",
+    },
+    "credential_location_reference": {
+        "category": "redacted_preflight_evidence",
+        "accepted_binaries": [],
+        "safe_probe_commands": [],
+        "accepted_env_keys": [],
+        "operator_action": "Fill the non-secret credential location reference in the preflight evidence file.",
+        "proof": "A rerun loads preflight evidence with a credential location ref, never a raw credential.",
+    },
+    "rollback_owner_refs": {
+        "category": "redacted_preflight_evidence",
+        "accepted_binaries": [],
+        "safe_probe_commands": [],
+        "accepted_env_keys": [],
+        "operator_action": "Fill rollback owner refs for deprovision, refund/cancel, and call cancellation.",
+        "proof": "A rerun loads preflight evidence with all rollback owner refs present.",
+    },
+}
+PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS = [
+    "stripe_projects.account_ref",
+    "stripe_projects.projects_catalog_checked_at",
+    "stripe_projects.voip_provider_candidate",
+    "stripe_projects.can_create_project_after_approval",
+    "stripe_link.account_ref",
+    "stripe_link.approval_capability_confirmed",
+    "stripe_link.max_approved_cents",
+    "stripe_link.currency",
+    "mpp.boundary_tool",
+    "mpp.policy_ref",
+    "mpp.approval_packet_ref",
+    "phone_handoff.provider",
+    "phone_handoff.provider_account_ref",
+    "phone_handoff.phone_target_ref",
+    "phone_handoff.credential_location_ref",
+    "rollback.deprovision_owner",
+    "rollback.refund_or_cancel_owner",
+    "rollback.call_cancel_owner",
+]
 
 SECRET_KEY_RE = re.compile(
     r"(?i)\b([A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|AUTH)[A-Z0-9_]*)\s*=\s*([^\s,;]+)"
 )
 SECRET_VALUE_RE = re.compile(
     r"(?i)\b(?:sk|pk|rk|whsec|AC|SG|xox[baprs]|gh[pousr])[_-]?[A-Za-z0-9][A-Za-z0-9_\-]{8,}\b"
+)
+PREFLIGHT_SECRET_VALUE_RE = re.compile(
+    r"\b(?:sk|pk|rk|whsec|xox[baprs]|gh[pousr])[_-][A-Za-z0-9][A-Za-z0-9_\-]{8,}\b|"
+    r"\bAC[A-Za-z0-9]{8,}\b|"
+    r"\bSG[A-Za-z0-9]{8,}\b"
 )
 BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-]{8,}")
 PHONE_RE = re.compile(r"(?<!\d)\+?[1-9]\d[\d .()\-]{7,}\d(?!\d)")
@@ -151,6 +286,137 @@ def _parse_env_file(path: Path) -> dict[str, str]:
     except (FileNotFoundError, OSError):
         return {}
     return values
+
+
+def build_preflight_evidence_template() -> dict[str, Any]:
+    return {
+        "schema_version": "voiceops.milestone2.preflight_evidence.v1",
+        "redaction_policy": "references and aliases only; no raw secrets, cards, tokens, or full phone numbers",
+        "stripe_projects": {
+            "account_ref": None,
+            "projects_catalog_checked_at": None,
+            "voip_provider_candidate": "twilio/voice",
+            "can_create_project_after_approval": False,
+        },
+        "stripe_link": {
+            "account_ref": None,
+            "approval_capability_confirmed": False,
+            "max_approved_cents": 0,
+            "currency": "usd",
+        },
+        "mpp": {
+            "boundary_tool": None,
+            "policy_ref": None,
+            "approval_packet_ref": "nemoclaw-action-packet.json",
+        },
+        "phone_handoff": {
+            "provider": None,
+            "provider_account_ref": None,
+            "phone_target_ref": None,
+            "credential_location_ref": None,
+        },
+        "rollback": {
+            "deprovision_owner": None,
+            "refund_or_cancel_owner": None,
+            "call_cancel_owner": None,
+        },
+    }
+
+
+def _dot_get(payload: Mapping[str, Any], path: str) -> Any:
+    current: Any = payload
+    for part in path.split("."):
+        if not isinstance(current, Mapping) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def _field_present(payload: Mapping[str, Any], path: str) -> bool:
+    value = _dot_get(payload, path)
+    if isinstance(value, bool):
+        return value is True
+    if isinstance(value, int | float):
+        return value > 0
+    return bool(str(value or "").strip())
+
+
+def _walk_strings(value: Any, prefix: str = "") -> Iterable[tuple[str, str]]:
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            yield from _walk_strings(child, child_prefix)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            child_prefix = f"{prefix}[{index}]"
+            yield from _walk_strings(child, child_prefix)
+    elif isinstance(value, str):
+        yield prefix, value
+
+
+def _preflight_secret_issues(payload: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    for path, value in _walk_strings(payload):
+        if SECRET_KEY_RE.search(f"{path}={value}") or BEARER_RE.search(value) or PREFLIGHT_SECRET_VALUE_RE.search(value):
+            issues.append(f"{path}: secret-like value")
+        elif not path.endswith("_checked_at") and PHONE_RE.search(value):
+            issues.append(f"{path}: phone-like value")
+    return issues
+
+
+def load_preflight_evidence(path: Path | None) -> dict[str, Any]:
+    if path is None:
+        return {
+            "loaded": False,
+            "path": None,
+            "fields_present": [],
+            "missing_fields": PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
+            "validation_issues": [],
+            "redaction_policy": "not_loaded",
+        }
+    resolved = path.expanduser().resolve(strict=False)
+    if resolved == FORBIDDEN_ENV_ROOT or FORBIDDEN_ENV_ROOT in resolved.parents:
+        raise ValueError(f"refusing to inspect forbidden Hermes worktree path: {resolved}")
+    try:
+        raw_payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {
+            "loaded": False,
+            "path": str(path),
+            "fields_present": [],
+            "missing_fields": PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
+            "validation_issues": ["preflight evidence file not found"],
+            "redaction_policy": "references_only",
+        }
+    except json.JSONDecodeError as exc:
+        return {
+            "loaded": False,
+            "path": str(path),
+            "fields_present": [],
+            "missing_fields": PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
+            "validation_issues": [f"preflight evidence JSON parse failed: {exc.msg}"],
+            "redaction_policy": "references_only",
+        }
+    if not isinstance(raw_payload, Mapping):
+        return {
+            "loaded": False,
+            "path": str(path),
+            "fields_present": [],
+            "missing_fields": PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
+            "validation_issues": ["preflight evidence root must be an object"],
+            "redaction_policy": "references_only",
+        }
+    fields_present = [field for field in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS if _field_present(raw_payload, field)]
+    missing_fields = [field for field in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS if field not in fields_present]
+    validation_issues = _preflight_secret_issues(raw_payload)
+    return {
+        "loaded": True,
+        "path": str(path),
+        "fields_present": fields_present,
+        "missing_fields": missing_fields,
+        "validation_issues": validation_issues,
+        "redaction_policy": "references_only",
+    }
 
 
 def _default_env_files() -> list[Path]:
@@ -326,6 +592,7 @@ def build_probe_report(
     *,
     env: Mapping[str, str] | None = None,
     env_files: Iterable[Path] | None = None,
+    preflight_evidence_path: Path | None = None,
     which: Callable[[str], str | None] = shutil.which,
     runner: CommandRunner = _subprocess_runner,
     run_commands: bool = False,
@@ -458,6 +725,102 @@ def build_probe_report(
         )
     )
 
+    preflight_evidence = load_preflight_evidence(preflight_evidence_path)
+
+    def preflight_check(
+        check_id: str,
+        area: str,
+        required_fields: list[str],
+        detail: str,
+        next_step: str,
+    ) -> ReadinessCheck:
+        missing = [field for field in required_fields if field in preflight_evidence["missing_fields"]]
+        status = "pass" if preflight_evidence["loaded"] and not missing and not preflight_evidence["validation_issues"] else "fail"
+        issue_detail = "; ".join(preflight_evidence["validation_issues"])
+        return ReadinessCheck(
+            check_id=check_id,
+            area=area,
+            status=status,
+            required=True,
+            detail=detail if status == "pass" else issue_detail or f"missing preflight evidence fields: {', '.join(missing)}",
+            next_step=next_step,
+            evidence={
+                "preflight_evidence_loaded": preflight_evidence["loaded"],
+                "preflight_evidence_path": preflight_evidence["path"],
+                "required_fields": required_fields,
+                "missing_fields": missing,
+            },
+        )
+
+    checks.extend(
+        [
+            preflight_check(
+                "stripe_projects_account",
+                "stripe_projects",
+                [
+                    "stripe_projects.account_ref",
+                    "stripe_projects.projects_catalog_checked_at",
+                    "stripe_projects.voip_provider_candidate",
+                    "stripe_projects.can_create_project_after_approval",
+                ],
+                "Stripe Projects account/capability evidence is present",
+                "Fill `provisioning-preflight-evidence.template.json` with redacted Stripe Projects references.",
+            ),
+            preflight_check(
+                "stripe_link_approval_capability",
+                "stripe_link",
+                [
+                    "stripe_link.account_ref",
+                    "stripe_link.approval_capability_confirmed",
+                    "stripe_link.max_approved_cents",
+                    "stripe_link.currency",
+                ],
+                "Stripe Link approval capability evidence is present",
+                "Fill Link account, approval capability, max approved cents, and currency in the preflight evidence file.",
+            ),
+            preflight_check(
+                "mpp_approval_boundary",
+                "mpp",
+                [
+                    "mpp.boundary_tool",
+                    "mpp.policy_ref",
+                    "mpp.approval_packet_ref",
+                ],
+                "MPP/NemoClaw approval boundary evidence is present",
+                "Fill boundary tool, policy ref, and approval packet ref in the preflight evidence file.",
+            ),
+            preflight_check(
+                "phone_provider_account",
+                "phone_handoff",
+                [
+                    "phone_handoff.provider",
+                    "phone_handoff.provider_account_ref",
+                    "phone_handoff.phone_target_ref",
+                ],
+                "Phone provider account and target evidence is present",
+                "Fill provider, provider account ref, and phone target ref in the preflight evidence file.",
+            ),
+            preflight_check(
+                "credential_location_reference",
+                "phone_handoff",
+                ["phone_handoff.credential_location_ref"],
+                "Credential location reference evidence is present",
+                "Fill a non-secret credential location ref in the preflight evidence file.",
+            ),
+            preflight_check(
+                "rollback_owner_refs",
+                "rollback",
+                [
+                    "rollback.deprovision_owner",
+                    "rollback.refund_or_cancel_owner",
+                    "rollback.call_cancel_owner",
+                ],
+                "Rollback owner refs are present",
+                "Fill all rollback owner refs in the preflight evidence file.",
+            ),
+        ]
+    )
+
     check_dicts = [asdict(check) for check in checks]
     required_failures = [check["check_id"] for check in check_dicts if check["required"] and check["status"] != "pass"]
     area_status: dict[str, str] = {}
@@ -478,6 +841,7 @@ def build_probe_report(
         "ready": not required_failures,
         "required_failures": required_failures,
         "area_status": area_status,
+        "preflight_evidence": preflight_evidence,
         "env_sources": env_sources,
         "checks": check_dicts,
         "command_probes": command_results,
@@ -504,6 +868,28 @@ def _markdown(report: dict[str, Any]) -> str:
     lines.extend(["", "## Areas", ""])
     for area, status in sorted(report["area_status"].items()):
         lines.append(f"- {area}: {status}")
+    lines.extend(
+        [
+            "",
+            "## Preflight Evidence",
+            "",
+            f"- Loaded: {'yes' if report['preflight_evidence']['loaded'] else 'no'}",
+            f"- Path: `{report['preflight_evidence']['path'] or 'not provided'}`",
+            "- Redaction policy: references only; no raw secrets, cards, tokens, or full phone numbers",
+            "- Missing fields: "
+            + (
+                ", ".join(report["preflight_evidence"]["missing_fields"])
+                if report["preflight_evidence"]["missing_fields"]
+                else "none"
+            ),
+            "- Validation issues: "
+            + (
+                ", ".join(_redact(issue) for issue in report["preflight_evidence"]["validation_issues"])
+                if report["preflight_evidence"]["validation_issues"]
+                else "none"
+            ),
+        ]
+    )
     lines.extend(["", "## Checks", ""])
     for check in report["checks"]:
         scope = "required" if check["required"] else "optional"
@@ -524,6 +910,112 @@ def _markdown(report: dict[str, Any]) -> str:
         executed = "executed" if probe["executed"] else "not executed"
         lines.append(f"- {probe['probe_id']}: {probe['status']} ({executed}) `{' '.join(probe['argv'])}`")
     lines.append("")
+    return "\n".join(lines)
+
+
+def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
+    """Describe the exact evidence needed to close Milestone 2 setup gaps."""
+
+    requirements: list[dict[str, Any]] = []
+    for check in report["checks"]:
+        if not check["required"]:
+            continue
+        closure = SETUP_CLOSURE_REQUIREMENTS[check["check_id"]]
+        satisfied = check["status"] == "pass"
+        requirements.append(
+            {
+                "check_id": check["check_id"],
+                "area": check["area"],
+                "category": closure["category"],
+                "status": check["status"],
+                "closure_state": "satisfied" if satisfied else "needs_setup",
+                "detail": check["detail"],
+                "operator_action": closure["operator_action"],
+                "next_step": check["next_step"],
+                "accepted_binaries": closure["accepted_binaries"],
+                "accepted_env_keys": closure["accepted_env_keys"],
+                "safe_probe_commands": closure["safe_probe_commands"],
+                "proof": closure["proof"],
+                "evidence_artifacts": [
+                    "provisioning-readiness.json",
+                    "provisioning-readiness.md",
+                    "setup-closure-plan.json",
+                ],
+            }
+        )
+    return {
+        "generated_at": _utc_now(),
+        "schema_version": "voiceops.milestone2.setup_closure.v1",
+        "artifact_id": "voiceops-m2-setup-closure",
+        "milestone": "milestone_2_real_spend_and_provisioning_preflight",
+        "ready": report["ready"],
+        "remaining_failures": report["required_failures"],
+        "source_readiness_artifact": "provisioning-readiness.json",
+        "mode": {
+            "artifact_only": True,
+            "headless": True,
+            "non_mutating": True,
+            "secret_values_emitted": False,
+        },
+        "safety": {
+            "live_spend": False,
+            "provider_provisioning": False,
+            "credential_retrieval": False,
+            "outbound_phone_calls": False,
+            "account_mutation": False,
+        },
+        "rerun_commands": {
+            "presence_only": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env",
+            "bounded_version_help": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --run-command-probes",
+            "plan_index": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env",
+        },
+        "operator_must_not": [
+            "paste secret values into chat or artifact files",
+            "use /Users/jethac/.hermes/hermes-agent as an env-file source",
+            "run mutating Stripe Projects, Link spend, provider provisioning, or phone-call commands before approval",
+        ],
+        "requirements": requirements,
+    }
+
+
+def _setup_closure_markdown(plan: dict[str, Any]) -> str:
+    lines = [
+        "# VoiceOps Milestone 2 Setup Closure Plan",
+        "",
+        f"- Ready: {'yes' if plan['ready'] else 'no'}",
+        f"- Remaining failures: {', '.join(plan['remaining_failures']) if plan['remaining_failures'] else 'none'}",
+        "- Mode: artifact-only, headless, non-mutating, no secret values emitted",
+        f"- Source readiness: `{plan['source_readiness_artifact']}`",
+        "",
+        "## Rerun Commands",
+        "",
+    ]
+    for label, command in plan["rerun_commands"].items():
+        lines.append(f"- {label}: `{command}`")
+    lines.extend(["", "## Do Not", ""])
+    lines.extend(f"- {item}" for item in plan["operator_must_not"])
+    lines.extend(["", "## Requirements", ""])
+    for requirement in plan["requirements"]:
+        lines.extend(
+            [
+                f"### {requirement['check_id']}",
+                "",
+                f"- Area: {requirement['area']}",
+                f"- Category: {requirement['category']}",
+                f"- Status: {requirement['status']}",
+                f"- Closure state: {requirement['closure_state']}",
+                f"- Operator action: {_redact(requirement['operator_action'])}",
+                f"- Proof: {_redact(requirement['proof'])}",
+                f"- Accepted binaries: {', '.join(requirement['accepted_binaries']) or 'none'}",
+                f"- Accepted env keys: {', '.join(requirement['accepted_env_keys']) or 'none'}",
+            ]
+        )
+        if requirement["safe_probe_commands"]:
+            commands = [" ".join(command) for command in requirement["safe_probe_commands"]]
+            lines.append(f"- Safe probe commands: {', '.join(f'`{command}`' for command in commands)}")
+        else:
+            lines.append("- Safe probe commands: none")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -594,6 +1086,15 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
         "preflight": {
             "command": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current",
             "readiness_artifact": "provisioning-readiness.json",
+            "preflight_evidence_template": "provisioning-preflight-evidence.template.json",
+            "required_evidence": [
+                "stripe_projects_account",
+                "stripe_link_approval_capability",
+                "mpp_approval_boundary",
+                "phone_provider_account",
+                "credential_location_reference",
+                "rollback_owner_refs",
+            ],
             "run_command_probes_default": False,
             "active_probe_policy": "version_help_only",
             "run_command_probes_does_not_grant_approval": True,
@@ -943,18 +1444,25 @@ def _execution_plan_markdown(plan: dict[str, Any]) -> str:
 def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
     execution_plan = build_milestone2_execution_plan(report)
+    setup_closure = build_setup_closure_plan(report)
     paths = {
         "json": output_dir / "provisioning-readiness.json",
         "markdown": output_dir / "provisioning-readiness.md",
         "command_manifest": output_dir / "safe-command-manifest.json",
         "execution_plan_json": output_dir / "milestone2-execution-plan.json",
         "execution_plan_markdown": output_dir / "milestone2-execution-plan.md",
+        "preflight_evidence_template": output_dir / "provisioning-preflight-evidence.template.json",
+        "setup_closure_json": output_dir / "setup-closure-plan.json",
+        "setup_closure_markdown": output_dir / "setup-closure-plan.md",
     }
     _write_json(paths["json"], report)
     paths["markdown"].write_text(_markdown(report), encoding="utf-8")
     _write_json(paths["command_manifest"], _safe_command_manifest_json())
     _write_json(paths["execution_plan_json"], execution_plan)
     paths["execution_plan_markdown"].write_text(_execution_plan_markdown(execution_plan), encoding="utf-8")
+    _write_json(paths["preflight_evidence_template"], build_preflight_evidence_template())
+    _write_json(paths["setup_closure_json"], setup_closure)
+    paths["setup_closure_markdown"].write_text(_setup_closure_markdown(setup_closure), encoding="utf-8")
     return {key: str(path) for key, path in paths.items()}
 
 
@@ -962,6 +1470,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--env-file", action="append", default=None, type=Path, help="Env file to inspect for key presence only.")
+    parser.add_argument(
+        "--preflight-evidence",
+        type=Path,
+        default=None,
+        help="Redacted Milestone 2 account/capability evidence JSON; values must be refs only, never secrets.",
+    )
     parser.add_argument("--timeout-seconds", type=int, default=3)
     parser.add_argument(
         "--run-command-probes",
@@ -982,6 +1496,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     report = build_probe_report(
         env_files=args.env_file,
+        preflight_evidence_path=args.preflight_evidence,
         run_commands=args.run_command_probes,
         timeout_seconds=args.timeout_seconds,
     )

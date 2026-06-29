@@ -72,7 +72,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "milestone_0_hackathon_proof" in markdown
 
 
-def test_plan_run_marks_provisioning_ready_with_presence_only_inputs(tmp_path):
+def test_plan_run_keeps_provisioning_incomplete_without_preflight_evidence(tmp_path):
     artifact_root = tmp_path / "artifacts"
     output_dir = artifact_root / "voiceops-plan" / "current"
     summary = build_plan_run(
@@ -92,6 +92,9 @@ def test_plan_run_marks_provisioning_ready_with_presence_only_inputs(tmp_path):
     serialized = json.dumps(summary)
     assert "sk_live_123456789abcdef" not in serialized
     assert "+15551234567" not in serialized
+    assert provisioning_result["status"] == "needs_setup"
+    assert provisioning_result["details"]["preflight_evidence_loaded"] is False
+    assert "stripe_projects_account" in provisioning_result["details"]["required_failures"]
     assert provisioning_result["details"]["run_command_probes"] is False
 
 
@@ -124,4 +127,5 @@ def test_parse_args_defaults_to_plan_artifact_paths():
 
     assert args.artifact_root == Path("artifacts")
     assert args.output_dir == Path("artifacts/voiceops-plan/current")
+    assert args.provisioning_preflight_evidence is None
     assert args.run_command_probes is False

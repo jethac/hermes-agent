@@ -9,6 +9,7 @@ import pytest
 
 from scripts.voiceops_provisioning_probe import (
     CommandResult,
+    build_preflight_evidence_template,
     build_milestone2_execution_plan,
     build_probe_report,
     parse_args,
@@ -16,7 +17,48 @@ from scripts.voiceops_provisioning_probe import (
 )
 
 
-def test_probe_passes_with_safe_local_tools_and_redacts_outputs():
+def _complete_preflight_evidence() -> dict[str, object]:
+    evidence = build_preflight_evidence_template()
+    evidence["stripe_projects"].update(
+        {
+            "account_ref": "stripe-account-ref-demo",
+            "projects_catalog_checked_at": "2026-06-29T00:00:00Z",
+            "can_create_project_after_approval": True,
+        }
+    )
+    evidence["stripe_link"].update(
+        {
+            "account_ref": "stripe-link-account-ref-demo",
+            "approval_capability_confirmed": True,
+            "max_approved_cents": 20_000,
+        }
+    )
+    evidence["mpp"].update({"boundary_tool": "nemoclaw", "policy_ref": "voiceops-policy-demo"})
+    evidence["phone_handoff"].update(
+        {
+            "provider": "twilio",
+            "provider_account_ref": "twilio-account-ref-demo",
+            "phone_target_ref": "phone-target-ref-demo",
+            "credential_location_ref": "keychain-ref-demo",
+        }
+    )
+    evidence["rollback"].update(
+        {
+            "deprovision_owner": "operator",
+            "refund_or_cancel_owner": "operator",
+            "call_cancel_owner": "operator",
+        }
+    )
+    return evidence
+
+
+def _write_preflight_evidence(tmp_path: Path, payload: dict[str, object] | None = None) -> Path:
+    evidence_path = tmp_path / "preflight-evidence.json"
+    evidence_path.write_text(json.dumps(payload or _complete_preflight_evidence(), indent=2), encoding="utf-8")
+    return evidence_path
+
+
+def test_probe_passes_with_safe_local_tools_and_redacts_outputs(tmp_path):
     calls: list[list[str]] = []
 
     def fake_which(command: str) -> str | None:
@@ -43,6 +85,7 @@ def test_probe_passes_with_safe_local_tools_and_redacts_outputs():
             "TWILIO_AUTH_TOKEN": "secret-token",
         },
         env_files=[],
+        preflight_evidence_path=_write_preflight_evidence(tmp_path),
         which=fake_which,
         runner=fake_runner,
         run_commands=True,
@@ -81,17 +124,40 @@ def test_probe_reports_required_failures_without_running_missing_tools():
 
     assert report["ready"] is False
     assert set(report["required_failures"]) == {
+        "credential_location_reference",
+        "mpp_approval_boundary",
         "stripe_cli",
         "stripe_projects_cli",
+        "stripe_projects_account",
         "stripe_link_cli",
+        "stripe_link_approval_capability",
         "mpp_agent",
         "phone_target",
         "phone_provider",
+        "phone_provider_account",
+        "rollback_owner_refs",
     }
     assert calls == []
 
 
-def test_probe_treats_no_command_probes_as_path_presence_only():
+def test_probe_treats_no_command_probes_as_path_presence_only(tmp_path):
+    def fake_which(command: str) -> str | None:
+        return f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None
+
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "VAPI_API_KEY": "secret"},
+        env_files=[],
+        preflight_evidence_path=_write_preflight_evidence(tmp_path),
+        which=fake_which,
+        runner=lambda _argv, _timeout_seconds: (_ for _ in ()).throw(AssertionError("runner should not be called")),
+    )
+
+    assert report["ready"] is True
+    assert all(probe["executed"] is False for probe in report["command_probes"])
+    assert {probe["status"] for probe in report["command_probes"] if probe["found"]} == {"found"}
+
+
+def test_cli_env_presence_alone_does_not_complete_real_preflight():
     def fake_which(command: str) -> str | None:
         return f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None
 
@@ -102,9 +168,12 @@ def test_probe_treats_no_command_probes_as_path_presence_only():
         runner=lambda _argv, _timeout_seconds: (_ for _ in ()).throw(AssertionError("runner should not be called")),
     )
 
-    assert report["ready"] is True
-    assert all(probe["executed"] is False for probe in report["command_probes"])
-    assert {probe["status"] for probe in report["command_probes"] if probe["found"]} == {"found"}
+    assert report["ready"] is False
+    assert {"stripe_projects_account", "stripe_link_approval_capability", "mpp_approval_boundary"} <= set(
+        report["required_failures"]
+    )
+    assert report["preflight_evidence"]["loaded"] is False
+    assert "stripe_cli" not in report["required_failures"]
 
 
 def test_write_probe_artifacts(tmp_path):
@@ -122,17 +191,28 @@ def test_write_probe_artifacts(tmp_path):
         "execution_plan_markdown",
         "json",
         "markdown",
+        "preflight_evidence_template",
+        "setup_closure_json",
+        "setup_closure_markdown",
     }
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     execution_plan = json.loads(Path(paths["execution_plan_json"]).read_text(encoding="utf-8"))
     manifest = json.loads(Path(paths["command_manifest"]).read_text(encoding="utf-8"))
+    setup_closure = json.loads(Path(paths["setup_closure_json"]).read_text(encoding="utf-8"))
+    preflight_template = json.loads(Path(paths["preflight_evidence_template"]).read_text(encoding="utf-8"))
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
     execution_markdown = Path(paths["execution_plan_markdown"]).read_text(encoding="utf-8")
+    setup_markdown = Path(paths["setup_closure_markdown"]).read_text(encoding="utf-8")
     assert payload["probe"]["non_mutating"] is True
+    assert payload["preflight_evidence"]["loaded"] is False
     assert "VoiceOps Provisioning Readiness Probe" in markdown
     assert execution_plan["schema_version"] == "voiceops.milestone2.execution_plan.v1"
+    assert "stripe_projects_account" in execution_plan["preflight"]["required_evidence"]
     assert "phone-context.json" in json.dumps(execution_plan)
     assert "VoiceOps Milestone 2 Execution Plan" in execution_markdown
+    assert setup_closure["schema_version"] == "voiceops.milestone2.setup_closure.v1"
+    assert "VoiceOps Milestone 2 Setup Closure Plan" in setup_markdown
+    assert preflight_template["schema_version"] == "voiceops.milestone2.preflight_evidence.v1"
     assert "projects add" in manifest["blocked_patterns"]
     assert "+15551234567" not in json.dumps(payload)
 
@@ -175,6 +255,7 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
     } <= set(plan["blocked_capabilities"])
     assert plan["preflight"]["run_command_probes_default"] is False
     assert plan["preflight"]["run_command_probes_does_not_grant_approval"] is True
+    assert "provisioning-preflight-evidence.template.json" == plan["preflight"]["preflight_evidence_template"]
     assert plan["demo_refs"] == {
         "audit_ledger": "audit-ledger.jsonl",
         "nemoclaw_packet": "nemoclaw-action-packet.json",
@@ -226,6 +307,7 @@ def test_probe_loads_env_file_key_presence_without_values(tmp_path):
     report = build_probe_report(
         env={},
         env_files=[env_file],
+        preflight_evidence_path=_write_preflight_evidence(tmp_path),
         which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
         runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
     )
@@ -243,6 +325,35 @@ def test_probe_refuses_forbidden_hermes_agent_env_path():
 
     with pytest.raises(ValueError, match="forbidden Hermes worktree"):
         build_probe_report(env={}, env_files=[forbidden], which=lambda _command: None)
+
+
+def test_probe_refuses_forbidden_hermes_agent_preflight_evidence_path():
+    forbidden = Path("/Users/jethac/.hermes/hermes-agent/preflight-evidence.json")
+
+    with pytest.raises(ValueError, match="forbidden Hermes worktree"):
+        build_probe_report(env={}, env_files=[], preflight_evidence_path=forbidden, which=lambda _command: None)
+
+
+def test_preflight_evidence_rejects_secret_like_values(tmp_path):
+    evidence = _complete_preflight_evidence()
+    evidence["phone_handoff"]["credential_location_ref"] = "sk_live_123456789abcdef"
+    evidence["phone_handoff"]["phone_target_ref"] = "+15551234567"
+    evidence_path = _write_preflight_evidence(tmp_path, evidence)
+
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "VAPI_API_KEY": "secret"},
+        env_files=[],
+        preflight_evidence_path=evidence_path,
+        which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
+    )
+
+    serialized = json.dumps(report)
+    assert report["ready"] is False
+    assert "credential_location_reference" in report["required_failures"]
+    assert "sk_live_123456789abcdef" not in serialized
+    assert "+15551234567" not in serialized
+    assert "secret-like value" in serialized
+    assert "phone-like value" in serialized
 
 
 def test_probe_cli_smoke_no_command_probes(tmp_path):
@@ -264,4 +375,5 @@ def test_parse_args_defaults_to_requested_artifact_dir():
     args = parse_args([])
 
     assert args.output_dir == Path("artifacts/voiceops-provisioning/current")
+    assert args.preflight_evidence is None
     assert args.run_command_probes is False
