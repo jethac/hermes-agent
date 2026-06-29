@@ -490,7 +490,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "spend_and_provisioning_preflight",
         "local_spark_stack",
     ]
+    assert [phase["status"] for phase in handoff["phases"]] == [
+        "needs_live_probe",
+        "needs_setup",
+        "needs_evidence",
+    ]
     assert handoff["phases"][0]["can_run_here_now"] is False
+    assert handoff["phases"][0]["first_safe_command"] == next_actions[0]["first_safe_command"]
     assert "discord-live-probe.json with source_artifact" in json.dumps(handoff["phases"][0]["required_inputs"])
     assert "sidecar_mode=production" in json.dumps(handoff["phases"][0]["required_inputs"])
     assert "healthcheck_observed" in json.dumps(handoff["phases"][0]["required_inputs"])
@@ -512,6 +518,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--refresh-preflight-source-hashes" in json.dumps(handoff["phases"][1]["commands"])
     assert "--run-command-probes" in json.dumps(handoff["phases"][1]["commands"])
     assert handoff["phases"][1]["commands"][0].endswith("--dry-audit")
+    assert handoff["phases"][1]["diagnostic_command"] == next_actions[1]["diagnostic_command"]
+    assert handoff["phases"][1]["first_safe_command"] == next_actions[1]["first_safe_command"]
     assert handoff["phases"][1]["command_safety"]["plan_index_dry_audit"] == "no_write_no_network_no_probe_audit"
     assert handoff["phases"][1]["command_safety"]["read_only_discovery"] == "network_possible_allowlisted_read_only"
     assert handoff["phases"][1]["command_safety"]["validate_post_approval_receipts"] == "post_approval_local_validation_only"
@@ -522,6 +530,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "post-approval-receipts-scaffold/post-approval-receipts.json" in json.dumps(
         handoff["phases"][1]["expected_artifacts"]
     )
+    assert handoff["phases"][2]["first_safe_command"] == next_actions[2]["first_safe_command"]
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in handoff["phases"][2]["commands"]
     assert "asr-nemotron-speech-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
     assert "tts-magpie-local-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
@@ -792,6 +801,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert closure["schema_version"] == "voiceops.closure_index.v1"
     assert handoff_payload == closure["operator_handoff"]
     assert handoff_payload["schema_version"] == "voiceops.operator_handoff.v1"
+    assert [phase["first_safe_command"] for phase in handoff_payload["phases"]] == [
+        closure["next_actions"][0]["first_safe_command"],
+        closure["next_actions"][1]["first_safe_command"],
+        closure["next_actions"][2]["first_safe_command"],
+    ]
     voice_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "live_discord_voice_operator")
     assert voice_gate["evidence_scaffold"].endswith("live-voice-evidence-scaffold/manifest.json")
     provisioning_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "spend_and_provisioning_preflight")

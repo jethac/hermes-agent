@@ -283,6 +283,33 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
     live_gate = gate_by_id["live_discord_voice_operator"]
     provisioning_gate = gate_by_id["spend_and_provisioning_preflight"]
     spark_gate = gate_by_id["local_spark_stack_matrix"]
+    live_commands = [
+        live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
+        live_gate["collection_commands"]["derive_from_realtime_voice_report"],
+        live_gate["collection_commands"]["collect_live_manifest"],
+        live_gate["collection_commands"]["validate_live_manifest_offline"],
+        live_gate["collection_commands"]["ingest_live_manifest"],
+        live_gate["rerun_command"],
+    ]
+    provisioning_commands = [
+        provisioning_gate["rerun_commands"]["plan_index_dry_audit"],
+        provisioning_gate["collection_commands"]["presence_only"],
+        provisioning_gate["collection_commands"]["bounded_version_help"],
+        provisioning_gate["rerun_commands"]["plan_index_command_probes"],
+        provisioning_gate["collection_commands"]["read_only_discovery"],
+        provisioning_gate["rerun_commands"]["plan_index_read_only_discovery"],
+        provisioning_gate["collection_commands"]["ingest_read_only_discovery_evidence"],
+        provisioning_gate["rerun_commands"]["plan_index_read_only_discovery_evidence"],
+        provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"],
+        provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
+        provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
+        provisioning_gate["rerun_commands"]["plan_index_manifest_and_post_approval_receipts"],
+    ]
+    spark_commands = [
+        spark_gate["collection_commands"]["dgx_eval"],
+        spark_gate["collection_commands"]["with_evidence"],
+        spark_gate["collection_commands"]["plan_index"],
+    ]
     return {
         "schema_version": "voiceops.operator_handoff.v1",
         "purpose": "Ordered external-evidence collection sequence for closing VoiceOps readiness without hand-editing the index.",
@@ -293,7 +320,9 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
             {
                 "phase_id": "live_discord_voice",
                 "gate_id": live_gate["gate_id"],
+                "status": live_gate["status"],
                 "can_run_here_now": blockers.get("discord_env", {}).get("missing_env_keys") == [],
+                "first_safe_command": live_commands[0],
                 "required_inputs": [
                     "Discord bot token and channel env/config presence",
                     "running realtime voice sidecar",
@@ -302,14 +331,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "sidecar-session.json with sidecar_mode=production, healthcheck_observed, provider_transport_observed, session_id_redacted, fallback_reason, and session_start/shutdown latency metrics",
                     "live-turn.json",
                 ],
-                "commands": [
-                    live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
-                    live_gate["collection_commands"]["derive_from_realtime_voice_report"],
-                    live_gate["collection_commands"]["collect_live_manifest"],
-                    live_gate["collection_commands"]["validate_live_manifest_offline"],
-                    live_gate["collection_commands"]["ingest_live_manifest"],
-                    live_gate["rerun_command"],
-                ],
+                "commands": live_commands,
                 "expected_artifacts": [
                     "artifacts/realtime-voice-evidence/live-current/manifest.json",
                     "artifacts/realtime-voice-evidence/live-current/discord-live-probe.json",
@@ -328,27 +350,17 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
             {
                 "phase_id": "spend_and_provisioning_preflight",
                 "gate_id": provisioning_gate["gate_id"],
+                "status": provisioning_gate["status"],
                 "can_run_here_now": blockers.get("provisioning_cli", {}).get("missing") == [],
+                "diagnostic_command": provisioning_commands[0],
+                "first_safe_command": provisioning_commands[1],
                 "required_inputs": [
                     ".env or local CLI auth for Stripe/Link/MPP/phone provider",
                     "redacted preflight evidence JSON or manifest",
                     "optional redacted post-approval receipt bundle",
                     "redacted source artifacts with matching SHA-256",
                 ],
-                "commands": [
-                    provisioning_gate["rerun_commands"]["plan_index_dry_audit"],
-                    provisioning_gate["collection_commands"]["presence_only"],
-                    provisioning_gate["collection_commands"]["bounded_version_help"],
-                    provisioning_gate["rerun_commands"]["plan_index_command_probes"],
-                    provisioning_gate["collection_commands"]["read_only_discovery"],
-                    provisioning_gate["rerun_commands"]["plan_index_read_only_discovery"],
-                    provisioning_gate["collection_commands"]["ingest_read_only_discovery_evidence"],
-                    provisioning_gate["rerun_commands"]["plan_index_read_only_discovery_evidence"],
-                    provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"],
-                    provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
-                    provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
-                    provisioning_gate["rerun_commands"]["plan_index_manifest_and_post_approval_receipts"],
-                ],
+                "commands": provisioning_commands,
                 "command_safety": {
                     "plan_index_dry_audit": "no_write_no_network_no_probe_audit",
                     "presence_only": "offline_presence_only",
@@ -384,18 +396,16 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
             {
                 "phase_id": "local_spark_stack",
                 "gate_id": spark_gate["gate_id"],
+                "status": spark_gate["status"],
                 "can_run_here_now": blockers.get("spark_host", {}).get("blocks_local_collection_here") is False,
+                "first_safe_command": spark_commands[0],
                 "required_inputs": [
                     "1x NVIDIA DGX Spark host",
                     "local KAME launch pack or equivalent services",
                     "filled voiceops.spark_benchmark_evidence.v1 JSON",
                     "readable benchmark source artifacts",
                 ],
-                "commands": [
-                    spark_gate["collection_commands"]["dgx_eval"],
-                    spark_gate["collection_commands"]["with_evidence"],
-                    spark_gate["collection_commands"]["plan_index"],
-                ],
+                "commands": spark_commands,
                 "expected_artifacts": [
                     "artifacts/dgx-spark-gemma4-voice-eval/current/kame-stack",
                     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json",
@@ -1458,7 +1468,14 @@ def _operator_handoff_markdown(handoff: dict[str, Any]) -> str:
                 [
                     f"### {phase.get('phase_id')}",
                     f"- Gate: `{phase.get('gate_id')}`",
+                    f"- Status: `{phase.get('status')}`",
                     f"- Can run here now: {phase.get('can_run_here_now')}",
+                    f"- First safe command: `{phase.get('first_safe_command')}`",
+                    *(
+                        [f"- Diagnostic command: `{phase.get('diagnostic_command')}`"]
+                        if phase.get("diagnostic_command")
+                        else []
+                    ),
                     f"- Success check: {phase.get('success_check')}",
                 ]
             )
