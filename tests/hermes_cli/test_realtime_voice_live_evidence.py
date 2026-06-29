@@ -712,6 +712,35 @@ def test_live_evidence_manifest_rejects_anonymous_optional_evidence(monkeypatch,
     assert "sidecar_session" not in result.reports
 
 
+def test_live_evidence_manifest_rejects_schema_only_optional_evidence_without_nested_section(monkeypatch, tmp_path):
+    async def fake_loopback():
+        return _FakeProbeResult(ok=True)
+
+    async def fake_live(_args):
+        return _FakeDiscordLiveProbeResult()
+
+    sidecar_payload = _complete_sidecar_session()
+    sidecar_payload.pop("kind")
+    sidecar_payload["schema_version"] = "voiceops.milestone1.live_voice_evidence.v1"
+    sidecar_path = _write_json(tmp_path / "sidecar-session.json", sidecar_payload)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", fake_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", fake_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    assert result.ok is False
+    assert "sidecar_session: evidence file must include kind, evidence_type, or live evidence schema" in result.issues
+    assert "sidecar_session" not in result.reports
+
+
 def test_live_evidence_manifest_rejects_example_only_optional_evidence(monkeypatch, tmp_path):
     async def fake_loopback():
         return _FakeProbeResult(ok=True)

@@ -381,7 +381,7 @@ def _load_live_evidence(paths: list[Path] | None) -> dict[str, Any]:
     return evidence
 
 
-def _load_live_evidence_file(path: Path, *, visited: set[Path] | None = None) -> dict[str, Any]:
+def _load_live_evidence_file(path: Path, *, visited: set[Path] | None = None, standalone: bool = True) -> dict[str, Any]:
     visited = set() if visited is None else set(visited)
     resolved_path = path.expanduser().resolve()
     if resolved_path in visited:
@@ -408,6 +408,10 @@ def _load_live_evidence_file(path: Path, *, visited: set[Path] | None = None) ->
             "issues": ["live_evidence_root_must_be_object"],
         }
     payload, issues = _expand_live_evidence_manifest(path, payload, visited=visited)
+    if standalone:
+        identity_issue = _standalone_report_identity_issue(payload)
+        if identity_issue:
+            issues.append(identity_issue)
     return {"payload": payload, "issues": issues}
 
 
@@ -436,7 +440,7 @@ def _expand_live_evidence_manifest(
             issues.append(f"live_evidence_manifest:{report_name}:empty_report_path")
             continue
         report_path = _resolve_manifest_report_path(path, report_path_text)
-        loaded = _load_live_evidence_file(report_path, visited=visited)
+        loaded = _load_live_evidence_file(report_path, visited=visited, standalone=False)
         if loaded["issues"]:
             issues.extend(f"live_evidence_manifest:{report_name}:{issue}" for issue in loaded["issues"])
         report_payload = loaded.get("payload")
@@ -486,11 +490,11 @@ def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) ->
 
 
 def _manifest_report_has_identity(report_name: str, payload: Mapping[str, Any]) -> bool:
-    if str(payload.get("schema_version") or "") == LIVE_EVIDENCE_SCHEMA_VERSION:
+    if _uses_expanded_live_evidence_schema(payload):
         return True
     kind = str(payload.get("kind") or payload.get("evidence_type") or "").strip()
     if report_name == "combined":
-        return any(isinstance(payload.get(section), Mapping) for section in ("discord_live_probe", "sidecar_session", "live_turn"))
+        return _uses_expanded_live_evidence_schema(payload) or kind == "combined"
     if report_name == "discord_live_probe":
         return kind == "discord_live_probe"
     if report_name == "sidecar_session":
@@ -498,6 +502,23 @@ def _manifest_report_has_identity(report_name: str, payload: Mapping[str, Any]) 
     if report_name == "live_turn":
         return kind == "live_turn"
     return bool(kind)
+
+
+def _standalone_report_identity_issue(payload: Mapping[str, Any]) -> str:
+    if _uses_expanded_live_evidence_schema(payload):
+        return ""
+    kind = str(payload.get("kind") or payload.get("evidence_type") or "").strip()
+    if not kind:
+        return "missing_standalone_report_identity"
+    if kind in {"discord_live_probe", "sidecar_session", "live_turn"}:
+        return ""
+    return f"invalid_standalone_report_identity:{kind}"
+
+
+def _uses_expanded_live_evidence_schema(payload: Mapping[str, Any]) -> bool:
+    if str(payload.get("schema_version") or "") != LIVE_EVIDENCE_SCHEMA_VERSION:
+        return False
+    return any(isinstance(payload.get(section), Mapping) for section in ("discord_live_probe", "sidecar_session", "live_turn"))
 
 
 def _merge_live_evidence_payload(target: dict[str, Any], payload: Mapping[str, Any]) -> None:
@@ -701,10 +722,19 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
 
 
 def _section_ref(section: Mapping[str, Any], section_name: str) -> dict[str, str]:
-    return {
+    ref = {
         "source_artifact": str(section.get("source_artifact") or ""),
         "section": section_name,
     }
+    provenance = section.get("provenance")
+    if isinstance(provenance, Mapping):
+        wrapper = str(provenance.get("wrapper_artifact") or "").strip()
+        reported = str(provenance.get("reported_source_artifact") or "").strip()
+        if wrapper:
+            ref["wrapper_artifact"] = wrapper
+        if reported:
+            ref["reported_source_artifact"] = reported
+    return ref
 
 
 def _source_artifact_exists(source_artifact: Any, evidence_paths: list[Path]) -> bool:
@@ -724,10 +754,12 @@ def _validate_source_artifact(
     issues: list[str],
 ) -> None:
     source_text = str(source_artifact or "").strip()
-    if source_text in LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS:
+    source_path = Path(source_text).expanduser()
+    if source_text in LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS or (
+        not source_path.is_absolute() and source_path.name in LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS
+    ):
         issues.append(f"{section_name}:template_source_artifact_not_accepted")
         return
-    source_path = Path(source_text).expanduser()
     if evidence_paths:
         if not _source_artifact_exists(source_text, evidence_paths):
             issues.append(f"{section_name}:source_artifact_not_found")
@@ -1081,6 +1113,7 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "required_section_field": "source_artifact",
             "required_section_refs": ["source_artifact", "section"],
             "manifest_report_identity": "per-section reports must include kind/evidence_type matching discord_live_probe, sidecar_session, or live_turn unless they use the expanded live evidence schema",
+            "standalone_report_identity": "standalone non-expanded evidence files must include kind/evidence_type matching discord_live_probe, sidecar_session, or live_turn",
             "source_artifacts_must_exist": True,
             "source_artifact_resolution": "absolute paths or paths relative to supplied live-evidence files",
             "template_source_artifacts_accepted": False,

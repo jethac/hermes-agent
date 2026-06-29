@@ -266,6 +266,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert live_closure["evidence_contract"]["source_artifacts_must_exist"] is True
     assert live_closure["evidence_contract"]["template_source_artifacts_accepted"] is False
     assert "kind/evidence_type" in live_closure["evidence_contract"]["manifest_report_identity"]
+    assert "standalone non-expanded evidence files" in live_closure["evidence_contract"]["standalone_report_identity"]
     assert live_closure["evidence_shapes"]["discord_live_probe"]["kind"] == "discord_live_probe"
     assert live_closure["evidence_shapes"]["discord_live_probe"]["require_inbound"] is True
     assert live_closure["evidence_shapes"]["sidecar_session"]["kind"] == "sidecar_session"
@@ -563,14 +564,17 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
         "discord_live_probe": {
             "source_artifact": str(tmp_path / "discord-live-probe.json"),
             "section": "discord_live_probe",
+            "wrapper_artifact": str(tmp_path / "discord-live-probe.json"),
         },
         "sidecar_session": {
             "source_artifact": str(tmp_path / "sidecar-session.json"),
             "section": "sidecar_session",
+            "wrapper_artifact": str(tmp_path / "sidecar-session.json"),
         },
         "live_turn": {
             "source_artifact": str(tmp_path / "live-turn.json"),
             "section": "live_turn",
+            "wrapper_artifact": str(tmp_path / "live-turn.json"),
         },
     }
     assert report["live_probe_required_for_completion"]["missing_gates"] == []
@@ -667,6 +671,82 @@ def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path
     }
 
 
+def test_voice_operator_rejects_standalone_section_without_identity(tmp_path):
+    sidecar_path = tmp_path / "actual-sidecar-session.json"
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+                "source_artifact": sidecar_path.name,
+                "sidecar_running": True,
+                "sidecar_healthy": True,
+                "session_started": True,
+                "session_closed": True,
+                "shutdown_bounded": True,
+                "shutdown_timed_out": False,
+                "fallback_mode_visible": True,
+                "fallback_reason": "none",
+                "sidecar_mode": "production",
+                "healthcheck_observed": True,
+                "provider_transport_observed": True,
+                "session_id_redacted": True,
+                "latency_metrics_ms": {"session_start_ms": 110, "shutdown_ms": 80},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([sidecar_path])
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "missing_standalone_report_identity" in live_evidence["issues"]
+
+
+def test_voice_operator_accepts_standalone_section_evidence_type_identity(tmp_path):
+    turn_path = tmp_path / "actual-live-turn.json"
+    turn_path.write_text(
+        json.dumps(
+            {
+                "evidence_type": "live_turn",
+                "source_artifact": turn_path.name,
+                "transcript_observed": True,
+                "assistant_audio_observed": True,
+                "barge_in_observed": True,
+                "spoken_reply_short": True,
+                "no_voice_denial_observed": True,
+                "speech_end_to_first_audio_ms": 950,
+                "barge_in_stop_ms": 80,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([turn_path])
+
+    assert "missing_standalone_report_identity" not in live_evidence["issues"]
+    assert "invalid_standalone_report_identity" not in " ".join(live_evidence["issues"])
+    assert "live_turn:missing_source_artifact" not in live_evidence["issues"]
+
+
+def test_voice_operator_rejects_standalone_section_with_wrong_identity(tmp_path):
+    turn_path = tmp_path / "actual-live-turn.json"
+    turn_path.write_text(
+        json.dumps(
+            {
+                "kind": "calendar_event",
+                "source_artifact": turn_path.name,
+                "transcript_observed": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([turn_path])
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "invalid_standalone_report_identity:calendar_event" in live_evidence["issues"]
+
+
 def test_voice_operator_rejects_combined_manifest_placeholder_source_artifacts(tmp_path):
     evidence = _complete_live_evidence()
     (tmp_path / "all-live-evidence.json").write_text(json.dumps(evidence), encoding="utf-8")
@@ -690,6 +770,43 @@ def test_voice_operator_rejects_combined_manifest_placeholder_source_artifacts(t
     assert "discord_live_probe:template_source_artifact_not_accepted" in live_evidence["issues"]
     assert "sidecar_session:template_source_artifact_not_accepted" in live_evidence["issues"]
     assert "live_turn:template_source_artifact_not_accepted" in live_evidence["issues"]
+
+
+def test_voice_operator_rejects_template_source_artifact_path_variants():
+    evidence = _complete_live_evidence()
+    evidence["discord_live_probe"]["source_artifact"] = "./discord-live-probe.json"
+    evidence["sidecar_session"]["source_artifact"] = "./sidecar-session.json"
+    evidence["live_turn"]["source_artifact"] = "./live-turn.json"
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "discord_live_probe:template_source_artifact_not_accepted" in live_evidence["issues"]
+    assert "sidecar_session:template_source_artifact_not_accepted" in live_evidence["issues"]
+    assert "live_turn:template_source_artifact_not_accepted" in live_evidence["issues"]
+
+
+def test_voice_operator_rejects_anonymous_combined_manifest_report(tmp_path):
+    evidence = _complete_live_evidence()
+    evidence.pop("schema_version")
+    evidence["discord_live_probe"]["source_artifact"] = str(tmp_path / "all-live-evidence.json")
+    evidence["sidecar_session"]["source_artifact"] = str(tmp_path / "all-live-evidence.json")
+    evidence["live_turn"]["source_artifact"] = str(tmp_path / "all-live-evidence.json")
+    (tmp_path / "all-live-evidence.json").write_text(json.dumps(evidence), encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "reports": {"combined": "all-live-evidence.json"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_evidence = _load_live_evidence([manifest_path])
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "live_evidence_manifest:combined:missing_report_identity" in live_evidence["issues"]
 
 
 def test_voice_operator_rejects_combined_manifest_missing_nested_source_artifact(tmp_path):
@@ -749,6 +866,8 @@ def test_voice_operator_manifest_nested_report_source_artifacts_resolve_relative
     assert live_evidence["overall_status"] == "live_evidence_supplied_not_readiness_claim"
     assert live_evidence["issues"] == []
     assert live_evidence["section_refs"]["sidecar_session"]["source_artifact"] == str(raw_dir / "sidecar.json")
+    assert live_evidence["section_refs"]["sidecar_session"]["wrapper_artifact"] == str(report_dir / "combined.json")
+    assert live_evidence["section_refs"]["sidecar_session"]["reported_source_artifact"] == "raw/sidecar.json"
 
 
 def test_live_evidence_rejects_complete_payload_without_schema_and_source_artifacts():

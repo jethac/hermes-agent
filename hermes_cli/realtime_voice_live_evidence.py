@@ -596,7 +596,10 @@ def _attach_optional_evidence_report(
 
 
 def _optional_evidence_has_identity(report_key: str, payload: dict[str, Any]) -> bool:
-    if payload.get("schema_version") == "voiceops.milestone1.live_voice_evidence.v1":
+    if (
+        payload.get("schema_version") == "voiceops.milestone1.live_voice_evidence.v1"
+        and any(isinstance(payload.get(section), dict) for section in ("discord_live_probe", "sidecar_session", "live_turn"))
+    ):
         return True
     kind = str(payload.get("kind") or payload.get("evidence_type") or "").strip()
     return kind == report_key
