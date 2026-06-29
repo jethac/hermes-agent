@@ -263,6 +263,7 @@ The command writes:
 - `audit-ledger.jsonl`
 - `demo-script.md`
 - `nemoclaw-action-packet.json`
+- `nemoclaw-action-packet.validation.json`
 - `phone-context.json`
 - `milestone2-execution-plan.json`
 - `readiness-report.json`
@@ -278,7 +279,7 @@ The command writes:
 - `submission-writeup.md`
 - `stripe-actions-dry-run.sh`
 
-The generated shell script is dry-run by construction. It prints the Stripe/Projects commands instead of executing them. The demo package, readiness report, local closure summary, and operator handoff preview are schema-tagged so the Milestone 0 artifact directory can be reviewed without first opening the global plan-run index. The readiness report is non-invasive: it checks local prerequisites and env shape from process env, repo `.env`, and explicit `--env-file` values by presence only. It does not read `/Users/jethac/.hermes/hermes-agent`, print secrets, provision, purchase, call, or mutate credentials. The handoff preview is also non-invasive: it lists the ordered safe evidence-collection phases, current blockers, command safety labels, must-not rules, and final reindex command for live Discord voice, spend/provisioning preflight, and DGX Spark evidence. The HTML dashboard is a static recording surface and does not require a web server.
+The generated shell script is dry-run by construction. It prints the Stripe/Projects commands instead of executing them. The NemoClaw validation artifact is also local static validation only: it checks the packet schema, approval contracts, command hashes, dry-run command alignment, blocked capabilities, and no-write safety flags without running commands, calling the network, spending, provisioning, reading credentials, or placing calls. The demo package, readiness report, local closure summary, and operator handoff preview are schema-tagged so the Milestone 0 artifact directory can be reviewed without first opening the global plan-run index. The readiness report is non-invasive: it checks local prerequisites and env shape from process env, repo `.env`, and explicit `--env-file` values by presence only. It does not read `/Users/jethac/.hermes/hermes-agent`, print secrets, provision, purchase, call, or mutate credentials. The handoff preview is also non-invasive: it lists the ordered safe evidence-collection phases, current blockers, command safety labels, must-not rules, and final reindex command for live Discord voice, spend/provisioning preflight, and DGX Spark evidence. The HTML dashboard is a static recording surface and does not require a web server.
 The recording runbook gives the shot list, fallback recording path, submission checklist, and tweet draft without requiring live spend or live provisioning. The submission writeup gives concise public copy for the tweet/thread/form.
 
 ## Milestone 1: Real Voice Operator
@@ -408,12 +409,23 @@ The command writes:
 - `post-approval-receipts.template.json`
 - `post-approval-receipts.example.json`
 - `post-approval-receipts.validation.json`
+- `nemoclaw-action-packet.validation.json`
 - `post-approval-receipts-scaffold/post-approval-receipts.json`
 - `audit-ledger.post-approval.jsonl`
 - `setup-closure-plan.json`
 - `setup-closure-plan.md`
 
-The default preflight is non-mutating and only checks PATH/env presence, env-key presence, local optional Stripe Skills bundle contracts, command policy, and phone-handoff configuration shape. It verifies that `optional-skills/payments/stripe-projects`, `optional-skills/payments/stripe-link-cli`, and `optional-skills/payments/mpp-agent` exist with the expected Link approval, HTTP 402/SPT, Projects billing, `.env`, and wallet/key secrecy safety terms. It blocks live spend, provider provisioning, credential retrieval, outbound phone calls, account mutation, and network tunnels. If active command probing is needed, it must be explicitly enabled with `--run-command-probes`; that mode is still limited to isolated version/help subprocess probes and must not be treated as approval for `stripe projects add`, Link spend creation, card retrieval, MPP payment, SMS, or phone calls.
+The default preflight is non-mutating and only checks PATH/env presence, env-key presence, local optional Stripe Skills bundle contracts, command policy, and phone-handoff configuration shape. It writes a `not_supplied` NemoClaw action-packet validation artifact unless `--nemoclaw-action-packet` is provided. It verifies that `optional-skills/payments/stripe-projects`, `optional-skills/payments/stripe-link-cli`, and `optional-skills/payments/mpp-agent` exist with the expected Link approval, HTTP 402/SPT, Projects billing, `.env`, and wallet/key secrecy safety terms. It blocks live spend, provider provisioning, credential retrieval, outbound phone calls, account mutation, and network tunnels. If active command probing is needed, it must be explicitly enabled with `--run-command-probes`; that mode is still limited to isolated version/help subprocess probes and must not be treated as approval for `stripe projects add`, Link spend creation, card retrieval, MPP payment, SMS, or phone calls.
+
+To validate the generated NemoClaw packet without running provider commands, ingest it explicitly:
+
+```bash
+uv run python scripts/voiceops_provisioning_probe.py \
+  --output-dir artifacts/voiceops-provisioning/current \
+  --env-file .env \
+  --no-command-probes \
+  --nemoclaw-action-packet artifacts/hackathon-voiceops-demo/current/nemoclaw-action-packet.json
+```
 
 Display-only discovery is a separate opt-in path and is required before Milestone 2 can be considered ready for live provisioning approval. Use `--run-readonly-discovery` only for the exact allowlisted commands `stripe projects list --limit 10` and `link-cli auth status`. These commands run with an isolated temporary `HOME`, so `link-cli auth status` is an isolated auth-status attempt and does not prove the operator's normal local CLI auth state. The probe redacts command output, writes `read-only-discovery.json`, `read-only-discovery.md`, `read-only-discovery.manifest.json`, and `audit-ledger.read-only-discovery.jsonl`, and still does not grant approval for spend, provisioning, credential retrieval, messages, or calls.
 

@@ -30,6 +30,7 @@ PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION = "voiceops.milestone2.preflight_evid
 POST_APPROVAL_RECEIPTS_SCHEMA_VERSION = "voiceops.milestone2.post_approval_receipts.v1"
 READ_ONLY_DISCOVERY_SCHEMA_VERSION = "voiceops.milestone2.read_only_discovery.v1"
 READ_ONLY_DISCOVERY_MANIFEST_SCHEMA_VERSION = "voiceops.milestone2.read_only_discovery_manifest.v1"
+NEMOCLAW_ACTION_PACKET_VALIDATION_SCHEMA_VERSION = "voiceops.nemoclaw_action_packet_validation.v1"
 POST_APPROVAL_RECEIPT_STATUSES = {"executed", "failed", "held", "denied", "skipped", "rolled_back"}
 POST_APPROVAL_NON_EXECUTED_STATUSES = {"held", "denied", "skipped"}
 PREFLIGHT_REDACTED_SOURCE_SCHEMA_VERSION = "voiceops.milestone2.redacted_source_artifact.v1"
@@ -1544,6 +1545,182 @@ def load_readonly_discovery_evidence(path: Path | None) -> dict[str, Any]:
     return discovery
 
 
+def validate_nemoclaw_action_packet(packet: Mapping[str, Any]) -> dict[str, Any]:
+    issues: list[str] = []
+    warnings: list[str] = []
+    if packet.get("schema_version") != "voiceops.nemoclaw_action_packet.v1":
+        issues.append("missing_or_invalid_schema_version")
+    if packet.get("artifact_id") != "voiceops-nemoclaw-action-packet":
+        issues.append("missing_or_invalid_artifact_id")
+    if packet.get("runtime") != "NemoClaw":
+        issues.append("runtime_not_nemoclaw")
+    if packet.get("mode") != "dry_run_until_user_approval":
+        issues.append("mode_not_dry_run_until_user_approval")
+    issues.extend(_example_only_presence_issues(packet))
+    issues.extend(_preflight_secret_issues(packet))
+
+    safety = packet.get("safety") if isinstance(packet.get("safety"), Mapping) else {}
+    for key in ("live_spend", "provider_provisioning", "credential_retrieval", "outbound_phone_calls", "network_io"):
+        if safety.get(key) is not False:
+            issues.append(f"safety.{key}_not_false")
+    if safety.get("requires_operator_approval") is not True:
+        issues.append("safety.requires_operator_approval_not_true")
+    if safety.get("default_decision") != "hold":
+        issues.append("safety.default_decision_not_hold")
+
+    required_blocked = [
+        "raw_card_data_in_model_context",
+        "unapproved_purchase",
+        "unbounded_network_access",
+    ]
+    blocked_capabilities = set(packet.get("blocked_capabilities") or [])
+    for required_block in required_blocked:
+        if required_block not in blocked_capabilities:
+            issues.append(f"missing_blocked_capability:{required_block}")
+
+    actions = packet.get("approval_required_actions") if isinstance(packet.get("approval_required_actions"), list) else []
+    contracts = packet.get("approval_contracts") if isinstance(packet.get("approval_contracts"), Mapping) else {}
+    dry_run_commands = packet.get("dry_run_commands") if isinstance(packet.get("dry_run_commands"), list) else []
+    action_ids = {str(action.get("action_id")) for action in actions if isinstance(action, Mapping)}
+    if not actions:
+        issues.append("approval_required_actions_empty")
+    if set(contracts) != action_ids:
+        issues.append("approval_contracts_do_not_match_actions")
+
+    for action in actions:
+        if not isinstance(action, Mapping):
+            issues.append("approval_required_action_not_object")
+            continue
+        action_id = str(action.get("action_id") or "")
+        command = str(action.get("command") or "")
+        contract = action.get("approval_contract") if isinstance(action.get("approval_contract"), Mapping) else {}
+        indexed_contract = contracts.get(action_id)
+        if action.get("requires_approval") is not True:
+            issues.append(f"{action_id}:requires_approval_not_true")
+        if action.get("status") not in {"queued", "held-budget"}:
+            issues.append(f"{action_id}:status_not_queued_or_held_budget")
+        if not command:
+            issues.append(f"{action_id}:missing_command")
+        elif command not in dry_run_commands:
+            issues.append(f"{action_id}:command_missing_from_dry_run_commands")
+        if not contract:
+            issues.append(f"{action_id}:missing_approval_contract")
+            continue
+        if indexed_contract != contract:
+            issues.append(f"{action_id}:approval_contract_index_mismatch")
+        if contract.get("approval_artifact") != "nemoclaw-action-packet.json":
+            issues.append(f"{action_id}:approval_artifact_not_packet")
+        if contract.get("allowed_decisions") != ["approve_once", "deny", "hold"]:
+            issues.append(f"{action_id}:allowed_decisions_invalid")
+        if contract.get("default_decision") != "hold":
+            issues.append(f"{action_id}:default_decision_not_hold")
+        if contract.get("status") not in {"pending", "blocked"}:
+            issues.append(f"{action_id}:approval_status_not_pending_or_blocked")
+        if contract.get("approved_by_ref") is not None:
+            issues.append(f"{action_id}:approved_by_ref_present")
+        expected_hash = hashlib.sha256(command.encode("utf-8")).hexdigest()
+        if contract.get("command_sha256") != expected_hash:
+            issues.append(f"{action_id}:command_sha256_mismatch")
+        if not contract.get("required_preflight_gates"):
+            issues.append(f"{action_id}:missing_required_preflight_gates")
+    if set(dry_run_commands) != {str(action.get("command")) for action in actions if isinstance(action, Mapping)}:
+        issues.append("dry_run_commands_do_not_match_approval_actions")
+
+    return {
+        "schema_version": NEMOCLAW_ACTION_PACKET_VALIDATION_SCHEMA_VERSION,
+        "artifact_id": "voiceops-nemoclaw-action-packet-validation",
+        "packet_id": packet.get("packet_id"),
+        "ok": not issues,
+        "status": "valid" if not issues else "invalid",
+        "mode": "local_static_validation_only",
+        "loaded": True,
+        "path": None,
+        "safety": {
+            "executes_commands": False,
+            "network_io": False,
+            "live_spend": False,
+            "provider_provisioning": False,
+            "credential_retrieval": False,
+            "outbound_phone_calls": False,
+            "secret_values_emitted": False,
+        },
+        "validation_issues": sorted(set(issues)),
+        "warnings": warnings,
+        "validated_contract_count": len(actions),
+        "dry_run_command_count": len(dry_run_commands),
+        "required_blocked_capabilities": required_blocked,
+    }
+
+
+def load_nemoclaw_action_packet(path: Path | None) -> dict[str, Any]:
+    if path is None:
+        return {
+            "schema_version": NEMOCLAW_ACTION_PACKET_VALIDATION_SCHEMA_VERSION,
+            "artifact_id": "voiceops-nemoclaw-action-packet-validation",
+            "ok": False,
+            "status": "not_supplied",
+            "mode": "local_static_validation_only",
+            "loaded": False,
+            "path": None,
+            "safety": {
+                "executes_commands": False,
+                "network_io": False,
+                "live_spend": False,
+                "provider_provisioning": False,
+                "credential_retrieval": False,
+                "outbound_phone_calls": False,
+                "secret_values_emitted": False,
+            },
+            "validation_issues": [],
+            "warnings": [],
+            "validated_contract_count": 0,
+            "dry_run_command_count": 0,
+            "required_blocked_capabilities": [
+                "raw_card_data_in_model_context",
+                "unapproved_purchase",
+                "unbounded_network_access",
+            ],
+        }
+    resolved = path.expanduser().resolve(strict=False)
+    if resolved == FORBIDDEN_ENV_ROOT or FORBIDDEN_ENV_ROOT in resolved.parents:
+        raise ValueError(f"refusing to inspect forbidden Hermes worktree path: {resolved}")
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        report = load_nemoclaw_action_packet(None)
+        report.update(
+            {
+                "status": "not_found",
+                "path": str(path),
+                "validation_issues": ["nemoclaw_action_packet:file_not_found"],
+            }
+        )
+        return report
+    except json.JSONDecodeError as exc:
+        report = load_nemoclaw_action_packet(None)
+        report.update(
+            {
+                "status": "invalid",
+                "path": str(path),
+                "validation_issues": [f"nemoclaw_action_packet:json_parse_failed:{exc.msg}"],
+            }
+        )
+        return report
+    if not isinstance(payload, Mapping):
+        report = load_nemoclaw_action_packet(None)
+        report.update(
+            {
+                "status": "invalid",
+                "path": str(path),
+                "validation_issues": ["nemoclaw_action_packet:root_must_be_object"],
+            }
+        )
+        return report
+    report = validate_nemoclaw_action_packet(payload)
+    report["path"] = str(path)
+    return report
+
+
 def _probe_by_id(command_results: list[dict[str, Any]], probe_id: str) -> dict[str, Any]:
     return next(item for item in command_results if item["probe_id"] == probe_id)
 
@@ -1562,6 +1739,7 @@ def build_probe_report(
     preflight_evidence_path: Path | None = None,
     read_only_discovery_evidence_path: Path | None = None,
     post_approval_receipts_path: Path | None = None,
+    nemoclaw_action_packet_path: Path | None = None,
     which: Callable[[str], str | None] = shutil.which,
     runner: CommandRunner = _subprocess_runner,
     readonly_discovery_runner: CommandRunner = _readonly_discovery_subprocess_runner,
@@ -1710,6 +1888,7 @@ def build_probe_report(
     )
 
     preflight_evidence = load_preflight_evidence(preflight_evidence_path)
+    nemoclaw_action_packet = load_nemoclaw_action_packet(nemoclaw_action_packet_path)
 
     def preflight_check(
         check_id: str,
@@ -1835,11 +2014,20 @@ def build_probe_report(
     required_failures = [check["check_id"] for check in check_dicts if check["required"] and check["status"] != "pass"]
     if readonly_discovery["status"] != "pass":
         required_failures.append("read_only_discovery_passed")
+    if nemoclaw_action_packet["loaded"] and nemoclaw_action_packet["status"] != "valid":
+        required_failures.append("nemoclaw_action_packet_valid")
     area_status: dict[str, str] = {}
     for area in sorted({check["area"] for check in check_dicts}):
         area_checks = [check for check in check_dicts if check["area"] == area]
         area_status[area] = "pass" if all(check["status"] == "pass" for check in area_checks if check["required"]) else "fail"
     area_status["read_only_discovery"] = "pass" if readonly_discovery["status"] == "pass" else "fail"
+    area_status["nemoclaw_action_packet"] = (
+        "pass"
+        if nemoclaw_action_packet["status"] == "valid"
+        else "not_supplied"
+        if not nemoclaw_action_packet["loaded"]
+        else "fail"
+    )
     ready = not required_failures
     report = {
         "generated_at": _utc_now(),
@@ -1850,6 +2038,7 @@ def build_probe_report(
             "run_commands": run_commands,
             "run_readonly_discovery": run_readonly_discovery,
             "read_only_discovery_evidence_path": str(read_only_discovery_evidence_path) if read_only_discovery_evidence_path else None,
+            "nemoclaw_action_packet_path": str(nemoclaw_action_packet_path) if nemoclaw_action_packet_path else None,
             "timeout_seconds": timeout_seconds,
             "active_probe_policy": "version_help_only",
             "read_only_discovery_policy": "exact_allowlist_only",
@@ -1867,6 +2056,7 @@ def build_probe_report(
         "checks": check_dicts,
         "command_probes": command_results,
         "read_only_discovery": readonly_discovery,
+        "nemoclaw_action_packet": nemoclaw_action_packet,
     }
     execution_plan = build_milestone2_execution_plan(report)
     report["post_approval_receipts"] = load_post_approval_receipts(post_approval_receipts_path, execution_plan)
@@ -2073,6 +2263,7 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "presence_only": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env",
             "bounded_version_help": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --run-command-probes",
             "read_only_discovery": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --run-readonly-discovery",
+            "validate_nemoclaw_action_packet": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --no-command-probes --nemoclaw-action-packet artifacts/hackathon-voiceops-demo/current/nemoclaw-action-packet.json",
             "with_preflight_evidence": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
             "with_preflight_manifest": "uv run python scripts/voiceops_provisioning_probe.py --output-dir artifacts/voiceops-provisioning/current --env-file .env --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
             "plan_index": "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --env-file .env --provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
@@ -3303,6 +3494,7 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
         "post_approval_receipts_example": output_dir / "post-approval-receipts.example.json",
         "post_approval_receipts_validation": output_dir / "post-approval-receipts.validation.json",
         "post_approval_audit_ledger": output_dir / "audit-ledger.post-approval.jsonl",
+        "nemoclaw_action_packet_validation": output_dir / "nemoclaw-action-packet.validation.json",
         "preflight_evidence_template": output_dir / "provisioning-preflight-evidence.template.json",
         "preflight_evidence_example": output_dir / "provisioning-preflight-evidence.example.json",
         "preflight_evidence_manifest_example": output_dir / "provisioning-preflight-evidence.manifest.example.json",
@@ -3329,6 +3521,7 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
     paths.update(write_post_approval_receipts_scaffold(output_dir, execution_plan))
     _write_json(paths["post_approval_receipts_validation"], report["post_approval_receipts"])
     _write_jsonl(paths["post_approval_audit_ledger"], report["post_approval_receipts"].get("ledger_rows", []))
+    _write_json(paths["nemoclaw_action_packet_validation"], report["nemoclaw_action_packet"])
     _write_json(paths["preflight_evidence_template"], build_preflight_evidence_template())
     _write_json(paths["preflight_evidence_example"], build_preflight_evidence_example())
     _write_json(paths["preflight_evidence_manifest_example"], build_preflight_evidence_manifest_example())
@@ -3353,6 +3546,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=None,
         help="Read-only redacted post-approval receipt bundle; validates receipts and writes local ledger artifacts only.",
+    )
+    parser.add_argument(
+        "--nemoclaw-action-packet",
+        type=Path,
+        default=None,
+        help="Read-only NemoClaw action packet JSON to validate without running commands or granting approval.",
     )
     parser.add_argument(
         "--read-only-discovery-evidence",
@@ -3408,6 +3607,7 @@ def main(argv: list[str] | None = None) -> int:
         preflight_evidence_path=args.preflight_evidence,
         read_only_discovery_evidence_path=args.read_only_discovery_evidence,
         post_approval_receipts_path=args.post_approval_receipts,
+        nemoclaw_action_packet_path=args.nemoclaw_action_packet,
         run_commands=args.run_command_probes,
         run_readonly_discovery=args.run_readonly_discovery,
         timeout_seconds=args.timeout_seconds,

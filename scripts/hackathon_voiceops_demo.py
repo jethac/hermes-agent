@@ -23,7 +23,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.voiceops_provisioning_probe import build_milestone2_execution_plan
+from scripts.voiceops_provisioning_probe import build_milestone2_execution_plan, validate_nemoclaw_action_packet
 
 
 DEFAULT_REQUEST = (
@@ -1130,13 +1130,26 @@ def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
         if action["requires_approval"]
     ]
     return {
+        "schema_version": "voiceops.nemoclaw_action_packet.v1",
+        "artifact_id": "voiceops-nemoclaw-action-packet",
         "packet_id": "voiceops-nemoclaw-demo-001",
         "runtime": "NemoClaw",
         "mode": "dry_run_until_user_approval",
+        "dry_run_shell_artifact": "stripe-actions-dry-run.sh",
+        "audit_ledger_artifact": "audit-ledger.jsonl",
         "source_channel": "discord_voice",
         "hermes_active_model": demo["sponsor_stack"]["hermes_active_model"]["active_model"],
         "model_selected_by": "Hermes /model",
         "spend_policy": demo["spend_policy"],
+        "safety": {
+            "live_spend": False,
+            "provider_provisioning": False,
+            "credential_retrieval": False,
+            "outbound_phone_calls": False,
+            "network_io": False,
+            "requires_operator_approval": True,
+            "default_decision": "hold",
+        },
         "allowed_capabilities": [
             "stripe_projects_catalog",
             "stripe_projects_voip_provisioning_after_approval",
@@ -1160,6 +1173,17 @@ def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
         "dry_run_commands": [action["command"] for action in approval_actions],
         "audit_event_ids": [event["event_id"] for event in demo["audit_events"]],
     }
+
+
+def _validate_nemoclaw_action_packet(packet: Mapping[str, Any]) -> dict[str, Any]:
+    validation = validate_nemoclaw_action_packet(packet)
+    demo_validation = {
+        key: value
+        for key, value in validation.items()
+        if key not in {"loaded", "path", "validation_issues"}
+    }
+    demo_validation["issues"] = validation["validation_issues"]
+    return demo_validation
 
 
 def _phone_context_packet(demo: dict[str, Any]) -> dict[str, Any]:
@@ -1802,6 +1826,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "## Evidence artifacts",
         "",
         "- `nemoclaw-action-packet.json`: sandbox and approval frame for billable/network-capable actions",
+        "- `nemoclaw-action-packet.validation.json`: local static validation of the NemoClaw approval packet; no commands, network, spend, provisioning, credential reads, or calls",
         "- `phone-context.json`: outbound phone-call handoff context preserved from Discord",
         "- `readiness-report.json`: local recording prerequisite report",
         "- `milestone2-execution-plan.json`: post-approval execution contract for VoIP provisioning, spend request, call receipt, credential reference, and rollback",
@@ -1841,7 +1866,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         "- Discord voice is the intended live front door; live proof requires the separate Discord evidence gate.",
         f"- {demo['sponsor_stack']['nemotron_3_super']['selection']} is the visible serious planning path.",
         "- Hosted fallback: clearly labeled provider through Hermes /model, only if the local Nemotron 3 Super Spark path is unavailable.",
-        "- NemoClaw-format dry-run packet frames billable and network-capable actions before execution.",
+        "- NemoClaw-format dry-run packet frames billable and network-capable actions before execution, with a local static validation artifact.",
         "- Stripe Skills provide the dry-run spend and provisioning queue until preflight and approval receipts exist.",
         f"- The spoken budget becomes a {_dollars(policy['limit_cents'])} spend policy with approval required over {_dollars(policy['approval_required_over_cents'])}.",
         f"- {_dollars(approval_cents)} of queued spend remains approval-gated.",
@@ -1863,7 +1888,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         "- Dry-run by default.",
         "- Live spend requires user-visible approval.",
         "- Reflex model does not get broad tool or spend authority.",
-        "- NemoClaw packet lists blocked capabilities such as raw card data in model context and unapproved purchases.",
+        "- NemoClaw packet validation proves the static approval packet does not execute commands, call the network, spend, provision, read credentials, or call out.",
         "- Audit ledger records proposed actions, budget impact, approval state, and handoff evidence.",
         "",
         "## Remaining Closure Gates",
@@ -1945,7 +1970,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "1. Discord voice: join the voice channel and say the prompt above.",
         "2. Reflex response: show Hermes acknowledging the budget immediately and stating that billable actions require approval.",
         "3. Oracle path: show Nemotron 3 Super selected through Hermes' normal `/model` flow or visible in the generated dashboard; label any hosted fallback clearly.",
-        "4. NemoClaw boundary: show `nemoclaw-action-packet.json` or the dashboard NemoClaw section before any billable/network-capable action.",
+        "4. NemoClaw boundary: show `nemoclaw-action-packet.json`, `nemoclaw-action-packet.validation.json`, or the dashboard NemoClaw section before any billable/network-capable action.",
         "5. Stripe Skills: show queued Stripe Projects VoIP provisioning and Link-gated service-credit spend in `stripe-actions-dry-run.sh` or the dashboard approval queue.",
         "6. Phone handoff: show `phone-context.json` and narrate that the same Discord context is preserved for the outbound call.",
         "7. Spark story: show or state that the target appliance is one DGX Spark running the reflex, speech stack, and preferred local model path.",
@@ -1957,6 +1982,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "- `operator-dashboard.html` for the recording surface",
         "- `voiceops-demo.md` for the concise story",
         "- `nemoclaw-action-packet.json` for the approval boundary",
+        "- `nemoclaw-action-packet.validation.json` for local no-write validation of that boundary",
         "- `stripe-actions-dry-run.sh` for non-mutating Stripe/Projects commands",
         "- `phone-context.json` for the handoff context",
         "- `milestone2-execution-plan.json` for receipts, credential references, approval gates, and rollback/deprovision notes",
@@ -2558,6 +2584,7 @@ def _demo_package(
     payload["milestone2_execution_plan_ref"] = paths["milestone2_execution_plan"].name
     payload["safety_boundary_refs"] = {
         "nemoclaw_action_packet": paths["nemoclaw_packet"].name,
+        "nemoclaw_action_packet_validation": paths["nemoclaw_packet_validation"].name,
         "stripe_actions_dry_run": paths["stripe_actions"].name,
         "phone_context": paths["phone_context"].name,
     }
@@ -2578,6 +2605,7 @@ def write_demo(
         "audit_ledger": output_dir / "audit-ledger.jsonl",
         "demo_script": output_dir / "demo-script.md",
         "nemoclaw_packet": output_dir / "nemoclaw-action-packet.json",
+        "nemoclaw_packet_validation": output_dir / "nemoclaw-action-packet.validation.json",
         "phone_context": output_dir / "phone-context.json",
         "readiness_json": output_dir / "readiness-report.json",
         "readiness_markdown": output_dir / "readiness-report.md",
@@ -2600,7 +2628,9 @@ def write_demo(
     paths["markdown"].write_text(_markdown(demo), encoding="utf-8")
     _write_jsonl(paths["audit_ledger"], demo["audit_events"])
     paths["demo_script"].write_text(_demo_script(demo), encoding="utf-8")
-    _write_json(paths["nemoclaw_packet"], _nemoclaw_action_packet(demo))
+    nemoclaw_packet = _nemoclaw_action_packet(demo)
+    _write_json(paths["nemoclaw_packet"], nemoclaw_packet)
+    _write_json(paths["nemoclaw_packet_validation"], _validate_nemoclaw_action_packet(nemoclaw_packet))
     _write_json(paths["phone_context"], _phone_context_packet(demo))
     _write_json(paths["readiness_json"], readiness)
     paths["readiness_markdown"].write_text(_readiness_markdown(readiness), encoding="utf-8")

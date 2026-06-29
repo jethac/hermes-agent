@@ -39,6 +39,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "dashboard",
         "milestone2_execution_plan",
         "nemoclaw_packet",
+        "nemoclaw_packet_validation",
         "operator_handoff_preview_json",
         "operator_handoff_preview_markdown",
         "operator_state",
@@ -56,6 +57,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     readiness = json.loads(Path(paths["readiness_json"]).read_text(encoding="utf-8"))
     closure_summary = json.loads(Path(paths["readiness_closure_summary_json"]).read_text(encoding="utf-8"))
     nemoclaw = json.loads(Path(paths["nemoclaw_packet"]).read_text(encoding="utf-8"))
+    nemoclaw_validation = json.loads(Path(paths["nemoclaw_packet_validation"]).read_text(encoding="utf-8"))
     phone_context = json.loads(Path(paths["phone_context"]).read_text(encoding="utf-8"))
     milestone2_plan = json.loads(Path(paths["milestone2_execution_plan"]).read_text(encoding="utf-8"))
     operator_handoff = json.loads(Path(paths["operator_handoff_preview_json"]).read_text(encoding="utf-8"))
@@ -220,6 +222,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Final Reindex" in handoff_markdown
     assert payload["safety_boundary_refs"] == {
         "nemoclaw_action_packet": "nemoclaw-action-packet.json",
+        "nemoclaw_action_packet_validation": "nemoclaw-action-packet.validation.json",
         "phone_context": "phone-context.json",
         "stripe_actions_dry_run": "stripe-actions-dry-run.sh",
     }
@@ -252,8 +255,38 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "provision-voip-provider" in action_ids
     assert "call-user-phone" in action_ids
     assert payload["totals"]["held_budget_cents"] > 0
+    assert nemoclaw["schema_version"] == "voiceops.nemoclaw_action_packet.v1"
+    assert nemoclaw["artifact_id"] == "voiceops-nemoclaw-action-packet"
     assert nemoclaw["runtime"] == "NemoClaw"
     assert nemoclaw["mode"] == "dry_run_until_user_approval"
+    assert nemoclaw["dry_run_shell_artifact"] == "stripe-actions-dry-run.sh"
+    assert nemoclaw["audit_ledger_artifact"] == "audit-ledger.jsonl"
+    assert nemoclaw["safety"] == {
+        "live_spend": False,
+        "provider_provisioning": False,
+        "credential_retrieval": False,
+        "outbound_phone_calls": False,
+        "network_io": False,
+        "requires_operator_approval": True,
+        "default_decision": "hold",
+    }
+    assert nemoclaw_validation["schema_version"] == "voiceops.nemoclaw_action_packet_validation.v1"
+    assert nemoclaw_validation["artifact_id"] == "voiceops-nemoclaw-action-packet-validation"
+    assert nemoclaw_validation["ok"] is True
+    assert nemoclaw_validation["status"] == "valid"
+    assert nemoclaw_validation["mode"] == "local_static_validation_only"
+    assert nemoclaw_validation["safety"] == {
+        "executes_commands": False,
+        "network_io": False,
+        "live_spend": False,
+        "provider_provisioning": False,
+        "credential_retrieval": False,
+        "outbound_phone_calls": False,
+        "secret_values_emitted": False,
+    }
+    assert nemoclaw_validation["issues"] == []
+    assert nemoclaw_validation["validated_contract_count"] == len(nemoclaw["approval_required_actions"])
+    assert nemoclaw_validation["dry_run_command_count"] == len(nemoclaw["dry_run_commands"])
     assert nemoclaw["model_selected_by"] == "Hermes /model"
     assert nemoclaw["hermes_active_model"].startswith("Nemotron 3 Super")
     assert "oracle_model" not in nemoclaw
@@ -359,6 +392,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "DGX Spark" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "via Hermes /model via Hermes" not in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "nemoclaw-action-packet.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "nemoclaw-action-packet.validation.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "phone-context.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "milestone2-execution-plan.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "readiness-report.json" in Path(paths["markdown"]).read_text(encoding="utf-8")

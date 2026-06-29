@@ -18,17 +18,64 @@ from scripts.voiceops_provisioning_probe import (
     build_post_approval_receipts_example,
     build_post_approval_receipts_template,
     build_probe_report,
+    load_nemoclaw_action_packet,
     load_payment_skill_bundle_evidence,
     load_post_approval_receipts,
     load_preflight_evidence,
     parse_args,
     refresh_preflight_source_hashes,
+    validate_nemoclaw_action_packet,
     validate_post_approval_receipts,
     write_preflight_evidence_scaffold,
     write_probe_artifacts,
     _validate_safe_probe_command,
     _validate_readonly_discovery_command,
 )
+
+
+def _nemoclaw_packet(command: str = "stripe projects add twilio/voice") -> dict[str, object]:
+    contract = {
+        "approval_id": "approval-provision-voip-provider",
+        "approval_artifact": "nemoclaw-action-packet.json",
+        "approval_channel": "discord_voice_operator_confirmation",
+        "approved_by_ref": None,
+        "allowed_decisions": ["approve_once", "deny", "hold"],
+        "command_sha256": hashlib.sha256(command.encode("utf-8")).hexdigest(),
+        "default_decision": "hold",
+        "required_preflight_gates": ["stripe_projects_account", "mpp_approval_boundary"],
+        "status": "pending",
+    }
+    action = {
+        "action_id": "provision-voip-provider",
+        "command": command,
+        "requires_approval": True,
+        "status": "queued",
+        "approval_contract": contract,
+    }
+    return {
+        "schema_version": "voiceops.nemoclaw_action_packet.v1",
+        "artifact_id": "voiceops-nemoclaw-action-packet",
+        "packet_id": "voiceops-nemoclaw-test-001",
+        "runtime": "NemoClaw",
+        "mode": "dry_run_until_user_approval",
+        "safety": {
+            "live_spend": False,
+            "provider_provisioning": False,
+            "credential_retrieval": False,
+            "outbound_phone_calls": False,
+            "network_io": False,
+            "requires_operator_approval": True,
+            "default_decision": "hold",
+        },
+        "blocked_capabilities": [
+            "raw_card_data_in_model_context",
+            "unapproved_purchase",
+            "unbounded_network_access",
+        ],
+        "approval_required_actions": [action],
+        "approval_contracts": {"provision-voip-provider": contract},
+        "dry_run_commands": [command],
+    }
 
 
 def _dot_get(payload, ref):
@@ -371,6 +418,49 @@ def test_cli_env_presence_alone_does_not_complete_real_preflight():
     assert "stripe_cli" not in report["required_failures"]
 
 
+def test_nemoclaw_action_packet_validation_accepts_no_write_packet(tmp_path):
+    packet = _nemoclaw_packet()
+    packet_path = tmp_path / "nemoclaw-action-packet.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+
+    direct_validation = validate_nemoclaw_action_packet(packet)
+    loaded_validation = load_nemoclaw_action_packet(packet_path)
+    report = build_probe_report(
+        env={},
+        env_files=[],
+        nemoclaw_action_packet_path=packet_path,
+        which=lambda _command: None,
+    )
+
+    assert direct_validation["status"] == "valid"
+    assert direct_validation["safety"]["executes_commands"] is False
+    assert loaded_validation["status"] == "valid"
+    assert loaded_validation["path"] == str(packet_path)
+    assert report["nemoclaw_action_packet"]["status"] == "valid"
+    assert report["area_status"]["nemoclaw_action_packet"] == "pass"
+    assert "nemoclaw_action_packet_valid" not in report["required_failures"]
+
+
+def test_nemoclaw_action_packet_validation_rejects_tampered_command_hash(tmp_path):
+    packet = _nemoclaw_packet()
+    packet["approval_contracts"]["provision-voip-provider"]["command_sha256"] = "0" * 64
+    packet["approval_required_actions"][0]["approval_contract"]["command_sha256"] = "0" * 64
+    packet_path = tmp_path / "nemoclaw-action-packet.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+
+    report = build_probe_report(
+        env={},
+        env_files=[],
+        nemoclaw_action_packet_path=packet_path,
+        which=lambda _command: None,
+    )
+
+    assert report["nemoclaw_action_packet"]["status"] == "invalid"
+    assert "provision-voip-provider:command_sha256_mismatch" in report["nemoclaw_action_packet"]["validation_issues"]
+    assert "nemoclaw_action_packet_valid" in report["required_failures"]
+    assert report["area_status"]["nemoclaw_action_packet"] == "fail"
+
+
 def test_write_probe_artifacts(tmp_path):
     report = build_probe_report(
         env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
@@ -386,6 +476,7 @@ def test_write_probe_artifacts(tmp_path):
         "execution_plan_markdown",
         "json",
         "markdown",
+        "nemoclaw_action_packet_validation",
         "post_approval_audit_ledger",
         "post_approval_receipts_example",
         "post_approval_receipts_scaffold",
@@ -420,6 +511,7 @@ def test_write_probe_artifacts(tmp_path):
     post_approval_example = json.loads(Path(paths["post_approval_receipts_example"]).read_text(encoding="utf-8"))
     post_approval_scaffold = json.loads(Path(paths["post_approval_receipts_scaffold"]).read_text(encoding="utf-8"))
     post_approval_validation = json.loads(Path(paths["post_approval_receipts_validation"]).read_text(encoding="utf-8"))
+    nemoclaw_validation = json.loads(Path(paths["nemoclaw_action_packet_validation"]).read_text(encoding="utf-8"))
     preflight_example = json.loads(Path(paths["preflight_evidence_example"]).read_text(encoding="utf-8"))
     preflight_manifest_example = json.loads(Path(paths["preflight_evidence_manifest_example"]).read_text(encoding="utf-8"))
     preflight_scaffold_manifest_path = Path(paths["preflight_evidence_scaffold_manifest"])
@@ -483,6 +575,11 @@ def test_write_probe_artifacts(tmp_path):
     assert post_approval_validation["credential_location_count"] == 0
     assert post_approval_validation["rollback_receipt_count"] == 0
     assert post_approval_validation["audit_event_count"] == 0
+    assert nemoclaw_validation["schema_version"] == "voiceops.nemoclaw_action_packet_validation.v1"
+    assert nemoclaw_validation["status"] == "not_supplied"
+    assert nemoclaw_validation["safety"]["executes_commands"] is False
+    assert nemoclaw_validation["safety"]["network_io"] is False
+    assert payload["nemoclaw_action_packet"] == nemoclaw_validation
     assert Path(paths["post_approval_audit_ledger"]).read_text(encoding="utf-8") == ""
     assert setup_closure["schema_version"] == "voiceops.milestone2.setup_closure.v1"
     assert setup_closure["preflight_evidence_template"] == "provisioning-preflight-evidence.template.json"
@@ -1722,6 +1819,7 @@ def test_parse_args_defaults_to_requested_artifact_dir():
     assert args.output_dir == Path("artifacts/voiceops-provisioning/current")
     assert args.preflight_evidence is None
     assert args.post_approval_receipts is None
+    assert args.nemoclaw_action_packet is None
     assert args.refresh_preflight_source_hashes is None
     assert args.run_command_probes is False
     assert args.run_readonly_discovery is False
