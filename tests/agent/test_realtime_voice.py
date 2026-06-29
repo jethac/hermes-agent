@@ -10812,6 +10812,123 @@ def test_kame_session_treats_interface_intent_final_as_turn_boundary():
     asyncio.run(run())
 
 
+def test_kame_session_persists_interface_commit_as_assistant_response():
+    class InterfaceCommitEngine:
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            return None
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.INTERFACE_INTENT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "turn_id": "voice-123:1",
+                    "intent": "Check deployment status.",
+                    "text": "check deployment status",
+                    "route": "local",
+                    "playback_generation": 1,
+                },
+            )
+            yield VoiceEvent(
+                type=VoiceEventType.INTERFACE_REPLY_LOCAL,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "turn_id": "voice-123:1",
+                    "text": "Checking locally.",
+                    "playback_generation": 1,
+                },
+            )
+            yield VoiceEvent(
+                type=VoiceEventType.INTERFACE_COMMIT,
+                session_id="voice-123",
+                sequence=3,
+                payload={
+                    "turn_id": "voice-123:1",
+                    "text": "Checking locally.",
+                    "playback_generation": 1,
+                },
+            )
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            ),
+            engine=InterfaceCommitEngine(),
+        )
+        await session.start()
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.INTERFACE_COMMIT:
+                break
+
+        states = {event.type: event.payload.get("session_state") for event in seen}
+        assert states[VoiceEventType.INTERFACE_INTENT_FINAL] == RealtimeVoiceSessionState.ASSISTANT_PENDING.value
+        assert states[VoiceEventType.INTERFACE_REPLY_LOCAL] == RealtimeVoiceSessionState.SPEAKING.value
+        assert states[VoiceEventType.INTERFACE_COMMIT] == RealtimeVoiceSessionState.LISTENING.value
+        assert session.durable_messages() == [
+            {"role": "user", "content": "Check deployment status."},
+            {"role": "assistant", "content": "Checking locally."},
+        ]
+        await session.close()
+
+    asyncio.run(run())
+
+
+def test_kame_session_deduplicates_interface_and_assistant_commit_for_same_turn():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        ),
+        engine=KameInterfaceOracleEngine(oracle=FakeOracle()),
+    )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_INTENT_FINAL,
+            session_id="voice-123",
+            sequence=1,
+            payload={
+                "turn_id": "voice-123:1",
+                "intent": "Check deployment status.",
+                "text": "check deployment status",
+                "route": "local",
+                "playback_generation": 7,
+            },
+        )
+    )
+    for event_type in (VoiceEventType.INTERFACE_COMMIT, VoiceEventType.ASSISTANT_COMMIT):
+        session._apply_server_event(
+            VoiceEvent(
+                type=event_type,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "turn_id": "voice-123:1",
+                    "text": "Checking locally.",
+                    "playback_generation": 7,
+                },
+            )
+        )
+
+    assert session.durable_messages() == [
+        {"role": "user", "content": "Check deployment status."},
+        {"role": "assistant", "content": "Checking locally."},
+    ]
+
+
 def test_kame_session_deduplicates_transcript_and_interface_final_for_same_turn():
     session = RealtimeVoiceSession(
         RealtimeVoiceSessionConfig(

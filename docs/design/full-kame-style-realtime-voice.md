@@ -532,15 +532,20 @@ Already present:
 - fallback to legacy behavior when sidecar startup fails
 - focused realtime voice tests
 - early latency measurement logs
-
-Missing for full KAME:
-
-- reflex/interface LLM in the live path
-- Gemma 4 E2B local reflex launch and benchmark evidence
+- KAME interface/oracle engine in the live session path
 - structured interface-to-oracle request contract
-- local/defer/oracle routing policy
-- ephemeral versus durable transcript policy enforced at the interface layer
-- oracle hint streaming back to the interface
-- DGX Spark launch profile for oracle, interface, ASR, and TTS together
-- benchmark matrix for local interface model candidates
-- GUI coverage for KAME-specific routing settings
+- local/defer/oracle_direct/reject_or_clarify routing policy
+- oracle-verbatim ASR lane for escalated turns
+- ephemeral versus durable transcript policy at the session boundary
+- oracle hint streaming back to live interface providers
+- DGX Spark launch/profile generation for interface, oracle, ASR, and TTS targets
+- benchmark matrix templates for local interface and speech candidates
+- GUI coverage for KAME interface, ASR, TTS, routing, barge-in, fallback, and local provider target settings
+
+Remaining for full KAME production readiness:
+
+- Gemma 4 E2B local reflex launch evidence from the actual DGX Spark runtime
+- benchmark evidence comparing E2B direct-audio routing against STT-fed fallback routing
+- benchmark evidence comparing oracle outcomes with and without ASR transcript hypotheses
+- all-local DGX Spark smoke evidence with the oracle, interface, ASR, and TTS services running together
+- live Discord smoke evidence for the full KAME path under production credentials

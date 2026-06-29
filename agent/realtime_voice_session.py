@@ -129,6 +129,7 @@ class RealtimeVoiceSession:
         self._quality_target_miss_count = 0
         self._last_quality_target_miss: Optional[dict] = None
         self._committed_final_user_turn_keys: set[str] = set()
+        self._committed_assistant_turn_keys: set[str] = set()
 
     async def start(self) -> None:
         self._started_at_monotonic = time.monotonic()
@@ -262,7 +263,7 @@ class RealtimeVoiceSession:
             if generation is not None and generation < self.transcript.active_playback_generation:
                 return
             self.state = RealtimeVoiceSessionState.LISTENING
-        elif event.type == VoiceEventType.ASSISTANT_COMMIT:
+        elif event.type in {VoiceEventType.INTERFACE_COMMIT, VoiceEventType.ASSISTANT_COMMIT}:
             generation = _payload_generation(event.payload)
             if generation is not None and generation < self.transcript.active_playback_generation:
                 return
@@ -272,8 +273,11 @@ class RealtimeVoiceSession:
                 self.transcript.assistant_draft = ""
             else:
                 text = str(event.payload.get("text") or self.transcript.assistant_draft or "").strip()
-                if text:
+                turn_key = _assistant_commit_turn_key(event.payload)
+                if text and (not turn_key or turn_key not in self._committed_assistant_turn_keys):
                     self.transcript.committed_assistant_segments.append(text)
+                    if turn_key:
+                        self._committed_assistant_turn_keys.add(turn_key)
                 self.transcript.assistant_draft = ""
             self.state = RealtimeVoiceSessionState.LISTENING
         elif event.type == VoiceEventType.ASSISTANT_CAPTION_FINAL:
@@ -348,6 +352,8 @@ class RealtimeVoiceSession:
         if event.type in {VoiceEventType.TRANSCRIPT_FINAL, VoiceEventType.INTERFACE_INTENT_FINAL}:
             return RealtimeVoiceSessionState.ASSISTANT_PENDING
         if event.type in {
+            VoiceEventType.INTERFACE_REPLY_LOCAL,
+            VoiceEventType.INTERFACE_REPLY_DEFER,
             VoiceEventType.ASSISTANT_CAPTION_PARTIAL,
             VoiceEventType.ASSISTANT_TEXT_PARTIAL,
             VoiceEventType.AUDIO_OUTPUT_CHUNK,
@@ -358,6 +364,7 @@ class RealtimeVoiceSession:
             return RealtimeVoiceSessionState.SPEAKING
         if event.type in {
             VoiceEventType.ASSISTANT_CAPTION_FINAL,
+            VoiceEventType.INTERFACE_COMMIT,
             VoiceEventType.ASSISTANT_COMMIT,
             VoiceEventType.BARGE_IN,
             VoiceEventType.PLAYBACK_STOPPED,
@@ -459,6 +466,17 @@ def _durable_user_text_from_final_user_event(payload: Mapping[str, Any]) -> str:
 
 
 def _final_user_turn_key(payload: Mapping[str, Any]) -> str:
+    for key in ("kame_turn_id", "turn_id"):
+        text = str(payload.get(key) or "").strip()
+        if text:
+            return text
+    generation = _payload_generation(dict(payload))
+    if generation is not None:
+        return f"playback_generation:{generation}"
+    return ""
+
+
+def _assistant_commit_turn_key(payload: Mapping[str, Any]) -> str:
     for key in ("kame_turn_id", "turn_id"):
         text = str(payload.get(key) or "").strip()
         if text:
