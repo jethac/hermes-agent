@@ -458,7 +458,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     handoff = summary["closure_index"]["operator_handoff"]
     assert handoff["schema_version"] == "voiceops.operator_handoff.v1"
     assert handoff["changes_readiness_by_itself"] is False
-    assert handoff["final_success_signal"] == "readiness_gaps is [] and closure_status is complete"
+    assert handoff["final_success_signal"] == (
+        "readiness_gaps is [] and closure_status is complete and package_audit.status is pass"
+    )
+    assert "--package-audit" in handoff["final_reindex_command"]
     next_actions = summary["closure_index"]["next_actions"]
     assert [action["gate_id"] for action in next_actions] == [
         "live_discord_voice_operator",
@@ -518,7 +521,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert "--refresh-preflight-source-hashes" in json.dumps(handoff["phases"][1]["commands"])
     assert "--run-command-probes" in json.dumps(handoff["phases"][1]["commands"])
-    assert handoff["phases"][1]["commands"][0].endswith("--dry-audit")
+    assert "--dry-audit" in handoff["phases"][1]["commands"][0]
+    assert "--package-audit" in handoff["phases"][1]["commands"][0]
     assert handoff["phases"][1]["diagnostic_command"] == next_actions[1]["diagnostic_command"]
     assert handoff["phases"][1]["first_safe_command"] == next_actions[1]["first_safe_command"]
     assert handoff["phases"][1]["command_safety"]["plan_index_dry_audit"] == "no_write_no_network_no_probe_audit"
@@ -895,6 +899,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "Diagnostic only" in closure_markdown
     assert "voiceops.operator_handoff.v1" in closure_markdown
     assert "Final reindex command" in closure_markdown
+    assert "Final package audit command" in closure_markdown
+    assert "voiceops_artifact_package_audit.py" in closure_markdown
+    assert "--package-audit" in closure_markdown
     assert "Next Actions" in closure_markdown
     assert "First safe command" in closure_markdown
     assert "needs_external_live_probe" in closure_markdown
@@ -933,6 +940,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--dry-audit" in handoff_markdown
     assert "no_write_no_network_no_probe_audit" in handoff_markdown
     assert "Final reindex command" in handoff_markdown
+    assert "Final package audit command" in handoff_markdown
+    assert "package_audit.status is pass" in handoff_markdown
     assert "milestone_0_hackathon_proof" in markdown
     assert "Next Actions" in markdown
 
@@ -1018,8 +1027,9 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     }
     assert summary["closure_index"]["operator_handoff"]["changes_readiness_by_itself"] is False
     assert summary["closure_index"]["operator_handoff"]["final_success_signal"] == (
-        "readiness_gaps is [] and closure_status is complete"
+        "readiness_gaps is [] and closure_status is complete and package_audit.status is pass"
     )
+    assert "--package-audit" in summary["closure_index"]["operator_handoff"]["final_reindex_command"]
     assert "present-redacted" not in serialized
     assert "+15551234567" not in serialized
     assert "sk_live" not in serialized
@@ -1105,6 +1115,8 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
         "readiness-closure-index.md",
         "operator-handoff.json",
         "operator-handoff.md",
+        "package-audit.json",
+        "package-audit.md",
     ]:
         assert f"`{artifact}`" in text
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in text
@@ -1112,6 +1124,8 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "`--validate-live-evidence`" in text
     assert "`--from-realtime-voice-report`" in text
     assert "`--audit-only`" in text
+    assert "`--package-audit`" in text
+    assert "package audit is part of final headless verification" in text
     assert "voiceops.realtime_voice_live_evidence_audit.v1" in text
     assert "voiceops.realtime_voice_report_derivation.v1" in text
     assert "must not claim production sidecar evidence from loopback or diagnostic sidecar modes" in text
@@ -1288,6 +1302,36 @@ def test_plan_run_cli_smoke(tmp_path):
     assert Path(payload["artifacts"]["operator_handoff_markdown"]).exists()
 
 
+def test_plan_run_cli_package_audit_writes_consistency_artifacts(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_plan_run.py"
+    artifact_root = tmp_path / "artifacts"
+    output_dir = artifact_root / "voiceops-plan" / "current"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--artifact-root",
+            str(artifact_root),
+            "--output-dir",
+            str(output_dir),
+            "--package-audit",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["package_audit"]["ok"] is True
+    assert payload["package_audit"]["status"] == "pass"
+    assert payload["package_audit"]["issues"] == []
+    assert payload["package_audit"]["checked_artifact_count"] == 10
+    assert Path(payload["package_audit"]["artifacts"]["json"]).exists()
+    assert Path(payload["package_audit"]["artifacts"]["markdown"]).exists()
+    assert str(artifact_root / "voiceops-package-audit" / "current") in payload["package_audit"]["artifacts"]["json"]
+
+
 def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
     script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_plan_run.py"
     artifact_root = tmp_path / "artifacts"
@@ -1332,6 +1376,41 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
     assert not artifact_root.exists()
 
 
+def test_plan_run_cli_dry_audit_can_run_package_audit_without_persistent_writes(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_plan_run.py"
+    artifact_root = tmp_path / "artifacts"
+    output_dir = artifact_root / "voiceops-plan" / "current"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--artifact-root",
+            str(artifact_root),
+            "--output-dir",
+            str(output_dir),
+            "--dry-audit",
+            "--package-audit",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["dry_audit"] is True
+    assert payload["persistent_writes"] is False
+    assert payload["package_audit"] == {
+        "checked_artifact_count": 10,
+        "issues": [],
+        "ok": True,
+        "persistent_writes": False,
+        "status": "pass",
+    }
+    assert not output_dir.exists()
+    assert not artifact_root.exists()
+
+
 def test_plan_run_cli_dry_audit_refuses_probe_execution(tmp_path):
     script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_plan_run.py"
     result = subprocess.run(
@@ -1366,3 +1445,5 @@ def test_parse_args_defaults_to_plan_artifact_paths():
     assert args.run_command_probes is False
     assert args.run_readonly_discovery is False
     assert args.dry_audit is False
+    assert args.package_audit is False
+    assert args.package_audit_output_dir is None

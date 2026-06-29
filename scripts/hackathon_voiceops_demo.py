@@ -211,6 +211,7 @@ def _demo_closure_summary() -> dict[str, Any]:
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                 "--output-dir artifacts/voiceops-plan/current "
+                "--package-audit "
                 "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json"
             ),
         },
@@ -337,24 +338,24 @@ def _demo_closure_summary() -> dict[str, Any]:
             "rerun_commands": {
                 "plan_index_dry_audit": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --dry-audit"
+                    "--output-dir artifacts/voiceops-plan/current --dry-audit --package-audit"
                 ),
                 "plan_index_command_probes": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --env-file .env --run-command-probes"
+                    "--output-dir artifacts/voiceops-plan/current --package-audit --env-file .env --run-command-probes"
                 ),
                 "plan_index_read_only_discovery": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --env-file .env --run-readonly-discovery"
+                    "--output-dir artifacts/voiceops-plan/current --package-audit --env-file .env --run-readonly-discovery"
                 ),
                 "plan_index_read_only_discovery_evidence": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--output-dir artifacts/voiceops-plan/current --package-audit --env-file .env "
                     "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json"
                 ),
                 "plan_index_manifest_and_post_approval_receipts": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--output-dir artifacts/voiceops-plan/current --package-audit --env-file .env "
                     "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json "
                     "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
                     "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json"
@@ -362,7 +363,7 @@ def _demo_closure_summary() -> dict[str, Any]:
             },
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                "--output-dir artifacts/voiceops-plan/current --package-audit --env-file .env "
                 "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
             ),
         },
@@ -396,6 +397,7 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "plan_index": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current "
+                    "--package-audit "
                     f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
                 ),
                 "dgx_eval": "scripts/dgx_spark_gemma4_voice_eval.sh",
@@ -435,6 +437,7 @@ def _demo_closure_summary() -> dict[str, Any]:
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                 "--output-dir artifacts/voiceops-plan/current "
+                "--package-audit "
                 f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
             ),
         },
@@ -663,6 +666,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
         "final_reindex_command": (
             "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
             "--output-dir artifacts/voiceops-plan/current "
+            "--package-audit "
             "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json "
             "--env-file .env "
             "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json "
@@ -670,7 +674,13 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
             "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json "
             f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
         ),
-        "final_success_signal": "readiness_gaps is [] and closure_status is complete",
+        "final_package_audit_command": (
+            "uv run python scripts/voiceops_artifact_package_audit.py --artifact-root artifacts "
+            "--output-dir artifacts/voiceops-package-audit/current"
+        ),
+        "final_success_signal": (
+            "readiness_gaps is [] and closure_status is complete and package_audit.status is pass"
+        ),
     }
 
 
@@ -714,6 +724,12 @@ def _operator_handoff_preview_markdown(handoff: dict[str, Any]) -> str:
             "",
             "```bash",
             handoff["final_reindex_command"],
+            "```",
+            "",
+            "Package audit:",
+            "",
+            "```bash",
+            handoff["final_package_audit_command"],
             "```",
             "",
             f"Success signal: {handoff['final_success_signal']}",

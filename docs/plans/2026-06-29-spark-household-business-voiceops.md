@@ -581,15 +581,15 @@ Run every currently headless VoiceOps milestone artifact generator and write one
 No-write preflight:
 
 ```bash
-uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --dry-audit
+uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --dry-audit --package-audit
 ```
 
 `--dry-audit` builds the same plan summary in a temporary artifact root, prints the readiness gaps, closure status, safety flags, current-environment blockers, and ordered `next_actions`, then removes the temporary artifacts on exit. It does not write the requested artifact paths, and it refuses `--run-command-probes` and `--run-readonly-discovery` so it cannot silently become a subprocess or network-capable probe. Its `ok` field means no hard validation failures, not readiness; use `readiness_ok` or `closure_status: complete` for readiness automation. The `next_actions` records are machine-readable and include each remaining gate, whether the current host can run it, current environment blockers, the first safe evidence command, any separate diagnostic command, and the success check.
 
-Artifact-writing indexer:
+Artifact-writing indexer with final package audit:
 
 ```bash
-uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current
+uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --package-audit
 ```
 
 The command writes:
@@ -606,16 +606,18 @@ The command writes:
 - `readiness-closure-index.md`
 - `operator-handoff.json`
 - `operator-handoff.md`
+- `package-audit.json`
+- `package-audit.md`
 
-The plain plan run is artifact-only but writes the artifact tree above. It should surface readiness gaps such as missing Stripe/phone local setup or missing DGX Spark benchmark evidence, but those gaps must not cause live spend, provider provisioning, outbound messaging, calls, or secret reads. Use `--dry-audit` first when the operator wants the same status check without persistent artifact writes.
+The audited plan run is artifact-only but writes the artifact tree above. It should surface readiness gaps such as missing Stripe/phone local setup or missing DGX Spark benchmark evidence, but those gaps must not cause live spend, provider provisioning, outbound messaging, calls, or secret reads. Use `--dry-audit --package-audit` first when the operator wants the same status check and package consistency check without persistent artifact writes.
 
 The readiness closure index is the top-level next-action map for the remaining external evidence gates. It must keep live Discord voice evidence, Stripe/MPP/phone provisioning evidence, and DGX Spark benchmark evidence separate, list the required proof shape for each gate, point at the relevant evidence templates and closure plans, emit ordered `next_actions`, and continue to report `needs_external_evidence` until supplied artifacts prove the live gates. It must never collapse missing live evidence into a single ready claim.
 
-The operator handoff is the ordered execution runbook derived from the closure index. It must list the live Discord voice, spend/provisioning preflight, and local Spark stack phases in order, include exact collection and re-index commands, identify expected artifacts and success checks, and state that the handoff does not change readiness by itself.
+The operator handoff is the ordered execution runbook derived from the closure index. It must list the live Discord voice, spend/provisioning preflight, and local Spark stack phases in order, include exact collection and re-index commands, identify expected artifacts and success checks, and state that the handoff does not change readiness by itself. The final re-index command must include `--package-audit`, and package audit is part of final headless verification after every closure re-index.
 
 The test suite includes a closure rehearsal with redacted local fixtures for all three remaining gates. It proves that supplied live voice evidence, provisioning preflight evidence, and Spark benchmark evidence can drive `readiness_gaps: []`, `closure_status: complete`, and `remaining_gates: []` without credentials, live Discord, provider actions, phone calls, network I/O, or DGX Spark execution. Real readiness still requires replacing those fixtures with actual collected evidence.
 
-Package consistency audit:
+Standalone package consistency audit:
 
 ```bash
 uv run python scripts/voiceops_artifact_package_audit.py --artifact-root artifacts --audit-only
@@ -629,7 +631,7 @@ uv run python scripts/voiceops_artifact_package_audit.py \
   --output-dir artifacts/voiceops-package-audit/current
 ```
 
-The package audit is local and static. It reads the generated VoiceOps package and checks cross-artifact consistency between the demo readiness report, demo closure summary, plan closure index, operator state, dashboard HTML, NemoClaw packet validation, audit ledger, and dry-run shell metadata. It catches contradictions such as live-ready claims while closure gates remain, mismatched NemoClaw/operator approval contracts, executed audit rows in a dry-run package, external service provisioning claims without receipts, and missing non-live dashboard status. `--audit-only` performs no persistent writes.
+The package audit is local and static. It reads the generated VoiceOps package and checks cross-artifact consistency between the demo readiness report, demo closure summary, plan closure index, operator state, dashboard HTML, NemoClaw packet validation, audit ledger, and dry-run shell metadata. It catches contradictions such as live-ready claims while closure gates remain, mismatched NemoClaw/operator approval contracts, executed audit rows in a dry-run package, external service provisioning claims without receipts, and missing non-live dashboard status. `--audit-only` performs no persistent writes. Prefer `voiceops_plan_run.py --package-audit` for normal headless operation so the plan index and package audit are generated and evaluated together.
 
 When evidence exists, rerun the same indexer with the relevant read-only artifacts instead of hand-editing the index:
 

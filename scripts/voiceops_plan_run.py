@@ -25,6 +25,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.hackathon_voiceops_demo import build_demo, parse_args as parse_demo_args, write_demo
+from scripts.voiceops_artifact_package_audit import audit_package, write_audit as write_package_audit
 from scripts.voiceops_channel_policy import build_channel_policy, build_review_packet, validate_policy, write_channel_policy
 from scripts.voiceops_operator_state import build_operator_state, validate_operator_state, write_operator_state
 from scripts.voiceops_provisioning_probe import (
@@ -43,6 +44,7 @@ from scripts.voiceops_voice_operator import (
 
 DEFAULT_ARTIFACT_ROOT = Path("artifacts")
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-plan/current")
+DEFAULT_PACKAGE_AUDIT_RELATIVE_OUTPUT_DIR = Path("voiceops-package-audit/current")
 FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
 SPARK_BENCHMARK_SCAFFOLD_EVIDENCE = (
     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
@@ -432,6 +434,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
         "final_reindex_command": (
             "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
             "--output-dir artifacts/voiceops-plan/current "
+            "--package-audit "
             "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json "
             "--env-file .env "
             "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json "
@@ -439,7 +442,13 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
             "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json "
             f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
         ),
-        "final_success_signal": "readiness_gaps is [] and closure_status is complete",
+        "final_package_audit_command": (
+            "uv run python scripts/voiceops_artifact_package_audit.py --artifact-root artifacts "
+            "--output-dir artifacts/voiceops-package-audit/current"
+        ),
+        "final_success_signal": (
+            "readiness_gaps is [] and closure_status is complete and package_audit.status is pass"
+        ),
     }
 
 
@@ -657,6 +666,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                 "--output-dir artifacts/voiceops-plan/current "
+                "--package-audit "
                 "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json"
             ),
             "operator_must_not": [
@@ -779,7 +789,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "rerun_commands": {
                 "plan_index_dry_audit": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --dry-audit"
+                    "--output-dir artifacts/voiceops-plan/current --dry-audit --package-audit"
                 ),
                 "presence_only": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
@@ -791,7 +801,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 ),
                 "plan_index_command_probes": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --env-file .env --run-command-probes"
+                    "--output-dir artifacts/voiceops-plan/current --package-audit --env-file .env --run-command-probes"
                 ),
                 "read_only_discovery": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
@@ -799,26 +809,26 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 ),
                 "plan_index_read_only_discovery": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --env-file .env --run-readonly-discovery"
+                    "--output-dir artifacts/voiceops-plan/current --package-audit --env-file .env --run-readonly-discovery"
                 ),
                 "plan_index_read_only_discovery_evidence": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--output-dir artifacts/voiceops-plan/current --package-audit --env-file .env "
                     "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json"
                 ),
                 "plan_index": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--output-dir artifacts/voiceops-plan/current --package-audit --env-file .env "
                     "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json"
                 ),
                 "plan_index_manifest": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--output-dir artifacts/voiceops-plan/current --package-audit --env-file .env "
                     "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
                 ),
                 "plan_index_manifest_and_post_approval_receipts": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--output-dir artifacts/voiceops-plan/current --package-audit --env-file .env "
                     "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json "
                     "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
                     "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json"
@@ -830,13 +840,14 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 ),
                 "plan_index_post_approval_receipts": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
-                    "--output-dir artifacts/voiceops-plan/current --env-file .env "
+                    "--output-dir artifacts/voiceops-plan/current --package-audit --env-file .env "
                     "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json"
                 ),
             },
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                 "--output-dir artifacts/voiceops-plan/current "
+                "--package-audit "
                 "--env-file .env "
                 "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json"
             ),
@@ -884,6 +895,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "plan_index": (
                     "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                     "--output-dir artifacts/voiceops-plan/current "
+                    "--package-audit "
                     f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
                 ),
                 "dgx_eval": "scripts/dgx_spark_gemma4_voice_eval.sh",
@@ -944,6 +956,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                 "--output-dir artifacts/voiceops-plan/current "
+                "--package-audit "
                 f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
             ),
             "operator_must_not": [
@@ -1527,6 +1540,7 @@ def _operator_handoff_markdown(handoff: dict[str, Any]) -> str:
                 for label, value in sorted(command_safety.items()):
                     lines.append(f"  - `{label}`: `{value}`")
     lines.append(f"- Final reindex command: `{handoff.get('final_reindex_command')}`")
+    lines.append(f"- Final package audit command: `{handoff.get('final_package_audit_command')}`")
     lines.append(f"- Final success signal: {handoff.get('final_success_signal')}")
     return "\n".join(lines)
 
@@ -1542,6 +1556,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--provisioning-preflight-evidence", type=Path, default=None)
     parser.add_argument("--read-only-discovery-evidence", "--readonly-discovery-evidence", type=Path, default=None)
     parser.add_argument("--post-approval-receipts", type=Path, default=None)
+    parser.add_argument(
+        "--package-audit",
+        action="store_true",
+        help="After generating the artifact tree, run the local static package consistency audit.",
+    )
+    parser.add_argument(
+        "--package-audit-output-dir",
+        type=Path,
+        default=None,
+        help="Output directory for --package-audit. Defaults to ARTIFACT_ROOT/voiceops-package-audit/current.",
+    )
     parser.add_argument("--timeout-seconds", type=int, default=3)
     parser.add_argument(
         "--run-command-probes",
@@ -1564,6 +1589,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     return parser.parse_args(argv)
+
+
+def _package_audit_output_dir(args: argparse.Namespace) -> Path:
+    if args.package_audit_output_dir is not None:
+        return args.package_audit_output_dir
+    return args.artifact_root / DEFAULT_PACKAGE_AUDIT_RELATIVE_OUTPUT_DIR
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1600,6 +1631,10 @@ def main(argv: list[str] | None = None) -> int:
                 run_readonly_discovery=False,
                 timeout_seconds=args.timeout_seconds,
             )
+            package_audit_report = None
+            if args.package_audit:
+                write_plan_run(temp_output_dir, summary)
+                package_audit_report = audit_package(temp_artifact_root)
             print(
                 json.dumps(
                     {
@@ -1623,12 +1658,26 @@ def main(argv: list[str] | None = None) -> int:
                         "safety": summary["safety"],
                         "current_environment_blockers": summary["closure_index"]["current_environment_blockers"],
                         "next_actions": summary["closure_index"]["next_actions"],
+                        **(
+                            {
+                                "package_audit": {
+                                    "ok": package_audit_report["ok"],
+                                    "status": package_audit_report["status"],
+                                    "issues": package_audit_report["issues"],
+                                    "checked_artifact_count": package_audit_report["checked_artifact_count"],
+                                    "persistent_writes": False,
+                                }
+                            }
+                            if package_audit_report is not None
+                            else {}
+                        ),
                     },
                     indent=2,
                     sort_keys=True,
                 )
             )
-            return 0 if summary["ok"] else 1
+            package_audit_ok = package_audit_report is None or package_audit_report["ok"]
+            return 0 if summary["ok"] and package_audit_ok else 1
     summary = build_plan_run(
         artifact_root=args.artifact_root,
         output_dir=args.output_dir,
@@ -1644,12 +1693,30 @@ def main(argv: list[str] | None = None) -> int:
         timeout_seconds=args.timeout_seconds,
     )
     paths = write_plan_run(args.output_dir, summary)
+    package_audit_report = None
+    package_audit_paths = None
+    if args.package_audit:
+        package_audit_report = audit_package(args.artifact_root)
+        package_audit_paths = write_package_audit(_package_audit_output_dir(args), package_audit_report)
     print(
         json.dumps(
             {
                 "ok": summary["ok"],
                 "output_dir": str(args.output_dir),
                 "artifacts": paths,
+                **(
+                    {
+                        "package_audit": {
+                            "ok": package_audit_report["ok"],
+                            "status": package_audit_report["status"],
+                            "issues": package_audit_report["issues"],
+                            "checked_artifact_count": package_audit_report["checked_artifact_count"],
+                            "artifacts": package_audit_paths,
+                        }
+                    }
+                    if package_audit_report is not None and package_audit_paths is not None
+                    else {}
+                ),
                 "readiness_gaps": summary["readiness_gaps"],
                 "hard_failures": summary["hard_failures"],
             },
@@ -1657,7 +1724,8 @@ def main(argv: list[str] | None = None) -> int:
             sort_keys=True,
         )
     )
-    return 0 if summary["ok"] else 1
+    package_audit_ok = package_audit_report is None or package_audit_report["ok"]
+    return 0 if summary["ok"] and package_audit_ok else 1
 
 
 if __name__ == "__main__":
