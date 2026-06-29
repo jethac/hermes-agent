@@ -30,7 +30,7 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert report["status"] == "pass"
     assert report["ok"] is True
     assert report["issues"] == []
-    assert report["checked_artifact_count"] == 13
+    assert report["checked_artifact_count"] == 17
     assert str(artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json") in report[
         "checked_artifacts"
     ]
@@ -38,6 +38,12 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
         "checked_artifacts"
     ]
     assert str(artifact_root / "voiceops-plan" / "current" / "operator-handoff.json") in report["checked_artifacts"]
+    assert str(artifact_root / "voiceops-channel-policy" / "current" / "channel-policy.json") in report[
+        "checked_artifacts"
+    ]
+    assert str(artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.md") in report[
+        "checked_artifacts"
+    ]
     assert report["safety"] == {
         "discord_io": False,
         "env_files_read": False,
@@ -139,6 +145,78 @@ def test_package_audit_rejects_unaudited_operator_handoff_reindex(tmp_path):
     assert report["ok"] is False
     assert "operator_handoff:mismatch_with_closure" in report["issues"]
     assert "operator_handoff:plan_run_command_missing_package_audit" in report["issues"]
+
+
+def test_package_audit_rejects_channel_policy_live_egress_claim(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    policy_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["scope"]["real_egress_enabled"] = True
+    _write_json(policy_path, policy)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "channel_policy:validation:real_egress_enabled_without_review" in report["issues"]
+    assert "channel_policy:real_egress_enabled_not_false" in report["issues"]
+
+
+def test_package_audit_rejects_channel_policy_review_approval_claim(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    review_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.json"
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["review_status"] = "approved"
+    review["real_egress_enabled"] = True
+    review["review_commands"] = [
+        command.replace(" --package-audit", "")
+        if isinstance(command, str) and "scripts/voiceops_plan_run.py" in command
+        else command
+        for command in review["review_commands"]
+    ]
+    _write_json(review_path, review)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "channel_policy_review:review_status_not_pending" in report["issues"]
+    assert "channel_policy_review:real_egress_enabled_not_false" in report["issues"]
+    assert "channel_policy_review:plan_run_command_missing_package_audit" in report["issues"]
+    assert "channel_policy_review:missing_package_audit_review_command" in report["issues"]
+
+
+def test_package_audit_rejects_channel_policy_review_identity_and_artifact_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    review_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.json"
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["artifact_only"] = False
+    review["policy_version"] = "stale-version"
+    review["decision_options"] = ["approve_live_egress_after_external_credentials_are_bound"]
+    _write_json(review_path, review)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "channel_policy_review:artifact_only_not_true" in report["issues"]
+    assert "channel_policy_review:policy_version_mismatch" in report["issues"]
+    assert "channel_policy_review:decision_options_missing_safe_choices" in report["issues"]
+
+
+def test_package_audit_rejects_channel_policy_review_route_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    review_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.json"
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    phone_review = next(channel for channel in review["per_channel_review"] if channel["channel_id"] == "phone_sms")
+    phone_review["approval_routes_to_confirm"].pop("approved_phone_handoff_call")
+    phone_review["required_evidence"] = []
+    phone_review["blocked_capabilities_to_confirm"] = []
+    _write_json(review_path, review)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "channel_policy_review:phone_sms:approval_routes_mismatch" in report["issues"]
+    assert "channel_policy_review:phone_sms:required_evidence_mismatch" in report["issues"]
+    assert "channel_policy_review:phone_sms:blocked_capabilities_mismatch" in report["issues"]
 
 
 def test_package_audit_parse_args_defaults():

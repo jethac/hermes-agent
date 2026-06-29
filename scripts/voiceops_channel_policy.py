@@ -622,7 +622,7 @@ def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
         ],
         "review_commands": [
             "uv run python scripts/voiceops_channel_policy.py --output-dir artifacts/voiceops-channel-policy/current",
-            "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current",
+            "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --package-audit",
         ],
     }
 

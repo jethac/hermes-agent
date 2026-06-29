@@ -417,6 +417,7 @@ def test_write_channel_policy_artifacts(tmp_path):
     assert "unapproved_voice_call" in channels["phone_sms"]["blocked_capabilities_to_confirm"]
     assert any("source_audit_id" in gate for gate in review_payload["egress_enablement_gates"])
     assert any("mark real_egress_enabled true" in item for item in review_payload["operator_must_not"])
+    assert any("--package-audit" in command for command in review_payload["review_commands"])
     assert "VoiceOps Milestone 3 Channel Policy" in markdown
     assert "Policy ID" in markdown
     assert "Channel Authorization" in markdown

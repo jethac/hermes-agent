@@ -12,8 +12,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 from pathlib import Path
 from typing import Any, Mapping
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.voiceops_channel_policy import CHANNEL_IDS, validate_policy
 
 
 DEFAULT_ARTIFACT_ROOT = Path("artifacts")
@@ -305,11 +310,105 @@ def _audit_plan_consistency(
         issues.append("demo_handoff:final_success_signal_mismatch")
 
 
+def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], issues: list[str]) -> None:
+    for issue in validate_policy(dict(policy)):
+        issues.append(f"channel_policy:validation:{issue}")
+
+    scope = policy.get("scope") if isinstance(policy.get("scope"), Mapping) else {}
+    if scope.get("real_egress_enabled") is not False:
+        issues.append("channel_policy:real_egress_enabled_not_false")
+    if scope.get("review_required_for_real_egress") is not True:
+        issues.append("channel_policy:review_required_for_real_egress_not_true")
+    if scope.get("review_status") != "pending_human_review":
+        issues.append("channel_policy:review_status_not_pending")
+    if set(scope.get("channels") or []) != set(CHANNEL_IDS):
+        issues.append("channel_policy:scope_channels_mismatch")
+
+    channel_ids = {
+        str(channel.get("channel_id"))
+        for channel in policy.get("channel_authorization", [])
+        if isinstance(channel, Mapping)
+    }
+    if channel_ids != set(CHANNEL_IDS):
+        issues.append("channel_policy:channel_authorization_mismatch")
+    policy_channels = {
+        str(channel.get("channel_id")): channel
+        for channel in policy.get("channel_authorization", [])
+        if isinstance(channel, Mapping)
+    }
+    if review.get("schema_version") != "voiceops.multi_channel_policy_review.v1":
+        issues.append("channel_policy_review:schema_version_mismatch")
+    if review.get("artifact_id") != "voiceops-m3-channel-policy-review":
+        issues.append("channel_policy_review:artifact_id_mismatch")
+    for key in ("milestone", "policy_id", "policy_version"):
+        if review.get(key) != policy.get(key):
+            issues.append(f"channel_policy_review:{key}_mismatch")
+    if review.get("artifact_only") is not True:
+        issues.append("channel_policy_review:artifact_only_not_true")
+    if review.get("policy_ref") != "channel-policy.json":
+        issues.append("channel_policy_review:policy_ref_mismatch")
+    if review.get("review_status") != "pending_human_review":
+        issues.append("channel_policy_review:review_status_not_pending")
+    if review.get("real_egress_enabled") is not False:
+        issues.append("channel_policy_review:real_egress_enabled_not_false")
+    if review.get("changes_policy") is not False:
+        issues.append("channel_policy_review:changes_policy_not_false")
+    decision_options = set(review.get("decision_options") or [])
+    if {"request_changes", "deny", "approve_dry_run_only"} - decision_options:
+        issues.append("channel_policy_review:decision_options_missing_safe_choices")
+    review_channels = {
+        str(channel.get("channel_id")): channel
+        for channel in review.get("per_channel_review", [])
+        if isinstance(channel, Mapping)
+    }
+    if set(review_channels) != set(CHANNEL_IDS):
+        issues.append("channel_policy_review:per_channel_mismatch")
+    for channel_id, channel in review_channels.items():
+        if channel.get("live_egress_enabled") is not False:
+            issues.append(f"channel_policy_review:{channel_id}:live_egress_enabled_not_false")
+        if channel.get("review_status") != "pending_human_review":
+            issues.append(f"channel_policy_review:{channel_id}:review_status_not_pending")
+        policy_channel = policy_channels.get(channel_id, {})
+        if set(channel.get("required_evidence") or []) != set(policy_channel.get("evidence_required") or []):
+            issues.append(f"channel_policy_review:{channel_id}:required_evidence_mismatch")
+        route_map = policy.get("approval_route_map") if isinstance(policy.get("approval_route_map"), Mapping) else {}
+        if dict(channel.get("approval_routes_to_confirm") or {}) != dict(route_map.get(channel_id) or {}):
+            issues.append(f"channel_policy_review:{channel_id}:approval_routes_mismatch")
+        if set(channel.get("blocked_capabilities_to_confirm") or []) != set(policy_channel.get("prohibited_actions") or []):
+            issues.append(f"channel_policy_review:{channel_id}:blocked_capabilities_mismatch")
+    phone_review = review_channels.get("phone_sms", {})
+    phone_routes = set((phone_review.get("approval_routes_to_confirm") or {}).keys())
+    if {"any_sms_send", "approved_phone_handoff_call", "customer_visible_handoff"} - phone_routes:
+        issues.append("channel_policy_review:phone_sms:approval_routes_mismatch")
+    blocked_capabilities = set(scope.get("blocked_capabilities") or [])
+    if {"sms_send_without_approval", "voice_call"} - blocked_capabilities:
+        issues.append("channel_policy:phone_sms_blocked_capabilities_missing")
+
+    required_signoff_roles = {"business_owner", "channel_owner", "security_owner", "privacy_reviewer"}
+    signoff_roles = {
+        str(signoff.get("role"))
+        for signoff in review.get("required_signoffs", [])
+        if isinstance(signoff, Mapping) and signoff.get("required") is True
+    }
+    if signoff_roles != required_signoff_roles:
+        issues.append("channel_policy_review:required_signoffs_mismatch")
+    has_package_audit_review_command = False
+    for command in review.get("review_commands", []):
+        if isinstance(command, str) and "scripts/voiceops_plan_run.py" in command:
+            if "--package-audit" in command:
+                has_package_audit_review_command = True
+            else:
+                issues.append("channel_policy_review:plan_run_command_missing_package_audit")
+    if not has_package_audit_review_command:
+        issues.append("channel_policy_review:missing_package_audit_review_command")
+
+
 def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]:
     issues: list[str] = []
     warnings: list[str] = []
     demo_dir = artifact_root / "hackathon-voiceops-demo" / "current"
     plan_dir = artifact_root / "voiceops-plan" / "current"
+    channel_dir = artifact_root / "voiceops-channel-policy" / "current"
 
     demo = _read_json(demo_dir / "voiceops-demo.json", issues, "voiceops_demo")
     readiness = _read_json(demo_dir / "readiness-report.json", issues, "readiness_report")
@@ -325,6 +424,10 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     plan_run = _read_json(plan_dir / "voiceops-plan-run.json", issues, "plan_run")
     plan_closure = _read_json(plan_dir / "readiness-closure-index.json", issues, "plan_closure")
     plan_handoff = _read_json(plan_dir / "operator-handoff.json", issues, "operator_handoff")
+    channel_policy = _read_json(channel_dir / "channel-policy.json", issues, "channel_policy")
+    channel_review = _read_json(channel_dir / "channel-policy-review.json", issues, "channel_policy_review")
+    _read_text(channel_dir / "channel-policy.md", issues, "channel_policy_markdown")
+    _read_text(channel_dir / "channel-policy-review.md", issues, "channel_policy_review_markdown")
     dashboard_html = _read_text(demo_dir / "operator-dashboard.html", issues, "operator_dashboard")
     audit_rows = _read_jsonl(demo_dir / "audit-ledger.jsonl", issues, "audit_ledger")
     dry_run_rows = _dry_run_metadata_rows(
@@ -358,6 +461,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         plan_handoff=plan_handoff,
         issues=issues,
     )
+    _audit_channel_policy(channel_policy, channel_review, issues)
 
     checked_artifacts = [
         str(demo_dir / "voiceops-demo.json"),
@@ -373,6 +477,10 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         str(plan_dir / "voiceops-plan-run.json"),
         str(plan_dir / "readiness-closure-index.json"),
         str(plan_dir / "operator-handoff.json"),
+        str(channel_dir / "channel-policy.json"),
+        str(channel_dir / "channel-policy.md"),
+        str(channel_dir / "channel-policy-review.json"),
+        str(channel_dir / "channel-policy-review.md"),
     ]
     return {
         "schema_version": AUDIT_SCHEMA_VERSION,
