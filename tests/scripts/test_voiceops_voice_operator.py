@@ -305,6 +305,9 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     )
     assert live_closure["evidence_contract"]["required_section_field"] == "source_artifact"
     assert live_closure["evidence_contract"]["source_artifacts_must_exist"] is True
+    assert live_closure["evidence_contract"]["source_artifacts_must_be_json"] is True
+    assert live_closure["evidence_contract"]["source_artifacts_reject_secret_or_phone_values"] is True
+    assert live_closure["evidence_contract"]["source_artifacts_reject_voice_capability_denials"] is True
     assert live_closure["evidence_contract"]["template_source_artifacts_accepted"] is False
     assert live_closure["evidence_contract"]["collector_attestation_required_for_live_readiness"] is True
     assert live_closure["evidence_contract"]["collector_attestation_required_fields"] == [
@@ -460,6 +463,79 @@ def test_live_evidence_rejects_fake_parent_manifest_attestation_hash(tmp_path):
     live_evidence = validate_live_probe_evidence(evidence)
 
     assert "discord_live_probe:collector_attestation_parent_manifest_sha256_mismatch" in live_evidence["issues"]
+
+
+def test_live_evidence_rejects_source_artifact_secret_and_phone_leak(tmp_path):
+    evidence = _complete_live_evidence()
+    source_path = tmp_path / "discord-live-probe.json"
+    evidence["discord_live_probe"]["source_artifact"] = str(source_path)
+    source_path.write_text(
+        json.dumps(
+            {
+                "kind": "discord_live_probe",
+                "redacted": True,
+                "api_key": "sk_live_123456789abcdef",
+                "operator_note": "call +15551234567 after the test",
+            }
+        ),
+        encoding="utf-8",
+    )
+    source_sha256 = hashlib.sha256(
+        json.dumps(
+            {
+                "kind": "discord_live_probe",
+                "redacted": True,
+                "api_key": "sk_live_123456789abcdef",
+                "operator_note": "call +15551234567 after the test",
+            },
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    evidence["discord_live_probe"]["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
+    evidence["discord_live_probe"]["collector_attestation"]["parent_manifest_sha256"] = source_sha256
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "discord_live_probe:source_artifact_forbidden_field:api_key" in live_evidence["issues"]
+    assert "discord_live_probe:source_artifact_secret_or_phone_like_value:api_key" in live_evidence["issues"]
+    assert "discord_live_probe:source_artifact_secret_or_phone_like_value:operator_note" in live_evidence["issues"]
+
+
+def test_live_evidence_rejects_source_artifact_voice_capability_denial(tmp_path):
+    evidence = _complete_live_evidence()
+    source_path = tmp_path / "live-turn.json"
+    evidence["live_turn"]["source_artifact"] = str(source_path)
+    source_path.write_text(
+        json.dumps(
+            {
+                "kind": "live_turn",
+                "redacted": True,
+                "assistant_text": "I cannot hear you in Discord voice.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    source_sha256 = hashlib.sha256(
+        json.dumps(
+            {
+                "kind": "live_turn",
+                "redacted": True,
+                "assistant_text": "I cannot hear you in Discord voice.",
+            },
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    evidence["live_turn"]["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
+    evidence["live_turn"]["collector_attestation"]["parent_manifest_sha256"] = source_sha256
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "live_turn:source_artifact_forbidden_field:assistant_text" in live_evidence["issues"]
+    assert "live_turn:source_artifact_voice_capability_denial_text:assistant_text" in live_evidence["issues"]
 
 
 def test_live_evidence_rejects_complete_hand_authored_sections_without_collector_attestation(tmp_path):

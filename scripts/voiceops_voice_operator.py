@@ -933,6 +933,28 @@ def _redacted_source_artifact_sha256(source_path: Path) -> str:
     return hashlib.sha256(source_bytes).hexdigest()
 
 
+def _source_artifact_content_issues(source_path: Path, section_name: str) -> list[str]:
+    try:
+        source_bytes = source_path.read_bytes()
+    except OSError:
+        return [f"{section_name}:source_artifact_unreadable"]
+    try:
+        payload = json.loads(source_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return [f"{section_name}:source_artifact_invalid_json"]
+    issues: list[str] = []
+    for key, value in _walk_live_evidence_strings(payload):
+        if _is_collector_attestation_path(key):
+            continue
+        if _looks_like_forbidden_live_evidence_field(key):
+            issues.append(f"{section_name}:source_artifact_forbidden_field:{key}")
+        if _looks_like_voice_denial_text(value):
+            issues.append(f"{section_name}:source_artifact_voice_capability_denial_text:{key}")
+        if _looks_secret_or_phone(value):
+            issues.append(f"{section_name}:source_artifact_secret_or_phone_like_value:{key}")
+    return sorted(set(issues))
+
+
 def _parent_manifest_sha256_values(
     section: Mapping[str, Any],
     source_sha256: str | None,
@@ -990,6 +1012,7 @@ def _validate_source_artifact(
             issues.append(f"{section_name}:source_artifact_not_found")
             issues.append(_source_artifact_not_found_detail(section_name, source_text, evidence_paths))
             return None
+        issues.extend(_source_artifact_content_issues(resolved, section_name))
         try:
             return _redacted_source_artifact_sha256(resolved)
         except OSError:
@@ -1003,6 +1026,7 @@ def _validate_source_artifact(
             issues.append(f"{section_name}:source_artifact_not_file")
             issues.append(f"{section_name}:source_artifact_not_file_path:{source_path.resolve(strict=False)}")
         else:
+            issues.extend(_source_artifact_content_issues(source_path, section_name))
             try:
                 return _redacted_source_artifact_sha256(source_path)
             except OSError:
@@ -1370,6 +1394,9 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "standalone_report_identity": "standalone non-expanded evidence files must include kind/evidence_type matching discord_live_probe, sidecar_session, or live_turn",
             "source_artifacts_must_exist": True,
             "source_artifact_resolution": "absolute paths or paths relative to supplied live-evidence files",
+            "source_artifacts_must_be_json": True,
+            "source_artifacts_reject_secret_or_phone_values": True,
+            "source_artifacts_reject_voice_capability_denials": True,
             "template_source_artifacts_accepted": False,
             "example_only_accepted": False,
             "collector_attestation_required_for_live_readiness": True,
