@@ -34,6 +34,13 @@ DEFAULT_REQUEST = (
 SPARK_BENCHMARK_SCAFFOLD_EVIDENCE = (
     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
 )
+REALTIME_VOICE_DOCTOR_REPORT = "artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json"
+REALTIME_VOICE_DOCTOR_REPORT_COMMAND = (
+    "uv run --extra dev --extra voice hermes doctor --realtime-voice --realtime-voice-smoke "
+    "--discord-voice-live-probe --discord-voice-live-probe-require-inbound "
+    "--discord-voice-live-probe-wait-seconds 5 "
+    f"--realtime-voice-report {REALTIME_VOICE_DOCTOR_REPORT}"
+)
 
 
 @dataclass(frozen=True)
@@ -119,10 +126,11 @@ def _demo_closure_summary() -> dict[str, Any]:
             "template_artifact": "live-voice-evidence-template.json",
             "closure_artifact": "live-probe-closure-plan.md",
             "collection_commands": {
+                "run_realtime_voice_doctor_report": REALTIME_VOICE_DOCTOR_REPORT_COMMAND,
                 "derive_from_realtime_voice_report": (
                     "uv run python -m hermes_cli.realtime_voice_live_evidence "
                     "--output-dir artifacts/realtime-voice-evidence/live-current "
-                    "--from-realtime-voice-report path/to/realtime-voice-report.json"
+                    f"--from-realtime-voice-report {REALTIME_VOICE_DOCTOR_REPORT}"
                 ),
                 "collect_live_manifest": (
                     "uv run python -m hermes_cli.realtime_voice_live_evidence "
@@ -150,6 +158,7 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "artifacts/realtime-voice-evidence/live-current/discord-live-probe.json",
                 "artifacts/realtime-voice-evidence/live-current/sidecar-session.json",
                 "artifacts/realtime-voice-evidence/live-current/live-turn.json",
+                REALTIME_VOICE_DOCTOR_REPORT,
                 "artifacts/realtime-voice-evidence/live-current/sidecar-session.from-realtime-report.json",
                 "artifacts/realtime-voice-evidence/live-current/live-turn.from-realtime-report.json",
                 "artifacts/realtime-voice-evidence/live-current/realtime-voice-report-validation.json",
@@ -502,8 +511,9 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                 "gate_id": live_gate["gate_id"],
                 "can_run_here_now": discord_ready,
                 "blocked_by_current_package": [] if discord_ready else ["discord_voice"],
-                "first_safe_command": live_gate["collection_commands"]["derive_from_realtime_voice_report"],
+                "first_safe_command": live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
                 "commands": [
+                    live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
                     live_gate["collection_commands"]["derive_from_realtime_voice_report"],
                     live_gate["collection_commands"]["collect_live_manifest"],
                     live_gate["collection_commands"]["validate_live_manifest_offline"],
@@ -511,6 +521,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     live_gate["rerun_command"],
                 ],
                 "command_safety": {
+                    "run_realtime_voice_doctor_report": "live_discord_probe_and_local_sidecar_diagnostic_writes_report",
                     "derive_from_realtime_voice_report": "local_file_derivation_only_no_discord_network",
                     "collect_live_manifest": "discord_live_probe_requires_config_no_secret_values_in_artifacts",
                     "validate_live_manifest_offline": "local_file_validation_only",
@@ -521,7 +532,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "Discord bot token and channel config for live collection",
                     "production realtime voice sidecar session evidence",
                     "one real live turn with assistant audio, barge-in, and no voice-capability denial",
-                    "optional hermes doctor realtime voice report for partial sidecar/live-turn derivation",
+                    f"optional hermes doctor realtime voice report at {REALTIME_VOICE_DOCTOR_REPORT} for partial sidecar/live-turn derivation",
                 ],
                 "expected_artifacts": live_gate["expected_artifacts"],
                 "success_check": live_gate["completion_signal"],

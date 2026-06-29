@@ -469,8 +469,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert next_actions[0]["can_run_here_now"] is False
     assert next_actions[0]["blocked_by_current_environment"]["needs_external_live_probe"] is True
     assert "DISCORD_BOT_TOKEN" in next_actions[0]["blocked_by_current_environment"]["missing_env_keys"]
-    assert "hermes_cli.realtime_voice_live_evidence" in next_actions[0]["first_safe_command"]
-    assert "--from-realtime-voice-report" in next_actions[0]["first_safe_command"]
+    assert "hermes doctor" in next_actions[0]["first_safe_command"]
+    assert "--realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in next_actions[0]["first_safe_command"]
     assert next_actions[1]["blocked_by_current_environment"]["missing_cli"] == [
         "stripe",
         "link-cli",
@@ -499,9 +499,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "fallback_reason" in json.dumps(handoff["phases"][0]["required_inputs"])
     assert "sidecar-session.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
     assert "live-evidence-validation.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
-    assert "python -m hermes_cli.realtime_voice_live_evidence" in handoff["phases"][0]["commands"][0]
-    assert "--from-realtime-voice-report" in handoff["phases"][0]["commands"][0]
-    assert "--require-live-discord" in handoff["phases"][0]["commands"][1]
+    assert "hermes doctor" in handoff["phases"][0]["commands"][0]
+    assert "--realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in handoff["phases"][0]["commands"][0]
+    assert "python -m hermes_cli.realtime_voice_live_evidence" in handoff["phases"][0]["commands"][1]
+    assert "--from-realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in handoff["phases"][0]["commands"][1]
+    assert "path/to/realtime-voice-report.json" not in json.dumps(handoff["phases"][0]["commands"])
+    assert "--require-live-discord" in handoff["phases"][0]["commands"][2]
     assert "--validate-live-evidence" in json.dumps(handoff["phases"][0]["commands"])
     assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in json.dumps(
         handoff["phases"][1]
@@ -591,6 +594,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     }
     assert "operator_must_not" in gates["live_discord_voice_operator"]
     assert "manifest.json" in gates["live_discord_voice_operator"]["rerun_command"]
+    assert "hermes doctor" in gates["live_discord_voice_operator"]["collection_commands"]["run_realtime_voice_doctor_report"]
+    assert "realtime-voice-doctor-report.json" in gates["live_discord_voice_operator"]["collection_commands"]["run_realtime_voice_doctor_report"]
     assert "python -m hermes_cli.realtime_voice_live_evidence" in gates["live_discord_voice_operator"]["collection_commands"]["collect_live_manifest"]
     assert "--validate-live-evidence" in gates["live_discord_voice_operator"]["collection_commands"][
         "validate_live_manifest_offline"
@@ -603,6 +608,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--from-realtime-voice-report" in gates["live_discord_voice_operator"]["collection_commands"][
         "derive_from_realtime_voice_report"
     ]
+    assert "realtime-voice-doctor-report.json" in gates["live_discord_voice_operator"]["collection_commands"][
+        "derive_from_realtime_voice_report"
+    ]
+    assert "path/to/realtime-voice-report.json" not in json.dumps(gates["live_discord_voice_operator"]["collection_commands"])
     assert gates["live_discord_voice_operator"]["current_environment"]["env_presence"]["DISCORD_BOT_TOKEN"] is False
     assert "missing_preflight_fields" in gates["spend_and_provisioning_preflight"]
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["preflight_schema_version"] == (
@@ -1254,10 +1263,8 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
         "local_spark_stack_matrix",
     ]
     assert [action["gate_id"] for action in payload["next_actions"]] == payload["remaining_gates"]
-    assert payload["next_actions"][0]["first_safe_command"].startswith(
-        "uv run python -m hermes_cli.realtime_voice_live_evidence"
-    )
-    assert "--from-realtime-voice-report" in payload["next_actions"][0]["first_safe_command"]
+    assert payload["next_actions"][0]["first_safe_command"].startswith("uv run --extra dev --extra voice hermes doctor")
+    assert "realtime-voice-doctor-report.json" in payload["next_actions"][0]["first_safe_command"]
     assert "--dry-audit" in payload["next_actions"][1]["diagnostic_command"]
     assert "voiceops_provisioning_probe.py" in payload["next_actions"][1]["first_safe_command"]
     assert payload["next_actions"][1]["first_evidence_command"] == payload["next_actions"][1]["first_safe_command"]

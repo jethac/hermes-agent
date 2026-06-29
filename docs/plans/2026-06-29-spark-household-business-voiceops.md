@@ -315,9 +315,19 @@ The voice-operator artifact runs the in-memory Discord realtime voice loopback s
 If an existing `hermes doctor --realtime-voice-report` JSON file exists, derive sidecar and live-turn VoiceOps evidence from it without running Discord probes:
 
 ```bash
+uv run --extra dev --extra voice hermes doctor \
+  --realtime-voice \
+  --realtime-voice-smoke \
+  --discord-voice-live-probe \
+  --discord-voice-live-probe-require-inbound \
+  --discord-voice-live-probe-wait-seconds 5 \
+  --realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json
+```
+
+```bash
 uv run python -m hermes_cli.realtime_voice_live_evidence \
   --output-dir artifacts/realtime-voice-evidence/live-current \
-  --from-realtime-voice-report path/to/realtime-voice-report.json
+  --from-realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json
 ```
 
 This writes `sidecar-session.from-realtime-report.json`, `live-turn.from-realtime-report.json`, and `realtime-voice-report-validation.json`, and references any `discord_live_probe` section only if the doctor report actually contains one. The derivation uses the alpha report validator before emitting passing evidence, copies the reported sidecar mode instead of translating loopback or diagnostic modes into production, omits raw transcripts and assistant text from generated live-turn evidence, and still lets strict validation report missing Discord join/playback/receiver gates when the doctor report lacks a real Discord probe.

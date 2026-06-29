@@ -27,6 +27,13 @@ DISCORD_FRAME_BYTES = 3840
 SIDECAR_FRAME_BYTES = 640
 LIVE_EVIDENCE_SCHEMA_VERSION = "voiceops.milestone1.live_voice_evidence.v1"
 LIVE_EVIDENCE_MANIFEST_SCHEMA_VERSION = "voiceops.realtime_voice_live_evidence_manifest.v1"
+LIVE_EVIDENCE_REQUIRED_GATES = (
+    "discord_join",
+    "discord_playback",
+    "live_receiver",
+    "production_sidecar",
+    "live_turn",
+)
 
 REQUIRED_EVENTS = {
     "transcript.partial",
@@ -828,7 +835,9 @@ def _coverage_from_smoke(smoke: dict[str, Any]) -> dict[str, bool]:
 def _live_evidence_missing_gates(live_evidence: dict[str, Any]) -> list[str]:
     missing: set[str] = set()
     if not live_evidence.get("loaded"):
-        return ["discord_join", "discord_playback", "live_receiver", "production_sidecar", "live_turn"]
+        return list(LIVE_EVIDENCE_REQUIRED_GATES)
+    if live_evidence.get("issues") or live_evidence.get("overall_status") != "live_evidence_supplied_not_readiness_claim":
+        return list(LIVE_EVIDENCE_REQUIRED_GATES)
     discord = live_evidence.get("discord_live_probe") if isinstance(live_evidence.get("discord_live_probe"), dict) else {}
     if discord.get("join_ok") is not True:
         missing.add("discord_join")

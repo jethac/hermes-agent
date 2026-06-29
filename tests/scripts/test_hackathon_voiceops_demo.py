@@ -136,6 +136,16 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         is False
     )
     assert "derive_from_realtime_voice_report" in closure_gates["live_discord_voice_operator"]["collection_commands"]
+    assert "run_realtime_voice_doctor_report" in closure_gates["live_discord_voice_operator"]["collection_commands"]
+    assert "realtime-voice-doctor-report.json" in closure_gates["live_discord_voice_operator"]["collection_commands"][
+        "run_realtime_voice_doctor_report"
+    ]
+    assert "realtime-voice-doctor-report.json" in closure_gates["live_discord_voice_operator"]["collection_commands"][
+        "derive_from_realtime_voice_report"
+    ]
+    assert "path/to/realtime-voice-report.json" not in json.dumps(
+        closure_gates["live_discord_voice_operator"]["collection_commands"]
+    )
     assert "--validate-live-evidence" in closure_gates["live_discord_voice_operator"]["collection_commands"][
         "validate_live_manifest_offline"
     ]
@@ -185,9 +195,10 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "spend_and_provisioning_preflight",
         "local_spark_stack",
     ]
-    assert operator_handoff["phases"][0]["first_safe_command"].startswith(
-        "uv run python -m hermes_cli.realtime_voice_live_evidence"
-    )
+    assert operator_handoff["phases"][0]["first_safe_command"].startswith("uv run --extra dev --extra voice hermes doctor")
+    assert "realtime-voice-doctor-report.json" in operator_handoff["phases"][0]["first_safe_command"]
+    assert "path/to/realtime-voice-report.json" not in json.dumps(operator_handoff["phases"][0]["commands"])
+    assert "run_realtime_voice_doctor_report" in operator_handoff["phases"][0]["command_safety"]
     assert "derive_from_realtime_voice_report" in operator_handoff["phases"][0]["command_safety"]
     assert "production realtime voice sidecar session evidence" in operator_handoff["phases"][0]["required_inputs"]
     assert operator_handoff["phases"][1]["command_safety"]["read_only_discovery"] == (

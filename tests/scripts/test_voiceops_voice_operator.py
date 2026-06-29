@@ -382,6 +382,16 @@ def test_voice_operator_rejects_loaded_evidence_with_missing_source_artifact_fil
     assert "discord_live_probe:source_artifact_not_found" in live_evidence["issues"]
     assert "sidecar_session:source_artifact_not_found" in live_evidence["issues"]
     assert "live_turn:source_artifact_not_found" in live_evidence["issues"]
+    report = build_voice_operator_report(_smoke_payload(), live_evidence=live_evidence)
+    assert report["status"] == "needs_live_probe"
+    assert report["proofs"]["live_evidence"]["ok"] is False
+    assert report["live_probe_required_for_completion"]["missing_gates"] == [
+        "discord_join",
+        "discord_playback",
+        "live_receiver",
+        "production_sidecar",
+        "live_turn",
+    ]
 
 
 def test_live_evidence_rejects_template_source_artifact_placeholders():

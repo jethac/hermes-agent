@@ -47,6 +47,13 @@ FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
 SPARK_BENCHMARK_SCAFFOLD_EVIDENCE = (
     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
 )
+REALTIME_VOICE_DOCTOR_REPORT = "artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json"
+REALTIME_VOICE_DOCTOR_REPORT_COMMAND = (
+    "uv run --extra dev --extra voice hermes doctor --realtime-voice --realtime-voice-smoke "
+    "--discord-voice-live-probe --discord-voice-live-probe-require-inbound "
+    "--discord-voice-live-probe-wait-seconds 5 "
+    f"--realtime-voice-report {REALTIME_VOICE_DOCTOR_REPORT}"
+)
 
 def _build_safety_flags(provisioning: dict[str, Any] | None = None) -> dict[str, Any]:
     discovery = provisioning.get("read_only_discovery", {}) if isinstance(provisioning, dict) else {}
@@ -290,12 +297,13 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "required_inputs": [
                     "Discord bot token and channel env/config presence",
                     "running realtime voice sidecar",
-                    "optional hermes doctor --realtime-voice-report JSON for offline sidecar/live-turn evidence derivation",
+                    f"optional hermes doctor --realtime-voice-report JSON at {REALTIME_VOICE_DOCTOR_REPORT} for offline sidecar/live-turn evidence derivation",
                     "discord-live-probe.json with source_artifact and connect/playback/inbound/disconnect latency metrics",
                     "sidecar-session.json with sidecar_mode=production, healthcheck_observed, provider_transport_observed, session_id_redacted, fallback_reason, and session_start/shutdown latency metrics",
                     "live-turn.json",
                 ],
                 "commands": [
+                    live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
                     live_gate["collection_commands"]["derive_from_realtime_voice_report"],
                     live_gate["collection_commands"]["collect_live_manifest"],
                     live_gate["collection_commands"]["validate_live_manifest_offline"],
@@ -307,6 +315,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "artifacts/realtime-voice-evidence/live-current/discord-live-probe.json",
                     "artifacts/realtime-voice-evidence/live-current/sidecar-session.json",
                     "artifacts/realtime-voice-evidence/live-current/live-turn.json",
+                    REALTIME_VOICE_DOCTOR_REPORT,
                     "artifacts/realtime-voice-evidence/live-current/sidecar-session.from-realtime-report.json",
                     "artifacts/realtime-voice-evidence/live-current/live-turn.from-realtime-report.json",
                     "artifacts/realtime-voice-evidence/live-current/realtime-voice-report-validation.json",
@@ -436,8 +445,9 @@ def _build_next_actions(
                 "needs_external_live_probe": True,
             }
             operator_step = (
-                "Derive sidecar/live-turn evidence from an existing realtime voice doctor report if available, "
-                "then run the live Discord evidence collector after Discord env/config and production sidecar are ready."
+                "Run the realtime voice doctor report into the live evidence artifact directory, derive sidecar/live-turn "
+                "evidence from that report, then run the live Discord evidence collector after Discord env/config and "
+                "production sidecar are ready."
             )
         elif gate_id == "spend_and_provisioning_preflight":
             if isinstance(commands, list) and len(commands) > 1:
@@ -516,10 +526,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "closure_plan": voice["artifacts"].get("live_probe_closure_json"),
             "closure_artifact": voice["artifacts"].get("live_probe_closure_markdown"),
             "collection_commands": {
+                "run_realtime_voice_doctor_report": REALTIME_VOICE_DOCTOR_REPORT_COMMAND,
                 "derive_from_realtime_voice_report": (
                     "uv run python -m hermes_cli.realtime_voice_live_evidence "
                     "--output-dir artifacts/realtime-voice-evidence/live-current "
-                    "--from-realtime-voice-report path/to/realtime-voice-report.json"
+                    f"--from-realtime-voice-report {REALTIME_VOICE_DOCTOR_REPORT}"
                 ),
                 "collect_live_manifest": (
                     "uv run python -m hermes_cli.realtime_voice_live_evidence "
