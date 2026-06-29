@@ -251,6 +251,11 @@ def _demo_closure_summary() -> dict[str, Any]:
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
                     "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json"
                 ),
+                "validate_nemoclaw_action_packet": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env --no-command-probes "
+                    "--nemoclaw-action-packet artifacts/hackathon-voiceops-demo/current/nemoclaw-action-packet.json"
+                ),
                 "ingest_preflight_evidence": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
@@ -278,6 +283,8 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json",
                 "artifacts/voiceops-provisioning/current/audit-ledger.read-only-discovery.jsonl",
                 "artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
+                "artifacts/hackathon-voiceops-demo/current/nemoclaw-action-packet.json",
+                "artifacts/voiceops-provisioning/current/nemoclaw-action-packet.validation.json",
                 "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
                 "artifacts/voiceops-provisioning/current/post-approval-receipts.template.json",
                 "artifacts/voiceops-provisioning/current/post-approval-receipts.example.json",
@@ -317,6 +324,9 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "read_only_discovery_required_status": "pass",
                 "read_only_discovery_auth_context": "isolated_home",
                 "read_only_discovery_proves_existing_local_auth": False,
+                "nemoclaw_action_packet_validation_schema_version": "voiceops.nemoclaw_action_packet_validation.v1",
+                "nemoclaw_action_packet_validation_grants_approval": False,
+                "nemoclaw_action_packet_validation_executes_commands": False,
                 "post_approval_receipts_schema_version": "voiceops.milestone2.post_approval_receipts.v1",
                 "post_approval_linkage_ids_must_be_unique": [
                     "credential_locations[].credential_ref_id",
@@ -575,6 +585,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     provisioning_gate["rerun_commands"]["plan_index_read_only_discovery"],
                     provisioning_gate["collection_commands"]["ingest_read_only_discovery_evidence"],
                     provisioning_gate["rerun_commands"]["plan_index_read_only_discovery_evidence"],
+                    provisioning_gate["collection_commands"]["validate_nemoclaw_action_packet"],
                     provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"],
                     provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
                     provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
@@ -589,6 +600,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "plan_index_read_only_discovery": "network_possible_allowlisted_read_only",
                     "ingest_read_only_discovery_evidence": "local_redacted_discovery_validation_only",
                     "plan_index_read_only_discovery_evidence": "local_reindex_only",
+                    "validate_nemoclaw_action_packet": "local_static_action_packet_validation_only",
                     "refresh_preflight_source_hashes": "local_file_hashing_only",
                     "ingest_preflight_manifest": "local_file_validation_only",
                     "validate_post_approval_receipts": "post_approval_local_validation_only",

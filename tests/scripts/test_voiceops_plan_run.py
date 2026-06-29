@@ -523,11 +523,16 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert handoff["phases"][1]["first_safe_command"] == next_actions[1]["first_safe_command"]
     assert handoff["phases"][1]["command_safety"]["plan_index_dry_audit"] == "no_write_no_network_no_probe_audit"
     assert handoff["phases"][1]["command_safety"]["read_only_discovery"] == "network_possible_allowlisted_read_only"
+    assert handoff["phases"][1]["command_safety"]["validate_nemoclaw_action_packet"] == (
+        "local_static_action_packet_validation_only"
+    )
     assert handoff["phases"][1]["command_safety"]["validate_post_approval_receipts"] == "post_approval_local_validation_only"
     assert "scripts/voiceops_plan_run.py" in json.dumps(handoff["phases"][1]["commands"])
+    assert "--nemoclaw-action-packet" in json.dumps(handoff["phases"][1]["commands"])
     assert "--run-readonly-discovery" in json.dumps(handoff["phases"][1]["commands"])
     assert "--post-approval-receipts" in json.dumps(handoff["phases"][1]["commands"])
     assert "post-approval-receipts.template.json" in json.dumps(handoff["phases"][1]["expected_artifacts"])
+    assert "nemoclaw-action-packet.validation.json" in json.dumps(handoff["phases"][1]["expected_artifacts"])
     assert "post-approval-receipts-scaffold/post-approval-receipts.json" in json.dumps(
         handoff["phases"][1]["expected_artifacts"]
     )
@@ -655,6 +660,15 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         ]
         is False
     )
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"][
+        "nemoclaw_action_packet_validation_schema_version"
+    ] == "voiceops.nemoclaw_action_packet_validation.v1"
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"][
+        "nemoclaw_action_packet_validation_grants_approval"
+    ] is False
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"][
+        "nemoclaw_action_packet_validation_executes_commands"
+    ] is False
     assert "post_approval_receipts_status is valid" in gates["spend_and_provisioning_preflight"]["completion_signal"]
     assert "read_only_discovery_status is pass" in gates["spend_and_provisioning_preflight"]["completion_signal"]
     assert "audit-ledger.post-approval.jsonl is populated" in gates["spend_and_provisioning_preflight"][
@@ -663,6 +677,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in gates[
         "spend_and_provisioning_preflight"
     ]["collection_commands"]["ingest_preflight_manifest"]
+    assert "--nemoclaw-action-packet" in gates["spend_and_provisioning_preflight"]["collection_commands"][
+        "validate_nemoclaw_action_packet"
+    ]
     assert gates["spend_and_provisioning_preflight"]["current_environment"]["required_cli_presence"]["stripe"] is False
     assert "required_candidate_fields" in gates["local_spark_stack_matrix"]
     assert "schema_version" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
@@ -758,10 +775,17 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert provisioning_result["details"]["post_approval_receipts_loaded"] is False
     assert provisioning_result["details"]["post_approval_receipts_status"] == "not_supplied"
     assert provisioning_result["details"]["post_approval_receipt_count"] == 0
+    assert provisioning_result["details"]["nemoclaw_action_packet_status"] == "valid"
+    assert provisioning_result["details"]["nemoclaw_action_packet_validation_issues"] == []
+    assert "--nemoclaw-action-packet" in provisioning_result["command"]
+    assert provisioning_result["details"]["input_paths"]["nemoclaw_action_packet"].endswith(
+        "hackathon-voiceops-demo/current/nemoclaw-action-packet.json"
+    )
     assert Path(provisioning_result["artifacts"]["execution_plan_json"]).exists()
     assert Path(provisioning_result["artifacts"]["execution_plan_markdown"]).exists()
     assert Path(provisioning_result["artifacts"]["post_approval_receipts_template"]).exists()
     assert Path(provisioning_result["artifacts"]["post_approval_receipts_validation"]).exists()
+    assert Path(provisioning_result["artifacts"]["nemoclaw_action_packet_validation"]).exists()
     assert Path(provisioning_result["artifacts"]["post_approval_audit_ledger"]).exists()
     assert Path(provisioning_result["artifacts"]["read_only_discovery_json"]).exists()
     assert Path(provisioning_result["artifacts"]["read_only_discovery_markdown"]).exists()
@@ -829,12 +853,16 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "validate_post_approval_receipts" in provisioning_gate["collection_commands"]
     assert "read_only_discovery" in provisioning_gate["collection_commands"]
     assert "refresh_preflight_source_hashes" in provisioning_gate["collection_commands"]
+    assert "validate_nemoclaw_action_packet" in provisioning_gate["collection_commands"]
     assert "--dry-audit" in provisioning_gate["rerun_commands"]["plan_index_dry_audit"]
     assert "--refresh-preflight-source-hashes" in provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"]
+    assert "--nemoclaw-action-packet" in provisioning_gate["collection_commands"]["validate_nemoclaw_action_packet"]
     assert "--run-readonly-discovery" in provisioning_gate["collection_commands"]["read_only_discovery"]
     assert "--run-readonly-discovery" in provisioning_gate["rerun_commands"]["plan_index_read_only_discovery"]
     assert "--refresh-preflight-source-hashes" in provisioning_gate["rerun_commands"]["refresh_preflight_source_hashes"]
     assert provisioning_gate["evidence_contract"]["read_only_discovery_grants_approval"] is False
+    assert provisioning_gate["evidence_contract"]["nemoclaw_action_packet_validation_grants_approval"] is False
+    assert provisioning_gate["evidence_contract"]["nemoclaw_action_packet_validation_executes_commands"] is False
     assert "voiceops.milestone2.post_approval_receipts.v1" == provisioning_gate["evidence_contract"][
         "post_approval_receipts_schema_version"
     ]
@@ -961,6 +989,8 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     assert provisioning_result["details"]["post_approval_receipt_count"] == 4
     assert provisioning_result["details"]["post_approval_receipts_validation_issues"] == []
     assert provisioning_result["details"]["read_only_discovery_status"] == "pass"
+    assert provisioning_result["details"]["nemoclaw_action_packet_status"] == "valid"
+    assert provisioning_result["details"]["nemoclaw_action_packet_validation_issues"] == []
     assert provisioning_result["details"]["run_readonly_discovery"] is False
     assert "--run-readonly-discovery" not in provisioning_result["command"]
     assert "--read-only-discovery-evidence" in provisioning_result["command"]
@@ -968,6 +998,7 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     assert str(preflight_evidence) in provisioning_result["command"]
     assert str(read_only_discovery_evidence) in provisioning_result["command"]
     assert "--post-approval-receipts" in provisioning_result["command"]
+    assert "--nemoclaw-action-packet" in provisioning_result["command"]
     assert str(post_approval_receipts) in provisioning_result["command"]
     assert provisioning_result["details"]["input_paths"]["preflight_evidence"] == str(preflight_evidence)
     assert provisioning_result["details"]["input_paths"]["read_only_discovery_evidence"] == str(read_only_discovery_evidence)

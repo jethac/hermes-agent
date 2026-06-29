@@ -111,6 +111,7 @@ def _provisioning_probe_command(
     preflight_evidence: Path | None,
     read_only_discovery_evidence: Path | None,
     post_approval_receipts: Path | None,
+    nemoclaw_action_packet: Path | None,
     run_command_probes: bool,
     run_readonly_discovery: bool,
 ) -> str:
@@ -130,6 +131,8 @@ def _provisioning_probe_command(
         argv.extend(["--read-only-discovery-evidence", str(read_only_discovery_evidence)])
     if post_approval_receipts is not None:
         argv.extend(["--post-approval-receipts", str(post_approval_receipts)])
+    if nemoclaw_action_packet is not None:
+        argv.extend(["--nemoclaw-action-packet", str(nemoclaw_action_packet)])
     if run_command_probes:
         argv.append("--run-command-probes")
     if run_readonly_discovery:
@@ -301,6 +304,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
         provisioning_gate["rerun_commands"]["plan_index_read_only_discovery"],
         provisioning_gate["collection_commands"]["ingest_read_only_discovery_evidence"],
         provisioning_gate["rerun_commands"]["plan_index_read_only_discovery_evidence"],
+        provisioning_gate["collection_commands"]["validate_nemoclaw_action_packet"],
         provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"],
         provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
         provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
@@ -372,6 +376,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "plan_index_read_only_discovery": "network_possible_allowlisted_read_only",
                     "ingest_read_only_discovery_evidence": "local_redacted_discovery_validation_only",
                     "plan_index_read_only_discovery_evidence": "local_reindex_only",
+                    "validate_nemoclaw_action_packet": "local_static_action_packet_validation_only",
                     "refresh_preflight_source_hashes": "local_file_hashing_only",
                     "ingest_preflight_manifest": "local_file_validation_only",
                     "validate_post_approval_receipts": "post_approval_local_validation_only",
@@ -383,6 +388,8 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json",
                     "artifacts/voiceops-provisioning/current/audit-ledger.read-only-discovery.jsonl",
                     "artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
+                    "artifacts/hackathon-voiceops-demo/current/nemoclaw-action-packet.json",
+                    "artifacts/voiceops-provisioning/current/nemoclaw-action-packet.validation.json",
                     "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
                     "artifacts/voiceops-provisioning/current/post-approval-receipts.template.json",
                     "artifacts/voiceops-provisioning/current/post-approval-receipts.example.json",
@@ -691,6 +698,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
                     "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json"
                 ),
+                "validate_nemoclaw_action_packet": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current --env-file .env --no-command-probes "
+                    "--nemoclaw-action-packet artifacts/hackathon-voiceops-demo/current/nemoclaw-action-packet.json"
+                ),
                 "ingest_preflight_evidence": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
@@ -754,6 +766,9 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "read_only_discovery_required_status": "pass",
                 "read_only_discovery_auth_context": "isolated_home",
                 "read_only_discovery_proves_existing_local_auth": False,
+                "nemoclaw_action_packet_validation_schema_version": "voiceops.nemoclaw_action_packet_validation.v1",
+                "nemoclaw_action_packet_validation_grants_approval": False,
+                "nemoclaw_action_packet_validation_executes_commands": False,
                 "post_approval_receipts_schema_version": "voiceops.milestone2.post_approval_receipts.v1",
                 "post_approval_linkage_ids_must_be_unique": [
                     "credential_locations[].credential_ref_id",
@@ -1083,6 +1098,7 @@ async def build_plan_run_async(
         preflight_evidence_path=provisioning_preflight_evidence,
         read_only_discovery_evidence_path=read_only_discovery_evidence,
         post_approval_receipts_path=post_approval_receipts,
+        nemoclaw_action_packet_path=Path(demo_paths["nemoclaw_packet"]),
         run_commands=run_command_probes,
         run_readonly_discovery=run_readonly_discovery,
         timeout_seconds=timeout_seconds,
@@ -1097,6 +1113,7 @@ async def build_plan_run_async(
                 preflight_evidence=provisioning_preflight_evidence,
                 read_only_discovery_evidence=read_only_discovery_evidence,
                 post_approval_receipts=post_approval_receipts,
+                nemoclaw_action_packet=Path(demo_paths["nemoclaw_packet"]),
                 run_command_probes=run_command_probes,
                 run_readonly_discovery=run_readonly_discovery,
             ),
@@ -1110,6 +1127,7 @@ async def build_plan_run_async(
                     "preflight_evidence": str(provisioning_preflight_evidence) if provisioning_preflight_evidence else None,
                     "read_only_discovery_evidence": str(read_only_discovery_evidence) if read_only_discovery_evidence else None,
                     "post_approval_receipts": str(post_approval_receipts) if post_approval_receipts else None,
+                    "nemoclaw_action_packet": demo_paths["nemoclaw_packet"],
                 },
                 "required_failures": provisioning["required_failures"],
                 "preflight_evidence_loaded": provisioning["preflight_evidence"]["loaded"],
@@ -1118,6 +1136,10 @@ async def build_plan_run_async(
                 "post_approval_receipts_status": provisioning["post_approval_receipts"]["status"],
                 "post_approval_receipt_count": provisioning["post_approval_receipts"].get("receipt_count", 0),
                 "post_approval_receipts_validation_issues": provisioning["post_approval_receipts"]["validation_issues"],
+                "nemoclaw_action_packet_status": provisioning["nemoclaw_action_packet"]["status"],
+                "nemoclaw_action_packet_validation_issues": provisioning["nemoclaw_action_packet"][
+                    "validation_issues"
+                ],
                 "run_command_probes": run_command_probes,
                 "run_readonly_discovery": run_readonly_discovery,
                 "read_only_discovery_status": provisioning["read_only_discovery"]["status"],
