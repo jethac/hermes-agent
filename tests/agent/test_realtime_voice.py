@@ -4265,11 +4265,23 @@ def test_kame_text_engine_labels_local_stt_as_interface_fallback(monkeypatch):
     assert request.interface_input_source == "local_stt"
     assert request.reflex_provider == "local_stt"
 
+    state = next(event for event in seen if event.type == VoiceEventType.FRONTEND_STATE)
     final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
     intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
     oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
     session_metrics = next(event for event in seen if event.type == VoiceEventType.SESSION_METRICS)
 
+    assert state.payload["status"] == "fallback"
+    assert state.payload["reason"] == "kame_audio_reflex_unavailable"
+    assert state.payload["provider"] == "local_stt"
+    assert state.payload["fallback_provider"] == "local_stt"
+    assert state.payload["intent_source"] == "asr_fallback"
+    assert state.payload["transcript_source"] == "asr"
+    assert state.payload["interface_audio_input_fallback"] is True
+    assert state.payload["interface_input_source"] == "local_stt"
+    assert state.payload["reflex_provider"] == "local_stt"
+    assert state.payload["interface_audio_input"] == "native_audio"
+    assert state.payload["asr_mode"] == "on_escalation"
     assert final.payload["text"] == "local transcript"
     assert final.payload["intent_source"] == "asr_fallback"
     assert final.payload["interface_audio_input_fallback"] is True

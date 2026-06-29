@@ -617,6 +617,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             transcript = await asyncio.to_thread(self._transcribe_sync, audio, codec)
             if transcript:
                 fallback_payload = _kame_local_stt_fallback_payload(self.config, transcript)
+                if fallback_payload:
+                    await self._emit(VoiceEventType.FRONTEND_STATE, _kame_local_stt_fallback_state_payload(self.config))
                 await self._start_turn(
                     transcript,
                     metadata=fallback_payload,
@@ -2056,6 +2058,27 @@ def _kame_local_stt_fallback_payload(
         "reflex_provider": "local_stt",
         "reflex_validation_error": "audio_reflex_unavailable_local_stt_fallback",
     }
+
+
+def _kame_local_stt_fallback_state_payload(config: Optional[RealtimeVoiceSessionConfig]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "status": "fallback",
+        "reason": "kame_audio_reflex_unavailable",
+        "provider": "local_stt",
+        "fallback_provider": "local_stt",
+        "intent_source": "asr_fallback",
+        "transcript_source": "asr",
+        "interface_audio_input_fallback": True,
+        "interface_input_source": "local_stt",
+        "reflex_provider": "local_stt",
+        "sidecar": False,
+    }
+    if config is not None:
+        interface_audio_input = str(config.interface_audio_input or "").strip()
+        if interface_audio_input:
+            payload["interface_audio_input"] = interface_audio_input
+        payload["asr_mode"] = config.asr_mode.value
+    return payload
 
 
 def _is_kame_metadata(metadata: Mapping[str, Any]) -> bool:
