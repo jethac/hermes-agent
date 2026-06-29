@@ -1038,6 +1038,13 @@ def build_voice_operator_report(smoke: dict[str, Any], *, live_evidence: dict[st
                 "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
                 "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
             ),
+            "audit_command": (
+                "uv run python -m hermes_cli.realtime_voice_live_evidence "
+                "--audit-only "
+                "--discord-live-probe-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json "
+                "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
+                "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
+            ),
             "ingest_command": (
                 "uv run python scripts/voiceops_voice_operator.py "
                 "--output-dir artifacts/voiceops-voice-operator/current "
@@ -1108,6 +1115,7 @@ def _markdown(report: dict[str, Any]) -> str:
     lines.append(f"- Reason: {live['reason']}")
     lines.append(f"- Missing gates: {', '.join(live['missing_gates']) if live['missing_gates'] else 'none'}")
     lines.append(f"- Recommended command: `{live['recommended_command']}`")
+    lines.append(f"- Audit command: `{live['audit_command']}`")
     lines.append(f"- Ingest command: `{live['ingest_command']}`")
     lines.extend(["", "## Supplied Live Evidence", ""])
     live_evidence = report["live_evidence"]
@@ -1150,6 +1158,7 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
         },
         "recommended_collection": {
             "live_bundle_manifest": report["live_probe_required_for_completion"]["recommended_command"],
+            "audit_bundle_no_write": report["live_probe_required_for_completion"]["audit_command"],
             "validate_bundle_offline": report["live_probe_required_for_completion"]["validate_command"],
             "sidecar_session": (
                 "Write sidecar-session.json with kind=sidecar_session, sidecar_running, sidecar_healthy, "

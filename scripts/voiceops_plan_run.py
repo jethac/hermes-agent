@@ -287,6 +287,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
         live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
         live_gate["collection_commands"]["derive_from_realtime_voice_report"],
         live_gate["collection_commands"]["collect_live_manifest"],
+        live_gate["collection_commands"]["audit_live_manifest_no_write"],
         live_gate["collection_commands"]["validate_live_manifest_offline"],
         live_gate["collection_commands"]["ingest_live_manifest"],
         live_gate["rerun_command"],
@@ -554,6 +555,13 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "uv run python -m hermes_cli.realtime_voice_live_evidence "
                     "--output-dir artifacts/realtime-voice-evidence/live-current "
                     "--validate-live-evidence "
+                    "--discord-live-probe-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json "
+                    "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
+                    "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
+                ),
+                "audit_live_manifest_no_write": (
+                    "uv run python -m hermes_cli.realtime_voice_live_evidence "
+                    "--audit-only "
                     "--discord-live-probe-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json "
                     "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
                     "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"

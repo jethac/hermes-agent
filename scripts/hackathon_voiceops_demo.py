@@ -147,6 +147,13 @@ def _demo_closure_summary() -> dict[str, Any]:
                     "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
                     "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
                 ),
+                "audit_live_manifest_no_write": (
+                    "uv run python -m hermes_cli.realtime_voice_live_evidence "
+                    "--audit-only "
+                    "--discord-live-probe-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json "
+                    "--sidecar-session-evidence artifacts/realtime-voice-evidence/live-current/sidecar-session.json "
+                    "--live-turn-evidence artifacts/realtime-voice-evidence/live-current/live-turn.json"
+                ),
                 "ingest_live_manifest": (
                     "uv run python scripts/voiceops_voice_operator.py "
                     "--output-dir artifacts/voiceops-voice-operator/current "
@@ -521,6 +528,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
                     live_gate["collection_commands"]["derive_from_realtime_voice_report"],
                     live_gate["collection_commands"]["collect_live_manifest"],
+                    live_gate["collection_commands"]["audit_live_manifest_no_write"],
                     live_gate["collection_commands"]["validate_live_manifest_offline"],
                     live_gate["collection_commands"]["ingest_live_manifest"],
                     live_gate["rerun_command"],
@@ -529,6 +537,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "run_realtime_voice_doctor_report": "live_discord_probe_and_local_sidecar_diagnostic_writes_report",
                     "derive_from_realtime_voice_report": "local_file_derivation_only_no_discord_network",
                     "collect_live_manifest": "discord_live_probe_requires_config_no_secret_values_in_artifacts",
+                    "audit_live_manifest_no_write": "no_write_live_evidence_validation",
                     "validate_live_manifest_offline": "local_file_validation_only",
                     "ingest_live_manifest": "local_file_ingest_only",
                     "plan_reindex": "local_reindex_only",

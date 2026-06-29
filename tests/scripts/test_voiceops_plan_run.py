@@ -511,6 +511,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--from-realtime-voice-report artifacts/realtime-voice-evidence/live-current/realtime-voice-doctor-report.json" in handoff["phases"][0]["commands"][1]
     assert "path/to/realtime-voice-report.json" not in json.dumps(handoff["phases"][0]["commands"])
     assert "--require-live-discord" in handoff["phases"][0]["commands"][2]
+    assert "--audit-only" in handoff["phases"][0]["commands"][3]
     assert "--validate-live-evidence" in json.dumps(handoff["phases"][0]["commands"])
     assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in json.dumps(
         handoff["phases"][1]
@@ -607,6 +608,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "hermes doctor" in gates["live_discord_voice_operator"]["collection_commands"]["run_realtime_voice_doctor_report"]
     assert "realtime-voice-doctor-report.json" in gates["live_discord_voice_operator"]["collection_commands"]["run_realtime_voice_doctor_report"]
     assert "python -m hermes_cli.realtime_voice_live_evidence" in gates["live_discord_voice_operator"]["collection_commands"]["collect_live_manifest"]
+    assert "--audit-only" in gates["live_discord_voice_operator"]["collection_commands"]["audit_live_manifest_no_write"]
     assert "--validate-live-evidence" in gates["live_discord_voice_operator"]["collection_commands"][
         "validate_live_manifest_offline"
     ]
@@ -1078,6 +1080,8 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "voiceops.realtime_voice_live_evidence_validation.v1" in text
     assert "`--validate-live-evidence`" in text
     assert "`--from-realtime-voice-report`" in text
+    assert "`--audit-only`" in text
+    assert "voiceops.realtime_voice_live_evidence_audit.v1" in text
     assert "voiceops.realtime_voice_report_derivation.v1" in text
     assert "must not claim production sidecar evidence from loopback or diagnostic sidecar modes" in text
     assert "performs no Discord network call" in text

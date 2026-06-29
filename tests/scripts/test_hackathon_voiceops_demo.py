@@ -149,6 +149,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "--validate-live-evidence" in closure_gates["live_discord_voice_operator"]["collection_commands"][
         "validate_live_manifest_offline"
     ]
+    assert "--audit-only" in closure_gates["live_discord_voice_operator"]["collection_commands"][
+        "audit_live_manifest_no_write"
+    ]
     assert any(
         artifact.endswith("live-evidence-validation.json")
         for artifact in closure_gates["live_discord_voice_operator"]["expected_artifacts"]
@@ -200,6 +203,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "path/to/realtime-voice-report.json" not in json.dumps(operator_handoff["phases"][0]["commands"])
     assert "run_realtime_voice_doctor_report" in operator_handoff["phases"][0]["command_safety"]
     assert "derive_from_realtime_voice_report" in operator_handoff["phases"][0]["command_safety"]
+    assert operator_handoff["phases"][0]["command_safety"]["audit_live_manifest_no_write"] == (
+        "no_write_live_evidence_validation"
+    )
     assert "production realtime voice sidecar session evidence" in operator_handoff["phases"][0]["required_inputs"]
     assert operator_handoff["phases"][1]["command_safety"]["read_only_discovery"] == (
         "network_possible_allowlisted_read_only"

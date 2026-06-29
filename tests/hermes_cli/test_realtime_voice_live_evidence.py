@@ -441,6 +441,120 @@ def test_live_evidence_validate_mode_does_not_call_discord_probes(monkeypatch, t
     assert validation["schema_version"] == "voiceops.realtime_voice_live_evidence_validation.v1"
 
 
+def test_live_evidence_parser_accepts_audit_only(tmp_path):
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--audit-only",
+        ]
+    )
+
+    assert args.audit_only is True
+
+
+def test_live_evidence_audit_only_passes_without_writing_or_calling_probes(monkeypatch, tmp_path, capsys):
+    async def unexpected_loopback():
+        raise AssertionError("loopback probe should not run in audit-only mode")
+
+    async def unexpected_live(_args):
+        raise AssertionError("live Discord probe should not run in audit-only mode")
+
+    discord_path = _write_json(tmp_path / "discord-live-probe.json", _complete_discord_probe())
+    sidecar_path = _write_json(tmp_path / "sidecar-session.json", _complete_sidecar_session())
+    live_turn_path = _write_json(tmp_path / "live-turn.json", _complete_live_turn())
+    output_dir = tmp_path / "bundle"
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", unexpected_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", unexpected_live)
+
+    exit_code = realtime_voice_live_evidence.main(
+        [
+            "--output-dir",
+            str(output_dir),
+            "--audit-only",
+            "--discord-live-probe-evidence",
+            str(discord_path),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+            "--live-turn-evidence",
+            str(live_turn_path),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["schema_version"] == "voiceops.realtime_voice_live_evidence_audit.v1"
+    assert payload["ok"] is True
+    assert payload["artifact_writes"] is False
+    assert payload["discord_probe_run"] is False
+    assert payload["report_derivation_run"] is False
+    assert payload["issues"] == []
+    assert payload["strict_validation"]["overall_status"] == "live_evidence_supplied_not_readiness_claim"
+    assert payload["strict_validation"]["missing_gates"] == []
+    assert not output_dir.exists()
+
+
+def test_live_evidence_audit_only_reports_invalid_evidence_without_writing(monkeypatch, tmp_path, capsys):
+    async def unexpected_loopback():
+        raise AssertionError("loopback probe should not run in audit-only mode")
+
+    async def unexpected_live(_args):
+        raise AssertionError("live Discord probe should not run in audit-only mode")
+
+    bad_turn = _complete_live_turn()
+    bad_turn["barge_in_stop_ms"] = 999
+    discord_path = _write_json(tmp_path / "discord-live-probe.json", _complete_discord_probe())
+    sidecar_path = _write_json(tmp_path / "sidecar-session.json", _complete_sidecar_session())
+    live_turn_path = _write_json(tmp_path / "live-turn.json", bad_turn)
+    output_dir = tmp_path / "bundle"
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", unexpected_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", unexpected_live)
+
+    exit_code = realtime_voice_live_evidence.main(
+        [
+            "--output-dir",
+            str(output_dir),
+            "--audit-only",
+            "--discord-live-probe-evidence",
+            str(discord_path),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+            "--live-turn-evidence",
+            str(live_turn_path),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert payload["artifact_writes"] is False
+    assert "live_evidence_validation:live_turn:barge_in_stop_ms_over_target" in payload["issues"]
+    assert "live_turn" in payload["strict_validation"]["missing_gates"]
+    assert not output_dir.exists()
+
+
+def test_live_evidence_audit_only_rejects_report_derivation_without_writing(tmp_path, capsys):
+    report_path = _write_json(tmp_path / "realtime-voice-report.json", _alpha_realtime_voice_report(include_discord=True))
+    output_dir = tmp_path / "bundle"
+
+    exit_code = realtime_voice_live_evidence.main(
+        [
+            "--output-dir",
+            str(output_dir),
+            "--audit-only",
+            "--from-realtime-voice-report",
+            str(report_path),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert "audit_only: --from-realtime-voice-report is not supported because derivation writes files" in payload["issues"]
+    assert payload["report_derivation_run"] is False
+    assert not output_dir.exists()
+
+
 def test_live_evidence_derives_complete_sections_from_realtime_voice_report(monkeypatch, tmp_path):
     async def unexpected_loopback():
         raise AssertionError("loopback probe should not run when deriving from an existing report")

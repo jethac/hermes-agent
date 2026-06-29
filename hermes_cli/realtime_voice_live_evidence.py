@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import subprocess
+import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -71,6 +72,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--audit-only",
+        action="store_true",
+        help=(
+            "Validate supplied live evidence without running probes, deriving reports, or writing persistent "
+            "artifacts under --output-dir"
+        ),
+    )
+    parser.add_argument(
         "--discord-live-probe-evidence",
         type=Path,
         help="Optional read-only Discord live probe evidence JSON to reference from the manifest",
@@ -98,9 +107,75 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if getattr(args, "audit_only", False):
+        result = audit_realtime_voice_live_evidence(args)
+        print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
+        return 0 if result["ok"] else 1
     result = asyncio.run(collect_realtime_voice_live_evidence(args))
     print(json.dumps(asdict(result), indent=2, ensure_ascii=False))
     return 0 if result.ok else 1
+
+
+def audit_realtime_voice_live_evidence(args: argparse.Namespace) -> dict[str, Any]:
+    reports = {
+        report_key: evidence_path
+        for report_key, evidence_path in (
+            ("discord_live_probe", getattr(args, "discord_live_probe_evidence", None)),
+            ("sidecar_session", getattr(args, "sidecar_session_evidence", None)),
+            ("live_turn", getattr(args, "live_turn_evidence", None)),
+        )
+        if evidence_path is not None
+    }
+    issues: list[str] = []
+    if getattr(args, "from_realtime_voice_report", None) is not None:
+        issues.append("audit_only: --from-realtime-voice-report is not supported because derivation writes files")
+    if not reports:
+        issues.append("audit_only: at least one live evidence file is required")
+
+    strict_validation: dict[str, Any]
+    if reports:
+        with tempfile.TemporaryDirectory(prefix="hermes-live-evidence-audit-") as tmpdir:
+            manifest_path = Path(tmpdir) / "manifest.json"
+            _write_json(
+                manifest_path,
+                {
+                    "schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                    "reports": {
+                        report_key: str(evidence_path.expanduser().resolve(strict=False))
+                        for report_key, evidence_path in reports.items()
+                    },
+                },
+            )
+            strict_validation = _strict_live_evidence_validation(manifest_path)
+    else:
+        strict_validation = {
+            "schema_version": "voiceops.realtime_voice_live_evidence_validation.v1",
+            "manifest": None,
+            "loaded": False,
+            "overall_status": "partial_live_evidence",
+            "issues": ["live_evidence_not_loaded"],
+            "section_refs": {},
+            "missing_gates": ["discord_join", "discord_playback", "live_receiver", "live_turn", "production_sidecar"],
+        }
+
+    validation_issues = [f"live_evidence_validation:{issue}" for issue in strict_validation.get("issues", [])]
+    all_issues = sorted(set([*issues, *validation_issues]))
+    ok = (
+        not all_issues
+        and strict_validation.get("overall_status") == "live_evidence_supplied_not_readiness_claim"
+        and not strict_validation.get("missing_gates")
+    )
+    return {
+        "schema_version": "voiceops.realtime_voice_live_evidence_audit.v1",
+        "ok": ok,
+        "artifact_writes": False,
+        "discord_probe_run": False,
+        "report_derivation_run": False,
+        "output_dir": str(Path(args.output_dir).expanduser()),
+        "reports": {report_key: str(path) for report_key, path in reports.items()},
+        "issues": all_issues,
+        "strict_validation": strict_validation,
+    }
 
 
 async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> RealtimeVoiceLiveEvidenceResult:
