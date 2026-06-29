@@ -103,6 +103,13 @@ class ReadinessCheck:
 
 STATIC_ARTIFACT_REQUIRED_CHECK_IDS = {"nemotron_3_super_spark_or_labeled_hosted_fallback"}
 LIVE_PREREQUISITE_CHECK_IDS = {"discord_voice", "stripe_projects_cli", "stripe_link_cli"}
+REQUIRED_DISCORD_LIVE_ENV_KEYS = (
+    "DISCORD_BOT_TOKEN",
+    "DISCORD_GUILD_ID",
+    "DISCORD_HOME_CHANNEL",
+    "DISCORD_VOICE_CHANNEL_ID",
+    "DISCORD_VOICE_CHANNEL_NAME",
+)
 
 
 def _utc_now() -> str:
@@ -569,9 +576,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                 "can_run_here_now": discord_ready,
                 "blocked_by_current_package": [] if discord_ready else ["discord_voice"],
                 "blocked_by_current_environment": {
-                    "missing_env_or_config": []
-                    if discord_ready
-                    else ["DISCORD_BOT_TOKEN", "DISCORD_VOICE_CHANNEL_ID_or_DISCORD_VOICE_CHANNEL_NAME"],
+                    "missing_env_or_config": [] if discord_ready else list(REQUIRED_DISCORD_LIVE_ENV_KEYS),
                     "needs_external_live_probe": True,
                 },
                 "first_safe_command": live_gate["collection_commands"]["run_realtime_voice_doctor_report"],
@@ -1623,18 +1628,17 @@ def build_readiness_report(
         )
     )
 
-    discord_ok = _env_present(env, "DISCORD_BOT_TOKEN") and (
-        _env_present(env, "DISCORD_VOICE_CHANNEL_ID") or _env_present(env, "DISCORD_VOICE_CHANNEL_NAME")
-    )
+    missing_discord_env = [key for key in REQUIRED_DISCORD_LIVE_ENV_KEYS if not _env_present(env, key)]
+    discord_ok = not missing_discord_env
     checks.append(
         ReadinessCheck(
             check_id="discord_voice",
             status="pass" if discord_ok else "fail",
             required_for_video=True,
             detail=(
-                "DISCORD_BOT_TOKEN and a voice channel selector are present"
+                "all live Discord voice env/config keys are present"
                 if discord_ok
-                else "missing DISCORD_BOT_TOKEN or DISCORD_VOICE_CHANNEL_ID/DISCORD_VOICE_CHANNEL_NAME"
+                else f"missing live Discord env/config keys: {', '.join(missing_discord_env)}"
             ),
             next_step="Set Discord gateway env, restart Hermes gateway, then use /voice join in the recording server.",
         )

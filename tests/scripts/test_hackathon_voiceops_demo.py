@@ -26,6 +26,16 @@ def build_milestone2_like_failures(demo, readiness):
     return _demo_milestone2_report(demo, readiness)["required_failures"]
 
 
+def _discord_live_env() -> dict[str, str]:
+    return {
+        "DISCORD_BOT_TOKEN": "set",
+        "DISCORD_GUILD_ID": "guild-ref",
+        "DISCORD_HOME_CHANNEL": "general",
+        "DISCORD_VOICE_CHANNEL_ID": "123",
+        "DISCORD_VOICE_CHANNEL_NAME": "General",
+    }
+
+
 def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     args = parse_args(["--output-dir", str(tmp_path), "--budget-cents", "7000"])
     demo = build_demo(args)
@@ -202,7 +212,13 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     ]
     assert [phase["order"] for phase in operator_handoff["phases"]] == [1, 2, 3]
     assert operator_handoff["phases"][0]["blocked_by_current_environment"] == {
-        "missing_env_or_config": ["DISCORD_BOT_TOKEN", "DISCORD_VOICE_CHANNEL_ID_or_DISCORD_VOICE_CHANNEL_NAME"],
+        "missing_env_or_config": [
+            "DISCORD_BOT_TOKEN",
+            "DISCORD_GUILD_ID",
+            "DISCORD_HOME_CHANNEL",
+            "DISCORD_VOICE_CHANNEL_ID",
+            "DISCORD_VOICE_CHANNEL_NAME",
+        ],
         "needs_external_live_probe": True,
     }
     assert operator_handoff["phases"][0]["first_safe_command"].startswith("uv run --extra dev --extra voice hermes doctor")
@@ -569,8 +585,7 @@ def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned
     ultra_ready = build_readiness_report(
         ultra_demo,
         env={
-            "DISCORD_BOT_TOKEN": "set",
-            "DISCORD_VOICE_CHANNEL_ID": "123",
+            **_discord_live_env(),
             "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
             "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
         },
@@ -590,8 +605,7 @@ def test_voiceops_demo_classifies_ultra_as_hosted_fallback_and_rejects_unaligned
     kimi_ready = build_readiness_report(
         kimi_demo,
         env={
-            "DISCORD_BOT_TOKEN": "set",
-            "DISCORD_VOICE_CHANNEL_ID": "123",
+            **_discord_live_env(),
             "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
             "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
         },
@@ -691,8 +705,7 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     ready = build_readiness_report(
         demo,
         env={
-            "DISCORD_BOT_TOKEN": "set",
-            "DISCORD_VOICE_CHANNEL_ID": "123",
+            **_discord_live_env(),
             "WHATSAPP_ENABLED": "true",
             "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
             "VOICEOPS_PHONE_PROVIDER_ACCOUNT_REF": "twilio:acct:redacted-demo",
@@ -719,11 +732,28 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     assert checks["phone_provider"]["status"] == "pass"
     assert checks["phone_handoff"]["status"] == "pass"
 
-    stripe_without_projects_marker = build_readiness_report(
+    partial_discord = build_readiness_report(
         demo,
         env={
             "DISCORD_BOT_TOKEN": "set",
             "DISCORD_VOICE_CHANNEL_ID": "123",
+            "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
+            "VOICEOPS_PHONE_PROVIDER_ACCOUNT_REF": "twilio:acct:redacted-demo",
+            "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
+        },
+        which=fake_which,
+    )
+    partial_discord_checks = {check["check_id"]: check for check in partial_discord["checks"]}
+    assert partial_discord_checks["discord_voice"]["status"] == "fail"
+    assert "DISCORD_GUILD_ID" in partial_discord_checks["discord_voice"]["detail"]
+    assert "DISCORD_HOME_CHANNEL" in partial_discord_checks["discord_voice"]["detail"]
+    assert "DISCORD_VOICE_CHANNEL_NAME" in partial_discord_checks["discord_voice"]["detail"]
+    assert "discord_voice" in partial_discord["live_prerequisite_failures"]
+
+    stripe_without_projects_marker = build_readiness_report(
+        demo,
+        env={
+            **_discord_live_env(),
             "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
         },
         which=fake_which,
@@ -744,8 +774,7 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     npx_not_ready = build_readiness_report(
         demo,
         env={
-            "DISCORD_BOT_TOKEN": "set",
-            "DISCORD_VOICE_CHANNEL_ID": "123",
+            **_discord_live_env(),
             "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
             "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
         },
@@ -759,8 +788,7 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     target_only = build_readiness_report(
         demo,
         env={
-            "DISCORD_BOT_TOKEN": "set",
-            "DISCORD_VOICE_CHANNEL_ID": "123",
+            **_discord_live_env(),
             "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
             "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
         },
@@ -775,8 +803,7 @@ def test_voiceops_readiness_report_distinguishes_required_failures():
     provider_only = build_readiness_report(
         demo,
         env={
-            "DISCORD_BOT_TOKEN": "set",
-            "DISCORD_VOICE_CHANNEL_ID": "123",
+            **_discord_live_env(),
             "VOICEOPS_PHONE_PROVIDER_ACCOUNT_REF": "twilio:acct:redacted-demo",
             "VOICEOPS_STRIPE_PROJECTS_HELP_VERIFIED": "true",
         },
@@ -805,6 +832,9 @@ def test_voiceops_readiness_report_loads_env_files_without_exposing_values(tmp_p
         "\n".join(
             [
                 "DISCORD_BOT_TOKEN=secret-token",
+                "DISCORD_GUILD_ID=guild-ref",
+                "DISCORD_HOME_CHANNEL=general",
+                "DISCORD_VOICE_CHANNEL_ID=voice-channel-ref",
                 "DISCORD_VOICE_CHANNEL_NAME=General",
                 "WHATSAPP_ENABLED=true",
                 "VOICEOPS_DEMO_PHONE_NUMBER='+15551234567'",
