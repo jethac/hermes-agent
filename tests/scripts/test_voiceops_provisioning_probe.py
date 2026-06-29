@@ -1585,6 +1585,46 @@ def test_preflight_evidence_rejects_source_artifact_symlink_escape(tmp_path):
     assert "stripe_projects.source_artifact:path_escape_not_allowed" in loaded["validation_issues"]
 
 
+def test_preflight_evidence_rejects_string_false_approval_flags(tmp_path):
+    payload = _complete_preflight_evidence()
+    payload["stripe_projects"]["can_create_project_after_approval"] = "false"
+    payload["stripe_link"]["approval_capability_confirmed"] = "no"
+    evidence_path = _write_preflight_evidence(tmp_path / "evidence", payload)
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "stripe_projects.can_create_project_after_approval: must be true" in loaded["validation_issues"]
+    assert "stripe_link.approval_capability_confirmed: must be true" in loaded["validation_issues"]
+
+
+def test_preflight_evidence_rejects_insufficient_or_non_integer_link_budget(tmp_path):
+    payload = _complete_preflight_evidence()
+    payload["stripe_link"]["max_approved_cents"] = "20000"
+    string_budget_path = _write_preflight_evidence(tmp_path / "string-budget", payload)
+
+    string_budget = load_preflight_evidence(string_budget_path)
+
+    assert "stripe_link.max_approved_cents: must be an integer >= 20000" in string_budget["validation_issues"]
+
+    low_budget_payload = _complete_preflight_evidence()
+    low_budget_payload["stripe_link"]["max_approved_cents"] = 1
+    low_budget_path = _write_preflight_evidence(tmp_path / "low-budget", low_budget_payload)
+
+    low_budget = load_preflight_evidence(low_budget_path)
+
+    assert "stripe_link.max_approved_cents: must be an integer >= 20000" in low_budget["validation_issues"]
+
+
+def test_preflight_evidence_rejects_non_usd_currency(tmp_path):
+    payload = _complete_preflight_evidence()
+    payload["stripe_link"]["currency"] = "eur"
+    evidence_path = _write_preflight_evidence(tmp_path / "evidence", payload)
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "stripe_link.currency: must be usd" in loaded["validation_issues"]
+
+
 def test_preflight_evidence_manifest_rejects_example_or_invalid_sections(tmp_path):
     bad_section = tmp_path / "stripe-projects.json"
     bad_section.write_text("[]", encoding="utf-8")

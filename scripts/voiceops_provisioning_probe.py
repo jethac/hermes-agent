@@ -834,6 +834,21 @@ def _preflight_field_value_issues(payload: Mapping[str, Any]) -> list[str]:
     candidate = str(_dot_get(payload, "stripe_projects.voip_provider_candidate") or "").strip()
     if candidate and not VOIP_PROVIDER_CANDIDATE_RE.fullmatch(candidate):
         issues.append("stripe_projects.voip_provider_candidate: invalid provider candidate")
+    for path in (
+        "stripe_projects.can_create_project_after_approval",
+        "stripe_link.approval_capability_confirmed",
+    ):
+        value = _dot_get(payload, path)
+        if value is not None and value is not True:
+            issues.append(f"{path}: must be true")
+    max_approved_cents = _dot_get(payload, "stripe_link.max_approved_cents")
+    if max_approved_cents is not None and (
+        not isinstance(max_approved_cents, int) or isinstance(max_approved_cents, bool) or max_approved_cents < 20_000
+    ):
+        issues.append("stripe_link.max_approved_cents: must be an integer >= 20000")
+    currency = str(_dot_get(payload, "stripe_link.currency") or "").strip().lower()
+    if currency and currency != "usd":
+        issues.append("stripe_link.currency: must be usd")
     return issues
 
 
