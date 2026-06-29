@@ -385,6 +385,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert next_actions[0]["blocked_by_current_environment"]["needs_external_live_probe"] is True
     assert "DISCORD_BOT_TOKEN" in next_actions[0]["blocked_by_current_environment"]["missing_env_keys"]
     assert "hermes_cli.realtime_voice_live_evidence" in next_actions[0]["first_safe_command"]
+    assert "--from-realtime-voice-report" in next_actions[0]["first_safe_command"]
     assert next_actions[1]["blocked_by_current_environment"]["missing_cli"] == [
         "stripe",
         "link-cli",
@@ -411,6 +412,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "sidecar-session.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
     assert "live-evidence-validation.json" in json.dumps(handoff["phases"][0]["expected_artifacts"])
     assert "python -m hermes_cli.realtime_voice_live_evidence" in handoff["phases"][0]["commands"][0]
+    assert "--from-realtime-voice-report" in handoff["phases"][0]["commands"][0]
+    assert "--require-live-discord" in handoff["phases"][0]["commands"][1]
     assert "--validate-live-evidence" in json.dumps(handoff["phases"][0]["commands"])
     assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in json.dumps(
         handoff["phases"][1]
@@ -491,6 +494,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "unverified_source_artifacts_accepted": False,
         "source_artifacts_must_exist": True,
         "example_only_accepted": False,
+        "realtime_voice_report_derivation_schema_version": "voiceops.realtime_voice_report_derivation.v1",
+        "doctor_report_derivation_overclaims_production": False,
     }
     assert "operator_must_not" in gates["live_discord_voice_operator"]
     assert "manifest.json" in gates["live_discord_voice_operator"]["rerun_command"]
@@ -503,6 +508,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     ]
     assert "--sidecar-session-evidence" in gates["live_discord_voice_operator"]["collection_commands"]["collect_live_manifest"]
     assert "--live-turn-evidence" in gates["live_discord_voice_operator"]["collection_commands"]["collect_live_manifest"]
+    assert "--from-realtime-voice-report" in gates["live_discord_voice_operator"]["collection_commands"][
+        "derive_from_realtime_voice_report"
+    ]
     assert gates["live_discord_voice_operator"]["current_environment"]["env_presence"]["DISCORD_BOT_TOKEN"] is False
     assert "missing_preflight_fields" in gates["spend_and_provisioning_preflight"]
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["preflight_schema_version"] == (
@@ -736,6 +744,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "required_sidecar_mode" in closure_markdown
     assert "required_sidecar_latency_metrics_ms" in closure_markdown
     assert "required_discord_latency_metrics_ms" in closure_markdown
+    assert "realtime_voice_report_derivation_schema_version" in closure_markdown
     assert "unverified_source_artifacts_accepted" in closure_markdown
     assert "voiceops.milestone2.preflight_evidence_manifest.v1" in closure_markdown
     assert "provisioning-preflight-evidence.manifest.json" in closure_markdown
@@ -891,6 +900,9 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
         "live-voice-evidence-template.json",
         "live-voice-evidence.example.json",
         "live-voice-evidence-scaffold/manifest.json",
+        "sidecar-session.from-realtime-report.json",
+        "live-turn.from-realtime-report.json",
+        "realtime-voice-report-validation.json",
         "live-probe-closure-plan.json",
         "live-probe-closure-plan.md",
         "provisioning-preflight-evidence.template.json",
@@ -923,6 +935,9 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in text
     assert "voiceops.realtime_voice_live_evidence_validation.v1" in text
     assert "`--validate-live-evidence`" in text
+    assert "`--from-realtime-voice-report`" in text
+    assert "voiceops.realtime_voice_report_derivation.v1" in text
+    assert "must not claim production sidecar evidence from loopback or diagnostic sidecar modes" in text
     assert "performs no Discord network call" in text
     assert "voiceops.milestone1.live_voice_evidence.v1" in text
     assert "For non-manifest ingestion, pass one `--live-evidence` per section or combined file" in text
@@ -1131,6 +1146,7 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
     assert payload["next_actions"][0]["first_safe_command"].startswith(
         "uv run python -m hermes_cli.realtime_voice_live_evidence"
     )
+    assert "--from-realtime-voice-report" in payload["next_actions"][0]["first_safe_command"]
     assert payload["next_actions"][1]["first_safe_command"].endswith("--dry-audit")
     assert payload["next_actions"][2]["first_safe_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
     assert not output_dir.exists()

@@ -283,11 +283,13 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "required_inputs": [
                     "Discord bot token and channel env/config presence",
                     "running realtime voice sidecar",
+                    "optional hermes doctor --realtime-voice-report JSON for offline sidecar/live-turn evidence derivation",
                     "discord-live-probe.json with source_artifact and connect/playback/inbound/disconnect latency metrics",
                     "sidecar-session.json with sidecar_mode=production, healthcheck_observed, provider_transport_observed, session_id_redacted, fallback_reason, and session_start/shutdown latency metrics",
                     "live-turn.json",
                 ],
                 "commands": [
+                    live_gate["collection_commands"]["derive_from_realtime_voice_report"],
                     live_gate["collection_commands"]["collect_live_manifest"],
                     live_gate["collection_commands"]["validate_live_manifest_offline"],
                     live_gate["collection_commands"]["ingest_live_manifest"],
@@ -298,6 +300,9 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "artifacts/realtime-voice-evidence/live-current/discord-live-probe.json",
                     "artifacts/realtime-voice-evidence/live-current/sidecar-session.json",
                     "artifacts/realtime-voice-evidence/live-current/live-turn.json",
+                    "artifacts/realtime-voice-evidence/live-current/sidecar-session.from-realtime-report.json",
+                    "artifacts/realtime-voice-evidence/live-current/live-turn.from-realtime-report.json",
+                    "artifacts/realtime-voice-evidence/live-current/realtime-voice-report-validation.json",
                     "artifacts/realtime-voice-evidence/live-current/live-evidence-validation.json",
                     "artifacts/voiceops-voice-operator/current/live-voice-evidence-scaffold/manifest.json",
                 ],
@@ -417,7 +422,10 @@ def _build_next_actions(
                 "missing_env_keys": blockers.get("discord_env", {}).get("missing_env_keys", []),
                 "needs_external_live_probe": True,
             }
-            operator_step = "Run the live Discord evidence collector after Discord env/config and production sidecar are ready."
+            operator_step = (
+                "Derive sidecar/live-turn evidence from an existing realtime voice doctor report if available, "
+                "then run the live Discord evidence collector after Discord env/config and production sidecar are ready."
+            )
         elif gate_id == "spend_and_provisioning_preflight":
             blocked_by = {
                 "missing_cli": blockers.get("provisioning_cli", {}).get("missing", []),
@@ -487,6 +495,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "closure_plan": voice["artifacts"].get("live_probe_closure_json"),
             "closure_artifact": voice["artifacts"].get("live_probe_closure_markdown"),
             "collection_commands": {
+                "derive_from_realtime_voice_report": (
+                    "uv run python -m hermes_cli.realtime_voice_live_evidence "
+                    "--output-dir artifacts/realtime-voice-evidence/live-current "
+                    "--from-realtime-voice-report path/to/realtime-voice-report.json"
+                ),
                 "collect_live_manifest": (
                     "uv run python -m hermes_cli.realtime_voice_live_evidence "
                     "--output-dir artifacts/realtime-voice-evidence/live-current "
@@ -580,6 +593,8 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "unverified_source_artifacts_accepted": False,
                 "source_artifacts_must_exist": True,
                 "example_only_accepted": False,
+                "realtime_voice_report_derivation_schema_version": "voiceops.realtime_voice_report_derivation.v1",
+                "doctor_report_derivation_overclaims_production": False,
             },
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "

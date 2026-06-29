@@ -85,6 +85,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Optional read-only live turn evidence JSON to reference from the manifest",
     )
+    parser.add_argument(
+        "--from-realtime-voice-report",
+        type=Path,
+        help=(
+            "Offline: derive sidecar/live-turn evidence files from a JSON report written by "
+            "hermes doctor --realtime-voice-report"
+        ),
+    )
     return parser
 
 
@@ -104,8 +112,26 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
     live_probe_ok: bool | None = None
     live_probe_status = "not_run"
     context = _evidence_context(args)
+    derived_report_paths: dict[str, Path] = {}
+    derived_evidence_supplied = False
 
-    if getattr(args, "validate_live_evidence", False):
+    if getattr(args, "from_realtime_voice_report", None) is not None:
+        derived_report_paths, derived_issues = _derive_live_evidence_from_realtime_voice_report(
+            Path(args.from_realtime_voice_report),
+            output_dir=output_dir,
+        )
+        issues.extend(derived_issues)
+        if "discord_live_probe" in derived_report_paths:
+            _attach_optional_evidence_report(
+                reports=reports,
+                issues=issues,
+                report_key="discord_live_probe",
+                path=derived_report_paths["discord_live_probe"],
+            )
+        derived_evidence_supplied = any(
+            key in derived_report_paths for key in ("discord_live_probe", "sidecar_session", "live_turn")
+        )
+    elif getattr(args, "validate_live_evidence", False):
         if getattr(args, "discord_live_probe_evidence", None) is None:
             issues.append("discord_live_probe: evidence file is required for --validate-live-evidence")
         _attach_optional_evidence_report(
@@ -141,17 +167,22 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
             else:
                 warnings.append(message)
 
+    if derived_report_paths:
+        reports["realtime_voice_report_validation"] = _report_ref(
+            output_dir,
+            output_dir / "realtime-voice-report-validation.json",
+        )
     _attach_optional_evidence_report(
         reports=reports,
         issues=issues,
         report_key="sidecar_session",
-        path=getattr(args, "sidecar_session_evidence", None),
+        path=derived_report_paths.get("sidecar_session") or getattr(args, "sidecar_session_evidence", None),
     )
     _attach_optional_evidence_report(
         reports=reports,
         issues=issues,
         report_key="live_turn",
-        path=getattr(args, "live_turn_evidence", None),
+        path=derived_report_paths.get("live_turn") or getattr(args, "live_turn_evidence", None),
     )
 
     if args.require_openai_realtime and not _openai_realtime_key_present():
@@ -180,7 +211,7 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
     optional_evidence_supplied = any(
         getattr(args, attr, None) is not None
         for attr in ("discord_live_probe_evidence", "sidecar_session_evidence", "live_turn_evidence")
-    )
+    ) or derived_evidence_supplied
     if getattr(args, "validate_live_evidence", False) or optional_evidence_supplied:
         strict_validation = _strict_live_evidence_validation(manifest_path)
         strict_issues = [f"live_evidence_validation:{issue}" for issue in strict_validation.get("issues", [])]
@@ -204,6 +235,319 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
         _write_json(output_dir / "live-evidence-validation.json", strict_validation)
         _write_json(manifest_path, asdict(result))
     return result
+
+
+def _derive_live_evidence_from_realtime_voice_report(
+    report_path: Path,
+    *,
+    output_dir: Path,
+) -> tuple[dict[str, Path], list[str]]:
+    from agent.realtime_voice_smoke_report import (
+        load_realtime_voice_smoke_report,
+        validate_realtime_voice_alpha_report,
+    )
+
+    reports: dict[str, Path] = {}
+    issues: list[str] = []
+    resolved = report_path.expanduser().resolve(strict=False)
+    try:
+        entries = load_realtime_voice_smoke_report(resolved)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return {}, [f"realtime_voice_report: failed to load report: {exc}"]
+
+    validation_issues = validate_realtime_voice_alpha_report(entries)
+    validation_payload = {
+        "kind": "realtime_voice_report_validation",
+        "source_artifact": str(resolved),
+        "schema_version": "voiceops.realtime_voice_report_derivation.v1",
+        "alpha_valid": not validation_issues,
+        "issue_count": len(validation_issues),
+        "issues": [_format_report_issue(issue) for issue in validation_issues],
+        "derived_sections": [],
+    }
+
+    if validation_issues:
+        issues.extend(f"realtime_voice_report:{_format_report_issue(issue)}" for issue in validation_issues)
+
+    discord = _derive_discord_probe_from_realtime_report(entries, resolved)
+    if discord is not None:
+        path = output_dir / "discord-live-probe.from-realtime-report.json"
+        _write_json(path, discord)
+        reports["discord_live_probe"] = path
+        validation_payload["derived_sections"].append("discord_live_probe")
+
+    sidecar = _derive_sidecar_session_from_realtime_report(
+        entries,
+        resolved,
+        alpha_valid=not validation_issues,
+    )
+    if sidecar is not None:
+        path = output_dir / "sidecar-session.from-realtime-report.json"
+        _write_json(path, sidecar)
+        reports["sidecar_session"] = path
+        validation_payload["derived_sections"].append("sidecar_session")
+    else:
+        issues.append("realtime_voice_report: unable to derive sidecar_session evidence")
+
+    live_turn = _derive_live_turn_from_realtime_report(
+        entries,
+        resolved,
+        alpha_valid=not validation_issues,
+    )
+    if live_turn is not None:
+        path = output_dir / "live-turn.from-realtime-report.json"
+        _write_json(path, live_turn)
+        reports["live_turn"] = path
+        validation_payload["derived_sections"].append("live_turn")
+    else:
+        issues.append("realtime_voice_report: unable to derive live_turn evidence")
+
+    _write_json(output_dir / "realtime-voice-report-validation.json", validation_payload)
+    return reports, issues
+
+
+def _format_report_issue(issue: object) -> str:
+    formatter = getattr(issue, "format", None)
+    if callable(formatter):
+        return str(formatter())
+    return str(issue)
+
+
+def _derive_discord_probe_from_realtime_report(entries: list[dict[str, Any]], report_path: Path) -> dict[str, Any] | None:
+    for entry in entries:
+        if str(entry.get("kind") or "") != "discord_live_probe":
+            continue
+        payload = dict(entry)
+        payload.setdefault("kind", "discord_live_probe")
+        payload["source_artifact"] = str(report_path)
+        return payload
+    return None
+
+
+def _derive_sidecar_session_from_realtime_report(
+    entries: list[dict[str, Any]],
+    report_path: Path,
+    *,
+    alpha_valid: bool,
+) -> dict[str, Any] | None:
+    manifest = _first_entry(entries, "manifest")
+    protocol = _first_passing_entry(entries, "protocol") or _first_entry(entries, "protocol")
+    bridge = _first_passing_entry(entries, "discord_bridge") or _first_entry(entries, "discord_bridge")
+    if manifest is None and bridge is None:
+        return None
+    sidecar = manifest.get("sidecar") if isinstance(manifest, dict) and isinstance(manifest.get("sidecar"), dict) else {}
+    health = sidecar.get("health") if isinstance(sidecar.get("health"), dict) else {}
+    health_ok = health.get("ok") is True
+    healthy = sidecar.get("healthy") is True or health_ok
+    bridge_ok = isinstance(bridge, dict) and bridge.get("ok") is True
+    protocol_ok = isinstance(protocol, dict) and protocol.get("ok") is True
+    shutdown_ms = _first_number(
+        bridge.get("shutdown_elapsed_ms") if isinstance(bridge, dict) else None,
+        bridge.get("latency_metrics_ms", {}).get("shutdown_ms")
+        if isinstance(bridge, dict) and isinstance(bridge.get("latency_metrics_ms"), dict)
+        else None,
+    )
+    session_start_ms = _first_number(
+        protocol.get("ready_ms") if isinstance(protocol, dict) else None,
+        _entry_number(entries, "session_turn", "ready_ms"),
+        _entry_number(entries, "audio_session", "ready_ms"),
+        0,
+    )
+    sidecar_mode = str(sidecar.get("mode") or "").strip() or "none"
+    provider_transport_observed = bool(
+        alpha_valid
+        and healthy
+        and any(entry.get("ok") is True and _non_empty(entry.get("transport")) for entry in entries)
+    )
+    shutdown_bounded = isinstance(bridge, dict) and bridge.get("shutdown_bounded") is True
+    shutdown_timed_out = bool(bridge.get("shutdown_timed_out")) if isinstance(bridge, dict) else True
+    unavailable_reason = str(manifest.get("unavailable_reason") or "") if isinstance(manifest, dict) else ""
+    conversation_quality = (
+        manifest.get("conversation_quality")
+        if isinstance(manifest, dict) and isinstance(manifest.get("conversation_quality"), dict)
+        else {}
+    )
+    fallback_reason = (
+        "none"
+        if conversation_quality.get("live_like") is True and not unavailable_reason
+        else "fallback_or_unavailable_redacted"
+    )
+    return {
+        "kind": "sidecar_session",
+        "source_artifact": str(report_path),
+        "derived_from": "hermes doctor --realtime-voice-report",
+        "sidecar_running": bool(alpha_valid and protocol_ok),
+        "sidecar_healthy": bool(alpha_valid and healthy),
+        "session_started": bool(alpha_valid and protocol_ok and _non_negative_number(session_start_ms) is not None),
+        "session_closed": bool(alpha_valid and bridge_ok and bridge.get("sidecar_closed") is True)
+        if isinstance(bridge, dict)
+        else False,
+        "fallback_mode_visible": True,
+        "fallback_reason": fallback_reason,
+        "sidecar_mode": sidecar_mode,
+        "healthcheck_observed": bool(isinstance(sidecar.get("health"), dict) and sidecar.get("health")),
+        "provider_transport_observed": provider_transport_observed,
+        "session_id_redacted": True,
+        "shutdown_bounded": bool(alpha_valid and shutdown_bounded),
+        "shutdown_timed_out": bool(shutdown_timed_out),
+        "latency_metrics_ms": {
+            "session_start_ms": session_start_ms,
+            "shutdown_ms": shutdown_ms,
+        },
+    }
+
+
+def _derive_live_turn_from_realtime_report(
+    entries: list[dict[str, Any]],
+    report_path: Path,
+    *,
+    alpha_valid: bool,
+) -> dict[str, Any] | None:
+    turn_entries = [
+        entry
+        for entry in entries
+        if str(entry.get("kind") or "") in {"session_turn", "audio_session"}
+    ]
+    barge_in = _first_passing_entry(entries, "barge_in") or _first_entry(entries, "barge_in")
+    if not turn_entries and barge_in is None:
+        return None
+    first_audio_ms = _min_number(
+        _nested_metric(entry, "kame_speech_end_to_first_audio_ms")
+        for entry in turn_entries
+        if entry.get("ok") is True
+    )
+    if first_audio_ms is None:
+        first_audio_ms = _min_number(
+            entry.get("first_audio_ms")
+            for entry in turn_entries
+        )
+    barge_in_ms = _first_number(
+        _nested_metric(barge_in, "barge_in_confirmed_to_playback_stopped_ms")
+        if isinstance(barge_in, dict)
+        else None,
+        barge_in.get("barge_in_ack_ms")
+        if isinstance(barge_in, dict) and _positive_int(barge_in.get("audio_after_barge_in_bytes")) == 0
+        else None,
+        _entry_number(entries, "discord_bridge", "barge_in_ack_ms"),
+    )
+    transcript_observed = any(
+        entry.get("ok") is True
+        and (
+            _non_negative_number(entry.get("transcript_final_ms")) is not None
+            or _non_empty(entry.get("final_text"))
+            or _non_empty(entry.get("text"))
+        )
+        for entry in turn_entries
+    )
+    assistant_audio_observed = any(
+        entry.get("ok") is True
+        and (
+            _positive_int(entry.get("output_audio_bytes")) > 0
+            or "audio.output.chunk" in _event_set(entry)
+            or "assistant.audio.chunk" in _event_set(entry)
+        )
+        for entry in turn_entries
+    )
+    texts = [
+        str(entry.get("assistant_final_text") or entry.get("final_text") or entry.get("text") or "")
+        for entry in turn_entries
+    ]
+    denial_observed = any(_looks_like_voice_denial(text) for text in texts if text)
+    spoken_reply_short = any(0 < len(text) <= 240 for text in texts)
+    return {
+        "kind": "live_turn",
+        "source_artifact": str(report_path),
+        "derived_from": "hermes doctor --realtime-voice-report",
+        "transcript_observed": bool(alpha_valid and transcript_observed),
+        "assistant_audio_observed": bool(alpha_valid and assistant_audio_observed),
+        "barge_in_observed": bool(alpha_valid and isinstance(barge_in, dict) and barge_in.get("ok") is True),
+        "spoken_reply_short": bool(alpha_valid and spoken_reply_short),
+        "no_voice_denial_observed": bool(alpha_valid and not denial_observed),
+        "speech_end_to_first_audio_ms": first_audio_ms,
+        "barge_in_stop_ms": barge_in_ms,
+    }
+
+
+def _first_entry(entries: list[dict[str, Any]], kind: str) -> dict[str, Any] | None:
+    for entry in entries:
+        if str(entry.get("kind") or "") == kind:
+            return entry
+    return None
+
+
+def _first_passing_entry(entries: list[dict[str, Any]], kind: str) -> dict[str, Any] | None:
+    for entry in entries:
+        if str(entry.get("kind") or "") == kind and entry.get("ok") is True:
+            return entry
+    return None
+
+
+def _entry_number(entries: list[dict[str, Any]], kind: str, key: str) -> float | None:
+    return _min_number(entry.get(key) for entry in entries if str(entry.get("kind") or "") == kind)
+
+
+def _nested_metric(entry: dict[str, Any] | None, key: str) -> Any:
+    if not isinstance(entry, dict):
+        return None
+    metrics = entry.get("metrics") if isinstance(entry.get("metrics"), dict) else {}
+    first_audio_metrics = (
+        entry.get("first_audio_metrics")
+        if isinstance(entry.get("first_audio_metrics"), dict)
+        else {}
+    )
+    return metrics.get(key) if key in metrics else first_audio_metrics.get(key)
+
+
+def _min_number(values: Any) -> float | None:
+    numbers = [_non_negative_number(value) for value in values]
+    numbers = [number for number in numbers if number is not None]
+    return min(numbers) if numbers else None
+
+
+def _first_number(*values: Any) -> float | None:
+    for value in values:
+        number = _non_negative_number(value)
+        if number is not None:
+            return number
+    return None
+
+
+def _event_set(entry: dict[str, Any]) -> set[str]:
+    events = entry.get("events") if isinstance(entry.get("events"), list) else []
+    return {str(event) for event in events}
+
+
+def _events_include(entries: list[dict[str, Any]], event_name: str) -> bool:
+    return any(event_name in _event_set(entry) for entry in entries)
+
+
+def _non_empty(value: Any) -> bool:
+    return bool(str(value or "").strip())
+
+
+def _positive_int(value: Any) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, number)
+
+
+def _looks_like_voice_denial(text: str) -> bool:
+    lowered = text.lower()
+    return any(
+        phrase in lowered
+        for phrase in (
+            "cannot hear you",
+            "can't hear you",
+            "cannot listen",
+            "can't listen",
+            "cannot join voice",
+            "can't join voice",
+            "cannot speak in voice",
+            "can't speak in voice",
+        )
+    )
 
 
 def _with_report_identity(payload: dict[str, Any], *, kind: str, report_path: Path) -> dict[str, Any]:
