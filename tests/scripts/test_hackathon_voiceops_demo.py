@@ -54,6 +54,16 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "spend_and_provisioning_preflight",
         "local_spark_stack_matrix",
     }
+    closure_gates = {gate["gate_id"]: gate for gate in payload["readiness_closure"]["gates"]}
+    assert closure_gates["live_discord_voice_operator"]["evidence_contract"]["manifest_schema_version"] == (
+        "voiceops.realtime_voice_live_evidence_manifest.v1"
+    )
+    assert closure_gates["spend_and_provisioning_preflight"]["evidence_contract"]["required_section_field"] == "source_artifact"
+    assert "all_local_stack_smoke:needs_evidence" in closure_gates["local_spark_stack_matrix"]["missing"]
+    assert (
+        closure_gates["local_spark_stack_matrix"]["evidence_contract"]["hosted_fallback_counts_for_one_spark_readiness"]
+        is False
+    )
     assert payload["operator_state_ref"] == "operator-state.json"
     assert payload["operator_state_events_ref"] == "operator-state-events.jsonl"
     assert payload["milestone2_execution_plan_ref"] == "milestone2-execution-plan.json"
@@ -76,6 +86,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert payload["sponsor_stack"]["stripe_skills"]["skills"] == ["stripe-projects", "stripe-link-cli", "mpp-agent"]
     assert payload["voice_surfaces"][0]["channel"] == "discord"
     assert {surface["channel"] for surface in payload["voice_surfaces"]} == {"discord", "whatsapp", "phone"}
+    assert next(surface for surface in payload["voice_surfaces"] if surface["channel"] == "phone")["status"] == "dry-run-queued"
     assert "provision-voip-provider" in action_ids
     assert "call-user-phone" in action_ids
     assert payload["totals"]["held_budget_cents"] > 0
@@ -85,6 +96,13 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert nemoclaw["hermes_active_model"].startswith("Nemotron 3 Super")
     assert "oracle_model" not in nemoclaw
     assert "unapproved_purchase" in nemoclaw["blocked_capabilities"]
+    assert "discord_or_whatsapp_send_without_channel_policy_approval" in nemoclaw["blocked_capabilities"]
+    assert "status_summary_draft" in nemoclaw["allowed_capabilities"]
+    status_action = next(action for action in payload["ops_actions"] if action["action_id"] == "draft-status")
+    assert status_action["requires_approval"] is False
+    assert status_action["status"] == "ready"
+    assert "draft" in status_action["command"]
+    assert "post summary" not in status_action["command"]
     assert "stripe projects add twilio/voice" in nemoclaw["dry_run_commands"]
     assert phone_context["target_channel"] == "phone"
     assert phone_context["status"] == "queued_requires_approval"
@@ -112,6 +130,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert operator_events == operator_state["recent_audit_events"]
     assert validate_operator_state(operator_state) == []
     assert "DGX Spark" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "via Hermes /model via Hermes" not in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "nemoclaw-action-packet.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "phone-context.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "milestone2-execution-plan.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
@@ -121,8 +140,12 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "operator-state-events.jsonl" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "recording-runbook.md" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "submission-writeup.md" in Path(paths["markdown"]).read_text(encoding="utf-8")
-    assert "spoken in Discord" in Path(paths["demo_script"]).read_text(encoding="utf-8")
-    assert "outbound phone call" in Path(paths["demo_script"]).read_text(encoding="utf-8")
+    demo_script = Path(paths["demo_script"]).read_text(encoding="utf-8")
+    assert "spoken in Discord" in demo_script
+    assert "outbound phone call" in demo_script
+    assert "After approval and VoIP provisioning" in demo_script
+    assert "Hermes calls the user's phone" not in demo_script
+    assert "planned post-approval Stripe-provisioned VoIP path" in demo_script
     runbook = Path(paths["recording_runbook"]).read_text(encoding="utf-8")
     assert "VoiceOps Recording Runbook" in runbook
     assert "Shot List" in runbook
@@ -134,6 +157,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "live_turn" in runbook
     assert "spend_and_provisioning_preflight" in runbook
     assert "local_spark_stack_matrix" in runbook
+    assert "all_local_stack_smoke:needs_evidence" in runbook
+    assert "voiceops.realtime_voice_live_evidence_manifest.v1" in runbook
+    assert "voiceops.milestone2.preflight_evidence.v1" in runbook
     assert "spark-matrix-closure-plan.md" in runbook
     assert "Closure artifact: `spark-model-matrix.md`" not in runbook
     writeup = Path(paths["submission_writeup"]).read_text(encoding="utf-8")
@@ -145,6 +171,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "live_discord_voice_operator" in writeup
     assert "spend_and_provisioning_preflight" in writeup
     assert "local_spark_stack_matrix" in writeup
+    assert "all_local_stack_smoke:needs_evidence" in writeup
     dashboard = Path(paths["dashboard"]).read_text(encoding="utf-8")
     assert "Nemotron 3 Super" in dashboard
     assert "Nemotron 3 Ultra hosted fallback" in dashboard
@@ -229,6 +256,9 @@ def test_voiceops_demo_dry_run_does_not_execute_live_stripe(tmp_path):
     assert "stripe projects add twilio/voice" in text
     assert "link-cli spend-request create" in text
     assert "queue outbound call" in text
+    assert "draft Discord and WhatsApp status summary" in text
+    assert "post summary to Discord and WhatsApp" not in text
+    assert "provisioning preflight, channel policy, Link approval, and command review pass" in text
     assert "sk_" not in text
 
 

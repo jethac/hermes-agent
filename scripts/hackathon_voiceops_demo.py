@@ -98,7 +98,15 @@ def _demo_closure_summary() -> dict[str, Any]:
             "missing": ["discord_join", "discord_playback", "live_receiver", "production_sidecar", "live_turn"],
             "template_artifact": "live-voice-evidence-template.json",
             "closure_artifact": "live-probe-closure-plan.md",
-            "completion_signal": "live_probe_missing_gates becomes []",
+            "completion_signal": "live_probe_missing_gates becomes [] and live_probe_status is live_evidence_supplied_not_readiness_claim",
+            "evidence_contract": {
+                "manifest_schema_version": "voiceops.realtime_voice_live_evidence_manifest.v1",
+                "expanded_evidence_schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+                "required_sections": ["discord_live_probe", "sidecar_session", "live_turn"],
+                "required_section_refs": ["source_artifact", "section"],
+                "source_artifacts_must_exist": True,
+                "example_only_accepted": False,
+            },
         },
         {
             "gate_id": "spend_and_provisioning_preflight",
@@ -120,14 +128,38 @@ def _demo_closure_summary() -> dict[str, Any]:
             "template_artifact": "provisioning-preflight-evidence.template.json",
             "closure_artifact": "setup-closure-plan.md",
             "completion_signal": "required_failures becomes [] and milestone status becomes ready",
+            "evidence_contract": {
+                "preflight_schema_version": "voiceops.milestone2.preflight_evidence.v1",
+                "manifest_schema_version": "voiceops.milestone2.preflight_evidence_manifest.v1",
+                "required_sections": ["stripe_projects", "stripe_link", "mpp", "phone_handoff", "rollback"],
+                "required_section_field": "source_artifact",
+                "source_artifacts_must_exist": True,
+                "example_only_accepted": False,
+            },
         },
         {
             "gate_id": "local_spark_stack_matrix",
             "status": "needs_evidence",
-            "missing": ["reflex:needs_evidence", "oracle:needs_evidence", "asr:needs_evidence", "tts:needs_evidence"],
+            "missing": [
+                "reflex:needs_evidence",
+                "oracle:needs_evidence",
+                "asr:needs_evidence",
+                "tts:needs_evidence",
+                "all_local_stack_smoke:needs_evidence",
+            ],
             "template_artifact": "spark-benchmark-evidence-template.json",
             "closure_artifact": "spark-matrix-closure-plan.md",
-            "completion_signal": "ready_for_one_spark_demo is true and role_status values are validated",
+            "completion_signal": "ready_for_one_spark_demo is true, role_status values are validated, and all_local_stack_smoke is validated",
+            "evidence_contract": {
+                "benchmark_schema_version": "voiceops.spark_benchmark_evidence.v1",
+                "required_locality_for_one_spark": "local_spark",
+                "required_hardware": "1x NVIDIA DGX Spark",
+                "required_oracle_selection": "Hermes /model",
+                "required_stack_components": ["reflex", "oracle", "asr", "tts", "sidecar"],
+                "required_stack_routing": ["oracle_authority_routes", "interface_input_sources", "reflex_providers"],
+                "hosted_fallback_counts_for_one_spark_readiness": False,
+                "example_only_accepted": False,
+            },
         },
     ]
     return {
@@ -150,9 +182,14 @@ def _closure_gate_markdown_lines(closure: dict[str, Any]) -> list[str]:
                 f"- Template: `{gate['template_artifact']}`",
                 f"- Closure artifact: `{gate['closure_artifact']}`",
                 f"- Completion signal: {gate['completion_signal']}",
-                "",
             ]
         )
+        contract = gate.get("evidence_contract")
+        if isinstance(contract, dict):
+            lines.append("- Evidence contract:")
+            for key, value in sorted(contract.items()):
+                lines.append(f"  - `{key}`: `{value}`")
+        lines.append("")
     return lines
 
 
@@ -257,7 +294,7 @@ def _surface_matrix() -> list[VoiceSurface]:
             channel="phone",
             role="outbound call handoff with the same operational context",
             implementation="Stripe Projects provisions Twilio or another VoIP provider; Hermes queues the call through the phone bridge",
-            status="demo-call-queued",
+            status="dry-run-queued",
         ),
     ]
 
@@ -410,10 +447,10 @@ def _ops_actions(total_budget_cents: int) -> list[OpsAction]:
             status="queued",
         ),
         OpsAction(
-            action_id="publish-status",
+            action_id="draft-status",
             provider="hermes-gateway",
-            command="post summary to Discord and WhatsApp with phone-call audit ID",
-            purpose="send the user a cross-channel approval packet and call handoff summary",
+            command="draft Discord and WhatsApp status summary with phone-call audit ID",
+            purpose="prepare a cross-channel approval packet and call handoff summary without sending it",
             estimated_cents=0,
             requires_approval=False,
             status="ready",
@@ -471,7 +508,7 @@ def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
             "stripe_projects_voip_provisioning_after_approval",
             "stripe_link_spend_request_after_approval",
             "phone_call_queue_after_approval",
-            "discord_and_whatsapp_status_post",
+            "status_summary_draft",
         ],
         "blocked_capabilities": [
             "raw_card_data_in_model_context",
@@ -479,6 +516,7 @@ def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
             "unapproved_recurring_charge",
             "unapproved_credential_deletion",
             "unbounded_network_access",
+            "discord_or_whatsapp_send_without_channel_policy_approval",
         ],
         "approval_required_actions": approval_actions,
         "dry_run_commands": [action["command"] for action in approval_actions],
@@ -567,7 +605,7 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
             "artifact_ref": "voiceops-demo.json",
         }
         for action in demo["ops_actions"]
-        if action["action_id"] in {"provision-voip-provider", "buy-service-credit", "call-user-phone", "publish-status"}
+        if action["action_id"] in {"provision-voip-provider", "buy-service-credit", "call-user-phone", "draft-status"}
     ]
     source_audit_events = demo["audit_events"][-5:]
     root_recent_audit_id = source_audit_events[0]["event_id"] if source_audit_events else None
@@ -981,7 +1019,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "",
         f"- Compute: {demo['spark_stack']['compute']}",
         f"- Reflex: {demo['spark_stack']['reflex']['model']} for low-latency KAME interface behavior",
-        f"- Oracle: {demo['spark_stack']['oracle']['model']} via Hermes' normal active model selection",
+        f"- Oracle: {demo['spark_stack']['oracle']['model']} selected through Hermes' normal active model flow",
         f"- Speech: {demo['spark_stack']['speech']['asr']} plus {demo['spark_stack']['speech']['tts']}",
         "",
         "## Voice surfaces",
@@ -1616,11 +1654,11 @@ def _demo_script(demo: dict[str, Any]) -> str:
             "",
             "Phone handoff:",
             "",
-            "  Hermes calls the user's phone and says: I am continuing from Discord. You gave me a 200 dollar budget to provision VoIP through Stripe Skills, and I am waiting on your approval before live spend.",
+            "  After approval and VoIP provisioning, Hermes would call the user's phone and say: I am continuing from Discord. You gave me a 200 dollar budget to provision VoIP through Stripe Skills, and I am waiting on your approval before live spend.",
             "",
             "Close:",
             "",
-            "  This is one Spark-powered Hermes operator carrying context across Discord, Stripe-provisioned VoIP, WhatsApp, and phone.",
+            "  This is one Spark-powered Hermes operator carrying context across Discord, a planned post-approval Stripe-provisioned VoIP path, WhatsApp, and phone.",
             "",
         ]
     )
@@ -1632,7 +1670,7 @@ def _stripe_script(actions: Iterable[dict[str, Any]]) -> str:
         "set -euo pipefail",
         "",
         "# Dry-run action queue generated for the Hermes VoiceOps hackathon demo.",
-        "# Remove the leading 'printf' only after explicit user approval.",
+        "# Keep printf in place until provisioning preflight, channel policy, Link approval, and command review pass.",
         "",
     ]
     for action in actions:
