@@ -136,6 +136,17 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         closure_gates["local_spark_stack_matrix"]["evidence_contract"]["hosted_fallback_counts_for_one_spark_readiness"]
         is False
     )
+    assert (
+        closure_gates["local_spark_stack_matrix"]["evidence_contract"][
+            "loopback_smoke_bridge_counts_for_local_speech_readiness"
+        ]
+        is False
+    )
+    assert closure_gates["local_spark_stack_matrix"]["evidence_contract"]["local_speech_requires_production_provider"] is True
+    assert any(
+        artifact.endswith("sources/asr-nemotron-speech-raw.json")
+        for artifact in closure_gates["local_spark_stack_matrix"]["expected_artifacts"]
+    )
     assert "--run-readonly-discovery" in closure_gates["spend_and_provisioning_preflight"]["collection_commands"][
         "read_only_discovery"
     ]
@@ -158,9 +169,16 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "stripe_actions_dry_run": "stripe-actions-dry-run.sh",
     }
     assert payload["spark_stack"]["local_first"] is True
+    assert payload["kame_reflex_ack"]["status"] == "scripted_static_ack_until_live_voice_evidence"
+    assert payload["kame_reflex_ack"]["ack_text"].startswith("I heard you.")
+    assert payload["kame_reflex_ack"]["latency_ms"] is None
+    assert payload["kame_reflex_ack"]["live_evidence_required_for_latency_claim"] is True
     assert payload["sponsor_stack"]["hermes_active_model"]["path"] == "spark_local_nemotron_3_super"
     assert payload["sponsor_stack"]["hermes_active_model"]["selected_by"] == "Hermes /model"
     assert payload["sponsor_stack"]["hermes_active_model"]["spark_local"] is True
+    assert payload["sponsor_stack"]["hermes_active_model"]["status"] == "preferred_local_target_selected_not_validated"
+    assert payload["sponsor_stack"]["hermes_active_model"]["fallback_used"] is False
+    assert payload["sponsor_stack"]["hermes_active_model"]["evidence_status"] == "target_selected_needs_benchmark_evidence"
     assert payload["sponsor_stack"]["nemotron_3_super"]["selection"].startswith("Nemotron 3 Super")
     assert payload["sponsor_stack"]["nemotron_3_ultra_hosted_fallback"]["selection"].startswith(
         "Hosted /model fallback"
@@ -170,7 +188,11 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert payload["spark_stack"]["oracle"]["active_model_path"]["path"] == "spark_local_nemotron_3_super"
     assert payload["sponsor_stack"]["stripe_skills"]["skills"] == ["stripe-projects", "stripe-link-cli", "mpp-agent"]
     assert payload["voice_surfaces"][0]["channel"] == "discord"
+    assert payload["voice_surfaces"][0]["status"] == "intended-live-front-door-needs-evidence"
     assert {surface["channel"] for surface in payload["voice_surfaces"]} == {"discord", "whatsapp", "phone"}
+    assert next(surface for surface in payload["voice_surfaces"] if surface["channel"] == "whatsapp")[
+        "status"
+    ] == "follow-on-not-configured-in-static-package"
     assert next(surface for surface in payload["voice_surfaces"] if surface["channel"] == "phone")["status"] == "dry-run-queued"
     assert "provision-voip-provider" in action_ids
     assert "call-user-phone" in action_ids
@@ -277,6 +299,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert operator_state["active_voice_surface"]["surface_id"] == "discord_voice"
     assert operator_state["provisioned_services"]
     assert operator_events == operator_state["recent_audit_events"]
+    assert operator_events[0]["audit_id"] == "evt-001"
     assert validate_operator_state(operator_state) == []
     assert "DGX Spark" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "via Hermes /model via Hermes" not in Path(paths["markdown"]).read_text(encoding="utf-8")
@@ -330,6 +353,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "read-only-discovery.json" in Path(paths["dashboard"]).read_text(encoding="utf-8")
     dashboard = Path(paths["dashboard"]).read_text(encoding="utf-8")
     assert "Nemotron 3 Super" in dashboard
+    assert "KAME Reflex Ack" in dashboard
+    assert "scripted_static_ack_until_live_voice_evidence" in dashboard
+    assert "requires live voice evidence" in dashboard
     assert "Clearly labeled /model fallback" in dashboard
     assert "Hosted fallback does not count as Spark-local readiness proof" in dashboard
     assert "NemoClaw Blocks" in dashboard
@@ -353,6 +379,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "call-user-phone" in dashboard
     assert "Action Ledger" in dashboard
     assert "Recent Audit Events" in dashboard
+    assert "evt-001" in dashboard
     assert "evt-006" in dashboard
     assert "Planned Services" in dashboard
     assert "Provisioned Services" in dashboard

@@ -260,6 +260,9 @@ def _demo_closure_summary() -> dict[str, Any]:
             },
             "expected_artifacts": [
                 "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json",
+                "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/asr-nemotron-speech-raw.json",
+                "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/tts-magpie-local-raw.json",
+                "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/all-local-stack-smoke-raw.json",
                 "artifacts/voiceops-spark-matrix/current/spark-model-matrix.json",
                 "artifacts/voiceops-spark-matrix/current/spark-matrix-closure-plan.md",
             ],
@@ -272,6 +275,8 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "required_stack_components": ["reflex", "oracle", "asr", "tts", "sidecar"],
                 "required_stack_routing": ["oracle_authority_routes", "interface_input_sources", "reflex_providers"],
                 "hosted_fallback_counts_for_one_spark_readiness": False,
+                "loopback_smoke_bridge_counts_for_local_speech_readiness": False,
+                "local_speech_requires_production_provider": True,
                 "example_only_accepted": False,
             },
             "rerun_command": (
@@ -431,13 +436,13 @@ def _surface_matrix() -> list[VoiceSurface]:
             channel="discord",
             role="primary realtime voice room",
             implementation="Hermes Discord gateway /voice join plus KAME realtime voice sidecar",
-            status="implemented-on-branch",
+            status="intended-live-front-door-needs-evidence",
         ),
         VoiceSurface(
             channel="whatsapp",
             role="mobile household command channel",
             implementation="existing WhatsApp bridge and WhatsApp Cloud setup path",
-            status="repo-supported",
+            status="follow-on-not-configured-in-static-package",
         ),
         VoiceSurface(
             channel="phone",
@@ -457,10 +462,12 @@ def _active_model_path(active_model: str) -> dict[str, Any]:
             "active_model": active_model,
             "selected_by": "Hermes /model",
             "path": "spark_local_nemotron_3_super",
-            "status": "preferred_local",
+            "status": "preferred_local_target_selected_not_validated",
             "recording_ready": True,
-            "label": "Nemotron 3 Super on DGX Spark",
+            "label": "Nemotron 3 Super on DGX Spark target; benchmark evidence still required",
             "spark_local": True,
+            "fallback_used": False,
+            "evidence_status": "target_selected_needs_benchmark_evidence",
         }
     if is_ultra:
         return {
@@ -471,6 +478,8 @@ def _active_model_path(active_model: str) -> dict[str, Any]:
             "recording_ready": True,
             "label": "Hosted /model fallback",
             "spark_local": False,
+            "fallback_used": True,
+            "evidence_status": "hosted_fallback_not_spark_local_evidence",
         }
     return {
         "active_model": active_model,
@@ -480,6 +489,8 @@ def _active_model_path(active_model: str) -> dict[str, Any]:
         "recording_ready": False,
         "label": "Switch Hermes to Nemotron 3 Super or label the hosted fallback",
         "spark_local": False,
+        "fallback_used": True,
+        "evidence_status": "non_nvidia_fallback_not_sponsor_aligned",
     }
 
 
@@ -542,6 +553,20 @@ def _spark_stack(active_model: str, reflex_model: str) -> dict[str, Any]:
             "dry-run by default",
             "live spend only through Stripe Link approval",
         ],
+    }
+
+
+def _kame_reflex_ack_trace() -> dict[str, Any]:
+    return {
+        "trace_id": "kame-reflex-ack-001",
+        "source": "discord_voice",
+        "input": "voice_segment_after_vad_endpoint",
+        "ack_text": "I heard you. I will keep this under 200 dollars and ask before anything billable runs.",
+        "scripted": True,
+        "latency_ms": None,
+        "evidence_ref": "demo-script.md",
+        "live_evidence_required_for_latency_claim": True,
+        "status": "scripted_static_ack_until_live_voice_evidence",
     }
 
 
@@ -865,7 +890,7 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
         for action in demo["ops_actions"]
         if action["action_id"] in {"provision-voip-provider", "buy-service-credit", "call-user-phone", "draft-status"}
     ]
-    source_audit_events = demo["audit_events"][-5:]
+    source_audit_events = demo["audit_events"][-12:]
     root_recent_audit_id = source_audit_events[0]["event_id"] if source_audit_events else None
     audit_status_by_action = {"ready": "planned", "queued": "held", "held-budget": "blocked"}
     recent_audit_events = [
@@ -1337,6 +1362,7 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
         },
         "sponsor_stack": _sponsor_stack(args.active_model),
         "spark_stack": _spark_stack(args.active_model, args.reflex_model),
+        "kame_reflex_ack": _kame_reflex_ack_trace(),
         "voice_surfaces": [asdict(surface) for surface in _surface_matrix()],
         "spend_policy": asdict(policy),
         "ops_actions": [asdict(action) for action in actions],
@@ -1364,7 +1390,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "",
         "## One-line pitch",
         "",
-        "Hermes VoiceOps turns a DGX Spark into a local-first operator for a household and business, controlled by live voice in Discord with WhatsApp and phone escalation paths.",
+        "Hermes VoiceOps turns a DGX Spark into a local-first operator for a household and business, with Discord voice as the intended live front door and WhatsApp/phone as approval-gated follow-on paths.",
         "",
         "## Sponsor stack",
         "",
@@ -1428,7 +1454,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "3. Show the NemoClaw/sandboxed action packet before anything billable runs.",
         "4. Show the Stripe/Projects queue for VoIP provisioning and a Link-gated service-credit spend.",
         "5. Show Hermes preserving the Discord context and queuing an outbound phone call.",
-        "6. Close by continuing the same task from the phone-call surface.",
+        "6. Close by showing the queued phone handoff context; only continue live by phone after approval and call receipt evidence exist.",
         "",
     ])
     return "\n".join(lines)
@@ -1443,18 +1469,18 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         "",
         "## Short Description",
         "",
-        "Hermes VoiceOps is a local-first household and business operator controlled by live Discord voice, targeted at one NVIDIA DGX Spark. In the demo, the user gives Hermes a fixed budget through Stripe Skills, Hermes prepares a NemoClaw-safe plan, queues VoIP provisioning through Stripe Projects, and preserves context for a phone handoff.",
+        "Hermes VoiceOps is a local-first household and business operator targeted at one NVIDIA DGX Spark, with Discord voice as the intended live front door. In this static package, the user gives Hermes a fixed budget through Stripe Skills, Hermes prepares a NemoClaw-format dry-run plan, queues VoIP provisioning through Stripe Projects, and preserves context for a phone handoff.",
         "",
         "## What The Demo Shows",
         "",
-        "- Discord voice is the live front door.",
+        "- Discord voice is the intended live front door; live proof requires the separate Discord evidence gate.",
         f"- {demo['sponsor_stack']['nemotron_3_super']['selection']} is the visible serious planning path.",
         "- Hosted fallback: clearly labeled provider through Hermes /model, only if the local Nemotron 3 Super Spark path is unavailable.",
-        "- NemoClaw frames billable and network-capable actions before execution.",
-        "- Stripe Skills provide the spend and provisioning rail.",
+        "- NemoClaw-format dry-run packet frames billable and network-capable actions before execution.",
+        "- Stripe Skills provide the dry-run spend and provisioning queue until preflight and approval receipts exist.",
         f"- The spoken budget becomes a {_dollars(policy['limit_cents'])} spend policy with approval required over {_dollars(policy['approval_required_over_cents'])}.",
         f"- {_dollars(approval_cents)} of queued spend remains approval-gated.",
-        "- Phone and WhatsApp are treated as follow-on operational surfaces, not separate assistants.",
+        "- Phone and WhatsApp are treated as follow-on operational surfaces, not separate assistants; this package does not claim they are configured live.",
         "",
         "## Why It Matters",
         "",
@@ -1637,7 +1663,15 @@ def _status_class(status: Any) -> str:
     normalized = str(status or "").strip().lower().replace("_", "-")
     if normalized in {"pass", "ready", "queued", "demo-call-queued", "implemented-on-branch", "repo-supported"}:
         return "ok"
-    if normalized in {"warn", "held-budget", "queued-requires-approval"}:
+    if normalized in {
+        "warn",
+        "held-budget",
+        "queued-requires-approval",
+        "intended-live-front-door-needs-evidence",
+        "follow-on-not-configured-in-static-package",
+        "preferred-local-target-selected-not-validated",
+        "scripted-static-ack-until-live-voice-evidence",
+    }:
         return "warn"
     if normalized in {"fail", "failed"}:
         return "fail"
@@ -1649,6 +1683,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
     phone_context = _phone_context_packet(demo)
     operator_state = _operator_state_packet(demo, readiness)
     closure = _demo_closure_summary()
+    kame_ack = demo["kame_reflex_ack"]
     budget_status = operator_state["budget_status"]
     voice_surface = operator_state["active_voice_surface"]
     approval_cents = demo["totals"]["approval_required_cents"]
@@ -1914,6 +1949,18 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         <div class="panel">
           <h2>Discord Voice Request</h2>
           <p>{_h(demo['demo']['request'])}</p>
+        </div>
+        <div class="panel">
+          <h2>KAME Reflex Ack</h2>
+          <table>
+            <tbody>
+              <tr><th>Status</th><td><span class="pill {_status_class(kame_ack['status'])}">{_h(kame_ack['status'])}</span></td></tr>
+              <tr><th>Source</th><td>{_h(kame_ack['source'])}</td></tr>
+              <tr><th>Ack</th><td>{_h(kame_ack['ack_text'])}</td></tr>
+              <tr><th>Evidence</th><td>{_h(kame_ack['evidence_ref'])}</td></tr>
+              <tr><th>Latency</th><td>{_h('requires live voice evidence' if kame_ack['latency_ms'] is None else str(kame_ack['latency_ms']) + ' ms')}</td></tr>
+            </tbody>
+          </table>
         </div>
         <div class="panel">
           <h2>Current Mode</h2>

@@ -374,8 +374,19 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         handoff["phases"][1]
     )
     assert "--refresh-preflight-source-hashes" in json.dumps(handoff["phases"][1]["commands"])
+    assert "--run-command-probes" in json.dumps(handoff["phases"][1]["commands"])
+    assert "scripts/voiceops_plan_run.py" in json.dumps(handoff["phases"][1]["commands"])
+    assert "--run-readonly-discovery" in json.dumps(handoff["phases"][1]["commands"])
     assert "--post-approval-receipts" in json.dumps(handoff["phases"][1]["commands"])
+    assert "post-approval-receipts.template.json" in json.dumps(handoff["phases"][1]["expected_artifacts"])
+    assert "post-approval-receipts-scaffold/post-approval-receipts.json" in json.dumps(
+        handoff["phases"][1]["expected_artifacts"]
+    )
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in handoff["phases"][2]["commands"]
+    assert "asr-nemotron-speech-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
+    assert "tts-magpie-local-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
+    assert "all-local-stack-smoke-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
+    assert "loopback_smoke_bridge protocol smoke checks" in json.dumps(handoff["phases"][2]["must_not"])
     assert "path/to/spark-benchmark-evidence.json" in handoff["final_reindex_command"]
     assert "--post-approval-receipts" in handoff["final_reindex_command"]
     gates = {gate["gate_id"]: gate for gate in summary["closure_index"]["gates"]}
@@ -387,6 +398,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "plan_index_manifest_and_post_approval_receipts" in json.dumps(
         gates["spend_and_provisioning_preflight"]["rerun_commands"]
     )
+    assert "plan_index_command_probes" in gates["spend_and_provisioning_preflight"]["rerun_commands"]
+    assert "--run-command-probes" in gates["spend_and_provisioning_preflight"]["rerun_commands"][
+        "plan_index_command_probes"
+    ]
     assert "schema_version" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "transcript_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert gates["live_discord_voice_operator"]["evidence_contract"] == {
@@ -426,6 +441,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "process cwd is never used"
     )
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["example_only_accepted"] is False
+    assert "post_approval_receipts_status is valid" in gates["spend_and_provisioning_preflight"]["completion_signal"]
+    assert "audit-ledger.post-approval.jsonl is populated" in gates["spend_and_provisioning_preflight"][
+        "completion_signal"
+    ]
     assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in gates[
         "spend_and_provisioning_preflight"
     ]["collection_commands"]["ingest_preflight_manifest"]
@@ -433,6 +452,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "required_candidate_fields" in gates["local_spark_stack_matrix"]
     assert "schema_version" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["hosted_fallback_counts_for_one_spark_readiness"] is False
+    assert (
+        gates["local_spark_stack_matrix"]["evidence_contract"][
+            "loopback_smoke_bridge_counts_for_local_speech_readiness"
+        ]
+        is False
+    )
+    assert gates["local_spark_stack_matrix"]["evidence_contract"]["local_speech_requires_production_provider"] is True
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["source_artifacts_must_exist"] is True
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["source_artifact_readable"] is True
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["source_artifact_resolution"].endswith(
@@ -558,6 +584,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     combined_receipt_command = provisioning_gate["rerun_commands"]["plan_index_manifest_and_post_approval_receipts"]
     assert "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json" in combined_receipt_command
     assert "--post-approval-receipts" in combined_receipt_command
+    assert "--run-command-probes" in provisioning_gate["rerun_commands"]["plan_index_command_probes"]
     assert provisioning_gate["evidence_scaffold"].endswith(
         "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
     )
@@ -601,7 +628,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "spark-benchmark-evidence.example.json" in closure_markdown
     assert "spark-operator-runbook.md" in closure_markdown
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" in closure_markdown
+    assert "loopback_smoke_bridge protocol smoke checks" in closure_markdown
     assert "VoiceOps Operator Handoff" in handoff_markdown
+    assert "loopback_smoke_bridge protocol smoke checks" in handoff_markdown
     assert "live_discord_voice" in handoff_markdown
     assert "Final reindex command" in handoff_markdown
     assert "milestone_0_hackathon_proof" in markdown

@@ -318,7 +318,9 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "commands": [
                     provisioning_gate["collection_commands"]["presence_only"],
                     provisioning_gate["collection_commands"]["bounded_version_help"],
+                    provisioning_gate["rerun_commands"]["plan_index_command_probes"],
                     provisioning_gate["collection_commands"]["read_only_discovery"],
+                    provisioning_gate["rerun_commands"]["plan_index_read_only_discovery"],
                     provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"],
                     provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
                     provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
@@ -331,6 +333,10 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "artifacts/voiceops-provisioning/current/audit-ledger.read-only-discovery.jsonl",
                     "artifacts/voiceops-provisioning/current/provisioning-preflight-evidence.json",
                     "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
+                    "artifacts/voiceops-provisioning/current/post-approval-receipts.template.json",
+                    "artifacts/voiceops-provisioning/current/post-approval-receipts.example.json",
+                    "artifacts/voiceops-provisioning/current/post-approval-receipts-scaffold/post-approval-receipts.json",
+                    "artifacts/voiceops-provisioning/current/post-approval-receipts.json",
                     "artifacts/voiceops-provisioning/current/post-approval-receipts.validation.json",
                     "artifacts/voiceops-provisioning/current/audit-ledger.post-approval.jsonl",
                     "artifacts/voiceops-provisioning/current/provisioning-readiness.json",
@@ -356,6 +362,9 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "expected_artifacts": [
                     "artifacts/dgx-spark-gemma4-voice-eval/current/kame-stack",
                     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json",
+                    "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/asr-nemotron-speech-raw.json",
+                    "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/tts-magpie-local-raw.json",
+                    "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/all-local-stack-smoke-raw.json",
                     "artifacts/voiceops-spark-matrix/current/spark-operator-runbook.md",
                     "path/to/spark-benchmark-evidence.json",
                     "artifacts/voiceops-spark-matrix/current/spark-model-matrix.json",
@@ -579,6 +588,10 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-command-probes"
                 ),
+                "plan_index_command_probes": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current --env-file .env --run-command-probes"
+                ),
                 "read_only_discovery": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env --run-readonly-discovery"
@@ -625,7 +638,11 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "use /Users/jethac/.hermes/hermes-agent as an env-file source",
                 "run mutating Stripe Projects, Link spend, provider provisioning, or phone-call commands before approval",
             ],
-            "completion_signal": "required_failures becomes [] and milestone status becomes ready",
+            "completion_signal": (
+                "required_failures becomes []; milestone status becomes ready; if post-approval receipts are "
+                "supplied, post_approval_receipts_status is valid, post_approval_receipts_validation_issues is [], "
+                "receipt_count covers all expected approval-required actions, and audit-ledger.post-approval.jsonl is populated"
+            ),
             "current_environment": current_environment.get("provisioning", {}),
         },
         {
@@ -702,6 +719,8 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "hosted_fallback_counts_for_one_spark_readiness": False,
                 "example_only_accepted": False,
                 "scaffold_is_example_only": True,
+                "loopback_smoke_bridge_counts_for_local_speech_readiness": False,
+                "local_speech_requires_production_provider": True,
             },
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
@@ -712,6 +731,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "claim one-Spark readiness from hosted Nemotron 3 Ultra fallback evidence or cloud TTS fallback evidence",
                 "mark benchmark evidence verified without raw source artifacts",
                 "treat the matrix template as measured evidence",
+                "treat loopback_smoke_bridge protocol smoke checks as verified local ASR/TTS evidence",
             ],
             "completion_signal": "ready_for_one_spark_demo is true, role_status values are validated, and all_local_stack_smoke is validated",
             "current_environment": current_environment.get("spark", {}),
