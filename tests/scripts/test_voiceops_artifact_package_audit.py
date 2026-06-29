@@ -253,6 +253,25 @@ def test_package_audit_rejects_plan_run_closure_mismatch(tmp_path):
     assert "plan_run:closure_index_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_plan_run_top_level_mirror_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    plan_run["artifact_id"] = "voiceops-plan-run-copy"
+    plan_run["closure_status"] = "complete"
+    plan_run["remaining_gates"] = []
+    plan_run["next_actions"] = plan_run["next_actions"][:-1]
+    _write_json(plan_run_path, plan_run)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "plan_run:artifact_id_mismatch" in report["issues"]
+    assert "plan_run:closure_status_mismatch" in report["issues"]
+    assert "plan_run:remaining_gates_mismatch" in report["issues"]
+    assert "plan_run:next_actions_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_unaudited_operator_handoff_reindex(tmp_path):
     artifact_root = _generate_package(tmp_path)
     handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"

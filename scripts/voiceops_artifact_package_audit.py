@@ -470,8 +470,21 @@ def _audit_plan_consistency(
     plan_handoff: Mapping[str, Any],
     issues: list[str],
 ) -> None:
+    if plan_run.get("artifact_id") != "voiceops-plan-run":
+        issues.append("plan_run:artifact_id_mismatch")
     if plan_run.get("closure_index") != plan_closure:
         issues.append("plan_run:closure_index_mismatch")
+    if plan_run.get("closure_status") != plan_closure.get("closure_status"):
+        issues.append("plan_run:closure_status_mismatch")
+    expected_remaining_gate_ids = [
+        str(gate.get("gate_id"))
+        for gate in plan_closure.get("remaining_gates", [])
+        if isinstance(gate, Mapping)
+    ]
+    if plan_run.get("remaining_gates") != expected_remaining_gate_ids:
+        issues.append("plan_run:remaining_gates_mismatch")
+    if plan_run.get("next_actions") != plan_closure.get("next_actions"):
+        issues.append("plan_run:next_actions_mismatch")
     if plan_handoff != plan_closure.get("operator_handoff"):
         issues.append("operator_handoff:mismatch_with_closure")
     for label, payload in (
