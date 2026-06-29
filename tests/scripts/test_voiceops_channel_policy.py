@@ -51,9 +51,18 @@ def test_channel_policy_defines_required_channels_and_boundaries():
 def test_channel_policy_contains_approval_escalation_audit_and_redaction_rules():
     policy = build_channel_policy()
     routes = {route["route_id"]: route for route in policy["approval_routing"]}
+    route_map = policy["approval_route_map"]
     escalations = {step["level"]: step for step in policy["escalation_policy"]}
     redactions = {rule["rule_id"]: rule for rule in policy["redaction_rules"]}
 
+    for channel in policy["channel_authorization"]:
+        channel_id = channel["channel_id"]
+        assert set(channel["approval_required_for"]) <= set(route_map[channel_id])
+        for approval_item in channel["approval_required_for"]:
+            route_id = route_map[channel_id][approval_item]
+            assert route_id in routes
+            assert channel_id in routes[route_id]["applies_to"]
+    assert route_map["phone_sms"]["approved_phone_handoff_call"] == "approved_phone_handoff_call"
     assert routes["customer_visible_outbound"]["default_decision"] == "hold_for_human_approval"
     assert routes["customer_visible_outbound"]["required_approval_count"] == 1
     assert routes["approved_phone_handoff_call"]["default_decision"] == "hold_for_human_approval"
@@ -70,6 +79,8 @@ def test_channel_policy_contains_approval_escalation_audit_and_redaction_rules()
         "env_assignment_secret",
         "sensitive_url",
         "bearer_token",
+        "discord_bot_token",
+        "twilio_auth_token",
         "secret_key_like",
         "phone_number",
         "email_address",
@@ -251,6 +262,26 @@ def test_channel_policy_validates_phone_handoff_route_is_phone_only():
     assert validate_policy(unsafe) == ["unsafe_route_channels:approved_phone_handoff_call:discord,phone_sms"]
 
 
+def test_channel_policy_validates_approval_route_map_coverage():
+    policy = build_channel_policy()
+
+    missing = json.loads(json.dumps(policy))
+    missing["approval_route_map"]["phone_sms"].pop("approved_phone_handoff_call")
+    assert validate_policy(missing) == ["missing_approval_route_map:phone_sms:approved_phone_handoff_call"]
+
+    unknown = json.loads(json.dumps(policy))
+    unknown["approval_route_map"]["discord"]["customer_visible_message"] = "missing-route"
+    assert validate_policy(unknown) == [
+        "approval_route_map_unknown_route:discord:customer_visible_message:missing-route"
+    ]
+
+    wrong_channel = json.loads(json.dumps(policy))
+    wrong_channel["approval_route_map"]["discord"]["customer_visible_message"] = "approved_phone_handoff_call"
+    assert validate_policy(wrong_channel) == [
+        "approval_route_map_route_not_applicable:discord:customer_visible_message:approved_phone_handoff_call"
+    ]
+
+
 def test_channel_policy_rejects_execution_permissions_in_level_3_escalation():
     policy = build_channel_policy()
     unsafe = json.loads(json.dumps(policy))
@@ -276,6 +307,21 @@ def test_channel_policy_requires_full_audit_continuity_fields_and_rules():
         "missing_audit_rule:redaction",
         "missing_audit_rule:cross_channel",
     ]
+
+    unsafe = json.loads(json.dumps(policy))
+    unsafe["audit_id_continuity"]["audit_id_format"] = "vops-m3-{channel_id}-{sequence}"
+    assert validate_policy(unsafe) == [
+        "invalid_audit_id_format",
+        "missing_audit_id_format_fields:utc_yyyymmddThhmmssZ",
+    ]
+
+    unsafe = json.loads(json.dumps(policy))
+    unsafe["approval_routing"][0]["audit_event"] = ""
+    assert validate_policy(unsafe) == ["approval_route_missing_audit_event:status_only"]
+
+    unsafe = json.loads(json.dumps(policy))
+    unsafe["approval_routing"][0]["audit_event"] = "bad event"
+    assert validate_policy(unsafe) == ["approval_route_invalid_audit_event:status_only"]
 
 
 def test_redaction_rules_compile_only_apply_to_known_channels_and_keep_safe_order():
@@ -305,8 +351,10 @@ def test_redaction_rules_mask_raw_provider_tokens_and_payment_urls():
     text = (
         "discord webhook https://discord.com/api/webhooks/123456789012345678/"
         "abcdefghijklmnopqrstuvwxyzABCDEF "
+        "discord token DISCORD_TOKEN_FIXTURE_REDACTED "
         "whatsapp EAAGm0PX4ZCpsBANZCZA1234567890 "
         "twilio TWILIO_ACCOUNT_SID_FIXTURE_REDACTED "
+        "twilio auth token 0123456789abcdef0123456789abcdef "
         "stripe sk_live_51ABCDEF123456789 whsec_123456789abcdef "
         "checkout https://checkout.stripe.com/c/pay/cs_live_123456789 "
         "link https://buy.stripe.com/test_123456789"
@@ -315,8 +363,10 @@ def test_redaction_rules_mask_raw_provider_tokens_and_payment_urls():
     redacted = apply_redactions(text)
 
     assert "discord.com/api/webhooks" not in redacted
+    assert "DISCORD_TOKEN_FIXTURE_REDACTED" not in redacted
     assert "EAAGm0PX4ZCpsBANZCZA1234567890" not in redacted
     assert "TWILIO_ACCOUNT_SID_FIXTURE_REDACTED" not in redacted
+    assert "0123456789abcdef0123456789abcdef" not in redacted
     assert "sk_live_51ABCDEF123456789" not in redacted
     assert "whsec_123456789abcdef" not in redacted
     assert "checkout.stripe.com" not in redacted

@@ -51,6 +51,8 @@ REQUIRED_REDACTION_RULES = {
     "env_assignment_secret",
     "sensitive_url",
     "bearer_token",
+    "discord_bot_token",
+    "twilio_auth_token",
     "secret_key_like",
     "phone_number",
     "email_address",
@@ -136,6 +138,33 @@ AUDIT_RULE_REQUIRED_TERMS = {
     "cross_channel": ("cross-channel", "parent_audit_id"),
 }
 HIGH_RISK_ROUTE_TRIGGER_TERMS = ("payment", "spend", "provisioning", "credential", "account_mutation")
+REQUIRED_AUDIT_ID_FORMAT = "vops-m3-{channel_id}-{utc_yyyymmddThhmmssZ}-{sequence}"
+REQUIRED_AUDIT_ID_FORMAT_FIELDS = {"channel_id", "utc_yyyymmddThhmmssZ", "sequence"}
+AUDIT_EVENT_PATTERN = re.compile(r"^channel_policy\.[a-z0-9_]+(?:\.[a-z0-9_]+)+$")
+
+
+def default_approval_route_map() -> dict[str, dict[str, str]]:
+    return {
+        "discord": {
+            "customer_visible_message": "customer_visible_outbound",
+            "new_webhook_or_bot_scope": "spend_provisioning_or_credential",
+            "role_or_permission_change": "spend_provisioning_or_credential",
+            "sensitive_context_replay": "sensitive_context_replay",
+        },
+        "whatsapp": {
+            "any_customer_visible_send": "customer_visible_outbound",
+            "template_change": "customer_visible_outbound",
+            "handoff_to_human_agent": "customer_visible_outbound",
+            "attachment_or_media_send": "customer_visible_outbound",
+        },
+        "phone_sms": {
+            "any_sms_send": "customer_visible_outbound",
+            "approved_phone_handoff_call": "approved_phone_handoff_call",
+            "phone_number_change": "sensitive_context_replay",
+            "incident_escalation_sms": "customer_visible_outbound",
+            "customer_visible_handoff": "customer_visible_outbound",
+        },
+    }
 
 
 @dataclass(frozen=True)
@@ -391,6 +420,20 @@ def default_redaction_rules() -> list[RedactionRule]:
             rationale="Mask credential-bearing webhook URLs and payment checkout links before channel persistence.",
         ),
         RedactionRule(
+            rule_id="discord_bot_token",
+            applies_to=list(CHANNEL_IDS),
+            pattern=r"\b[A-Za-z0-9_\-]{23,28}\.[A-Za-z0-9_\-]{6,8}\.[A-Za-z0-9_\-]{27,45}\b",
+            replacement="<redacted-discord-token>",
+            rationale="Mask raw Discord bot token strings even when they are not shown as env assignments.",
+        ),
+        RedactionRule(
+            rule_id="twilio_auth_token",
+            applies_to=list(CHANNEL_IDS),
+            pattern=r"(?i)\b(twilio(?:[_ -]?auth)?[_ -]?token\s*[:=]?\s*)[a-f0-9]{32}\b",
+            replacement=r"\1<redacted>",
+            rationale="Mask raw Twilio auth tokens when they appear in prose rather than env assignment form.",
+        ),
+        RedactionRule(
             rule_id="secret_key_like",
             applies_to=list(CHANNEL_IDS),
             pattern=r"(?i)\b(?:sk|pk|rk|whsec|AC|SG|EAAG|xox[baprs]|gh[pousr])[_-]?[A-Za-z0-9][A-Za-z0-9_\-]{8,}\b",
@@ -465,6 +508,7 @@ def build_channel_policy() -> dict[str, Any]:
         },
         "channel_authorization": [asdict(channel) for channel in channels],
         "approval_routing": [asdict(route) for route in routes],
+        "approval_route_map": default_approval_route_map(),
         "escalation_policy": [asdict(step) for step in escalations],
         "audit_id_continuity": {
             "audit_id_format": "vops-m3-{channel_id}-{utc_yyyymmddThhmmssZ}-{sequence}",
@@ -547,6 +591,26 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
         issues.append("missing_approval_routing")
     else:
         routes = {route.get("route_id"): route for route in policy.get("approval_routing", [])}
+        approval_route_map = policy.get("approval_route_map") if isinstance(policy.get("approval_route_map"), dict) else {}
+        for channel in policy.get("channel_authorization", []):
+            channel_id = str(channel.get("channel_id") or "")
+            if channel_id not in known_channels:
+                continue
+            channel_route_map = approval_route_map.get(channel_id)
+            if not isinstance(channel_route_map, dict):
+                channel_route_map = {}
+            for approval_item in channel.get("approval_required_for") or []:
+                route_id = str(channel_route_map.get(approval_item) or "")
+                if not route_id:
+                    issues.append(f"missing_approval_route_map:{channel_id}:{approval_item}")
+                    continue
+                route = routes.get(route_id)
+                if route is None:
+                    if route_id not in REQUIRED_APPROVAL_ROUTES:
+                        issues.append(f"approval_route_map_unknown_route:{channel_id}:{approval_item}:{route_id}")
+                    continue
+                if channel_id not in set(route.get("applies_to") or []):
+                    issues.append(f"approval_route_map_route_not_applicable:{channel_id}:{approval_item}:{route_id}")
         for required_route, contract in REQUIRED_APPROVAL_ROUTES.items():
             route = routes.get(required_route)
             if route is None:
@@ -575,6 +639,11 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
         }
         for route in policy.get("approval_routing", []):
             route_id = str(route.get("route_id") or "unknown")
+            audit_event = str(route.get("audit_event") or "").strip()
+            if not audit_event:
+                issues.append(f"approval_route_missing_audit_event:{route_id}")
+            elif not AUDIT_EVENT_PATTERN.match(audit_event):
+                issues.append(f"approval_route_invalid_audit_event:{route_id}")
             escalation_level = str(route.get("escalation_level") or "")
             if escalation_level and escalation_level != "none" and escalation_level not in escalation_levels:
                 issues.append(f"approval_route_missing_escalation_level:{route_id}:{escalation_level}")
@@ -614,6 +683,14 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
     audit = policy.get("audit_id_continuity", {})
     if not audit.get("rules"):
         issues.append("missing_audit_id_continuity")
+    audit_id_format = str(audit.get("audit_id_format") or "")
+    if audit_id_format != REQUIRED_AUDIT_ID_FORMAT:
+        issues.append("invalid_audit_id_format")
+    missing_format_fields = [
+        field for field in sorted(REQUIRED_AUDIT_ID_FORMAT_FIELDS) if "{" + field + "}" not in audit_id_format
+    ]
+    if missing_format_fields:
+        issues.append(f"missing_audit_id_format_fields:{','.join(missing_format_fields)}")
     missing_audit_fields = REQUIRED_AUDIT_FIELDS - set(audit.get("required_fields") or [])
     if missing_audit_fields:
         issues.append(f"missing_audit_fields:{','.join(sorted(missing_audit_fields))}")

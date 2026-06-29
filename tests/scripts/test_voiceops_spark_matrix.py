@@ -571,6 +571,34 @@ def test_spark_matrix_rejects_stack_smoke_above_closure_first_audio_target(tmp_p
     assert matrix["ready_for_one_spark_demo"] is False
 
 
+@pytest.mark.parametrize(
+    ("metrics", "expected_status", "expected_issue"),
+    [
+        ({"speech_end_to_first_audio_ms": 1500}, "validated", None),
+        ({"barge_in_stop_ms": 150}, "validated", None),
+        ({"local_turns": 1}, "validated", None),
+        ({"local_turns": 0}, "fails_target", "missing_or_failed:local_turns"),
+        ({"oracle_bound_turns": 1, "oracle_bound_oracle_calls": 1}, "validated", None),
+        ({"oracle_bound_turns": 0}, "fails_target", "missing_or_failed:oracle_bound_turns"),
+        ({"oracle_bound_turns": 2, "oracle_bound_oracle_calls": 2}, "validated", None),
+        ({"oracle_bound_turns": 2, "oracle_bound_oracle_calls": 1}, "fails_target", "target_failed:oracle_bound_oracle_calls"),
+    ],
+)
+def test_spark_matrix_stack_smoke_threshold_boundaries(tmp_path, metrics, expected_status, expected_issue):
+    evidence_path = tmp_path / "evidence.json"
+    smoke = _stack_smoke()
+    smoke["metrics"].update(metrics)
+    evidence_path.write_text(json.dumps({"evidence": [smoke]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == expected_status
+    if expected_issue is None:
+        assert matrix["stack_smoke"]["issues"] == []
+    else:
+        assert expected_issue in matrix["stack_smoke"]["issues"]
+
+
 def test_spark_matrix_adapts_kame_benchmark_evidence_with_provenance(tmp_path):
     evidence_path = tmp_path / "kame-evidence.json"
     common = {
