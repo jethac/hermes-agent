@@ -1,6 +1,7 @@
 import asyncio
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from hermes_cli import realtime_voice_live_evidence
 
@@ -9,6 +10,25 @@ from hermes_cli import realtime_voice_live_evidence
 class _FakeProbeResult:
     ok: bool
     error: str = ""
+
+
+@dataclass(frozen=True)
+class _FakeDiscordLiveProbeResult:
+    ok: bool = True
+    error: str = ""
+    connect_perm: bool = True
+    speak_perm: bool = True
+    connected: bool = True
+    opus_loaded: bool = True
+    accepted_audio_source: bool = True
+    played: bool = True
+    playing_during_probe: bool = True
+    receiver_started: bool = True
+    receiver_frames: int = 18
+    receiver_speech_start: int = 1
+    inbound_observed: bool = True
+    disconnected: bool = True
+    require_inbound: bool = True
 
 
 def _write_json(path, payload):
@@ -139,6 +159,46 @@ def test_live_evidence_manifest_references_optional_sidecar_and_turn_evidence(mo
     manifest = json.loads((tmp_path / "bundle" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["reports"]["sidecar_session"] == str(sidecar_path)
     assert manifest["reports"]["live_turn"] == str(live_turn_path)
+
+
+def test_live_evidence_manifest_with_relative_output_dir_is_reingestable(monkeypatch, tmp_path):
+    from scripts.voiceops_voice_operator import _load_live_evidence
+
+    async def fake_loopback():
+        return _FakeProbeResult(ok=True)
+
+    async def fake_live(_args):
+        return _FakeDiscordLiveProbeResult()
+
+    monkeypatch.chdir(tmp_path)
+    output_dir = "artifacts/realtime-voice-evidence/live-current"
+    sidecar_path = _write_json(Path(output_dir) / "sidecar-session.json", _complete_sidecar_session())
+    live_turn_path = _write_json(Path(output_dir) / "live-turn.json", _complete_live_turn())
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", fake_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", fake_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            output_dir,
+            "--require-inbound",
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+            "--live-turn-evidence",
+            str(live_turn_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    manifest_path = Path(output_dir) / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert result.ok is True
+    assert manifest["reports"]["discord_live_probe"] == "discord-live-probe.json"
+    assert manifest["reports"]["discord_loopback"] == "discord-loopback.json"
+    live_evidence = _load_live_evidence([manifest_path])
+    assert live_evidence["overall_status"] == "live_evidence_supplied_not_readiness_claim"
+    assert "live_evidence_manifest:discord_live_probe:live_evidence_file_not_found" not in live_evidence["issues"]
+    assert live_evidence["issues"] == []
 
 
 def test_live_evidence_validate_mode_does_not_call_discord_probes(monkeypatch, tmp_path):

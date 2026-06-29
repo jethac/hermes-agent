@@ -121,7 +121,7 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
             loopback_report,
             _with_report_identity(asdict(loopback_result), kind="discord_loopback", report_path=loopback_report),
         )
-        reports["discord_loopback"] = str(loopback_report)
+        reports["discord_loopback"] = _report_ref(output_dir, loopback_report)
         if not getattr(loopback_result, "ok", False):
             issues.append(f"discord_loopback: {getattr(loopback_result, 'error', '') or 'failed'}")
 
@@ -133,7 +133,7 @@ async def collect_realtime_voice_live_evidence(args: argparse.Namespace) -> Real
             live_report,
             _with_report_identity(asdict(live_result), kind="discord_live_probe", report_path=live_report),
         )
-        reports["discord_live_probe"] = str(live_report)
+        reports["discord_live_probe"] = _report_ref(output_dir, live_report)
         if not live_probe_ok:
             message = f"discord_live_probe: {getattr(live_result, 'error', '') or 'failed'}"
             if args.require_live_discord:
@@ -209,6 +209,13 @@ def _with_report_identity(payload: dict[str, Any], *, kind: str, report_path: Pa
     return enriched
 
 
+def _report_ref(output_dir: Path, report_path: Path) -> str:
+    try:
+        return str(report_path.relative_to(output_dir))
+    except ValueError:
+        return str(report_path.resolve())
+
+
 def _attach_optional_evidence_report(
     *,
     reports: dict[str, str],
@@ -237,7 +244,7 @@ def _attach_optional_evidence_report(
     if structural_issues:
         issues.extend(f"{report_key}: {issue}" for issue in structural_issues)
         return
-    reports[report_key] = str(resolved)
+    reports[report_key] = str(resolved.resolve())
 
 
 def _optional_evidence_has_identity(report_key: str, payload: dict[str, Any]) -> bool:
