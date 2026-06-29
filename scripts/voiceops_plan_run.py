@@ -134,9 +134,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "rerun_command": (
                 "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
                 "--output-dir artifacts/voiceops-plan/current "
-                "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json "
-                "--voice-live-evidence path/to/sidecar-session.json "
-                "--voice-live-evidence path/to/live-turn.json"
+                "--voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json"
             ),
             "operator_must_not": [
                 "paste Discord bot tokens or provider tokens into evidence files",

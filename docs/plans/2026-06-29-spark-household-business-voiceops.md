@@ -309,14 +309,20 @@ The voice-operator artifact runs the in-memory Discord realtime voice loopback s
 When live evidence exists, ingest supplied artifacts without running Discord from the generator:
 
 ```bash
-uv run python scripts/voiceops_voice_operator.py \
-  --output-dir artifacts/voiceops-voice-operator/current \
-  --live-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json \
-  --live-evidence path/to/sidecar-session.json \
-  --live-evidence path/to/live-turn.json
+uv run python -m hermes_cli.realtime_voice_live_evidence \
+  --output-dir artifacts/realtime-voice-evidence/live-current \
+  --require-live-discord \
+  --require-inbound \
+  --wait-seconds 5
 ```
 
-The supplied evidence path is read-only. It must prove Discord join/playback, inbound receiver frames or speech-start, production sidecar session start/close, and one live conversational turn with transcript, assistant audio, barge-in, short spoken reply, no voice-capability denial, first-audio latency, and barge-in stop latency. It must not include Discord tokens, provider secrets, full phone numbers, or private transcript text containing secrets. The generated `.example.json` file is only a populated redacted shape for operators; validators reject `example_only: true` evidence until real artifact references replace it.
+```bash
+uv run python scripts/voiceops_voice_operator.py \
+  --output-dir artifacts/voiceops-voice-operator/current \
+  --live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json
+```
+
+The supplied evidence path is read-only. It may be a `manifest.json` from `hermes_cli.realtime_voice_live_evidence` or individual evidence JSON files. It must prove Discord join/playback, inbound receiver frames or speech-start, production sidecar session start/close, and one live conversational turn with transcript, assistant audio, barge-in, short spoken reply, no voice-capability denial, first-audio latency, and barge-in stop latency. It must not include Discord tokens, provider secrets, full phone numbers, or private transcript text containing secrets. The generated `.example.json` file is only a populated redacted shape for operators; validators reject `example_only: true` evidence until real artifact references replace it.
 
 ## Milestone 2: Real Spend and Provisioning
 
@@ -474,9 +480,7 @@ When evidence exists, rerun the same indexer with the relevant read-only artifac
 ```bash
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts \
   --output-dir artifacts/voiceops-plan/current \
-  --voice-live-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json \
-  --voice-live-evidence path/to/sidecar-session.json \
-  --voice-live-evidence path/to/live-turn.json
+  --voice-live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json
 ```
 
 ```bash

@@ -266,7 +266,43 @@ def _load_live_evidence_file(path: Path) -> dict[str, Any]:
             "payload": None,
             "issues": ["live_evidence_root_must_be_object"],
         }
-    return {"payload": payload, "issues": []}
+    payload, issues = _expand_live_evidence_manifest(path, payload)
+    return {"payload": payload, "issues": issues}
+
+
+def _expand_live_evidence_manifest(path: Path, payload: Mapping[str, Any]) -> tuple[Mapping[str, Any], list[str]]:
+    reports = payload.get("reports")
+    if not isinstance(reports, Mapping):
+        return payload, []
+
+    expanded: dict[str, Any] = {}
+    issues: list[str] = []
+    for report_name, report_path_value in reports.items():
+        report_path_text = str(report_path_value or "").strip()
+        if not report_path_text:
+            issues.append(f"live_evidence_manifest:{report_name}:empty_report_path")
+            continue
+        report_path = _resolve_manifest_report_path(path, report_path_text)
+        loaded = _load_live_evidence_file(report_path)
+        if loaded["issues"]:
+            issues.extend(f"live_evidence_manifest:{report_name}:{issue}" for issue in loaded["issues"])
+        report_payload = loaded.get("payload")
+        if isinstance(report_payload, Mapping):
+            _merge_live_evidence_payload(expanded, report_payload)
+    return expanded if expanded else payload, issues
+
+
+def _resolve_manifest_report_path(manifest_path: Path, report_path_text: str) -> Path:
+    report_path = Path(report_path_text).expanduser()
+    if report_path.is_absolute() or report_path.exists():
+        return report_path
+    sibling = manifest_path.parent / report_path_text
+    if sibling.exists():
+        return sibling
+    basename_sibling = manifest_path.parent / report_path.name
+    if basename_sibling.exists():
+        return basename_sibling
+    return report_path
 
 
 def _merge_live_evidence_payload(target: dict[str, Any], payload: Mapping[str, Any]) -> None:
@@ -599,15 +635,14 @@ def build_voice_operator_report(smoke: dict[str, Any], *, live_evidence: dict[st
             "reason": "Headless loopback does not prove a real Discord gateway join, live receiver transport, or production sidecar availability.",
             "missing_gates": missing_live_gates,
             "recommended_command": (
-                "uv run python -m hermes_cli.discord_voice_live_probe "
-                "--require-inbound --wait-seconds 5 --report artifacts/realtime-voice-evidence/live-current/discord-live-probe.json"
+                "uv run python -m hermes_cli.realtime_voice_live_evidence "
+                "--output-dir artifacts/realtime-voice-evidence/live-current "
+                "--require-live-discord --require-inbound --wait-seconds 5"
             ),
             "ingest_command": (
                 "uv run python scripts/voiceops_voice_operator.py "
                 "--output-dir artifacts/voiceops-voice-operator/current "
-                "--live-evidence artifacts/realtime-voice-evidence/live-current/discord-live-probe.json "
-                "--live-evidence path/to/sidecar-session.json "
-                "--live-evidence path/to/live-turn.json"
+                "--live-evidence artifacts/realtime-voice-evidence/live-current/manifest.json"
             ),
         },
     }
@@ -701,7 +736,7 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
         "missing_gates": report["live_probe_required_for_completion"]["missing_gates"],
         "live_evidence_template": "live-voice-evidence-template.json",
         "recommended_collection": {
-            "discord_live_probe": report["live_probe_required_for_completion"]["recommended_command"],
+            "live_bundle_manifest": report["live_probe_required_for_completion"]["recommended_command"],
             "sidecar_session": "Capture a redacted /voice status or sidecar report with sidecar_running, sidecar_healthy, session_started, and session_closed.",
             "live_turn": "Capture a redacted live turn evidence JSON with transcript_observed, assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, speech_end_to_first_audio_ms, and barge_in_stop_ms.",
             "ingest": report["live_probe_required_for_completion"]["ingest_command"],
@@ -777,7 +812,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="append",
         default=[],
         type=Path,
-        help="Read-only live evidence JSON artifact to ingest; may be repeated. The generator still runs no Discord network.",
+        help="Read-only live evidence JSON artifact or realtime_voice_live_evidence manifest to ingest; may be repeated. The generator still runs no Discord network.",
     )
     return parser.parse_args(argv)
 

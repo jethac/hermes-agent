@@ -32,6 +32,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     }
     assert "transcript_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "operator_must_not" in gates["live_discord_voice_operator"]
+    assert "manifest.json" in gates["live_discord_voice_operator"]["rerun_command"]
     assert "missing_preflight_fields" in gates["spend_and_provisioning_preflight"]
     assert "required_candidate_fields" in gates["local_spark_stack_matrix"]
     assert summary["hard_failures"] == []
