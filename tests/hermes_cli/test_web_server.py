@@ -208,21 +208,51 @@ def _valid_realtime_voice_alpha_report():
     return entries
 
 
-def _valid_realtime_voice_production_review_report():
-    from hermes_cli.web_server import _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
+def _write_valid_dgx_benchmark_validation_artifact(path):
+    from hermes_cli.realtime_voice_production_review import KAME_DGX_REQUIRED_BENCHMARK_COVERAGE
 
+    path.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "benchmark_evidence": {
+                    "ok": True,
+                    "issues": [],
+                    "coverage": {
+                        key: True
+                        for key in KAME_DGX_REQUIRED_BENCHMARK_COVERAGE
+                    },
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _valid_realtime_voice_production_review_report(*, dgx_artifact=None):
+    from hermes_cli.web_server import _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
+    from hermes_cli.realtime_voice_production_review import KAME_DGX_BENCHMARK_EVIDENCE_CHECK
+
+    evidence = {
+        key: {
+            "notes": f"{key} passed in production review.",
+            "artifacts": [f"./artifacts/realtime-voice-review/{key}.md"],
+        }
+        for key in _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
+    }
+    if dgx_artifact is not None:
+        evidence[KAME_DGX_BENCHMARK_EVIDENCE_CHECK] = {
+            "notes": "DGX Spark benchmark validator passed.",
+            "artifacts": [str(dgx_artifact)],
+        }
     return {
         "kind": "realtime_voice_production_review",
         "reviewer": "qa@example.test",
         "reviewed_at": _fresh_realtime_voice_collected_at(),
         "checks": {key: True for key in _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS},
-        "evidence": {
-            key: {
-                "notes": f"{key} passed in production review.",
-                "artifacts": [f"./artifacts/realtime-voice-review/{key}.md"],
-            }
-            for key in _REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS
-        },
+        "evidence": evidence,
     }
 
 
@@ -8793,8 +8823,12 @@ class TestRealtimeVoiceWebSocket:
                 encoding="utf-8",
             )
         review_path = tmp_path / "production-review.json"
+        dgx_artifact = _write_valid_dgx_benchmark_validation_artifact(tmp_path / "dgx-benchmark-validation.json")
         review_path.write_text(
-            json.dumps(_valid_realtime_voice_production_review_report(), ensure_ascii=False),
+            json.dumps(
+                _valid_realtime_voice_production_review_report(dgx_artifact=dgx_artifact),
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
 
@@ -8865,7 +8899,8 @@ class TestRealtimeVoiceWebSocket:
                 json.dumps(_valid_realtime_voice_alpha_report(), ensure_ascii=False),
                 encoding="utf-8",
             )
-        review = _valid_realtime_voice_production_review_report()
+        dgx_artifact = _write_valid_dgx_benchmark_validation_artifact(tmp_path / "dgx-benchmark-validation.json")
+        review = _valid_realtime_voice_production_review_report(dgx_artifact=dgx_artifact)
         review["reviewed_at"] = "2026-01-01T00:00:00Z"
         review_path = tmp_path / "production-review.json"
         review_path.write_text(json.dumps(review, ensure_ascii=False), encoding="utf-8")

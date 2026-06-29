@@ -42,6 +42,23 @@ REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS = {
         "Live Discord smoke passed the full KAME path with production credentials"
     ),
 }
+KAME_DGX_BENCHMARK_EVIDENCE_CHECK = "kame_dgx_benchmark_evidence"
+KAME_DGX_REQUIRED_BENCHMARK_COVERAGE = frozenset(
+    {
+        "interface_candidate_model_matrix",
+        "interface_direct_audio_vs_stt_fallback",
+        "interface_direct_audio_latency",
+        "oracle_simple_first_audio_latency",
+        "oracle_outcomes_with_and_without_asr_hypotheses",
+        "oracle_verbatim_asr_latency_and_literal_accuracy",
+        "local_asr_tts_benchmark_matrix",
+        "model_assumptions_validated",
+        "all_local_smoke",
+        "cloud_fallback_smoke",
+        "capability_honesty_smoke",
+        "barge_in_interruption_smoke",
+    }
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -127,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         print(f"Realtime voice production review template written: {report_path}")
-        issues = validate_production_review_report(report)
+        issues = validate_production_review_report(report, report_path=report_path)
         if issues:
             print(f"Pending check(s): {len(issues)}")
             for issue in issues:
@@ -150,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    issues = validate_production_review_report(report)
+    issues = validate_production_review_report(report, report_path=report_path)
     if not issues:
         print("Realtime voice production review OK")
         if args.apply:
@@ -268,7 +285,11 @@ def load_production_review_report(report_path: str | Path) -> dict[str, Any]:
     return report
 
 
-def validate_production_review_report(report: Mapping[str, Any]) -> list[str]:
+def validate_production_review_report(
+    report: Mapping[str, Any],
+    *,
+    report_path: str | Path | None = None,
+) -> list[str]:
     issues: list[str] = []
     if str(report.get("kind") or "") != "realtime_voice_production_review":
         issues.append("invalid_kind")
@@ -291,6 +312,13 @@ def validate_production_review_report(report: Mapping[str, Any]) -> list[str]:
             issues.append(f"review_check_missing:{key}")
         elif not _production_review_evidence_is_supported(evidence.get(key)):
             issues.append(f"review_evidence_missing:{key}")
+        elif key == KAME_DGX_BENCHMARK_EVIDENCE_CHECK:
+            issue = _kame_dgx_benchmark_evidence_issue(
+                evidence.get(key),
+                report_path=report_path,
+            )
+            if issue:
+                issues.append(issue)
     return list(dict.fromkeys(issues))
 
 
@@ -319,6 +347,83 @@ def _production_review_evidence_is_supported(value: Any) -> bool:
     if isinstance(artifacts, list) and any(str(item or "").strip() for item in artifacts):
         return True
     return False
+
+
+def _kame_dgx_benchmark_evidence_issue(
+    value: Any,
+    *,
+    report_path: str | Path | None = None,
+) -> str:
+    artifacts = _production_review_evidence_artifacts(value)
+    if not artifacts:
+        return "review_evidence_invalid:kame_dgx_benchmark_evidence:requires_local_validator_json"
+    base_dir = _production_review_report_base_dir(report_path)
+    attempted: list[str] = []
+    for artifact in artifacts:
+        path = _local_artifact_path(artifact, base_dir=base_dir)
+        if path is None:
+            attempted.append(f"{artifact}:not_local_file")
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            attempted.append(f"{artifact}:{sanitize_realtime_voice_error(exc)}")
+            continue
+        if _kame_dgx_benchmark_validation_payload_ok(payload):
+            return ""
+        attempted.append(f"{artifact}:validator_not_ok")
+    suffix = ",".join(attempted[:3])
+    return (
+        "review_evidence_invalid:kame_dgx_benchmark_evidence:"
+        "requires_local_validator_json"
+        f"[{suffix}]" if suffix else
+        "review_evidence_invalid:kame_dgx_benchmark_evidence:requires_local_validator_json"
+    )
+
+
+def _production_review_evidence_artifacts(value: Any) -> list[str]:
+    if not isinstance(value, Mapping):
+        return []
+    artifacts = value.get("artifacts")
+    if not isinstance(artifacts, list):
+        return []
+    return [str(item).strip() for item in artifacts if str(item or "").strip()]
+
+
+def _production_review_report_base_dir(report_path: str | Path | None) -> Path:
+    if report_path is None:
+        return Path.cwd()
+    path = Path(report_path).expanduser()
+    if path.suffix:
+        return path.parent
+    return path
+
+
+def _local_artifact_path(value: str, *, base_dir: Path) -> Path | None:
+    if value.startswith(("http://", "https://")):
+        return None
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = base_dir / path
+    return path
+
+
+def _kame_dgx_benchmark_validation_payload_ok(payload: Any) -> bool:
+    if not isinstance(payload, Mapping):
+        return False
+    if isinstance(payload.get("benchmark_evidence"), Mapping):
+        return bool(payload.get("ok") is True) and _kame_dgx_benchmark_validation_payload_ok(
+            payload["benchmark_evidence"]
+        )
+    if payload.get("ok") is not True:
+        return False
+    issues = payload.get("issues")
+    if isinstance(issues, list) and any(str(item or "").strip() for item in issues):
+        return False
+    coverage = payload.get("coverage")
+    if not isinstance(coverage, Mapping):
+        return False
+    return all(coverage.get(key) is True for key in KAME_DGX_REQUIRED_BENCHMARK_COVERAGE)
 
 
 if __name__ == "__main__":

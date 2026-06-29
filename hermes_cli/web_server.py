@@ -14103,7 +14103,7 @@ def _realtime_voice_production_launch_review_payload(
             "issues": [f"invalid_production_review_report:{sanitize_realtime_voice_error(exc)}"],
         }
 
-    issues = validate_production_review_report(report)
+    issues = validate_production_review_report(report, report_path=raw_path)
     reviewed_at = report.get("reviewed_at")
     reviewer = report.get("reviewer")
     raw_review_evidence = report.get("evidence")

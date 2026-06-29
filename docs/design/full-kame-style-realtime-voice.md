@@ -513,6 +513,10 @@ voice production review is not enough for this branch. Required KAME gates are:
 - all-local DGX Spark smoke with oracle, interface, ASR, TTS, and sidecar together
 - live Discord smoke for the full KAME path under production credentials
 
+The `kame_dgx_benchmark_evidence` production-review check must reference a
+local JSON artifact from the DGX Spark benchmark validator with `ok=true` and
+passing coverage for the required KAME matrix rows.
+
 ## Acceptance Criteria
 
 The full implementation is acceptable when:
