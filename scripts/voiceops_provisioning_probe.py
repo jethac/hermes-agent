@@ -1286,6 +1286,9 @@ def _build_readonly_discovery_report(
         "non_mutating": True,
         "does_not_grant_approval": True,
         "redacted_outputs_only": True,
+        "required_for_live_provisioning_approval": True,
+        "auth_context": "isolated_home",
+        "proves_existing_local_auth": False,
         "network_io_possible": run_discovery,
         "status": status,
         "failed_probe_ids": failed,
@@ -1562,10 +1565,13 @@ def build_probe_report(
 
     check_dicts = [asdict(check) for check in checks]
     required_failures = [check["check_id"] for check in check_dicts if check["required"] and check["status"] != "pass"]
+    if readonly_discovery["status"] != "pass":
+        required_failures.append("read_only_discovery_passed")
     area_status: dict[str, str] = {}
     for area in sorted({check["area"] for check in check_dicts}):
         area_checks = [check for check in check_dicts if check["area"] == area]
         area_status[area] = "pass" if all(check["status"] == "pass" for check in area_checks if check["required"]) else "fail"
+    area_status["read_only_discovery"] = "pass" if readonly_discovery["status"] == "pass" else "fail"
     ready = not required_failures
     report = {
         "generated_at": _utc_now(),
@@ -1620,6 +1626,8 @@ def _markdown(report: dict[str, Any]) -> str:
         f"- Ready: {'yes' if report['ready'] else 'no'}",
         "- Mode: non-mutating, bounded, PATH/env presence by default; version/help probes only when explicitly enabled",
         f"- Read-only discovery requested: {'yes' if report['read_only_discovery']['run_requested'] else 'no'}",
+        f"- Read-only discovery status: {report['read_only_discovery']['status']}",
+        "- Read-only discovery auth context: isolated HOME; does not prove the operator's normal CLI auth state",
         f"- Required failures: {', '.join(report['required_failures']) if report['required_failures'] else 'none'}",
         "",
         "## Safety Boundary",

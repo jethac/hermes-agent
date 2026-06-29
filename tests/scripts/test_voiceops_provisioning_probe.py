@@ -102,6 +102,7 @@ def _write_preflight_evidence(tmp_path: Path, payload: dict[str, object] | None 
 
 def test_probe_passes_with_safe_local_tools_and_redacts_outputs(tmp_path):
     calls: list[list[str]] = []
+    discovery_calls: list[list[str]] = []
 
     def fake_which(command: str) -> str | None:
         paths = {
@@ -120,6 +121,10 @@ def test_probe_passes_with_safe_local_tools_and_redacts_outputs(tmp_path):
             stderr="Bearer token_123456789abcdef",
         )
 
+    def fake_readonly_runner(argv: Sequence[str], _timeout_seconds: int) -> CommandResult:
+        discovery_calls.append(list(argv))
+        return CommandResult(exit_code=0, stdout="ok", stderr="")
+
     report = build_probe_report(
         env={
             "VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567",
@@ -130,7 +135,9 @@ def test_probe_passes_with_safe_local_tools_and_redacts_outputs(tmp_path):
         preflight_evidence_path=_write_preflight_evidence(tmp_path),
         which=fake_which,
         runner=fake_runner,
+        readonly_discovery_runner=fake_readonly_runner,
         run_commands=True,
+        run_readonly_discovery=True,
     )
 
     assert report["status"] == "ready"
@@ -145,6 +152,13 @@ def test_probe_passes_with_safe_local_tools_and_redacts_outputs(tmp_path):
         ["mppx", "--version"],
         ["twilio", "--version"],
     ]
+    assert discovery_calls == [
+        ["stripe", "projects", "list", "--limit", "10"],
+        ["link-cli", "auth", "status"],
+    ]
+    assert report["read_only_discovery"]["required_for_live_provisioning_approval"] is True
+    assert report["read_only_discovery"]["auth_context"] == "isolated_home"
+    assert report["read_only_discovery"]["proves_existing_local_auth"] is False
     assert all(any(arg in {"--version", "--help"} for arg in call[1:]) for call in calls)
     joined_calls = " ".join(" ".join(call) for call in calls)
     for forbidden in ["projects add", "spend-request create", "provision", "call create", "credential"]:
@@ -222,6 +236,7 @@ def test_probe_reports_required_failures_without_running_missing_tools():
         "phone_target",
         "phone_provider",
         "phone_provider_account",
+        "read_only_discovery_passed",
         "rollback_owner_refs",
     }
     assert calls == []
@@ -239,7 +254,9 @@ def test_probe_treats_no_command_probes_as_path_presence_only(tmp_path):
         runner=lambda _argv, _timeout_seconds: (_ for _ in ()).throw(AssertionError("runner should not be called")),
     )
 
-    assert report["ready"] is True
+    assert report["ready"] is False
+    assert report["required_failures"] == ["read_only_discovery_passed"]
+    assert report["area_status"]["read_only_discovery"] == "fail"
     assert all(probe["executed"] is False for probe in report["command_probes"])
     assert {probe["status"] for probe in report["command_probes"] if probe["found"]} == {"found"}
 
@@ -656,12 +673,15 @@ def test_preflight_evidence_manifest_merges_redacted_section_files(tmp_path):
         preflight_evidence_path=manifest_path,
         which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
         runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
     )
 
     assert loaded["loaded"] is True
     assert loaded["missing_fields"] == []
     assert loaded["validation_issues"] == []
     assert report["ready"] is True
+    assert report["read_only_discovery"]["status"] == "pass"
 
 
 def test_refresh_preflight_manifest_source_sha256_updates_section_files(tmp_path):
@@ -1327,6 +1347,8 @@ def test_probe_loads_env_file_key_presence_without_values(tmp_path):
         preflight_evidence_path=_write_preflight_evidence(tmp_path),
         which=lambda command: f"/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None,
         runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        run_readonly_discovery=True,
     )
 
     serialized = json.dumps(report)

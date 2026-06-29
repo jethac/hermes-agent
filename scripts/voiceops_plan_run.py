@@ -574,6 +574,10 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "full_phone_numbers_accepted": False,
                 "read_only_discovery_schema_version": "voiceops.milestone2.read_only_discovery.v1",
                 "read_only_discovery_grants_approval": False,
+                "read_only_discovery_required_for_live_provisioning_approval": True,
+                "read_only_discovery_required_status": "pass",
+                "read_only_discovery_auth_context": "isolated_home",
+                "read_only_discovery_proves_existing_local_auth": False,
                 "post_approval_receipts_schema_version": "voiceops.milestone2.post_approval_receipts.v1",
             },
             "rerun_commands": {
@@ -636,7 +640,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "run mutating Stripe Projects, Link spend, provider provisioning, or phone-call commands before approval",
             ],
             "completion_signal": (
-                "required_failures becomes []; milestone status becomes ready; if post-approval receipts are "
+                "required_failures becomes []; read_only_discovery_status is pass; milestone status becomes ready; if post-approval receipts are "
                 "supplied, post_approval_receipts_status is valid, post_approval_receipts_validation_issues is [], "
                 "receipt_count covers all expected approval-required actions, and audit-ledger.post-approval.jsonl is populated"
             ),

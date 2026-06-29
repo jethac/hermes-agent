@@ -441,7 +441,22 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "process cwd is never used"
     )
     assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["example_only_accepted"] is False
+    assert (
+        gates["spend_and_provisioning_preflight"]["evidence_contract"][
+            "read_only_discovery_required_for_live_provisioning_approval"
+        ]
+        is True
+    )
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["read_only_discovery_required_status"] == "pass"
+    assert gates["spend_and_provisioning_preflight"]["evidence_contract"]["read_only_discovery_auth_context"] == "isolated_home"
+    assert (
+        gates["spend_and_provisioning_preflight"]["evidence_contract"][
+            "read_only_discovery_proves_existing_local_auth"
+        ]
+        is False
+    )
     assert "post_approval_receipts_status is valid" in gates["spend_and_provisioning_preflight"]["completion_signal"]
+    assert "read_only_discovery_status is pass" in gates["spend_and_provisioning_preflight"]["completion_signal"]
     assert "audit-ledger.post-approval.jsonl is populated" in gates["spend_and_provisioning_preflight"][
         "completion_signal"
     ]
@@ -650,7 +665,8 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     fake_bin = tmp_path / "bin"
     for binary in ["stripe", "link-cli", "mppx"]:
         _write_fake_bin(fake_bin, binary)
-    monkeypatch.setenv("PATH", str(fake_bin))
+    fake_path = os.pathsep.join([str(fake_bin), os.environ.get("PATH", "")])
+    monkeypatch.setenv("PATH", fake_path)
     live_evidence = _write_live_voice_evidence(tmp_path / "live-voice")
     preflight_evidence = _write_preflight_evidence(tmp_path / "preflight")
     post_approval_receipts = _write_post_approval_receipts(tmp_path / "post-approval")
@@ -660,7 +676,7 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
         artifact_root=artifact_root,
         output_dir=output_dir,
         env={
-            "PATH": str(fake_bin),
+            "PATH": fake_path,
             "DISCORD_BOT_TOKEN": "present-redacted",
             "DISCORD_GUILD_ID": "guild-ref-demo",
             "DISCORD_HOME_CHANNEL": "channel-ref-demo",
@@ -672,6 +688,7 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
         provisioning_preflight_evidence=preflight_evidence,
         post_approval_receipts=post_approval_receipts,
         evidence_paths=[spark_evidence],
+        run_readonly_discovery=True,
     )
 
     statuses = {result["milestone"]: result["status"] for result in summary["results"]}
@@ -692,6 +709,9 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     assert provisioning_result["details"]["post_approval_receipts_status"] == "valid"
     assert provisioning_result["details"]["post_approval_receipt_count"] == 4
     assert provisioning_result["details"]["post_approval_receipts_validation_issues"] == []
+    assert provisioning_result["details"]["read_only_discovery_status"] == "pass"
+    assert provisioning_result["details"]["run_readonly_discovery"] is True
+    assert "--run-readonly-discovery" in provisioning_result["command"]
     assert "--preflight-evidence" in provisioning_result["command"]
     assert str(preflight_evidence) in provisioning_result["command"]
     assert "--post-approval-receipts" in provisioning_result["command"]
@@ -703,13 +723,13 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
         "env_secret_values_emitted": False,
         "live_spend": False,
         "mutating_network_io": False,
-        "network_io": False,
-        "network_io_scope": "none",
+        "network_io": True,
+        "network_io_scope": "allowlisted_read_only_discovery",
         "outbound_calls": False,
         "outbound_sends": False,
         "provider_provisioning": False,
         "read_only_discovery_grants_approval": False,
-        "read_only_discovery_run_requested": False,
+        "read_only_discovery_run_requested": True,
     }
     assert summary["closure_index"]["operator_handoff"]["changes_readiness_by_itself"] is False
     assert summary["closure_index"]["operator_handoff"]["final_success_signal"] == (
@@ -845,6 +865,10 @@ def test_goal_doc_keeps_super_local_and_ultra_hosted():
     assert "Hosted selections do not count as Spark-local readiness evidence" in text
     assert "There should not be a separate `oracle_model` setting for VoiceOps" in text
     assert "`/model` remains authoritative" in text
+    assert "Display-only discovery is a separate opt-in path" in text
+    assert "required before Milestone 2 can be considered ready for live provisioning approval" in text
+    assert "isolated temporary `HOME`" in text
+    assert "does not prove the operator's normal local CLI auth state" in text
 
 
 def test_plan_run_keeps_provisioning_incomplete_without_preflight_evidence(tmp_path):
