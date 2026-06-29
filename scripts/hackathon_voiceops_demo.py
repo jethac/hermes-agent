@@ -1774,7 +1774,11 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
             "name": args.demo_name,
             "request": args.request,
             "operator": "Hermes VoiceOps",
-            "submission_theme": "give a Spark-powered Hermes agent spending money over Discord, let it provision VoIP through Stripe Skills, then continue by phone",
+            "submission_theme": (
+                "static dry-run package: Spark target selected, live evidence pending; "
+                "give Hermes a Discord voice budget, queue Stripe Skills VoIP provisioning, "
+                "and preserve context for phone handoff"
+            ),
         },
         "sponsor_stack": _sponsor_stack(args.active_model),
         "spark_stack": _spark_stack(args.active_model, args.reflex_model),
@@ -1807,6 +1811,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "## One-line pitch",
         "",
         "Hermes VoiceOps turns a DGX Spark into a local-first operator for a household and business, with Discord voice as the intended live front door and WhatsApp/phone as approval-gated follow-on paths.",
+        "This package is a static dry-run package: Spark target selected, live evidence pending, and spend/provisioning gated by approval.",
         "",
         "## Sponsor stack",
         "",
@@ -1934,7 +1939,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         "",
         "## Submission Tweet",
         "",
-        "Hermes VoiceOps: I give a Spark-powered Hermes agent a budget over Discord voice, it builds a NemoClaw-safe plan, queues Stripe Skills provisioning for VoIP, and preserves context for a phone handoff. Local-first household/business ops, with spend gated by approval. @NousResearch",
+        "Hermes VoiceOps: static dry-run package, Spark target selected, live evidence pending. I give Hermes a Discord voice budget; it builds a NemoClaw-safe plan, queues Stripe Skills VoIP provisioning, and preserves context for phone handoff. Spend gated by approval. @NousResearch",
         "",
     ]
     return "\n".join(lines)
@@ -1956,7 +1961,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "",
         "## Goal",
         "",
-        "Record a 1-3 minute hackathon video showing Hermes as a Spark-powered household and business operator: Discord voice in, Stripe Skills budget and provisioning plan, NemoClaw safety boundary, and phone handoff with preserved context.",
+        "Record a 1-3 minute hackathon video showing a static dry-run VoiceOps package: Spark target selected, live evidence pending, Discord voice budget in, Stripe Skills provisioning plan, NemoClaw safety boundary, and phone handoff context preserved.",
         "",
         "## Regenerate Artifacts",
         "",
@@ -2028,7 +2033,7 @@ def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "",
         "## Tweet Draft",
         "",
-        "Hermes VoiceOps: I give a Spark-powered Hermes agent a budget over Discord voice, it builds a NemoClaw-safe plan, queues Stripe Skills provisioning for VoIP, and preserves context for a phone handoff. Local-first household/business ops, with spend gated by approval. @NousResearch",
+        "Hermes VoiceOps: static dry-run package, Spark target selected, live evidence pending. I give Hermes a Discord voice budget; it builds a NemoClaw-safe plan, queues Stripe Skills VoIP provisioning, and preserves context for phone handoff. Spend gated by approval. @NousResearch",
         "",
     ]
     return "\n".join(lines)

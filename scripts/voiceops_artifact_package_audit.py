@@ -24,6 +24,98 @@ from scripts.voiceops_channel_policy import CHANNEL_IDS, validate_policy
 DEFAULT_ARTIFACT_ROOT = Path("artifacts")
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-package-audit/current")
 AUDIT_SCHEMA_VERSION = "voiceops.artifact_package_audit.v1"
+EXPECTED_PACKAGE_ARTIFACTS = (
+    "hackathon-voiceops-demo/current/audit-ledger.jsonl",
+    "hackathon-voiceops-demo/current/demo-script.md",
+    "hackathon-voiceops-demo/current/milestone2-execution-plan.json",
+    "hackathon-voiceops-demo/current/nemoclaw-action-packet.json",
+    "hackathon-voiceops-demo/current/nemoclaw-action-packet.validation.json",
+    "hackathon-voiceops-demo/current/operator-dashboard.html",
+    "hackathon-voiceops-demo/current/operator-handoff-preview.json",
+    "hackathon-voiceops-demo/current/operator-handoff-preview.md",
+    "hackathon-voiceops-demo/current/operator-state-events.jsonl",
+    "hackathon-voiceops-demo/current/operator-state.json",
+    "hackathon-voiceops-demo/current/phone-context.json",
+    "hackathon-voiceops-demo/current/readiness-closure-summary.json",
+    "hackathon-voiceops-demo/current/readiness-closure-summary.md",
+    "hackathon-voiceops-demo/current/readiness-report.json",
+    "hackathon-voiceops-demo/current/readiness-report.md",
+    "hackathon-voiceops-demo/current/recording-runbook.md",
+    "hackathon-voiceops-demo/current/stripe-actions-dry-run.sh",
+    "hackathon-voiceops-demo/current/submission-writeup.md",
+    "hackathon-voiceops-demo/current/voiceops-demo.json",
+    "hackathon-voiceops-demo/current/voiceops-demo.md",
+    "voiceops-channel-policy/current/channel-policy-review.json",
+    "voiceops-channel-policy/current/channel-policy-review.md",
+    "voiceops-channel-policy/current/channel-policy.json",
+    "voiceops-channel-policy/current/channel-policy.md",
+    "voiceops-operator-state/current/operator-state-events.jsonl",
+    "voiceops-operator-state/current/operator-state.json",
+    "voiceops-operator-state/current/operator-state.md",
+    "voiceops-plan/current/operator-handoff.json",
+    "voiceops-plan/current/operator-handoff.md",
+    "voiceops-plan/current/readiness-closure-index.json",
+    "voiceops-plan/current/readiness-closure-index.md",
+    "voiceops-plan/current/voiceops-plan-run.json",
+    "voiceops-plan/current/voiceops-plan-run.md",
+    "voiceops-provisioning/current/audit-ledger.post-approval.jsonl",
+    "voiceops-provisioning/current/audit-ledger.read-only-discovery.jsonl",
+    "voiceops-provisioning/current/milestone2-execution-plan.json",
+    "voiceops-provisioning/current/milestone2-execution-plan.md",
+    "voiceops-provisioning/current/nemoclaw-action-packet.validation.json",
+    "voiceops-provisioning/current/post-approval-receipts-scaffold/post-approval-receipts.json",
+    "voiceops-provisioning/current/post-approval-receipts.example.json",
+    "voiceops-provisioning/current/post-approval-receipts.template.json",
+    "voiceops-provisioning/current/post-approval-receipts.validation.json",
+    "voiceops-provisioning/current/provisioning-preflight-evidence.example.json",
+    "voiceops-provisioning/current/provisioning-preflight-evidence.manifest.example.json",
+    "voiceops-provisioning/current/provisioning-preflight-evidence.template.json",
+    "voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json",
+    "voiceops-provisioning/current/provisioning-preflight-scaffold/sections/nemoclaw-boundary-evidence.json",
+    "voiceops-provisioning/current/provisioning-preflight-scaffold/sections/phone-handoff-evidence.json",
+    "voiceops-provisioning/current/provisioning-preflight-scaffold/sections/rollback-owner-evidence.json",
+    "voiceops-provisioning/current/provisioning-preflight-scaffold/sections/stripe-link-evidence.json",
+    "voiceops-provisioning/current/provisioning-preflight-scaffold/sections/stripe-projects-evidence.json",
+    "voiceops-provisioning/current/provisioning-preflight-scaffold/sources/nemoclaw-boundary-redacted-source.json",
+    "voiceops-provisioning/current/provisioning-preflight-scaffold/sources/phone-handoff-redacted-source.json",
+    "voiceops-provisioning/current/provisioning-preflight-scaffold/sources/rollback-owners-redacted-source.json",
+    "voiceops-provisioning/current/provisioning-preflight-scaffold/sources/stripe-link-redacted-source.json",
+    "voiceops-provisioning/current/provisioning-preflight-scaffold/sources/stripe-projects-redacted-source.json",
+    "voiceops-provisioning/current/provisioning-readiness.json",
+    "voiceops-provisioning/current/provisioning-readiness.md",
+    "voiceops-provisioning/current/read-only-discovery.json",
+    "voiceops-provisioning/current/read-only-discovery.manifest.json",
+    "voiceops-provisioning/current/read-only-discovery.md",
+    "voiceops-provisioning/current/safe-command-manifest.json",
+    "voiceops-provisioning/current/setup-closure-plan.json",
+    "voiceops-provisioning/current/setup-closure-plan.md",
+    "voiceops-spark-matrix/current/spark-benchmark-evidence-template.json",
+    "voiceops-spark-matrix/current/spark-benchmark-evidence.example.json",
+    "voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/all-local-stack-smoke-raw.json",
+    "voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/asr-nemotron-speech-raw.json",
+    "voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/oracle-nemotron3-super-raw.json",
+    "voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/reflex-gemma4-e2b-raw.json",
+    "voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/reflex-gemma4-e4b-raw.json",
+    "voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/tts-magpie-local-raw.json",
+    "voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json",
+    "voiceops-spark-matrix/current/spark-matrix-closure-plan.json",
+    "voiceops-spark-matrix/current/spark-matrix-closure-plan.md",
+    "voiceops-spark-matrix/current/spark-model-matrix.json",
+    "voiceops-spark-matrix/current/spark-model-matrix.md",
+    "voiceops-spark-matrix/current/spark-operator-runbook.md",
+    "voiceops-voice-operator/current/discord-loopback-smoke.json",
+    "voiceops-voice-operator/current/live-probe-closure-plan.json",
+    "voiceops-voice-operator/current/live-probe-closure-plan.md",
+    "voiceops-voice-operator/current/live-voice-evidence-scaffold/manifest.json",
+    "voiceops-voice-operator/current/live-voice-evidence-scaffold/sections/discord-live-probe.json",
+    "voiceops-voice-operator/current/live-voice-evidence-scaffold/sections/live-turn.json",
+    "voiceops-voice-operator/current/live-voice-evidence-scaffold/sections/sidecar-session.json",
+    "voiceops-voice-operator/current/live-voice-evidence-template.json",
+    "voiceops-voice-operator/current/live-voice-evidence.example.json",
+    "voiceops-voice-operator/current/voice-operator-events.jsonl",
+    "voiceops-voice-operator/current/voice-operator-readiness.json",
+    "voiceops-voice-operator/current/voice-operator-readiness.md",
+)
 
 
 def _read_json(path: Path, issues: list[str], label: str) -> dict[str, Any]:
@@ -67,6 +159,23 @@ def _read_jsonl(path: Path, issues: list[str], label: str) -> list[dict[str, Any
             continue
         rows.append(row)
     return rows
+
+
+def _audit_expected_package_artifacts(artifact_root: Path, issues: list[str]) -> list[str]:
+    checked_artifacts: list[str] = []
+    for relative_path in EXPECTED_PACKAGE_ARTIFACTS:
+        path = artifact_root / relative_path
+        label = f"package_artifact:{relative_path}"
+        if path.suffix == ".json":
+            _read_json(path, issues, label)
+        elif path.suffix == ".jsonl":
+            _read_jsonl(path, issues, label)
+        else:
+            text = _read_text(path, issues, label)
+            if not text.strip():
+                issues.append(f"{label}:empty")
+        checked_artifacts.append(str(path))
+    return checked_artifacts
 
 
 def _dry_run_metadata_rows(script_text: str, issues: list[str]) -> list[dict[str, Any]]:
@@ -134,6 +243,8 @@ def _audit_static_readiness(
             if not voice_surface.get("fallback_reason"):
                 issues.append("operator_state:active_for_demo_without_visible_fallback_reason")
         required_dashboard_tokens = [
+            "static dry-run package",
+            "Spark target selected, live evidence pending",
             "scripted_static_ack_until_live_voice_evidence",
             "needs_live_probe",
             "needs_setup",
@@ -417,6 +528,9 @@ def _reject_markdown_tokens(label: str, markdown: str, tokens: Mapping[str, str]
 
 def _audit_markdown_consistency(
     *,
+    demo_markdown: str,
+    recording_runbook_markdown: str,
+    submission_writeup_markdown: str,
     closure_markdown: str,
     operator_handoff_markdown: str,
     demo_handoff_markdown: str,
@@ -424,6 +538,36 @@ def _audit_markdown_consistency(
     channel_review_markdown: str,
     issues: list[str],
 ) -> None:
+    _require_markdown_tokens(
+        "demo_markdown",
+        demo_markdown,
+        {
+            "missing_static_dry_run_status": "static dry-run package",
+            "missing_spark_target_evidence_boundary": "Spark target selected, live evidence pending",
+            "missing_approval_gate": "spend/provisioning gated by approval",
+        },
+        issues,
+    )
+    _require_markdown_tokens(
+        "recording_runbook_markdown",
+        recording_runbook_markdown,
+        {
+            "missing_static_dry_run_status": "static dry-run VoiceOps package",
+            "missing_spark_target_evidence_boundary": "Spark target selected, live evidence pending",
+            "missing_secret_policy": "Do not show terminal panes or files that contain secrets",
+        },
+        issues,
+    )
+    _require_markdown_tokens(
+        "submission_writeup_markdown",
+        submission_writeup_markdown,
+        {
+            "missing_static_dry_run_status": "static dry-run package",
+            "missing_spark_target_evidence_boundary": "Spark target selected, live evidence pending",
+            "missing_spend_gate": "Spend gated by approval",
+        },
+        issues,
+    )
     _require_markdown_tokens(
         "closure_markdown",
         closure_markdown,
@@ -499,15 +643,19 @@ def _audit_markdown_consistency(
 def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]:
     issues: list[str] = []
     warnings: list[str] = []
+    checked_artifacts = _audit_expected_package_artifacts(artifact_root, issues)
     demo_dir = artifact_root / "hackathon-voiceops-demo" / "current"
     plan_dir = artifact_root / "voiceops-plan" / "current"
     channel_dir = artifact_root / "voiceops-channel-policy" / "current"
 
     demo = _read_json(demo_dir / "voiceops-demo.json", issues, "voiceops_demo")
+    demo_markdown = _read_text(demo_dir / "voiceops-demo.md", issues, "voiceops_demo_markdown")
     readiness = _read_json(demo_dir / "readiness-report.json", issues, "readiness_report")
     demo_closure = _read_json(demo_dir / "readiness-closure-summary.json", issues, "demo_closure")
     demo_handoff = _read_json(demo_dir / "operator-handoff-preview.json", issues, "demo_handoff")
     demo_handoff_markdown = _read_text(demo_dir / "operator-handoff-preview.md", issues, "demo_handoff_markdown")
+    recording_runbook_markdown = _read_text(demo_dir / "recording-runbook.md", issues, "recording_runbook_markdown")
+    submission_writeup_markdown = _read_text(demo_dir / "submission-writeup.md", issues, "submission_writeup_markdown")
     operator_state = _read_json(demo_dir / "operator-state.json", issues, "operator_state")
     packet = _read_json(demo_dir / "nemoclaw-action-packet.json", issues, "nemoclaw_packet")
     packet_validation = _read_json(
@@ -563,6 +711,9 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     )
     _audit_channel_policy(channel_policy, channel_review, issues)
     _audit_markdown_consistency(
+        demo_markdown=demo_markdown,
+        recording_runbook_markdown=recording_runbook_markdown,
+        submission_writeup_markdown=submission_writeup_markdown,
         closure_markdown=plan_closure_markdown,
         operator_handoff_markdown=plan_handoff_markdown,
         demo_handoff_markdown=demo_handoff_markdown,
@@ -571,28 +722,6 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         issues=issues,
     )
 
-    checked_artifacts = [
-        str(demo_dir / "voiceops-demo.json"),
-        str(demo_dir / "readiness-report.json"),
-        str(demo_dir / "readiness-closure-summary.json"),
-        str(demo_dir / "operator-handoff-preview.json"),
-        str(demo_dir / "operator-handoff-preview.md"),
-        str(demo_dir / "operator-state.json"),
-        str(demo_dir / "operator-dashboard.html"),
-        str(demo_dir / "nemoclaw-action-packet.json"),
-        str(demo_dir / "nemoclaw-action-packet.validation.json"),
-        str(demo_dir / "audit-ledger.jsonl"),
-        str(demo_dir / "stripe-actions-dry-run.sh"),
-        str(plan_dir / "voiceops-plan-run.json"),
-        str(plan_dir / "readiness-closure-index.json"),
-        str(plan_dir / "readiness-closure-index.md"),
-        str(plan_dir / "operator-handoff.json"),
-        str(plan_dir / "operator-handoff.md"),
-        str(channel_dir / "channel-policy.json"),
-        str(channel_dir / "channel-policy.md"),
-        str(channel_dir / "channel-policy-review.json"),
-        str(channel_dir / "channel-policy-review.md"),
-    ]
     return {
         "schema_version": AUDIT_SCHEMA_VERSION,
         "artifact_id": "voiceops-artifact-package-audit",

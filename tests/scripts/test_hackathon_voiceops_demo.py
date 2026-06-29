@@ -390,6 +390,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert operator_events[0]["audit_id"] == "evt-001"
     assert validate_operator_state(operator_state) == []
     assert "DGX Spark" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "static dry-run package" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "Spark target selected, live evidence pending" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "via Hermes /model via Hermes" not in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "nemoclaw-action-packet.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "nemoclaw-action-packet.validation.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
@@ -410,6 +412,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "planned post-approval Stripe-provisioned VoIP path" in demo_script
     runbook = Path(paths["recording_runbook"]).read_text(encoding="utf-8")
     assert "VoiceOps Recording Runbook" in runbook
+    assert "static dry-run VoiceOps package" in runbook
+    assert "Spark target selected, live evidence pending" in runbook
     assert "Shot List" in runbook
     assert "@NousResearch" in runbook
     assert "Do not show terminal panes or files that contain secrets" in runbook
@@ -433,6 +437,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Closure artifact: `spark-model-matrix.md`" not in runbook
     writeup = Path(paths["submission_writeup"]).read_text(encoding="utf-8")
     assert "Hermes VoiceOps Submission Writeup" in writeup
+    assert "static dry-run package" in writeup
+    assert "Spark target selected, live evidence pending" in writeup
     assert "NemoClaw" in writeup
     assert "Stripe Skills" in writeup
     assert "@NousResearch" in writeup
@@ -443,6 +449,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "all_local_stack_smoke:needs_evidence" in writeup
     assert "read-only-discovery.json" in Path(paths["dashboard"]).read_text(encoding="utf-8")
     dashboard = Path(paths["dashboard"]).read_text(encoding="utf-8")
+    assert "static dry-run package" in dashboard
+    assert "Spark target selected, live evidence pending" in dashboard
     assert "Nemotron 3 Super" in dashboard
     assert "KAME Reflex Ack" in dashboard
     assert "scripted_static_ack_until_live_voice_evidence" in dashboard

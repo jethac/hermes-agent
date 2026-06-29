@@ -30,7 +30,7 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert report["status"] == "pass"
     assert report["ok"] is True
     assert report["issues"] == []
-    assert report["checked_artifact_count"] == 20
+    assert report["checked_artifact_count"] == 90
     assert str(artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json") in report[
         "checked_artifacts"
     ]
@@ -51,6 +51,18 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert str(artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.md") in report[
         "checked_artifacts"
     ]
+    assert str(artifact_root / "voiceops-voice-operator" / "current" / "live-voice-evidence-scaffold" / "manifest.json") in report[
+        "checked_artifacts"
+    ]
+    assert str(artifact_root / "voiceops-provisioning" / "current" / "provisioning-preflight-scaffold" / "provisioning-preflight-evidence.manifest.json") in report[
+        "checked_artifacts"
+    ]
+    assert str(artifact_root / "voiceops-spark-matrix" / "current" / "spark-operator-runbook.md") in report[
+        "checked_artifacts"
+    ]
+    assert str(artifact_root / "voiceops-operator-state" / "current" / "operator-state.md") in report[
+        "checked_artifacts"
+    ]
     assert report["safety"] == {
         "discord_io": False,
         "env_files_read": False,
@@ -64,6 +76,41 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     }
     assert Path(paths["json"]).exists()
     assert Path(paths["markdown"]).read_text(encoding="utf-8").startswith("# VoiceOps Artifact Package Audit")
+
+
+def test_package_audit_rejects_missing_promised_runbook(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    missing_path = artifact_root / "voiceops-spark-matrix" / "current" / "spark-operator-runbook.md"
+    missing_path.unlink()
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "package_artifact:voiceops-spark-matrix/current/spark-operator-runbook.md:"
+        f"missing:{missing_path}"
+    ) in report["issues"]
+
+
+def test_package_audit_rejects_malformed_promised_scaffold_json(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    scaffold_path = (
+        artifact_root
+        / "voiceops-provisioning"
+        / "current"
+        / "provisioning-preflight-scaffold"
+        / "provisioning-preflight-evidence.manifest.json"
+    )
+    scaffold_path.write_text("{not-json", encoding="utf-8")
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "package_artifact:voiceops-provisioning/current/provisioning-preflight-scaffold/"
+        "provisioning-preflight-evidence.manifest.json:json_parse_failed:"
+        "Expecting property name enclosed in double quotes"
+    ) in report["issues"]
 
 
 def test_package_audit_rejects_live_dashboard_claim_with_open_gates(tmp_path):
@@ -281,6 +328,36 @@ def test_package_audit_rejects_demo_handoff_markdown_drift(tmp_path):
     assert "demo_handoff_markdown:missing_package_audit_section" in report["issues"]
     assert "demo_handoff_markdown:missing_package_audit_flag" in report["issues"]
     assert "demo_handoff_markdown:missing_no_secret_policy" in report["issues"]
+
+
+def test_package_audit_rejects_public_recording_copy_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    demo_markdown_path = artifact_root / "hackathon-voiceops-demo" / "current" / "voiceops-demo.md"
+    runbook_path = artifact_root / "hackathon-voiceops-demo" / "current" / "recording-runbook.md"
+    writeup_path = artifact_root / "hackathon-voiceops-demo" / "current" / "submission-writeup.md"
+    demo_markdown_path.write_text(
+        demo_markdown_path.read_text(encoding="utf-8").replace(
+            "static dry-run package", "live demo package"
+        ),
+        encoding="utf-8",
+    )
+    runbook_path.write_text(
+        runbook_path.read_text(encoding="utf-8").replace(
+            "Spark target selected, live evidence pending", "Spark evidence complete"
+        ),
+        encoding="utf-8",
+    )
+    writeup_path.write_text(
+        writeup_path.read_text(encoding="utf-8").replace("Spend gated by approval", "Spend already executed"),
+        encoding="utf-8",
+    )
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "demo_markdown:missing_static_dry_run_status" in report["issues"]
+    assert "recording_runbook_markdown:missing_spark_target_evidence_boundary" in report["issues"]
+    assert "submission_writeup_markdown:missing_spend_gate" in report["issues"]
 
 
 def test_package_audit_rejects_channel_policy_review_markdown_drift(tmp_path):
