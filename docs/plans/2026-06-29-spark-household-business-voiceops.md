@@ -527,6 +527,16 @@ For the hackathon demo, the generated `operator-dashboard.html` from Milestone 0
 
 Run every currently headless VoiceOps milestone artifact generator and write one evidence index:
 
+No-write preflight:
+
+```bash
+uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --dry-audit
+```
+
+`--dry-audit` builds the same plan summary in a temporary artifact root, prints the readiness gaps, closure status, safety flags, and current-environment blockers, then removes the temporary artifacts on exit. It does not write the requested artifact paths, and it refuses `--run-command-probes` and `--run-readonly-discovery` so it cannot silently become a subprocess or network-capable probe. Its `ok` field means no hard validation failures, not readiness; use `readiness_ok` or `closure_status: complete` for readiness automation.
+
+Artifact-writing indexer:
+
 ```bash
 uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current
 ```
@@ -546,7 +556,7 @@ The command writes:
 - `operator-handoff.json`
 - `operator-handoff.md`
 
-The plan run is artifact-only. It should surface readiness gaps such as missing Stripe/phone local setup or missing DGX Spark benchmark evidence, but those gaps must not cause live spend, provider provisioning, outbound messaging, calls, or secret reads.
+The plain plan run is artifact-only but writes the artifact tree above. It should surface readiness gaps such as missing Stripe/phone local setup or missing DGX Spark benchmark evidence, but those gaps must not cause live spend, provider provisioning, outbound messaging, calls, or secret reads. Use `--dry-audit` first when the operator wants the same status check without persistent artifact writes.
 
 The readiness closure index is the top-level next-action map for the remaining external evidence gates. It must keep live Discord voice evidence, Stripe/MPP/phone provisioning evidence, and DGX Spark benchmark evidence separate, list the required proof shape for each gate, point at the relevant evidence templates and closure plans, and continue to report `needs_external_evidence` until supplied artifacts prove the live gates. It must never collapse missing live evidence into a single ready claim.
 

@@ -395,6 +395,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert "--refresh-preflight-source-hashes" in json.dumps(handoff["phases"][1]["commands"])
     assert "--run-command-probes" in json.dumps(handoff["phases"][1]["commands"])
+    assert handoff["phases"][1]["commands"][0].endswith("--dry-audit")
+    assert handoff["phases"][1]["command_safety"]["plan_index_dry_audit"] == "no_write_no_network_no_probe_audit"
+    assert handoff["phases"][1]["command_safety"]["read_only_discovery"] == "network_possible_allowlisted_read_only"
+    assert handoff["phases"][1]["command_safety"]["validate_post_approval_receipts"] == "post_approval_local_validation_only"
     assert "scripts/voiceops_plan_run.py" in json.dumps(handoff["phases"][1]["commands"])
     assert "--run-readonly-discovery" in json.dumps(handoff["phases"][1]["commands"])
     assert "--post-approval-receipts" in json.dumps(handoff["phases"][1]["commands"])
@@ -418,6 +422,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "plan_index_manifest_and_post_approval_receipts" in json.dumps(
         gates["spend_and_provisioning_preflight"]["rerun_commands"]
     )
+    assert "--dry-audit" in gates["spend_and_provisioning_preflight"]["rerun_commands"]["plan_index_dry_audit"]
     assert "plan_index_command_probes" in gates["spend_and_provisioning_preflight"]["rerun_commands"]
     assert "--run-command-probes" in gates["spend_and_provisioning_preflight"]["rerun_commands"][
         "plan_index_command_probes"
@@ -672,6 +677,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "validate_post_approval_receipts" in provisioning_gate["collection_commands"]
     assert "read_only_discovery" in provisioning_gate["collection_commands"]
     assert "refresh_preflight_source_hashes" in provisioning_gate["collection_commands"]
+    assert "--dry-audit" in provisioning_gate["rerun_commands"]["plan_index_dry_audit"]
     assert "--refresh-preflight-source-hashes" in provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"]
     assert "--run-readonly-discovery" in provisioning_gate["collection_commands"]["read_only_discovery"]
     assert "--run-readonly-discovery" in provisioning_gate["rerun_commands"]["plan_index_read_only_discovery"]
@@ -709,6 +715,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "voiceops.milestone2.preflight_evidence_manifest.v1" in closure_markdown
     assert "provisioning-preflight-evidence.manifest.json" in closure_markdown
     assert "--refresh-preflight-source-hashes" in closure_markdown
+    assert "--dry-audit" in closure_markdown
+    assert "network_possible_allowlisted_read_only" in closure_markdown
     assert "voiceops.spark_benchmark_evidence.v1" in closure_markdown
     assert "spark-benchmark-evidence.example.json" in closure_markdown
     assert "spark-operator-runbook.md" in closure_markdown
@@ -720,6 +728,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "live_discord_voice" in handoff_markdown
     assert "sidecar_mode=production" in handoff_markdown
     assert "provider_transport_observed" in handoff_markdown
+    assert "--dry-audit" in handoff_markdown
+    assert "no_write_no_network_no_probe_audit" in handoff_markdown
     assert "Final reindex command" in handoff_markdown
     assert "milestone_0_hackathon_proof" in markdown
 
@@ -915,6 +925,8 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "spark-operator-runbook.md" in text
     assert "The operator handoff is the ordered execution runbook" in text
     assert "does not change readiness by itself" in text
+    assert "`--dry-audit` builds the same plan summary in a temporary artifact root" in text
+    assert "Its `ok` field means no hard validation failures, not readiness" in text
     assert "closure rehearsal" in text.lower()
     assert "`remaining_gates: []`" in text
 
@@ -1073,6 +1085,8 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
 
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
+    assert payload["ok_meaning"] == "no hard validation failures; not a readiness claim"
+    assert payload["readiness_ok"] is False
     assert payload["dry_audit"] is True
     assert payload["persistent_writes"] is False
     assert payload["temporary_artifacts_removed_on_exit"] is True

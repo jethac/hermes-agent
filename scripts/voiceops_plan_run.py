@@ -315,6 +315,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "redacted source artifacts with matching SHA-256",
                 ],
                 "commands": [
+                    provisioning_gate["rerun_commands"]["plan_index_dry_audit"],
                     provisioning_gate["collection_commands"]["presence_only"],
                     provisioning_gate["collection_commands"]["bounded_version_help"],
                     provisioning_gate["rerun_commands"]["plan_index_command_probes"],
@@ -325,6 +326,18 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
                     provisioning_gate["rerun_commands"]["plan_index_manifest_and_post_approval_receipts"],
                 ],
+                "command_safety": {
+                    "plan_index_dry_audit": "no_write_no_network_no_probe_audit",
+                    "presence_only": "offline_presence_only",
+                    "bounded_version_help": "local_subprocess_only_no_network_intent",
+                    "plan_index_command_probes": "local_subprocess_only_no_network_intent",
+                    "read_only_discovery": "network_possible_allowlisted_read_only",
+                    "plan_index_read_only_discovery": "network_possible_allowlisted_read_only",
+                    "refresh_preflight_source_hashes": "local_file_hashing_only",
+                    "ingest_preflight_manifest": "local_file_validation_only",
+                    "validate_post_approval_receipts": "post_approval_local_validation_only",
+                    "plan_index_manifest_and_post_approval_receipts": "local_reindex_only",
+                },
                 "expected_artifacts": [
                     "artifacts/voiceops-provisioning/current/read-only-discovery.json",
                     "artifacts/voiceops-provisioning/current/read-only-discovery.md",
@@ -619,6 +632,10 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "post_approval_receipts_schema_version": "voiceops.milestone2.post_approval_receipts.v1",
             },
             "rerun_commands": {
+                "plan_index_dry_audit": (
+                    "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "
+                    "--output-dir artifacts/voiceops-plan/current --dry-audit"
+                ),
                 "presence_only": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env"
@@ -1288,6 +1305,11 @@ def _operator_handoff_markdown(handoff: dict[str, Any]) -> str:
                     lines.append(f"- {label}:")
                     for item in items:
                         lines.append(f"  - `{item}`" if label in {"commands", "expected_artifacts"} else f"  - {item}")
+            command_safety = phase.get("command_safety")
+            if isinstance(command_safety, dict):
+                lines.append("- command_safety:")
+                for label, value in sorted(command_safety.items()):
+                    lines.append(f"  - `{label}`: `{value}`")
     lines.append(f"- Final reindex command: `{handoff.get('final_reindex_command')}`")
     lines.append(f"- Final success signal: {handoff.get('final_success_signal')}")
     return "\n".join(lines)
@@ -1364,6 +1386,11 @@ def main(argv: list[str] | None = None) -> int:
                 json.dumps(
                     {
                         "ok": summary["ok"],
+                        "ok_meaning": "no hard validation failures; not a readiness claim",
+                        "readiness_ok": (
+                            summary["closure_index"]["closure_status"] == "complete"
+                            and summary["readiness_gaps"] == []
+                        ),
                         "dry_audit": True,
                         "persistent_writes": False,
                         "temporary_artifacts_removed_on_exit": True,
