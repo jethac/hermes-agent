@@ -20,6 +20,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "dashboard",
         "nemoclaw_packet",
         "phone_context",
+        "recording_runbook",
         "readiness_json",
         "readiness_markdown",
         "stripe_actions",
@@ -48,8 +49,14 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "phone-context.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "readiness-report.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "operator-dashboard.html" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "recording-runbook.md" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "spoken in Discord" in Path(paths["demo_script"]).read_text(encoding="utf-8")
     assert "outbound phone call" in Path(paths["demo_script"]).read_text(encoding="utf-8")
+    runbook = Path(paths["recording_runbook"]).read_text(encoding="utf-8")
+    assert "VoiceOps Recording Runbook" in runbook
+    assert "Shot List" in runbook
+    assert "@NousResearch" in runbook
+    assert "Do not show terminal panes or files that contain secrets" in runbook
     dashboard = Path(paths["dashboard"]).read_text(encoding="utf-8")
     assert "Nemotron 3 Ultra" in dashboard
     assert "NemoClaw Blocks" in dashboard

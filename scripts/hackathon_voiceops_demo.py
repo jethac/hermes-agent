@@ -626,6 +626,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "- `phone-context.json`: outbound phone-call handoff context preserved from Discord",
         "- `readiness-report.json`: local recording prerequisite report",
         "- `operator-dashboard.html`: static recording dashboard for budget, approvals, guardrails, and handoff state",
+        "- `recording-runbook.md`: shot list, fallback plan, and submission checklist",
         "",
         "## 90-second video beat sheet",
         "",
@@ -637,6 +638,80 @@ def _markdown(demo: dict[str, Any]) -> str:
         "6. Close by continuing the same task from the phone-call surface.",
         "",
     ])
+    return "\n".join(lines)
+
+
+def _recording_runbook(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
+    failures = readiness["required_failures"]
+    fallback = (
+        "Use the static dashboard plus generated dry-run packets; narrate the missing required checks directly."
+        if failures
+        else "Record live Discord voice first, then cut to the dashboard and generated action packets."
+    )
+    lines = [
+        "# VoiceOps Recording Runbook",
+        "",
+        "## Goal",
+        "",
+        "Record a 1-3 minute hackathon video showing Hermes as a Spark-powered household and business operator: Discord voice in, Stripe Skills budget and provisioning plan, NemoClaw safety boundary, and phone handoff with preserved context.",
+        "",
+        "## Regenerate Artifacts",
+        "",
+        "```bash",
+        "uv run python scripts/hackathon_voiceops_demo.py --output-dir artifacts/hackathon-voiceops-demo/current",
+        "```",
+        "",
+        "Open `artifacts/hackathon-voiceops-demo/current/operator-dashboard.html` directly in a browser for the recording surface.",
+        "",
+        "## Readiness Gate",
+        "",
+        f"- Ready for recording: {'yes' if readiness['ready_for_recording'] else 'no'}",
+        f"- Required failures: {', '.join(failures) if failures else 'none'}",
+        f"- Recording fallback: {fallback}",
+        "",
+        "Do not show terminal panes or files that contain secrets. Do not run live spend or provisioning unless the user explicitly approves it during the recording.",
+        "",
+        "## Spoken Demo Prompt",
+        "",
+        "Say this in Discord voice:",
+        "",
+        f"> {demo['demo']['request']}",
+        "",
+        "## Shot List",
+        "",
+        "1. Discord voice: join the voice channel and say the prompt above.",
+        "2. Reflex response: show Hermes acknowledging the budget immediately and stating that billable actions require approval.",
+        "3. Oracle path: show Nemotron 3 Ultra selected through Hermes' normal `/model` flow or visible in the generated dashboard.",
+        "4. NemoClaw boundary: show `nemoclaw-action-packet.json` or the dashboard NemoClaw section before any billable/network-capable action.",
+        "5. Stripe Skills: show queued Stripe Projects VoIP provisioning and Link-gated service-credit spend in `stripe-actions-dry-run.sh` or the dashboard approval queue.",
+        "6. Phone handoff: show `phone-context.json` and narrate that the same Discord context is preserved for the outbound call.",
+        "7. Spark story: show or state that the target appliance is one DGX Spark running the reflex, speech stack, and preferred local model path.",
+        "",
+        "## If Live Voice Is Not Ready",
+        "",
+        "Use the generated package as the demo evidence instead of pretending the system is live:",
+        "",
+        "- `operator-dashboard.html` for the recording surface",
+        "- `voiceops-demo.md` for the concise story",
+        "- `nemoclaw-action-packet.json` for the approval boundary",
+        "- `stripe-actions-dry-run.sh` for non-mutating Stripe/Projects commands",
+        "- `phone-context.json` for the handoff context",
+        "- `audit-ledger.jsonl` for durable action evidence",
+        "",
+        "## Submission Checklist",
+        "",
+        "- Video is between 1 and 3 minutes.",
+        "- Video tags `@NousResearch` in the tweet.",
+        "- Short writeup mentions DGX Spark, Discord voice, Nemotron 3 Ultra, NemoClaw, and Stripe Skills.",
+        "- Submit the tweet link in the Nous Discord submissions channel.",
+        "- Fill out the hackathon Typeform submission.",
+        "- Confirm no API keys, phone numbers, tokens, or account secrets are visible.",
+        "",
+        "## Tweet Draft",
+        "",
+        "Hermes VoiceOps: I give a Spark-powered Hermes agent a budget over Discord voice, it builds a NemoClaw-safe plan, queues Stripe Skills provisioning for VoIP, and preserves context for a phone handoff. Local-first household/business ops, with spend gated by approval. @NousResearch",
+        "",
+    ]
     return "\n".join(lines)
 
 
@@ -995,6 +1070,7 @@ def write_demo(
         "readiness_json": output_dir / "readiness-report.json",
         "readiness_markdown": output_dir / "readiness-report.md",
         "dashboard": output_dir / "operator-dashboard.html",
+        "recording_runbook": output_dir / "recording-runbook.md",
         "stripe_actions": output_dir / "stripe-actions-dry-run.sh",
     }
     _write_json(paths["json"], demo)
@@ -1006,6 +1082,7 @@ def write_demo(
     _write_json(paths["readiness_json"], readiness)
     paths["readiness_markdown"].write_text(_readiness_markdown(readiness), encoding="utf-8")
     paths["dashboard"].write_text(_dashboard_html(demo, readiness), encoding="utf-8")
+    paths["recording_runbook"].write_text(_recording_runbook(demo, readiness), encoding="utf-8")
     paths["stripe_actions"].write_text(_stripe_script(demo["ops_actions"]), encoding="utf-8")
     paths["stripe_actions"].chmod(0o755)
     return {key: str(path) for key, path in paths.items()}
