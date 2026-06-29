@@ -132,6 +132,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "live_turn" in runbook
     assert "spend_and_provisioning_preflight" in runbook
     assert "local_spark_stack_matrix" in runbook
+    assert "spark-matrix-closure-plan.md" in runbook
+    assert "Closure artifact: `spark-model-matrix.md`" not in runbook
     writeup = Path(paths["submission_writeup"]).read_text(encoding="utf-8")
     assert "Hermes VoiceOps Submission Writeup" in writeup
     assert "NemoClaw" in writeup

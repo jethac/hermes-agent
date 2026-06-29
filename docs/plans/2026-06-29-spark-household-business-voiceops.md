@@ -29,7 +29,7 @@ There are two related but distinct model strategies.
 
 ### Hackathon Strategy
 
-Use Nemotron 3 Super visibly as the preferred Spark-local Hermes oracle/model path for the demo because it is sponsor-aligned and communicates serious agentic reasoning on the NVIDIA target. The demo should show Nemotron 3 Super as the planner behind the budgeted VoIP provisioning workflow when the local Spark path is available.
+Use Nemotron 3 Super visibly as the preferred Spark-local Hermes oracle/model path for the demo because it is sponsor-aligned, has a credible one-Spark serving path, and communicates serious agentic reasoning on the NVIDIA target. The demo should show Nemotron 3 Super as the planner behind the budgeted VoIP provisioning workflow when the local Spark path is available.
 
 This does not mean VoiceOps adds a separate model selector. Nemotron 3 Super should still be selected through Hermes's normal `/model` flow. If the local Super endpoint is not ready, Nemotron 3 Ultra is acceptable as a clearly labeled hosted fallback through the same `/model` flow. The goal is to prove that Hermes can carry a Discord voice request into a safe, budgeted, tool-using business operation with NVIDIA/Stripe integrations visible.
 
@@ -44,7 +44,7 @@ Hackathon stack:
 
 ### One-Spark Local Strategy
 
-For the long-term household/business appliance, treat Nemotron 3 Super as the first preferred Spark-local NVIDIA oracle target, but still require benchmark evidence before claiming one-Spark readiness. Nemotron 3 Ultra remains the hosted fallback, not the local readiness proof.
+For the long-term household/business appliance, treat Nemotron 3 Super as the first preferred Spark-local NVIDIA oracle target, but still require benchmark evidence before claiming one-Spark readiness. Nemotron 3 Ultra is not the one-Spark target; keep it as a hosted or future multi-Spark fallback unless local evidence proves otherwise.
 
 Target KAME layout:
 
@@ -60,6 +60,7 @@ Evidence notes:
 - NVIDIA's Nemotron deployment guide lists a "Nemotron 3 Super on DGX Spark" path for a single DGX Spark with 128 GB unified memory using vLLM and TensorRT-LLM with NVFP4 and MTP.
 - NVIDIA describes Nemotron 3 Super as a 120B-total, 12B-active hybrid MoE model for agentic reasoning.
 - NVIDIA describes Nemotron 3 Ultra as a 550B model; for VoiceOps, Ultra is only an optional hosted/upstream fallback and must not be used as Spark-local readiness proof.
+- Public DGX Spark reports support this split: Super has one-Spark reports, while Ultra reports and forum guidance point toward multi-Spark operation.
 
 ## Operating Domains
 

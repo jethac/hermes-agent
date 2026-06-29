@@ -126,7 +126,7 @@ def _demo_closure_summary() -> dict[str, Any]:
             "status": "needs_evidence",
             "missing": ["reflex:needs_evidence", "oracle:needs_evidence", "asr:needs_evidence", "tts:needs_evidence"],
             "template_artifact": "spark-benchmark-evidence-template.json",
-            "closure_artifact": "spark-model-matrix.md",
+            "closure_artifact": "spark-matrix-closure-plan.md",
             "completion_signal": "ready_for_one_spark_demo is true and role_status values are validated",
         },
     ]
