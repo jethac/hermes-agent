@@ -86,7 +86,7 @@ class DiscordVoiceSessionState:
     tts_model: Optional[str] = None
     tts_voice: Optional[str] = None
     tts_base_url: Optional[str] = None
-    fallback_policy: str = "legacy_voice"
+    fallback_policy: str = "text_only"
     routing: Dict[str, Any] = field(default_factory=dict)
     latency_metrics_ms: Dict[str, int] = field(default_factory=dict)
     quality_target_misses: List[Dict[str, Any]] = field(default_factory=list)
@@ -220,10 +220,10 @@ def _discord_voice_provider_context(value: Any) -> str:
 
 
 def _discord_realtime_voice_fallback_policy(cfg: Dict[str, Any]) -> str:
-    policy = str((cfg or {}).get("fallback_policy") or "legacy_voice").strip().lower()
+    policy = str((cfg or {}).get("fallback_policy") or "text_only").strip().lower()
     if policy in {"legacy_voice", "text_only", "fail_closed"}:
         return policy
-    return "legacy_voice"
+    return "text_only"
 
 
 def _discord_mapping_config(value: Any) -> Dict[str, Any]:
@@ -3055,7 +3055,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "tts_base_url": None,
             "streaming_tts_base_url": None,
             "streaming_tts_token_env": None,
-            "fallback_policy": "legacy_voice",
+            "fallback_policy": "text_only",
             "sidecar_connect_timeout_seconds": 10.0,
             "sidecar_close_timeout_seconds": 2.0,
             "barge_in_min_speech_ms": 120,

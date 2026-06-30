@@ -12392,15 +12392,40 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if not transcript_agent_turns:
             return
 
+        voice_context = ""
+        if hasattr(adapter, "get_voice_channel_context"):
+            try:
+                context_result = adapter.get_voice_channel_context(guild_id)
+                if inspect.isawaitable(context_result):
+                    context_result = await context_result
+                voice_context = context_result if isinstance(context_result, str) else ""
+            except Exception:
+                voice_context = ""
+        voice_prompt = (
+            "[Live Discord voice transcript]\n"
+            "The user just spoke this in a Discord voice channel where Hermes is joined. "
+            "Treat the transcript as heard live speech. Do not say you cannot hear or "
+            "process Discord voice; answer briefly for spoken playback.\n"
+        )
+        if voice_context:
+            voice_prompt += f"{voice_context}\n"
+        agent_text = f"{voice_prompt}\nTranscript: {transcript}"
+
         # Build a synthetic MessageEvent and feed through the normal pipeline
         # Use SimpleNamespace as raw_message so _get_guild_id() can extract
         # guild_id and _send_voice_reply() plays audio in the voice channel.
         from types import SimpleNamespace
         event = MessageEvent(
             source=source,
-            text=transcript,
+            text=agent_text,
             message_type=MessageType.VOICE,
             raw_message=SimpleNamespace(guild_id=guild_id, guild=None),
+            metadata={
+                "voice_origin": "discord_live_voice",
+                "voice_transcript": transcript,
+                "voice_guild_id": str(guild_id),
+                "voice_user_id": str(user_id),
+            },
         )
 
         await adapter.handle_message(event)

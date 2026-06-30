@@ -7977,6 +7977,7 @@ class TestRealtimeVoiceWebSocket:
                             "final_transcript_to_first_text_ms": "400",
                             "final_transcript_to_first_audio_ms": 0,
                             "barge_in_ack_ms": -1,
+                            "kame_speech_end_to_playback_start_ms": "2500",
                             "unknown": 1,
                         },
                     }
@@ -7992,6 +7993,7 @@ class TestRealtimeVoiceWebSocket:
             "final_transcript_to_first_text_ms": 400,
             "final_transcript_to_first_audio_ms": 900,
             "barge_in_ack_ms": 150,
+            "kame_speech_end_to_playback_start_ms": 2500,
         }
 
     def test_status_includes_sanitized_sidecar_health_payload(self, monkeypatch):

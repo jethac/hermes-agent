@@ -1131,7 +1131,11 @@ class TestVoiceChannelCommands:
         await runner._handle_voice_channel_input(111, 42, "Hello from VC")
         mock_adapter.handle_message.assert_called_once()
         event = mock_adapter.handle_message.call_args[0][0]
-        assert event.text == "Hello from VC"
+        assert "Live Discord voice transcript" in event.text
+        assert "Do not say you cannot hear" in event.text
+        assert "Transcript: Hello from VC" in event.text
+        assert event.metadata["voice_origin"] == "discord_live_voice"
+        assert event.metadata["voice_transcript"] == "Hello from VC"
         assert event.message_type == MessageType.VOICE
         assert event.source.chat_id == "123"
         assert event.source.chat_type == "channel"
@@ -1650,6 +1654,7 @@ class TestDiscordVoiceChannelMethods:
         adapter._realtime_voice_cfg = {
             "enabled": True,
             "sidecar_base_url": "http://127.0.0.1:8766",
+            "fallback_policy": "legacy_voice",
         }
         adapter._reset_voice_timeout = MagicMock()
         fake_session = AsyncMock()
@@ -1776,9 +1781,10 @@ class TestDiscordVoiceChannelMethods:
         assert ok is True
         assert 111 not in adapter._realtime_voice_sessions
         status = adapter.get_voice_session_status(111)
-        assert status["mode"] == "degraded_no_sidecar"
+        assert status["mode"] == "text_only_fallback"
         assert status["session_state"] == "degraded"
         assert status["sidecar_running"] is False
+        assert status["fallback_policy"] == "text_only"
         assert "sidecar_start_failed" in status["fallback_reason"]
         assert "sidecar_base_url is not configured" in status["fallback_reason"]
 
@@ -1969,6 +1975,7 @@ class TestDiscordVoiceChannelMethods:
     @pytest.mark.asyncio
     async def test_runtime_sidecar_degradation_removes_session_and_enables_legacy_voice_input(self):
         adapter = self._make_adapter()
+        adapter._realtime_voice_cfg = {"enabled": True, "fallback_policy": "legacy_voice"}
         fake_session = AsyncMock()
         fake_session.close = AsyncMock()
         adapter._realtime_voice_sessions[111] = fake_session

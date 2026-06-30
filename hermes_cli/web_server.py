@@ -13694,6 +13694,14 @@ def _realtime_voice_quality_targets_payload(realtime: Dict[str, Any]) -> Dict[st
     for key in targets:
         parsed = _positive_int_config(raw.get(key), default=targets[key])
         targets[key] = parsed
+    for key, value in raw.items():
+        if key in targets:
+            continue
+        if key not in _REALTIME_VOICE_KAME_QUALITY_TARGETS_MS:
+            continue
+        parsed = _positive_int_config(value, default=0)
+        if parsed > 0:
+            targets[str(key)] = parsed
     return targets
 
 

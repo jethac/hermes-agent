@@ -966,7 +966,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                             **_kame_route_metrics_payload(assistant_metadata, oracle_called=True),
                         },
                     )
-                    queue_speak(planned_acknowledgement)
+                    if self._sidecar is None:
+                        queue_speak(planned_acknowledgement)
 
             oracle = self._oracle or NullRealtimeOracle()
             answer = ""
