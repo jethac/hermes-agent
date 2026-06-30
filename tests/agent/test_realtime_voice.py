@@ -1374,10 +1374,10 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
 
         defer = next(event for event in seen if event.type == VoiceEventType.INTERFACE_REPLY_DEFER)
         oracle_request = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST)
-        acknowledgement = next(
+        narration = next(
             event
             for event in seen
-            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("acknowledgement")
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL and event.payload.get("reflex_narration")
         )
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
         forwarded_interface_events = [
@@ -1394,7 +1394,7 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
         assert defer.payload["route"] == "defer"
         assert defer.payload["interface_already_said"] == "Checking that now."
         assert defer.payload["text"] == "Checking that now."
-        assert defer.payload["acknowledgement_text"] == "Checking that now."
+        assert defer.payload["reflex_narration_text"] == "Checking that now."
         assert defer.payload["oracle_text"] == "check the deployment status"
         assert defer.payload["oracle_text_source"] == "asr"
         assert oracle_request.payload["route"] == "defer"
@@ -1403,9 +1403,9 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
         assert oracle_request.payload["intent"] == "Check the deployment status."
         assert oracle_request.payload["text"] == "check the deployment status"
         assert oracle_request.payload["oracle_text_source"] == "asr"
-        assert "acknowledgement_text" not in oracle_request.payload
-        assert acknowledgement.payload["text"] == "Checking that now."
-        assert acknowledgement.payload["kame_interface_already_said"] == "Checking that now."
+        assert "reflex_narration_text" not in oracle_request.payload
+        assert narration.payload["text"] == "Checking that now."
+        assert narration.payload["kame_interface_already_said"] == "Checking that now."
         assert commit.payload["text"] == "The deployment is healthy."
         assert [event.type for event in forwarded_interface_events] == [
             VoiceEventType.INTERFACE_INTENT_FINAL,
@@ -1576,8 +1576,8 @@ def test_kame_engine_defer_acknowledgement_reports_first_audio_metric(monkeypatc
 
         audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
         session_metrics = next(event for event in seen if event.type == VoiceEventType.SESSION_METRICS)
-        assert AudioChunk.from_payload(audio.payload).data == b"One moment."
-        assert audio.payload["kame_interface_already_said"] == "One moment."
+        assert AudioChunk.from_payload(audio.payload).data == b"I'll ask Hermes to check the deployment status."
+        assert audio.payload["kame_interface_already_said"] == "I'll ask Hermes to check the deployment status."
         assert audio.payload["metrics"]["kame_interface_decision_to_first_audio_ms"] >= 0
         assert audio.payload["metrics"]["kame_interface_decision_to_defer_first_audio_ms"] >= 0
         assert audio.payload["metrics"]["kame_speech_end_to_first_audio_ms"] >= 41
@@ -6558,7 +6558,7 @@ def test_reference_sidecar_passes_language_metadata_to_tts_callback(tmp_path):
     asyncio.run(run())
 
 
-def test_reference_sidecar_uses_prewarmed_acknowledgement_audio(tmp_path):
+def test_reference_sidecar_does_not_cache_acknowledgement_audio(tmp_path):
     synth_calls = []
 
     def fake_synthesize(text):
@@ -6579,7 +6579,7 @@ def test_reference_sidecar_uses_prewarmed_acknowledgement_audio(tmp_path):
                 metadata={"turn_acknowledgement": {"enabled": True, "text": "One moment."}},
             )
         )
-        assert synth_calls == ["One moment."]
+        assert synth_calls == []
 
         await sidecar.receive_event(
             VoiceEvent(
@@ -6589,19 +6589,28 @@ def test_reference_sidecar_uses_prewarmed_acknowledgement_audio(tmp_path):
                 payload={"text": "One moment.", "speak": True, "playback_generation": 7},
             )
         )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-123",
+                sequence=2,
+                payload={"text": "One moment.", "speak": True, "playback_generation": 8},
+            )
+        )
 
         seen = []
         async for event in sidecar.events():
             seen.append(event)
-            if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK:
+            if sum(1 for item in seen if item.type == VoiceEventType.AUDIO_OUTPUT_CHUNK) == 2:
                 await sidecar.close()
                 break
 
-        audio = seen[-1]
-        assert synth_calls == ["One moment."]
-        assert base64.b64decode(audio.payload["data_b64"]) == b"audio-1"
-        assert audio.payload["metrics"]["tts_cache"] == "prewarmed"
-        assert audio.payload["metrics"]["tts_synthesis_ms"] >= 0
+        audio_events = [event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK]
+        assert synth_calls == ["One moment.", "One moment."]
+        assert base64.b64decode(audio_events[0].payload["data_b64"]) == b"audio-1"
+        assert base64.b64decode(audio_events[1].payload["data_b64"]) == b"audio-2"
+        assert "tts_cache" not in audio_events[0].payload["metrics"]
+        assert audio_events[0].payload["metrics"]["tts_synthesis_ms"] >= 0
 
     asyncio.run(run())
 
@@ -6661,7 +6670,7 @@ def test_reference_sidecar_kame_local_tts_reports_playback_start_metric(tmp_path
     asyncio.run(run())
 
 
-def test_reference_sidecar_cached_kame_ack_reports_playback_start_metric(tmp_path):
+def test_reference_sidecar_kame_reflex_narration_reports_playback_start_metric(tmp_path):
     def fake_synthesize(text):
         audio = tmp_path / "speech.ogg"
         audio.write_bytes(b"audio")
@@ -6677,7 +6686,6 @@ def test_reference_sidecar_cached_kame_ack_reports_playback_start_metric(tmp_pat
                 session_id="voice-123",
                 engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
                 frontend_provider="local",
-                metadata={"turn_acknowledgement": {"enabled": True, "text": "One moment."}},
             )
         )
         await sidecar.receive_event(
@@ -6709,7 +6717,7 @@ def test_reference_sidecar_cached_kame_ack_reports_playback_start_metric(tmp_pat
         assert playback.payload["metrics"]["kame_speech_end_to_playback_start_ms"] >= 80
         assert audio.payload["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
         assert audio.payload["metrics"]["kame_speech_end_to_playback_start_ms"] >= 80
-        assert audio.payload["metrics"]["tts_cache"] == "prewarmed"
+        assert "tts_cache" not in audio.payload["metrics"]
 
     asyncio.run(run())
 
@@ -6915,7 +6923,6 @@ def test_reference_sidecar_close_clears_provider_and_session_state():
         sidecar._audio_bytes = len(b"stale-audio")
         sidecar._audio_input_generation = 3
         sidecar._asr_hypotheses_by_generation[3] = {"asr_transcript": "stale hypothesis"}
-        sidecar._cached_acknowledgement_audio = {"text": "One moment.", "data": b"audio"}
         sidecar._active_playback_generations.add(9)
         sidecar._last_speech_lifecycle_event = {"event": "speech.energy", "input_generation": 3}
         sidecar._last_streaming_tts_failure = {"reason": "streaming_tts_send_failed", "error": "failed"}
@@ -6946,7 +6953,6 @@ def test_reference_sidecar_close_clears_provider_and_session_state():
         assert sidecar._audio_bytes == 0
         assert sidecar._audio_input_generation is None
         assert sidecar._asr_hypotheses_by_generation == {}
-        assert sidecar._cached_acknowledgement_audio is None
         assert sidecar._active_playback_generations == set()
         assert sidecar._last_speech_lifecycle_event is None
         assert sidecar._last_streaming_tts_failure is None

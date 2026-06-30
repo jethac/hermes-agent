@@ -1183,10 +1183,6 @@ class DiscordAdapter(BasePlatformAdapter):
         self._voice_mixers: Dict[int, Any] = {}  # guild_id -> VoiceMixer
         self._ambient_pcm_cache: Optional[bytes] = None  # decoded ambient bed
         self._voice_fx_cfg: Dict[str, Any] = self._load_voice_fx_config()
-        self._ack_pcm_cache: Dict[Tuple[str, str], bytes] = {}
-        self._ack_prewarm_tasks: Dict[Tuple[str, str], asyncio.Task] = {}
-        self._ack_phrase_index: int = 0
-        self._realtime_voice_last_ack: Dict[Tuple[int, int], Dict[str, Any]] = {}
         # Realtime voice sidecar bridge.  Opt-in: keeps legacy Discord voice
         # capture/TTS behavior unchanged unless discord.realtime_voice.enabled.
         self._realtime_voice_cfg: Dict[str, Any] = self._load_realtime_voice_config()
@@ -3002,7 +2998,6 @@ class DiscordAdapter(BasePlatformAdapter):
                 "Give me a sec.",
                 "On it.",
             ],
-            "ack_prewarm_enabled": True,
         }
         try:
             from hermes_cli.config import read_raw_config
@@ -3228,7 +3223,6 @@ class DiscordAdapter(BasePlatformAdapter):
             last_end = self._realtime_voice_last_speech_end
         ended_at = time.monotonic()
         last_end[(guild_id, user_id)] = ended_at
-        self._play_realtime_speech_end_ack(guild_id, user_id, speech_end_at=ended_at)
         self._schedule_realtime_voice_transcript_flush(guild_id, user_id, delay_seconds=0.8)
         if session is None:
             return
@@ -3734,7 +3728,6 @@ class DiscordAdapter(BasePlatformAdapter):
         self._voice_mixers[guild_id] = mixer
         self._update_voice_state(guild_id, mixer_installed=True)
         logger.info("Voice mixer installed (guild=%d, ambient=%s)", guild_id, bool(ambient))
-        self._ensure_ack_bank_prewarmed()
 
     def _configured_ack_phrases(self) -> List[str]:
         phrases = self._voice_fx_cfg.get("ack_phrases") or ["One moment."]
@@ -3746,60 +3739,6 @@ class DiscordAdapter(BasePlatformAdapter):
             if text and text not in cleaned:
                 cleaned.append(text)
         return cleaned or ["One moment."]
-
-    def _ack_voice_signature(self) -> str:
-        """Return a stable cache signature for the active ack TTS voice."""
-        tts_config: Dict[str, Any] = {}
-        try:
-            from hermes_cli.config import read_raw_config
-            raw_cfg = read_raw_config() or {}
-            if isinstance(raw_cfg.get("tts"), dict):
-                tts_config = raw_cfg.get("tts") or {}
-        except Exception as e:
-            logger.debug("Could not read TTS config for Discord ack cache signature: %s", e)
-
-        realtime_cfg = getattr(self, "_realtime_voice_cfg", {}) or {}
-        voice_identity = {
-            "tts": tts_config,
-            "discord_realtime_voice": {
-                "tts_provider": realtime_cfg.get("tts_provider"),
-                "tts_model": realtime_cfg.get("tts_model") or realtime_cfg.get("streaming_tts_model"),
-                "tts_voice": realtime_cfg.get("tts_voice") or realtime_cfg.get("streaming_tts_voice"),
-                "tts_base_url": realtime_cfg.get("tts_base_url") or realtime_cfg.get("streaming_tts_base_url"),
-            },
-            "env_voice": {
-                "realtime_tts_provider": os.getenv("HERMES_DGX_SPARK_TTS_PROVIDER") or os.getenv("HERMES_KAME_TTS_PROVIDER") or "",
-                "streaming_tts_base_url": os.getenv("HERMES_VOICE_STREAMING_TTS_BASE_URL") or "",
-                "streaming_tts_model": os.getenv("HERMES_VOICE_STREAMING_TTS_MODEL") or "",
-                "cartesia_voice_id": os.getenv("HERMES_CARTESIA_VOICE_ID") or os.getenv("CARTESIA_VOICE_ID") or "",
-                "cartesia_tts_model": os.getenv("HERMES_CARTESIA_TTS_MODEL") or "",
-                "cartesia_tts_model_by_language": os.getenv("HERMES_CARTESIA_TTS_MODEL_BY_LANGUAGE") or "",
-                "cartesia_tts_voice_by_language": os.getenv("HERMES_CARTESIA_TTS_VOICE_BY_LANGUAGE") or "",
-                "deepgram_tts_model": os.getenv("HERMES_DEEPGRAM_TTS_MODEL") or "",
-                "deepgram_tts_model_by_language": os.getenv("HERMES_DEEPGRAM_TTS_MODEL_BY_LANGUAGE") or "",
-                "elevenlabs_voice_id": os.getenv("HERMES_ELEVENLABS_VOICE_ID") or "",
-                "elevenlabs_bridge_voice_id": os.getenv("ELEVENLABS_VOICE_ID") or "",
-                "elevenlabs_model_id": os.getenv("HERMES_ELEVENLABS_MODEL_ID") or "",
-                "elevenlabs_tts_model": os.getenv("HERMES_ELEVENLABS_TTS_MODEL") or "",
-            },
-        }
-        encoded = json.dumps(voice_identity, sort_keys=True, default=str, separators=(",", ":"))
-        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
-
-    def _ack_cache_key(self, phrase: str, signature: Optional[str] = None) -> Tuple[str, str]:
-        return (signature or self._ack_voice_signature(), phrase)
-
-    def _next_cached_ack_phrase(self) -> str:
-        signature = self._ack_voice_signature()
-        phrases = [
-            phrase for phrase in self._configured_ack_phrases()
-            if self._ack_cache_key(phrase, signature) in self._ack_pcm_cache
-        ]
-        if not phrases:
-            phrases = self._configured_ack_phrases()
-        phrase = phrases[self._ack_phrase_index % len(phrases)]
-        self._ack_phrase_index += 1
-        return phrase
 
     def _synthesize_ack_pcm(self, phrase: str) -> Optional[bytes]:
         """Synthesize and decode one acknowledgement into Discord PCM."""
@@ -3833,175 +3772,6 @@ class DiscordAdapter(BasePlatformAdapter):
                     except OSError:
                         pass
 
-    async def _prewarm_ack_phrase(self, phrase: str, signature: str) -> None:
-        key = self._ack_cache_key(phrase, signature)
-        if key in self._ack_pcm_cache:
-            return
-        pcm = await asyncio.to_thread(self._synthesize_ack_pcm, phrase)
-        if pcm:
-            self._ack_pcm_cache[key] = pcm
-            logger.info(
-                "Discord voice acknowledgement cached: %r (voice=%s, %d bytes)",
-                phrase,
-                signature,
-                len(pcm),
-            )
-        else:
-            logger.debug("Discord voice acknowledgement cache miss: %r (voice=%s)", phrase, signature)
-
-    def _ensure_ack_prewarm(self, phrase: str) -> None:
-        if not self._voice_fx_cfg.get("ack_enabled"):
-            return
-        signature = self._ack_voice_signature()
-        key = self._ack_cache_key(phrase, signature)
-        if key in self._ack_pcm_cache:
-            return
-        existing = self._ack_prewarm_tasks.get(key)
-        if existing is not None and not existing.done():
-            return
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-
-        task = loop.create_task(self._prewarm_ack_phrase(phrase, signature))
-        self._ack_prewarm_tasks[key] = task
-
-        def _cleanup(done: asyncio.Task) -> None:
-            self._ack_prewarm_tasks.pop(key, None)
-            try:
-                done.result()
-            except asyncio.CancelledError:
-                pass
-            except Exception as exc:
-                logger.debug("Discord ack prewarm task failed for %r (voice=%s): %s", phrase, signature, exc)
-
-        task.add_done_callback(_cleanup)
-
-    def _ensure_ack_bank_prewarmed(self) -> None:
-        if not self._voice_fx_cfg.get("ack_prewarm_enabled", True):
-            return
-        for phrase in self._configured_ack_phrases():
-            self._ensure_ack_prewarm(phrase)
-
-    def _play_cached_ack_in_voice(
-        self,
-        guild_id: int,
-        phrase: Optional[str] = None,
-        *,
-        speech_end_at: Optional[float] = None,
-    ) -> bool:
-        if not self._voice_fx_cfg.get("ack_enabled"):
-            return False
-        mixer = self._voice_mixers.get(guild_id)
-        if mixer is None:
-            return False
-        phrase = phrase or self._next_cached_ack_phrase()
-        signature = self._ack_voice_signature()
-        pcm = self._ack_pcm_cache.get(self._ack_cache_key(phrase, signature))
-        if not pcm:
-            self._ensure_ack_prewarm(phrase)
-            return False
-        mixer.play_speech(
-            pcm,
-            gain=float(self._voice_fx_cfg.get("speech_gain", 1.0)),
-            fade_in_ms=0,
-        )
-        self._reset_voice_timeout(guild_id)
-        if speech_end_at is not None:
-            state = self._voice_state(guild_id)
-            metrics = dict(state.latency_metrics_ms)
-            metrics["speech_end_to_ack_enqueued_ms"] = int((time.monotonic() - speech_end_at) * 1000)
-            self._update_voice_state(guild_id, latency_metrics_ms=metrics)
-        logger.info(
-            "Discord realtime voice acknowledgement enqueued (guild=%d, phrase=%r, voice=%s)",
-            guild_id,
-            phrase,
-            signature,
-        )
-        return True
-
-    def _record_realtime_voice_ack(self, guild_id: int, user_id: int, phrase: str) -> None:
-        acks = getattr(self, "_realtime_voice_last_ack", None)
-        if not isinstance(acks, dict):
-            self._realtime_voice_last_ack = {}
-            acks = self._realtime_voice_last_ack
-        acks[(guild_id, user_id)] = {"text": phrase, "at": time.monotonic()}
-
-    def consume_realtime_voice_ack(self, guild_id: int, user_id: int) -> Optional[str]:
-        """Return the recent reflex ack for this voice turn, if any."""
-        acks = getattr(self, "_realtime_voice_last_ack", None)
-        if not isinstance(acks, dict):
-            return None
-        entry = acks.pop((guild_id, user_id), None)
-        if not isinstance(entry, dict):
-            return None
-        try:
-            age = time.monotonic() - float(entry.get("at", 0.0))
-        except (TypeError, ValueError):
-            return None
-        text = str(entry.get("text") or "").strip()
-        if not text or age > 8.0:
-            return None
-        return text
-
-    def _schedule_realtime_voice_ack_transcript(
-        self,
-        guild_id: int,
-        user_id: int,
-        phrase: str,
-    ) -> None:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-        task = loop.create_task(self._post_realtime_voice_ack_transcript(guild_id, user_id, phrase))
-        task.add_done_callback(self._log_realtime_voice_task_result)
-
-    async def _post_realtime_voice_ack_transcript(
-        self,
-        guild_id: int,
-        user_id: int,
-        phrase: str,
-    ) -> None:
-        text_channels = getattr(self, "_voice_text_channels", {}) or {}
-        text_ch_id = text_channels.get(guild_id)
-        if not text_ch_id:
-            return
-        client = getattr(self, "_client", None)
-        channel = client.get_channel(text_ch_id) if client is not None else None
-        if channel is None:
-            return
-        safe_phrase = phrase[:500].replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
-        await channel.send(f"**[Voice reflex]** Hermes: {safe_phrase}")
-
-    def _play_realtime_speech_end_ack(
-        self,
-        guild_id: int,
-        user_id: int,
-        *,
-        speech_end_at: float,
-    ) -> bool:
-        if not self._realtime_voice_cfg.get("enabled"):
-            return False
-        phrase = self._next_cached_ack_phrase()
-        played = self._play_cached_ack_in_voice(
-            guild_id,
-            phrase=phrase,
-            speech_end_at=speech_end_at,
-        )
-        if not played:
-            self._ensure_ack_bank_prewarmed()
-            logger.debug(
-                "Discord realtime voice acknowledgement not ready (guild=%d, user=%d)",
-                guild_id,
-                user_id,
-            )
-            return False
-        self._record_realtime_voice_ack(guild_id, user_id, phrase)
-        self._schedule_realtime_voice_ack_transcript(guild_id, user_id, phrase)
-        return played
-
     async def play_ack_in_voice(self, guild_id: int, phrase: Optional[str] = None) -> bool:
         """Speak a short acknowledgement over the ambient bed.
 
@@ -4015,14 +3785,12 @@ class DiscordAdapter(BasePlatformAdapter):
         if mixer is None:
             return False
         if phrase is None:
-            phrase = self._next_cached_ack_phrase()
-        if self._play_cached_ack_in_voice(guild_id, phrase=phrase):
-            return True
+            import random
+            phrase = random.choice(self._configured_ack_phrases())
         try:
             pcm = await asyncio.to_thread(self._synthesize_ack_pcm, phrase)
             if not pcm:
                 return False
-            self._ack_pcm_cache[self._ack_cache_key(phrase)] = pcm
             mixer.play_speech(
                 pcm, gain=float(self._voice_fx_cfg.get("speech_gain", 1.0))
             )

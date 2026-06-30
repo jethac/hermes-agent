@@ -206,14 +206,10 @@ def _make_adapter(fx_cfg=None):
     adapter._voice_listen_tasks = {}
     adapter._voice_mixers = {}
     adapter._ambient_pcm_cache = None
-    adapter._ack_pcm_cache = {}
-    adapter._ack_prewarm_tasks = {}
-    adapter._ack_phrase_index = 0
     adapter._voice_fx_cfg = fx_cfg if fx_cfg is not None else {
         "enabled": True, "ambient_enabled": True, "ambient_path": "",
         "ambient_gain": 0.18, "duck_gain": 0.06, "speech_gain": 1.0,
         "ack_enabled": True, "ack_phrases": ["One moment."],
-        "ack_prewarm_enabled": True,
     }
     return adapter
 

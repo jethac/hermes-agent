@@ -131,6 +131,13 @@ KAME_REFLEX_DECISION_JSON_SCHEMA: dict[str, Any] = {
             "minimum": 0,
             "maximum": 1,
         },
+        "interface_already_said": {
+            "type": "string",
+            "description": (
+                "For defer routes, optional exact short first-person narration "
+                "the reflex already spoke to the user about what it is asking the oracle to do."
+            ),
+        },
     },
 }
 KAME_REFLEX_ALLOWED_KEYS = frozenset(KAME_REFLEX_DECISION_JSON_SCHEMA["properties"])
@@ -190,6 +197,9 @@ def kame_reflex_instruction_text(
         "transcript_confidence. "
         "Use intent for what the user wants. Use transcript only for the reflex's own audio hypothesis; "
         "dedicated ASR evidence is attached separately when configured. "
+        "For defer routes, prefer interface_already_said with one short spoken fragment "
+        "that narrates the oracle handoff, such as \"I'm checking the deployment status.\" or "
+        "\"I'll ask Hermes to look at the logs.\" "
         "This voice session is already connected; never claim Hermes cannot hear, listen, join, "
         "or speak through the live voice interface. For can-you-hear-me checks, use route=local "
         "and a brief affirmative local_reply. Only use local for greetings, repeats, "

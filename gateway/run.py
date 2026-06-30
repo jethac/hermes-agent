@@ -12385,23 +12385,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception:
             pass
 
-        reflex_ack_text = ""
-        consume_ack = None
-        if hasattr(type(adapter), "consume_realtime_voice_ack"):
-            consume_ack = getattr(adapter, "consume_realtime_voice_ack", None)
-        else:
-            adapter_dict = getattr(adapter, "__dict__", {})
-            if isinstance(adapter_dict, dict) and "consume_realtime_voice_ack" in adapter_dict:
-                consume_ack = adapter_dict.get("consume_realtime_voice_ack")
-        if callable(consume_ack):
-            try:
-                ack_result = consume_ack(guild_id, user_id)
-                if inspect.isawaitable(ack_result):
-                    ack_result = await ack_result
-                reflex_ack_text = str(ack_result or "").strip()
-            except Exception:
-                reflex_ack_text = ""
-
         transcript_agent_turns = getattr(self, "_discord_voice_transcript_agent_turns", None)
         if transcript_agent_turns is None:
             transcript_agent_turns = _load_discord_voice_transcript_agent_turns()
@@ -12426,11 +12409,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
         if voice_context:
             voice_prompt += f"{voice_context}\n"
-        if reflex_ack_text:
-            voice_prompt += (
-                f"The voice reflex already told the user: {reflex_ack_text}\n"
-                "Treat that as an assistant utterance that already happened; do not repeat it.\n"
-            )
         agent_text = f"{voice_prompt}\nTranscript: {transcript}"
 
         # Build a synthetic MessageEvent and feed through the normal pipeline
@@ -12447,7 +12425,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "voice_transcript": transcript,
                 "voice_guild_id": str(guild_id),
                 "voice_user_id": str(user_id),
-                "kame_interface_already_said": reflex_ack_text,
             },
         )
 

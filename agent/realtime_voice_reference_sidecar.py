@@ -370,7 +370,6 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._openai_realtime_task: Optional[asyncio.Task[None]] = None
         self._gemini_live: Any = None
         self._gemini_live_task: Optional[asyncio.Task[None]] = None
-        self._cached_acknowledgement_audio: Optional[dict[str, Any]] = None
         self._active_playback_generations: set[Optional[int]] = set()
         self._last_speech_lifecycle_event: Optional[dict[str, Any]] = None
         self._kame_feedback_events: list[dict[str, Any]] = []
@@ -407,7 +406,6 @@ class ReferenceRealtimeVoiceSidecarSession:
             await self._start_streaming_stt(config)
         if self._openai_realtime is None and self._gemini_live is None and self.runtime.streaming_tts_base_url:
             await self._start_streaming_tts(config)
-        await self._prepare_acknowledgement_audio(config)
         fallback_reason = self._kame_audio_reflex_fallback_reason(config)
         text_fallback_requested = _interface_audio_input(config) == "text_fallback"
         vllm_drives_reflex = bool(
@@ -702,7 +700,6 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._clear_kame_feedback_state()
         self._last_speech_lifecycle_event = None
         self._last_streaming_tts_failure = None
-        self._cached_acknowledgement_audio = None
         self._clear_audio_buffer()
 
         await self._close_provider(streaming_stt, "streaming_stt")
@@ -1720,8 +1717,6 @@ class ReferenceRealtimeVoiceSidecarSession:
         if not self.runtime.local_tts_enabled:
             await self._emit_tts_unavailable_error(playback_generation)
             return
-        if await self._emit_cached_acknowledgement_audio(text, playback_generation, clean_metadata):
-            return
         try:
             tts_started_at = time.perf_counter()
             file_path = await asyncio.to_thread(self._speak_sync, text, clean_metadata)
@@ -1797,76 +1792,6 @@ class ReferenceRealtimeVoiceSidecarSession:
             if config.tts_voice:
                 payload["tts_voice"] = config.tts_voice
         await self._emit(VoiceEventType.SESSION_ERROR, payload)
-
-    async def _prepare_acknowledgement_audio(self, config: RealtimeVoiceSessionConfig) -> None:
-        if self._streaming_tts is not None or not self.runtime.local_tts_enabled:
-            return
-        text = _turn_acknowledgement_text(config)
-        if not text:
-            return
-        try:
-            tts_started_at = time.perf_counter()
-            file_path = await asyncio.to_thread(self._speak_sync, text, {})
-            tts_synthesis_ms = int(round((time.perf_counter() - tts_started_at) * 1000))
-            if not file_path:
-                return
-            try:
-                with open(file_path, "rb") as fh:
-                    data = fh.read()
-            finally:
-                _unlink(file_path)
-            if not data:
-                return
-            self._cached_acknowledgement_audio = {
-                "text": text,
-                "data": data,
-                "mime_type": _mime_type_for_path(file_path),
-                "metrics": {"tts_synthesis_ms": tts_synthesis_ms, "tts_cache": "prewarmed"},
-            }
-        except Exception as exc:
-            logger.debug("Reference realtime voice acknowledgement prewarm failed: %s", exc)
-
-    async def _emit_cached_acknowledgement_audio(
-        self,
-        text: str,
-        playback_generation: Optional[int],
-        metadata: Mapping[str, Any],
-    ) -> bool:
-        cached = self._cached_acknowledgement_audio
-        if not cached or str(cached.get("text") or "") != text:
-            return False
-        data = cached.get("data")
-        if not isinstance(data, bytes) or not data:
-            return False
-        payload = AudioChunk(codec=VoiceAudioCodec.OPUS, data=data).to_payload()
-        payload["mime_type"] = str(cached.get("mime_type") or "audio/mpeg")
-        if playback_generation is not None:
-            payload["playback_generation"] = playback_generation
-        payload.update(dict(metadata))
-        first_tts_audio_at = time.perf_counter()
-        playback_started_at = time.perf_counter()
-        playback_start_metrics = _kame_playback_start_metrics(
-            metadata,
-            first_tts_audio_at,
-            playback_started_at,
-        )
-        cached_metrics = dict(cached.get("metrics") or {})
-        cached_metrics.update(playback_start_metrics)
-        payload["metrics"] = cached_metrics
-        await self._emit(
-            VoiceEventType.PLAYBACK_STARTED,
-            _playback_lifecycle_payload(playback_generation, metadata, playback_start_metrics),
-        )
-        await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
-        await self._emit(
-            VoiceEventType.PLAYBACK_STOPPED,
-            {"playback_generation": playback_generation} if playback_generation is not None else {},
-        )
-        await self._emit(
-            VoiceEventType.ASSISTANT_AUDIO_END,
-            {"playback_generation": playback_generation} if playback_generation is not None else {},
-        )
-        return True
 
     def _speak_sync(self, text: str, metadata: Optional[Mapping[str, Any]] = None) -> str:
         synthesize = self._synthesize_func
@@ -2798,21 +2723,6 @@ def _reported_frontend_model(
     if effective_provider == "local_stt":
         return config.frontend_model or runtime.streaming_stt_model or ""
     return config.frontend_model or runtime.vllm_model or runtime.streaming_stt_model or ""
-
-
-def _turn_acknowledgement_text(config: RealtimeVoiceSessionConfig) -> str:
-    acknowledgement: Any = config.turn_acknowledgement
-    if not acknowledgement:
-        metadata = config.metadata if isinstance(config.metadata, Mapping) else {}
-        acknowledgement = metadata.get("turn_acknowledgement")
-    if not isinstance(acknowledgement, Mapping):
-        return ""
-    if not _metadata_bool(acknowledgement.get("enabled"), default=False):
-        return ""
-    text = str(acknowledgement.get("text") or "One moment.").strip()
-    if not text:
-        return ""
-    return text[:120]
 
 
 def _kame_routing_policy_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:

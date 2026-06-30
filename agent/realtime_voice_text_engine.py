@@ -775,9 +775,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             routing_policy=_kame_routing_policy(config),
         )
         if request.route == KameRoute.DEFER and not request.interface_already_said:
-            acknowledgement = _turn_acknowledgement_text(config)
-            if acknowledgement:
-                request = replace(request, interface_already_said=acknowledgement)
+            narration = _kame_oracle_handoff_narration(config, request)
+            if narration:
+                request = replace(request, interface_already_said=narration)
         return request
 
     async def _speak_kame_local_reply(
@@ -952,22 +952,25 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             return _kame_voice_capability_correction_text(self.config), True
 
         try:
-            acknowledgement = _oracle_acknowledgement_text(self.config, oracle_request)
-            if acknowledgement:
-                planned_acknowledgement = self._planner.clean(acknowledgement)
-                if planned_acknowledgement:
+            reflex_narration = _oracle_reflex_narration_text(self.config, oracle_request)
+            if reflex_narration:
+                planned_reflex_narration = self._planner.clean(reflex_narration)
+                if planned_reflex_narration:
+                    is_kame_reflex_narration = (
+                        oracle_request is not None
+                        and oracle_request.route == KameRoute.DEFER
+                    )
                     await self._emit(
                         VoiceEventType.ASSISTANT_TEXT_PARTIAL,
                         {
-                            "text": planned_acknowledgement,
+                            "text": planned_reflex_narration,
                             "playback_generation": playback_generation,
-                            "acknowledgement": True,
+                            **({"reflex_narration": True} if is_kame_reflex_narration else {"acknowledgement": True}),
                             **assistant_metadata,
                             **_kame_route_metrics_payload(assistant_metadata, oracle_called=True),
                         },
                     )
-                    if self._sidecar is None:
-                        queue_speak(planned_acknowledgement)
+                    queue_speak(planned_reflex_narration)
 
             oracle = self._oracle or NullRealtimeOracle()
             answer = ""
@@ -1821,7 +1824,7 @@ def _turn_acknowledgement_text(config: Optional[RealtimeVoiceSessionConfig]) -> 
     return text[:120]
 
 
-def _oracle_acknowledgement_text(
+def _oracle_reflex_narration_text(
     config: Optional[RealtimeVoiceSessionConfig],
     oracle_request: Optional[KameOracleRequest],
 ) -> str:
@@ -1831,7 +1834,30 @@ def _oracle_acknowledgement_text(
         and oracle_request.interface_already_said
     ):
         return oracle_request.interface_already_said.strip()[:120]
+    if oracle_request is not None and oracle_request.route == KameRoute.DEFER:
+        return _kame_oracle_handoff_narration(config, oracle_request)
     return _turn_acknowledgement_text(config)
+
+
+def _kame_oracle_handoff_narration(
+    config: Optional[RealtimeVoiceSessionConfig],
+    request: KameOracleRequest,
+) -> str:
+    intent = _compact_kame_summary_text(request.intent or request.oracle_text)
+    if not intent:
+        return ""
+    intent = intent.rstrip(".!?。！？")
+    prefix = "I'll ask Hermes to"
+    if config is not None and isinstance(config.metadata, Mapping):
+        configured = str(config.metadata.get("kame_oracle_handoff_prefix") or "").strip()
+        if configured:
+            prefix = configured.rstrip()
+    lower_intent = intent[:1].lower() + intent[1:]
+    if lower_intent.startswith(("check ", "look ", "find ", "run ", "call ", "open ", "search ", "verify ", "review ")):
+        text = f"{prefix} {lower_intent}."
+    else:
+        text = f"{prefix} handle: {intent}."
+    return text[:160]
 
 
 def _compact_kame_summary_text(text: str) -> str:
@@ -1926,10 +1952,10 @@ def _kame_defer_reply_payload_with_metrics(
     metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
     payload = _kame_interface_payload_with_metrics(request, playback_generation, metadata)
-    acknowledgement = request.interface_already_said.strip()
-    if acknowledgement:
-        payload["text"] = acknowledgement
-        payload["acknowledgement_text"] = acknowledgement
+    narration = request.interface_already_said.strip()
+    if narration:
+        payload["text"] = narration
+        payload["reflex_narration_text"] = narration
         payload["oracle_text"] = request.oracle_text
         payload["oracle_text_source"] = request.oracle_text_source
     return payload
@@ -2568,28 +2594,28 @@ def _take_speakable_chunk(buffer: str) -> tuple[Optional[str], str]:
     if not normalized:
         return None, ""
 
-    sentence_at = _find_delimiter(normalized, _SENTENCE_BOUNDARY_CHARS, start=8, end=260)
+    sentence_at = _find_delimiter(normalized, _SENTENCE_BOUNDARY_CHARS, start=6, end=180)
     if sentence_at >= 0:
         return normalized[: sentence_at + 1].strip(), normalized[sentence_at + 1 :].strip()
 
     has_whitespace = any(character.isspace() for character in normalized)
-    phrase_min = 48 if has_whitespace else 16
-    phrase_trigger = 96 if has_whitespace else 32
-    phrase_end = 160 if has_whitespace else 96
+    phrase_min = 28 if has_whitespace else 12
+    phrase_trigger = 56 if has_whitespace else 24
+    phrase_end = 104 if has_whitespace else 72
 
     if len(normalized) >= phrase_trigger:
         split_at = _find_delimiter(normalized, _PHRASE_BOUNDARY_CHARS, start=phrase_min, end=phrase_end)
         if split_at >= phrase_min:
             return normalized[: split_at + 1].strip(), normalized[split_at + 1 :].strip()
 
-        split_at = normalized.rfind(" ", 96, 160) if has_whitespace else -1
-        if split_at >= 96:
+        split_at = normalized.rfind(" ", 56, 104) if has_whitespace else -1
+        if split_at >= 56:
             return normalized[:split_at].strip(), normalized[split_at:].strip()
 
-    if len(normalized) > 220:
-        split_at = _find_delimiter(normalized, _PHRASE_BOUNDARY_CHARS, start=0, end=220)
-        split_at = max(split_at, normalized.rfind(" ", 0, 220))
-        if split_at >= 80:
+    if len(normalized) > 140:
+        split_at = _find_delimiter(normalized, _PHRASE_BOUNDARY_CHARS, start=0, end=140)
+        split_at = max(split_at, normalized.rfind(" ", 0, 140))
+        if split_at >= 48:
             suffix_start = split_at + 1 if normalized[split_at] in _PHRASE_BOUNDARY_CHARS else split_at
             return normalized[:suffix_start].strip(), normalized[suffix_start:].strip()
 
