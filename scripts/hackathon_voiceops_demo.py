@@ -305,6 +305,14 @@ def _demo_closure_summary() -> dict[str, Any]:
                     "--refresh-preflight-source-hashes "
                     "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
                 ),
+                "execute_approved_stripe_actions": (
+                    "uv run python scripts/voiceops_stripe_executor.py "
+                    "--nemoclaw-action-packet artifacts/hackathon-voiceops-demo/current/nemoclaw-action-packet.json "
+                    "--execution-plan artifacts/voiceops-provisioning/current/milestone2-execution-plan.json "
+                    "--approval-decisions artifacts/voiceops-provisioning/current/approval-decisions.json "
+                    "--output-dir artifacts/voiceops-provisioning/current "
+                    "--execute --confirm-live-actions execute-approved-voiceops-stripe-actions"
+                ),
                 "validate_post_approval_receipts": (
                     "uv run python scripts/voiceops_provisioning_probe.py "
                     "--output-dir artifacts/voiceops-provisioning/current --env-file .env "
@@ -323,6 +331,9 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "artifacts/voiceops-provisioning/current/post-approval-receipts.template.json",
                 "artifacts/voiceops-provisioning/current/post-approval-receipts.example.json",
                 "artifacts/voiceops-provisioning/current/post-approval-receipts-scaffold/post-approval-receipts.json",
+                "artifacts/voiceops-provisioning/current/approval-decisions.json",
+                "artifacts/voiceops-provisioning/current/approval-decisions/",
+                "artifacts/voiceops-provisioning/current/stripe-executor-report.json",
                 "artifacts/voiceops-provisioning/current/post-approval-receipts.json",
                 "artifacts/voiceops-provisioning/current/post-approval-receipts.validation.json",
                 "artifacts/voiceops-provisioning/current/audit-ledger.post-approval.jsonl",
@@ -674,6 +685,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     provisioning_gate["collection_commands"]["validate_nemoclaw_action_packet"],
                     provisioning_gate["collection_commands"]["refresh_preflight_source_hashes"],
                     provisioning_gate["collection_commands"]["ingest_preflight_manifest"],
+                    provisioning_gate["collection_commands"]["execute_approved_stripe_actions"],
                     provisioning_gate["collection_commands"]["validate_post_approval_receipts"],
                     provisioning_gate["rerun_commands"]["plan_index_manifest_and_post_approval_receipts"],
                 ],
@@ -689,6 +701,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "validate_nemoclaw_action_packet": "local_static_action_packet_validation_only",
                     "refresh_preflight_source_hashes": "local_file_hashing_only",
                     "ingest_preflight_manifest": "local_file_validation_only",
+                    "execute_approved_stripe_actions": "explicit_approval_live_execution_boundary",
                     "validate_post_approval_receipts": "post_approval_local_validation_only",
                     "plan_index_manifest_and_post_approval_receipts": "local_reindex_only",
                 },
@@ -697,6 +710,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "NemoClaw/MPP execution-boundary setup",
                     "phone provider and target references",
                     "redacted source artifacts with matching SHA-256 fields and collector_attestation redacted hashes",
+                    "redacted approval-decisions.json with explicit approve_once, deny, or hold per action",
                     "post-approval receipts only after explicit approval",
                 ],
                 "expected_artifacts": provisioning_gate["expected_artifacts"],

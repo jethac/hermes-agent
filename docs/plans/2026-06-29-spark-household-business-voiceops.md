@@ -492,7 +492,19 @@ uv run python scripts/voiceops_provisioning_probe.py \
   --post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json
 ```
 
-The receipt bundle uses `voiceops.milestone2.post_approval_receipts.v1` and must contain redacted `receipts`, `credential_locations`, `rollback_receipts`, and `audit_events`. The validator rejects `example_only`, raw secret/token/card/phone fields, command hash mismatches, unknown action ids, duplicate credential-location refs, duplicate rollback refs, duplicate audit event ids, missing audit events, missing approval-decision provenance, attempted execution without `decision: approve_once`, and missing credential-location or rollback refs for executed actions. Held, denied, and skipped decision receipts may omit execution-only credential and rollback artifacts, but they still need explicit `decision`, `decision_by`, `decision_at`, `approval_decision_ref`, and `approval_decision_sha256` fields. When receipts are loaded from a file, each `approval_decision_ref` must resolve to a package-local redacted JSON artifact whose SHA-256 matches `approval_decision_sha256`; absolute paths, home expansion, parent traversal, missing files, unredacted files, secret-like values, and phone-like values are rejected. A valid bundle writes `post-approval-receipts.validation.json` and `audit-ledger.post-approval.jsonl`; it still does not execute spend, provisioning, credential retrieval, messages, or calls.
+To actually execute approved Stripe/Link actions, use the bounded post-approval executor instead of hand-running commands. It requires a validated NemoClaw packet, the generated Milestone 2 execution plan, a redacted `approval-decisions.json` containing explicit `approve_once`, `deny`, or `hold` decisions, and the live confirmation string. Without `--execute`, `approve_once` decisions fail closed; with `--execute`, only exact allowlisted Stripe Projects, Stripe Link, and queued phone-handoff commands that match the packet and plan can run. The executor writes `post-approval-receipts.json`, per-action approval decision artifacts, and `stripe-executor-report.json`; the normal receipt validator then decides whether the evidence closes the gate.
+
+```bash
+uv run python scripts/voiceops_stripe_executor.py \
+  --nemoclaw-action-packet artifacts/hackathon-voiceops-demo/current/nemoclaw-action-packet.json \
+  --execution-plan artifacts/voiceops-provisioning/current/milestone2-execution-plan.json \
+  --approval-decisions artifacts/voiceops-provisioning/current/approval-decisions.json \
+  --output-dir artifacts/voiceops-provisioning/current \
+  --execute \
+  --confirm-live-actions execute-approved-voiceops-stripe-actions
+```
+
+The receipt bundle uses `voiceops.milestone2.post_approval_receipts.v1` and must contain redacted `receipts`, `credential_locations`, `rollback_receipts`, and `audit_events`. The validator rejects `example_only`, raw secret/token/card/phone fields, command hash mismatches, unknown action ids, duplicate credential-location refs, duplicate rollback refs, duplicate audit event ids, missing audit events, missing approval-decision provenance, attempted execution without `decision: approve_once`, and missing credential-location or rollback refs for executed actions. Held, denied, and skipped decision receipts may omit execution-only credential and rollback artifacts, but they still need explicit `decision`, `decision_by`, `decision_at`, `approval_decision_ref`, and `approval_decision_sha256` fields. When receipts are loaded from a file, each `approval_decision_ref` must resolve to a package-local redacted JSON artifact whose SHA-256 matches `approval_decision_sha256`; absolute paths, home expansion, parent traversal, missing files, unredacted files, secret-like values, and phone-like values are rejected. A valid bundle writes `post-approval-receipts.validation.json` and `audit-ledger.post-approval.jsonl`; receipt validation itself still does not execute spend, provisioning, credential retrieval, messages, or calls.
 
 ## Milestone 3: Multi-Channel Operations
 
