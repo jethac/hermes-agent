@@ -1637,6 +1637,7 @@ class TestDiscordVoiceChannelMethods:
         fake_session.handle_speech_end = AsyncMock()
         mixer = MagicMock()
         adapter._realtime_voice_cfg = {"enabled": True}
+        adapter._ack_voice_signature = MagicMock(return_value="voice-a")
         adapter._voice_fx_cfg = {
             "ack_enabled": True,
             "ack_phrases": ["One moment.", "On it."],
@@ -1644,8 +1645,8 @@ class TestDiscordVoiceChannelMethods:
             "ack_prewarm_enabled": True,
         }
         adapter._ack_pcm_cache = {
-            "One moment.": b"pcm-one",
-            "On it.": b"pcm-two",
+            ("voice-a", "One moment."): b"pcm-one",
+            ("voice-a", "On it."): b"pcm-two",
         }
         adapter._voice_mixers[111] = mixer
         adapter._realtime_voice_sessions[111] = fake_session
@@ -1669,6 +1670,7 @@ class TestDiscordVoiceChannelMethods:
         adapter = self._make_adapter()
         mixer = MagicMock()
         adapter._realtime_voice_cfg = {"enabled": True}
+        adapter._ack_voice_signature = MagicMock(return_value="voice-a")
         adapter._voice_fx_cfg = {
             "ack_enabled": True,
             "ack_phrases": ["One moment.", "On it."],
@@ -1676,8 +1678,8 @@ class TestDiscordVoiceChannelMethods:
             "ack_prewarm_enabled": True,
         }
         adapter._ack_pcm_cache = {
-            "One moment.": b"pcm-one",
-            "On it.": b"pcm-two",
+            ("voice-a", "One moment."): b"pcm-one",
+            ("voice-a", "On it."): b"pcm-two",
         }
         adapter._voice_mixers[111] = mixer
         adapter._reset_voice_timeout = MagicMock()
@@ -1687,6 +1689,27 @@ class TestDiscordVoiceChannelMethods:
 
         assert mixer.play_speech.call_args_list[0].args == (b"pcm-one",)
         assert mixer.play_speech.call_args_list[1].args == (b"pcm-two",)
+
+    def test_realtime_voice_silence_boundary_does_not_reuse_ack_after_voice_change(self):
+        adapter = self._make_adapter()
+        mixer = MagicMock()
+        adapter._realtime_voice_cfg = {"enabled": True}
+        adapter._voice_fx_cfg = {
+            "ack_enabled": True,
+            "ack_phrases": ["One moment."],
+            "speech_gain": 1.0,
+            "ack_prewarm_enabled": False,
+        }
+        adapter._ack_voice_signature = MagicMock(return_value="voice-b")
+        adapter._ack_pcm_cache = {
+            ("voice-a", "One moment."): b"old-voice-pcm",
+        }
+        adapter._voice_mixers[111] = mixer
+
+        adapter._schedule_realtime_voice_speech_end(111, 42)
+
+        mixer.play_speech.assert_not_called()
+        assert adapter.consume_realtime_voice_ack(111, 42) is None
 
     def test_realtime_voice_silence_boundary_does_not_block_when_ack_cache_empty(self):
         adapter = self._make_adapter()
