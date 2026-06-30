@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { resolveGatewayWsUrl } from '@hermes/shared'
 
-import { resolveGatewayWsUrl } from '@/lib/gateway-ws-url'
 import { notifyError } from '@/store/notifications'
 
 import type { ConversationStatus } from './use-voice-conversation'

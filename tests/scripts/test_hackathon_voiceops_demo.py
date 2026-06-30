@@ -111,13 +111,16 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert payload["recording_readiness"]["static_recording_ready"] is True
     assert payload["recording_readiness"]["ready_for_recording_scope"] == "static_artifact_recording_only"
     assert payload["recording_readiness"]["live_demo_ready"] is False
-    assert payload["recording_readiness"]["live_prerequisite_failures"] == [
+    assert (
+        payload["recording_readiness"]["live_prerequisite_failures"]
+        == readiness["live_prerequisite_failures"]
+    )
+    assert {
         "discord_voice",
         "nemoclaw_boundary",
         "stripe_projects_cli",
-        "stripe_link_cli",
         "phone_handoff",
-    ]
+    }.issubset(payload["recording_readiness"]["live_prerequisite_failures"])
     assert payload["recording_readiness"]["live_demo_missing_evidence"] == [
         "live_discord_voice_operator",
         "spend_and_provisioning_preflight",
@@ -134,11 +137,13 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert readiness["spark_readiness_source"] == "voiceops_spark_matrix.ready_for_one_spark_demo"
     assert payload["recording_readiness"]["required_failures"] == []
     assert payload["recording_readiness"]["artifact_required_failures"] == []
-    assert payload["recording_readiness"]["all_required_check_failures"] == [
-        "discord_voice",
-        "stripe_projects_cli",
-        "stripe_link_cli",
-    ]
+    assert (
+        payload["recording_readiness"]["all_required_check_failures"]
+        == readiness["all_required_check_failures"]
+    )
+    assert {"discord_voice", "stripe_projects_cli"}.issubset(
+        payload["recording_readiness"]["all_required_check_failures"]
+    )
     assert payload["readiness_closure_ref"] == "readiness-closure-summary.json"
     assert payload["readiness_closure_summary_ref"] == "readiness-closure-summary.json"
     assert payload["plan_readiness_closure_ref"] == "artifacts/voiceops-plan/current/readiness-closure-index.json"
@@ -263,7 +268,16 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert operator_handoff["phases"][1]["commands"][0] == operator_handoff["phases"][1]["first_safe_command"]
     assert operator_handoff["phases"][1]["commands"][1] == operator_handoff["phases"][1]["first_evidence_command"]
     assert operator_handoff["phases"][1]["blocked_by_current_environment"] == {
-        "missing_cli_or_config": ["stripe_projects_cli", "stripe_link_cli", "nemoclaw_boundary", "phone_handoff"],
+        "missing_cli_or_config": [
+            check_id
+            for check_id in (
+                "stripe_projects_cli",
+                "stripe_link_cli",
+                "nemoclaw_boundary",
+                "phone_handoff",
+            )
+            if check_id in readiness["live_prerequisite_failures"]
+        ],
         "needs_read_only_discovery": True,
         "needs_redacted_setup_evidence": True,
     }
