@@ -151,6 +151,33 @@ def _with_post_approval_attestation(payload: dict[str, object]) -> dict[str, obj
     return payload
 
 
+def _write_approval_decision_artifacts(root: Path, payload: dict[str, object]) -> None:
+    receipts = payload.get("receipts")
+    if not isinstance(receipts, list):
+        return
+    for receipt in receipts:
+        if not isinstance(receipt, dict):
+            continue
+        decision_ref = str(receipt.get("approval_decision_ref") or "")
+        if not decision_ref:
+            continue
+        decision_payload = {
+            "schema_version": "voiceops.milestone2.approval_decision.v1",
+            "redacted": True,
+            "redaction_policy": "redacted references only; no raw secrets, tokens, cards, or phone numbers",
+            "action_id": receipt.get("action_id"),
+            "receipt_id": receipt.get("receipt_id"),
+            "decision": receipt.get("decision"),
+            "decision_by": receipt.get("decision_by"),
+            "decision_at": receipt.get("decision_at"),
+            "approval_id": receipt.get("approval_id"),
+        }
+        decision_path = root / decision_ref
+        decision_path.parent.mkdir(parents=True, exist_ok=True)
+        decision_path.write_text(json.dumps(decision_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        receipt["approval_decision_sha256"] = hashlib.sha256(decision_path.read_bytes()).hexdigest()
+
+
 def _readonly_discovery_redacted_sha256(payload: dict[str, object]) -> str:
     attested_payload = dict(payload)
     attested_payload.pop("collector_attestation", None)
@@ -2251,8 +2278,9 @@ def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_pat
             for action in actions
         ],
     }
-    payload = _with_post_approval_attestation(payload)
     receipt_path = tmp_path / "post-approval-receipts.json"
+    _write_approval_decision_artifacts(tmp_path, payload)
+    payload = _with_post_approval_attestation(payload)
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
 
     loaded = load_post_approval_receipts(receipt_path, plan)
@@ -2277,6 +2305,60 @@ def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_pat
     assert len(ledger_rows) == 4
     assert json.loads(ledger_rows[0])["audit_event_id"] == "audit-provision-voip-provider-001"
     assert "+15551234567" not in json.dumps(loaded)
+
+
+def test_post_approval_receipts_reject_missing_approval_decision_artifact(tmp_path):
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    payload = _complete_post_approval_receipts(plan)
+    payload = _with_post_approval_attestation(payload)
+    receipt_path = tmp_path / "post-approval-receipts.json"
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = load_post_approval_receipts(receipt_path, plan)
+
+    assert loaded["status"] == "invalid"
+    assert (
+        "post_approval_receipts:receipt-provision-voip-provider-001:approval_decision_ref:file_not_found"
+        in loaded["validation_issues"]
+    )
+
+
+def test_post_approval_receipts_reject_approval_decision_hash_mismatch(tmp_path):
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    payload = _complete_post_approval_receipts(plan)
+    _write_approval_decision_artifacts(tmp_path, payload)
+    payload["receipts"][0]["approval_decision_sha256"] = "e" * 64
+    payload = _with_post_approval_attestation(payload)
+    receipt_path = tmp_path / "post-approval-receipts.json"
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = load_post_approval_receipts(receipt_path, plan)
+
+    assert loaded["status"] == "invalid"
+    assert (
+        "post_approval_receipts:receipt-provision-voip-provider-001:approval_decision_sha256_mismatch"
+        in loaded["validation_issues"]
+    )
+
+
+def test_post_approval_receipts_reject_absolute_approval_decision_ref(tmp_path):
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    payload = _complete_post_approval_receipts(plan)
+    payload["receipts"][0]["approval_decision_ref"] = "/tmp/approval-decision.json"
+    payload = _with_post_approval_attestation(payload)
+    receipt_path = tmp_path / "post-approval-receipts.json"
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = load_post_approval_receipts(receipt_path, plan)
+
+    assert loaded["status"] == "invalid"
+    assert (
+        "post_approval_receipts:receipt-provision-voip-provider-001:approval_decision_ref:absolute_path_not_allowed"
+        in loaded["validation_issues"]
+    )
 
 
 def test_post_approval_receipts_validate_held_denied_skipped_without_execution_artifacts():

@@ -1125,7 +1125,7 @@ def _audit_post_approval_receipt_validation(
         if not isinstance(receipt_payload, Mapping) or not receipt_payload:
             issues.append("post_approval_receipts_validation:loaded_receipts_empty_or_invalid")
             return
-        recomputed = validate_post_approval_receipts(receipt_payload, execution_plan)
+        recomputed = validate_post_approval_receipts(receipt_payload, execution_plan, receipt_path=receipt_path)
         for key in (
             "status",
             "validation_issues",

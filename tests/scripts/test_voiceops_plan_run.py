@@ -208,6 +208,30 @@ def _write_preflight_evidence(root: Path) -> Path:
     )
 
 
+def _write_approval_decision_artifacts(root: Path, payload: dict) -> None:
+    for receipt in payload.get("receipts", []):
+        if not isinstance(receipt, dict):
+            continue
+        decision_ref = str(receipt.get("approval_decision_ref") or "")
+        if not decision_ref:
+            continue
+        decision_payload = {
+            "schema_version": "voiceops.milestone2.approval_decision.v1",
+            "redacted": True,
+            "redaction_policy": "redacted references only; no raw secrets, tokens, cards, or phone numbers",
+            "action_id": receipt.get("action_id"),
+            "receipt_id": receipt.get("receipt_id"),
+            "decision": receipt.get("decision"),
+            "decision_by": receipt.get("decision_by"),
+            "decision_at": receipt.get("decision_at"),
+            "approval_id": receipt.get("approval_id"),
+        }
+        decision_path = root / decision_ref
+        decision_path.parent.mkdir(parents=True, exist_ok=True)
+        decision_path.write_text(json.dumps(decision_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        receipt["approval_decision_sha256"] = hashlib.sha256(decision_path.read_bytes()).hexdigest()
+
+
 def _write_post_approval_receipts(root: Path) -> Path:
     report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
     plan = build_milestone2_execution_plan(report)
@@ -279,6 +303,7 @@ def _write_post_approval_receipts(root: Path) -> Path:
             for action in actions
         ],
     }
+    _write_approval_decision_artifacts(root, payload)
     attested_payload = dict(payload)
     attested_payload.pop("collector_attestation", None)
     redacted_sha256 = hashlib.sha256(

@@ -3541,7 +3541,7 @@ def load_post_approval_receipts(path: Path | None, plan: Mapping[str, Any]) -> d
             "validation_issues": ["post_approval_receipts:root_must_be_object"],
             "redaction_policy": "references_only",
         }
-    report = validate_post_approval_receipts(payload, plan)
+    report = validate_post_approval_receipts(payload, plan, receipt_path=resolved)
     report["loaded"] = True
     report["path"] = str(path)
     report["redaction_policy"] = "references_only"
@@ -3560,7 +3560,7 @@ def _post_approval_receipt_secret_issues(payload: Mapping[str, Any]) -> list[str
             continue
         if BEARER_RE.search(value) or PREFLIGHT_SECRET_VALUE_RE.search(value) or SECRET_VALUE_RE.search(value):
             issues.append(f"{path}:secret-like value")
-        elif not (name.endswith("_at") or name.endswith("_due")) and PHONE_RE.search(value):
+        elif not (name.endswith("_at") or name.endswith("_due") or name.endswith("_sha256")) and PHONE_RE.search(value):
             issues.append(f"{path}:phone-like value")
     return issues
 
@@ -3581,7 +3581,70 @@ def _duplicate_nonempty_field_values(items: Iterable[Any], field: str) -> list[s
     return sorted(value for value in set(values) if values.count(value) > 1)
 
 
-def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[str, Any]) -> dict[str, Any]:
+def _approval_decision_artifact_issues(
+    receipt: Mapping[str, Any],
+    *,
+    receipt_id: str,
+    receipt_path: Path | None,
+) -> list[str]:
+    if receipt_path is None:
+        return []
+    decision_ref = str(receipt.get("approval_decision_ref") or "").strip()
+    if not decision_ref:
+        return []
+    issues: list[str] = []
+    ref_issues = _relative_artifact_ref_issues(decision_ref, base_path=receipt_path)
+    if ref_issues:
+        return [f"post_approval_receipts:{receipt_id}:approval_decision_ref:{issue}" for issue in ref_issues]
+    decision_path = _resolve_source_artifact_path(decision_ref, receipt_path)
+    if not decision_path.exists():
+        return [
+            f"post_approval_receipts:{receipt_id}:approval_decision_ref:file_not_found",
+            f"post_approval_receipts:{receipt_id}:approval_decision_ref:file_not_found_at:{decision_path.resolve(strict=False)}",
+        ]
+    try:
+        decision_bytes = decision_path.read_bytes()
+    except OSError as exc:
+        return [f"post_approval_receipts:{receipt_id}:approval_decision_ref:file_unreadable:{exc.strerror or exc}"]
+    actual_sha256 = hashlib.sha256(decision_bytes).hexdigest()
+    expected_sha256 = str(receipt.get("approval_decision_sha256") or "").strip().lower()
+    if re.fullmatch(r"[0-9a-f]{64}", expected_sha256) and expected_sha256 != actual_sha256:
+        issues.append(f"post_approval_receipts:{receipt_id}:approval_decision_sha256_mismatch")
+    try:
+        decision_payload = json.loads(decision_bytes.decode("utf-8"))
+    except UnicodeDecodeError:
+        issues.append(f"post_approval_receipts:{receipt_id}:approval_decision_ref:not_utf8_json")
+        return issues
+    except json.JSONDecodeError as exc:
+        issues.append(f"post_approval_receipts:{receipt_id}:approval_decision_ref:json_parse_failed:{exc.msg}")
+        return issues
+    if not isinstance(decision_payload, Mapping):
+        issues.append(f"post_approval_receipts:{receipt_id}:approval_decision_ref:root_must_be_object")
+        return issues
+    if decision_payload.get("redacted") is not True and not _strict_affirmative_redaction_policy(
+        str(decision_payload.get("redaction_policy") or "")
+    ):
+        issues.append(f"post_approval_receipts:{receipt_id}:approval_decision_ref:not_redacted")
+    issues.extend(
+        f"post_approval_receipts:{receipt_id}:approval_decision_ref:{issue}"
+        for issue in _example_only_presence_issues(decision_payload)
+    )
+    issues.extend(
+        f"post_approval_receipts:{receipt_id}:approval_decision_ref:{issue}"
+        for issue in _post_approval_receipt_secret_issues(decision_payload)
+    )
+    for field in ("action_id", "decision", "decision_by", "decision_at"):
+        if field in decision_payload and decision_payload.get(field) != receipt.get(field):
+            issues.append(f"post_approval_receipts:{receipt_id}:approval_decision_ref:{field}_mismatch")
+    return issues
+
+
+def validate_post_approval_receipts(
+    payload: Mapping[str, Any],
+    plan: Mapping[str, Any],
+    *,
+    receipt_path: Path | None = None,
+) -> dict[str, Any]:
     issues: list[str] = []
     if str(payload.get("schema_version") or "") != POST_APPROVAL_RECEIPTS_SCHEMA_VERSION:
         issues.append("post_approval_receipts:missing_or_invalid_schema_version")
@@ -3711,6 +3774,13 @@ def validate_post_approval_receipts(payload: Mapping[str, Any], plan: Mapping[st
         decision_sha256 = str(receipt.get("approval_decision_sha256") or "")
         if not re.fullmatch(r"[0-9a-f]{64}", decision_sha256):
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_approval_decision_sha256")
+        issues.extend(
+            _approval_decision_artifact_issues(
+                receipt,
+                receipt_id=receipt_id or str(index),
+                receipt_path=receipt_path,
+            )
+        )
         if (
             status not in POST_APPROVAL_NON_EXECUTED_STATUSES
             and action.get("credential_location_required")
