@@ -1293,6 +1293,9 @@ class TestDiscordVoiceChannelMethods:
         adapter._realtime_voice_cfg = {"enabled": False}
         adapter._voice_fx_cfg = {"enabled": False}
         adapter._ambient_pcm_cache = None
+        adapter._ack_pcm_cache = {}
+        adapter._ack_prewarm_tasks = {}
+        adapter._ack_phrase_index = 0
         adapter._voice_input_callback = None
         adapter._allowed_user_ids = set()
         adapter._running = True
@@ -1601,6 +1604,74 @@ class TestDiscordVoiceChannelMethods:
         await asyncio.sleep(0)
 
         fake_session.handle_speech_end.assert_awaited_once_with(user_id=42)
+
+    @pytest.mark.asyncio
+    async def test_realtime_voice_silence_boundary_enqueues_cached_ack_before_session_end(self):
+        adapter = self._make_adapter()
+        fake_session = AsyncMock()
+        fake_session.handle_speech_end = AsyncMock()
+        mixer = MagicMock()
+        adapter._realtime_voice_cfg = {"enabled": True}
+        adapter._voice_fx_cfg = {
+            "ack_enabled": True,
+            "ack_phrases": ["One moment.", "On it."],
+            "speech_gain": 0.75,
+            "ack_prewarm_enabled": True,
+        }
+        adapter._ack_pcm_cache = {
+            "One moment.": b"pcm-one",
+            "On it.": b"pcm-two",
+        }
+        adapter._voice_mixers[111] = mixer
+        adapter._realtime_voice_sessions[111] = fake_session
+        adapter._reset_voice_timeout = MagicMock()
+
+        adapter._schedule_realtime_voice_speech_end(111, 42)
+        mixer.play_speech.assert_called_once_with(b"pcm-one", gain=0.75, fade_in_ms=0)
+        fake_session.handle_speech_end.assert_not_awaited()
+        await asyncio.sleep(0)
+
+        fake_session.handle_speech_end.assert_awaited_once_with(user_id=42)
+        assert adapter._voice_state(111).latency_metrics_ms["speech_end_to_ack_enqueued_ms"] >= 0
+
+    def test_realtime_voice_silence_boundary_rotates_cached_ack_phrases(self):
+        adapter = self._make_adapter()
+        mixer = MagicMock()
+        adapter._realtime_voice_cfg = {"enabled": True}
+        adapter._voice_fx_cfg = {
+            "ack_enabled": True,
+            "ack_phrases": ["One moment.", "On it."],
+            "speech_gain": 1.0,
+            "ack_prewarm_enabled": True,
+        }
+        adapter._ack_pcm_cache = {
+            "One moment.": b"pcm-one",
+            "On it.": b"pcm-two",
+        }
+        adapter._voice_mixers[111] = mixer
+        adapter._reset_voice_timeout = MagicMock()
+
+        adapter._schedule_realtime_voice_speech_end(111, 42)
+        adapter._schedule_realtime_voice_speech_end(111, 42)
+
+        assert mixer.play_speech.call_args_list[0].args == (b"pcm-one",)
+        assert mixer.play_speech.call_args_list[1].args == (b"pcm-two",)
+
+    def test_realtime_voice_silence_boundary_does_not_block_when_ack_cache_empty(self):
+        adapter = self._make_adapter()
+        mixer = MagicMock()
+        adapter._realtime_voice_cfg = {"enabled": True}
+        adapter._voice_fx_cfg = {
+            "ack_enabled": True,
+            "ack_phrases": ["One moment."],
+            "speech_gain": 1.0,
+            "ack_prewarm_enabled": False,
+        }
+        adapter._voice_mixers[111] = mixer
+
+        adapter._schedule_realtime_voice_speech_end(111, 42)
+
+        mixer.play_speech.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_leave_voice_channel_closes_realtime_session(self):
