@@ -1186,6 +1186,7 @@ class DiscordAdapter(BasePlatformAdapter):
         self._ack_pcm_cache: Dict[str, bytes] = {}
         self._ack_prewarm_tasks: Dict[str, asyncio.Task] = {}
         self._ack_phrase_index: int = 0
+        self._realtime_voice_last_ack: Dict[Tuple[int, int], Dict[str, Any]] = {}
         # Realtime voice sidecar bridge.  Opt-in: keeps legacy Discord voice
         # capture/TTS behavior unchanged unless discord.realtime_voice.enabled.
         self._realtime_voice_cfg: Dict[str, Any] = self._load_realtime_voice_config()
@@ -3863,6 +3864,60 @@ class DiscordAdapter(BasePlatformAdapter):
         logger.info("Discord realtime voice acknowledgement enqueued (guild=%d, phrase=%r)", guild_id, phrase)
         return True
 
+    def _record_realtime_voice_ack(self, guild_id: int, user_id: int, phrase: str) -> None:
+        acks = getattr(self, "_realtime_voice_last_ack", None)
+        if not isinstance(acks, dict):
+            self._realtime_voice_last_ack = {}
+            acks = self._realtime_voice_last_ack
+        acks[(guild_id, user_id)] = {"text": phrase, "at": time.monotonic()}
+
+    def consume_realtime_voice_ack(self, guild_id: int, user_id: int) -> Optional[str]:
+        """Return the recent reflex ack for this voice turn, if any."""
+        acks = getattr(self, "_realtime_voice_last_ack", None)
+        if not isinstance(acks, dict):
+            return None
+        entry = acks.pop((guild_id, user_id), None)
+        if not isinstance(entry, dict):
+            return None
+        try:
+            age = time.monotonic() - float(entry.get("at", 0.0))
+        except (TypeError, ValueError):
+            return None
+        text = str(entry.get("text") or "").strip()
+        if not text or age > 8.0:
+            return None
+        return text
+
+    def _schedule_realtime_voice_ack_transcript(
+        self,
+        guild_id: int,
+        user_id: int,
+        phrase: str,
+    ) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(self._post_realtime_voice_ack_transcript(guild_id, user_id, phrase))
+        task.add_done_callback(self._log_realtime_voice_task_result)
+
+    async def _post_realtime_voice_ack_transcript(
+        self,
+        guild_id: int,
+        user_id: int,
+        phrase: str,
+    ) -> None:
+        text_channels = getattr(self, "_voice_text_channels", {}) or {}
+        text_ch_id = text_channels.get(guild_id)
+        if not text_ch_id:
+            return
+        client = getattr(self, "_client", None)
+        channel = client.get_channel(text_ch_id) if client is not None else None
+        if channel is None:
+            return
+        safe_phrase = phrase[:500].replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
+        await channel.send(f"**[Voice reflex]** Hermes: {safe_phrase}")
+
     def _play_realtime_speech_end_ack(
         self,
         guild_id: int,
@@ -3872,7 +3927,12 @@ class DiscordAdapter(BasePlatformAdapter):
     ) -> bool:
         if not self._realtime_voice_cfg.get("enabled"):
             return False
-        played = self._play_cached_ack_in_voice(guild_id, speech_end_at=speech_end_at)
+        phrase = self._next_cached_ack_phrase()
+        played = self._play_cached_ack_in_voice(
+            guild_id,
+            phrase=phrase,
+            speech_end_at=speech_end_at,
+        )
         if not played:
             self._ensure_ack_bank_prewarmed()
             logger.debug(
@@ -3880,6 +3940,9 @@ class DiscordAdapter(BasePlatformAdapter):
                 guild_id,
                 user_id,
             )
+            return False
+        self._record_realtime_voice_ack(guild_id, user_id, phrase)
+        self._schedule_realtime_voice_ack_transcript(guild_id, user_id, phrase)
         return played
 
     async def play_ack_in_voice(self, guild_id: int, phrase: Optional[str] = None) -> bool:

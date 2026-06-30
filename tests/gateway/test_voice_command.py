@@ -1141,6 +1141,30 @@ class TestVoiceChannelCommands:
         assert event.source.chat_type == "channel"
 
     @pytest.mark.asyncio
+    async def test_input_includes_reflex_ack_in_oracle_context(self, runner):
+        """Voice input tells the oracle what the reflex already said."""
+        from gateway.config import Platform
+        runner._discord_voice_transcript_agent_turns = True
+        mock_adapter = AsyncMock()
+        mock_adapter._voice_text_channels = {111: 123}
+        mock_adapter._voice_sources = {}
+        mock_channel = AsyncMock()
+        mock_adapter._client = MagicMock()
+        mock_adapter._client.get_channel = MagicMock(return_value=mock_channel)
+        mock_adapter.handle_message = AsyncMock()
+        mock_adapter.consume_realtime_voice_ack = MagicMock(return_value="One moment.")
+        runner.adapters[Platform.DISCORD] = mock_adapter
+
+        await runner._handle_voice_channel_input(111, 42, "Hello from VC")
+
+        mock_adapter.handle_message.assert_called_once()
+        event = mock_adapter.handle_message.call_args[0][0]
+        assert "The voice reflex already told the user: One moment." in event.text
+        assert "do not repeat it" in event.text
+        assert event.metadata["kame_interface_already_said"] == "One moment."
+        mock_adapter.consume_realtime_voice_ack.assert_called_once_with(111, 42)
+
+    @pytest.mark.asyncio
     async def test_input_reuses_bound_source_metadata(self, runner):
         """Voice input should share the linked text channel session metadata."""
         from gateway.config import Platform
@@ -1296,6 +1320,7 @@ class TestDiscordVoiceChannelMethods:
         adapter._ack_pcm_cache = {}
         adapter._ack_prewarm_tasks = {}
         adapter._ack_phrase_index = 0
+        adapter._realtime_voice_last_ack = {}
         adapter._voice_input_callback = None
         adapter._allowed_user_ids = set()
         adapter._running = True
@@ -1625,6 +1650,10 @@ class TestDiscordVoiceChannelMethods:
         adapter._voice_mixers[111] = mixer
         adapter._realtime_voice_sessions[111] = fake_session
         adapter._reset_voice_timeout = MagicMock()
+        adapter._voice_text_channels = {111: 123}
+        mock_channel = AsyncMock()
+        adapter._client = MagicMock()
+        adapter._client.get_channel = MagicMock(return_value=mock_channel)
 
         adapter._schedule_realtime_voice_speech_end(111, 42)
         mixer.play_speech.assert_called_once_with(b"pcm-one", gain=0.75, fade_in_ms=0)
@@ -1632,6 +1661,8 @@ class TestDiscordVoiceChannelMethods:
         await asyncio.sleep(0)
 
         fake_session.handle_speech_end.assert_awaited_once_with(user_id=42)
+        mock_channel.send.assert_awaited_once_with("**[Voice reflex]** Hermes: One moment.")
+        assert adapter.consume_realtime_voice_ack(111, 42) == "One moment."
         assert adapter._voice_state(111).latency_metrics_ms["speech_end_to_ack_enqueued_ms"] >= 0
 
     def test_realtime_voice_silence_boundary_rotates_cached_ack_phrases(self):
