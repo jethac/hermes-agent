@@ -145,6 +145,17 @@ Target:
 
 Hermes's existing skills and tool system remain the action layer. VoiceOps should compose those capabilities instead of bypassing them.
 
+Voice turns must not carry the full Hermes tool surface by default. The normal Discord/CLI toolset is too large for low-latency local oracle models and pushes long sessions into unnecessary context compaction. VoiceOps needs progressive tool disclosure:
+
+- the durable voice/oracle conversation should keep only conversation state, selected tool results, and user-visible action history
+- most or all Hermes core tools may be hidden behind `tool_search` when a feature flag enables core deferral
+- raw MCP and plugin tools should stay behind `tool_search` unless they are explicitly selected for the current turn
+- the long-term router is an ephemeral tool-selection oracle: it receives the reflex intent, compact session summary, platform metadata, and a compact tool catalog, then returns `no_tools`, a small set of toolsets, or exact tool names
+- the ephemeral router must not perform real tool calls and must not persist its own transcript into the user conversation
+- actual tool invocation still happens in the real Hermes oracle session, so approvals, guardrails, NemoClaw checks, audit logging, and session state remain authoritative
+
+The first implementation target is a conservative feature flag: `tools.tool_search.defer_core: all`, used with `tools.tool_search.enabled: 'on'`. This collapses core Hermes tools behind the same bridge used for MCP/plugin progressive disclosure. A later VoiceOps milestone should add the separate ephemeral router so the main oracle sees only the selected small tool surface for that turn, instead of needing to call `tool_search` itself.
+
 Initial important skills:
 
 - Stripe Link CLI

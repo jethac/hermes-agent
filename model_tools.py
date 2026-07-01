@@ -960,6 +960,7 @@ def handle_function_call(
 
     if _ts_mod is not None and _ts_mod.is_bridge_tool(function_name):
         try:
+            _ts_cfg = _ts_mod.load_config()
             # Use skip_tool_search_assembly=True so we see the real catalog,
             # not the already-collapsed bridge-only list (the bridge would
             # otherwise be searching only itself).
@@ -980,14 +981,20 @@ def handle_function_call(
             ) or []
         except Exception:
             current_defs = []
+            _ts_cfg = _ts_mod.ToolSearchConfig.from_raw(None)
         if function_name == _ts_mod.TOOL_SEARCH_NAME:
             return _ts_mod.dispatch_tool_search(function_args or {},
-                                                current_tool_defs=current_defs)
+                                                current_tool_defs=current_defs,
+                                                config=_ts_cfg)
         if function_name == _ts_mod.TOOL_DESCRIBE_NAME:
             return _ts_mod.dispatch_tool_describe(function_args or {},
-                                                  current_tool_defs=current_defs)
+                                                  current_tool_defs=current_defs,
+                                                  config=_ts_cfg)
         if function_name == _ts_mod.TOOL_CALL_NAME:
-            underlying_name, underlying_args, err = _ts_mod.resolve_underlying_call(function_args or {})
+            underlying_name, underlying_args, err = _ts_mod.resolve_underlying_call(
+                function_args or {},
+                config=_ts_cfg,
+            )
             if err or not underlying_name:
                 return json.dumps({"error": err or "tool_call could not be resolved"},
                                   ensure_ascii=False)
@@ -997,7 +1004,10 @@ def handle_function_call(
             # additionally rejects any tool the session was not granted, so a
             # restricted session can never invoke an out-of-scope tool through
             # the bridge even if the catalog scoping above regressed.
-            _scoped_deferrable = _ts_mod.scoped_deferrable_names(current_defs)
+            _scoped_deferrable = _ts_mod.scoped_deferrable_names(
+                current_defs,
+                config=_ts_cfg,
+            )
             if underlying_name not in _scoped_deferrable:
                 return json.dumps({
                     "error": (

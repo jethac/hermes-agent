@@ -82,6 +82,17 @@ class TestConfigParsing:
         assert cfg.max_search_limit == 50
         assert cfg.search_default_limit <= cfg.max_search_limit
 
+    def test_defer_core_defaults_off(self):
+        from tools.tool_search import ToolSearchConfig
+        cfg = ToolSearchConfig.from_raw(None)
+        assert cfg.defer_core == "off"
+
+    def test_defer_core_all_flag(self):
+        from tools.tool_search import ToolSearchConfig
+        for value in ("all", "on", True):
+            cfg = ToolSearchConfig.from_raw({"defer_core": value})
+            assert cfg.defer_core == "all"
+
 
 # ---------------------------------------------------------------------------
 # Classification — the hard invariant: core tools NEVER defer.
@@ -105,6 +116,12 @@ class TestClassification:
         from tools.tool_search import is_deferrable_tool_name, BRIDGE_TOOL_NAMES
         for name in BRIDGE_TOOL_NAMES:
             assert not is_deferrable_tool_name(name)
+
+    def test_core_tools_defer_when_feature_flag_enabled(self):
+        from tools.tool_search import ToolSearchConfig, is_deferrable_tool_name
+        cfg = ToolSearchConfig.from_raw({"defer_core": "all"})
+        assert is_deferrable_tool_name("terminal", config=cfg)
+        assert is_deferrable_tool_name("read_file", config=cfg)
 
     def test_unknown_tool_not_deferrable(self):
         """Defensive: a tool name we cannot resolve to a registry entry must
@@ -250,6 +267,18 @@ class TestAssembly:
         assert not result.activated
         assert {t["function"]["name"] for t in result.tool_defs} == {"terminal", "read_file"}
 
+    def test_defer_core_all_hides_core_behind_bridge(self):
+        from tools.tool_search import assemble_tool_defs, ToolSearchConfig, BRIDGE_TOOL_NAMES
+        defs = [_td("terminal", "Run shell"), _td("read_file", "Read a file")]
+        result = assemble_tool_defs(
+            defs,
+            context_length=200_000,
+            config=ToolSearchConfig.from_raw({"enabled": "on", "defer_core": "all"}),
+        )
+        assert result.activated
+        assert result.deferred_count == 2
+        assert {t["function"]["name"] for t in result.tool_defs} == set(BRIDGE_TOOL_NAMES)
+
     def test_below_threshold_returns_unchanged(self):
         """Tiny deferrable surface: don't bother."""
         from tools.tool_search import assemble_tool_defs, ToolSearchConfig
@@ -303,6 +332,16 @@ class TestBridgeDispatch:
             {"name": "terminal"}, current_tool_defs=[_td("terminal", "Run shell")],
         )
         assert "error" in json.loads(result)
+
+    def test_tool_describe_allows_core_when_defer_core_enabled(self):
+        from tools.tool_search import ToolSearchConfig, dispatch_tool_describe
+        result = dispatch_tool_describe(
+            {"name": "terminal"},
+            current_tool_defs=[_td("terminal", "Run shell")],
+            config=ToolSearchConfig.from_raw({"defer_core": "all"}),
+        )
+        parsed = json.loads(result)
+        assert parsed["name"] == "terminal"
 
     def test_resolve_underlying_call_parses_object_args(self):
         from tools.tool_search import resolve_underlying_call
@@ -364,6 +403,24 @@ class TestHandleFunctionCallIntegration:
         # dispatch path completed without error.
         assert "matches" in parsed or "error" in parsed
 
+    def test_tool_describe_dispatch_honors_defer_core_config(self, monkeypatch):
+        import model_tools
+        from tools import tool_search as _ts
+
+        monkeypatch.setattr(
+            _ts,
+            "load_config",
+            lambda: _ts.ToolSearchConfig.from_raw({"enabled": "on", "defer_core": "all"}),
+        )
+
+        result = model_tools.handle_function_call(
+            function_name="tool_describe",
+            function_args={"name": "terminal"},
+            enabled_toolsets=["terminal"],
+        )
+        parsed = json.loads(result)
+        assert parsed["name"] == "terminal"
+
 
 class TestRegression_OpenClawCron84141:
     """Regression guard for the OpenClaw cron-tool-loss class of bug.
@@ -414,6 +471,16 @@ class TestRegression_OpenClawCron84141:
         })
         assert err is not None
         assert "not a deferrable" in err
+
+    def test_unwrap_allows_core_tool_when_defer_core_enabled(self):
+        from tools.tool_search import ToolSearchConfig, resolve_underlying_call
+        name, args, err = resolve_underlying_call(
+            {"name": "terminal", "arguments": {"command": "echo hi"}},
+            config=ToolSearchConfig.from_raw({"defer_core": "all"}),
+        )
+        assert err is None
+        assert name == "terminal"
+        assert args == {"command": "echo hi"}
 
 
 class TestRegression_ToolsetScoping:
@@ -536,3 +603,11 @@ class TestRegression_ToolsetScoping:
         # core tools are never deferrable
         assert "terminal" not in names
 
+    def test_scoped_deferrable_names_can_include_core_tools_with_flag(self):
+        from tools.tool_search import ToolSearchConfig, scoped_deferrable_names
+
+        names = scoped_deferrable_names(
+            [_td("terminal", "Run shell")],
+            config=ToolSearchConfig.from_raw({"defer_core": "all"}),
+        )
+        assert "terminal" in names
