@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import tempfile
 import time
 from dataclasses import replace
@@ -951,6 +952,60 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             voice_denial_corrected = True
             return _kame_voice_capability_correction_text(self.config), True
 
+        async def emit_planned_speech_chunk(raw_chunk: str) -> bool:
+            nonlocal first_spoken_text_at, spoken_answer, spoken_truncated
+            planned_chunk = self._planner.clean(raw_chunk)
+            if not planned_chunk:
+                return True
+            planned_chunk, denial_corrected = correct_voice_denial(planned_chunk)
+            if denial_corrected:
+                spoken_truncated = True
+            if not planned_chunk:
+                return True
+            planned_chunk, chunk_truncated = _limit_spoken_text(
+                planned_chunk,
+                max_sentences=max_spoken_sentences,
+                already_spoken=spoken_answer,
+            )
+            spoken_truncated = spoken_truncated or chunk_truncated
+            if not planned_chunk:
+                if _spoken_sentence_count(spoken_answer) >= max_spoken_sentences > 0:
+                    spoken_truncated = True
+                    return False
+                return True
+            spoken_answer = _join_spoken_text(spoken_answer, planned_chunk)
+            if oracle_request is not None and first_spoken_text_at is None:
+                first_spoken_text_at = time.perf_counter()
+                if kame_provider_metrics_enabled and oracle_first_token_at is not None:
+                    kame_timing_metrics["kame_oracle_first_token_to_first_spoken_text_ms"] = _elapsed_perf_ms(
+                        oracle_first_token_at,
+                        first_spoken_text_at,
+                    )
+                sync_kame_timing_metrics()
+            await self._emit(
+                VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                {
+                    "text": planned_chunk,
+                    "playback_generation": playback_generation,
+                    **assistant_metadata,
+                    **_voice_response_policy_payload(
+                        policy=voice_response_policy,
+                        max_sentences=max_spoken_sentences,
+                        truncated=spoken_truncated,
+                    ),
+                    **_kame_route_metrics_payload(
+                        assistant_metadata,
+                        oracle_called=True,
+                        extra_metrics=kame_timing_metrics,
+                    ),
+                },
+            )
+            queue_speak(planned_chunk)
+            if _spoken_sentence_count(spoken_answer) >= max_spoken_sentences > 0:
+                spoken_truncated = True
+                return False
+            return True
+
         try:
             reflex_narration = _oracle_reflex_narration_text(self.config, oracle_request)
             if reflex_narration:
@@ -975,6 +1030,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             oracle = self._oracle or NullRealtimeOracle()
             answer = ""
             buffer = ""
+            speech_limit_reached = False
             if oracle_request is not None:
                 await self._emit_oracle_hint(
                     text="",
@@ -1034,100 +1090,23 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         playback_generation=playback_generation,
                         metadata=assistant_metadata,
                     )
-                chunk, buffer = _take_speakable_chunk(buffer)
-                if chunk:
-                    planned_chunk = self._planner.clean(chunk)
-                    if planned_chunk:
-                        planned_chunk, denial_corrected = correct_voice_denial(planned_chunk)
-                        if denial_corrected:
-                            spoken_truncated = True
-                        if not planned_chunk:
-                            continue
-                        planned_chunk, chunk_truncated = _limit_spoken_text(
-                            planned_chunk,
-                            max_sentences=max_spoken_sentences,
-                            already_spoken=spoken_answer,
-                        )
-                        spoken_truncated = spoken_truncated or chunk_truncated
-                        if not planned_chunk:
-                            if _spoken_sentence_count(spoken_answer) >= max_spoken_sentences > 0:
-                                spoken_truncated = True
-                                break
-                            continue
-                        spoken_answer = _join_spoken_text(spoken_answer, planned_chunk)
-                        if oracle_request is not None and first_spoken_text_at is None:
-                            first_spoken_text_at = time.perf_counter()
-                            if kame_provider_metrics_enabled and oracle_first_token_at is not None:
-                                kame_timing_metrics["kame_oracle_first_token_to_first_spoken_text_ms"] = _elapsed_perf_ms(
-                                    oracle_first_token_at,
-                                    first_spoken_text_at,
-                                )
-                            sync_kame_timing_metrics()
-                        await self._emit(
-                            VoiceEventType.ASSISTANT_TEXT_PARTIAL,
-                            {
-                                "text": planned_chunk,
-                                "playback_generation": playback_generation,
-                                **assistant_metadata,
-                                **_voice_response_policy_payload(
-                                    policy=voice_response_policy,
-                                    max_sentences=max_spoken_sentences,
-                                    truncated=spoken_truncated,
-                                ),
-                                **_kame_route_metrics_payload(
-                                    assistant_metadata,
-                                    oracle_called=True,
-                                    extra_metrics=kame_timing_metrics,
-                                ),
-                            },
-                        )
-                        queue_speak(planned_chunk)
-                        if _spoken_sentence_count(spoken_answer) >= max_spoken_sentences > 0:
-                            spoken_truncated = True
-                            break
+                while True:
+                    chunk, buffer = _take_speakable_chunk(buffer)
+                    if not chunk:
+                        break
+                    if not await emit_planned_speech_chunk(chunk):
+                        speech_limit_reached = True
+                        break
+                if speech_limit_reached:
+                    break
 
-            if buffer.strip():
-                planned_chunk = self._planner.clean(buffer)
-                if planned_chunk:
-                    planned_chunk, denial_corrected = correct_voice_denial(planned_chunk)
-                    if denial_corrected:
-                        spoken_truncated = True
-                if planned_chunk:
-                    planned_chunk, chunk_truncated = _limit_spoken_text(
-                        planned_chunk,
-                        max_sentences=max_spoken_sentences,
-                        already_spoken=spoken_answer,
-                    )
-                    spoken_truncated = spoken_truncated or chunk_truncated
-                if planned_chunk:
-                    spoken_answer = _join_spoken_text(spoken_answer, planned_chunk)
-                    if oracle_request is not None and first_spoken_text_at is None:
-                        first_spoken_text_at = time.perf_counter()
-                        if kame_provider_metrics_enabled and oracle_first_token_at is not None:
-                            kame_timing_metrics["kame_oracle_first_token_to_first_spoken_text_ms"] = _elapsed_perf_ms(
-                                oracle_first_token_at,
-                                first_spoken_text_at,
-                            )
-                        sync_kame_timing_metrics()
-                    await self._emit(
-                        VoiceEventType.ASSISTANT_TEXT_PARTIAL,
-                        {
-                            "text": planned_chunk,
-                            "playback_generation": playback_generation,
-                            **assistant_metadata,
-                            **_voice_response_policy_payload(
-                                policy=voice_response_policy,
-                                max_sentences=max_spoken_sentences,
-                                truncated=spoken_truncated,
-                            ),
-                            **_kame_route_metrics_payload(
-                                assistant_metadata,
-                                oracle_called=True,
-                                extra_metrics=kame_timing_metrics,
-                            ),
-                        },
-                    )
-                    queue_speak(planned_chunk)
+            if buffer.strip() and not speech_limit_reached:
+                while buffer.strip():
+                    chunk, buffer = _take_speakable_chunk(buffer)
+                    if not chunk:
+                        chunk, buffer = buffer, ""
+                    if not await emit_planned_speech_chunk(chunk):
+                        break
 
             if oracle_request is not None and answer:
                 if kame_provider_metrics_enabled and oracle_accepted_at is not None:
@@ -1843,20 +1822,45 @@ def _kame_oracle_handoff_narration(
     config: Optional[RealtimeVoiceSessionConfig],
     request: KameOracleRequest,
 ) -> str:
-    intent = _compact_kame_summary_text(request.intent or request.oracle_text)
-    if not intent:
+    task = _compact_kame_summary_text(request.oracle_text or request.intent)
+    if not task:
         return ""
-    intent = intent.rstrip(".!?。！？")
-    prefix = "I'll ask Hermes to"
+    task = task.rstrip(".!?。！？")
+    prefix = "I'm"
     if config is not None and isinstance(config.metadata, Mapping):
         configured = str(config.metadata.get("kame_oracle_handoff_prefix") or "").strip()
         if configured:
             prefix = configured.rstrip()
-    lower_intent = intent[:1].lower() + intent[1:]
-    if lower_intent.startswith(("check ", "look ", "find ", "run ", "call ", "open ", "search ", "verify ", "review ")):
-        text = f"{prefix} {lower_intent}."
+    lower_task = task[:1].lower() + task[1:]
+    verb_map = {
+        "check ": "checking ",
+        "look ": "looking ",
+        "look up ": "looking up ",
+        "find ": "finding ",
+        "run ": "running ",
+        "call ": "calling ",
+        "open ": "opening ",
+        "search ": "searching ",
+        "verify ": "verifying ",
+        "review ": "reviewing ",
+        "diagnose ": "diagnosing ",
+        "fix ": "fixing ",
+        "provision ": "provisioning ",
+        "create ": "creating ",
+        "buy ": "buying ",
+    }
+    action = ""
+    for source, replacement in verb_map.items():
+        if lower_task.startswith(source):
+            action = f"{replacement}{lower_task[len(source):]}".strip()
+            break
+    if action:
+        if prefix.lower().endswith((" to", " to:")):
+            text = f"{prefix} {lower_task}."
+        else:
+            text = f"{prefix} {action}."
     else:
-        text = f"{prefix} handle: {intent}."
+        text = f"{prefix} checking on {task}."
     return text[:160]
 
 
@@ -2590,6 +2594,14 @@ _PHRASE_BOUNDARY_CHARS = frozenset(",;:，、；：،؛")
 
 
 def _take_speakable_chunk(buffer: str) -> tuple[Optional[str], str]:
+    raw = (buffer or "").replace("\r\n", "\n").replace("\r", "\n")
+    paragraph_boundary = re.search(r"\n\s*\n+", raw)
+    if paragraph_boundary is not None:
+        paragraph = raw[: paragraph_boundary.start()].strip()
+        remaining = raw[paragraph_boundary.end() :].strip()
+        if paragraph:
+            return " ".join(paragraph.split()), remaining
+
     normalized = " ".join((buffer or "").split())
     if not normalized:
         return None, ""

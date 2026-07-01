@@ -10932,6 +10932,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 session_key=session_key,
                 run_generation=run_generation,
                 event_message_id=self._reply_anchor_for_event(event),
+                event=event,
                 channel_prompt=event.channel_prompt,
                 moa_config=getattr(event, "_moa_config", None),
                 persist_user_message=persist_user_message,
@@ -11441,6 +11442,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
             # Auto voice reply: send TTS audio before the text response
             _already_sent = bool(agent_result.get("already_sent"))
+            if (
+                not agent_result.get("failed")
+                and response
+                and await self._send_discord_live_voice_reply_segments(event, response, agent_messages)
+            ):
+                return None
             if self._should_send_voice_reply(event, response, agent_messages, already_sent=_already_sent):
                 await self._send_voice_reply(event, response)
 
@@ -12483,6 +12490,82 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return False
 
         return True
+
+    @staticmethod
+    def _is_discord_live_voice_input(event: MessageEvent) -> bool:
+        metadata = getattr(event, "metadata", None) or {}
+        return (
+            event.source.platform == Platform.DISCORD
+            and event.message_type == MessageType.VOICE
+            and metadata.get("voice_origin") == "discord_live_voice"
+        )
+
+    @staticmethod
+    def _split_discord_live_voice_reply_segments(text: str, *, max_chars: int = 1200) -> list[str]:
+        cleaned = str(text or "").strip()
+        if not cleaned:
+            return []
+        paragraphs = [
+            part.strip()
+            for part in re.split(r"\n\s*\n+", cleaned.replace("\r\n", "\n").replace("\r", "\n"))
+            if part.strip()
+        ]
+        segments: list[str] = []
+        for paragraph in paragraphs:
+            for sentence in re.split(r"(?<=[.!?。！？])\s+", paragraph):
+                remaining = sentence.strip()
+                while len(remaining) > max_chars:
+                    split_at = remaining.rfind(" ", 0, max_chars)
+                    if split_at < max_chars // 3:
+                        split_at = max_chars
+                    head = remaining[:split_at].strip()
+                    if head:
+                        segments.append(head)
+                    remaining = remaining[split_at:].strip()
+                if remaining:
+                    segments.append(remaining)
+        return segments
+
+    async def _send_discord_live_voice_reply_segments(
+        self,
+        event: MessageEvent,
+        response: str,
+        agent_messages: list,
+    ) -> bool:
+        if not self._is_discord_live_voice_input(event):
+            return False
+        if not response or response.startswith("Error:"):
+            return False
+        if not self._should_send_voice_reply(event, response, agent_messages, already_sent=True):
+            return False
+        adapter = self.adapters.get(event.source.platform)
+        if adapter is None or not hasattr(adapter, "send"):
+            return False
+
+        segments = self._split_discord_live_voice_reply_segments(response)
+        if not segments:
+            return False
+
+        reply_anchor = self._reply_anchor_for_event(event)
+        metadata = self._thread_metadata_for_source(event.source, reply_anchor)
+        delivered_any = False
+        for index, segment in enumerate(segments):
+            segment_metadata = dict(metadata) if metadata else None
+            if segment_metadata is not None:
+                segment_metadata["notify"] = index == len(segments) - 1
+            try:
+                await adapter.send(
+                    event.source.chat_id,
+                    segment,
+                    metadata=segment_metadata,
+                )
+                delivered_any = True
+            except Exception as exc:
+                logger.warning("Discord live voice segment text send failed: %s", exc)
+                if not delivered_any:
+                    return False
+            await self._send_voice_reply(event, segment)
+        return delivered_any
 
     async def _send_voice_reply(self, event: MessageEvent, text: str) -> None:
         """Generate TTS audio and send as a voice message before the text reply."""
@@ -15956,6 +16039,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         run_generation: Optional[int] = None,
         _interrupt_depth: int = 0,
         event_message_id: Optional[str] = None,
+        event: Optional[MessageEvent] = None,
         channel_prompt: Optional[str] = None,
         moa_config: Optional[dict] = None,
         persist_user_message: Optional[str] = None,
@@ -15975,6 +16059,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 message, context_prompt, history, source, session_id,
                 session_key=session_key, run_generation=run_generation,
                 _interrupt_depth=_interrupt_depth, event_message_id=event_message_id,
+                event=event,
                 channel_prompt=channel_prompt, moa_config=moa_config,
                 persist_user_message=persist_user_message,
                 persist_user_timestamp=persist_user_timestamp,
@@ -15986,6 +16071,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 message, context_prompt, history, source, session_id,
                 session_key=session_key, run_generation=run_generation,
                 _interrupt_depth=_interrupt_depth, event_message_id=event_message_id,
+                event=event,
                 channel_prompt=channel_prompt, moa_config=moa_config,
                 persist_user_message=persist_user_message,
                 persist_user_timestamp=persist_user_timestamp,
@@ -16017,6 +16103,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         run_generation: Optional[int] = None,
         _interrupt_depth: int = 0,
         event_message_id: Optional[str] = None,
+        event: Optional[MessageEvent] = None,
         channel_prompt: Optional[str] = None,
         moa_config: Optional[dict] = None,
         persist_user_message: Optional[str] = None,
@@ -16960,6 +17047,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if _plat_streaming is None
                 else bool(_plat_streaming)
             )
+            if event is not None and self._is_discord_live_voice_input(event):
+                # Live voice has its own paragraph-segmented text + TTS delivery
+                # path after the oracle returns. The generic edit stream would
+                # otherwise create a duplicate single-message preview.
+                _streaming_enabled = False
             _want_stream_deltas = _streaming_enabled
             _want_interim_messages = interim_assistant_messages_enabled
             _want_interim_consumer = _want_interim_messages

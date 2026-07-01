@@ -709,6 +709,13 @@ def test_text_engine_keeps_short_unfinished_phrase_buffered():
     assert remaining == "This is still forming"
 
 
+def test_text_engine_takes_paragraph_boundary_before_normalizing_whitespace():
+    chunk, remaining = _take_speakable_chunk("First paragraph is ready.\n\nSecond paragraph follows.")
+
+    assert chunk == "First paragraph is ready."
+    assert remaining == "Second paragraph follows."
+
+
 def test_text_engine_accepts_transcript_payload_and_emits_oracle_text(monkeypatch):
     async def run():
         async def fake_speak(self, text, playback_generation):
@@ -1576,8 +1583,8 @@ def test_kame_engine_defer_acknowledgement_reports_first_audio_metric(monkeypatc
 
         audio = next(event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK)
         session_metrics = next(event for event in seen if event.type == VoiceEventType.SESSION_METRICS)
-        assert AudioChunk.from_payload(audio.payload).data == b"I'll ask Hermes to check the deployment status."
-        assert audio.payload["kame_interface_already_said"] == "I'll ask Hermes to check the deployment status."
+        assert AudioChunk.from_payload(audio.payload).data == b"I'm checking the deployment status."
+        assert audio.payload["kame_interface_already_said"] == "I'm checking the deployment status."
         assert audio.payload["metrics"]["kame_interface_decision_to_first_audio_ms"] >= 0
         assert audio.payload["metrics"]["kame_interface_decision_to_defer_first_audio_ms"] >= 0
         assert audio.payload["metrics"]["kame_speech_end_to_first_audio_ms"] >= 41
@@ -3153,6 +3160,54 @@ def test_text_engine_speaks_stable_phrase_before_sentence_ends(monkeypatch):
         assert spoken[0] == "This response starts with a stable opening phrase,"
         assert seen[-1].payload["text"] == "This response starts with a stable opening phrase,"
         await engine.close()
+
+    asyncio.run(run())
+
+
+def test_text_engine_drains_large_oracle_delta_into_multiple_speech_chunks(monkeypatch):
+    class ParagraphOracle:
+        async def stream_answer(self, transcript: str):
+            yield "First paragraph is ready.\n\nSecond paragraph follows.\n\nThird paragraph lands."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        engine = TextOracleTTSEngine(oracle=ParagraphOracle())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                max_spoken_sentences=10,
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "tell me something"},
+            )
+        )
+
+        partials = []
+        async for event in engine.events():
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
+                partials.append(event.payload["text"])
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+
+        assert partials == [
+            "First paragraph is ready.",
+            "Second paragraph follows.",
+            "Third paragraph lands.",
+        ]
+        assert spoken == partials
 
     asyncio.run(run())
 
@@ -7711,6 +7766,14 @@ def test_kame_reflex_decision_validates_schema_and_exports_payload():
         "route_confidence must be between 0 and 1",
         "local_reply is required for local or reject_or_clarify",
     ]
+    assert kame_reflex_schema_issues(
+        {
+            "route": "defer",
+            "intent": "The user wants Hermes to check deployment status.",
+            "text": "check deployment status",
+            "route_confidence": 0.9,
+        }
+    ) == ["interface_already_said is required for defer"]
 
     decision = KameReflexDecision.from_payload(
         {
@@ -7787,6 +7850,7 @@ def test_kame_reflex_decision_rejects_direct_tool_authority():
             "intent": "The user wants Hermes to inspect a file.",
             "text": "read pyproject.toml",
             "route_confidence": 0.88,
+            "interface_already_said": "I'm checking pyproject.toml.",
             "tool_calls": [{"name": "read_file", "arguments": {"path": "pyproject.toml"}}],
         }
     )
@@ -7796,6 +7860,7 @@ def test_kame_reflex_decision_rejects_direct_tool_authority():
             "intent": "The user wants Hermes to inspect a file.",
             "text": "read pyproject.toml",
             "route_confidence": 0.88,
+            "interface_already_said": "I'm checking pyproject.toml.",
             "tool_calls": [{"name": "read_file", "arguments": {"path": "pyproject.toml"}}],
             "local_reply": "I'll read it now.",
         }

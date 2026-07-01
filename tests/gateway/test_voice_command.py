@@ -529,6 +529,52 @@ class TestSendVoiceReply:
             # Should not raise
             await runner._send_voice_reply(event, "Hello")
 
+    def test_discord_live_voice_reply_segments_split_sentences(self, runner):
+        segments = runner._split_discord_live_voice_reply_segments(
+            "First sentence. Second sentence!\n\nThird sentence? 四つ目です。"
+        )
+
+        assert segments == ["First sentence.", "Second sentence!", "Third sentence?", "四つ目です。"]
+
+    @pytest.mark.asyncio
+    async def test_discord_live_voice_segments_send_text_before_matching_tts(self, runner):
+        from gateway.config import Platform
+
+        event = _make_event(message_type=MessageType.VOICE)
+        event.source.platform = Platform.DISCORD
+        event.source.chat_id = "123"
+        event.raw_message = SimpleNamespace(guild_id=111, guild=None)
+        event.metadata = {"voice_origin": "discord_live_voice"}
+        runner._voice_mode["discord:123"] = "all"
+
+        calls = []
+        mock_adapter = AsyncMock()
+
+        async def fake_send(chat_id, content, metadata=None):
+            calls.append(("text", content))
+            return SimpleNamespace(success=True)
+
+        async def fake_tts(tts_event, text):
+            calls.append(("tts", text))
+
+        mock_adapter.send = fake_send
+        runner.adapters[Platform.DISCORD] = mock_adapter
+        runner._send_voice_reply = fake_tts
+
+        delivered = await runner._send_discord_live_voice_reply_segments(
+            event,
+            "First sentence. Second sentence.",
+            [],
+        )
+
+        assert delivered is True
+        assert calls == [
+            ("text", "First sentence."),
+            ("tts", "First sentence."),
+            ("text", "Second sentence."),
+            ("tts", "Second sentence."),
+        ]
+
 
 # =====================================================================
 # Discord play_tts skip when in voice channel
