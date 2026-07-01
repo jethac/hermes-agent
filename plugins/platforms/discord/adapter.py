@@ -359,21 +359,21 @@ def _realtime_voice_turn_text_from_payload(event_type: str, payload: Mapping[str
         return str(payload.get("text") or "").strip()
 
     asr_transcript = str(payload.get("asr_transcript") or "").strip()
-    if asr_transcript:
-        return asr_transcript
-
-    transcript = str(payload.get("transcript") or "").strip()
-    if not transcript:
+    if not asr_transcript:
         return ""
 
-    confidence = payload.get("transcript_confidence")
+    source = str(payload.get("asr_transcript_source") or "").strip().lower()
+    if source and source not in {"asr", "local_stt", "streaming_stt"}:
+        return ""
+
+    confidence = payload.get("asr_transcript_confidence")
     if confidence is not None and not isinstance(confidence, bool):
         try:
             if float(confidence) < 0.35:
                 return ""
         except (TypeError, ValueError):
             return ""
-    return transcript
+    return asr_transcript
 
 
 class _Snowflake:
@@ -3670,7 +3670,7 @@ class DiscordAdapter(BasePlatformAdapter):
         if not transcript or user_id is None:
             if event_type == "interface.intent.final" and payload.get("text"):
                 logger.info(
-                    "Discord realtime voice dropped reflex intent without transcript evidence "
+                    "Discord realtime voice dropped reflex intent without ASR evidence "
                     "(guild=%d, route=%s, text=%r)",
                     guild_id,
                     str(payload.get("route") or "")[:40],
