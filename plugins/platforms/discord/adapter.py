@@ -828,8 +828,15 @@ class VoiceReceiver:
     # ------------------------------------------------------------------
 
     def map_ssrc(self, ssrc: int, user_id: int):
+        if not self._is_allowed_voice_user(user_id):
+            logger.info("Ignoring SPEAKING event for disallowed voice user: ssrc=%d user=%d", ssrc, user_id)
+            return
         with self._lock:
             self._ssrc_to_user[ssrc] = user_id
+
+    def _is_allowed_voice_user(self, user_id: int) -> bool:
+        allowed = self._allowed_user_ids
+        return not allowed or "*" in allowed or str(user_id) in allowed
 
     def _install_speaking_hook(self, conn):
         """Wrap the voice websocket hook to capture SPEAKING events (op 5).
@@ -1153,23 +1160,25 @@ class VoiceReceiver:
         """Try to infer user_id for an unmapped SSRC.
 
         When the bot rejoins a voice channel, Discord may not resend
-        SPEAKING events for users already speaking.  If exactly one
-        allowed user is in the channel, map the SSRC to them.
+        SPEAKING events for users already speaking.  Only infer when
+        exactly one non-bot human is in the channel; with multiple humans,
+        an unmapped SSRC is ambiguous even if only one user is allowlisted.
         """
         try:
             channel = self._vc.channel
             if not channel:
                 return 0
             bot_id = self._vc.user.id if self._vc.user else 0
-            allowed = self._allowed_user_ids
             candidates = [
                 m.id for m in channel.members
-                if m.id != bot_id and (not allowed or str(m.id) in allowed)
+                if m.id != bot_id
             ]
             if len(candidates) == 1:
                 uid = candidates[0]
+                if not self._is_allowed_voice_user(uid):
+                    return 0
                 self._ssrc_to_user[ssrc] = uid
-                logger.info("Auto-mapped ssrc=%d -> user=%d (sole allowed member)", ssrc, uid)
+                logger.info("Auto-mapped ssrc=%d -> user=%d (sole non-bot member)", ssrc, uid)
                 return uid
         except Exception:
             pass

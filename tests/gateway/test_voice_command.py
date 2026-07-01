@@ -3592,6 +3592,15 @@ class TestVoiceReception:
         assert completed[0][0] == 42
         assert len(receiver._buffers[100]) == 0  # cleared
 
+    def test_known_ssrc_disallowed_speaking_event_ignored(self):
+        receiver = self._make_receiver(allowed_ids={"42"})
+        receiver.start()
+        receiver.map_ssrc(100, 43)
+        self._fill_buffer(receiver, 100)
+        completed = receiver.check_silence()
+        assert len(completed) == 0
+        assert 100 not in receiver._ssrc_to_user
+
     def test_known_ssrc_short_buffer_ignored(self):
         receiver = self._make_receiver()
         receiver.start()
@@ -3660,6 +3669,19 @@ class TestVoiceReception:
         self._fill_buffer(receiver, 100)
         completed = receiver.check_silence()
         assert len(completed) == 0
+
+    def test_automap_single_allowed_user_with_second_human_no_map(self):
+        members = [
+            SimpleNamespace(id=9999, name="Bot"),
+            SimpleNamespace(id=42, name="Alice"),
+            SimpleNamespace(id=43, name="Bob"),
+        ]
+        receiver = self._make_receiver(allowed_ids={"42"}, members=members)
+        receiver.start()
+        self._fill_buffer(receiver, 100)
+        completed = receiver.check_silence()
+        assert len(completed) == 0
+        assert 100 not in receiver._ssrc_to_user
 
     def test_automap_no_allowlist_single_member(self):
         """No allowed_user_ids → sole non-bot member inferred."""
