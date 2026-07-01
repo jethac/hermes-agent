@@ -96,6 +96,9 @@ The immediate hackathon build can use the existing streaming STT path while the 
 - Running Gemma E2B and Nemotron Super concurrently leaves limited memory headroom.
 - vLLM reports model context according to the configured serving cap, not necessarily the model's architectural maximum.
 - Long context and concurrency trade off directly. For a single-user demo, lower concurrency is the right choice.
+- The current Nemotron Super vLLM path may leak reasoning-style text or
+  `</think>` markers into assistant content. The demo path must filter this
+  before Discord text or TTS output.
 - Cartesia STT/TTS is currently the practical speech bridge; native-audio Gemma reflex remains the target direction.
 - The sidecar and gateway must run from the same worktree/version to avoid realtime voice protocol mismatches.
 

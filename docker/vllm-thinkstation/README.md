@@ -115,6 +115,15 @@ failures while preserving a usable single-user oracle endpoint. Auto tool choice
 with the `hermes` parser is required because Hermes sends OpenAI-compatible tool
 definitions and `tool_choice=auto` to the oracle provider.
 
+## Known Serving Limitation
+
+The Nemotron Super endpoint can emit reasoning-style text such as planning
+phrases or `</think>` markers in normal assistant content when served through
+this vLLM path. The API is healthy in that state, but Hermes must filter that
+content before it reaches Discord text or TTS. Treat a clean `/v1/models`
+response and successful tool-choice probe as serving checks, not as proof that
+the model output is demo-ready.
+
 ## Smoke Test
 
 ```bash
