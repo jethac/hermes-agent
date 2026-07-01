@@ -5,6 +5,9 @@ FROM ${VLLM_IMAGE}
 LABEL org.opencontainers.image.title="Hermes ThinkStation vLLM serving"
 LABEL org.opencontainers.image.description="OpenAI-compatible vLLM endpoints for Hermes KAME reflex and oracle experiments"
 
+RUN VLLM_VERSION="$(python3 -c 'import importlib.metadata as metadata; print(metadata.version("vllm"))')" \
+    && python3 -m pip install --no-cache-dir "vllm[audio]==${VLLM_VERSION}"
+
 COPY healthcheck.py /opt/hermes-vllm/healthcheck.py
 COPY serve-model.sh /opt/hermes-vllm/serve-model.sh
 
