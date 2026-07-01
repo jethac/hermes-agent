@@ -73,7 +73,7 @@ services:
       NEMOTRON_SUPER_MAX_MODEL_LEN: ${NEMOTRON_SUPER_MAX_MODEL_LEN:-32768}
       NEMOTRON_SUPER_GPU_MEMORY_UTILIZATION: ${NEMOTRON_SUPER_GPU_MEMORY_UTILIZATION:-0.62}
       NEMOTRON_SUPER_TENSOR_PARALLEL_SIZE: ${NEMOTRON_SUPER_TENSOR_PARALLEL_SIZE:-1}
-      NEMOTRON_SUPER_EXTRA_ARGS: ${NEMOTRON_SUPER_EXTRA_ARGS:-}
+      NEMOTRON_SUPER_EXTRA_ARGS: ${NEMOTRON_SUPER_EXTRA_ARGS:---max-num-seqs 4 --enforce-eager --enable-auto-tool-choice --tool-call-parser hermes --reasoning-parser nemotron_v3}
     entrypoint: ["/opt/hermes-vllm/serve-model.sh"]
     command: ["nemotron-super-oracle"]
     healthcheck:

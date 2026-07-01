@@ -56,9 +56,83 @@ intentional, bounded construct.
 
 from __future__ import annotations
 
+import re
 from typing import Tuple
 
-__all__ = ["StreamingThinkScrubber"]
+__all__ = ["StreamingThinkScrubber", "strip_leading_reasoning_trace"]
+
+
+_CLOSE_REASONING_TAG_RE = re.compile(
+    r"</(?:think|thinking|reasoning|thought|REASONING_SCRATCHPAD)>\s*",
+    flags=re.IGNORECASE,
+)
+_LEADING_REASONING_START_RE = re.compile(
+    r"^\s*(?:we need to|i need to|need to|the user (?:asks|wants|requested)|"
+    r"we should|let'?s)\b",
+    flags=re.IGNORECASE,
+)
+_LEADING_REASONING_META_RE = re.compile(
+    r"\b(?:reply|respond|answer|output|return|say|give|no extra text|"
+    r"no tool calls|just output|exactly|let'?s do that)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _looks_like_leading_reasoning_trace(text: str) -> bool:
+    candidate = (text or "").strip()
+    if not candidate or len(candidate) > 800:
+        return False
+    return bool(
+        _LEADING_REASONING_START_RE.search(candidate)
+        and _LEADING_REASONING_META_RE.search(candidate)
+    )
+
+
+def strip_leading_reasoning_trace(text: str) -> str:
+    """Strip conservative Nemotron-style leading reasoning leakage.
+
+    vLLM's ``nemotron_v3`` parser should route this text through structured
+    ``reasoning`` fields. When that parser is missing or the model emits an
+    orphan close tag, the trace can arrive as normal content, for example::
+
+        We need to reply with exactly "ready". No extra text. Let's do that.
+        ready
+
+    This intentionally handles only short, leading meta-commentary about how to
+    answer. It does not remove ordinary answers that begin with "we need to..."
+    unless there is a clear final-answer tail.
+    """
+    if not isinstance(text, str) or not text:
+        return ""
+
+    close_match = _CLOSE_REASONING_TAG_RE.search(text)
+    if close_match is not None:
+        prefix = text[: close_match.start()]
+        suffix = text[close_match.end() :]
+        if suffix.strip() and _looks_like_leading_reasoning_trace(prefix):
+            return suffix.lstrip()
+
+    normalized = text.lstrip()
+    if not _LEADING_REASONING_START_RE.search(normalized):
+        return text
+
+    # Common untagged leak: one short planning line, then the actual answer.
+    # Keep this strict so legitimate multi-sentence answers survive.
+    line_match = re.match(r"(?s)^(.{1,500}?)\n+(\S.*)$", normalized)
+    if line_match is not None:
+        prefix, suffix = line_match.groups()
+        if suffix.strip() and _looks_like_leading_reasoning_trace(prefix):
+            leading_ws = text[: len(text) - len(normalized)]
+            return leading_ws + suffix.lstrip()
+
+    paragraph_match = re.match(r"(?s)^(.{1,600}?)\n\s*\n+(\S.*)$", normalized)
+    if paragraph_match is not None:
+        prefix, suffix = paragraph_match.groups()
+        if suffix.strip() and _looks_like_leading_reasoning_trace(prefix):
+            leading_ws = text[: len(text) - len(normalized)]
+            return leading_ws + suffix.lstrip()
+
+    return text
 
 
 class StreamingThinkScrubber:

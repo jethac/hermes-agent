@@ -107,20 +107,23 @@ Hermes oracle.
   scheduler, quantization, KV cache, or tool-calling flags.
 
 The Nemotron Super default includes
-`--max-num-seqs 4 --enforce-eager --enable-auto-tool-choice --tool-call-parser hermes`.
+`--max-num-seqs 4 --enforce-eager --enable-auto-tool-choice --tool-call-parser hermes --reasoning-parser nemotron_v3`.
 On the GB10/PGX with Gemma resident, vLLM reported only 25 available Mamba cache
 blocks after real profiling; the upstream default of 256 concurrent sequences
 cannot initialize in that memory split. Eager mode avoids CUDA graph capture
 failures while preserving a usable single-user oracle endpoint. Auto tool choice
 with the `hermes` parser is required because Hermes sends OpenAI-compatible tool
-definitions and `tool_choice=auto` to the oracle provider.
+definitions and `tool_choice=auto` to the oracle provider. The `nemotron_v3`
+reasoning parser is required so vLLM returns thinking as structured
+`reasoning` instead of mixing it into normal assistant `content`.
 
 ## Known Serving Limitation
 
-The Nemotron Super endpoint can emit reasoning-style text such as planning
-phrases or `</think>` markers in normal assistant content when served through
-this vLLM path. The API is healthy in that state, but Hermes must filter that
-content before it reaches Discord text or TTS. Treat a clean `/v1/models`
+If `--reasoning-parser nemotron_v3` is removed or unsupported by the installed
+vLLM image, the Nemotron Super endpoint can emit reasoning-style text such as
+planning phrases or `</think>` markers in normal assistant content. The API is
+healthy in that state, but Hermes must filter that content before it reaches
+Discord text, TTS, or the Gemma reflex context. Treat a clean `/v1/models`
 response and successful tool-choice probe as serving checks, not as proof that
 the model output is demo-ready.
 

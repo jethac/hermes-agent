@@ -600,6 +600,9 @@ def strip_think_blocks(agent, content: str) -> str:
     """
     if not content:
         return ""
+    from agent.think_scrubber import strip_leading_reasoning_trace
+
+    content = strip_leading_reasoning_trace(content)
     # 1. Closed tag pairs — case-insensitive for all variants so
     #    mixed-case tags (<THINK>, <Thinking>) don't slip through to
     #    the unterminated-tag pass and take trailing content with them.
@@ -649,6 +652,7 @@ def strip_think_blocks(agent, content: str) -> str:
         content,
         flags=re.IGNORECASE,
     )
+    content = strip_leading_reasoning_trace(content)
     # 3b. Stray tool-call closers. (We do NOT strip bare <function> or
     #     unterminated <function name="..."> because a truncated tail
     #     during streaming may still be valuable to the user; matches

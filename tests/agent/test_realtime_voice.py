@@ -1211,6 +1211,65 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
     asyncio.run(run())
 
 
+def test_text_engine_suppresses_oracle_thinking_from_speech_and_commit(monkeypatch):
+    class ThinkingOracle:
+        async def stream_answer(self, transcript: str):
+            yield "<think>planning the spoken answer"
+            yield "</think>"
+            yield "Visible answer."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+            await self._emit(
+                VoiceEventType.AUDIO_OUTPUT_CHUNK,
+                {
+                    **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+                    "playback_generation": playback_generation,
+                },
+            )
+
+        monkeypatch.setattr(TextOracleTTSEngine, "_speak_chunk", fake_speak)
+
+        engine = TextOracleTTSEngine(oracle=ThinkingOracle())
+        await engine.start(RealtimeVoiceSessionConfig(session_id="voice-123"))
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={"transcript": "test", "end_of_utterance": True},
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        await engine.close()
+        assistant_text = "\n".join(
+            str(event.payload.get("text") or "")
+            for event in seen
+            if event.type
+            in {
+                VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                VoiceEventType.INTERFACE_COMMIT,
+                VoiceEventType.ASSISTANT_COMMIT,
+            }
+        )
+        assert "planning" not in assistant_text
+        assert "<think>" not in assistant_text
+        assert "</think>" not in assistant_text
+        assert "Visible answer." in assistant_text
+        assert spoken == ["Visible answer."]
+
+    asyncio.run(run())
+
+
 def test_kame_engine_drops_asr_evidence_when_asr_mode_disabled(monkeypatch):
     class StructuredOracle:
         def __init__(self):

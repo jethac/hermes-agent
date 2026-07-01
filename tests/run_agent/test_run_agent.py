@@ -369,6 +369,24 @@ class TestStripThinkBlocks:
         assert "</think>" not in result
         assert "actual answer" in result
 
+    def test_nemotron_orphaned_closing_trace_stripped(self, agent):
+        text = (
+            'We need to respond with "ready". No tool calls. '
+            'So just output "ready".\n\n</think>\n\nready'
+        )
+        assert agent._strip_think_blocks(text).strip() == "ready"
+
+    def test_nemotron_untagged_leading_trace_stripped(self, agent):
+        text = (
+            'We need to reply with exactly "ready". No extra text. '
+            "Let's do that.\nready"
+        )
+        assert agent._strip_think_blocks(text).strip() == "ready"
+
+    def test_legitimate_we_need_answer_preserved(self, agent):
+        text = "We need to fix the gateway first.\nThen restart the sidecar."
+        assert agent._strip_think_blocks(text) == text
+
     def test_orphaned_closing_thinking_tag(self, agent):
         result = agent._strip_think_blocks("reasoning</thinking>answer")
         assert "</thinking>" not in result

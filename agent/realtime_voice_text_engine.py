@@ -32,6 +32,7 @@ from agent.realtime_voice_kame import KameOracleRequest, KameRoute, kame_local_r
 from agent.realtime_voice_oracle import HermesRealtimeOracle, NullRealtimeOracle
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, wants_realtime_sidecar
+from agent.think_scrubber import StreamingThinkScrubber, strip_leading_reasoning_trace
 
 
 class TextOracleTTSEngine(RealtimeVoiceEngine):
@@ -1031,6 +1032,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             answer = ""
             buffer = ""
             speech_limit_reached = False
+            oracle_text_scrubber = StreamingThinkScrubber()
             if oracle_request is not None:
                 await self._emit_oracle_hint(
                     text="",
@@ -1070,6 +1072,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 delta = _oracle_stream_text_delta(item)
                 if not delta:
                     continue
+                delta = oracle_text_scrubber.feed(delta)
+                if not delta:
+                    continue
                 now = time.perf_counter()
                 if oracle_request is not None and oracle_first_token_at is None:
                     oracle_first_token_at = now
@@ -1100,6 +1105,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 if speech_limit_reached:
                     break
 
+            if not speech_limit_reached:
+                tail = oracle_text_scrubber.flush()
+                if tail:
+                    answer += tail
+                    buffer += tail
             if buffer.strip() and not speech_limit_reached:
                 while buffer.strip():
                     chunk, buffer = _take_speakable_chunk(buffer)
@@ -1109,6 +1119,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         break
 
             if oracle_request is not None and answer:
+                answer = strip_leading_reasoning_trace(answer)
                 if kame_provider_metrics_enabled and oracle_accepted_at is not None:
                     kame_timing_metrics["kame_oracle_total_stream_ms"] = _elapsed_perf_ms(
                         oracle_accepted_at,
