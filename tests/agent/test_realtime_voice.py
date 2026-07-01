@@ -7468,7 +7468,7 @@ def test_reference_sidecar_vllm_kame_audio_reflex_does_not_retry_unrelated_http_
         interface_audio_input="native_audio",
     )
 
-    with pytest.raises(urllib.error.HTTPError):
+    with pytest.raises(RuntimeError, match="HTTP 401: Unauthorized"):
         sidecar._understand_kame_with_vllm(b"audio", VoiceAudioCodec.WEBM_OPUS)
 
     assert len(captured_bodies) == 1
@@ -7659,6 +7659,38 @@ def test_reference_sidecar_kame_audio_reflex_rejects_pcm_segments_over_model_lim
         sidecar._understand_audio_sync(b"\x00\x00" * 16001, VoiceAudioCodec.PCM16)
 
     assert calls == []
+
+
+def test_reference_sidecar_kame_audio_reflex_reports_vllm_http_body(monkeypatch):
+    def fake_urlopen(req, timeout):
+        raise urllib.error.HTTPError(
+            req.full_url,
+            500,
+            "Internal Server Error",
+            hdrs=None,
+            fp=io.BytesIO(b'{"error":{"message":"Please install vllm[audio] for audio support"}}'),
+        )
+
+    monkeypatch.setattr("agent.realtime_voice_reference_sidecar.urllib.request.urlopen", fake_urlopen)
+
+    sidecar = ReferenceRealtimeVoiceSidecarSession(
+        ReferenceSidecarRuntimeConfig(
+            vllm_base_url="http://vllm.local:8000/v1",
+            vllm_model="google/gemma-4-E2B-it",
+            vllm_timeout_seconds=12,
+        )
+    )
+    sidecar.config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        sample_rate_hz=16000,
+        channels=1,
+        interface_audio_input="native_audio",
+        asr_mode=RealtimeVoiceASRMode.DISABLED,
+    )
+
+    with pytest.raises(RuntimeError, match=r"Please install vllm\[audio\]"):
+        sidecar._understand_audio_sync(b"\x00\x00" * 160, VoiceAudioCodec.PCM16)
 
 
 def test_reference_sidecar_reports_kame_audio_segment_limit_during_live_receive(monkeypatch):

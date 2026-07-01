@@ -1610,8 +1610,11 @@ class ReferenceRealtimeVoiceSidecarSession:
             headers=_vllm_request_headers(self.runtime, content_json=True),
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=self.runtime.vllm_timeout_seconds) as response:
-            data = json.loads(response.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(req, timeout=self.runtime.vllm_timeout_seconds) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(_format_http_error(exc)) from exc
         return str(data["choices"][0]["message"].get("content") or "").strip()
 
     def _understand_kame_with_vllm(self, audio: bytes, codec: VoiceAudioCodec) -> dict[str, Any]:
@@ -1660,10 +1663,13 @@ class ReferenceRealtimeVoiceSidecarSession:
             data = _post_vllm_chat_completion(self.runtime, url, payload, timeout=timeout)
         except urllib.error.HTTPError as exc:
             if not _vllm_rejected_json_schema_response_format(exc):
-                raise
+                raise RuntimeError(_format_http_error(exc)) from exc
             fallback_payload = dict(payload)
             fallback_payload["response_format"] = {"type": "json_object"}
-            data = _post_vllm_chat_completion(self.runtime, url, fallback_payload, timeout=timeout)
+            try:
+                data = _post_vllm_chat_completion(self.runtime, url, fallback_payload, timeout=timeout)
+            except urllib.error.HTTPError as fallback_exc:
+                raise RuntimeError(_format_http_error(fallback_exc)) from fallback_exc
             response_format_fallback = "json_object"
         request_ms = int(round((time.perf_counter() - request_started_at) * 1000))
         content = str(data["choices"][0]["message"].get("content") or "").strip()
@@ -2252,6 +2258,13 @@ def _http_error_text(exc: urllib.error.HTTPError) -> str:
     except Exception:
         body_text = ""
     return f"{exc.reason or ''} {body_text}".strip()
+
+
+def _format_http_error(exc: urllib.error.HTTPError) -> str:
+    detail = _http_error_text(exc)
+    if detail:
+        return f"HTTP {exc.code}: {detail}"
+    return f"HTTP {exc.code}: {exc.reason or 'request failed'}"
 
 
 async def _probe_vllm_health(runtime: ReferenceSidecarRuntimeConfig) -> Optional[Mapping[str, Any]]:
