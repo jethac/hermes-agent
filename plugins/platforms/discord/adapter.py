@@ -239,6 +239,31 @@ def _discord_set_realtime_default(config: Dict[str, Any], key: str, value: Any) 
     config[key] = value
 
 
+def _discord_reconcile_kame_native_audio_config(config: Dict[str, Any]) -> None:
+    audio_input = str(config.get("interface_audio_input") or "").strip().lower().replace("-", "_")
+    if audio_input == "native_audio":
+        engine = str(config.get("engine") or "").strip().lower()
+        has_reflex_endpoint = bool(
+            str(config.get("interface_base_url") or config.get("vllm_base_url") or "").strip()
+            and str(config.get("frontend_model") or config.get("vllm_model") or "").strip()
+        )
+        if has_reflex_endpoint and engine in {"", "text_oracle_tts"}:
+            config["engine"] = "kame_interface_oracle"
+
+    asr_mode = str(config.get("asr_mode") or "").strip().lower().replace("-", "_")
+    if asr_mode == "disabled":
+        config["asr_provider"] = ""
+        config["asr_model"] = ""
+        config["asr_base_url"] = ""
+        config["streaming_stt_base_url"] = ""
+
+    tts_provider = str(config.get("tts_provider") or "").strip().lower().replace("-", "_")
+    if tts_provider in {"piper", "kittentts", "neutts"}:
+        config["tts_base_url"] = ""
+        config["streaming_tts_base_url"] = ""
+        config["streaming_tts_model"] = ""
+
+
 def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dict[str, Any]:
     config = dict(realtime) if isinstance(realtime, Mapping) else {}
     interface = _discord_mapping_config(config.get("interface"))
@@ -309,6 +334,7 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
     _discord_set_realtime_default(config, "barge_in_stop_playback_deadline_ms", barge_in.get("stop_playback_deadline_ms"))
     if output_events and not isinstance(config.get("output_events"), Mapping):
         config["output_events"] = dict(output_events)
+    _discord_reconcile_kame_native_audio_config(config)
     return config
 
 

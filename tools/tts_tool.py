@@ -159,6 +159,13 @@ def _import_piper():
     wheels (Linux / macOS / Windows, x86_64 + ARM64) with embedded espeak-ng.
     Voice models (.onnx + .onnx.json) are downloaded on first use.
     """
+    try:
+        from tools.lazy_deps import ensure
+        ensure("tts.piper", prompt=False)
+    except ImportError:
+        pass
+    except Exception as e:
+        raise ImportError(str(e))
     from piper import PiperVoice
     return PiperVoice
 

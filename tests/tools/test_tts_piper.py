@@ -49,6 +49,25 @@ class TestCheckPiperAvailable:
         assert isinstance(_check_piper_available(), bool)
 
 
+class TestImportPiper:
+    def test_lazy_installs_piper_before_import(self, monkeypatch):
+        calls = []
+
+        def fake_ensure(feature, prompt=False):
+            calls.append((feature, prompt))
+
+        class FakePiperVoice:
+            pass
+
+        fake_lazy_deps = types.SimpleNamespace(ensure=fake_ensure)
+        fake_piper = types.SimpleNamespace(PiperVoice=FakePiperVoice)
+        monkeypatch.setitem(sys.modules, "tools.lazy_deps", fake_lazy_deps)
+        monkeypatch.setitem(sys.modules, "piper", fake_piper)
+
+        assert tts_tool._import_piper() is FakePiperVoice
+        assert calls == [("tts.piper", False)]
+
+
 # ---------------------------------------------------------------------------
 # _resolve_piper_voice_path
 # ---------------------------------------------------------------------------

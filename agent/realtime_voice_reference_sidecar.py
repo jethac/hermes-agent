@@ -360,6 +360,7 @@ class ReferenceRealtimeVoiceSidecarSession:
         self._sequence = 0
         self._closed = False
         self._active_tasks: set[asyncio.Task[None]] = set()
+        self._speak_lock = asyncio.Lock()
         self._streaming_stt: Optional[RealtimeVoiceSidecarClient] = None
         self._streaming_stt_task: Optional[asyncio.Task[None]] = None
         self._asr_hypotheses_by_generation: dict[int, dict[str, Any]] = {}
@@ -576,7 +577,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                     return
                 self._track_task(
                     asyncio.create_task(
-                        self._speak(
+                        self._speak_ordered(
                             text,
                             _payload_generation(event.payload),
                             _assistant_speak_metadata_from_payload(event.payload),
@@ -1770,6 +1771,15 @@ class ReferenceRealtimeVoiceSidecarSession:
                 VoiceEventType.SESSION_ERROR,
                 {"error": f"tts failed: {sanitize_realtime_voice_error(exc)}"},
             )
+
+    async def _speak_ordered(
+        self,
+        text: str,
+        playback_generation: Optional[int] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+        async with self._speak_lock:
+            await self._speak(text, playback_generation, metadata)
 
     async def _emit_tts_unavailable_error(self, playback_generation: Optional[int]) -> None:
         failure = self._last_streaming_tts_failure or {}
