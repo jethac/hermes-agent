@@ -1,0 +1,84 @@
+name: hermes-vllm-thinkstation
+
+x-vllm-common: &vllm-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      VLLM_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
+  image: hermes-vllm-thinkstation:${VLLM_IMAGE_TAG:-latest}
+  ipc: host
+  shm_size: ${VLLM_SHM_SIZE:-32g}
+  gpus: all
+  ulimits:
+    memlock: -1
+    stack: 67108864
+  volumes:
+    - ${HF_HOME:-${HOME}/.cache/huggingface}:/root/.cache/huggingface
+    - ${VLLM_CACHE_DIR:-./.vllm-cache}:/root/.cache/vllm
+  environment:
+    HF_TOKEN: ${HF_TOKEN:-}
+    HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+    HF_HOME: /root/.cache/huggingface
+    VLLM_CACHE_ROOT: /root/.cache/vllm
+    VLLM_WORKER_MULTIPROC_METHOD: ${VLLM_WORKER_MULTIPROC_METHOD:-spawn}
+    PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+    NCCL_DEBUG: ${NCCL_DEBUG:-WARN}
+  restart: unless-stopped
+
+services:
+  gemma4-e2b-reflex:
+    <<: *vllm-common
+    container_name: hermes-gemma4-e2b-reflex
+    ports:
+      - "${GEMMA4_E2B_PORT:-8001}:8000"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+      HF_HOME: /root/.cache/huggingface
+      VLLM_CACHE_ROOT: /root/.cache/vllm
+      VLLM_WORKER_MULTIPROC_METHOD: ${VLLM_WORKER_MULTIPROC_METHOD:-spawn}
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+      NCCL_DEBUG: ${NCCL_DEBUG:-WARN}
+      GEMMA4_E2B_MODEL: ${GEMMA4_E2B_MODEL:-google/gemma-4-E2B-it}
+      GEMMA4_E2B_SERVED_NAME: ${GEMMA4_E2B_SERVED_NAME:-gemma-4-e2b-reflex}
+      GEMMA4_E2B_MAX_MODEL_LEN: ${GEMMA4_E2B_MAX_MODEL_LEN:-8192}
+      GEMMA4_E2B_GPU_MEMORY_UTILIZATION: ${GEMMA4_E2B_GPU_MEMORY_UTILIZATION:-0.12}
+      GEMMA4_E2B_LIMIT_MM_PER_PROMPT: ${GEMMA4_E2B_LIMIT_MM_PER_PROMPT:-{"audio":1,"image":0,"video":0}}
+      GEMMA4_E2B_EXTRA_ARGS: ${GEMMA4_E2B_EXTRA_ARGS:-}
+    entrypoint: ["/opt/hermes-vllm/serve-model.sh"]
+    command: ["gemma4-e2b-reflex"]
+    healthcheck:
+      test: ["CMD", "python3", "/opt/hermes-vllm/healthcheck.py", "http://127.0.0.1:8000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 5m
+
+  nemotron-super-oracle:
+    <<: *vllm-common
+    container_name: hermes-nemotron-super-oracle
+    ports:
+      - "${NEMOTRON_SUPER_PORT:-8002}:8000"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+      HF_HOME: /root/.cache/huggingface
+      VLLM_CACHE_ROOT: /root/.cache/vllm
+      VLLM_WORKER_MULTIPROC_METHOD: ${VLLM_WORKER_MULTIPROC_METHOD:-spawn}
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+      NCCL_DEBUG: ${NCCL_DEBUG:-WARN}
+      NEMOTRON_SUPER_MODEL: ${NEMOTRON_SUPER_MODEL:-nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4}
+      NEMOTRON_SUPER_SERVED_NAME: ${NEMOTRON_SUPER_SERVED_NAME:-nemotron-3-super-oracle}
+      NEMOTRON_SUPER_MAX_MODEL_LEN: ${NEMOTRON_SUPER_MAX_MODEL_LEN:-32768}
+      NEMOTRON_SUPER_GPU_MEMORY_UTILIZATION: ${NEMOTRON_SUPER_GPU_MEMORY_UTILIZATION:-0.62}
+      NEMOTRON_SUPER_TENSOR_PARALLEL_SIZE: ${NEMOTRON_SUPER_TENSOR_PARALLEL_SIZE:-1}
+      NEMOTRON_SUPER_EXTRA_ARGS: ${NEMOTRON_SUPER_EXTRA_ARGS:-}
+    entrypoint: ["/opt/hermes-vllm/serve-model.sh"]
+    command: ["nemotron-super-oracle"]
+    healthcheck:
+      test: ["CMD", "python3", "/opt/hermes-vllm/healthcheck.py", "http://127.0.0.1:8000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 40
+      start_period: 20m
