@@ -97,7 +97,7 @@ KAME_GREETING_OR_HEAR_ME_TERMS = frozenset(
 KAME_REFLEX_DECISION_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["route", "intent", "text", "route_confidence"],
+    "required": ["route", "intent", "text", "route_confidence", "transcript", "transcript_confidence"],
     "properties": {
         "route": {
             "type": "string",
@@ -124,7 +124,7 @@ KAME_REFLEX_DECISION_JSON_SCHEMA: dict[str, Any] = {
         },
         "transcript": {
             "type": "string",
-            "description": "Optional reflex audio hypothesis; not dedicated ASR evidence.",
+            "description": "Literal reflex audio hypothesis. Use an empty string if no intelligible speech is present.",
         },
         "transcript_confidence": {
             "type": "number",
@@ -190,12 +190,14 @@ def kame_reflex_instruction_text(
     return (
         "You are the low-latency KAME reflex for a Hermes realtime voice session. "
         "Listen to the audio segment and return only a compact JSON object. "
-        "Required keys: route, intent, text, route_confidence. route must be one of local, defer, "
-        "oracle_direct, or reject_or_clarify. Include route_confidence from 0 to 1. "
+        "Required keys: route, intent, text, route_confidence, transcript, transcript_confidence. "
+        "route must be one of local, defer, oracle_direct, or reject_or_clarify. Include route_confidence "
+        "and transcript_confidence from 0 to 1. "
         "text should equal the best oracle-facing user wording. For local or reject_or_clarify, "
-        "include local_reply with the exact short phrase to speak. Optional keys: transcript, "
-        "transcript_confidence. "
-        "Use intent for what the user wants. Use transcript only for the reflex's own audio hypothesis; "
+        "include local_reply with the exact short phrase to speak. "
+        "Use intent for what the user wants. Use transcript for the literal words you heard; if the audio "
+        "is silence, echo, background sound, or not intelligible, set transcript to an empty string, "
+        "transcript_confidence to 0, route to reject_or_clarify, and do not invent a command. "
         "dedicated ASR evidence is attached separately when configured. "
         "For defer routes, include interface_already_said with one concise spoken fragment "
         "that transforms the oracle-facing request into what you are doing now, such as "

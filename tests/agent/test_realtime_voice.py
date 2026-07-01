@@ -7367,7 +7367,14 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     response_schema = captured["body"]["response_format"]["json_schema"]
     assert response_schema["name"] == "kame_reflex_decision"
     assert response_schema["strict"] is True
-    assert response_schema["schema"]["required"] == ["route", "intent", "text", "route_confidence"]
+    assert response_schema["schema"]["required"] == [
+        "route",
+        "intent",
+        "text",
+        "route_confidence",
+        "transcript",
+        "transcript_confidence",
+    ]
     assert response_schema["schema"]["properties"]["route"]["enum"] == [
         "defer",
         "local",
@@ -7376,10 +7383,11 @@ def test_reference_sidecar_vllm_kame_audio_reflex(monkeypatch):
     ]
     prompt = captured["body"]["messages"][0]["content"][1]["text"]
     assert "KAME reflex" in prompt
-    assert "Required keys: route, intent, text" in prompt
+    assert "Required keys: route, intent, text, route_confidence, transcript, transcript_confidence" in prompt
     assert "JSON schema:" in prompt
-    assert '"required":["route","intent","text","route_confidence"]' in prompt
-    assert "Include route_confidence from 0 to 1" in prompt
+    assert '"required":["route","intent","text","route_confidence","transcript","transcript_confidence"]' in prompt
+    assert "transcript to an empty string" in prompt
+    assert "do not invent a command" in prompt
     assert "route must be one of local, defer, oracle_direct, or reject_or_clarify" in prompt
     assert "This voice session is already connected" in prompt
     assert "never claim Hermes cannot hear" in prompt
@@ -7859,7 +7867,14 @@ def test_kame_reflex_decision_validates_schema_and_exports_payload():
     schema = kame_reflex_decision_json_schema()
     schema["required"].append("mutated")
 
-    assert kame_reflex_decision_json_schema()["required"] == ["route", "intent", "text", "route_confidence"]
+    assert kame_reflex_decision_json_schema()["required"] == [
+        "route",
+        "intent",
+        "text",
+        "route_confidence",
+        "transcript",
+        "transcript_confidence",
+    ]
     assert kame_reflex_schema_issues(
         {
             "route": "local",

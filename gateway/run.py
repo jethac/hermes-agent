@@ -16871,6 +16871,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         result_holder = [None]  # Mutable container for the result
         tools_holder = [None]   # Mutable container for the tool definitions
         stream_consumer_holder = [None]  # Mutable container for stream consumer
+        is_discord_live_voice_input = event is not None and self._is_discord_live_voice_input(event)
         
         # Bridge sync step_callback → async hooks.emit for agent:step events
         _loop_for_step = asyncio.get_running_loop()
@@ -17047,7 +17048,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if _plat_streaming is None
                 else bool(_plat_streaming)
             )
-            if event is not None and self._is_discord_live_voice_input(event):
+            if is_discord_live_voice_input:
                 # Live voice has its own paragraph-segmented text + TTS delivery
                 # path after the oracle returns. The generic edit stream would
                 # otherwise create a duplicate single-message preview.

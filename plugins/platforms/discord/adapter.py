@@ -354,6 +354,28 @@ def _join_realtime_voice_transcript_parts(parts: List[Any]) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _realtime_voice_turn_text_from_payload(event_type: str, payload: Mapping[str, Any]) -> str:
+    if event_type != "interface.intent.final":
+        return str(payload.get("text") or "").strip()
+
+    asr_transcript = str(payload.get("asr_transcript") or "").strip()
+    if asr_transcript:
+        return asr_transcript
+
+    transcript = str(payload.get("transcript") or "").strip()
+    if not transcript:
+        return ""
+
+    confidence = payload.get("transcript_confidence")
+    if confidence is not None and not isinstance(confidence, bool):
+        try:
+            if float(confidence) < 0.35:
+                return ""
+        except (TypeError, ValueError):
+            return ""
+    return transcript
+
+
 class _Snowflake:
     """Minimal object exposing ``.id`` — satisfies discord.py's Snowflake
     protocol for ``channel.history(before=...)`` without constructing a
@@ -3640,12 +3662,20 @@ class DiscordAdapter(BasePlatformAdapter):
             logger.info("Discord realtime voice first audio output chunk (guild=%d)", guild_id)
         self._update_voice_state(guild_id, **updates)
         if event_type in {"transcript.final", "interface.intent.final"}:
-            self._schedule_realtime_voice_transcript(guild_id, payload)
+            self._schedule_realtime_voice_transcript(guild_id, event_type, payload)
 
-    def _schedule_realtime_voice_transcript(self, guild_id: int, payload: Dict[str, Any]) -> None:
-        transcript = str(payload.get("text") or "").strip()
+    def _schedule_realtime_voice_transcript(self, guild_id: int, event_type: str, payload: Dict[str, Any]) -> None:
+        transcript = _realtime_voice_turn_text_from_payload(event_type, payload)
         user_id = _discord_voice_nonnegative_int(payload.get("user_id"))
         if not transcript or user_id is None:
+            if event_type == "interface.intent.final" and payload.get("text"):
+                logger.info(
+                    "Discord realtime voice dropped reflex intent without transcript evidence "
+                    "(guild=%d, route=%s, text=%r)",
+                    guild_id,
+                    str(payload.get("route") or "")[:40],
+                    str(payload.get("text") or "")[:120],
+                )
             return
         buffers = getattr(self, "_realtime_voice_transcript_buffers", None)
         if buffers is None:

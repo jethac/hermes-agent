@@ -1595,7 +1595,7 @@ class TestDiscordVoiceChannelMethods:
         callback.assert_awaited_once_with(guild_id=111, user_id=42, transcript="this is a test")
 
     @pytest.mark.asyncio
-    async def test_realtime_interface_intent_final_routes_to_voice_input_callback(self):
+    async def test_realtime_interface_intent_final_routes_transcript_to_voice_input_callback(self):
         adapter = self._make_adapter()
         callback = AsyncMock()
         adapter._voice_input_callback = callback
@@ -1603,7 +1603,13 @@ class TestDiscordVoiceChannelMethods:
         adapter._handle_realtime_voice_event(
             111,
             "interface.intent.final",
-            {"user_id": "42", "text": "hey hermes", "route": "oracle_direct"},
+            {
+                "user_id": "42",
+                "text": "The user wants Hermes to tell a joke.",
+                "transcript": "hey hermes tell me a joke",
+                "transcript_confidence": 0.72,
+                "route": "oracle_direct",
+            },
         )
         await asyncio.sleep(0.9)
         callback.assert_not_awaited()
@@ -1611,7 +1617,47 @@ class TestDiscordVoiceChannelMethods:
         adapter._schedule_realtime_voice_speech_end(111, 42)
         await asyncio.sleep(0.9)
 
-        callback.assert_awaited_once_with(guild_id=111, user_id=42, transcript="hey hermes")
+        callback.assert_awaited_once_with(guild_id=111, user_id=42, transcript="hey hermes tell me a joke")
+
+    @pytest.mark.asyncio
+    async def test_realtime_interface_intent_final_drops_bare_reflex_text(self):
+        adapter = self._make_adapter()
+        callback = AsyncMock()
+        adapter._voice_input_callback = callback
+
+        adapter._handle_realtime_voice_event(
+            111,
+            "interface.intent.final",
+            {"user_id": "42", "text": "Can you get me the latest project file?", "route": "oracle_direct"},
+        )
+        adapter._schedule_realtime_voice_speech_end(111, 42)
+        await asyncio.sleep(0.9)
+
+        callback.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_realtime_interface_intent_final_prefers_asr_transcript(self):
+        adapter = self._make_adapter()
+        callback = AsyncMock()
+        adapter._voice_input_callback = callback
+
+        adapter._handle_realtime_voice_event(
+            111,
+            "interface.intent.final",
+            {
+                "user_id": "42",
+                "text": "The user wants a deployment file.",
+                "transcript": "deployment style",
+                "transcript_confidence": 0.72,
+                "asr_transcript": "tell me a joke",
+                "asr_transcript_source": "asr",
+                "route": "oracle_direct",
+            },
+        )
+        adapter._schedule_realtime_voice_speech_end(111, 42)
+        await asyncio.sleep(0.9)
+
+        callback.assert_awaited_once_with(guild_id=111, user_id=42, transcript="tell me a joke")
 
     @pytest.mark.asyncio
     async def test_realtime_transcript_final_waits_for_discord_silence_boundary(self):
