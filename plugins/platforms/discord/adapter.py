@@ -1090,7 +1090,7 @@ class VoiceReceiver:
                 else:
                     voiced_duration = 0.0
                 self._realtime_gate_voiced_duration[ssrc] = voiced_duration
-                if voiced_duration >= self._realtime_noise_gate_start_duration:
+                if is_voiced and voiced_duration >= self._realtime_noise_gate_start_duration:
                     self._realtime_gate_open.add(ssrc)
                     self._realtime_gate_quiet_duration[ssrc] = 0.0
                     frames = list(preroll)

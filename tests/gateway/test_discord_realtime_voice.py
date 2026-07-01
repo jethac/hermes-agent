@@ -496,6 +496,29 @@ def test_discord_voice_receiver_noise_gate_drops_low_energy_pcm_before_sidecar()
     assert ended == [42]
 
 
+def test_discord_voice_receiver_noise_gate_zero_start_ignores_quiet_preroll():
+    from plugins.platforms.discord.adapter import VoiceReceiver
+
+    dropped = []
+    receiver = VoiceReceiver(
+        SimpleNamespace(),
+        realtime_noise_gate_min_rms=100,
+        realtime_noise_gate_start_ms=0,
+        realtime_noise_gate_hangover_ms=40,
+        realtime_noise_gate_preroll_ms=80,
+        realtime_noise_gate_drop_callback=lambda user_id, rms, duration: dropped.append((user_id, rms, duration)),
+    )
+
+    quiet = b"\x00" * 3840
+    voiced = b"\x02" * 3840
+
+    assert receiver._realtime_gate_frames(1, 42, quiet, 0, 0.02) == []
+    opened = receiver._realtime_gate_frames(1, 42, voiced, 200, 0.02)
+
+    assert opened == [quiet, voiced]
+    assert dropped == [(42, 0, 0.02)]
+
+
 def test_discord_voice_receiver_noise_gate_can_be_disabled():
     from plugins.platforms.discord.adapter import VoiceReceiver
 
