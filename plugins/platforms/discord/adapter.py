@@ -21,7 +21,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Any, Tuple, Mapping
@@ -271,6 +271,7 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
     asr = _discord_mapping_config(config.get("asr"))
     tts = _discord_mapping_config(config.get("tts"))
     barge_in = _discord_mapping_config(config.get("barge_in"))
+    input_noise_gate = _discord_mapping_config(config.get("input_noise_gate") or config.get("noise_gate"))
     output_events = _discord_mapping_config(config.get("output_events"))
 
     _discord_set_realtime_default(config, "frontend_provider", interface.get("provider"))
@@ -332,6 +333,11 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
     _discord_set_realtime_default(config, "barge_in_min_rms", barge_in.get("min_rms"))
     _discord_set_realtime_default(config, "barge_in_min_speech_ms", barge_in.get("min_speech_ms"))
     _discord_set_realtime_default(config, "barge_in_stop_playback_deadline_ms", barge_in.get("stop_playback_deadline_ms"))
+    _discord_set_realtime_default(config, "input_noise_gate_enabled", input_noise_gate.get("enabled"))
+    _discord_set_realtime_default(config, "input_noise_gate_min_rms", input_noise_gate.get("min_rms"))
+    _discord_set_realtime_default(config, "input_noise_gate_start_ms", input_noise_gate.get("start_ms"))
+    _discord_set_realtime_default(config, "input_noise_gate_hangover_ms", input_noise_gate.get("hangover_ms"))
+    _discord_set_realtime_default(config, "input_noise_gate_preroll_ms", input_noise_gate.get("preroll_ms"))
     if output_events and not isinstance(config.get("output_events"), Mapping):
         config["output_events"] = dict(output_events)
     _discord_reconcile_kame_native_audio_config(config)
@@ -718,17 +724,31 @@ class VoiceReceiver:
         allowed_user_ids: Optional[set] = None,
         realtime_frame_callback: Optional[Callable[[int, bytes], None]] = None,
         realtime_speech_start_callback: Optional[Callable[[int], None]] = None,
+        realtime_speech_end_callback: Optional[Callable[[int], None]] = None,
         realtime_speech_energy_callback: Optional[Callable[[int, int, float], None]] = None,
         realtime_speech_start_min_duration: float = 0.0,
         realtime_speech_start_min_rms: int = 0,
+        realtime_noise_gate_enabled: bool = True,
+        realtime_noise_gate_min_rms: int = 350,
+        realtime_noise_gate_start_ms: int = 120,
+        realtime_noise_gate_hangover_ms: int = 320,
+        realtime_noise_gate_preroll_ms: int = 120,
+        realtime_noise_gate_drop_callback: Optional[Callable[[int, int, float], None]] = None,
     ):
         self._vc = voice_client
         self._allowed_user_ids = allowed_user_ids or set()
         self._realtime_frame_callback = realtime_frame_callback
         self._realtime_speech_start_callback = realtime_speech_start_callback
+        self._realtime_speech_end_callback = realtime_speech_end_callback
         self._realtime_speech_energy_callback = realtime_speech_energy_callback
         self._realtime_speech_start_min_duration = max(0.0, float(realtime_speech_start_min_duration))
         self._realtime_speech_start_min_rms = max(0, int(realtime_speech_start_min_rms))
+        self._realtime_noise_gate_enabled = bool(realtime_noise_gate_enabled)
+        self._realtime_noise_gate_min_rms = max(0, int(realtime_noise_gate_min_rms))
+        self._realtime_noise_gate_start_duration = max(0.0, float(realtime_noise_gate_start_ms) / 1000.0)
+        self._realtime_noise_gate_hangover_duration = max(0.0, float(realtime_noise_gate_hangover_ms) / 1000.0)
+        self._realtime_noise_gate_preroll_duration = max(0.0, float(realtime_noise_gate_preroll_ms) / 1000.0)
+        self._realtime_noise_gate_drop_callback = realtime_noise_gate_drop_callback
         self._running = False
 
         # Decryption
@@ -746,6 +766,10 @@ class VoiceReceiver:
         self._last_packet_time: Dict[int, float] = {}
         self._realtime_speech_notified: set[int] = set()
         self._realtime_voiced_duration: Dict[int, float] = {}
+        self._realtime_gate_open: set[int] = set()
+        self._realtime_gate_voiced_duration: Dict[int, float] = {}
+        self._realtime_gate_quiet_duration: Dict[int, float] = {}
+        self._realtime_gate_preroll: Dict[int, deque[bytes]] = defaultdict(deque)
 
         # Opus decoder per SSRC (each user needs own decoder state)
         self._decoders: Dict[int, object] = {}
@@ -785,6 +809,10 @@ class VoiceReceiver:
             self._last_packet_time.clear()
             self._realtime_speech_notified.clear()
             self._realtime_voiced_duration.clear()
+            self._realtime_gate_open.clear()
+            self._realtime_gate_voiced_duration.clear()
+            self._realtime_gate_quiet_duration.clear()
+            self._realtime_gate_preroll.clear()
             self._decoders.clear()
             self._ssrc_to_user.clear()
         logger.info("VoiceReceiver stopped")
@@ -1016,7 +1044,8 @@ class VoiceReceiver:
                     logger.debug("Discord realtime voice speech-energy callback failed: %s", cb_exc)
             if realtime_user_id and self._realtime_frame_callback:
                 try:
-                    self._realtime_frame_callback(realtime_user_id, pcm)
+                    for frame in self._realtime_gate_frames(ssrc, realtime_user_id, pcm, pcm_rms, pcm_duration):
+                        self._realtime_frame_callback(realtime_user_id, frame)
                 except Exception as cb_exc:
                     logger.debug("Discord realtime voice frame callback failed: %s", cb_exc)
         except Exception as e:
@@ -1028,6 +1057,82 @@ class VoiceReceiver:
                 e,
             )
             return
+
+    def _realtime_gate_frames(
+        self,
+        ssrc: int,
+        user_id: int,
+        pcm: bytes,
+        pcm_rms: int,
+        pcm_duration: float,
+    ) -> list[bytes]:
+        """Return decoded PCM frames that should reach the realtime sidecar.
+
+        Discord can deliver low-energy frames that are packets but not speech.
+        The KAME audio reflex should only see voiced audio plus a short
+        hangover, otherwise silence/noise becomes model input and can cause
+        hallucinated or truncated commands.
+        """
+        if not self._realtime_noise_gate_enabled:
+            return [pcm]
+
+        is_voiced = pcm_rms >= self._realtime_noise_gate_min_rms
+        with self._lock:
+            opened = ssrc in self._realtime_gate_open
+            if not opened:
+                preroll = self._realtime_gate_preroll[ssrc]
+                preroll.append(bytes(pcm))
+                max_preroll_frames = max(1, int(self._realtime_noise_gate_preroll_duration / max(pcm_duration, 0.001)))
+                while len(preroll) > max_preroll_frames:
+                    preroll.popleft()
+                if is_voiced:
+                    voiced_duration = self._realtime_gate_voiced_duration.get(ssrc, 0.0) + pcm_duration
+                else:
+                    voiced_duration = 0.0
+                self._realtime_gate_voiced_duration[ssrc] = voiced_duration
+                if voiced_duration >= self._realtime_noise_gate_start_duration:
+                    self._realtime_gate_open.add(ssrc)
+                    self._realtime_gate_quiet_duration[ssrc] = 0.0
+                    frames = list(preroll)
+                    preroll.clear()
+                    return frames
+                if not is_voiced and self._realtime_noise_gate_drop_callback:
+                    self._call_realtime_gate_drop_callback(user_id, pcm_rms, pcm_duration)
+                return []
+
+            if is_voiced:
+                self._realtime_gate_quiet_duration[ssrc] = 0.0
+                return [pcm]
+
+            quiet_duration = self._realtime_gate_quiet_duration.get(ssrc, 0.0) + pcm_duration
+            self._realtime_gate_quiet_duration[ssrc] = quiet_duration
+            if quiet_duration <= self._realtime_noise_gate_hangover_duration:
+                return [pcm]
+
+            self._close_realtime_noise_gate_locked(ssrc)
+        if self._realtime_speech_end_callback:
+            try:
+                self._realtime_speech_end_callback(user_id)
+            except Exception as cb_exc:
+                logger.debug("Discord realtime voice speech-end callback failed: %s", cb_exc)
+        if self._realtime_noise_gate_drop_callback:
+            self._call_realtime_gate_drop_callback(user_id, pcm_rms, pcm_duration)
+        return []
+
+    def _close_realtime_noise_gate_locked(self, ssrc: int) -> None:
+        self._realtime_gate_open.discard(ssrc)
+        self._realtime_gate_voiced_duration.pop(ssrc, None)
+        self._realtime_gate_quiet_duration.pop(ssrc, None)
+        self._realtime_gate_preroll.pop(ssrc, None)
+
+    def _call_realtime_gate_drop_callback(self, user_id: int, pcm_rms: int, pcm_duration: float) -> None:
+        callback = self._realtime_noise_gate_drop_callback
+        if not callback:
+            return
+        try:
+            callback(user_id, pcm_rms, pcm_duration)
+        except Exception as cb_exc:
+            logger.debug("Discord realtime voice noise-gate callback failed: %s", cb_exc)
 
     # ------------------------------------------------------------------
     # Silence detection
@@ -1092,12 +1197,14 @@ class VoiceReceiver:
                     self._last_packet_time.pop(ssrc, None)
                     self._realtime_speech_notified.discard(ssrc)
                     self._realtime_voiced_duration.pop(ssrc, None)
+                    self._close_realtime_noise_gate_locked(ssrc)
                 elif reached_max_duration:
                     self._buffers[ssrc] = bytearray()
                     self._buffer_start_time.pop(ssrc, None)
                     self._last_packet_time.pop(ssrc, None)
                     self._realtime_speech_notified.discard(ssrc)
                     self._realtime_voiced_duration.pop(ssrc, None)
+                    self._close_realtime_noise_gate_locked(ssrc)
                 elif silence_duration >= self.SILENCE_THRESHOLD * 2:
                     # Stale buffer with no valid user — discard
                     self._buffers.pop(ssrc, None)
@@ -1105,6 +1212,7 @@ class VoiceReceiver:
                     self._last_packet_time.pop(ssrc, None)
                     self._realtime_speech_notified.discard(ssrc)
                     self._realtime_voiced_duration.pop(ssrc, None)
+                    self._close_realtime_noise_gate_locked(ssrc)
 
         return completed
 
@@ -3110,6 +3218,11 @@ class DiscordAdapter(BasePlatformAdapter):
             "barge_in_min_speech_ms": 120,
             "barge_in_min_rms": 350,
             "barge_in_stop_playback_deadline_ms": 150,
+            "input_noise_gate_enabled": True,
+            "input_noise_gate_min_rms": 350,
+            "input_noise_gate_start_ms": 120,
+            "input_noise_gate_hangover_ms": 320,
+            "input_noise_gate_preroll_ms": 120,
             "turn_acknowledgement": {
                 "enabled": True,
                 "text": "One moment.",
@@ -3261,9 +3374,31 @@ class DiscordAdapter(BasePlatformAdapter):
         )
         task.add_done_callback(self._log_realtime_voice_task_result)
 
+    def _schedule_realtime_voice_noise_gate_drop(
+        self,
+        guild_id: int,
+        user_id: int,
+        rms: int,
+        duration_seconds: float,
+    ) -> None:
+        state = self._voice_state(guild_id)
+        dropped = int(state.latency_metrics_ms.get("pcm_frames_dropped_by_noise_gate", 0)) + 1
+        state.latency_metrics_ms["pcm_frames_dropped_by_noise_gate"] = dropped
+        if dropped in {1, 10, 50} or dropped % 250 == 0:
+            logger.info(
+                "Discord realtime voice PCM dropped by noise gate "
+                "(guild=%d, user=%d, dropped=%d, rms=%d, duration_ms=%d)",
+                guild_id,
+                user_id,
+                dropped,
+                int(rms),
+                int(round(max(0.0, float(duration_seconds)) * 1000)),
+            )
+
     def _schedule_realtime_voice_speech_end(self, guild_id: int, user_id: int) -> None:
         session = self._realtime_voice_sessions.get(guild_id)
         active = getattr(self, "_realtime_voice_active_speakers", None)
+        was_active = bool(active.get((guild_id, user_id))) if active is not None else True
         if active is not None:
             active[(guild_id, user_id)] = False
         last_end = getattr(self, "_realtime_voice_last_speech_end", None)
@@ -3271,8 +3406,11 @@ class DiscordAdapter(BasePlatformAdapter):
             self._realtime_voice_last_speech_end = {}
             last_end = self._realtime_voice_last_speech_end
         ended_at = time.monotonic()
+        previous_end = last_end.get((guild_id, user_id))
         last_end[(guild_id, user_id)] = ended_at
         self._schedule_realtime_voice_transcript_flush(guild_id, user_id, delay_seconds=0.8)
+        if not was_active and previous_end is not None and ended_at - previous_end < 1.0:
+            return
         if session is None:
             return
         handle = getattr(session, "handle_speech_end", None)
@@ -3963,9 +4101,25 @@ class DiscordAdapter(BasePlatformAdapter):
                         user_id,
                     )
 
+                def _realtime_speech_end_callback(user_id: int) -> None:
+                    loop.call_soon_threadsafe(
+                        self._schedule_realtime_voice_speech_end,
+                        guild_id,
+                        user_id,
+                    )
+
                 def _realtime_speech_energy_callback(user_id: int, rms: int, duration_seconds: float) -> None:
                     loop.call_soon_threadsafe(
                         self._schedule_realtime_voice_speech_energy,
+                        guild_id,
+                        user_id,
+                        rms,
+                        duration_seconds,
+                    )
+
+                def _realtime_noise_gate_drop_callback(user_id: int, rms: int, duration_seconds: float) -> None:
+                    loop.call_soon_threadsafe(
+                        self._schedule_realtime_voice_noise_gate_drop,
                         guild_id,
                         user_id,
                         rms,
@@ -3977,12 +4131,19 @@ class DiscordAdapter(BasePlatformAdapter):
                     allowed_user_ids=self._allowed_user_ids,
                     realtime_frame_callback=_realtime_frame_callback,
                     realtime_speech_start_callback=_realtime_speech_start_callback,
+                    realtime_speech_end_callback=_realtime_speech_end_callback,
                     realtime_speech_energy_callback=_realtime_speech_energy_callback,
                     realtime_speech_start_min_duration=max(
                         0.0,
                         float(self._realtime_voice_cfg.get("barge_in_min_speech_ms") or 0) / 1000.0,
                     ),
                     realtime_speech_start_min_rms=int(self._realtime_voice_cfg.get("barge_in_min_rms") or 0),
+                    realtime_noise_gate_enabled=bool(self._realtime_voice_cfg.get("input_noise_gate_enabled", True)),
+                    realtime_noise_gate_min_rms=int(self._realtime_voice_cfg.get("input_noise_gate_min_rms") or 0),
+                    realtime_noise_gate_start_ms=int(self._realtime_voice_cfg.get("input_noise_gate_start_ms") or 0),
+                    realtime_noise_gate_hangover_ms=int(self._realtime_voice_cfg.get("input_noise_gate_hangover_ms") or 0),
+                    realtime_noise_gate_preroll_ms=int(self._realtime_voice_cfg.get("input_noise_gate_preroll_ms") or 0),
+                    realtime_noise_gate_drop_callback=_realtime_noise_gate_drop_callback,
                 )
                 receiver.start()
                 self._voice_receivers[guild_id] = receiver

@@ -141,6 +141,13 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
                         "min_speech_ms": 130,
                         "stop_playback_deadline_ms": 95,
                     },
+                    "input_noise_gate": {
+                        "enabled": True,
+                        "min_rms": 275,
+                        "start_ms": 80,
+                        "hangover_ms": 240,
+                        "preroll_ms": 100,
+                    },
                     "routing": {
                         "allow_local_greetings": True,
                         "allow_local_clarifications": True,
@@ -211,6 +218,11 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["barge_in_min_rms"] == 410
     assert cfg["barge_in_min_speech_ms"] == 130
     assert cfg["barge_in_stop_playback_deadline_ms"] == 95
+    assert cfg["input_noise_gate_enabled"] is True
+    assert cfg["input_noise_gate_min_rms"] == 275
+    assert cfg["input_noise_gate_start_ms"] == 80
+    assert cfg["input_noise_gate_hangover_ms"] == 240
+    assert cfg["input_noise_gate_preroll_ms"] == 100
     assert cfg["routing"] == {
         "allow_local_greetings": True,
         "allow_local_clarifications": False,
@@ -451,6 +463,50 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.sent[-1].payload["sample_rate_hz"] == 16000
     assert sidecar.sent[-1].payload["channels"] == 1
     assert len(base64.b64decode(sidecar.sent[-1].payload["data_b64"])) == 640
+
+
+def test_discord_voice_receiver_noise_gate_drops_low_energy_pcm_before_sidecar():
+    from plugins.platforms.discord.adapter import VoiceReceiver
+
+    ended = []
+    dropped = []
+    receiver = VoiceReceiver(
+        SimpleNamespace(),
+        realtime_speech_end_callback=lambda user_id: ended.append(user_id),
+        realtime_noise_gate_min_rms=100,
+        realtime_noise_gate_start_ms=40,
+        realtime_noise_gate_hangover_ms=40,
+        realtime_noise_gate_preroll_ms=40,
+        realtime_noise_gate_drop_callback=lambda user_id, rms, duration: dropped.append((user_id, rms, duration)),
+    )
+
+    quiet = b"\x00" * 3840
+    voiced_1 = b"\x01" * 3840
+    voiced_2 = b"\x02" * 3840
+    assert receiver._realtime_gate_frames(1, 42, quiet, 0, 0.02) == []
+    assert receiver._realtime_gate_frames(1, 42, voiced_1, 200, 0.02) == []
+
+    opened = receiver._realtime_gate_frames(1, 42, voiced_2, 200, 0.02)
+    assert opened == [voiced_1, voiced_2]
+    assert dropped == [(42, 0, 0.02)]
+
+    assert receiver._realtime_gate_frames(1, 42, quiet, 0, 0.02) == [quiet]
+    assert receiver._realtime_gate_frames(1, 42, quiet, 0, 0.02) == [quiet]
+    assert receiver._realtime_gate_frames(1, 42, quiet, 0, 0.02) == []
+    assert ended == [42]
+
+
+def test_discord_voice_receiver_noise_gate_can_be_disabled():
+    from plugins.platforms.discord.adapter import VoiceReceiver
+
+    receiver = VoiceReceiver(
+        SimpleNamespace(),
+        realtime_noise_gate_enabled=False,
+        realtime_noise_gate_min_rms=1000,
+    )
+
+    quiet = b"\x00" * 3840
+    assert receiver._realtime_gate_frames(1, 42, quiet, 0, 0.02) == [quiet]
 
 
 @pytest.mark.asyncio

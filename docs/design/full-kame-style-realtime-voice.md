@@ -363,6 +363,13 @@ min_rms = 350
 min_speech_ms = 120
 stop_playback_deadline_ms = 150
 
+[voice.realtime.input_noise_gate]
+enabled = true
+min_rms = 350
+start_ms = 120
+hangover_ms = 320
+preroll_ms = 120
+
 [voice.realtime.metrics]
 enabled = true
 log_turn_spans = true
@@ -378,6 +385,7 @@ The GUI environment page should expose provider/model/base URL settings for:
 - ASR provider/model
 - TTS provider/model/voice
 - barge-in thresholds
+- input noise gate thresholds
 - routing policy
 - local/cloud fallback behavior
 
