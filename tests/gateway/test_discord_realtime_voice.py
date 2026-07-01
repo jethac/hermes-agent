@@ -593,6 +593,79 @@ async def test_discord_realtime_session_tags_interface_intents_with_last_input_u
 
 
 @pytest.mark.asyncio
+async def test_discord_realtime_session_keeps_user_tag_for_intent_and_transcript_pair():
+    from agent.realtime_voice import VoiceEvent, VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    observed = []
+    sidecar = FakeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+        event_callback=lambda event_type, payload: observed.append((event_type, dict(payload))),
+    )
+
+    await session.start()
+    await session.handle_pcm_frame(user_id=42, pcm48_stereo=b"\x00" * 3840)
+    await sidecar.emit(VoiceEvent(
+        type=VoiceEventType.INTERFACE_INTENT_FINAL,
+        session_id="discord:111:222",
+        sequence=1,
+        payload={"text": "hey hermes", "route": "oracle_direct"},
+    ))
+    await sidecar.emit(VoiceEvent(
+        type=VoiceEventType.TRANSCRIPT_FINAL,
+        session_id="discord:111:222",
+        sequence=2,
+        payload={"text": "hey hermes"},
+    ))
+    await asyncio.wait_for(session.wait_until_idle(), timeout=1)
+
+    finals = [
+        payload for event_type, payload in observed
+        if event_type in {
+            VoiceEventType.INTERFACE_INTENT_FINAL.value,
+            VoiceEventType.TRANSCRIPT_FINAL.value,
+        }
+    ]
+    assert [payload["user_id"] for payload in finals] == ["42", "42"]
+
+
+@pytest.mark.asyncio
+async def test_discord_realtime_session_does_not_guess_user_for_mixed_speakers():
+    from agent.realtime_voice import VoiceEvent, VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    observed = []
+    sidecar = FakeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+        event_callback=lambda event_type, payload: observed.append((event_type, dict(payload))),
+    )
+
+    await session.start()
+    await session.handle_pcm_frame(user_id=42, pcm48_stereo=b"\x00" * 3840)
+    await session.handle_pcm_frame(user_id=43, pcm48_stereo=b"\x00" * 3840)
+    await sidecar.emit(VoiceEvent(
+        type=VoiceEventType.TRANSCRIPT_FINAL,
+        session_id="discord:111:222",
+        sequence=1,
+        payload={"text": "mixed speech"},
+    ))
+    await asyncio.wait_for(session.wait_until_idle(), timeout=1)
+
+    assert observed[-1][0] == VoiceEventType.TRANSCRIPT_FINAL.value
+    assert "user_id" not in observed[-1][1]
+
+
+@pytest.mark.asyncio
 async def test_discord_realtime_session_sends_end_of_utterance_marker():
     from agent.realtime_voice import VoiceEventType
     from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession

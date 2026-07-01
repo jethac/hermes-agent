@@ -220,6 +220,7 @@ class DiscordRealtimeVoiceSession:
         self._first_tts_audio_received_at_by_generation: dict[int, float] = {}
         self._playback_start_metric_generations: set[int] = set()
         self._last_input_user_id: Optional[str] = None
+        self._input_user_ids_since_result: set[str] = set()
 
     async def start(self) -> None:
         config = RealtimeVoiceSessionConfig(
@@ -408,6 +409,7 @@ class DiscordRealtimeVoiceSession:
         if self._closed or not self._started or not pcm48_stereo:
             return
         self._last_input_user_id = str(user_id)
+        self._input_user_ids_since_result.add(str(user_id))
         pcm16_mono = discord_pcm48_stereo_to_pcm16_mono(pcm48_stereo)
         await self._send_event(
             VoiceEventType.AUDIO_INPUT_CHUNK,
@@ -484,7 +486,18 @@ class DiscordRealtimeVoiceSession:
                     VoiceEventType.INTERFACE_INTENT_PARTIAL,
                     VoiceEventType.INTERFACE_INTENT_FINAL,
                 }:
-                    event.payload.setdefault("user_id", self._last_input_user_id or "")
+                    if "user_id" not in event.payload:
+                        if len(self._input_user_ids_since_result) == 1:
+                            event.payload["user_id"] = next(iter(self._input_user_ids_since_result))
+                        elif len(self._input_user_ids_since_result) > 1:
+                            logger.info(
+                                "Discord realtime voice left untagged provider event without user_id "
+                                "(type=%s, users=%s)",
+                                event.type.value,
+                                sorted(self._input_user_ids_since_result),
+                            )
+                    if event.type == VoiceEventType.TRANSCRIPT_FINAL:
+                        self._input_user_ids_since_result.clear()
                 await self._notify_event_observed(event)
                 self._activity.set()
         except asyncio.CancelledError:
