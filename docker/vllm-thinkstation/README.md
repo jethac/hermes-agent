@@ -106,11 +106,14 @@ Hermes oracle.
 - `*_EXTRA_ARGS`: append vLLM flags without editing Compose, for example
   scheduler, quantization, KV cache, or tool-calling flags.
 
-The Nemotron Super default includes `--max-num-seqs 4 --enforce-eager`. On the
-GB10/PGX with Gemma resident, vLLM reported only 25 available Mamba cache
+The Nemotron Super default includes
+`--max-num-seqs 4 --enforce-eager --enable-auto-tool-choice --tool-call-parser hermes`.
+On the GB10/PGX with Gemma resident, vLLM reported only 25 available Mamba cache
 blocks after real profiling; the upstream default of 256 concurrent sequences
 cannot initialize in that memory split. Eager mode avoids CUDA graph capture
-failures while preserving a usable single-user oracle endpoint.
+failures while preserving a usable single-user oracle endpoint. Auto tool choice
+with the `hermes` parser is required because Hermes sends OpenAI-compatible tool
+definitions and `tool_choice=auto` to the oracle provider.
 
 ## Smoke Test
 
