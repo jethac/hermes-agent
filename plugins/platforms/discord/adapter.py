@@ -730,7 +730,7 @@ class VoiceReceiver:
         realtime_speech_start_min_rms: int = 0,
         realtime_noise_gate_enabled: bool = True,
         realtime_noise_gate_min_rms: int = 350,
-        realtime_noise_gate_start_ms: int = 120,
+        realtime_noise_gate_start_ms: int = 0,
         realtime_noise_gate_hangover_ms: int = 320,
         realtime_noise_gate_preroll_ms: int = 120,
         realtime_noise_gate_drop_callback: Optional[Callable[[int, int, float], None]] = None,
@@ -1095,6 +1095,17 @@ class VoiceReceiver:
                     self._realtime_gate_quiet_duration[ssrc] = 0.0
                     frames = list(preroll)
                     preroll.clear()
+                    logger.info(
+                        "Discord realtime voice noise gate opened "
+                        "(ssrc=%d, user=%d, rms=%d, voiced_ms=%d, start_ms=%d, preroll_frames=%d, preroll_ms=%d)",
+                        ssrc,
+                        user_id,
+                        pcm_rms,
+                        int(voiced_duration * 1000),
+                        int(self._realtime_noise_gate_start_duration * 1000),
+                        len(frames),
+                        int(self._realtime_noise_gate_preroll_duration * 1000),
+                    )
                     return frames
                 if not is_voiced and self._realtime_noise_gate_drop_callback:
                     self._call_realtime_gate_drop_callback(user_id, pcm_rms, pcm_duration)
@@ -3220,7 +3231,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "barge_in_stop_playback_deadline_ms": 150,
             "input_noise_gate_enabled": True,
             "input_noise_gate_min_rms": 350,
-            "input_noise_gate_start_ms": 120,
+            "input_noise_gate_start_ms": 0,
             "input_noise_gate_hangover_ms": 320,
             "input_noise_gate_preroll_ms": 120,
             "turn_acknowledgement": {
