@@ -73,7 +73,7 @@ services:
       GEMMA4_12B_MAX_MODEL_LEN: ${GEMMA4_12B_MAX_MODEL_LEN:-65536}
       GEMMA4_12B_GPU_MEMORY_UTILIZATION: ${GEMMA4_12B_GPU_MEMORY_UTILIZATION:-0.38}
       GEMMA4_12B_LIMIT_MM_PER_PROMPT: ${GEMMA4_12B_LIMIT_MM_PER_PROMPT:-{"audio":1,"image":1,"video":0}}
-      GEMMA4_12B_EXTRA_ARGS: ${GEMMA4_12B_EXTRA_ARGS:---max-num-seqs 4 --enforce-eager}
+      GEMMA4_12B_EXTRA_ARGS: ${GEMMA4_12B_EXTRA_ARGS:---max-num-seqs 4 --enforce-eager --enable-auto-tool-choice --tool-call-parser hermes}
     entrypoint: ["/opt/hermes-vllm/serve-model.sh"]
     command: ["gemma4-12b-oracle"]
     healthcheck:

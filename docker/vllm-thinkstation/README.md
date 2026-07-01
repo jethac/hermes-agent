@@ -157,8 +157,9 @@ turns, and Gemma 12B aggregates it into the normal Hermes response.
 - `*_EXTRA_ARGS`: append vLLM flags without editing Compose, for example
   scheduler, quantization, KV cache, or tool-calling flags.
 
-The Nemotron Nano and Super defaults include
-`--max-num-seqs 4 --enforce-eager --enable-auto-tool-choice --tool-call-parser hermes --reasoning-parser nemotron_v3`.
+The Gemma 12B, Nemotron Nano, and Nemotron Super defaults include
+`--max-num-seqs 4 --enforce-eager --enable-auto-tool-choice --tool-call-parser hermes`.
+The Nemotron defaults also include `--reasoning-parser nemotron_v3`.
 On the GB10/PGX with Gemma resident, the upstream default of 256 concurrent
 sequences is too aggressive for single-user voice. Eager mode avoids CUDA graph
 capture failures while preserving usable oracle endpoints. Auto tool choice with
