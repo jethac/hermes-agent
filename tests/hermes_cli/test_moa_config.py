@@ -177,6 +177,39 @@ def test_resolve_moa_preset_returns_requested_model_set():
     ]
 
 
+def test_moa_slots_preserve_custom_endpoint_fields():
+    cfg = normalize_moa_config(
+        {
+            "presets": {
+                "local": {
+                    "reference_models": [
+                        {
+                            "provider": "custom",
+                            "model": "nemotron-3-nano-oracle",
+                            "base_url": "http://pgx.local:8003/v1",
+                            "api_key": "no-key-required",
+                            "api_mode": "chat_completions",
+                        }
+                    ],
+                    "aggregator": {
+                        "provider": "custom",
+                        "model": "gemma-4-12b-oracle",
+                        "base_url": "http://pgx.local:8002/v1",
+                        "api_key": "no-key-required",
+                    },
+                }
+            }
+        }
+    )
+
+    preset = resolve_moa_preset(cfg, "local")
+
+    assert preset["reference_models"][0]["base_url"] == "http://pgx.local:8003/v1"
+    assert preset["reference_models"][0]["api_mode"] == "chat_completions"
+    assert preset["aggregator"]["base_url"] == "http://pgx.local:8002/v1"
+    assert preset["aggregator"]["api_key"] == "no-key-required"
+
+
 def test_build_moa_turn_prompt_encodes_one_shot_default_preset():
     prompt = build_moa_turn_prompt("write a file then inspect it")
 

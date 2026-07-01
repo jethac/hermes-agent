@@ -559,6 +559,14 @@ def run_conversation(
                     persist_user_message = _decoded_message
         except Exception:
             pass
+    if moa_config is None and str(getattr(agent, "provider", "") or "").strip().lower() != "moa":
+        try:
+            from hermes_cli.config import load_config
+            from hermes_cli.model_router import moa_config_for_request
+
+            moa_config = moa_config_for_request(load_config(), user_message)
+        except Exception as _moa_router_exc:
+            logger.debug("model router did not select MoA for this turn: %s", _moa_router_exc)
 
     # ── Per-turn setup (the prologue) ──
     # All once-per-turn setup — stdio guarding, retry-counter resets, user

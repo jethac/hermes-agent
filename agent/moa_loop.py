@@ -143,6 +143,12 @@ def _slot_runtime(slot: dict[str, str]) -> dict[str, Any]:
     provider = str(slot.get("provider") or "").strip()
     model = str(slot.get("model") or "").strip()
     out: dict[str, Any] = {"provider": provider, "model": model}
+    for key in ("base_url", "api_key", "api_mode"):
+        value = str(slot.get(key) or "").strip()
+        if value:
+            out[key] = value
+    if out.get("base_url"):
+        return out
     try:
         from hermes_cli.runtime_provider import resolve_runtime_provider
 
@@ -481,8 +487,12 @@ def _extract_text(response: Any) -> str:
         message = response.choices[0].message
         if isinstance(message, dict):
             content = message.get("content")
+            if not content:
+                content = message.get("reasoning")
         else:
             content = getattr(message, "content", message)
+            if not content:
+                content = getattr(message, "reasoning", None)
         if not isinstance(content, str):
             content = str(content) if content else ""
         return content.strip()

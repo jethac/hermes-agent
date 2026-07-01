@@ -8,6 +8,7 @@ so reference slots using providers that require a specific API surface
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
 
 import pytest
 
@@ -73,3 +74,21 @@ class TestCallLlmApiMode:
         sig = inspect.signature(call_llm)
         assert "api_mode" in sig.parameters
         assert sig.parameters["api_mode"].default is None
+
+
+class TestMoAExtraction:
+    def test_extract_text_falls_back_to_structured_reasoning(self):
+        from agent.moa_loop import _extract_text
+
+        response = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=None,
+                        reasoning="Nano reference analysis",
+                    )
+                )
+            ]
+        )
+
+        assert _extract_text(response) == "Nano reference analysis"

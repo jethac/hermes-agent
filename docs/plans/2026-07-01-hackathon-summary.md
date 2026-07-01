@@ -38,9 +38,13 @@ Second, the voice sidecar and streaming speech bridge handle speech conversion a
 Third, the PGX model server runs vLLM containers:
 
 - **Reflex/interface model:** `gemma-4-e2b-reflex` at `http://100.113.98.11:8001/v1`
-- **Oracle model:** `nemotron-3-super-oracle` at `http://100.113.98.11:8002/v1`
+- **Primary oracle model:** `gemma-4-12b-oracle` at `http://100.113.98.11:8002/v1`
+- **Secondary oracle model:** `nemotron-3-nano-oracle` at `http://100.113.98.11:8003/v1`
+- **Optional deep model:** `nemotron-3-super-oracle` at `http://100.113.98.11:8004/v1` when memory and latency allow it.
 
-Hermes itself remains the source of truth for the oracle. There is no separate `oracle_model` setting in the intended design; the oracle is whatever Hermes' active model is. For the hackathon setup, Hermes' active model is pointed at the PGX-hosted Nemotron Super endpoint.
+Hermes itself remains the source of truth for the oracle. There is no separate `oracle_model` setting in the intended design; the oracle is whatever Hermes' active model is. For the hackathon setup, Hermes' active model is pointed at the PGX-hosted Gemma 4 12B endpoint for responsive multimodal operation.
+
+Heavy requests are not single-model turns. When the request is long or uses planning/build/debug/research language, Hermes automatically runs a Gemma + Nemotron mixture-of-agents pass: Nemotron Nano produces a second-model analysis, and Gemma 12B aggregates that analysis into the normal Hermes turn. This keeps the `/model` interface stable while making the local NVIDIA model part of the serious reasoning path.
 
 ## Why This Fits The Hackathon
 
@@ -62,6 +66,7 @@ The final voice architecture should separate low-latency conversational reflexes
 
 - The **reflex** model handles immediate acknowledgement, intent shaping, and concise narration of what it is asking the oracle to do.
 - The **oracle** is Hermes' active model and handles tool use, memory, business logic, and longer reasoning.
+- **Heavy requests** use the mandatory Gemma 12B + Nemotron Nano MoA path so the local NVIDIA model participates in planning, debugging, provisioning, and other high-stakes work.
 - The reflex should produce real transcript-visible messages, not hidden filler audio.
 - Voice output should be fragmented into sentence-level chunks so text and speech arrive incrementally instead of waiting for a large monolithic response.
 
@@ -84,7 +89,8 @@ The immediate hackathon build can use the existing streaming STT path while the 
 - Hermes gives a low-latency acknowledgement shortly after speech end.
 - Hermes does not claim it lacks voice capability.
 - Hermes replies in sentence-sized voice/text chunks.
-- The active Hermes model routes to the local PGX oracle endpoint.
+- The active Hermes model routes to the local PGX Gemma 12B endpoint.
+- Heavy planning/build/debug requests automatically include the local Nemotron Nano MoA pass.
 - Stripe-linked provisioning is constrained by an explicit budget.
 - Spend/provision/call actions are represented as NemoClaw-style packets before
   live execution.
@@ -92,8 +98,8 @@ The immediate hackathon build can use the existing streaming STT path while the 
 
 ## Known Constraints
 
-- Nemotron Super is memory-heavy on the PGX/GB10. The current deployment is tuning-sensitive.
-- Running Gemma E2B and Nemotron Super concurrently leaves limited memory headroom.
+- Nemotron Super is memory-heavy on the PGX/GB10 and is now optional for this demo shape.
+- Running Gemma E2B, Gemma 12B, and Nemotron Nano concurrently is still tuning-sensitive but leaves a more plausible single-user memory envelope than keeping Super always warm.
 - vLLM reports model context according to the configured serving cap, not necessarily the model's architectural maximum.
 - Long context and concurrency trade off directly. For a single-user demo, lower concurrency is the right choice.
 - The current Nemotron Super vLLM path may leak reasoning-style text or
@@ -104,11 +110,12 @@ The immediate hackathon build can use the existing streaming STT path while the 
 
 ## Immediate Build Priorities
 
-1. Stabilize the PGX vLLM stack at `64K` context for Nemotron Super with single-user concurrency.
+1. Stabilize the PGX vLLM stack at `64K` context for Gemma 12B plus Nemotron Nano with single-user concurrency.
 2. Keep the Hermes model interface normal: `/model` and `model.*` config select the oracle.
-3. Make reflex acknowledgements real, visible, sentence-fragmented messages.
-4. Wire the Stripe spending/provisioning flow into a demo-safe budgeted path.
-5. Add a NemoClaw packet boundary for spending, provisioning, credential, and
+3. Make heavy requests automatically use Gemma + Nemotron MoA.
+4. Make reflex acknowledgements real, visible, sentence-fragmented messages.
+5. Wire the Stripe spending/provisioning flow into a demo-safe budgeted path.
+6. Add a NemoClaw packet boundary for spending, provisioning, credential, and
    outbound-call actions.
-6. Implement the phone call handoff with context transfer from the Discord session.
-7. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.
+7. Implement the phone call handoff with context transfer from the Discord session.
+8. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.

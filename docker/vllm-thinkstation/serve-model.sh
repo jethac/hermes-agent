@@ -28,6 +28,30 @@ case "${service}" in
       --limit-mm-per-prompt "${GEMMA4_E2B_LIMIT_MM_PER_PROMPT}" \
       "${EXTRA_ARGS[@]}"
     ;;
+  gemma4-12b-oracle)
+    append_extra_args "${GEMMA4_12B_EXTRA_ARGS:-}"
+    exec vllm serve "${GEMMA4_12B_MODEL}" \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --served-model-name "${GEMMA4_12B_SERVED_NAME}" \
+      --trust-remote-code \
+      --max-model-len "${GEMMA4_12B_MAX_MODEL_LEN}" \
+      --gpu-memory-utilization "${GEMMA4_12B_GPU_MEMORY_UTILIZATION}" \
+      --limit-mm-per-prompt "${GEMMA4_12B_LIMIT_MM_PER_PROMPT}" \
+      "${EXTRA_ARGS[@]}"
+    ;;
+  nemotron-nano-oracle)
+    append_extra_args "${NEMOTRON_NANO_EXTRA_ARGS:-}"
+    exec vllm serve "${NEMOTRON_NANO_MODEL}" \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --served-model-name "${NEMOTRON_NANO_SERVED_NAME}" \
+      --trust-remote-code \
+      --max-model-len "${NEMOTRON_NANO_MAX_MODEL_LEN}" \
+      --gpu-memory-utilization "${NEMOTRON_NANO_GPU_MEMORY_UTILIZATION}" \
+      --tensor-parallel-size "${NEMOTRON_NANO_TENSOR_PARALLEL_SIZE}" \
+      "${EXTRA_ARGS[@]}"
+    ;;
   nemotron-super-oracle)
     append_extra_args "${NEMOTRON_SUPER_EXTRA_ARGS:-}"
     exec vllm serve "${NEMOTRON_SUPER_MODEL}" \
@@ -41,7 +65,7 @@ case "${service}" in
       "${EXTRA_ARGS[@]}"
     ;;
   *)
-    echo "unknown service '${service}'. expected gemma4-e2b-reflex or nemotron-super-oracle" >&2
+    echo "unknown service '${service}'. expected gemma4-e2b-reflex, gemma4-12b-oracle, nemotron-nano-oracle, or nemotron-super-oracle" >&2
     exit 64
     ;;
 esac

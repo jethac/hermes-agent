@@ -74,7 +74,12 @@ def _clean_slot(slot: Any) -> dict[str, str] | None:
     # an invalid slot is dropped, falling back to the preset's defaults.
     if provider.lower() == "moa":
         return None
-    return {"provider": provider, "model": model}
+    cleaned = {"provider": provider, "model": model}
+    for key in ("base_url", "api_key", "api_mode"):
+        value = str(slot.get(key) or "").strip()
+        if value:
+            cleaned[key] = value
+    return cleaned
 
 
 def _default_preset() -> dict[str, Any]:

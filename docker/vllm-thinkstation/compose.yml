@@ -55,11 +55,67 @@ services:
       retries: 20
       start_period: 5m
 
+  gemma4-12b-oracle:
+    <<: *vllm-common
+    container_name: hermes-gemma4-12b-oracle
+    ports:
+      - "${GEMMA4_12B_PORT:-8002}:8000"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+      HF_HOME: /root/.cache/huggingface
+      VLLM_CACHE_ROOT: /root/.cache/vllm
+      VLLM_WORKER_MULTIPROC_METHOD: ${VLLM_WORKER_MULTIPROC_METHOD:-spawn}
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+      NCCL_DEBUG: ${NCCL_DEBUG:-WARN}
+      GEMMA4_12B_MODEL: ${GEMMA4_12B_MODEL:-google/gemma-4-12B-it}
+      GEMMA4_12B_SERVED_NAME: ${GEMMA4_12B_SERVED_NAME:-gemma-4-12b-oracle}
+      GEMMA4_12B_MAX_MODEL_LEN: ${GEMMA4_12B_MAX_MODEL_LEN:-65536}
+      GEMMA4_12B_GPU_MEMORY_UTILIZATION: ${GEMMA4_12B_GPU_MEMORY_UTILIZATION:-0.38}
+      GEMMA4_12B_LIMIT_MM_PER_PROMPT: ${GEMMA4_12B_LIMIT_MM_PER_PROMPT:-{"audio":1,"image":1,"video":0}}
+      GEMMA4_12B_EXTRA_ARGS: ${GEMMA4_12B_EXTRA_ARGS:---max-num-seqs 4 --enforce-eager}
+    entrypoint: ["/opt/hermes-vllm/serve-model.sh"]
+    command: ["gemma4-12b-oracle"]
+    healthcheck:
+      test: ["CMD", "python3", "/opt/hermes-vllm/healthcheck.py", "http://127.0.0.1:8000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 30
+      start_period: 12m
+
+  nemotron-nano-oracle:
+    <<: *vllm-common
+    container_name: hermes-nemotron-nano-oracle
+    ports:
+      - "${NEMOTRON_NANO_PORT:-8003}:8000"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+      HF_HOME: /root/.cache/huggingface
+      VLLM_CACHE_ROOT: /root/.cache/vllm
+      VLLM_WORKER_MULTIPROC_METHOD: ${VLLM_WORKER_MULTIPROC_METHOD:-spawn}
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+      NCCL_DEBUG: ${NCCL_DEBUG:-WARN}
+      NEMOTRON_NANO_MODEL: ${NEMOTRON_NANO_MODEL:-nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4}
+      NEMOTRON_NANO_SERVED_NAME: ${NEMOTRON_NANO_SERVED_NAME:-nemotron-3-nano-oracle}
+      NEMOTRON_NANO_MAX_MODEL_LEN: ${NEMOTRON_NANO_MAX_MODEL_LEN:-65536}
+      NEMOTRON_NANO_GPU_MEMORY_UTILIZATION: ${NEMOTRON_NANO_GPU_MEMORY_UTILIZATION:-0.28}
+      NEMOTRON_NANO_TENSOR_PARALLEL_SIZE: ${NEMOTRON_NANO_TENSOR_PARALLEL_SIZE:-1}
+      NEMOTRON_NANO_EXTRA_ARGS: ${NEMOTRON_NANO_EXTRA_ARGS:---max-num-seqs 4 --enforce-eager --enable-auto-tool-choice --tool-call-parser hermes --reasoning-parser nemotron_v3}
+    entrypoint: ["/opt/hermes-vllm/serve-model.sh"]
+    command: ["nemotron-nano-oracle"]
+    healthcheck:
+      test: ["CMD", "python3", "/opt/hermes-vllm/healthcheck.py", "http://127.0.0.1:8000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 30
+      start_period: 12m
+
   nemotron-super-oracle:
     <<: *vllm-common
     container_name: hermes-nemotron-super-oracle
     ports:
-      - "${NEMOTRON_SUPER_PORT:-8002}:8000"
+      - "${NEMOTRON_SUPER_PORT:-8004}:8000"
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
       HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
