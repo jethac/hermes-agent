@@ -359,21 +359,22 @@ def _realtime_voice_turn_text_from_payload(event_type: str, payload: Mapping[str
         return str(payload.get("text") or "").strip()
 
     asr_transcript = str(payload.get("asr_transcript") or "").strip()
-    if not asr_transcript:
-        return ""
-
     source = str(payload.get("asr_transcript_source") or "").strip().lower()
-    if source and source not in {"asr", "local_stt", "streaming_stt"}:
-        return ""
+    if asr_transcript and (not source or source in {"asr", "local_stt", "streaming_stt"}):
+        confidence = payload.get("asr_transcript_confidence")
+        if confidence is not None and not isinstance(confidence, bool):
+            try:
+                if float(confidence) >= 0.35:
+                    return asr_transcript
+            except (TypeError, ValueError):
+                pass
+        else:
+            return asr_transcript
 
-    confidence = payload.get("asr_transcript_confidence")
-    if confidence is not None and not isinstance(confidence, bool):
-        try:
-            if float(confidence) < 0.35:
-                return ""
-        except (TypeError, ValueError):
-            return ""
-    return asr_transcript
+    transcript = str(payload.get("transcript") or "").strip()
+    if transcript:
+        return transcript
+    return str(payload.get("text") or "").strip()
 
 
 class _Snowflake:
@@ -3691,7 +3692,7 @@ class DiscordAdapter(BasePlatformAdapter):
         # buffer if the receiver never emits an utterance boundary.
         last_end = getattr(self, "_realtime_voice_last_speech_end", {}) or {}
         ended_at = last_end.get(key)
-        if ended_at is not None and time.monotonic() - float(ended_at) <= 2.0:
+        if event_type == "interface.intent.final" or ended_at is not None:
             delay = 0.45
         else:
             delay = 8.0
