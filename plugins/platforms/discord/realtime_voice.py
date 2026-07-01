@@ -478,7 +478,12 @@ class DiscordRealtimeVoiceSession:
                     await self._notify_degraded("sidecar_session_error", error)
                     self._activity.set()
                     return
-                if event.type in {VoiceEventType.TRANSCRIPT_PARTIAL, VoiceEventType.TRANSCRIPT_FINAL}:
+                if event.type in {
+                    VoiceEventType.TRANSCRIPT_PARTIAL,
+                    VoiceEventType.TRANSCRIPT_FINAL,
+                    VoiceEventType.INTERFACE_INTENT_PARTIAL,
+                    VoiceEventType.INTERFACE_INTENT_FINAL,
+                }:
                     event.payload.setdefault("user_id", self._last_input_user_id or "")
                 await self._notify_event_observed(event)
                 self._activity.set()

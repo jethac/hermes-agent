@@ -16,10 +16,13 @@ import logging
 import math
 import os
 import re
+import shutil
+import subprocess
 import tempfile
 import time
 import urllib.error
 import urllib.request
+import wave
 from dataclasses import dataclass, replace
 from typing import Any, AsyncIterator, Callable, Mapping, Optional
 
@@ -1749,7 +1752,7 @@ class ReferenceRealtimeVoiceSidecarSession:
                             playback_start_metrics,
                         ),
                     )
-                    payload = AudioChunk(codec=VoiceAudioCodec.OPUS, data=data).to_payload()
+                    payload = _audio_file_to_pcm16_chunk(file_path, data).to_payload()
                     payload["mime_type"] = _mime_type_for_path(file_path)
                     if playback_generation is not None:
                         payload["playback_generation"] = playback_generation
@@ -2489,6 +2492,71 @@ def _mime_type_for_path(path: str) -> str:
         ".wav": "audio/wav",
         ".flac": "audio/flac",
     }.get(ext, "audio/mpeg")
+
+
+def _audio_file_to_pcm16_chunk(path: str, data: Optional[bytes] = None) -> AudioChunk:
+    """Decode a synthesized audio file into raw PCM16 for realtime playback."""
+
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".wav":
+        try:
+            with wave.open(path, "rb") as wav:
+                if wav.getcomptype() != "NONE":
+                    raise RuntimeError(f"unsupported WAV compression: {wav.getcomptype()}")
+                if wav.getsampwidth() != 2:
+                    raise RuntimeError(f"unsupported WAV sample width: {wav.getsampwidth()}")
+                channels = int(wav.getnchannels())
+                sample_rate = int(wav.getframerate())
+                pcm = wav.readframes(wav.getnframes())
+            if channels <= 0 or sample_rate <= 0:
+                raise RuntimeError("invalid WAV audio geometry")
+            return AudioChunk(
+                codec=VoiceAudioCodec.PCM16,
+                data=pcm,
+                sample_rate_hz=sample_rate,
+                channels=channels,
+            )
+        except wave.Error as exc:
+            raise RuntimeError(f"invalid WAV audio: {exc}") from exc
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("ffmpeg is required to decode non-WAV TTS audio to PCM16")
+    source = path if path else "pipe:0"
+    proc = subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            source,
+            "-f",
+            "s16le",
+            "-acodec",
+            "pcm_s16le",
+            "-ac",
+            "1",
+            "-ar",
+            "24000",
+            "pipe:1",
+        ],
+        input=data if source == "pipe:0" else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        error = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(error or "ffmpeg failed to decode TTS audio to PCM16")
+    if not proc.stdout:
+        raise RuntimeError("ffmpeg produced no PCM audio")
+    return AudioChunk(
+        codec=VoiceAudioCodec.PCM16,
+        data=proc.stdout,
+        sample_rate_hz=24000,
+        channels=1,
+    )
 
 
 def _kame_reflex_payload_from_content(

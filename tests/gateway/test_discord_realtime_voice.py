@@ -484,6 +484,36 @@ async def test_discord_realtime_session_tags_transcripts_with_last_input_user():
 
 
 @pytest.mark.asyncio
+async def test_discord_realtime_session_tags_interface_intents_with_last_input_user():
+    from agent.realtime_voice import VoiceEvent, VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    observed = []
+    sidecar = FakeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+        event_callback=lambda event_type, payload: observed.append((event_type, payload)),
+    )
+
+    await session.start()
+    await session.handle_pcm_frame(user_id=42, pcm48_stereo=b"\x00" * 3840)
+    await sidecar.emit(VoiceEvent(
+        type=VoiceEventType.INTERFACE_INTENT_FINAL,
+        session_id="discord:111:222",
+        sequence=1,
+        payload={"text": "hey hermes", "route": "oracle_direct"},
+    ))
+    await asyncio.wait_for(session.wait_until_idle(), timeout=1)
+
+    assert observed[-1][0] == VoiceEventType.INTERFACE_INTENT_FINAL.value
+    assert observed[-1][1]["user_id"] == "42"
+
+
+@pytest.mark.asyncio
 async def test_discord_realtime_session_sends_end_of_utterance_marker():
     from agent.realtime_voice import VoiceEventType
     from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession

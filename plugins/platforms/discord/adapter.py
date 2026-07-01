@@ -3639,7 +3639,7 @@ class DiscordAdapter(BasePlatformAdapter):
         elif should_count_audio_output and not self._voice_state(guild_id).latency_metrics_ms.get("audio_output_chunks"):
             logger.info("Discord realtime voice first audio output chunk (guild=%d)", guild_id)
         self._update_voice_state(guild_id, **updates)
-        if event_type == "transcript.final":
+        if event_type in {"transcript.final", "interface.intent.final"}:
             self._schedule_realtime_voice_transcript(guild_id, payload)
 
     def _schedule_realtime_voice_transcript(self, guild_id: int, payload: Dict[str, Any]) -> None:

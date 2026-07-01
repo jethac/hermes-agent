@@ -5,6 +5,7 @@ import json
 import time
 import types
 import urllib.error
+import wave
 
 import pytest
 
@@ -46,6 +47,15 @@ from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSess
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, sidecar_ws_url, wants_realtime_sidecar
 from agent.realtime_voice_text_engine import KameInterfaceOracleEngine, TextOracleTTSEngine, _take_speakable_chunk
+
+
+def _write_test_wav(path, pcm: bytes = b"\x01\x00\x02\x00\x03\x00\x04\x00", *, sample_rate: int = 16000) -> bytes:
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(pcm)
+    return pcm
 
 
 class FakeOracle:
@@ -6028,8 +6038,8 @@ def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
         return {"success": True, "transcript": "local transcript"}
 
     def fake_synthesize(text):
-        audio = tmp_path / "speech.ogg"
-        audio.write_bytes(b"audio")
+        audio = tmp_path / "speech.wav"
+        _write_test_wav(audio)
         return {"success": True, "file_path": str(audio)}
 
     async def run():
@@ -6079,6 +6089,10 @@ def test_reference_sidecar_local_stt_and_tts_without_gpu(tmp_path):
         assert final.payload["input_generation"] == 9
         audio_events = [event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK]
         assert audio_events[0].payload["data_b64"]
+        audio_chunk = AudioChunk.from_payload(audio_events[0].payload)
+        assert audio_chunk.codec == VoiceAudioCodec.PCM16
+        assert audio_chunk.sample_rate_hz == 16000
+        assert audio_chunk.channels == 1
         assert audio_events[0].payload["playback_generation"] == 7
         assert audio_events[0].payload["metrics"]["tts_synthesis_ms"] >= 0
 
@@ -6621,8 +6635,8 @@ def test_reference_sidecar_passes_language_metadata_to_tts_callback(tmp_path):
     def fake_synthesize(text, *, metadata=None):
         captured["text"] = text
         captured["metadata"] = metadata
-        audio = tmp_path / "speech.ogg"
-        audio.write_bytes(b"audio")
+        audio = tmp_path / "speech.wav"
+        _write_test_wav(audio)
         return {"success": True, "file_path": str(audio)}
 
     async def run():
@@ -6677,8 +6691,9 @@ def test_reference_sidecar_does_not_cache_acknowledgement_audio(tmp_path):
 
     def fake_synthesize(text):
         synth_calls.append(text)
-        audio = tmp_path / f"speech-{len(synth_calls)}.ogg"
-        audio.write_bytes(f"audio-{len(synth_calls)}".encode())
+        audio = tmp_path / f"speech-{len(synth_calls)}.wav"
+        pcm = bytes([len(synth_calls), 0, len(synth_calls) + 1, 0])
+        _write_test_wav(audio, pcm)
         return {"success": True, "file_path": str(audio)}
 
     async def run():
@@ -6721,8 +6736,12 @@ def test_reference_sidecar_does_not_cache_acknowledgement_audio(tmp_path):
 
         audio_events = [event for event in seen if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK]
         assert synth_calls == ["One moment.", "One moment."]
-        assert base64.b64decode(audio_events[0].payload["data_b64"]) == b"audio-1"
-        assert base64.b64decode(audio_events[1].payload["data_b64"]) == b"audio-2"
+        first = AudioChunk.from_payload(audio_events[0].payload)
+        second = AudioChunk.from_payload(audio_events[1].payload)
+        assert first.codec == VoiceAudioCodec.PCM16
+        assert second.codec == VoiceAudioCodec.PCM16
+        assert first.data == b"\x01\x00\x02\x00"
+        assert second.data == b"\x02\x00\x03\x00"
         assert "tts_cache" not in audio_events[0].payload["metrics"]
         assert audio_events[0].payload["metrics"]["tts_synthesis_ms"] >= 0
 
@@ -6731,8 +6750,8 @@ def test_reference_sidecar_does_not_cache_acknowledgement_audio(tmp_path):
 
 def test_reference_sidecar_kame_local_tts_reports_playback_start_metric(tmp_path):
     def fake_synthesize(text):
-        audio = tmp_path / "speech.ogg"
-        audio.write_bytes(b"audio")
+        audio = tmp_path / "speech.wav"
+        _write_test_wav(audio)
         return {"success": True, "file_path": str(audio)}
 
     async def run():
@@ -6780,14 +6799,18 @@ def test_reference_sidecar_kame_local_tts_reports_playback_start_metric(tmp_path
         assert audio.payload["metrics"]["kame_first_tts_audio_to_playback_start_ms"] >= 0
         assert audio.payload["metrics"]["kame_speech_end_to_playback_start_ms"] >= 120
         assert audio.payload["metrics"]["tts_synthesis_ms"] >= 0
+        chunk = AudioChunk.from_payload(audio.payload)
+        assert chunk.codec == VoiceAudioCodec.PCM16
+        assert chunk.sample_rate_hz == 16000
+        assert chunk.channels == 1
 
     asyncio.run(run())
 
 
 def test_reference_sidecar_kame_reflex_narration_reports_playback_start_metric(tmp_path):
     def fake_synthesize(text):
-        audio = tmp_path / "speech.ogg"
-        audio.write_bytes(b"audio")
+        audio = tmp_path / "speech.wav"
+        _write_test_wav(audio)
         return {"success": True, "file_path": str(audio)}
 
     async def run():
