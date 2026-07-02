@@ -13182,6 +13182,51 @@ def test_session_drops_stale_durable_oracle_records_after_barge_in():
     ]
 
 
+def test_session_drops_stale_kame_oracle_job_record_by_source_generation():
+    class SourceGenerationEngine:
+        @property
+        def kind(self):
+            return RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
+
+        async def start(self, config):
+            pass
+
+        async def receive_event(self, event):
+            pass
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.ORACLE_JOB_COMPLETED,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "job_id": "voice-oracle-001",
+                    "state": "completed",
+                    "result_summary": "Old job result",
+                    "source_playback_generation": 1,
+                    "playback_generation": 2,
+                },
+            )
+
+        async def close(self):
+            pass
+
+    async def run():
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(session_id="voice-123"),
+            engine=SourceGenerationEngine(),
+        )
+        session.transcript.active_playback_generation = 2
+
+        events = [event async for event in session.events()]
+
+        assert [event.type for event in events] == [VoiceEventType.ORACLE_JOB_COMPLETED]
+        assert events[0].payload["result_summary"] == "Old job result"
+        assert session.durable_oracle_records() == []
+
+    asyncio.run(run())
+
+
 def test_session_ignores_stale_interrupted_commit_from_prior_generation():
     async def run():
         session = RealtimeVoiceSession(

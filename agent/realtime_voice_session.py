@@ -298,7 +298,7 @@ class RealtimeVoiceSession:
                 )
             self.state = RealtimeVoiceSessionState.LISTENING
         elif event.type in DURABLE_ORACLE_RECORD_EVENT_TYPES:
-            generation = _payload_generation(event.payload)
+            generation = _durable_oracle_record_generation(event)
             if generation is not None and generation < self.transcript.active_playback_generation:
                 return
             if _oracle_record_is_ephemeral(event):
@@ -458,6 +458,24 @@ def _payload_generation(payload: dict) -> Optional[int]:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+def _payload_source_generation(payload: Mapping[str, Any]) -> Optional[int]:
+    value = payload.get("source_playback_generation")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _durable_oracle_record_generation(event: VoiceEvent) -> Optional[int]:
+    source_generation = _payload_source_generation(event.payload)
+    if source_generation is not None:
+        return source_generation
+    return _payload_generation(event.payload)
 
 
 def _durable_user_text_from_final_user_event(payload: Mapping[str, Any]) -> str:

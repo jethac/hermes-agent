@@ -128,6 +128,7 @@ async def test_high_priority_queued_job_starts_before_low_priority_job():
 
 @pytest.mark.asyncio
 async def test_reprioritizing_queued_job_moves_it_ahead_before_capacity_frees():
+    events = []
     started = []
     release_first = asyncio.Event()
 
@@ -137,7 +138,11 @@ async def test_reprioritizing_queued_job_moves_it_ahead_before_capacity_frees():
             await release_first.wait()
         return f"finished {job.job_id}"
 
-    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
 
     await manager.submit(_request("running"))
     second = await manager.submit(_request("second"), priority="normal")
@@ -145,7 +150,16 @@ async def test_reprioritizing_queued_job_moves_it_ahead_before_capacity_frees():
     await asyncio.sleep(0)
 
     updated = await manager.update_priority(third.job_id, priority="highest")
+    progress = next(
+        event
+        for event in events
+        if event["type"] == "oracle.job.progress"
+        and event["job_id"] == third.job_id
+        and event["payload"].get("operation") == "priority"
+    )
     assert updated.priority == "high"
+    assert progress["payload"]["priority"] == "high"
+    assert progress["payload"]["state"] == "queued"
 
     release_first.set()
     await manager.wait_for_idle()
@@ -155,13 +169,18 @@ async def test_reprioritizing_queued_job_moves_it_ahead_before_capacity_frees():
 
 @pytest.mark.asyncio
 async def test_add_update_records_compact_status_without_running_job():
+    events = []
     release = asyncio.Event()
 
     async def runner(job):
         await release.wait()
         return "done"
 
-    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
 
     first = await manager.submit(_request("running"))
     second = await manager.submit(_request("second"))
@@ -174,6 +193,13 @@ async def test_add_update_records_compact_status_without_running_job():
         update_type="clarification",
     )
     status = await manager.status_view()
+    progress = next(
+        event
+        for event in events
+        if event["type"] == "oracle.job.progress"
+        and event["job_id"] == second.job_id
+        and event["payload"].get("operation") == "update"
+    )
 
     assert updated.updates == [
         {
@@ -186,6 +212,9 @@ async def test_add_update_records_compact_status_without_running_job():
     queued_status = next(job for job in status["jobs"] if job["job_id"] == second.job_id)
     assert queued_status["update_count"] == 1
     assert queued_status["latest_update"] == "also check the Stripe receipt before answering"
+    assert progress["payload"]["update_count"] == 1
+    assert progress["payload"]["latest_update"] == "also check the Stripe receipt before answering"
+    assert progress["payload"]["state"] == "queued"
 
     await manager.cancel(first.job_id)
     release.set()
@@ -616,6 +645,12 @@ async def test_audit_ledger_path_records_redacted_lifecycle_events(tmp_path):
     )
     job = await manager.submit(_request("buy service credits"))
     await asyncio.sleep(0)
+    await manager.add_update(
+        job.job_id,
+        text="include redacted receipt reference",
+        source="discord_voice",
+        update_type="clarification",
+    )
     await manager.mark_waiting_for_approval(
         job.job_id,
         reason="Stripe Link spend requires approval",
@@ -638,6 +673,7 @@ async def test_audit_ledger_path_records_redacted_lifecycle_events(tmp_path):
     assert [row["event_type"] for row in rows] == [
         "oracle.job.accepted",
         "oracle.job.started",
+        "oracle.job.progress",
         "oracle.job.waiting_for_approval",
         "oracle.job.started",
         "oracle.job.completed",
@@ -645,6 +681,9 @@ async def test_audit_ledger_path_records_redacted_lifecycle_events(tmp_path):
     assert all(row["schema_version"] == "voiceops.oracle_job_audit_event.v1" for row in rows)
     assert all(row["action"] == "oracle_job_event" for row in rows)
     waiting = next(row for row in rows if row["event_type"] == "oracle.job.waiting_for_approval")
+    progress = next(row for row in rows if row["event_type"] == "oracle.job.progress")
+    assert progress["payload"]["operation"] == "update"
+    assert progress["payload"]["latest_update"] == "include redacted receipt reference"
     assert waiting["payload"]["approval"] == {
         "approval_id": "approval-123",
         "tool_name": "stripe_link_purchase",

@@ -243,6 +243,15 @@ class OracleJobManager:
             job.updated_at = self._clock()
             if job.state == OracleJobState.QUEUED:
                 self._sort_queue_locked()
+            await self._emit_locked(
+                OracleJobEventType.PROGRESS,
+                job,
+                payload={
+                    **job.to_status(),
+                    "operation": "priority",
+                    "priority": job.priority,
+                },
+            )
             return job
 
     async def add_update(
@@ -271,6 +280,16 @@ class OracleJobManager:
                 }
             )
             job.updated_at = self._clock()
+            await self._emit_locked(
+                OracleJobEventType.PROGRESS,
+                job,
+                payload={
+                    **job.to_status(),
+                    "operation": "update",
+                    "latest_update": update_text,
+                    "update_count": len(job.updates),
+                },
+            )
             return job
 
     async def mark_waiting_for_approval(

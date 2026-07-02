@@ -850,8 +850,8 @@ async def run_smoke() -> dict[str, Any]:
             and not cancelled_result_progress_leaked
             and not cancelled_result_durable_completed
             and not cancelled_result_durable_text
-            and durable_cancelled_record_present
-            and durable_completed_jobs == 6
+            and not durable_cancelled_record_present
+            and durable_completed_jobs == 1
             and bool(approval_waiting)
             and bool(approval_tool_progress)
             and bool(approval_status_commits)
@@ -957,6 +957,7 @@ async def run_smoke() -> dict[str, Any]:
             for event_type in {
                 VoiceEventType.ORACLE_JOB_STARTED,
                 VoiceEventType.ORACLE_JOB_QUEUED,
+                VoiceEventType.ORACLE_JOB_PROGRESS,
                 VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
                 VoiceEventType.ORACLE_JOB_COMPLETED,
                 VoiceEventType.ORACLE_JOB_FAILED,
