@@ -453,6 +453,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "credential_location_ref",
         "rollback_ref",
         "notification_channel",
+        "source_voice_session_id",
+        "source_oracle_job_id",
+        "parent_audit_event_id",
     }
     assert all(required_audit_fields <= set(event) for event in audit_events)
     assert {event["approval_status"] for event in audit_events if event["approval_required"]} >= {
@@ -507,8 +510,20 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     approval_action_ids = {action["action_id"] for action in milestone2_plan["approval_required_actions"]}
     assert approval_step_ids <= approval_action_ids
     assert "publish-status" in approval_action_ids
+    nemoclaw_actions_by_id = {action["action_id"]: action for action in nemoclaw["approval_required_actions"]}
+    phone_approvals_by_id = {approval["action_id"]: approval for approval in phone_context["pending_approvals"]}
     for action in milestone2_plan["approval_required_actions"]:
-        assert _dot_get(milestone2_plan, action["expected_receipt_ref"])["schema_ref"] == "receipt_schema"
+        lineage = action["lineage"]
+        assert lineage["source_voice_session_id"] == payload["source_context"]["source_voice_session_id"]
+        assert lineage["source_oracle_job_id"] == payload["source_context"]["source_oracle_job_id"]
+        assert lineage["parent_audit_event_id"]
+        if action["action_id"] in nemoclaw_actions_by_id:
+            assert nemoclaw_actions_by_id[action["action_id"]]["lineage"] == lineage
+        if action["action_id"] in phone_approvals_by_id:
+            assert phone_approvals_by_id[action["action_id"]]["lineage"] == lineage
+        receipt_slot = _dot_get(milestone2_plan, action["expected_receipt_ref"])
+        assert receipt_slot["schema_ref"] == "receipt_schema"
+        assert receipt_slot["lineage"] == lineage
         assert _dot_get(milestone2_plan, action["rollback_ref"])
         if action["credential_location_required"]:
             assert action["credential_location_schema_ref"] == "credential_location_schema"
@@ -521,6 +536,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         assert evidence["execution_status"] == "not_executed"
         assert evidence["receipt"] is None
         assert evidence["rollback_receipt"] is None
+        assert evidence["lineage"] == lineage
     assert operator_state["schema_version"] == "voiceops.operator_state.v1"
     assert payload["operator_state"] == operator_state
     assert operator_state["readiness_closure"]["closure_status"] == "needs_external_evidence"

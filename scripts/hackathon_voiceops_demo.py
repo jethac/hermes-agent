@@ -52,6 +52,10 @@ REALTIME_VOICE_LIVE_EVIDENCE_CLOSURE_COMMAND = (
     "--require-inbound "
     "--wait-seconds 5"
 )
+DEFAULT_SOURCE_CONTEXT = {
+    "source_voice_session_id": "discord:voiceops-demo:general",
+    "source_oracle_job_id": "voice-oracle-voiceops-demo-001",
+}
 
 
 @dataclass(frozen=True)
@@ -101,6 +105,9 @@ class AuditEvent:
     credential_location_ref: str | None
     rollback_ref: str | None
     notification_channel: str
+    source_voice_session_id: str
+    source_oracle_job_id: str
+    parent_audit_event_id: str | None
 
 
 @dataclass(frozen=True)
@@ -1271,9 +1278,27 @@ def _audit_events(actions: Iterable[OpsAction]) -> list[AuditEvent]:
                 credential_location_ref=_credential_location_ref(action.action_id),
                 rollback_ref=_rollback_ref(action.action_id),
                 notification_channel="discord_text_status",
+                source_voice_session_id=DEFAULT_SOURCE_CONTEXT["source_voice_session_id"],
+                source_oracle_job_id=DEFAULT_SOURCE_CONTEXT["source_oracle_job_id"],
+                parent_audit_event_id=None if index == 1 else "evt-001",
             )
         )
     return events
+
+
+def _audit_event_id_for_action(demo: Mapping[str, Any], action_id: str) -> str | None:
+    for event in demo.get("audit_events", []):
+        if isinstance(event, Mapping) and event.get("action") == action_id:
+            event_id = str(event.get("event_id") or "").strip()
+            return event_id or None
+    return None
+
+
+def _lineage_for_action(demo: Mapping[str, Any], action_id: str) -> dict[str, Any]:
+    return {
+        **dict(demo.get("source_context") or DEFAULT_SOURCE_CONTEXT),
+        "parent_audit_event_id": _audit_event_id_for_action(demo, action_id),
+    }
 
 
 def _approval_contract(action: Mapping[str, Any]) -> dict[str, Any]:
@@ -1304,7 +1329,7 @@ def _approval_contract(action: Mapping[str, Any]) -> dict[str, Any]:
 
 def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
     approval_actions = [
-        {**action, "approval_contract": _approval_contract(action)}
+        {**action, "approval_contract": _approval_contract(action), "lineage": _lineage_for_action(demo, action["action_id"])}
         for action in demo["ops_actions"]
         if action["requires_approval"]
     ]
@@ -1351,6 +1376,7 @@ def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
         },
         "dry_run_commands": [action["command"] for action in approval_actions],
         "audit_event_ids": [event["event_id"] for event in demo["audit_events"]],
+        "source_context": dict(demo["source_context"]),
     }
 
 
@@ -1371,6 +1397,8 @@ def _phone_context_packet(demo: dict[str, Any]) -> dict[str, Any]:
         "handoff_id": "voiceops-phone-handoff-001",
         "source_channel": "discord_voice",
         "target_channel": "phone",
+        "source_context": dict(demo["source_context"]),
+        **dict(demo["source_context"]),
         "status": "queued_requires_approval",
         "context_summary": (
             "The user gave Hermes a 200 dollar Stripe Skills budget in Discord voice, "
@@ -1390,6 +1418,7 @@ def _phone_context_packet(demo: dict[str, Any]) -> dict[str, Any]:
                 "estimated_cents": action["estimated_cents"],
                 "purpose": action["purpose"],
                 "approval_contract": _approval_contract(action),
+                "lineage": _lineage_for_action(demo, action["action_id"]),
             }
             for action in approval_actions
         ],
@@ -1689,6 +1718,12 @@ def _demo_milestone2_report(demo: dict[str, Any], readiness: dict[str, Any]) -> 
             "approval_threshold_cents": demo["spend_policy"]["approval_required_over_cents"],
             "queued_cents": demo["totals"]["approval_required_cents"],
             "held_cents": demo["totals"]["held_budget_cents"],
+            "source_voice_session_id": demo["source_context"]["source_voice_session_id"],
+            "source_oracle_job_id": demo["source_context"]["source_oracle_job_id"],
+            **{
+                f"{action['action']}_parent_audit_event_id": action["event_id"]
+                for action in demo["audit_events"]
+            },
         },
     }
 
@@ -1960,6 +1995,7 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
         "kame_reflex_ack": _kame_reflex_ack_trace(),
         "voice_surfaces": [asdict(surface) for surface in _surface_matrix()],
         "spend_policy": asdict(policy),
+        "source_context": dict(DEFAULT_SOURCE_CONTEXT),
         "ops_actions": [asdict(action) for action in actions],
         "audit_events": [asdict(event) for event in _audit_events(actions)],
         "totals": {

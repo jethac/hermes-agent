@@ -31,6 +31,14 @@ FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
 PREFLIGHT_EVIDENCE_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence.v1"
 PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence_manifest.v1"
 POST_APPROVAL_RECEIPTS_SCHEMA_VERSION = "voiceops.milestone2.post_approval_receipts.v1"
+DEFAULT_SOURCE_VOICE_SESSION_ID = "discord:voiceops-demo:general"
+DEFAULT_SOURCE_ORACLE_JOB_ID = "voice-oracle-voiceops-demo-001"
+ACTION_PARENT_AUDIT_EVENT_IDS = {
+    "provision-voip-provider": "evt-002",
+    "buy-service-credit": "evt-003",
+    "call-user-phone": "evt-005",
+    "publish-status": "evt-006",
+}
 READ_ONLY_DISCOVERY_SCHEMA_VERSION = "voiceops.milestone2.read_only_discovery.v1"
 READ_ONLY_DISCOVERY_MANIFEST_SCHEMA_VERSION = "voiceops.milestone2.read_only_discovery_manifest.v1"
 NEMOCLAW_ACTION_PACKET_VALIDATION_SCHEMA_VERSION = "voiceops.nemoclaw_action_packet_validation.v1"
@@ -2739,9 +2747,26 @@ def _expected_post_approval_evidence(action: Mapping[str, Any]) -> dict[str, Any
         "credential_location": None,
         "rollback_ref": rollback_ref,
         "rollback_receipt": None,
+        "lineage": dict(action.get("lineage") or {}),
         "required_schemas": required_schemas,
         "audit_update_required": True,
         "secret_policy": "redacted references only; no raw tokens, card data, credentials, or full phone numbers",
+    }
+
+
+def _lineage_for_action(demo_refs: Mapping[str, Any], action_id: str) -> dict[str, Any]:
+    return {
+        "source_voice_session_id": str(
+            demo_refs.get("source_voice_session_id") or DEFAULT_SOURCE_VOICE_SESSION_ID
+        ),
+        "source_oracle_job_id": str(
+            demo_refs.get("source_oracle_job_id") or DEFAULT_SOURCE_ORACLE_JOB_ID
+        ),
+        "parent_audit_event_id": str(
+            demo_refs.get(f"{action_id}_parent_audit_event_id")
+            or ACTION_PARENT_AUDIT_EVENT_IDS.get(action_id)
+            or ""
+        ),
     }
 
 
@@ -2897,6 +2922,7 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
     for action in approval_required_actions:
         action["approval_id"] = action["approval_contract"]["approval_id"]
         action["command_sha256"] = action["approval_contract"]["command_sha256"]
+        action["lineage"] = _lineage_for_action(demo_refs, str(action["action_id"]))
     return {
         "generated_at": _utc_now(),
         "schema_version": "voiceops.milestone2.execution_plan.v1",
@@ -3002,6 +3028,7 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "credential_location_ref": action["credential_location_ref"],
                 "rollback_ref": action["rollback_ref"],
                 "approval_contract_ref": f"approval_contracts.{action['action_id']}",
+                "lineage": dict(action["lineage"]),
             }
             for action in approval_required_actions
         },
@@ -3145,6 +3172,9 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "credential_location_ref",
                 "rollback_ref",
                 "audit_event_id",
+                "source_voice_session_id",
+                "source_oracle_job_id",
+                "parent_audit_event_id",
             ],
             "secret_policy": "receipts must contain references and redacted summaries only; never raw credentials, card data, tokens, or full phone numbers",
         },
@@ -3463,6 +3493,7 @@ def build_post_approval_receipts_example(plan: Mapping[str, Any]) -> dict[str, A
                 "credential_location_ref": credential_ref,
                 "rollback_ref": action["rollback_ref"],
                 "audit_event_id": audit_event_id,
+                **dict(action.get("lineage") or {}),
                 "approval_artifact": action["approval_artifact"],
                 "redacted_summary": "Example only; replace with real redacted receipt refs.",
             }
@@ -3478,6 +3509,7 @@ def build_post_approval_receipts_example(plan: Mapping[str, Any]) -> dict[str, A
                     "created_by_action_id": action_id,
                     "rotation_due": "2026-09-29T00:00:00Z",
                     "redacted": True,
+                    "lineage": dict(action.get("lineage") or {}),
                 }
             )
         example["rollback_receipts"].append(
@@ -3486,6 +3518,7 @@ def build_post_approval_receipts_example(plan: Mapping[str, Any]) -> dict[str, A
                 "status": "not_run",
                 "owner_ref": "operator-ref-demo",
                 "notes": "Example only; rollback not needed for this sample.",
+                "lineage": dict(action.get("lineage") or {}),
             }
         )
         example["audit_events"].append(
@@ -3497,6 +3530,7 @@ def build_post_approval_receipts_example(plan: Mapping[str, Any]) -> dict[str, A
                 "provider": action["provider"],
                 "artifact_ref": "post-approval-receipts.example.json",
                 "operator_next_step": "Replace this example with real redacted post-approval evidence.",
+                **dict(action.get("lineage") or {}),
             }
         )
     example["collector_attestation"] = _example_collector_attestation(
@@ -3667,6 +3701,16 @@ def _approval_decision_artifact_issues(
     return issues
 
 
+def _lineage_issues(prefix: str, item: Mapping[str, Any], expected: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    for field in ("source_voice_session_id", "source_oracle_job_id", "parent_audit_event_id"):
+        actual_value = str(item.get(field) or "")
+        expected_value = str(expected.get(field) or "")
+        if actual_value != expected_value:
+            issues.append(f"{prefix}:{field}_mismatch")
+    return issues
+
+
 def validate_post_approval_receipts(
     payload: Mapping[str, Any],
     plan: Mapping[str, Any],
@@ -3771,6 +3815,8 @@ def validate_post_approval_receipts(
         if action is None:
             issues.append(f"post_approval_receipts:{receipt_id or index}:unknown_action_id")
             continue
+        action_lineage = action.get("lineage") if isinstance(action.get("lineage"), Mapping) else {}
+        issues.extend(_lineage_issues(f"post_approval_receipts:{receipt_id or index}", receipt, action_lineage))
         if receipt.get("approval_id") != action["approval_id"]:
             issues.append(f"post_approval_receipts:{receipt_id}:approval_id_mismatch")
         if receipt.get("command_sha256") != action["command_sha256"]:
@@ -3833,6 +3879,13 @@ def validate_post_approval_receipts(
                 issues.append(f"post_approval_receipts:{receipt_id}:audit_status_mismatch")
             if audit_event.get("provider") != action["provider"]:
                 issues.append(f"post_approval_receipts:{receipt_id}:audit_provider_mismatch")
+            issues.extend(
+                _lineage_issues(
+                    f"post_approval_receipts:{receipt_id}:audit_event",
+                    audit_event,
+                    action_lineage,
+                )
+            )
         if status not in POST_APPROVAL_RECEIPT_STATUSES:
             issues.append(f"post_approval_receipts:{receipt_id}:invalid_status")
         decision_at = _parse_preflight_timestamp(receipt.get("decision_at"))
@@ -3889,6 +3942,11 @@ def validate_post_approval_receipts(
         issues.append(f"post_approval_receipts:missing_receipts_for_actions:{','.join(missing_action_receipts)}")
     if isinstance(budget_cap_cents, int) and total_amount_cents > budget_cap_cents:
         issues.append("post_approval_receipts:total_amount_exceeds_budget")
+    action_by_rollback_ref = {
+        str(action.get("rollback_ref") or ""): action
+        for action in actions.values()
+        if str(action.get("rollback_ref") or "")
+    }
     for index, credential in enumerate(credential_locations):
         if not isinstance(credential, Mapping):
             issues.append(f"post_approval_receipts:credential_locations[{index}]:not_object")
@@ -3902,6 +3960,33 @@ def validate_post_approval_receipts(
             issues.append(f"post_approval_receipts:{credential_id}:forbidden_credential_fields:{','.join(forbidden_present)}")
         if credential.get("storage_backend") not in plan["credential_location_schema"]["allowed_storage_backends"]:
             issues.append(f"post_approval_receipts:{credential_id}:invalid_storage_backend")
+        action = actions.get(str(credential.get("created_by_action_id") or ""))
+        if action is not None:
+            expected_lineage = action.get("lineage") if isinstance(action.get("lineage"), Mapping) else {}
+            actual_lineage = credential.get("lineage") if isinstance(credential.get("lineage"), Mapping) else credential
+            issues.extend(
+                _lineage_issues(
+                    f"post_approval_receipts:{credential_id}:lineage",
+                    actual_lineage,
+                    expected_lineage,
+                )
+            )
+    for index, rollback in enumerate(rollback_receipts):
+        if not isinstance(rollback, Mapping):
+            continue
+        rollback_ref = str(rollback.get("rollback_ref") or "")
+        action = action_by_rollback_ref.get(rollback_ref)
+        if action is None:
+            continue
+        expected_lineage = action.get("lineage") if isinstance(action.get("lineage"), Mapping) else {}
+        actual_lineage = rollback.get("lineage") if isinstance(rollback.get("lineage"), Mapping) else rollback
+        issues.extend(
+            _lineage_issues(
+                f"post_approval_receipts:rollback_receipts[{index}]:lineage",
+                actual_lineage,
+                expected_lineage,
+            )
+        )
     for audit_id, event in audit_by_id.items():
         if not audit_id:
             issues.append("post_approval_receipts:audit_event_missing_id")

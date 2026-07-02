@@ -354,6 +354,7 @@ def execute_approved_actions(
             if result is not None
             else None
         )
+        lineage = action.get("lineage") if isinstance(action.get("lineage"), Mapping) else {}
 
         receipt: dict[str, Any] = {
             "receipt_id": receipt_id,
@@ -369,6 +370,7 @@ def execute_approved_actions(
             "command_sha256": action["command_sha256"],
             "approval_artifact": action["approval_artifact"],
             "audit_event_id": audit_event_id,
+            **dict(lineage),
             "redacted_summary": (
                 "Executed approved action and stored redacted receipt metadata."
                 if result is not None
@@ -397,6 +399,7 @@ def execute_approved_actions(
                         "created_by_action_id": action_id,
                         "rotation_due": "2026-12-31T00:00:00Z",
                         "redacted": True,
+                        "lineage": dict(lineage),
                     }
                 )
             rollback_receipts.append(
@@ -405,6 +408,7 @@ def execute_approved_actions(
                     "status": "not_run",
                     "owner_ref": decision_by,
                     "notes": "Rollback/deprovision not run; owner ref recorded for approved action.",
+                    "lineage": dict(lineage),
                 }
             )
         receipts.append(receipt)
@@ -416,6 +420,7 @@ def execute_approved_actions(
                 "status": status,
                 "provider": action["provider"],
                 "artifact_ref": "post-approval-receipts.json",
+                **dict(lineage),
                 "operator_next_step": (
                     "Inspect provider dashboard and run rollback if needed."
                     if status in {"executed", "failed"}

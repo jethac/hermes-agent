@@ -2117,8 +2117,11 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
         "approval_id",
         "command_sha256",
         "credential_location_ref",
+        "parent_audit_event_id",
         "receipt_id",
         "rollback_ref",
+        "source_oracle_job_id",
+        "source_voice_session_id",
     } <= set(plan["receipt_schema"]["required_fields"])
     assert "credential_ref_id" in plan["credential_location_schema"]["required_fields"]
     assert "raw_secret" in plan["credential_location_schema"]["forbidden_fields"]
@@ -2152,6 +2155,12 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
     assert set(plan["approval_contracts"]) == {
         action["action_id"] for action in plan["approval_required_actions"]
     }
+    expected_parent_audit_ids = {
+        "provision-voip-provider": "evt-002",
+        "buy-service-credit": "evt-003",
+        "call-user-phone": "evt-005",
+        "publish-status": "evt-006",
+    }
     for action in plan["approval_required_actions"]:
         receipt_slot = _dot_get(plan, action["expected_receipt_ref"])
         rollback_slot = _dot_get(plan, action["rollback_ref"])
@@ -2163,6 +2172,12 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
         assert receipt_slot["command_sha256"] == action["command_sha256"]
         assert receipt_slot["credential_location_ref"] == action["credential_location_ref"]
         assert receipt_slot["rollback_ref"] == action["rollback_ref"]
+        assert receipt_slot["lineage"] == action["lineage"]
+        assert action["lineage"] == {
+            "source_voice_session_id": "discord:voiceops-demo:general",
+            "source_oracle_job_id": "voice-oracle-voiceops-demo-001",
+            "parent_audit_event_id": expected_parent_audit_ids[action["action_id"]],
+        }
         assert rollback_slot
         contract = action["approval_contract"]
         assert contract == plan["approval_contracts"][action["action_id"]]
@@ -2194,6 +2209,7 @@ def test_milestone2_execution_plan_defines_safety_gates_receipts_and_rollback():
         assert evidence["expected_receipt_ref"] == action["expected_receipt_ref"]
         assert evidence["credential_location_ref"] == action["credential_location_ref"]
         assert evidence["rollback_ref"] == action["rollback_ref"]
+        assert evidence["lineage"] == action["lineage"]
 
     serialized = json.dumps(plan)
     assert "sk_live_123456789abcdef" not in serialized
@@ -2259,6 +2275,7 @@ def _complete_post_approval_receipts(plan):
                 "credential_location_ref": action["credential_location_ref"],
                 "rollback_ref": action["rollback_ref"],
                 "audit_event_id": f"audit-{action['action_id']}-001",
+                **dict(action["lineage"]),
             }
             for action in actions
         ],
@@ -2271,6 +2288,7 @@ def _complete_post_approval_receipts(plan):
                 "secret_name_or_path": f"credential-location-ref-{action['action_id']}",
                 "created_by_action_id": action["action_id"],
                 "rotation_due": "2026-09-29T00:00:00Z",
+                "lineage": dict(action["lineage"]),
             }
             for action in actions
             if action["credential_location_required"]
@@ -2281,6 +2299,7 @@ def _complete_post_approval_receipts(plan):
                 "status": "not_run",
                 "owner_ref": "operator-ref-demo",
                 "notes": "No rollback run.",
+                "lineage": dict(action["lineage"]),
             }
             for action in actions
         ],
@@ -2293,6 +2312,7 @@ def _complete_post_approval_receipts(plan):
                 "provider": action["provider"],
                 "artifact_ref": "post-approval-receipts.json",
                 "operator_next_step": "Review provider dashboard and rollback window.",
+                **dict(action["lineage"]),
             }
             for action in actions
         ],
@@ -2332,6 +2352,7 @@ def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_pat
                 "credential_location_ref": action["credential_location_ref"],
                 "rollback_ref": action["rollback_ref"],
                 "audit_event_id": f"audit-{action['action_id']}-001",
+                **dict(action["lineage"]),
             }
             for action in actions
         ],
@@ -2344,6 +2365,7 @@ def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_pat
                 "secret_name_or_path": f"credential-location-ref-{action['action_id']}",
                 "created_by_action_id": action["action_id"],
                 "rotation_due": "2026-09-29T00:00:00Z",
+                "lineage": dict(action["lineage"]),
             }
             for action in actions
             if action["credential_location_required"]
@@ -2354,6 +2376,7 @@ def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_pat
                 "status": "not_run",
                 "owner_ref": "operator-ref-demo",
                 "notes": "No rollback run.",
+                "lineage": dict(action["lineage"]),
             }
             for action in actions
         ],
@@ -2366,6 +2389,7 @@ def test_post_approval_receipts_validate_redacted_bundle_and_emit_ledger(tmp_pat
                 "provider": action["provider"],
                 "artifact_ref": "post-approval-receipts.json",
                 "operator_next_step": "Review provider dashboard and rollback window.",
+                **dict(action["lineage"]),
             }
             for action in actions
         ],
@@ -2476,6 +2500,7 @@ def test_post_approval_receipts_validate_held_denied_skipped_without_execution_a
                 "command_sha256": action["command_sha256"],
                 "approval_artifact": action["approval_artifact"],
                 "audit_event_id": f"audit-{action['action_id']}-decision",
+                **dict(action["lineage"]),
             }
             for action, status in zip(plan["approval_required_actions"], statuses, strict=True)
         ],
@@ -2490,6 +2515,7 @@ def test_post_approval_receipts_validate_held_denied_skipped_without_execution_a
                 "provider": action["provider"],
                 "artifact_ref": "post-approval-receipts.json",
                 "operator_next_step": "No external action executed; review or re-approve later.",
+                **dict(action["lineage"]),
             }
             for action, status in zip(plan["approval_required_actions"], statuses, strict=True)
         ],
@@ -2539,6 +2565,38 @@ def test_post_approval_receipts_reject_executed_when_decision_is_not_approve_onc
     assert "post_approval_receipts:receipt-provision-voip-provider-001:decision_mismatch:approve_once" in loaded[
         "validation_issues"
     ]
+    assert loaded["ledger_rows"] == []
+
+
+def test_post_approval_receipts_reject_lineage_mismatch():
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    payload = _complete_post_approval_receipts(plan)
+    payload["receipts"][0]["parent_audit_event_id"] = "evt-wrong"
+    payload["credential_locations"][0]["lineage"]["source_oracle_job_id"] = "wrong-oracle-job"
+    payload["rollback_receipts"][0]["lineage"]["source_voice_session_id"] = "wrong-voice-session"
+    payload["audit_events"][0]["source_voice_session_id"] = "wrong-voice-session"
+    payload = _with_post_approval_attestation(payload)
+
+    loaded = validate_post_approval_receipts(payload, plan)
+
+    assert loaded["status"] == "invalid"
+    assert (
+        "post_approval_receipts:receipt-provision-voip-provider-001:parent_audit_event_id_mismatch"
+        in loaded["validation_issues"]
+    )
+    assert (
+        "post_approval_receipts:credential_locations.voip_provider:lineage:source_oracle_job_id_mismatch"
+        in loaded["validation_issues"]
+    )
+    assert (
+        "post_approval_receipts:rollback_receipts[0]:lineage:source_voice_session_id_mismatch"
+        in loaded["validation_issues"]
+    )
+    assert (
+        "post_approval_receipts:receipt-provision-voip-provider-001:audit_event:source_voice_session_id_mismatch"
+        in loaded["validation_issues"]
+    )
     assert loaded["ledger_rows"] == []
 
 

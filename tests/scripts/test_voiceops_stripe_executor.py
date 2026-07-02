@@ -46,6 +46,7 @@ def _packet_from_plan(plan):
                 "requires_approval": True,
                 "status": "queued",
                 "approval_contract": contract,
+                "lineage": dict(action["lineage"]),
             }
         )
     return {
@@ -146,6 +147,20 @@ def test_stripe_executor_runs_only_approved_packet_commands_and_writes_valid_rec
     assert loaded["receipt_count"] == 4
     assert loaded["credential_location_count"] == 2
     assert loaded["rollback_receipt_count"] == 2
+    receipts = json.loads((tmp_path / "post-approval-receipts.json").read_text(encoding="utf-8"))
+    action_lineage = {
+        action["action_id"]: action["lineage"]
+        for action in plan["approval_required_actions"]
+    }
+    first_receipt = receipts["receipts"][0]
+    first_lineage = action_lineage[first_receipt["action_id"]]
+    assert {
+        key: first_receipt[key]
+        for key in ("source_voice_session_id", "source_oracle_job_id", "parent_audit_event_id")
+    } == first_lineage
+    assert receipts["audit_events"][0]["source_voice_session_id"] == first_lineage["source_voice_session_id"]
+    assert receipts["credential_locations"][0]["lineage"] == first_lineage
+    assert receipts["rollback_receipts"][0]["lineage"] == first_lineage
 
 
 def test_stripe_executor_refuses_approve_once_without_execute(tmp_path):
