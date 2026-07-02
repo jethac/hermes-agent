@@ -97,6 +97,10 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_waiting_for_approval_holds_capacity_and_emits_redacted_event",
         "tests/gateway/test_discord_realtime_voice.py::test_voice_status_oracle_job_lines_are_compact",
     ],
+    "failure_handling": [
+        "tests/agent/test_realtime_voice.py::test_kame_engine_async_oracle_job_failure_reports_in_voice",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_failed_job_records_error_and_starts_next",
+    ],
     "result_handling": [
         "tests/agent/test_realtime_voice.py::test_completed_async_oracle_job_speaks_after_intervening_local_turn",
         "tests/agent/test_realtime_voice.py::test_kame_engine_status_recalls_recent_completed_async_oracle_job",
@@ -1225,6 +1229,11 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("approval_tool_progress_observed") is True
         and smoke.get("approval_payload_redacted") is True
         and smoke.get("approval_completed") is True,
+        "failed_job_reported_without_crash": int(smoke.get("failed_jobs") or 0) >= 1
+        and smoke.get("failed_job_reported") is True
+        and smoke.get("failed_job_spoken") is True
+        and smoke.get("durable_failed_record_present") is True
+        and smoke.get("session_survived_failed_job") is True,
     }
 
 
@@ -1296,6 +1305,13 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             ok=smoke_ok and bool(async_oracle_coverage.get("approval_wait_visible_and_redacted")),
             evidence="async_oracle_smoke_plus_approval_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["approval_wait"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "failed_job_is_reported_without_crashing_session": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("failed_job_reported_without_crash")),
+            evidence="async_oracle_smoke_plus_failure_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["failure_handling"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
@@ -1436,6 +1452,7 @@ def build_voice_operator_report(
             "started_jobs": async_oracle_smoke.get("started_jobs"),
             "queued_jobs": async_oracle_smoke.get("queued_jobs"),
             "completed_jobs": async_oracle_smoke.get("completed_jobs"),
+            "failed_jobs": async_oracle_smoke.get("failed_jobs"),
             "cancelled_jobs": async_oracle_smoke.get("cancelled_jobs"),
             "local_turn_committed": bool(async_oracle_smoke.get("local_turn_committed")),
             "status_turn_committed": bool(async_oracle_smoke.get("status_turn_committed")),
@@ -1462,6 +1479,10 @@ def build_voice_operator_report(
             "approval_payload_redacted": bool(async_oracle_smoke.get("approval_payload_redacted")),
             "approval_completed": bool(async_oracle_smoke.get("approval_completed")),
             "approval_status_text": async_oracle_smoke.get("approval_status_text"),
+            "failed_job_reported": bool(async_oracle_smoke.get("failed_job_reported")),
+            "failed_job_spoken": bool(async_oracle_smoke.get("failed_job_spoken")),
+            "durable_failed_record_present": bool(async_oracle_smoke.get("durable_failed_record_present")),
+            "session_survived_failed_job": bool(async_oracle_smoke.get("session_survived_failed_job")),
             "coverage": async_oracle_coverage,
         },
         "live_evidence": {
@@ -1616,6 +1637,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "late_cancelled_output_attempted",
         "late_cancelled_output_not_durable",
         "approval_wait_visible_and_redacted",
+        "failed_job_reported_without_crash",
     ):
         if async_oracle_coverage.get(key) is not True:
             issues.append(f"missing_async_oracle_coverage:{key}")

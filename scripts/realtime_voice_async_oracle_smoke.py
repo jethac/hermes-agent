@@ -54,6 +54,8 @@ class SmokeOracle:
                 }
                 yield "Approval smoke cleared."
                 return
+            if key == "Fail smoke task":
+                raise RuntimeError("smoke oracle failure")
             try:
                 await self.releases[key].wait()
             except asyncio.CancelledError:
@@ -274,6 +276,40 @@ async def run_smoke() -> dict[str, Any]:
             for event in events
         )
     )
+    await send(
+        {
+            "transcript": "fail smoke task",
+            "intent": "Fail smoke task",
+            "intent_source": "smoke_reflex",
+            "route": "defer",
+            "interface_already_said": "Testing failure handling.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ASSISTANT_COMMIT
+            and event.payload.get("oracle_job_failed")
+            and "smoke oracle failure" in str(event.payload.get("text") or "")
+            for event in events
+        )
+    )
+    await send(
+        {
+            "transcript": "can you still hear me",
+            "intent": "The user is checking whether Hermes is still live after a failed oracle job.",
+            "intent_source": "smoke_reflex",
+            "route": "local",
+            "local_reply": "Still listening.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ASSISTANT_COMMIT
+            and event.payload.get("local_reply")
+            and event.payload.get("text") == "Still listening."
+            for event in events
+        )
+    )
     await engine.close()
     collector.cancel()
     try:
@@ -284,6 +320,7 @@ async def run_smoke() -> dict[str, Any]:
     started = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_STARTED]
     queued = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_QUEUED]
     completed = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_COMPLETED]
+    failed = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_FAILED]
     cancelled = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_CANCELLED]
     active_job_ids: set[str] = set()
     scheduler_max_running = 0
@@ -341,6 +378,20 @@ async def run_smoke() -> dict[str, Any]:
     approval_payload_redacted = bool(approval_waiting) and "secret test value" not in str(
         approval_waiting[-1].payload
     )
+    failure_commits = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ASSISTANT_COMMIT
+        and event.payload.get("oracle_job_failed")
+        and "smoke oracle failure" in str(event.payload.get("text") or "")
+    ]
+    failure_spoken = any("smoke oracle failure" in text for text in engine.spoken)
+    session_survived_failure = any(
+        event.type == VoiceEventType.ASSISTANT_COMMIT
+        and event.payload.get("local_reply")
+        and event.payload.get("text") == "Still listening."
+        for event in recorder.events
+    )
     cancelled_job_id = str(task_3_started.payload["job_id"])
     fifth_job_id = next(
         (
@@ -397,15 +448,21 @@ async def run_smoke() -> dict[str, Any]:
         record.get("type") == VoiceEventType.ORACLE_JOB_COMPLETED.value
         for record in durable_records
     )
+    durable_failed_record_present = any(
+        record.get("type") == VoiceEventType.ORACLE_JOB_FAILED.value
+        and "smoke oracle failure" in str(record.get("payload", {}))
+        for record in durable_records
+    )
     report = {
         "ok": (
-            len(started) == 7
+            len(started) == 8
             and len(queued) == 1
             and scheduler_max_running == 4
             and oracle.max_running >= 4
             and len(local_commits) >= 2
             and bool(running_status_commits)
             and len(completed) == 5
+            and len(failed) == 1
             and len(cancelled) == 1
             and bool(fifth_job_id)
             and fifth_job_started_after_capacity_freed
@@ -422,6 +479,10 @@ async def run_smoke() -> dict[str, Any]:
             and bool(approval_status_commits)
             and approval_payload_redacted
             and approval_completed
+            and bool(failure_commits)
+            and failure_spoken
+            and durable_failed_record_present
+            and session_survived_failure
         ),
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": scheduler_max_running,
@@ -431,6 +492,7 @@ async def run_smoke() -> dict[str, Any]:
         "started_jobs": len(started),
         "queued_jobs": len(queued),
         "completed_jobs": len(completed),
+        "failed_jobs": len(failed),
         "cancelled_jobs": len(cancelled),
         "local_turn_committed": bool(local_commits),
         "status_turn_committed": bool(running_status_commits),
@@ -455,6 +517,10 @@ async def run_smoke() -> dict[str, Any]:
         "approval_status_text": str(approval_status_commits[-1].payload.get("text") or "")
         if approval_status_commits
         else "",
+        "failed_job_reported": bool(failure_commits),
+        "failed_job_spoken": failure_spoken,
+        "durable_failed_record_present": durable_failed_record_present,
+        "session_survived_failed_job": session_survived_failure,
         "spoken": list(engine.spoken),
         "event_counts": {
             event_type.value: sum(event.type == event_type for event in recorder.events)
@@ -463,6 +529,7 @@ async def run_smoke() -> dict[str, Any]:
                 VoiceEventType.ORACLE_JOB_QUEUED,
                 VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
                 VoiceEventType.ORACLE_JOB_COMPLETED,
+                VoiceEventType.ORACLE_JOB_FAILED,
                 VoiceEventType.ORACLE_JOB_CANCELLED,
                 VoiceEventType.ASSISTANT_COMMIT,
             }

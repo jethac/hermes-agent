@@ -12,9 +12,10 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["max_worker_overlap"] >= 4
     assert report["worker_overlap_proved"] is True
     assert report["noncooperative_cancel_overlap_observed"] is True
-    assert report["started_jobs"] == 7
+    assert report["started_jobs"] == 8
     assert report["queued_jobs"] == 1
     assert report["completed_jobs"] == 5
+    assert report["failed_jobs"] == 1
     assert report["cancelled_jobs"] == 1
     assert report["local_turn_committed"] is True
     assert report["status_turn_committed"] is True
@@ -35,3 +36,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["approval_payload_redacted"] is True
     assert report["approval_completed"] is True
     assert "waiting_for_approval: Preparing spend approval." in report["approval_status_text"]
+    assert report["failed_job_reported"] is True
+    assert report["failed_job_spoken"] is True
+    assert report["durable_failed_record_present"] is True
+    assert report["session_survived_failed_job"] is True

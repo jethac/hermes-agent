@@ -1427,6 +1427,7 @@ async def build_plan_run_async(
                     "started_jobs": voice_operator["proofs"]["async_oracle_jobs"]["started_jobs"],
                     "queued_jobs": voice_operator["proofs"]["async_oracle_jobs"]["queued_jobs"],
                     "completed_jobs": voice_operator["proofs"]["async_oracle_jobs"]["completed_jobs"],
+                    "failed_jobs": voice_operator["proofs"]["async_oracle_jobs"]["failed_jobs"],
                     "cancelled_jobs": voice_operator["proofs"]["async_oracle_jobs"]["cancelled_jobs"],
                     "local_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["local_turn_committed"],
                     "status_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["status_turn_committed"],
@@ -1467,6 +1468,14 @@ async def build_plan_run_async(
                     ],
                     "approval_completed": voice_operator["proofs"]["async_oracle_jobs"]["approval_completed"],
                     "approval_status_text": voice_operator["proofs"]["async_oracle_jobs"]["approval_status_text"],
+                    "failed_job_reported": voice_operator["proofs"]["async_oracle_jobs"]["failed_job_reported"],
+                    "failed_job_spoken": voice_operator["proofs"]["async_oracle_jobs"]["failed_job_spoken"],
+                    "durable_failed_record_present": voice_operator["proofs"]["async_oracle_jobs"][
+                        "durable_failed_record_present"
+                    ],
+                    "session_survived_failed_job": voice_operator["proofs"]["async_oracle_jobs"][
+                        "session_survived_failed_job"
+                    ],
                 },
                 "async_oracle_acceptance": {
                     key: {

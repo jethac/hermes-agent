@@ -1021,6 +1021,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(voice_result["artifacts"]["live_probe_closure_json"]).exists()
     assert voice_result["details"]["async_oracle_smoke"]["late_cancelled_output_attempted"] is True
     assert voice_result["details"]["async_oracle_smoke"]["queued_jobs"] == 1
+    assert voice_result["details"]["async_oracle_smoke"]["failed_jobs"] == 1
     assert voice_result["details"]["async_oracle_smoke"]["status_turn_committed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["fifth_job_queued"] is True
     assert voice_result["details"]["async_oracle_smoke"]["fifth_job_started_after_capacity_freed"] is True
@@ -1039,11 +1040,21 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "waiting_for_approval: Preparing spend approval." in voice_result["details"]["async_oracle_smoke"][
         "approval_status_text"
     ]
+    assert voice_result["details"]["async_oracle_smoke"]["failed_job_reported"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["failed_job_spoken"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["durable_failed_record_present"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["session_survived_failed_job"] is True
     assert voice_result["details"]["async_oracle_acceptance"]["four_oracle_jobs_reflex_responsive"]["ok"] is True
     assert voice_result["details"]["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
     assert voice_result["details"]["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
     assert (
         voice_result["details"]["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"][
+            "runtime_verified_by_this_report"
+        ]
+        is True
+    )
+    assert (
+        voice_result["details"]["async_oracle_acceptance"]["failed_job_is_reported_without_crashing_session"][
             "runtime_verified_by_this_report"
         ]
         is True
