@@ -2600,6 +2600,38 @@ def test_post_approval_receipts_reject_executed_without_approval_decision_ref():
     assert loaded["ledger_rows"] == []
 
 
+def test_post_approval_receipts_reject_plan_command_hash_mismatch():
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    payload = _complete_post_approval_receipts(plan)
+    action = plan["approval_required_actions"][0]
+    forged_hash = "0" * 64
+    action["command_sha256"] = forged_hash
+    action["approval_contract"]["command_sha256"] = forged_hash
+    plan["approval_contracts"][action["action_id"]]["command_sha256"] = forged_hash
+    receipt_slot = plan["receipts"][action["expected_receipt_ref"].split(".", 1)[1]]
+    receipt_slot["command_sha256"] = forged_hash
+    payload["receipts"][0]["command_sha256"] = forged_hash
+    payload = _with_post_approval_attestation(payload)
+
+    loaded = validate_post_approval_receipts(payload, plan)
+
+    assert loaded["status"] == "invalid"
+    assert (
+        "post_approval_receipts:receipt-provision-voip-provider-001:plan_command_sha256_mismatch"
+        in loaded["validation_issues"]
+    )
+    assert (
+        "post_approval_receipts:receipt-provision-voip-provider-001:approval_contract_command_sha256_mismatch"
+        in loaded["validation_issues"]
+    )
+    assert (
+        "post_approval_receipts:receipt-provision-voip-provider-001:receipt_slot_command_sha256_mismatch"
+        in loaded["validation_issues"]
+    )
+    assert loaded["ledger_rows"] == []
+
+
 def test_post_approval_receipts_reject_executed_when_decision_is_not_approve_once():
     report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
     plan = build_milestone2_execution_plan(report)

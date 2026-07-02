@@ -3817,6 +3817,17 @@ def validate_post_approval_receipts(
         if action is None:
             issues.append(f"post_approval_receipts:{receipt_id or index}:unknown_action_id")
             continue
+        command = str(action.get("command") or "")
+        expected_command_hash = hashlib.sha256(command.encode("utf-8")).hexdigest()
+        if action.get("command_sha256") != expected_command_hash:
+            issues.append(f"post_approval_receipts:{receipt_id}:plan_command_sha256_mismatch")
+        contract = action.get("approval_contract") if isinstance(action.get("approval_contract"), Mapping) else {}
+        if contract and contract.get("command_sha256") != expected_command_hash:
+            issues.append(f"post_approval_receipts:{receipt_id}:approval_contract_command_sha256_mismatch")
+        receipt_slot_path = str(action.get("expected_receipt_ref") or "")
+        receipt_slot = _dot_get(plan, receipt_slot_path) if receipt_slot_path else None
+        if isinstance(receipt_slot, Mapping) and receipt_slot.get("command_sha256") != expected_command_hash:
+            issues.append(f"post_approval_receipts:{receipt_id}:receipt_slot_command_sha256_mismatch")
         action_lineage = action.get("lineage") if isinstance(action.get("lineage"), Mapping) else {}
         issues.extend(_lineage_issues(f"post_approval_receipts:{receipt_id or index}", receipt, action_lineage))
         if receipt.get("approval_id") != action["approval_id"]:

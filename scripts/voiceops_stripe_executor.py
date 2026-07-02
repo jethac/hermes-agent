@@ -205,6 +205,18 @@ def _command_issues_for_action(action_id: str, command: str) -> list[str]:
     return [f"{action_id}:unknown_action"]
 
 
+def _command_hash_issues_for_action(action_id: str, action: Mapping[str, Any]) -> list[str]:
+    command = str(action.get("command") or "")
+    expected_hash = _sha256_text(command)
+    issues: list[str] = []
+    if action.get("command_sha256") != expected_hash:
+        issues.append(f"{action_id}:command_sha256_mismatch")
+    contract = action.get("approval_contract") if isinstance(action.get("approval_contract"), Mapping) else {}
+    if contract and contract.get("command_sha256") != expected_hash:
+        issues.append(f"{action_id}:approval_contract_command_sha256_mismatch")
+    return issues
+
+
 def _receipt_status_for_decision(decision: str, *, executed: bool, exit_code: int | None = None) -> str:
     if decision == "deny":
         return "denied"
@@ -295,6 +307,7 @@ def execute_approved_actions(
             continue
         command = str(action.get("command") or "")
         issues.extend(_command_issues_for_action(action_id, command))
+        issues.extend(_command_hash_issues_for_action(action_id, action))
         packet_action = packet_actions.get(action_id)
         if packet_action is None:
             issues.append(f"{action_id}:not_present_in_nemoclaw_packet")
@@ -313,6 +326,7 @@ def execute_approved_actions(
         packet_action = packet_actions.get(action_id)
         command = str(action.get("command") or "")
         command_issues = _command_issues_for_action(action_id, command)
+        command_hash_issues = _command_hash_issues_for_action(action_id, action)
 
         receipt_id = f"receipt-{action_id}-001"
         audit_event_id = f"audit-{action_id}-001"
@@ -335,6 +349,7 @@ def execute_approved_actions(
             and execute
             and decision == "approve_once"
             and not command_issues
+            and not command_hash_issues
             and packet_action is not None
             and str(packet_action.get("command") or "") == command
         )

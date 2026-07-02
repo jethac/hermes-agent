@@ -257,6 +257,29 @@ def test_stripe_executor_rejects_packet_plan_command_mismatch(tmp_path):
     assert all(result["executed"] is False for result in report["command_results"])
 
 
+def test_stripe_executor_rejects_plan_command_sha256_mismatch(tmp_path):
+    plan = _plan()
+    packet = _packet_from_plan(plan)
+    plan["approval_required_actions"][0]["command_sha256"] = "0" * 64
+    calls = []
+
+    report = execute_approved_actions(
+        packet=packet,
+        plan=plan,
+        decisions_payload=_decisions(plan, {"provision-voip-provider"}),
+        output_dir=tmp_path,
+        execute=True,
+        confirmation=LIVE_CONFIRMATION,
+        runner=lambda argv, _timeout_seconds: calls.append(list(argv)) or CommandResult(exit_code=0),
+        now=lambda: "2026-06-29T00:00:30Z",
+    )
+
+    assert report["ok"] is False
+    assert "provision-voip-provider:command_sha256_mismatch" in report["issues"]
+    assert calls == []
+    assert all(result["executed"] is False for result in report["command_results"])
+
+
 def test_stripe_executor_cli_outputs_report(tmp_path, capsys):
     plan = _plan()
     packet = _packet_from_plan(plan)
