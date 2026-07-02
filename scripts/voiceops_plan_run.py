@@ -1458,6 +1458,14 @@ async def build_plan_run_async(
                 "async_oracle_smoke": {
                     "ok": voice_operator["proofs"]["async_oracle_jobs"]["ok"],
                     "max_running": voice_operator["proofs"]["async_oracle_jobs"]["max_running"],
+                    "max_worker_overlap": voice_operator["proofs"]["async_oracle_jobs"]["max_worker_overlap"],
+                    "worker_overlap_proved": voice_operator["proofs"]["async_oracle_jobs"]["worker_overlap_proved"],
+                    "worker_overlap_within_capacity": voice_operator["proofs"]["async_oracle_jobs"][
+                        "worker_overlap_within_capacity"
+                    ],
+                    "noncooperative_cancel_overlap_observed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "noncooperative_cancel_overlap_observed"
+                    ],
                     "started_jobs": voice_operator["proofs"]["async_oracle_jobs"]["started_jobs"],
                     "queued_jobs": voice_operator["proofs"]["async_oracle_jobs"]["queued_jobs"],
                     "completed_jobs": voice_operator["proofs"]["async_oracle_jobs"]["completed_jobs"],

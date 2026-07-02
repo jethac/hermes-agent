@@ -1032,6 +1032,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(voice_result["artifacts"]["live_evidence_template"]).exists()
     assert Path(voice_result["artifacts"]["live_probe_closure_json"]).exists()
     assert voice_result["details"]["async_oracle_smoke"]["late_cancelled_output_attempted"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["max_worker_overlap"] == 4
+    assert voice_result["details"]["async_oracle_smoke"]["worker_overlap_proved"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["worker_overlap_within_capacity"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["noncooperative_cancel_overlap_observed"] is False
     assert voice_result["details"]["async_oracle_smoke"]["queued_jobs"] == 1
     assert voice_result["details"]["async_oracle_smoke"]["failed_jobs"] == 1
     assert voice_result["details"]["async_oracle_smoke"]["status_turn_committed"] is True
