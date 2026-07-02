@@ -96,6 +96,7 @@ PROVIDER_FORWARDED_EVENT_TYPES = frozenset(
         VoiceEventType.INTERFACE_REPLY_DEFER,
         VoiceEventType.INTERFACE_ORACLE_REQUEST,
         VoiceEventType.INTERFACE_ORACLE_CANCEL,
+        VoiceEventType.INTERFACE_ORACLE_UPDATE,
         VoiceEventType.INTERFACE_COMMIT,
         VoiceEventType.ORACLE_ACCEPTED,
         VoiceEventType.ORACLE_HINT,
@@ -123,6 +124,7 @@ KAME_FEEDBACK_EVENT_TYPES = frozenset(
         VoiceEventType.INTERFACE_REPLY_DEFER,
         VoiceEventType.INTERFACE_ORACLE_REQUEST,
         VoiceEventType.INTERFACE_ORACLE_CANCEL,
+        VoiceEventType.INTERFACE_ORACLE_UPDATE,
         VoiceEventType.INTERFACE_COMMIT,
         VoiceEventType.ORACLE_ACCEPTED,
         VoiceEventType.ORACLE_HINT,
@@ -145,6 +147,12 @@ KAME_LIVE_FRONTEND_ORACLE_CONTEXT_EVENT_TYPES = frozenset(
         VoiceEventType.ORACLE_ERROR,
     }
 ) | ORACLE_JOB_EVENT_TYPES
+KAME_EXTERNAL_CONTROL_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.INTERFACE_ORACLE_CANCEL,
+        VoiceEventType.INTERFACE_ORACLE_UPDATE,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -580,6 +588,8 @@ class ReferenceRealtimeVoiceSidecarSession:
             return
         if event.type in KAME_FEEDBACK_EVENT_TYPES:
             self._record_kame_feedback_event(event)
+            if event.type in KAME_EXTERNAL_CONTROL_EVENT_TYPES and event.payload.get("transport"):
+                await self._emit(event.type, {**dict(event.payload), "sidecar_control": True})
             if event.type in KAME_LIVE_FRONTEND_ORACLE_CONTEXT_EVENT_TYPES:
                 await self._forward_live_frontend_oracle_context_event(event)
             return
@@ -1922,6 +1932,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             VoiceEventType.INTERFACE_REPLY_DEFER,
             VoiceEventType.INTERFACE_ORACLE_REQUEST,
             VoiceEventType.INTERFACE_ORACLE_CANCEL,
+            VoiceEventType.INTERFACE_ORACLE_UPDATE,
             VoiceEventType.INTERFACE_COMMIT,
         }:
             self._kame_last_interface_event = record

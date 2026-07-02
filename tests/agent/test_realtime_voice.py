@@ -883,6 +883,188 @@ def test_text_engine_emits_opt_in_audio_alias_events(monkeypatch):
     asyncio.run(run())
 
 
+def test_reference_sidecar_mirrors_external_oracle_control_events():
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_CANCEL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "job_id": "voice-oracle-001",
+                    "reason": "user requested /voice cancel",
+                    "transport": "discord_voice",
+                },
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "job_id": "voice-oracle-002",
+                    "priority": "high",
+                    "update_text": "also check Stripe",
+                    "reason": "user requested /voice update",
+                    "transport": "discord_voice",
+                },
+            )
+        )
+
+        seen = []
+        for _ in range(6):
+            event = await asyncio.wait_for(anext(sidecar.events()), timeout=1)
+            seen.append(event)
+            if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE:
+                break
+        await sidecar.close()
+        return seen
+
+    seen = asyncio.run(run())
+
+    cancel = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL)
+    update = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE)
+    assert cancel.payload["job_id"] == "voice-oracle-001"
+    assert cancel.payload["transport"] == "discord_voice"
+    assert cancel.payload["sidecar_control"] is True
+    assert update.payload["job_id"] == "voice-oracle-002"
+    assert update.payload["priority"] == "high"
+    assert update.payload["update_text"] == "also check Stripe"
+    assert update.payload["sidecar_control"] is True
+
+
+def test_kame_engine_applies_oracle_cancel_from_sidecar_stream():
+    async def run():
+        sidecar = FakeSidecar()
+        engine = KameInterfaceOracleEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_jobs={
+                    "enabled": True,
+                    "max_concurrent": 1,
+                },
+            )
+        )
+        assert engine._oracle_job_manager is not None
+
+        async def runner(job):
+            await asyncio.sleep(10)
+
+        job = await engine._oracle_job_manager.submit(
+            KameOracleRequest(
+                session_id="voice-123",
+                turn_id="voice-123:1",
+                source="voice",
+                user_id="123",
+                intent="check the invoice",
+                transcript="check the invoice",
+            ),
+            runner=runner,
+        )
+        await asyncio.sleep(0)
+        await sidecar._events.put(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_CANCEL,
+                session_id="voice-123",
+                sequence=7,
+                payload={
+                    "job_id": job.job_id,
+                    "reason": "user requested /voice cancel",
+                    "transport": "discord_voice",
+                    "sidecar_control": True,
+                },
+            )
+        )
+        await engine._oracle_job_manager.wait_for_idle()
+        stored = await engine._oracle_job_manager.get(job.job_id)
+        seen = []
+        while not engine._events.empty():
+            event = await asyncio.wait_for(anext(engine.events()), timeout=1)
+            seen.append(event)
+        await engine.close()
+        return stored, seen
+
+    stored, seen = asyncio.run(run())
+
+    assert stored.state.value == "cancelled"
+    assert stored.cancel_reason == "user requested /voice cancel"
+    assert any(event.type == VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED for event in seen)
+    assert any(event.type == VoiceEventType.ORACLE_JOB_CANCELLED for event in seen)
+
+
+def test_kame_engine_applies_oracle_update_from_sidecar_stream():
+    async def run():
+        sidecar = FakeSidecar()
+        engine = KameInterfaceOracleEngine(oracle=FakeOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_jobs={
+                    "enabled": True,
+                    "max_concurrent": 1,
+                },
+            )
+        )
+        assert engine._oracle_job_manager is not None
+
+        async def runner(job):
+            await asyncio.sleep(10)
+
+        job = await engine._oracle_job_manager.submit(
+            KameOracleRequest(
+                session_id="voice-123",
+                turn_id="voice-123:1",
+                source="voice",
+                user_id="123",
+                intent="check the invoice",
+                transcript="check the invoice",
+            ),
+            runner=runner,
+        )
+        await sidecar._events.put(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                session_id="voice-123",
+                sequence=8,
+                payload={
+                    "job_id": job.job_id,
+                    "priority": "high",
+                    "update_text": "include the Stripe receipt",
+                    "reason": "user requested /voice update",
+                    "transport": "discord_voice",
+                    "sidecar_control": True,
+                },
+            )
+        )
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            stored = await engine._oracle_job_manager.get(job.job_id)
+            if stored.updates and stored.priority == "high":
+                break
+            await asyncio.sleep(0)
+        stored = await engine._oracle_job_manager.get(job.job_id)
+        await engine._oracle_job_manager.cancel(job.job_id, reason="test cleanup")
+        await engine._oracle_job_manager.wait_for_idle()
+        await engine.close()
+        return stored
+
+    stored = asyncio.run(run())
+
+    assert stored.priority == "high"
+    assert stored.updates[-1]["text"] == "include the Stripe receipt"
+
+
 def test_reference_sidecar_emits_opt_in_caption_alias_events():
     async def run():
         sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())

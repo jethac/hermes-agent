@@ -409,6 +409,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 elif event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
                     if await self._handle_interface_intent_final(event, from_sidecar=True):
                         continue
+                elif event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL:
+                    await self._handle_oracle_job_cancel_event(event)
+                    continue
+                elif event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE:
+                    await self._handle_oracle_job_update_event(event)
+                    continue
                 elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
                     payload = dict(event.payload)
                     if self._is_stale_sidecar_input(payload):
