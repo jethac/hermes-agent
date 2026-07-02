@@ -473,6 +473,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "lint_evidence": "no_write_spark_evidence_lint",
                     "dgx_eval": "live_dgx_spark_collection",
                     "refresh_source_hashes": "local_source_artifact_hash_refresh",
+                    "matrix_only": "local_matrix_generation_no_supplied_evidence",
                     "with_evidence": "local_matrix_generation_from_supplied_evidence",
                     "plan_index": "local_reindex_only",
                 },
@@ -1465,6 +1466,12 @@ async def build_plan_run_async(
                     ],
                     "approval_payload_redacted": voice_operator["proofs"]["async_oracle_jobs"][
                         "approval_payload_redacted"
+                    ],
+                    "approval_secret_leaked": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_secret_leaked"
+                    ],
+                    "approval_secret_canary_checked": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_secret_canary_checked"
                     ],
                     "approval_completed": voice_operator["proofs"]["async_oracle_jobs"]["approval_completed"],
                     "approval_status_text": voice_operator["proofs"]["async_oracle_jobs"]["approval_status_text"],

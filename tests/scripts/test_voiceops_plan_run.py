@@ -687,7 +687,16 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "needs_setup",
         "needs_evidence",
     ]
+    assert (
+        handoff["phases"][2]["command_safety"]["matrix_only"]
+        == "local_matrix_generation_no_supplied_evidence"
+    )
     assert handoff["phases"][0]["can_run_here_now"] is False
+    handoff_phases_by_gate = {phase["gate_id"]: phase for phase in handoff["phases"]}
+    for action in next_actions:
+        phase = handoff_phases_by_gate[action["gate_id"]]
+        for command_key in action["validation_commands"]:
+            assert command_key in phase["command_safety"]
     assert handoff["phases"][0]["first_safe_command"] == next_actions[0]["first_safe_command"]
     assert handoff["phases"][0]["first_evidence_command"] == next_actions[0]["first_evidence_command"]
     assert "--audit-only" in handoff["phases"][0]["commands"][0]

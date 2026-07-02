@@ -1369,6 +1369,8 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("approval_status_committed") is True
         and smoke.get("approval_tool_progress_observed") is True
         and smoke.get("approval_payload_redacted") is True
+        and smoke.get("approval_secret_leaked") is False
+        and smoke.get("approval_secret_canary_checked") is True
         and smoke.get("approval_completed") is True,
         "failed_job_reported_without_crash": int(smoke.get("failed_jobs") or 0) >= 1
         and smoke.get("failed_job_reported") is True
@@ -1648,6 +1650,8 @@ def build_voice_operator_report(
             "approval_status_committed": bool(async_oracle_smoke.get("approval_status_committed")),
             "approval_tool_progress_observed": bool(async_oracle_smoke.get("approval_tool_progress_observed")),
             "approval_payload_redacted": bool(async_oracle_smoke.get("approval_payload_redacted")),
+            "approval_secret_leaked": bool(async_oracle_smoke.get("approval_secret_leaked")),
+            "approval_secret_canary_checked": bool(async_oracle_smoke.get("approval_secret_canary_checked")),
             "approval_completed": bool(async_oracle_smoke.get("approval_completed")),
             "approval_status_text": async_oracle_smoke.get("approval_status_text"),
             "failed_job_reported": bool(async_oracle_smoke.get("failed_job_reported")),
@@ -1861,10 +1865,16 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
     if not isinstance(async_oracle_acceptance, Mapping) or not async_oracle_acceptance:
         issues.append("missing_async_oracle_acceptance_matrix")
     else:
+        recomputed_async_oracle_acceptance = _async_oracle_acceptance_matrix(recomputed_async_oracle_coverage)
         for key, value in async_oracle_acceptance.items():
+            recomputed_value = recomputed_async_oracle_acceptance.get(key, {})
+            if recomputed_value.get("ok") is not True:
+                issues.append(f"missing_async_oracle_acceptance:{key}")
             if not isinstance(value, Mapping) or value.get("ok") is not True:
                 issues.append(f"missing_async_oracle_acceptance:{key}")
                 continue
+            if value.get("ok") is not recomputed_value.get("ok"):
+                issues.append(f"stale_async_oracle_acceptance:{key}")
             test_refs = value.get("test_refs")
             if not isinstance(test_refs, list) or not test_refs:
                 issues.append(f"missing_async_oracle_acceptance_test_refs:{key}")

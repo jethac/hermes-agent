@@ -88,6 +88,8 @@ def _async_oracle_smoke_payload() -> dict:
         "approval_status_committed": True,
         "approval_tool_progress_observed": True,
         "approval_payload_redacted": True,
+        "approval_secret_leaked": False,
+        "approval_secret_canary_checked": True,
         "approval_completed": True,
         "approval_status_text": "Oracle jobs: 0 running out of 4. waiting_for_approval: Preparing spend approval.",
         "failed_job_reported": True,
@@ -375,6 +377,8 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
     assert report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["ok"] is True
     assert report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_secret_leaked"] is False
+    assert report["proofs"]["async_oracle_jobs"]["approval_secret_canary_checked"] is True
     assert (
         report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["verification_mode"]
         == "loopback_smoke_plus_focused_tests"
@@ -485,6 +489,28 @@ def test_voice_operator_validation_recomputes_async_coverage_from_embedded_smoke
 
     assert "missing_async_oracle_coverage:four_jobs_ran_concurrently" in issues
     assert "stale_async_oracle_coverage:four_jobs_ran_concurrently" in issues
+
+
+def test_voice_operator_validation_rejects_async_approval_secret_leak():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["approval_secret_leaked"] = True
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:approval_wait_visible_and_redacted" in issues
+    assert "stale_async_oracle_coverage:approval_wait_visible_and_redacted" in issues
+    assert "missing_async_oracle_acceptance:approval_wait_is_visible_and_redacted" in issues
+
+
+def test_voice_operator_validation_rejects_missing_async_approval_secret_canary_check():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["approval_secret_canary_checked"] = False
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:approval_wait_visible_and_redacted" in issues
+    assert "stale_async_oracle_coverage:approval_wait_visible_and_redacted" in issues
+    assert "missing_async_oracle_acceptance:approval_wait_is_visible_and_redacted" in issues
 
 
 def test_voice_operator_validation_rejects_static_acceptance_without_test_refs():

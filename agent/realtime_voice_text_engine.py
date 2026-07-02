@@ -81,6 +81,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._kame_committed_turns: list[tuple[str, str]] = []
         self._oracle_job_manager: Optional[OracleJobManager] = None
         self._oracle_job_context_by_turn_id: dict[str, tuple[int, dict, KameOracleRequest]] = {}
+        self._running_oracle_request_by_job_id: dict[str, KameOracleRequest] = {}
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -664,6 +665,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     source=str(event.payload.get("source") or event.payload.get("transport") or "user"),
                     update_type=str(event.payload.get("update_type") or "clarification"),
                 )
+                await self._notify_running_oracle_job_update(job, update_text=update_text, reason=reason)
         except OracleJobNotFoundError:
             await self._emit(
                 VoiceEventType.FRONTEND_STATE,
@@ -993,6 +995,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     source=oracle_request.source or "voice",
                     update_type="clarification",
                 )
+                await self._notify_running_oracle_job_update(job, update_text=update_text, reason=reason)
                 await self._emit_interface_event(
                     VoiceEventType.INTERFACE_ORACLE_UPDATE,
                     {
@@ -1131,62 +1134,111 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         answer = ""
         scrubber = StreamingThinkScrubber()
         accepted_at = time.perf_counter()
-        await self._emit_oracle_job_progress(job, phase="accepted", delta="", text="")
-        async for item in _stream_oracle_answer(
-            oracle,
-            request.oracle_text or request.intent,
-            metadata,
-            oracle_request=request,
-            timeout_seconds=_oracle_timeout_seconds(self.config),
-        ):
-            if job.state in {OracleJobState.CANCEL_REQUESTED, OracleJobState.CANCELLED}:
-                raise asyncio.CancelledError
-            if isinstance(item, Mapping):
-                oracle_tool_event_type = _oracle_tool_event_type(item)
-                if oracle_tool_event_type is not None:
-                    if oracle_tool_event_type == VoiceEventType.ORACLE_TOOL_CALL and _oracle_tool_event_waits_for_approval(item):
-                        manager = self._oracle_job_manager
-                        if manager is not None:
-                            with contextlib.suppress(OracleJobNotFoundError):
-                                await manager.mark_waiting_for_approval(
-                                    job.job_id,
-                                    reason=_oracle_tool_approval_reason(item),
-                                    approval=_oracle_tool_event_payload(item),
-                                )
-                    elif oracle_tool_event_type == VoiceEventType.ORACLE_TOOL_RESULT:
-                        manager = self._oracle_job_manager
-                        if manager is not None and job.state == OracleJobState.WAITING_FOR_APPROVAL:
-                            with contextlib.suppress(OracleJobNotFoundError):
-                                await manager.mark_running(job.job_id)
-                    await self._emit_oracle_job_progress(
-                        job,
-                        phase="tool",
-                        delta="",
-                        text=answer,
-                        tool_event=_oracle_tool_event_payload(item),
-                    )
+        self._running_oracle_request_by_job_id[job.job_id] = request
+        try:
+            await self._emit_oracle_job_progress(job, phase="accepted", delta="", text="")
+            async for item in _stream_oracle_answer(
+                oracle,
+                request.oracle_text or request.intent,
+                metadata,
+                oracle_request=request,
+                timeout_seconds=_oracle_timeout_seconds(self.config),
+            ):
+                if job.state in {OracleJobState.CANCEL_REQUESTED, OracleJobState.CANCELLED}:
+                    raise asyncio.CancelledError
+                if isinstance(item, Mapping):
+                    oracle_tool_event_type = _oracle_tool_event_type(item)
+                    if oracle_tool_event_type is not None:
+                        if oracle_tool_event_type == VoiceEventType.ORACLE_TOOL_CALL and _oracle_tool_event_waits_for_approval(item):
+                            manager = self._oracle_job_manager
+                            if manager is not None:
+                                with contextlib.suppress(OracleJobNotFoundError):
+                                    await manager.mark_waiting_for_approval(
+                                        job.job_id,
+                                        reason=_oracle_tool_approval_reason(item),
+                                        approval=_oracle_tool_event_payload(item),
+                                    )
+                        elif oracle_tool_event_type == VoiceEventType.ORACLE_TOOL_RESULT:
+                            manager = self._oracle_job_manager
+                            if manager is not None and job.state == OracleJobState.WAITING_FOR_APPROVAL:
+                                with contextlib.suppress(OracleJobNotFoundError):
+                                    await manager.mark_running(job.job_id)
+                        await self._emit_oracle_job_progress(
+                            job,
+                            phase="tool",
+                            delta="",
+                            text=answer,
+                            tool_event=_oracle_tool_event_payload(
+                                item,
+                                redact_sensitive=_oracle_tool_event_waits_for_approval(item),
+                            ),
+                        )
+                        continue
+                delta = _oracle_stream_text_delta(item)
+                if not delta:
                     continue
-            delta = _oracle_stream_text_delta(item)
-            if not delta:
-                continue
-            delta = scrubber.feed(delta)
-            if not delta:
-                continue
-            answer += delta
-            await self._emit_oracle_job_progress(job, phase="stream", delta=delta, text=answer)
-        tail = scrubber.flush()
-        if tail:
-            answer += tail
-            await self._emit_oracle_job_progress(job, phase="stream", delta=tail, text=answer)
-        answer = strip_leading_reasoning_trace(answer)
-        await self._emit_oracle_job_progress(
-            job,
-            phase="final",
-            delta="",
-            text=answer,
-            metrics={"oracle_job_total_stream_ms": _elapsed_perf_ms(accepted_at, time.perf_counter())},
-        )
-        return {"result_summary": answer}
+                delta = scrubber.feed(delta)
+                if not delta:
+                    continue
+                answer += delta
+                await self._emit_oracle_job_progress(job, phase="stream", delta=delta, text=answer)
+            tail = scrubber.flush()
+            if tail:
+                answer += tail
+                await self._emit_oracle_job_progress(job, phase="stream", delta=tail, text=answer)
+            answer = strip_leading_reasoning_trace(answer)
+            await self._emit_oracle_job_progress(
+                job,
+                phase="final",
+                delta="",
+                text=answer,
+                metrics={"oracle_job_total_stream_ms": _elapsed_perf_ms(accepted_at, time.perf_counter())},
+            )
+            return {"result_summary": answer}
+        finally:
+            self._running_oracle_request_by_job_id.pop(job.job_id, None)
+
+    async def _notify_running_oracle_job_update(
+        self,
+        job: OracleJob,
+        *,
+        update_text: str,
+        reason: str,
+    ) -> None:
+        if job.state not in {OracleJobState.RUNNING, OracleJobState.WAITING_FOR_APPROVAL}:
+            return
+        update_text = " ".join(str(update_text or "").split())
+        if not update_text:
+            return
+        request = self._running_oracle_request_by_job_id.get(job.job_id)
+        if request is None:
+            return
+        updated_request = _oracle_request_for_job(job, request)
+        self._running_oracle_request_by_job_id[job.job_id] = updated_request
+        updater = getattr(self._oracle, "update_request", None)
+        if not callable(updater):
+            return
+        metadata = {
+            "job_id": job.job_id,
+            "state": job.state.value,
+            "reason": reason,
+            "update_count": len(job.updates),
+        }
+        try:
+            result = updater(updated_request, update_text, metadata)
+            if hasattr(result, "__await__"):
+                await result
+        except Exception as exc:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "oracle_job_update_delivery_failed",
+                    "job_id": job.job_id,
+                    "error": sanitize_realtime_voice_error(exc),
+                    "sidecar": self._sidecar is not None,
+                },
+            )
 
     async def _emit_oracle_job_progress(
         self,
@@ -3062,16 +3114,31 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
 
 def _oracle_request_for_job(job: OracleJob, request: KameOracleRequest) -> KameOracleRequest:
     updates = tuple(
-        str(update.get("text") or "").strip()
-        for update in job.updates
-        if str(update.get("text") or "").strip()
+        dict.fromkeys(
+            (
+                *(
+                    str(update or "").strip()
+                    for update in request.job_updates
+                    if str(update or "").strip()
+                ),
+                *_oracle_job_update_texts(job),
+            )
+        )
     )
     if not updates and request.priority == job.priority:
         return request
     return replace(
         request,
         priority=job.priority,
-        job_updates=tuple((*request.job_updates, *updates)),
+        job_updates=updates,
+    )
+
+
+def _oracle_job_update_texts(job: OracleJob) -> tuple[str, ...]:
+    return tuple(
+        str(update.get("text") or "").strip()
+        for update in job.updates
+        if str(update.get("text") or "").strip()
     )
 
 
@@ -3587,11 +3654,17 @@ def _oracle_stream_text_delta(item: Any) -> str:
     return str(item)
 
 
-def _oracle_tool_event_payload(item: Mapping[str, Any]) -> dict[str, Any]:
+def _oracle_tool_event_payload(
+    item: Mapping[str, Any],
+    *,
+    redact_sensitive: bool = False,
+) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     for key, value in item.items():
         normalized_key = str(key)
         if normalized_key in {"type", "event"}:
+            continue
+        if redact_sensitive and normalized_key in {"arguments", "args", "input", "parameters", "function"}:
             continue
         payload[normalized_key] = _realtime_json_safe(value)
 
@@ -3601,7 +3674,7 @@ def _oracle_tool_event_payload(item: Mapping[str, Any]) -> dict[str, Any]:
         arguments = function.get("arguments")
         if name is not None and not payload.get("tool_name"):
             payload["tool_name"] = str(name)
-        if arguments is not None and "arguments" not in payload:
+        if arguments is not None and "arguments" not in payload and not redact_sensitive:
             payload["arguments"] = _realtime_json_safe(arguments)
 
     if item.get("name") is not None and not payload.get("tool_name"):

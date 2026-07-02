@@ -1449,6 +1449,8 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "failed_jobs": async_smoke.get("failed_jobs"),
             "cancelled_jobs": async_smoke.get("cancelled_jobs"),
             "status_text": async_smoke.get("status_text"),
+            "approval_secret_leaked": bool(async_smoke.get("approval_secret_leaked")),
+            "approval_secret_canary_checked": bool(async_smoke.get("approval_secret_canary_checked")),
             "verbose_spoken_result": async_smoke.get("verbose_spoken_result"),
         },
         issues=issues,

@@ -19,6 +19,9 @@ from agent.realtime_voice_session import RealtimeVoiceSession
 from agent.realtime_voice_text_engine import KameInterfaceOracleEngine
 
 
+APPROVAL_SECRET_CANARY = "secret test value must not leak"
+
+
 class SmokeOracle:
     def __init__(self) -> None:
         self.running = 0
@@ -42,7 +45,7 @@ class SmokeOracle:
                     "approval_required": True,
                     "approval_id": "approval-smoke-123",
                     "approval_reason": "Stripe Link spend requires approval",
-                    "arguments": {"amount": 200, "card": "secret test value must not leak"},
+                    "arguments": {"amount": 200, "card": APPROVAL_SECRET_CANARY},
                 }
                 await self.releases[key].wait()
                 yield {
@@ -525,6 +528,15 @@ async def run_smoke() -> dict[str, Any]:
         and "smoke oracle failure" in str(record.get("payload", {}))
         for record in durable_records
     )
+    approval_secret_leaked = APPROVAL_SECRET_CANARY in json.dumps(
+        {
+            "spoken": engine.spoken,
+            "event_payloads": [dict(event.payload) for event in recorder.events],
+            "durable_records": durable_records,
+        },
+        sort_keys=True,
+        default=str,
+    )
     verbose_full_result = "First sentence. Second sentence. Third sentence."
     verbose_completed_events = [
         event
@@ -588,6 +600,7 @@ async def run_smoke() -> dict[str, Any]:
             and bool(approval_tool_progress)
             and bool(approval_status_commits)
             and approval_payload_redacted
+            and not approval_secret_leaked
             and approval_completed
             and bool(failure_commits)
             and failure_spoken
@@ -630,6 +643,8 @@ async def run_smoke() -> dict[str, Any]:
         "approval_status_committed": bool(approval_status_commits),
         "approval_tool_progress_observed": bool(approval_tool_progress),
         "approval_payload_redacted": approval_payload_redacted,
+        "approval_secret_leaked": approval_secret_leaked,
+        "approval_secret_canary_checked": True,
         "approval_completed": approval_completed,
         "approval_status_text": str(approval_status_commits[-1].payload.get("text") or "")
         if approval_status_commits

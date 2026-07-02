@@ -2677,6 +2677,111 @@ def test_kame_engine_attaches_update_to_queued_async_oracle_job(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_attaches_update_to_running_async_oracle_job(monkeypatch):
+    class RunningUpdateOracle:
+        def __init__(self):
+            self.requests = []
+            self.updates = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+            self.update_seen = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release.wait()
+            yield f"Finished {request.intent}."
+
+        async def update_request(self, request, update_text, metadata):
+            self.updates.append((request, update_text, metadata))
+            self.update_seen.set()
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = RunningUpdateOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "run task one",
+                    "intent": "Run task one",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "interface_already_said": "Starting task one.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "job_id": "voice-oracle-001",
+                    "update_text": "also check the Stripe receipt before answering",
+                    "reason": "add running receipt clarification",
+                },
+            )
+        )
+        await asyncio.wait_for(oracle.update_seen.wait(), timeout=1)
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE:
+                break
+
+        oracle.release.set()
+        await engine.close()
+
+        update = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE)
+        assert update.payload == {
+            "job_id": "voice-oracle-001",
+            "priority": "normal",
+            "state": "running",
+            "reason": "add running receipt clarification",
+            "update_count": 1,
+        }
+        updated_request, update_text, metadata = oracle.updates[0]
+        assert updated_request.intent == "Run task one"
+        assert updated_request.job_updates == ("also check the Stripe receipt before answering",)
+        assert update_text == "also check the Stripe receipt before answering"
+        assert metadata == {
+            "job_id": "voice-oracle-001",
+            "state": "running",
+            "reason": "add running receipt clarification",
+            "update_count": 1,
+        }
+        assert "Starting task one." in spoken
+
+    asyncio.run(run())
+
+
 def test_kame_engine_spoken_stop_everything_cancels_all_async_oracle_jobs(monkeypatch):
     class BlockingOracle:
         def __init__(self):
@@ -3881,6 +3986,8 @@ def test_async_oracle_job_enters_waiting_for_approval_on_tool_call(monkeypatch):
         assert waiting.payload["approval"]["tool_name"] == "stripe_link_purchase"
         assert "secret" not in str(waiting.payload)
         assert tool_call_progress.payload["tool_event"]["approval_required"] is True
+        assert "arguments" not in tool_call_progress.payload["tool_event"]
+        assert "secret" not in str(tool_call_progress.payload)
 
         await engine.receive_event(
             VoiceEvent(
