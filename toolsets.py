@@ -324,6 +324,12 @@ TOOLSETS = {
         "includes": []
     },
 
+    "voiceops": {
+        "description": "VoiceOps planning and NemoClaw-safe action packet preparation",
+        "tools": ["voiceops_prepare_action_packet"],
+        "includes": [],
+    },
+
 
     # Scenario-specific toolsets
     

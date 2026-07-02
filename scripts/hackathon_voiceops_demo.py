@@ -21,7 +21,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.voiceops_provisioning_probe import build_milestone2_execution_plan, validate_nemoclaw_action_packet
 
