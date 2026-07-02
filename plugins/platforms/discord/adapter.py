@@ -5797,7 +5797,12 @@ class DiscordAdapter(BasePlatformAdapter):
             await self._run_simple_slash(interaction, "/reload-skills")
 
         @tree.command(name="voice", description="Toggle voice reply mode")
-        @discord.app_commands.describe(mode="Voice mode: join, channel, leave, jobs, cancel, priority, update, on, tts, off, or status")
+        @discord.app_commands.describe(
+            mode="Voice mode: join, channel, leave, jobs, cancel, priority, update, on, tts, off, or status",
+            job_id="Realtime oracle job id for cancel, priority, or update. Leave empty to cancel all.",
+            priority="Priority for /voice priority: high, normal, or low.",
+            context="Extra context for /voice update.",
+        )
         @discord.app_commands.choices(mode=[
             # `join` and `channel` both route to _handle_voice_channel_join in
             # gateway/run.py — expose both in the slash UI so autocomplete
@@ -5815,8 +5820,31 @@ class DiscordAdapter(BasePlatformAdapter):
             discord.app_commands.Choice(name="off — text only", value="off"),
             discord.app_commands.Choice(name="status — show current mode", value="status"),
         ])
-        async def slash_voice(interaction: discord.Interaction, mode: str = ""):
-            await self._run_simple_slash(interaction, f"/voice {mode}".strip())
+        @discord.app_commands.choices(priority=[
+            discord.app_commands.Choice(name="high", value="high"),
+            discord.app_commands.Choice(name="normal", value="normal"),
+            discord.app_commands.Choice(name="low", value="low"),
+        ])
+        async def slash_voice(
+            interaction: discord.Interaction,
+            mode: str = "",
+            job_id: str = "",
+            priority: str = "",
+            context: str = "",
+        ):
+            mode = str(mode or "").strip()
+            job_id = str(job_id or "").strip()
+            priority = str(priority or "").strip()
+            context = str(context or "").strip()
+            if mode == "cancel" and job_id:
+                command = f"/voice cancel {job_id}"
+            elif mode == "priority" and job_id and priority:
+                command = f"/voice priority {job_id} {priority}"
+            elif mode == "update" and job_id and context:
+                command = f"/voice update {job_id} {context}"
+            else:
+                command = f"/voice {mode}".strip()
+            await self._run_simple_slash(interaction, command)
 
         @tree.command(name="update", description="Update Hermes Agent to the latest version")
         async def slash_update(interaction: discord.Interaction):

@@ -349,18 +349,58 @@ def test_voice_slash_choices_include_oracle_job_update_controls(adapter, monkeyp
 
     def record_choices(**kwargs):
         def decorator(fn):
-            fn._test_choices = kwargs
+            existing = getattr(fn, "_test_choices", {})
+            fn._test_choices = {**existing, **kwargs}
+            return fn
+
+        return decorator
+
+    def record_describe(**kwargs):
+        def decorator(fn):
+            fn._test_describe = kwargs
             return fn
 
         return decorator
 
     monkeypatch.setattr(discord.app_commands, "choices", record_choices)
+    monkeypatch.setattr(discord.app_commands, "describe", record_describe)
 
     adapter._register_slash_commands()
 
     voice_cmd = adapter._client.tree.commands["voice"]
     values = {choice.value for choice in voice_cmd._test_choices["mode"]}
     assert {"jobs", "cancel", "priority", "update"}.issubset(values)
+    priority_values = {choice.value for choice in voice_cmd._test_choices["priority"]}
+    assert priority_values == {"high", "normal", "low"}
+    assert {"job_id", "priority", "context"}.issubset(voice_cmd._test_describe)
+
+
+@pytest.mark.asyncio
+async def test_voice_slash_oracle_job_controls_include_arguments(adapter):
+    adapter._run_simple_slash = AsyncMock()
+    adapter._register_slash_commands()
+    voice_cmd = adapter._client.tree.commands["voice"]
+    interaction = SimpleNamespace()
+
+    await voice_cmd(interaction, mode="cancel", job_id="voice-oracle-001")
+    await voice_cmd(
+        interaction,
+        mode="priority",
+        job_id="voice-oracle-002",
+        priority="high",
+    )
+    await voice_cmd(
+        interaction,
+        mode="update",
+        job_id="voice-oracle-003",
+        context="also check the Stripe receipt",
+    )
+
+    assert [call.args[1] for call in adapter._run_simple_slash.await_args_list] == [
+        "/voice cancel voice-oracle-001",
+        "/voice priority voice-oracle-002 high",
+        "/voice update voice-oracle-003 also check the Stripe receipt",
+    ]
 
 
 # ------------------------------------------------------------------
