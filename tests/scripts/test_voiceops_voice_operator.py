@@ -64,9 +64,9 @@ def _async_oracle_smoke_payload() -> dict:
         "max_worker_overlap": 5,
         "worker_overlap_proved": True,
         "noncooperative_cancel_overlap_observed": True,
-        "started_jobs": 8,
+        "started_jobs": 9,
         "queued_jobs": 1,
-        "completed_jobs": 5,
+        "completed_jobs": 6,
         "failed_jobs": 1,
         "cancelled_jobs": 1,
         "local_turn_committed": True,
@@ -83,7 +83,7 @@ def _async_oracle_smoke_payload() -> dict:
         "cancelled_result_durable_completed": False,
         "cancelled_result_durable_text": False,
         "durable_cancelled_record_present": True,
-        "durable_completed_jobs": 5,
+        "durable_completed_jobs": 6,
         "approval_wait_observed": True,
         "approval_status_committed": True,
         "approval_tool_progress_observed": True,
@@ -97,6 +97,12 @@ def _async_oracle_smoke_payload() -> dict:
         "queued_job_update_observed": True,
         "queued_update_started_with_priority": True,
         "queued_update_reached_oracle": True,
+        "verbose_result_spoken_bounded": True,
+        "verbose_result_committed_bounded": True,
+        "verbose_result_commit_marked_truncated": True,
+        "verbose_full_result_durable": True,
+        "verbose_full_result_chars": 48,
+        "verbose_spoken_result": "First sentence.",
         "spoken": [
             "Starting smoke task 1.",
             "Starting smoke task 2.",
@@ -112,14 +118,16 @@ def _async_oracle_smoke_payload() -> dict:
             "Testing failure handling.",
             "I couldn't finish Fail smoke task: smoke oracle failure",
             "Still listening.",
+            "Working on the plan.",
+            "First sentence.",
         ],
         "event_counts": {
-            "oracle.job.started": 8,
-            "oracle.job.completed": 5,
+            "oracle.job.started": 9,
+            "oracle.job.completed": 6,
             "oracle.job.failed": 1,
             "oracle.job.cancelled": 1,
             "oracle.job.waiting_for_approval": 1,
-            "assistant.commit": 8,
+            "assistant.commit": 9,
         },
     }
 
@@ -317,7 +325,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_completed"] is False
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_text"] is False
     assert report["proofs"]["async_oracle_jobs"]["durable_cancelled_record_present"] is True
-    assert report["proofs"]["async_oracle_jobs"]["durable_completed_jobs"] == 5
+    assert report["proofs"]["async_oracle_jobs"]["durable_completed_jobs"] == 6
     assert report["proofs"]["async_oracle_jobs"]["approval_wait_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_status_committed"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_tool_progress_observed"] is True
@@ -333,6 +341,11 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["queued_job_update_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["queued_update_started_with_priority"] is True
     assert report["proofs"]["async_oracle_jobs"]["queued_update_reached_oracle"] is True
+    assert report["proofs"]["async_oracle_jobs"]["verbose_result_spoken_bounded"] is True
+    assert report["proofs"]["async_oracle_jobs"]["verbose_result_committed_bounded"] is True
+    assert report["proofs"]["async_oracle_jobs"]["verbose_result_commit_marked_truncated"] is True
+    assert report["proofs"]["async_oracle_jobs"]["verbose_full_result_durable"] is True
+    assert report["proofs"]["async_oracle_jobs"]["verbose_spoken_result"] == "First sentence."
     assert report["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
     assert report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["ok"] is True
     assert report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
@@ -352,9 +365,9 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     )
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
     assert result_handling["ok"] is True
-    assert result_handling["evidence"] == "focused_result_handling_test_refs"
-    assert result_handling["verification_mode"] == "static_focused_test_reference_inventory"
-    assert result_handling["runtime_verified_by_this_report"] is False
+    assert result_handling["evidence"] == "async_oracle_smoke_plus_result_tests"
+    assert result_handling["verification_mode"] == "loopback_smoke_plus_focused_tests"
+    assert result_handling["runtime_verified_by_this_report"] is True
     assert result_handling["live_external_evidence_required"] is False
     assert result_handling["test_ref_count"] == len(result_handling["test_refs"])
     assert result_handling["test_ref_count"] >= 1
@@ -416,15 +429,16 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:approval_wait_visible_and_redacted" in issues
     assert "missing_async_oracle_coverage:failed_job_reported_without_crash" in issues
     assert "missing_async_oracle_coverage:queued_job_control_update_reaches_oracle" in issues
+    assert "missing_async_oracle_coverage:result_handling_bounded_and_durable" in issues
     assert "missing_async_oracle_acceptance:four_oracle_jobs_reflex_responsive" in issues
     assert "missing_async_oracle_acceptance:fifth_job_obeys_overflow_policy" in issues
     assert "missing_async_oracle_acceptance:approval_wait_is_visible_and_redacted" in issues
     assert "missing_async_oracle_acceptance:failed_job_is_reported_without_crashing_session" in issues
     assert "missing_async_oracle_acceptance:queued_job_control_updates_reach_oracle" in issues
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
-    assert result_handling["ok"] is True
-    assert result_handling["verification_mode"] == "static_focused_test_reference_inventory"
-    assert result_handling["runtime_verified_by_this_report"] is False
+    assert result_handling["ok"] is False
+    assert result_handling["verification_mode"] == "loopback_smoke_plus_focused_tests"
+    assert result_handling["runtime_verified_by_this_report"] is True
 
 
 def test_voice_operator_validation_rejects_static_acceptance_without_test_refs():

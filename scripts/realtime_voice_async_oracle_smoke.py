@@ -56,6 +56,11 @@ class SmokeOracle:
                 return
             if key == "Fail smoke task":
                 raise RuntimeError("smoke oracle failure")
+            if key == "Explain verbose plan":
+                yield "First sentence. "
+                yield "Second sentence. "
+                yield "Third sentence."
+                return
             try:
                 await self.releases[key].wait()
             except asyncio.CancelledError:
@@ -340,6 +345,25 @@ async def run_smoke() -> dict[str, Any]:
             for event in events
         )
     )
+    await send(
+        {
+            "transcript": "explain verbose plan",
+            "intent": "Explain verbose plan",
+            "intent_source": "smoke_reflex",
+            "route": "defer",
+            "interface_already_said": "Working on the plan.",
+            "max_spoken_sentences": 1,
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ASSISTANT_COMMIT
+            and event.payload.get("oracle_job_result")
+            and event.payload.get("text") == "First sentence."
+            and event.payload.get("voice_response_truncated") is True
+            for event in events
+        )
+    )
     await engine.close()
     collector.cancel()
     try:
@@ -501,15 +525,53 @@ async def run_smoke() -> dict[str, Any]:
         and "smoke oracle failure" in str(record.get("payload", {}))
         for record in durable_records
     )
+    verbose_full_result = "First sentence. Second sentence. Third sentence."
+    verbose_completed_events = [
+        event
+        for event in completed
+        if event.payload.get("intent") == "Explain verbose plan"
+        and event.payload.get("result_summary") == verbose_full_result
+    ]
+    verbose_job_id = str(verbose_completed_events[-1].payload.get("job_id") or "") if verbose_completed_events else ""
+    verbose_result_commits = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ASSISTANT_COMMIT
+        and event.payload.get("oracle_job_result")
+        and event.payload.get("oracle_job_id") == verbose_job_id
+    ]
+    verbose_result_spoken_bounded = any(text == "First sentence." for text in engine.spoken) and not any(
+        text == verbose_full_result or "Second sentence." in text or "Third sentence." in text
+        for text in engine.spoken
+    )
+    verbose_result_committed_bounded = bool(verbose_result_commits) and any(
+        event.payload.get("text") == "First sentence." for event in verbose_result_commits
+    ) and all(
+        "Second sentence." not in str(event.payload.get("text") or "")
+        and "Third sentence." not in str(event.payload.get("text") or "")
+        for event in verbose_result_commits
+    )
+    verbose_result_commit_marked_truncated = any(
+        event.payload.get("voice_response_truncated") is True
+        and event.payload.get("max_spoken_sentences") == 1
+        for event in verbose_result_commits
+    )
+    verbose_full_result_durable = any(
+        record.get("type") == VoiceEventType.ORACLE_JOB_COMPLETED.value
+        and record.get("payload", {}).get("job_id") == verbose_job_id
+        and record.get("payload", {}).get("result_summary") == verbose_full_result
+        and record.get("payload", {}).get("result_text") == verbose_full_result
+        for record in durable_records
+    )
     report = {
         "ok": (
-            len(started) == 8
+            len(started) == 9
             and len(queued) == 1
             and scheduler_max_running == 4
             and oracle.max_running >= 4
             and len(local_commits) >= 2
             and bool(running_status_commits)
-            and len(completed) == 5
+            and len(completed) == 6
             and len(failed) == 1
             and len(cancelled) == 1
             and bool(fifth_job_id)
@@ -521,7 +583,7 @@ async def run_smoke() -> dict[str, Any]:
             and not cancelled_result_durable_completed
             and not cancelled_result_durable_text
             and durable_cancelled_record_present
-            and durable_completed_jobs == 5
+            and durable_completed_jobs == 6
             and bool(approval_waiting)
             and bool(approval_tool_progress)
             and bool(approval_status_commits)
@@ -534,6 +596,10 @@ async def run_smoke() -> dict[str, Any]:
             and queued_job_update_observed
             and queued_update_started_with_priority
             and queued_update_reached_oracle
+            and verbose_result_spoken_bounded
+            and verbose_result_committed_bounded
+            and verbose_result_commit_marked_truncated
+            and verbose_full_result_durable
         ),
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": scheduler_max_running,
@@ -575,6 +641,12 @@ async def run_smoke() -> dict[str, Any]:
         "queued_job_update_observed": queued_job_update_observed,
         "queued_update_started_with_priority": queued_update_started_with_priority,
         "queued_update_reached_oracle": queued_update_reached_oracle,
+        "verbose_result_spoken_bounded": verbose_result_spoken_bounded,
+        "verbose_result_committed_bounded": verbose_result_committed_bounded,
+        "verbose_result_commit_marked_truncated": verbose_result_commit_marked_truncated,
+        "verbose_full_result_durable": verbose_full_result_durable,
+        "verbose_full_result_chars": len(verbose_full_result),
+        "verbose_spoken_result": "First sentence." if verbose_result_spoken_bounded else "",
         "spoken": list(engine.spoken),
         "event_counts": {
             event_type.value: sum(event.type == event_type for event in recorder.events)

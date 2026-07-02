@@ -1031,7 +1031,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["cancelled_result_durable_completed"] is False
     assert voice_result["details"]["async_oracle_smoke"]["cancelled_result_durable_text"] is False
     assert voice_result["details"]["async_oracle_smoke"]["durable_cancelled_record_present"] is True
-    assert voice_result["details"]["async_oracle_smoke"]["durable_completed_jobs"] == 5
+    assert voice_result["details"]["async_oracle_smoke"]["durable_completed_jobs"] == 6
     assert voice_result["details"]["async_oracle_smoke"]["approval_wait_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["approval_status_committed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["approval_tool_progress_observed"] is True
@@ -1047,6 +1047,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["queued_job_update_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["queued_update_started_with_priority"] is True
     assert voice_result["details"]["async_oracle_smoke"]["queued_update_reached_oracle"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["verbose_result_spoken_bounded"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["verbose_result_committed_bounded"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["verbose_result_commit_marked_truncated"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["verbose_full_result_durable"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["verbose_spoken_result"] == "First sentence."
     assert voice_result["details"]["async_oracle_acceptance"]["four_oracle_jobs_reflex_responsive"]["ok"] is True
     assert voice_result["details"]["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
     assert voice_result["details"]["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
@@ -1073,10 +1078,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     ] >= 1
     assert voice_result["details"]["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"][
         "verification_mode"
-    ] == "static_focused_test_reference_inventory"
+    ] == "loopback_smoke_plus_focused_tests"
     assert voice_result["details"]["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"][
         "runtime_verified_by_this_report"
-    ] is False
+    ] is True
 
     provisioning_result = next(
         result for result in summary["results"] if result["milestone"] == "milestone_2_real_spend_and_provisioning_preflight"

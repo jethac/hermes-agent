@@ -12,9 +12,9 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["max_worker_overlap"] >= 4
     assert report["worker_overlap_proved"] is True
     assert report["noncooperative_cancel_overlap_observed"] is True
-    assert report["started_jobs"] == 8
+    assert report["started_jobs"] == 9
     assert report["queued_jobs"] == 1
-    assert report["completed_jobs"] == 5
+    assert report["completed_jobs"] == 6
     assert report["failed_jobs"] == 1
     assert report["cancelled_jobs"] == 1
     assert report["local_turn_committed"] is True
@@ -29,7 +29,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["cancelled_result_durable_completed"] is False
     assert report["cancelled_result_durable_text"] is False
     assert report["durable_cancelled_record_present"] is True
-    assert report["durable_completed_jobs"] == 5
+    assert report["durable_completed_jobs"] == 6
     assert report["approval_wait_observed"] is True
     assert report["approval_status_committed"] is True
     assert report["approval_tool_progress_observed"] is True
@@ -43,3 +43,8 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["queued_job_update_observed"] is True
     assert report["queued_update_started_with_priority"] is True
     assert report["queued_update_reached_oracle"] is True
+    assert report["verbose_result_spoken_bounded"] is True
+    assert report["verbose_result_committed_bounded"] is True
+    assert report["verbose_result_commit_marked_truncated"] is True
+    assert report["verbose_full_result_durable"] is True
+    assert report["verbose_spoken_result"] == "First sentence."

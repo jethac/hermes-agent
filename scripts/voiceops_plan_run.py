@@ -1485,6 +1485,24 @@ async def build_plan_run_async(
                     "queued_update_reached_oracle": voice_operator["proofs"]["async_oracle_jobs"][
                         "queued_update_reached_oracle"
                     ],
+                    "verbose_result_spoken_bounded": voice_operator["proofs"]["async_oracle_jobs"][
+                        "verbose_result_spoken_bounded"
+                    ],
+                    "verbose_result_committed_bounded": voice_operator["proofs"]["async_oracle_jobs"][
+                        "verbose_result_committed_bounded"
+                    ],
+                    "verbose_result_commit_marked_truncated": voice_operator["proofs"]["async_oracle_jobs"][
+                        "verbose_result_commit_marked_truncated"
+                    ],
+                    "verbose_full_result_durable": voice_operator["proofs"]["async_oracle_jobs"][
+                        "verbose_full_result_durable"
+                    ],
+                    "verbose_full_result_chars": voice_operator["proofs"]["async_oracle_jobs"][
+                        "verbose_full_result_chars"
+                    ],
+                    "verbose_spoken_result": voice_operator["proofs"]["async_oracle_jobs"][
+                        "verbose_spoken_result"
+                    ],
                 },
                 "async_oracle_acceptance": {
                     key: {

@@ -1243,6 +1243,10 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         "queued_job_control_update_reaches_oracle": smoke.get("queued_job_update_observed") is True
         and smoke.get("queued_update_started_with_priority") is True
         and smoke.get("queued_update_reached_oracle") is True,
+        "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
+        and smoke.get("verbose_result_committed_bounded") is True
+        and smoke.get("verbose_result_commit_marked_truncated") is True
+        and smoke.get("verbose_full_result_durable") is True,
     }
 
 
@@ -1332,11 +1336,11 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             runtime_verified_by_this_report=True,
         ),
         "result_handling_is_bounded_and_durable": _async_oracle_acceptance_row(
-            ok=bool(ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["result_handling"]),
-            evidence="focused_result_handling_test_refs",
+            ok=smoke_ok and bool(async_oracle_coverage.get("result_handling_bounded_and_durable")),
+            evidence="async_oracle_smoke_plus_result_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["result_handling"],
-            verification_mode="static_focused_test_reference_inventory",
-            runtime_verified_by_this_report=False,
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
         ),
         "discord_session_cleanup_preserves_oracle_state": _async_oracle_acceptance_row(
             ok=bool(ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["discord_session"]),
@@ -1504,6 +1508,16 @@ def build_voice_operator_report(
                 async_oracle_smoke.get("queued_update_started_with_priority")
             ),
             "queued_update_reached_oracle": bool(async_oracle_smoke.get("queued_update_reached_oracle")),
+            "verbose_result_spoken_bounded": bool(async_oracle_smoke.get("verbose_result_spoken_bounded")),
+            "verbose_result_committed_bounded": bool(
+                async_oracle_smoke.get("verbose_result_committed_bounded")
+            ),
+            "verbose_result_commit_marked_truncated": bool(
+                async_oracle_smoke.get("verbose_result_commit_marked_truncated")
+            ),
+            "verbose_full_result_durable": bool(async_oracle_smoke.get("verbose_full_result_durable")),
+            "verbose_full_result_chars": async_oracle_smoke.get("verbose_full_result_chars"),
+            "verbose_spoken_result": async_oracle_smoke.get("verbose_spoken_result"),
             "coverage": async_oracle_coverage,
         },
         "live_evidence": {
@@ -1660,6 +1674,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "approval_wait_visible_and_redacted",
         "failed_job_reported_without_crash",
         "queued_job_control_update_reaches_oracle",
+        "result_handling_bounded_and_durable",
     ):
         if async_oracle_coverage.get(key) is not True:
             issues.append(f"missing_async_oracle_coverage:{key}")
