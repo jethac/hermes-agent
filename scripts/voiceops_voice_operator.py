@@ -108,6 +108,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_queued_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_priority_control_reprioritizes_queued_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_update_attaches_to_latest_async_oracle_job",
+        "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_event_tracks_oracle_job_status",
     ],
     "result_handling": [
         "tests/agent/test_realtime_voice.py::test_completed_async_oracle_job_after_intervening_local_turn_is_lifecycle_only",
@@ -1385,12 +1386,14 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("durable_failed_record_present") is True
         and smoke.get("session_survived_failed_job") is True,
         "queued_job_control_update_reaches_oracle": smoke.get("queued_job_update_observed") is True
+        and smoke.get("queued_update_latest_update_visible") is True
         and smoke.get("queued_update_started_with_priority") is True
         and smoke.get("queued_update_reached_oracle") is True,
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
         and smoke.get("verbose_result_committed_bounded") is True
         and smoke.get("verbose_result_commit_marked_truncated") is True
-        and smoke.get("verbose_full_result_durable") is True,
+        and smoke.get("verbose_full_result_durable") is True
+        and smoke.get("completed_result_status_visible") is True,
         "shutdown_timeout_bounded": smoke.get("shutdown_bounded_close_observed") is True
         and smoke.get("shutdown_forced_cancel_observed") is True
         and int(smoke.get("shutdown_cancelled_jobs") or 0) >= 1,
@@ -1686,6 +1689,9 @@ def build_voice_operator_report(
             "local_turn_committed": bool(async_oracle_smoke.get("local_turn_committed")),
             "status_turn_committed": bool(async_oracle_smoke.get("status_turn_committed")),
             "status_text": async_oracle_smoke.get("status_text"),
+            "terminal_status_committed": bool(async_oracle_smoke.get("terminal_status_committed")),
+            "completed_result_status_visible": bool(async_oracle_smoke.get("completed_result_status_visible")),
+            "terminal_status_text": async_oracle_smoke.get("terminal_status_text"),
             "fifth_job_id": async_oracle_smoke.get("fifth_job_id"),
             "fifth_job_queued": bool(async_oracle_smoke.get("fifth_job_queued")),
             "fifth_job_started_after_capacity_freed": bool(
@@ -1715,6 +1721,10 @@ def build_voice_operator_report(
             "durable_failed_record_present": bool(async_oracle_smoke.get("durable_failed_record_present")),
             "session_survived_failed_job": bool(async_oracle_smoke.get("session_survived_failed_job")),
             "queued_job_update_observed": bool(async_oracle_smoke.get("queued_job_update_observed")),
+            "queued_update_latest_update_visible": bool(
+                async_oracle_smoke.get("queued_update_latest_update_visible")
+            ),
+            "queued_update_latest_update_text": async_oracle_smoke.get("queued_update_latest_update_text"),
             "queued_update_started_with_priority": bool(
                 async_oracle_smoke.get("queued_update_started_with_priority")
             ),

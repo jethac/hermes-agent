@@ -79,6 +79,12 @@ def _async_oracle_smoke_payload() -> dict:
         "local_turn_committed": True,
         "status_turn_committed": True,
         "status_text": "Oracle jobs: 4 running out of 4, 1 queued. running: Starting smoke task 1.",
+        "terminal_status_committed": True,
+        "completed_result_status_visible": True,
+        "terminal_status_text": (
+            "No oracle jobs are running or queued right now. Recent: "
+            "completed: First sentence. Second sentence. Third sentence."
+        ),
         "fifth_job_id": "voice-oracle-005",
         "fifth_job_queued": True,
         "fifth_job_started_after_capacity_freed": True,
@@ -104,6 +110,8 @@ def _async_oracle_smoke_payload() -> dict:
         "durable_failed_record_present": True,
         "session_survived_failed_job": True,
         "queued_job_update_observed": True,
+        "queued_update_latest_update_visible": True,
+        "queued_update_latest_update_text": "include smoke update context",
         "queued_update_started_with_priority": True,
         "queued_update_reached_oracle": True,
         "verbose_result_spoken_bounded": True,
@@ -136,7 +144,8 @@ def _async_oracle_smoke_payload() -> dict:
             "oracle.job.failed": 1,
             "oracle.job.cancelled": 1,
             "oracle.job.waiting_for_approval": 1,
-            "assistant.commit": 9,
+            "interface.oracle.update": 1,
+            "assistant.commit": 7,
         },
     }
 
@@ -351,6 +360,11 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["queued_jobs"] == 1
     assert report["proofs"]["async_oracle_jobs"]["failed_jobs"] == 1
     assert report["proofs"]["async_oracle_jobs"]["status_turn_committed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["terminal_status_committed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["completed_result_status_visible"] is True
+    assert "completed: First sentence. Second sentence. Third sentence." in report["proofs"]["async_oracle_jobs"][
+        "terminal_status_text"
+    ]
     assert report["proofs"]["async_oracle_jobs"]["fifth_job_queued"] is True
     assert report["proofs"]["async_oracle_jobs"]["fifth_job_started_after_capacity_freed"] is True
     assert report["proofs"]["async_oracle_jobs"]["late_cancelled_output_attempted"] is True
@@ -374,6 +388,8 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["durable_failed_record_present"] is True
     assert report["proofs"]["async_oracle_jobs"]["session_survived_failed_job"] is True
     assert report["proofs"]["async_oracle_jobs"]["queued_job_update_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["queued_update_latest_update_visible"] is True
+    assert report["proofs"]["async_oracle_jobs"]["queued_update_latest_update_text"] == "include smoke update context"
     assert report["proofs"]["async_oracle_jobs"]["queued_update_started_with_priority"] is True
     assert report["proofs"]["async_oracle_jobs"]["queued_update_reached_oracle"] is True
     assert report["proofs"]["async_oracle_jobs"]["verbose_result_spoken_bounded"] is True
@@ -405,6 +421,9 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert (
         report["async_oracle_acceptance"]["queued_job_control_updates_reach_oracle"]["verification_mode"]
         == "loopback_smoke_plus_focused_tests"
+    )
+    assert "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_event_tracks_oracle_job_status" in (
+        report["async_oracle_acceptance"]["queued_job_control_updates_reach_oracle"]["test_refs"]
     )
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
     assert result_handling["ok"] is True
@@ -525,6 +544,28 @@ def test_voice_operator_validation_rejects_missing_async_approval_secret_canary_
     assert "missing_async_oracle_coverage:approval_wait_visible_and_redacted" in issues
     assert "stale_async_oracle_coverage:approval_wait_visible_and_redacted" in issues
     assert "missing_async_oracle_acceptance:approval_wait_is_visible_and_redacted" in issues
+
+
+def test_voice_operator_validation_rejects_missing_visible_queued_update_status():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["queued_update_latest_update_visible"] = False
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:queued_job_control_update_reaches_oracle" in issues
+    assert "stale_async_oracle_coverage:queued_job_control_update_reaches_oracle" in issues
+    assert "missing_async_oracle_acceptance:queued_job_control_updates_reach_oracle" in issues
+
+
+def test_voice_operator_validation_rejects_completed_result_missing_from_status_view():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["completed_result_status_visible"] = False
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:result_handling_bounded_and_durable" in issues
+    assert "stale_async_oracle_coverage:result_handling_bounded_and_durable" in issues
+    assert "missing_async_oracle_acceptance:result_handling_is_bounded_and_durable" in issues
 
 
 def test_voice_operator_validation_rejects_static_acceptance_without_test_refs():

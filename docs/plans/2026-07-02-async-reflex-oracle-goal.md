@@ -437,8 +437,10 @@ Add a local smoke report mode that proves:
 
 - four fake oracle jobs can run concurrently
 - reflex still accepts a local "can you hear me?" turn while jobs run
+- queued oracle job updates are visible in the reflex/status event stream
 - one job can be cancelled while others complete
 - late cancelled output is not played
+- completed oracle results are visible in a later reflex status query
 
 For real DGX Spark evidence:
 

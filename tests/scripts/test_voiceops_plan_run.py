@@ -1035,6 +1035,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["queued_jobs"] == 1
     assert voice_result["details"]["async_oracle_smoke"]["failed_jobs"] == 1
     assert voice_result["details"]["async_oracle_smoke"]["status_turn_committed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["terminal_status_committed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["completed_result_status_visible"] is True
+    assert "completed: First sentence. Second sentence. Third sentence." in voice_result["details"][
+        "async_oracle_smoke"
+    ]["terminal_status_text"]
     assert voice_result["details"]["async_oracle_smoke"]["fifth_job_queued"] is True
     assert voice_result["details"]["async_oracle_smoke"]["fifth_job_started_after_capacity_freed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["cancelled_result_spoken"] is False
@@ -1057,6 +1062,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["durable_failed_record_present"] is True
     assert voice_result["details"]["async_oracle_smoke"]["session_survived_failed_job"] is True
     assert voice_result["details"]["async_oracle_smoke"]["queued_job_update_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["queued_update_latest_update_visible"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["queued_update_latest_update_text"]
+        == "include smoke update context"
+    )
     assert voice_result["details"]["async_oracle_smoke"]["queued_update_started_with_priority"] is True
     assert voice_result["details"]["async_oracle_smoke"]["queued_update_reached_oracle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["verbose_result_spoken_bounded"] is True

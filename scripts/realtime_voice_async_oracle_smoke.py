@@ -140,6 +140,7 @@ async def run_smoke() -> dict[str, Any]:
                 "speak_terminal_results": True,
                 "shutdown_timeout_seconds": 0.01,
             },
+            max_spoken_sentences=5,
             metadata={"transport": "smoke"},
         )
     )
@@ -379,6 +380,26 @@ async def run_smoke() -> dict[str, Any]:
     )
     await send(
         {
+            "transcript": "what completed",
+            "intent": "What completed?",
+            "intent_source": "smoke_reflex",
+            "route": "local",
+            "local_reply": "Let me check.",
+            "max_spoken_sentences": 5,
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ASSISTANT_COMMIT
+            and str(event.payload.get("text") or "").startswith(
+                "No oracle jobs are running or queued right now. Recent:"
+            )
+            and "completed: First sentence. Second sentence. Third sentence." in str(event.payload.get("text") or "")
+            for event in events
+        )
+    )
+    await send(
+        {
             "transcript": "run noncooperative close task",
             "intent": "Noncooperative close task",
             "intent_source": "smoke_reflex",
@@ -441,6 +462,12 @@ async def run_smoke() -> dict[str, Any]:
         for event in status_commits
         if str(event.payload.get("text") or "").startswith("Oracle jobs: 4 running out of 4, 1 queued.")
     ]
+    terminal_status_commits = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ASSISTANT_COMMIT
+        and str(event.payload.get("text") or "").startswith("No oracle jobs are running or queued right now. Recent:")
+    ]
     approval_waiting = [
         event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL
     ]
@@ -485,6 +512,12 @@ async def run_smoke() -> dict[str, Any]:
         and event.payload.get("job_id") == task_5_queued.payload["job_id"]
         and event.payload.get("priority") == "high"
         and event.payload.get("update_count") == 1
+        for event in recorder.events
+    )
+    queued_update_latest_update_visible = any(
+        event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+        and event.payload.get("job_id") == task_5_queued.payload["job_id"]
+        and event.payload.get("latest_update") == "include smoke update context"
         for event in recorder.events
     )
     queued_update_started_with_priority = any(
@@ -584,8 +617,7 @@ async def run_smoke() -> dict[str, Any]:
         and event.payload.get("oracle_job_id") == verbose_job_id
     ]
     verbose_result_spoken_bounded = any(text == "First sentence." for text in engine.spoken) and not any(
-        text == verbose_full_result or "Second sentence." in text or "Third sentence." in text
-        for text in engine.spoken
+        text == verbose_full_result for text in engine.spoken
     )
     verbose_result_committed_bounded = bool(verbose_result_commits) and any(
         event.payload.get("text") == "First sentence." for event in verbose_result_commits
@@ -605,6 +637,10 @@ async def run_smoke() -> dict[str, Any]:
         and record.get("payload", {}).get("result_summary") == verbose_full_result
         and record.get("payload", {}).get("result_text") == verbose_full_result
         for record in durable_records
+    )
+    terminal_status_text = str(terminal_status_commits[-1].payload.get("text") or "") if terminal_status_commits else ""
+    completed_result_status_visible = (
+        "completed: First sentence. Second sentence. Third sentence." in terminal_status_text
     )
     close_cancelled_events = [
         event
@@ -647,12 +683,14 @@ async def run_smoke() -> dict[str, Any]:
             and durable_failed_record_present
             and session_survived_failure
             and queued_job_update_observed
+            and queued_update_latest_update_visible
             and queued_update_started_with_priority
             and queued_update_reached_oracle
             and verbose_result_spoken_bounded
             and verbose_result_committed_bounded
             and verbose_result_commit_marked_truncated
             and verbose_full_result_durable
+            and completed_result_status_visible
             and shutdown_bounded_close_observed
             and shutdown_forced_cancel_observed
         ),
@@ -676,6 +714,9 @@ async def run_smoke() -> dict[str, Any]:
         "local_turn_committed": bool(local_commits),
         "status_turn_committed": bool(running_status_commits),
         "status_text": str(running_status_commits[-1].payload.get("text") or "") if running_status_commits else "",
+        "terminal_status_committed": bool(terminal_status_commits),
+        "completed_result_status_visible": completed_result_status_visible,
+        "terminal_status_text": terminal_status_text,
         "fifth_job_id": fifth_job_id,
         "fifth_job_queued": bool(fifth_job_id),
         "fifth_job_started_after_capacity_freed": fifth_job_started_after_capacity_freed,
@@ -703,6 +744,10 @@ async def run_smoke() -> dict[str, Any]:
         "durable_failed_record_present": durable_failed_record_present,
         "session_survived_failed_job": session_survived_failure,
         "queued_job_update_observed": queued_job_update_observed,
+        "queued_update_latest_update_visible": queued_update_latest_update_visible,
+        "queued_update_latest_update_text": "include smoke update context"
+        if queued_update_latest_update_visible
+        else "",
         "queued_update_started_with_priority": queued_update_started_with_priority,
         "queued_update_reached_oracle": queued_update_reached_oracle,
         "verbose_result_spoken_bounded": verbose_result_spoken_bounded,
@@ -721,6 +766,7 @@ async def run_smoke() -> dict[str, Any]:
                 VoiceEventType.ORACLE_JOB_COMPLETED,
                 VoiceEventType.ORACLE_JOB_FAILED,
                 VoiceEventType.ORACLE_JOB_CANCELLED,
+                VoiceEventType.INTERFACE_ORACLE_UPDATE,
                 VoiceEventType.ASSISTANT_COMMIT,
             }
         },

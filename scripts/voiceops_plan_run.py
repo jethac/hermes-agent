@@ -1466,6 +1466,13 @@ async def build_plan_run_async(
                     "local_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["local_turn_committed"],
                     "status_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["status_turn_committed"],
                     "status_text": voice_operator["proofs"]["async_oracle_jobs"]["status_text"],
+                    "terminal_status_committed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "terminal_status_committed"
+                    ],
+                    "completed_result_status_visible": voice_operator["proofs"]["async_oracle_jobs"][
+                        "completed_result_status_visible"
+                    ],
+                    "terminal_status_text": voice_operator["proofs"]["async_oracle_jobs"]["terminal_status_text"],
                     "fifth_job_queued": voice_operator["proofs"]["async_oracle_jobs"]["fifth_job_queued"],
                     "fifth_job_started_after_capacity_freed": voice_operator["proofs"]["async_oracle_jobs"][
                         "fifth_job_started_after_capacity_freed"
@@ -1518,6 +1525,12 @@ async def build_plan_run_async(
                     ],
                     "queued_job_update_observed": voice_operator["proofs"]["async_oracle_jobs"][
                         "queued_job_update_observed"
+                    ],
+                    "queued_update_latest_update_visible": voice_operator["proofs"]["async_oracle_jobs"][
+                        "queued_update_latest_update_visible"
+                    ],
+                    "queued_update_latest_update_text": voice_operator["proofs"]["async_oracle_jobs"][
+                        "queued_update_latest_update_text"
                     ],
                     "queued_update_started_with_priority": voice_operator["proofs"]["async_oracle_jobs"][
                         "queued_update_started_with_priority"

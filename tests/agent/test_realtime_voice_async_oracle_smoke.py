@@ -26,6 +26,9 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["local_turn_committed"] is True
     assert report["status_turn_committed"] is True
     assert report["status_text"].startswith("Oracle jobs: 4 running out of 4, 1 queued.")
+    assert report["terminal_status_committed"] is True
+    assert report["completed_result_status_visible"] is True
+    assert "completed: First sentence. Second sentence. Third sentence." in report["terminal_status_text"]
     assert report["fifth_job_queued"] is True
     assert report["fifth_job_started_after_capacity_freed"] is True
     assert report["late_cancelled_output_attempted"] is True
@@ -49,6 +52,8 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["durable_failed_record_present"] is True
     assert report["session_survived_failed_job"] is True
     assert report["queued_job_update_observed"] is True
+    assert report["queued_update_latest_update_visible"] is True
+    assert report["queued_update_latest_update_text"] == "include smoke update context"
     assert report["queued_update_started_with_priority"] is True
     assert report["queued_update_reached_oracle"] is True
     assert report["verbose_result_spoken_bounded"] is True
@@ -56,3 +61,4 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["verbose_result_commit_marked_truncated"] is True
     assert report["verbose_full_result_durable"] is True
     assert report["verbose_spoken_result"] == "First sentence."
+    assert report["event_counts"]["interface.oracle.update"] >= 1
