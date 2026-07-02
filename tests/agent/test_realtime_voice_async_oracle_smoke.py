@@ -17,3 +17,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["cancelled_result_spoken"] is False
     assert report["cancelled_result_committed"] is False
     assert report["cancelled_result_progress_leaked"] is False
+    assert report["cancelled_result_durable_completed"] is False
+    assert report["cancelled_result_durable_text"] is False
+    assert report["durable_cancelled_record_present"] is True
+    assert report["durable_completed_jobs"] == 3

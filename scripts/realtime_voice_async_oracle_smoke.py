@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceEvent, VoiceEventType
+from agent.realtime_voice_session import RealtimeVoiceSession
 from agent.realtime_voice_text_engine import KameInterfaceOracleEngine
 
 
@@ -219,6 +220,32 @@ async def run_smoke() -> dict[str, Any]:
         )
         for event in recorder.events
     )
+    durable_session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-smoke-async-oracle"),
+        engine=SmokeEngine(oracle=SmokeOracle()),
+    )
+    for event in recorder.events:
+        durable_session._apply_server_event(event)
+    durable_records = durable_session.durable_oracle_records()
+    cancelled_result_durable_completed = any(
+        record.get("type") == VoiceEventType.ORACLE_JOB_COMPLETED.value
+        and record.get("payload", {}).get("job_id") == cancelled_job_id
+        for record in durable_records
+    )
+    cancelled_result_durable_text = any(
+        record.get("payload", {}).get("job_id") == cancelled_job_id
+        and "Finished Run smoke task 3" in str(record.get("payload", {}))
+        for record in durable_records
+    )
+    durable_cancelled_record_present = any(
+        record.get("type") == VoiceEventType.ORACLE_JOB_CANCELLED.value
+        and record.get("payload", {}).get("job_id") == cancelled_job_id
+        for record in durable_records
+    )
+    durable_completed_jobs = sum(
+        record.get("type") == VoiceEventType.ORACLE_JOB_COMPLETED.value
+        for record in durable_records
+    )
     report = {
         "ok": (
             len(started) == 4
@@ -230,6 +257,10 @@ async def run_smoke() -> dict[str, Any]:
             and not cancelled_result_spoken
             and not cancelled_result_committed
             and not cancelled_result_progress_leaked
+            and not cancelled_result_durable_completed
+            and not cancelled_result_durable_text
+            and durable_cancelled_record_present
+            and durable_completed_jobs == 3
         ),
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": oracle.max_running,
@@ -242,6 +273,10 @@ async def run_smoke() -> dict[str, Any]:
         "cancelled_result_spoken": cancelled_result_spoken,
         "cancelled_result_committed": cancelled_result_committed,
         "cancelled_result_progress_leaked": cancelled_result_progress_leaked,
+        "cancelled_result_durable_completed": cancelled_result_durable_completed,
+        "cancelled_result_durable_text": cancelled_result_durable_text,
+        "durable_cancelled_record_present": durable_cancelled_record_present,
+        "durable_completed_jobs": durable_completed_jobs,
         "spoken": list(engine.spoken),
         "event_counts": {
             event_type.value: sum(event.type == event_type for event in recorder.events)

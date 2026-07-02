@@ -1392,6 +1392,16 @@ async def build_plan_run_async(
                     "cancelled_result_progress_leaked": voice_operator["proofs"]["async_oracle_jobs"][
                         "cancelled_result_progress_leaked"
                     ],
+                    "cancelled_result_durable_completed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "cancelled_result_durable_completed"
+                    ],
+                    "cancelled_result_durable_text": voice_operator["proofs"]["async_oracle_jobs"][
+                        "cancelled_result_durable_text"
+                    ],
+                    "durable_cancelled_record_present": voice_operator["proofs"]["async_oracle_jobs"][
+                        "durable_cancelled_record_present"
+                    ],
+                    "durable_completed_jobs": voice_operator["proofs"]["async_oracle_jobs"]["durable_completed_jobs"],
                 },
             },
         )

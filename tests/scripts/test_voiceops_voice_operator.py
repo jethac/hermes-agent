@@ -70,6 +70,10 @@ def _async_oracle_smoke_payload() -> dict:
         "cancelled_result_spoken": False,
         "cancelled_result_committed": False,
         "cancelled_result_progress_leaked": False,
+        "cancelled_result_durable_completed": False,
+        "cancelled_result_durable_text": False,
+        "durable_cancelled_record_present": True,
+        "durable_completed_jobs": 3,
         "spoken": [
             "Starting smoke task 1.",
             "Starting smoke task 2.",
@@ -256,6 +260,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["requirements"]["async_oracle_cancellation_isolated"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_attempted"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_dropped"] is True
+    assert report["requirements"]["async_oracle_late_cancelled_output_not_durable"] is True
     assert report["requirements"]["live_discord_join"] is False
     assert report["requirements"]["live_evidence_supplied"] is False
     assert report["proofs"]["lifecycle"]["sidecar_closed"] is True
@@ -271,6 +276,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_spoken"] is False
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_committed"] is False
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_progress_leaked"] is False
+    assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_completed"] is False
+    assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_text"] is False
+    assert report["proofs"]["async_oracle_jobs"]["durable_cancelled_record_present"] is True
+    assert report["proofs"]["async_oracle_jobs"]["durable_completed_jobs"] == 3
     assert report["proofs"]["latency_metrics"]["oracle_metric_status"] == "needs_live_oracle_or_sidecar_probe"
     assert report["live_probe_required_for_completion"]["status"] == "needs_live_probe"
     assert report["live_probe_required_for_completion"]["missing_gates"] == [
@@ -309,6 +318,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:one_job_cancelled_while_others_completed" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_attempted" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_not_spoken" in issues
+    assert "missing_async_oracle_coverage:late_cancelled_output_not_durable" in issues
 
 
 def test_write_voice_operator_report_artifacts(tmp_path):
