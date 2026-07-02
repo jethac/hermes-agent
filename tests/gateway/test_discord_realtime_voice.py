@@ -1127,6 +1127,32 @@ async def test_discord_realtime_session_sends_oracle_job_cancel_event():
 
 
 @pytest.mark.asyncio
+async def test_discord_realtime_session_sends_oracle_job_cancel_all_event():
+    from agent.realtime_voice import VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    sidecar = FakeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+    )
+    await session.start()
+    await session.cancel_oracle_job("all", reason="user requested /voice cancel")
+    await session.close()
+
+    cancel = next(event for event in sidecar.sent if event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL)
+    assert cancel.payload == {
+        "job_id": "all",
+        "all": True,
+        "reason": "user requested /voice cancel",
+        "transport": "discord_voice",
+    }
+
+
+@pytest.mark.asyncio
 async def test_discord_adapter_cancel_voice_oracle_job_delegates_to_session():
     from plugins.platforms.discord.adapter import DiscordAdapter
 

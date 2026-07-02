@@ -1153,6 +1153,28 @@ class TestVoiceChannelCommands:
         assert result == "Requested cancellation for realtime oracle job voice-oracle-001."
 
     @pytest.mark.asyncio
+    async def test_voice_cancel_without_job_id_cancels_all_oracle_jobs(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.cancel_voice_oracle_job = AsyncMock(
+            return_value={
+                "ok": True,
+                "job_id": "all",
+                "reason": "user requested /voice cancel",
+            }
+        )
+        event = self._make_discord_event("/voice cancel")
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_command(event)
+
+        mock_adapter.cancel_voice_oracle_job.assert_awaited_once_with(
+            111,
+            "all",
+            reason="user requested /voice cancel",
+        )
+        assert result == "Requested cancellation for all realtime oracle jobs."
+
+    @pytest.mark.asyncio
     async def test_voice_cancel_without_session_reports_no_active_realtime_voice(self, runner):
         mock_adapter = MagicMock()
         mock_adapter.cancel_voice_oracle_job = AsyncMock(
