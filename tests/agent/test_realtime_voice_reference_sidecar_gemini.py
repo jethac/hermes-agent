@@ -137,6 +137,57 @@ def test_reference_sidecar_routes_requested_gemini_live_provider(monkeypatch):
     assert provider.closed is True
 
 
+def test_reference_sidecar_forwards_speakable_oracle_result_to_gemini_live(monkeypatch):
+    FakeGeminiSession.started = []
+    monkeypatch.setattr(
+        "agent.realtime_voice_gemini.GeminiLiveFrontendSession",
+        FakeGeminiSession,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(gemini_live_api_key="gemini-secret")
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-1",
+                frontend_provider="gemini_live",
+                frontend_model="gemini-3.1-flash-live-preview",
+            )
+        )
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if len(seen) == 3:
+                break
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                session_id="voice-1",
+                sequence=7,
+                payload={
+                    "text": "The deployment is healthy.",
+                    "speak": True,
+                    "oracle_job_result": True,
+                    "job_id": "job-1",
+                },
+            )
+        )
+        await sidecar.close()
+        return FakeGeminiSession.started[0]
+
+    provider = asyncio.run(run())
+
+    forwarded = next(event for event in provider.received if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL)
+    assert forwarded.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL
+    assert forwarded.payload == {
+        "text": "The deployment is healthy.",
+        "speak": True,
+        "oracle_job_result": True,
+        "job_id": "job-1",
+    }
+
+
 def test_reference_sidecar_degrades_gemini_live_without_key_and_keeps_local_path():
     async def run():
         sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())

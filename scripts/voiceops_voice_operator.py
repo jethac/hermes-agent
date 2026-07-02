@@ -75,9 +75,16 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
     "job_manager_capacity": [
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_max_concurrent_one_queues_second_job",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_max_concurrent_four_starts_four_and_queues_fifth",
-        "tests/agent/test_realtime_voice_oracle_jobs.py::test_queue_limit_rejects_overflow",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_equal_priority_queued_jobs_start_fifo",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_spoken_tasks_create_async_oracle_jobs",
+    ],
+    "overflow_policy": [
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_queue_limit_rejects_overflow",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_overflow_policy_reject_rejects_at_capacity_with_queue_space",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_overflow_policy_reprioritize_requires_user_control_at_capacity",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_reports_async_oracle_reject_policy_without_sync_fallback",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_reports_async_oracle_reprioritize_policy_without_sync_fallback",
+        "tests/hermes_cli/test_web_server.py::TestBuildSchemaFromConfig::test_realtime_voice_ws_config_passes_oracle_jobs_from_config",
     ],
     "status_view": [
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_status_view_reports_capacity_and_redacts_raw_metadata",
@@ -1567,8 +1574,9 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
         ),
         "fifth_job_obeys_overflow_policy": _async_oracle_acceptance_row(
             ok=smoke_ok and bool(async_oracle_coverage.get("fifth_job_queued_and_started_after_capacity_freed")),
-            evidence="async_oracle_smoke",
-            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["job_manager_capacity"],
+            evidence="async_oracle_smoke_plus_overflow_policy_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["job_manager_capacity"]
+            + ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["overflow_policy"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),

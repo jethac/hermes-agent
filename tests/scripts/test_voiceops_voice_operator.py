@@ -522,7 +522,25 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     ]
     assert report["proofs"]["tool_disclosure"]["hidden_core_tool_names"] == ["read_file", "terminal"]
     assert report["tool_disclosure_smoke"]["ok"] is True
-    assert report["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
+    overflow_policy = report["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]
+    assert overflow_policy["ok"] is True
+    assert overflow_policy["evidence"] == "async_oracle_smoke_plus_overflow_policy_tests"
+    assert (
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_overflow_policy_reject_rejects_at_capacity_with_queue_space"
+        in overflow_policy["test_refs"]
+    )
+    assert (
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_overflow_policy_reprioritize_requires_user_control_at_capacity"
+        in overflow_policy["test_refs"]
+    )
+    assert (
+        "tests/agent/test_realtime_voice.py::test_kame_engine_reports_async_oracle_reprioritize_policy_without_sync_fallback"
+        in overflow_policy["test_refs"]
+    )
+    assert (
+        "tests/hermes_cli/test_web_server.py::TestBuildSchemaFromConfig::test_realtime_voice_ws_config_passes_oracle_jobs_from_config"
+        in overflow_policy["test_refs"]
+    )
     assert report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["ok"] is True
     assert report["async_oracle_acceptance"]["shutdown_timeout_is_bounded"]["ok"] is True
     assert report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
