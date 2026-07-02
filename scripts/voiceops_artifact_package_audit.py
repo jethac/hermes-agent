@@ -762,6 +762,35 @@ def _audit_service_claims(operator_state: Mapping[str, Any], issues: list[str]) 
             issues.append(f"provisioned_services:{service.get('service_id')}:execution_status_invalid")
 
 
+def _audit_execution_plan_contracts(execution_plan: Mapping[str, Any], issues: list[str]) -> None:
+    contracts = (
+        execution_plan.get("approval_contracts")
+        if isinstance(execution_plan.get("approval_contracts"), Mapping)
+        else {}
+    )
+    receipts = execution_plan.get("receipts") if isinstance(execution_plan.get("receipts"), Mapping) else {}
+    for action in execution_plan.get("approval_required_actions", []):
+        if not isinstance(action, Mapping):
+            issues.append("execution_plan:approval_required_action_not_object")
+            continue
+        action_id = str(action.get("action_id") or "unknown")
+        command = str(action.get("command") or "")
+        expected_hash = hashlib.sha256(command.encode("utf-8")).hexdigest()
+        if action.get("command_sha256") != expected_hash:
+            issues.append(f"execution_plan:{action_id}:command_sha256_mismatch")
+        contract = action.get("approval_contract") if isinstance(action.get("approval_contract"), Mapping) else {}
+        if contract and contract.get("command_sha256") != expected_hash:
+            issues.append(f"execution_plan:{action_id}:approval_contract_command_sha256_mismatch")
+        indexed_contract = contracts.get(action_id) if isinstance(contracts, Mapping) else None
+        if isinstance(indexed_contract, Mapping) and indexed_contract.get("command_sha256") != expected_hash:
+            issues.append(f"execution_plan:{action_id}:indexed_contract_command_sha256_mismatch")
+        receipt_ref = str(action.get("expected_receipt_ref") or "")
+        receipt_key = receipt_ref.split(".", 1)[1] if receipt_ref.startswith("receipts.") else ""
+        receipt_slot = receipts.get(receipt_key) if isinstance(receipts, Mapping) else None
+        if isinstance(receipt_slot, Mapping) and receipt_slot.get("command_sha256") != expected_hash:
+            issues.append(f"execution_plan:{action_id}:receipt_slot_command_sha256_mismatch")
+
+
 def _iter_plan_run_commands(value: Any) -> list[str]:
     commands: list[str] = []
     if isinstance(value, str):
@@ -1936,6 +1965,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         issues=issues,
     )
     _audit_channel_policy(channel_policy, channel_review, issues)
+    _audit_execution_plan_contracts(execution_plan, issues)
     _audit_post_approval_receipt_validation(
         artifact_root=artifact_root,
         execution_plan=execution_plan,

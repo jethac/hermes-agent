@@ -608,6 +608,34 @@ def test_package_audit_rejects_forged_post_approval_receipt_validation(tmp_path)
     assert "post_approval_receipts_validation:ledger_rows_present_without_loaded_receipts" in report["issues"]
 
 
+def test_package_audit_rejects_execution_plan_command_hash_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_path = artifact_root / "voiceops-provisioning" / "current" / "milestone2-execution-plan.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    action = plan["approval_required_actions"][0]
+    forged_hash = "0" * 64
+    action["command_sha256"] = forged_hash
+    action["approval_contract"]["command_sha256"] = forged_hash
+    plan["approval_contracts"][action["action_id"]]["command_sha256"] = forged_hash
+    receipt_slot = plan["receipts"][action["expected_receipt_ref"].split(".", 1)[1]]
+    receipt_slot["command_sha256"] = forged_hash
+    _write_json(plan_path, plan)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "execution_plan:provision-voip-provider:command_sha256_mismatch" in report["issues"]
+    assert (
+        "execution_plan:provision-voip-provider:approval_contract_command_sha256_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "execution_plan:provision-voip-provider:indexed_contract_command_sha256_mismatch"
+        in report["issues"]
+    )
+    assert "execution_plan:provision-voip-provider:receipt_slot_command_sha256_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_scaffold_approval_decision_ref_path_escape(tmp_path):
     artifact_root = _generate_package(tmp_path)
     scaffold_path = (
