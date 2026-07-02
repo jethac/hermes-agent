@@ -3290,6 +3290,7 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.overflow_policy"]["options"] == ["queue", "reject"]
         assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.shutdown_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.speak_terminal_results"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.audit_ledger_path"]["type"] == "text"
         assert CONFIG_SCHEMA["voice.realtime.output_events.caption_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.output_events.audio_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
@@ -3380,6 +3381,7 @@ class TestBuildSchemaFromConfig:
                             "overflow_policy": "reject",
                             "shutdown_timeout_seconds": 3.5,
                             "speak_terminal_results": False,
+                            "audit_ledger_path": "artifacts/voiceops/live-oracle-jobs.jsonl",
                         },
                     }
                 }
@@ -3399,6 +3401,7 @@ class TestBuildSchemaFromConfig:
             "overflow_policy": "reject",
             "shutdown_timeout_seconds": 3.5,
             "speak_terminal_results": False,
+            "audit_ledger_path": "artifacts/voiceops/live-oracle-jobs.jsonl",
         }
         assert config.metadata["oracle_jobs"] == config.oracle_jobs
 

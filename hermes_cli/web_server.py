@@ -973,6 +973,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Speak concise completed or failed oracle job results when still relevant",
         "category": "voice",
     },
+    "voice.realtime.oracle_jobs.audit_ledger_path": {
+        "type": "text",
+        "description": "Optional JSONL path for redacted VoiceOps oracle-job lifecycle audit events",
+        "category": "voice",
+    },
     "voice.realtime.output_events.caption_aliases": {
         "type": "boolean",
         "description": "Emit assistant.caption.partial/final aliases alongside legacy assistant text events",
@@ -13815,6 +13820,7 @@ def _realtime_voice_oracle_jobs_payload(realtime: Mapping[str, Any]) -> Dict[str
             default=2.0,
         ),
         "speak_terminal_results": _truthy_config(raw.get("speak_terminal_results"), default=True),
+        "audit_ledger_path": str(raw.get("audit_ledger_path") or "").strip(),
     }
 
 

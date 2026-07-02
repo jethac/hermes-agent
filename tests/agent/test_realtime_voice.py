@@ -1614,6 +1614,91 @@ def test_kame_engine_async_oracle_job_emits_lifecycle_without_blocking_ack(monke
     asyncio.run(run())
 
 
+def test_kame_engine_async_oracle_job_writes_configured_audit_ledger(monkeypatch, tmp_path):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release.wait()
+            yield "The VoIP provisioning plan is ready."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            return None
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        ledger_path = tmp_path / "voiceops-oracle-jobs.jsonl"
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle, sidecar=FakeSidecar())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                sidecar_base_url="http://voice.local:8765",
+                oracle_jobs={
+                    "enabled": True,
+                    "max_concurrent": 1,
+                    "queue_limit": 4,
+                    "audit_ledger_path": str(ledger_path),
+                },
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "give Hermes two hundred dollars and provision VoIP",
+                    "intent": "Use a 200 dollar budget to provision VoIP safely.",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "transcript_source": "asr",
+                    "interface_already_said": "I'm preparing the approval packet.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        async for event in engine.events():
+            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+                break
+
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+        oracle.release.set()
+        async for event in engine.events():
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
+                break
+
+        await engine.close()
+        rows = [
+            json.loads(line)
+            for line in ledger_path.read_text(encoding="utf-8").splitlines()
+        ]
+
+        assert [row["event_type"] for row in rows] == [
+            "oracle.job.accepted",
+            "oracle.job.started",
+            "oracle.job.completed",
+        ]
+        assert rows[0]["payload"]["spoken_status"] == "I'm preparing the approval packet."
+        assert rows[-1]["payload"]["result_summary"] == "The VoIP provisioning plan is ready."
+        assert "oracle_text" not in rows[0]["payload"]
+        assert "metadata" not in rows[0]["payload"]
+
+    asyncio.run(run())
+
+
 def test_kame_engine_async_oracle_job_allows_local_turn_while_running(monkeypatch):
     class BlockingOracle:
         def __init__(self):

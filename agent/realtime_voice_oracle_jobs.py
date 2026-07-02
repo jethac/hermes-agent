@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Deque, Mapping, Optional
 
 from agent.realtime_voice_kame import KameOracleRequest
@@ -141,6 +143,7 @@ class OracleJobManager:
         runner: Optional[OracleJobRunner] = None,
         event_callback: Optional[OracleJobEventCallback] = None,
         interrupt_callback: Optional[OracleJobInterruptCallback] = None,
+        audit_ledger_path: Optional[str | Path] = None,
         id_prefix: str = "voice-oracle",
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -151,6 +154,7 @@ class OracleJobManager:
         self.runner = runner
         self.event_callback = event_callback
         self.interrupt_callback = interrupt_callback
+        self.audit_ledger_path = _audit_ledger_path(audit_ledger_path)
         self.id_prefix = str(id_prefix or "voice-oracle")
         self._clock = clock
         self._jobs: dict[str, OracleJob] = {}
@@ -446,9 +450,6 @@ class OracleJobManager:
         *,
         payload: Optional[Mapping[str, Any]] = None,
     ) -> None:
-        callback = self.event_callback
-        if callback is None:
-            return
         event = OracleJobEvent(
             type=event_type,
             job_id=job.job_id,
@@ -456,6 +457,11 @@ class OracleJobManager:
             state=job.state,
             payload=dict(payload) if payload is not None else job.to_status(),
         )
+        if self.audit_ledger_path is not None:
+            _append_audit_ledger_event(self.audit_ledger_path, event)
+        callback = self.event_callback
+        if callback is None:
+            return
         await _maybe_await(callback(event))
 
     def _running_count_locked(self) -> int:
@@ -630,3 +636,66 @@ def _compact_approval_payload(value: Mapping[str, Any]) -> dict[str, Any]:
         elif raw is not None:
             compact[text_key] = " ".join(str(raw).split())[:240]
     return compact
+
+
+def _audit_ledger_path(value: Optional[str | Path]) -> Optional[Path]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return Path(text).expanduser()
+
+
+def _append_audit_ledger_event(path: Path, event: OracleJobEvent) -> None:
+    row = {
+        "schema_version": "voiceops.oracle_job_audit_event.v1",
+        "action": "oracle_job_event",
+        "event_type": event.type.value,
+        "job_id": event.job_id,
+        "session_id": event.session_id,
+        "state": event.state.value,
+        "timestamp_ms": event.timestamp_ms,
+        "payload": _compact_audit_payload(event.payload),
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
+    except OSError:
+        # The audit hook must not break the live voice loop. External readiness
+        # checks validate the ledger file when it is required as evidence.
+        return
+
+
+def _compact_audit_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    blocked = {"metadata", "oracle_text", "result_text", "requested_response_style"}
+    compact: dict[str, Any] = {}
+    for key, raw in payload.items():
+        text_key = str(key)
+        if text_key in blocked:
+            continue
+        if text_key == "approval" and isinstance(raw, Mapping):
+            compact[text_key] = _compact_approval_payload(raw)
+        elif isinstance(raw, bool):
+            compact[text_key] = raw
+        elif isinstance(raw, int) and not isinstance(raw, bool):
+            compact[text_key] = raw
+        elif isinstance(raw, float):
+            compact[text_key] = raw
+        elif raw is None:
+            continue
+        elif isinstance(raw, Mapping):
+            compact[text_key] = _compact_audit_payload(raw)
+        elif isinstance(raw, list):
+            compact[text_key] = [
+                _compact_audit_payload(item) if isinstance(item, Mapping) else _compact_audit_scalar(item)
+                for item in raw[:20]
+            ]
+        else:
+            compact[text_key] = _compact_audit_scalar(raw)
+    return compact
+
+
+def _compact_audit_scalar(value: Any) -> str:
+    return " ".join(str(value or "").split())[:2000]

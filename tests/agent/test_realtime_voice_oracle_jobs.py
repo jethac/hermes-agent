@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 
@@ -510,3 +511,66 @@ async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
 
     release.set()
     await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
+async def test_audit_ledger_path_records_redacted_lifecycle_events(tmp_path):
+    ledger_path = tmp_path / "voiceops-oracle-jobs.jsonl"
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return {
+            "result_summary": "Bought service credits after approval.",
+            "result_text": "Long private result " * 50,
+            "tool_trace": "private trace",
+        }
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        audit_ledger_path=ledger_path,
+    )
+    job = await manager.submit(_request("buy service credits"))
+    await asyncio.sleep(0)
+    await manager.mark_waiting_for_approval(
+        job.job_id,
+        reason="Stripe Link spend requires approval",
+        approval={
+            "approval_id": "approval-123",
+            "tool_name": "stripe_link_purchase",
+            "secret": "do not expose",
+            "arguments": {"card": "do not expose"},
+        },
+    )
+    await manager.mark_running(job.job_id)
+    release.set()
+    await manager.wait_for_idle()
+
+    rows = [
+        json.loads(line)
+        for line in ledger_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert [row["event_type"] for row in rows] == [
+        "oracle.job.accepted",
+        "oracle.job.started",
+        "oracle.job.waiting_for_approval",
+        "oracle.job.started",
+        "oracle.job.completed",
+    ]
+    assert all(row["schema_version"] == "voiceops.oracle_job_audit_event.v1" for row in rows)
+    assert all(row["action"] == "oracle_job_event" for row in rows)
+    waiting = next(row for row in rows if row["event_type"] == "oracle.job.waiting_for_approval")
+    assert waiting["payload"]["approval"] == {
+        "approval_id": "approval-123",
+        "tool_name": "stripe_link_purchase",
+    }
+    completed = rows[-1]
+    assert completed["payload"]["result_summary"] == "Bought service credits after approval."
+    assert completed["payload"]["result_text_chars"] == len("Long private result " * 50)
+    assert "result_text" not in completed["payload"]
+    assert "metadata" not in rows[0]["payload"]
+    assert "oracle_text" not in rows[0]["payload"]
+    assert "do not expose" not in str(rows)
+    assert "Long private result" not in str(rows)

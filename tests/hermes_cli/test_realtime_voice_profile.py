@@ -339,6 +339,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
         "overflow_policy": "queue",
         "shutdown_timeout_seconds": 2.0,
         "speak_terminal_results": True,
+        "audit_ledger_path": "",
     }
     assert realtime["metrics"] == {
         "enabled": True,
@@ -756,6 +757,7 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
         "overflow_policy": "queue",
         "shutdown_timeout_seconds": 2.0,
         "speak_terminal_results": True,
+        "audit_ledger_path": "",
     }
     assert discord_rt["turn_acknowledgement"] == {
         "enabled": True,

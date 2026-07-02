@@ -2153,6 +2153,7 @@ DEFAULT_CONFIG = {
                 "overflow_policy": "queue",
                 "shutdown_timeout_seconds": 2.0,
                 "speak_terminal_results": True,
+                "audit_ledger_path": "",
             },
             "output_events": {
                 "caption_aliases": False,

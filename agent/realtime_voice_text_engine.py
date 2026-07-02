@@ -121,6 +121,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 runner=self._run_oracle_job,
                 event_callback=self._emit_oracle_job_event,
                 interrupt_callback=self._interrupt_oracle_job,
+                audit_ledger_path=_oracle_jobs_config_optional_str(config, "audit_ledger_path"),
             )
         await self._emit(
             VoiceEventType.SESSION_STARTED,
@@ -2928,6 +2929,13 @@ def _oracle_jobs_config_str(config: RealtimeVoiceSessionConfig, key: str, *, def
         return default
     value = str(config.oracle_jobs.get(key) or "").strip()
     return value or default
+
+
+def _oracle_jobs_config_optional_str(config: RealtimeVoiceSessionConfig, key: str) -> Optional[str]:
+    if not isinstance(config.oracle_jobs, Mapping):
+        return None
+    value = str(config.oracle_jobs.get(key) or "").strip()
+    return value or None
 
 
 def _oracle_jobs_config_float(config: Optional[RealtimeVoiceSessionConfig], key: str, *, default: float) -> float:

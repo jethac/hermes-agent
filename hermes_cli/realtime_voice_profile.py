@@ -46,6 +46,7 @@ DEFAULT_KAME_ORACLE_JOBS = {
     "overflow_policy": "queue",
     "shutdown_timeout_seconds": 2.0,
     "speak_terminal_results": True,
+    "audit_ledger_path": "",
 }
 KAME_QUALITY_TARGETS_MS = {
     "audio_to_partial_transcript_ms": 300,
