@@ -9,9 +9,10 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
 
     assert report["ok"] is True
     assert report["max_running"] == 4
-    assert report["max_worker_overlap"] >= 4
+    assert report["max_worker_overlap"] == 4
     assert report["worker_overlap_proved"] is True
-    assert report["noncooperative_cancel_overlap_observed"] is True
+    assert report["worker_overlap_within_capacity"] is True
+    assert report["noncooperative_cancel_overlap_observed"] is False
     assert report["started_jobs"] == 9
     assert report["queued_jobs"] == 1
     assert report["completed_jobs"] == 6

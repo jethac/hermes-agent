@@ -61,9 +61,10 @@ def _async_oracle_smoke_payload() -> dict:
         "ok": True,
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": 4,
-        "max_worker_overlap": 5,
+        "max_worker_overlap": 4,
         "worker_overlap_proved": True,
-        "noncooperative_cancel_overlap_observed": True,
+        "worker_overlap_within_capacity": True,
+        "noncooperative_cancel_overlap_observed": False,
         "started_jobs": 9,
         "queued_jobs": 1,
         "completed_jobs": 6,
@@ -419,9 +420,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert "tests/agent/test_realtime_voice.py::test_kame_engine_local_status_question_uses_oracle_job_state" in (
         report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["test_refs"]
     )
-    assert report["proofs"]["async_oracle_jobs"]["max_worker_overlap"] == 5
+    assert report["proofs"]["async_oracle_jobs"]["max_worker_overlap"] == 4
     assert report["proofs"]["async_oracle_jobs"]["worker_overlap_proved"] is True
-    assert report["proofs"]["async_oracle_jobs"]["noncooperative_cancel_overlap_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["worker_overlap_within_capacity"] is True
+    assert report["proofs"]["async_oracle_jobs"]["noncooperative_cancel_overlap_observed"] is False
     assert report["proofs"]["latency_metrics"]["oracle_metric_status"] == "needs_live_oracle_or_sidecar_probe"
     assert report["live_probe_required_for_completion"]["status"] == "needs_live_probe"
     assert report["live_probe_required_for_completion"]["missing_gates"] == [

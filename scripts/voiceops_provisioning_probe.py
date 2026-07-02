@@ -4038,6 +4038,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--readonly-discovery-timeout-seconds",
+        "--read-only-discovery-timeout-seconds",
+        type=int,
+        default=None,
+        dest="readonly_discovery_timeout_seconds",
+        help=(
+            "Timeout for exact allowlisted read-only provider discovery; defaults to "
+            f"{DEFAULT_READONLY_DISCOVERY_TIMEOUT_SECONDS}s."
+        ),
+    )
+    parser.add_argument(
         "--run-command-probes",
         action="store_true",
         help="Opt in to isolated version/help subprocess probes. Default inspects PATH/env presence only.",
@@ -4083,6 +4094,7 @@ def main(argv: list[str] | None = None) -> int:
         run_commands=args.run_command_probes,
         run_readonly_discovery=args.run_readonly_discovery,
         timeout_seconds=args.timeout_seconds,
+        readonly_discovery_timeout_seconds=args.readonly_discovery_timeout_seconds,
     )
     paths = write_probe_artifacts(args.output_dir, report)
     print(

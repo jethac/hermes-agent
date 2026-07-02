@@ -2002,3 +2002,40 @@ def test_parse_args_defaults_to_plan_artifact_paths():
     assert args.dry_audit is False
     assert args.package_audit is False
     assert args.package_audit_output_dir is None
+
+
+def test_parse_args_accepts_separate_readonly_discovery_timeout():
+    args = parse_args(
+        [
+            "--timeout-seconds",
+            "5",
+            "--readonly-discovery-timeout-seconds",
+            "13",
+        ]
+    )
+
+    assert args.timeout_seconds == 5
+    assert args.readonly_discovery_timeout_seconds == 13
+
+
+def test_plan_run_provisioning_command_preserves_timeout_overrides(tmp_path):
+    artifact_root = tmp_path / "artifacts"
+    output_dir = artifact_root / "voiceops-plan" / "current"
+
+    summary = build_plan_run(
+        artifact_root=artifact_root,
+        output_dir=output_dir,
+        env={"PATH": ""},
+        timeout_seconds=5,
+        readonly_discovery_timeout_seconds=13,
+    )
+
+    provisioning_result = next(
+        result
+        for result in summary["results"]
+        if result["milestone"] == "milestone_2_real_spend_and_provisioning_preflight"
+    )
+    command = provisioning_result["command"]
+
+    assert "--timeout-seconds 5" in command
+    assert "--readonly-discovery-timeout-seconds 13" in command

@@ -1344,6 +1344,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
     return {
         "async_oracle_smoke_ok": bool(smoke.get("ok")),
         "four_jobs_ran_concurrently": bool(smoke.get("worker_overlap_proved"))
+        and smoke.get("worker_overlap_within_capacity") is True
         and int(smoke.get("max_worker_overlap") or 0) >= 4
         and int(smoke.get("max_running") or 0) >= 4
         and int(smoke.get("started_jobs") or 0) >= 4,
@@ -1619,6 +1620,7 @@ def build_voice_operator_report(
             "max_running": async_oracle_smoke.get("max_running"),
             "max_worker_overlap": async_oracle_smoke.get("max_worker_overlap"),
             "worker_overlap_proved": bool(async_oracle_smoke.get("worker_overlap_proved")),
+            "worker_overlap_within_capacity": bool(async_oracle_smoke.get("worker_overlap_within_capacity")),
             "noncooperative_cancel_overlap_observed": bool(
                 async_oracle_smoke.get("noncooperative_cancel_overlap_observed")
             ),

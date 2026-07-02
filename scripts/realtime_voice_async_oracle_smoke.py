@@ -580,7 +580,7 @@ async def run_smoke() -> dict[str, Any]:
             len(started) == 9
             and len(queued) == 1
             and scheduler_max_running == 4
-            and oracle.max_running >= 4
+            and oracle.max_running == 4
             and len(local_commits) >= 2
             and bool(running_status_commits)
             and len(completed) == 6
@@ -618,6 +618,7 @@ async def run_smoke() -> dict[str, Any]:
         "max_running": scheduler_max_running,
         "max_worker_overlap": oracle.max_running,
         "worker_overlap_proved": oracle.max_running >= 4,
+        "worker_overlap_within_capacity": oracle.max_running <= scheduler_max_running,
         "noncooperative_cancel_overlap_observed": oracle.max_running > scheduler_max_running,
         "started_jobs": len(started),
         "queued_jobs": len(queued),

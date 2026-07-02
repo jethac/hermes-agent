@@ -3579,11 +3579,16 @@ async def _stream_oracle_answer(
 async def _with_next_timeout(stream: AsyncIterator[Any], *, timeout_seconds: float) -> AsyncIterator[Any]:
     timeout = max(0.001, float(timeout_seconds or 60.0))
     iterator = stream.__aiter__()
-    while True:
-        try:
-            yield await asyncio.wait_for(iterator.__anext__(), timeout=timeout)
-        except StopAsyncIteration:
-            return
+    try:
+        while True:
+            try:
+                yield await asyncio.wait_for(iterator.__anext__(), timeout=timeout)
+            except StopAsyncIteration:
+                return
+    finally:
+        aclose = getattr(iterator, "aclose", None)
+        if callable(aclose):
+            await aclose()
 
 
 _ORACLE_TOOL_CALL_EVENT_NAMES = frozenset({"oracle.tool_call", "tool_call", "tool.call"})

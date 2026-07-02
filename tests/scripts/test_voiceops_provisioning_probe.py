@@ -2893,5 +2893,20 @@ def test_parse_args_defaults_to_requested_artifact_dir():
     assert args.nemoclaw_action_packet is None
     assert args.refresh_preflight_source_hashes is None
     assert args.timeout_seconds is None
+    assert args.readonly_discovery_timeout_seconds is None
     assert args.run_command_probes is False
     assert args.run_readonly_discovery is False
+
+
+def test_parse_args_accepts_separate_readonly_discovery_timeout():
+    args = parse_args(
+        [
+            "--timeout-seconds",
+            "5",
+            "--readonly-discovery-timeout-seconds",
+            "13",
+        ]
+    )
+
+    assert args.timeout_seconds == 5
+    assert args.readonly_discovery_timeout_seconds == 13

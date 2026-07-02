@@ -131,6 +131,8 @@ def _provisioning_probe_command(
     nemoclaw_action_packet: Path | None,
     run_command_probes: bool,
     run_readonly_discovery: bool,
+    timeout_seconds: int | None = None,
+    readonly_discovery_timeout_seconds: int | None = None,
 ) -> str:
     argv = [
         "uv",
@@ -150,6 +152,10 @@ def _provisioning_probe_command(
         argv.extend(["--post-approval-receipts", str(post_approval_receipts)])
     if nemoclaw_action_packet is not None:
         argv.extend(["--nemoclaw-action-packet", str(nemoclaw_action_packet)])
+    if timeout_seconds is not None:
+        argv.extend(["--timeout-seconds", str(timeout_seconds)])
+    if readonly_discovery_timeout_seconds is not None:
+        argv.extend(["--readonly-discovery-timeout-seconds", str(readonly_discovery_timeout_seconds)])
     if run_command_probes:
         argv.append("--run-command-probes")
     if run_readonly_discovery:
@@ -1584,6 +1590,8 @@ async def build_plan_run_async(
                 nemoclaw_action_packet=Path(demo_paths["nemoclaw_packet"]),
                 run_command_probes=run_command_probes,
                 run_readonly_discovery=run_readonly_discovery,
+                timeout_seconds=timeout_seconds,
+                readonly_discovery_timeout_seconds=readonly_discovery_timeout_seconds,
             ),
             output_dir=provisioning_dir,
             artifacts=provisioning_paths,
