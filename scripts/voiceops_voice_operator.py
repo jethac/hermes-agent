@@ -1158,8 +1158,13 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         "four_jobs_ran_concurrently": int(smoke.get("max_running") or 0) >= 4
         and int(smoke.get("started_jobs") or 0) >= 4,
         "local_turn_while_jobs_running": bool(smoke.get("local_turn_committed")),
+        "status_turn_while_jobs_running": bool(smoke.get("status_turn_committed"))
+        and "4 running out of 4" in str(smoke.get("status_text") or ""),
+        "fifth_job_queued_and_started_after_capacity_freed": int(smoke.get("queued_jobs") or 0) >= 1
+        and smoke.get("fifth_job_queued") is True
+        and smoke.get("fifth_job_started_after_capacity_freed") is True,
         "one_job_cancelled_while_others_completed": int(smoke.get("cancelled_jobs") or 0) >= 1
-        and int(smoke.get("completed_jobs") or 0) >= 3,
+        and int(smoke.get("completed_jobs") or 0) >= 4,
         "late_cancelled_output_attempted": smoke.get("late_cancelled_output_attempted") is True,
         "late_cancelled_output_not_spoken": smoke.get("late_cancelled_output_attempted") is True
         and smoke.get("cancelled_result_spoken") is False
@@ -1285,9 +1290,17 @@ def build_voice_operator_report(
             "scenario": async_oracle_smoke.get("scenario"),
             "max_running": async_oracle_smoke.get("max_running"),
             "started_jobs": async_oracle_smoke.get("started_jobs"),
+            "queued_jobs": async_oracle_smoke.get("queued_jobs"),
             "completed_jobs": async_oracle_smoke.get("completed_jobs"),
             "cancelled_jobs": async_oracle_smoke.get("cancelled_jobs"),
             "local_turn_committed": bool(async_oracle_smoke.get("local_turn_committed")),
+            "status_turn_committed": bool(async_oracle_smoke.get("status_turn_committed")),
+            "status_text": async_oracle_smoke.get("status_text"),
+            "fifth_job_id": async_oracle_smoke.get("fifth_job_id"),
+            "fifth_job_queued": bool(async_oracle_smoke.get("fifth_job_queued")),
+            "fifth_job_started_after_capacity_freed": bool(
+                async_oracle_smoke.get("fifth_job_started_after_capacity_freed")
+            ),
             "cancelled_job_id": async_oracle_smoke.get("cancelled_job_id"),
             "late_cancelled_output_attempted": bool(async_oracle_smoke.get("late_cancelled_output_attempted")),
             "cancelled_result_spoken": bool(async_oracle_smoke.get("cancelled_result_spoken")),
@@ -1339,6 +1352,10 @@ def build_voice_operator_report(
             "live_evidence_supplied": bool(live_evidence.get("loaded")),
             "async_oracle_four_concurrent_jobs": async_oracle_coverage["four_jobs_ran_concurrently"],
             "async_oracle_local_turn_while_running": async_oracle_coverage["local_turn_while_jobs_running"],
+            "async_oracle_status_turn_while_running": async_oracle_coverage["status_turn_while_jobs_running"],
+            "async_oracle_fifth_job_queued_and_started": async_oracle_coverage[
+                "fifth_job_queued_and_started_after_capacity_freed"
+            ],
             "async_oracle_cancellation_isolated": async_oracle_coverage["one_job_cancelled_while_others_completed"],
             "async_oracle_late_cancelled_output_attempted": async_oracle_coverage[
                 "late_cancelled_output_attempted"
@@ -1441,6 +1458,8 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "async_oracle_smoke_ok",
         "four_jobs_ran_concurrently",
         "local_turn_while_jobs_running",
+        "status_turn_while_jobs_running",
+        "fifth_job_queued_and_started_after_capacity_freed",
         "one_job_cancelled_while_others_completed",
         "late_cancelled_output_not_spoken",
         "late_cancelled_output_attempted",

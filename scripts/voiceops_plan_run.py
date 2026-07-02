@@ -1379,9 +1379,16 @@ async def build_plan_run_async(
                     "ok": voice_operator["proofs"]["async_oracle_jobs"]["ok"],
                     "max_running": voice_operator["proofs"]["async_oracle_jobs"]["max_running"],
                     "started_jobs": voice_operator["proofs"]["async_oracle_jobs"]["started_jobs"],
+                    "queued_jobs": voice_operator["proofs"]["async_oracle_jobs"]["queued_jobs"],
                     "completed_jobs": voice_operator["proofs"]["async_oracle_jobs"]["completed_jobs"],
                     "cancelled_jobs": voice_operator["proofs"]["async_oracle_jobs"]["cancelled_jobs"],
                     "local_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["local_turn_committed"],
+                    "status_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["status_turn_committed"],
+                    "status_text": voice_operator["proofs"]["async_oracle_jobs"]["status_text"],
+                    "fifth_job_queued": voice_operator["proofs"]["async_oracle_jobs"]["fifth_job_queued"],
+                    "fifth_job_started_after_capacity_freed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "fifth_job_started_after_capacity_freed"
+                    ],
                     "late_cancelled_output_attempted": voice_operator["proofs"]["async_oracle_jobs"][
                         "late_cancelled_output_attempted"
                     ],

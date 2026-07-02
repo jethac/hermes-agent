@@ -61,10 +61,16 @@ def _async_oracle_smoke_payload() -> dict:
         "ok": True,
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": 4,
-        "started_jobs": 4,
-        "completed_jobs": 3,
+        "started_jobs": 5,
+        "queued_jobs": 1,
+        "completed_jobs": 4,
         "cancelled_jobs": 1,
         "local_turn_committed": True,
+        "status_turn_committed": True,
+        "status_text": "Oracle jobs: 4 running out of 4, 1 queued. running: Starting smoke task 1.",
+        "fifth_job_id": "voice-oracle-005",
+        "fifth_job_queued": True,
+        "fifth_job_started_after_capacity_freed": True,
         "cancelled_job_id": "voice-oracle-003",
         "late_cancelled_output_attempted": True,
         "cancelled_result_spoken": False,
@@ -73,7 +79,7 @@ def _async_oracle_smoke_payload() -> dict:
         "cancelled_result_durable_completed": False,
         "cancelled_result_durable_text": False,
         "durable_cancelled_record_present": True,
-        "durable_completed_jobs": 3,
+        "durable_completed_jobs": 4,
         "spoken": [
             "Starting smoke task 1.",
             "Starting smoke task 2.",
@@ -257,6 +263,8 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["requirements"]["sidecar_session_shutdown"] is True
     assert report["requirements"]["async_oracle_four_concurrent_jobs"] is True
     assert report["requirements"]["async_oracle_local_turn_while_running"] is True
+    assert report["requirements"]["async_oracle_status_turn_while_running"] is True
+    assert report["requirements"]["async_oracle_fifth_job_queued_and_started"] is True
     assert report["requirements"]["async_oracle_cancellation_isolated"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_attempted"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_dropped"] is True
@@ -272,6 +280,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["shutdown"]["close_timeout_bounded"] is True
     assert report["proofs"]["async_oracle_jobs"]["ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["max_running"] == 4
+    assert report["proofs"]["async_oracle_jobs"]["queued_jobs"] == 1
+    assert report["proofs"]["async_oracle_jobs"]["status_turn_committed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["fifth_job_queued"] is True
+    assert report["proofs"]["async_oracle_jobs"]["fifth_job_started_after_capacity_freed"] is True
     assert report["proofs"]["async_oracle_jobs"]["late_cancelled_output_attempted"] is True
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_spoken"] is False
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_committed"] is False
@@ -279,7 +291,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_completed"] is False
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_text"] is False
     assert report["proofs"]["async_oracle_jobs"]["durable_cancelled_record_present"] is True
-    assert report["proofs"]["async_oracle_jobs"]["durable_completed_jobs"] == 3
+    assert report["proofs"]["async_oracle_jobs"]["durable_completed_jobs"] == 4
     assert report["proofs"]["latency_metrics"]["oracle_metric_status"] == "needs_live_oracle_or_sidecar_probe"
     assert report["live_probe_required_for_completion"]["status"] == "needs_live_probe"
     assert report["live_probe_required_for_completion"]["missing_gates"] == [
@@ -315,6 +327,8 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:async_oracle_smoke_ok" in issues
     assert "missing_async_oracle_coverage:four_jobs_ran_concurrently" in issues
     assert "missing_async_oracle_coverage:local_turn_while_jobs_running" in issues
+    assert "missing_async_oracle_coverage:status_turn_while_jobs_running" in issues
+    assert "missing_async_oracle_coverage:fifth_job_queued_and_started_after_capacity_freed" in issues
     assert "missing_async_oracle_coverage:one_job_cancelled_while_others_completed" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_attempted" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_not_spoken" in issues
