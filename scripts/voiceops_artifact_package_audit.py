@@ -1588,6 +1588,11 @@ def _require_markdown_tokens(label: str, markdown: str, tokens: Mapping[str, str
             issues.append(f"{label}:{issue}")
 
 
+def _require_markdown_any_token(label: str, markdown: str, issue: str, tokens: tuple[str, ...], issues: list[str]) -> None:
+    if not any(token in markdown for token in tokens):
+        issues.append(f"{label}:{issue}")
+
+
 def _reject_markdown_tokens(label: str, markdown: str, tokens: Mapping[str, str], issues: list[str]) -> None:
     for issue, token in tokens.items():
         if token in markdown:
@@ -1654,11 +1659,20 @@ def _audit_markdown_consistency(
         closure_markdown,
         {
             "missing_needs_external_evidence": "needs_external_evidence",
-            "missing_artifact_only_safety": "artifact-only; no network I/O",
             "missing_final_package_audit_command": "Final package audit command",
             "missing_package_audit_status_signal": "package_audit.status is pass",
             "missing_package_audit_flag": "--package-audit",
         },
+        issues,
+    )
+    _require_markdown_any_token(
+        "closure_markdown",
+        closure_markdown,
+        "missing_artifact_only_safety",
+        (
+            "artifact-only; no network I/O",
+            "artifact-only; read-only discovery network possible only when explicitly requested",
+        ),
         issues,
     )
     _require_markdown_tokens(

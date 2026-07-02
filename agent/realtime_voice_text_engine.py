@@ -2872,9 +2872,10 @@ def _oracle_job_control_match_job(text: str, jobs: list[dict[str, Any]]) -> dict
         return best[1]
     if len(jobs) == 1:
         return jobs[0]
-    if any(token in text for token in ("that", "this", "current", "latest", "last")) or text.startswith(
-        ("also ", "and also ", "add ", "include ", "tell it ", "ask it ")
-    ):
+    update_fallback = text.startswith(("also ", "and also ", "add ", "include ", "tell it ", "ask it "))
+    if text_terms and not update_fallback:
+        return {}
+    if any(token in text for token in ("that", "this", "current", "latest", "last")) or update_fallback:
         return jobs[-1]
     return {}
 
@@ -2925,11 +2926,23 @@ def _oracle_job_control_terms(text: str) -> set[str]:
         "to",
         "urgent",
     }
-    return {
-        token
-        for token in re.findall(r"[a-z][a-z0-9_-]*", str(text or "").lower())
-        if token not in stop and len(token) > 2
-    }
+    terms: set[str] = set()
+    for token in re.findall(r"[a-z][a-z0-9_-]*", str(text or "").lower()):
+        if token in stop or len(token) <= 2:
+            continue
+        terms.add(token)
+        normalized = _oracle_job_control_normalized_term(token)
+        if normalized and normalized not in stop and len(normalized) > 2:
+            terms.add(normalized)
+    return terms
+
+
+def _oracle_job_control_normalized_term(token: str) -> str:
+    if len(token) > 4 and token.endswith("ies"):
+        return f"{token[:-3]}y"
+    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
 
 
 def _oracle_job_control_label(job: Mapping[str, Any]) -> str:

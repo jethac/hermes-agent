@@ -94,6 +94,35 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert "static_package_consistency_only" in audit_markdown
 
 
+def test_package_audit_accepts_allowlisted_readonly_discovery_safety_summary(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_dir = artifact_root / "voiceops-plan" / "current"
+    for name in ("voiceops-plan-run.json", "readiness-closure-index.json"):
+        payload_path = plan_dir / name
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        payload["safety"]["network_io"] = True
+        payload["safety"]["network_io_scope"] = "allowlisted_read_only_discovery"
+        payload["safety"]["read_only_discovery_run_requested"] = True
+        if isinstance(payload.get("closure_index"), dict):
+            payload["closure_index"]["safety"]["network_io"] = True
+            payload["closure_index"]["safety"]["network_io_scope"] = "allowlisted_read_only_discovery"
+            payload["closure_index"]["safety"]["read_only_discovery_run_requested"] = True
+        _write_json(payload_path, payload)
+    markdown_path = plan_dir / "readiness-closure-index.md"
+    markdown_path.write_text(
+        markdown_path.read_text(encoding="utf-8").replace(
+            "artifact-only; no network I/O",
+            "artifact-only; read-only discovery network possible only when explicitly requested",
+        ),
+        encoding="utf-8",
+    )
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is True
+    assert "closure_markdown:missing_artifact_only_safety" not in report["issues"]
+
+
 def test_package_audit_rejects_discord_loopback_smoke_artifact_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     smoke_path = artifact_root / "voiceops-voice-operator" / "current" / "discord-loopback-smoke.json"
