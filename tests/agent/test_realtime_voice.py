@@ -13934,6 +13934,63 @@ def test_session_persists_durable_async_oracle_job_records():
     assert "secret" not in str(session.durable_oracle_records())
 
 
+def test_session_redacts_durable_async_oracle_record_scalars():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-123"),
+        engine=TextOracleTTSEngine(oracle=FakeOracle()),
+    )
+    test_secret = "sk" + "_test_" + "abcdefghijklmnopqrstuvwxyz"
+    live_secret = "sk" + "_live_" + "abcdefghijklmnopqrstuvwxyz"
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
+            session_id="voice-123",
+            sequence=1,
+            payload={
+                "job_id": "voice-oracle-001",
+                "state": "waiting_for_approval",
+                "approval_reason": f"Approve spend with Authorization: Bearer raw-token and {test_secret}",
+                "approval": {
+                    "approval_id": "approval-123",
+                    "tool_name": "stripe_link_purchase",
+                    "summary": f"Charge uses {live_secret}",
+                    "nested": [{"token": "raw-nested-token"}],
+                },
+            },
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_JOB_COMPLETED,
+            session_id="voice-123",
+            sequence=2,
+            payload={
+                "job_id": "voice-oracle-001",
+                "state": "completed",
+                "result_summary": f"Provider credential {test_secret} created.",
+                "result_text": f"Full provider result includes Authorization: Bearer raw-result-token and {live_secret}.",
+                "result_text_chars": 123,
+            },
+        )
+    )
+
+    records = session.durable_oracle_records()
+    serialized = json.dumps(records, sort_keys=True)
+
+    assert len(records) == 2
+    assert records[0]["payload"]["approval"]["tool_name"] == "stripe_link_purchase"
+    assert records[1]["payload"]["result_text_chars"] == 123
+    assert "Authorization: Bearer ***" in serialized
+    assert "sk_tes" in serialized
+    assert "sk_liv" in serialized
+    assert "raw-token" not in serialized
+    assert "raw-result-token" not in serialized
+    assert "raw-nested-token" not in serialized
+    assert test_secret not in serialized
+    assert live_secret not in serialized
+
+
 def test_session_drops_stale_durable_oracle_records_after_barge_in():
     session = RealtimeVoiceSession(
         RealtimeVoiceSessionConfig(session_id="voice-123"),

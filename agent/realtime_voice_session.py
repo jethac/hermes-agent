@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, AsyncIterator, Dict, List, Mapping, Optional
 
+from agent.redact import redact_sensitive_text
 from agent.realtime_voice import (
     RealtimeVoiceEngine,
     RealtimeVoiceEngineKind,
@@ -335,7 +336,7 @@ class RealtimeVoiceSession:
             self.transcript.committed_oracle_records.append(
                 {
                     "type": event.type.value,
-                    "payload": dict(event.payload),
+                    "payload": _redacted_durable_oracle_payload(event.payload),
                 }
             )
         elif event.type == VoiceEventType.SESSION_ERROR:
@@ -537,6 +538,47 @@ def _durable_record_is_oracle_job_cancelled(record: Mapping[str, Any], job_id: s
         record.get("type") == VoiceEventType.ORACLE_JOB_CANCELLED.value
         and _durable_record_job_id(record) == job_id
     )
+
+
+def _redacted_durable_oracle_payload(payload: Mapping[str, Any]) -> dict:
+    return {
+        str(key): _redacted_durable_oracle_value(value, key=str(key))
+        for key, value in payload.items()
+    }
+
+
+def _redacted_durable_oracle_value(value: Any, *, key: str = "") -> Any:
+    if isinstance(value, Mapping):
+        return _redacted_durable_oracle_payload(value)
+    if isinstance(value, list):
+        return [_redacted_durable_oracle_value(item, key=key) for item in value]
+    if isinstance(value, tuple):
+        return [_redacted_durable_oracle_value(item, key=key) for item in value]
+    if isinstance(value, str):
+        if _durable_oracle_key_is_sensitive(key):
+            return "***"
+        return redact_sensitive_text(value, force=True)
+    return value
+
+
+def _durable_oracle_key_is_sensitive(key: str) -> bool:
+    normalized = str(key or "").strip().lower().replace("-", "_").replace(".", "_")
+    if normalized in {
+        "access_token",
+        "api_key",
+        "apikey",
+        "auth",
+        "authorization",
+        "client_secret",
+        "key_material",
+        "password",
+        "private_key",
+        "refresh_token",
+        "secret",
+        "token",
+    }:
+        return True
+    return normalized.endswith("_token") or normalized.endswith("_secret")
 
 
 def _durable_oracle_record_survives_stale_generation(event: VoiceEvent) -> bool:
