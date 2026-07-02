@@ -29,6 +29,8 @@ class SmokeOracle:
         self.requests: list[Any] = []
         self.releases: dict[str, asyncio.Event] = {}
         self.late_cancelled_output_attempted = False
+        self.close_cancel_entered = asyncio.Event()
+        self.close_release = asyncio.Event()
 
     async def stream_answer_for_request(self, request: Any):
         self.requests.append(request)
@@ -64,6 +66,13 @@ class SmokeOracle:
                 yield "Second sentence. "
                 yield "Third sentence."
                 return
+            if key == "Noncooperative close task":
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    self.close_cancel_entered.set()
+                    await self.close_release.wait()
+                    raise
             try:
                 await self.releases[key].wait()
             except asyncio.CancelledError:
@@ -129,6 +138,7 @@ async def run_smoke() -> dict[str, Any]:
                 "max_concurrent": 4,
                 "queue_limit": 4,
                 "speak_terminal_results": True,
+                "shutdown_timeout_seconds": 0.01,
             },
             metadata={"transport": "smoke"},
         )
@@ -367,7 +377,28 @@ async def run_smoke() -> dict[str, Any]:
             for event in events
         )
     )
-    await engine.close()
+    await send(
+        {
+            "transcript": "run noncooperative close task",
+            "intent": "Noncooperative close task",
+            "intent_source": "smoke_reflex",
+            "route": "defer",
+            "interface_already_said": "Starting close-time task.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_STARTED
+            and event.payload.get("intent") == "Noncooperative close task"
+            for event in events
+        )
+    )
+    close_started_at = time.perf_counter()
+    await asyncio.wait_for(engine.close(), timeout=1.0)
+    close_elapsed_ms = round((time.perf_counter() - close_started_at) * 1000, 3)
+    close_cancel_entered = oracle.close_cancel_entered.is_set()
+    oracle.close_release.set()
+    await asyncio.sleep(0)
     collector.cancel()
     try:
         await collector
@@ -575,9 +606,18 @@ async def run_smoke() -> dict[str, Any]:
         and record.get("payload", {}).get("result_text") == verbose_full_result
         for record in durable_records
     )
+    close_cancelled_events = [
+        event
+        for event in cancelled
+        if event.payload.get("intent") == "Noncooperative close task"
+        and event.payload.get("cancel_reason") == "session closed"
+    ]
+    shutdown_timeout_configured_ms = 10
+    shutdown_bounded_close_observed = close_elapsed_ms < 1000
+    shutdown_forced_cancel_observed = bool(close_cancelled_events) and close_cancel_entered
     report = {
         "ok": (
-            len(started) == 9
+            len(started) == 10
             and len(queued) == 1
             and scheduler_max_running == 4
             and oracle.max_running == 4
@@ -585,7 +625,7 @@ async def run_smoke() -> dict[str, Any]:
             and bool(running_status_commits)
             and len(completed) == 6
             and len(failed) == 1
-            and len(cancelled) == 1
+            and len(cancelled) == 2
             and bool(fifth_job_id)
             and fifth_job_started_after_capacity_freed
             and oracle.late_cancelled_output_attempted
@@ -613,6 +653,8 @@ async def run_smoke() -> dict[str, Any]:
             and verbose_result_committed_bounded
             and verbose_result_commit_marked_truncated
             and verbose_full_result_durable
+            and shutdown_bounded_close_observed
+            and shutdown_forced_cancel_observed
         ),
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": scheduler_max_running,
@@ -625,6 +667,12 @@ async def run_smoke() -> dict[str, Any]:
         "completed_jobs": len(completed),
         "failed_jobs": len(failed),
         "cancelled_jobs": len(cancelled),
+        "shutdown_timeout_configured_ms": shutdown_timeout_configured_ms,
+        "shutdown_close_elapsed_ms": close_elapsed_ms,
+        "shutdown_bounded_close_observed": shutdown_bounded_close_observed,
+        "shutdown_forced_cancel_observed": shutdown_forced_cancel_observed,
+        "shutdown_close_cancel_entered": close_cancel_entered,
+        "shutdown_cancelled_jobs": len(close_cancelled_events),
         "local_turn_committed": bool(local_commits),
         "status_turn_committed": bool(running_status_commits),
         "status_text": str(running_status_commits[-1].payload.get("text") or "") if running_status_commits else "",

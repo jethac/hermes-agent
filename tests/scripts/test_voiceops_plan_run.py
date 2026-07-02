@@ -1465,6 +1465,24 @@ def test_plan_run_readonly_discovery_safety_is_evidence_derived(tmp_path, monkey
     assert provisioning_result["details"]["read_only_discovery_failed_probe_ids"] == []
     assert provisioning_result["details"]["read_only_discovery_missing_probe_ids"] == []
     assert provisioning_result["details"]["read_only_discovery_timed_out_probe_ids"] == []
+    provisioning_gate = next(
+        gate
+        for gate in summary["closure_index"]["remaining_gates"]
+        if gate["gate_id"] == "spend_and_provisioning_preflight"
+    )
+    provisioning_action = next(
+        action
+        for action in summary["closure_index"]["next_actions"]
+        if action["gate_id"] == "spend_and_provisioning_preflight"
+    )
+    provisioning_phase = next(
+        phase
+        for phase in summary["closure_index"]["operator_handoff"]["phases"]
+        if phase["gate_id"] == "spend_and_provisioning_preflight"
+    )
+    assert provisioning_gate["read_only_discovery_status"] == "pass"
+    assert provisioning_action["blocked_by_current_environment"]["needs_read_only_discovery"] is False
+    assert provisioning_phase["blocked_by_current_environment"]["needs_read_only_discovery"] is False
     assert summary["safety"]["network_io"] is True
     assert summary["safety"]["network_io_scope"] == "allowlisted_read_only_discovery"
     assert summary["safety"]["mutating_network_io"] is False

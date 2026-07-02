@@ -309,6 +309,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
     live_gate = gate_by_id["live_discord_voice_operator"]
     provisioning_gate = gate_by_id["spend_and_provisioning_preflight"]
     spark_gate = gate_by_id["local_spark_stack_matrix"]
+    provisioning_needs_read_only_discovery = provisioning_gate.get("read_only_discovery_status") != "pass"
     live_commands = [
         live_gate["collection_commands"]["audit_live_manifest_no_write"],
         live_gate["collection_commands"]["run_doctor_report_and_derive_live_bundle"],
@@ -405,7 +406,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "blocked_by_current_environment": {
                     "missing_cli": blockers.get("provisioning_cli", {}).get("missing", []),
                     "present_cli": blockers.get("provisioning_cli", {}).get("present", []),
-                    "needs_read_only_discovery": provisioning_gate["status"] != "ready",
+                    "needs_read_only_discovery": provisioning_needs_read_only_discovery,
                     "needs_redacted_setup_evidence": provisioning_gate["status"] != "ready",
                 },
                 "first_safe_command": provisioning_commands[0],
@@ -671,9 +672,10 @@ def _build_next_actions(
                 "the separate doctor-report and derivation commands only for debugging or replaying an existing report."
             )
         elif gate_id == "spend_and_provisioning_preflight":
+            needs_read_only_discovery = gate.get("read_only_discovery_status") != "pass"
             blocked_by = {
                 "missing_cli": blockers.get("provisioning_cli", {}).get("missing", []),
-                "needs_read_only_discovery": True,
+                "needs_read_only_discovery": needs_read_only_discovery,
                 "needs_redacted_setup_evidence": True,
             }
             local_audit_command = gate.get("rerun_commands", {}).get("plan_index_dry_audit")
@@ -954,6 +956,19 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "gate_id": "spend_and_provisioning_preflight",
             "gate_ids": provisioning_missing,
             "missing": provisioning_missing,
+            "read_only_discovery_status": provisioning["details"].get("read_only_discovery_status"),
+            "read_only_discovery_failed_probe_ids": provisioning["details"].get(
+                "read_only_discovery_failed_probe_ids",
+                [],
+            ),
+            "read_only_discovery_missing_probe_ids": provisioning["details"].get(
+                "read_only_discovery_missing_probe_ids",
+                [],
+            ),
+            "read_only_discovery_timed_out_probe_ids": provisioning["details"].get(
+                "read_only_discovery_timed_out_probe_ids",
+                [],
+            ),
             "evidence_template": provisioning["artifacts"].get("preflight_evidence_template"),
             "template_artifact": provisioning["artifacts"].get("preflight_evidence_template"),
             "evidence_example": provisioning["artifacts"].get("preflight_evidence_example"),

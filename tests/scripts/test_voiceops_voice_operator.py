@@ -65,11 +65,17 @@ def _async_oracle_smoke_payload() -> dict:
         "worker_overlap_proved": True,
         "worker_overlap_within_capacity": True,
         "noncooperative_cancel_overlap_observed": False,
-        "started_jobs": 9,
+        "started_jobs": 10,
         "queued_jobs": 1,
         "completed_jobs": 6,
         "failed_jobs": 1,
-        "cancelled_jobs": 1,
+        "cancelled_jobs": 2,
+        "shutdown_timeout_configured_ms": 10,
+        "shutdown_close_elapsed_ms": 15.0,
+        "shutdown_bounded_close_observed": True,
+        "shutdown_forced_cancel_observed": True,
+        "shutdown_close_cancel_entered": True,
+        "shutdown_cancelled_jobs": 1,
         "local_turn_committed": True,
         "status_turn_committed": True,
         "status_text": "Oracle jobs: 4 running out of 4, 1 queued. running: Starting smoke task 1.",
@@ -375,8 +381,14 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["verbose_result_commit_marked_truncated"] is True
     assert report["proofs"]["async_oracle_jobs"]["verbose_full_result_durable"] is True
     assert report["proofs"]["async_oracle_jobs"]["verbose_spoken_result"] == "First sentence."
+    assert report["proofs"]["async_oracle_jobs"]["shutdown_timeout_configured_ms"] == 10
+    assert report["proofs"]["async_oracle_jobs"]["shutdown_bounded_close_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["shutdown_forced_cancel_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["shutdown_close_cancel_entered"] is True
+    assert report["proofs"]["async_oracle_jobs"]["shutdown_cancelled_jobs"] == 1
     assert report["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
     assert report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["ok"] is True
+    assert report["async_oracle_acceptance"]["shutdown_timeout_is_bounded"]["ok"] is True
     assert report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_secret_leaked"] is False
     assert report["proofs"]["async_oracle_jobs"]["approval_secret_canary_checked"] is True

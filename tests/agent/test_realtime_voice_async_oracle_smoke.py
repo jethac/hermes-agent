@@ -13,11 +13,16 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["worker_overlap_proved"] is True
     assert report["worker_overlap_within_capacity"] is True
     assert report["noncooperative_cancel_overlap_observed"] is False
-    assert report["started_jobs"] == 9
+    assert report["started_jobs"] == 10
     assert report["queued_jobs"] == 1
     assert report["completed_jobs"] == 6
     assert report["failed_jobs"] == 1
-    assert report["cancelled_jobs"] == 1
+    assert report["cancelled_jobs"] == 2
+    assert report["shutdown_timeout_configured_ms"] == 10
+    assert report["shutdown_bounded_close_observed"] is True
+    assert report["shutdown_forced_cancel_observed"] is True
+    assert report["shutdown_close_cancel_entered"] is True
+    assert report["shutdown_cancelled_jobs"] == 1
     assert report["local_turn_committed"] is True
     assert report["status_turn_committed"] is True
     assert report["status_text"].startswith("Oracle jobs: 4 running out of 4, 1 queued.")

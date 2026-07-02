@@ -121,6 +121,11 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_degraded_marks_active_oracle_jobs_failed",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_session_close_cancels_oracle_jobs_before_session_closed",
     ],
+    "shutdown": [
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_shutdown_forces_cancelled_state_when_worker_ignores_cancel",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_close_bounds_noncooperative_async_oracle_shutdown",
+        "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
+    ],
 }
 
 LIVE_EVIDENCE_REQUIRED_DISCORD_BOOLS = (
@@ -1385,6 +1390,9 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("verbose_result_committed_bounded") is True
         and smoke.get("verbose_result_commit_marked_truncated") is True
         and smoke.get("verbose_full_result_durable") is True,
+        "shutdown_timeout_bounded": smoke.get("shutdown_bounded_close_observed") is True
+        and smoke.get("shutdown_forced_cancel_observed") is True
+        and int(smoke.get("shutdown_cancelled_jobs") or 0) >= 1,
     }
 
 
@@ -1495,6 +1503,13 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             ok=bool(async_oracle_coverage.get("discord_session_cleanup_preserves_oracle_state")),
             evidence="discord_session_cleanup_smoke_plus_focused_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["discord_session"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "shutdown_timeout_is_bounded": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("shutdown_timeout_bounded")),
+            evidence="async_oracle_smoke_plus_shutdown_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["shutdown"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
@@ -1629,6 +1644,12 @@ def build_voice_operator_report(
             "completed_jobs": async_oracle_smoke.get("completed_jobs"),
             "failed_jobs": async_oracle_smoke.get("failed_jobs"),
             "cancelled_jobs": async_oracle_smoke.get("cancelled_jobs"),
+            "shutdown_timeout_configured_ms": async_oracle_smoke.get("shutdown_timeout_configured_ms"),
+            "shutdown_close_elapsed_ms": async_oracle_smoke.get("shutdown_close_elapsed_ms"),
+            "shutdown_bounded_close_observed": bool(async_oracle_smoke.get("shutdown_bounded_close_observed")),
+            "shutdown_forced_cancel_observed": bool(async_oracle_smoke.get("shutdown_forced_cancel_observed")),
+            "shutdown_close_cancel_entered": bool(async_oracle_smoke.get("shutdown_close_cancel_entered")),
+            "shutdown_cancelled_jobs": async_oracle_smoke.get("shutdown_cancelled_jobs"),
             "local_turn_committed": bool(async_oracle_smoke.get("local_turn_committed")),
             "status_turn_committed": bool(async_oracle_smoke.get("status_turn_committed")),
             "status_text": async_oracle_smoke.get("status_text"),
