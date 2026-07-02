@@ -1391,6 +1391,48 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Log Discord KAME realtime voice provider latency spans",
         "category": "discord",
     },
+    "discord.realtime_voice.oracle_jobs.enabled": {
+        "type": "boolean",
+        "description": "Run Discord KAME oracle turns as bounded background jobs instead of blocking the live reflex",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_jobs.max_concurrent": {
+        "type": "number",
+        "description": "Maximum concurrent Hermes oracle jobs for one Discord realtime voice session",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_jobs.queue_limit": {
+        "type": "number",
+        "description": "Maximum queued Discord KAME oracle jobs accepted while workers are busy",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_jobs.default_priority": {
+        "type": "select",
+        "description": "Default priority for spoken Discord KAME oracle jobs",
+        "options": ["high", "normal", "low"],
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_jobs.overflow_policy": {
+        "type": "select",
+        "description": "Behavior when the Discord KAME oracle job queue is full",
+        "options": ["queue", "reject"],
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_jobs.shutdown_timeout_seconds": {
+        "type": "number",
+        "description": "Seconds to wait for Discord background oracle jobs during voice session shutdown",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_jobs.speak_terminal_results": {
+        "type": "boolean",
+        "description": "Speak concise completed or failed Discord oracle job results when still relevant",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_jobs.audit_ledger_path": {
+        "type": "text",
+        "description": "Optional JSONL path for redacted Discord VoiceOps oracle-job lifecycle audit events",
+        "category": "discord",
+    },
     "discord.realtime_voice.output_events.caption_aliases": {
         "type": "boolean",
         "description": "Emit assistant.caption.partial/final aliases for Discord realtime voice sessions",
@@ -1603,7 +1645,10 @@ for _k, _v in CONFIG_SCHEMA.items():
         _ordered_schema["model_context_length"] = _mcl_entry
 CONFIG_SCHEMA = _ordered_schema
 for _schema_key, _schema_entry in _SCHEMA_OVERRIDES.items():
-    if _schema_key.startswith("voice.realtime.quality_targets_ms.") and _schema_key not in CONFIG_SCHEMA:
+    if (
+        _schema_key.startswith("voice.realtime.quality_targets_ms.")
+        or _schema_key.startswith("discord.realtime_voice.oracle_jobs.")
+    ) and _schema_key not in CONFIG_SCHEMA:
         CONFIG_SCHEMA[_schema_key] = dict(_schema_entry)
 
 

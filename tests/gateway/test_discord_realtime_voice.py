@@ -65,6 +65,16 @@ def test_discord_realtime_config_derives_reference_sidecar_and_env_token(monkeyp
                         "log_turn_spans": False,
                         "log_provider_spans": True,
                     },
+                    "oracle_jobs": {
+                        "enabled": True,
+                        "max_concurrent": 4,
+                        "queue_limit": 12,
+                        "default_priority": "high",
+                        "overflow_policy": "reject",
+                        "shutdown_timeout_seconds": 3.5,
+                        "speak_terminal_results": False,
+                        "audit_ledger_path": "artifacts/voiceops/oracle-jobs.jsonl",
+                    },
                 },
             },
             "discord": {
@@ -86,6 +96,68 @@ def test_discord_realtime_config_derives_reference_sidecar_and_env_token(monkeyp
     assert cfg["routing"]["allow_local_greetings"] is False
     assert cfg["routing"]["local_confidence_threshold"] == 0.9
     assert cfg["metrics"]["log_turn_spans"] is False
+    assert cfg["oracle_jobs"] == {
+        "enabled": True,
+        "max_concurrent": 4,
+        "queue_limit": 12,
+        "default_priority": "high",
+        "overflow_policy": "reject",
+        "shutdown_timeout_seconds": 3.5,
+        "speak_terminal_results": False,
+        "audit_ledger_path": "artifacts/voiceops/oracle-jobs.jsonl",
+    }
+
+
+def test_discord_realtime_config_overrides_shared_oracle_jobs(monkeypatch):
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    monkeypatch.delenv("HERMES_REALTIME_VOICE_SIDECAR_URL", raising=False)
+    monkeypatch.delenv("HERMES_REALTIME_VOICE_SIDECAR_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {
+            "voice": {
+                "realtime": {
+                    "enabled": True,
+                    "sidecar_base_url": "http://127.0.0.1:8877",
+                    "oracle_jobs": {
+                        "enabled": True,
+                        "max_concurrent": 4,
+                        "queue_limit": 16,
+                        "default_priority": "normal",
+                        "overflow_policy": "queue",
+                        "shutdown_timeout_seconds": 2.0,
+                        "speak_terminal_results": True,
+                        "audit_ledger_path": "artifacts/shared.jsonl",
+                    },
+                },
+            },
+            "discord": {
+                "realtime_voice": {
+                    "oracle_jobs": {
+                        "max_concurrent": 2,
+                        "shutdown_timeout_seconds": 0.75,
+                        "audit_ledger_path": "artifacts/discord.jsonl",
+                    },
+                },
+            },
+        },
+    )
+    monkeypatch.setattr("hermes_cli.config.load_env", lambda: {})
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    cfg = adapter._load_realtime_voice_config()
+
+    assert cfg["oracle_jobs"] == {
+        "enabled": True,
+        "max_concurrent": 2,
+        "queue_limit": 16,
+        "default_priority": "normal",
+        "overflow_policy": "queue",
+        "shutdown_timeout_seconds": 0.75,
+        "speak_terminal_results": True,
+        "audit_ledger_path": "artifacts/discord.jsonl",
+    }
 
 
 def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatch):

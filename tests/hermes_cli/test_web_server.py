@@ -3291,6 +3291,17 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.shutdown_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.speak_terminal_results"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.audit_ledger_path"]["type"] == "text"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.enabled"]["type"] == "boolean"
+        assert "background jobs" in CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.enabled"]["description"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.max_concurrent"]["type"] == "number"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.queue_limit"]["type"] == "number"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.default_priority"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.default_priority"]["options"] == ["high", "normal", "low"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.overflow_policy"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.overflow_policy"]["options"] == ["queue", "reject"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.shutdown_timeout_seconds"]["type"] == "number"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.speak_terminal_results"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.audit_ledger_path"]["type"] == "text"
         assert CONFIG_SCHEMA["voice.realtime.output_events.caption_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.output_events.audio_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"

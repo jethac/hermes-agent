@@ -3386,6 +3386,16 @@ class DiscordAdapter(BasePlatformAdapter):
                 "log_turn_spans": True,
                 "log_provider_spans": True,
             },
+            "oracle_jobs": {
+                "enabled": False,
+                "max_concurrent": 1,
+                "queue_limit": 16,
+                "default_priority": "normal",
+                "overflow_policy": "queue",
+                "shutdown_timeout_seconds": 2.0,
+                "speak_terminal_results": True,
+                "audit_ledger_path": "",
+            },
             "output_events": {
                 "caption_aliases": False,
                 "audio_aliases": False,
