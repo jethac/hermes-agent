@@ -1859,6 +1859,7 @@ async def run_smoke() -> dict[str, Any]:
     shutdown_bounded_close_observed = close_elapsed_ms < 1000
     shutdown_forced_cancel_observed = bool(close_cancelled_events) and close_cancel_entered
     report = {
+        "kind": "async_oracle_smoke",
         "ok": (
             len(started) == 10
             and len(queued) == 1

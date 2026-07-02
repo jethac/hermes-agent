@@ -64,6 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Require at least this many report files/runs when validating --alpha evidence",
     )
     parser.add_argument(
+        "--require-async-oracle-smoke",
+        action="store_true",
+        help="With --alpha, require a passing async_oracle_smoke proof entry",
+    )
+    parser.add_argument(
         "--apply-production-evidence",
         action="store_true",
         help=(
@@ -82,15 +87,25 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
+    if args.require_async_oracle_smoke and not args.alpha:
+        print(
+            "Realtime voice smoke report failed: --require-async-oracle-smoke requires --alpha",
+            file=sys.stderr,
+        )
+        return 1
     runs = [(report, load_realtime_voice_smoke_report(report)) for report in args.report]
     if args.alpha:
         if len(runs) == 1 and args.min_runs <= 1 and not args.apply_production_evidence:
-            issues = validate_realtime_voice_alpha_report(runs[0][1])
+            issues = validate_realtime_voice_alpha_report(
+                runs[0][1],
+                require_async_oracle_smoke=bool(args.require_async_oracle_smoke),
+            )
         else:
             issues = validate_realtime_voice_alpha_report_runs(
                 runs,
                 min_runs=args.min_runs,
                 allow_loopback_validation=not args.apply_production_evidence,
+                require_async_oracle_smoke=bool(args.require_async_oracle_smoke),
             )
     elif args.discord_live_probe:
         entries = [entry for _report, report_entries in runs for entry in report_entries]

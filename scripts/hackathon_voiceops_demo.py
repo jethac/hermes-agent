@@ -756,6 +756,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "lint_evidence": "no_write_spark_evidence_lint",
                     "dgx_eval": "requires_dgx_spark_local_benchmark_collection",
                     "refresh_source_hashes": "local_file_hashing_only",
+                    "matrix_only": "local_matrix_generation_no_supplied_evidence",
                     "with_evidence": "local_benchmark_evidence_validation",
                     "plan_index": "local_reindex_only",
                 },
@@ -779,6 +780,49 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                 ],
                 "active_model_path": spark_path,
             },
+        ],
+        "review_phases": [
+            {
+                "order": 1,
+                "phase_id": "multi_channel_policy_review",
+                "milestone": "milestone_3_multi_channel_policy",
+                "status": "pending_human_review",
+                "changes_readiness_by_itself": False,
+                "changes_policy_by_itself": False,
+                "real_egress_enabled": False,
+                "can_run_here_now": True,
+                "blocked_by_current_environment": {},
+                "review_artifacts": [
+                    "artifacts/voiceops-channel-policy/current/channel-policy.json",
+                    "artifacts/voiceops-channel-policy/current/channel-policy.md",
+                    "artifacts/voiceops-channel-policy/current/channel-policy-review.json",
+                    "artifacts/voiceops-channel-policy/current/channel-policy-review.md",
+                ],
+                "first_safe_command": (
+                    "uv run python scripts/voiceops_channel_policy.py "
+                    "--output-dir artifacts/voiceops-channel-policy/current"
+                ),
+                "review_command": (
+                    "uv run python scripts/voiceops_channel_policy.py "
+                    "--output-dir artifacts/voiceops-channel-policy/current"
+                ),
+                "required_review": [
+                    "business_owner",
+                    "channel_owner",
+                    "privacy_reviewer",
+                    "security_owner",
+                ],
+                "success_check": (
+                    "channel-policy-review.json remains artifact_only, real_egress_enabled is false, "
+                    "and a separate future operator decision records explicit approval before any WhatsApp, SMS, or phone egress"
+                ),
+                "must_not": [
+                    "treat pending_human_review as approval",
+                    "enable WhatsApp, SMS, phone, or customer-visible Discord egress from this artifact alone",
+                    "send outbound messages or place calls from the policy generator",
+                    "mark real_egress_enabled true without a separate operator decision artifact",
+                ],
+            }
         ],
         "final_reindex_command": (
             "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts "

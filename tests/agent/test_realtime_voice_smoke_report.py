@@ -212,8 +212,59 @@ def _add_kame_route_evidence(report):
     return report
 
 
+def _valid_async_oracle_smoke_entry():
+    return {
+        "kind": "async_oracle_smoke",
+        "ok": True,
+        "scenario": "async_kame_oracle_jobs_fake",
+        "max_worker_overlap": 4,
+        "worker_overlap_proved": True,
+        "worker_overlap_within_capacity": True,
+        "fifth_job_queued": True,
+        "fifth_job_started_after_capacity_freed": True,
+        "queued_job_update_observed": True,
+        "queued_update_reached_oracle": True,
+        "spoken_cancel_control_observed": True,
+        "queued_cancel_smoke_ok": True,
+        "completed_result_status_visible": True,
+        "failed_job_reported": True,
+        "verbose_result_spoken_bounded": True,
+        "verbose_full_result_durable": True,
+    }
+
+
 def test_realtime_voice_alpha_report_accepts_required_en_ja_smokes():
     assert validate_realtime_voice_alpha_report(_valid_alpha_report()) == []
+
+
+def test_realtime_voice_alpha_report_requires_async_oracle_smoke_when_requested():
+    issues = validate_realtime_voice_alpha_report(
+        _valid_alpha_report(),
+        require_async_oracle_smoke=True,
+    )
+
+    assert any("missing async oracle smoke proof" in issue.format() for issue in issues)
+
+
+def test_realtime_voice_alpha_report_accepts_async_oracle_smoke_when_requested():
+    report = [*_valid_alpha_report(), _valid_async_oracle_smoke_entry()]
+
+    assert validate_realtime_voice_alpha_report(report, require_async_oracle_smoke=True) == []
+
+
+def test_realtime_voice_alpha_report_rejects_weak_async_oracle_smoke():
+    weak_async_smoke = _valid_async_oracle_smoke_entry()
+    weak_async_smoke["max_worker_overlap"] = 3
+    weak_async_smoke["queued_update_reached_oracle"] = False
+    report = [*_valid_alpha_report(), weak_async_smoke]
+
+    issues = validate_realtime_voice_alpha_report(
+        report,
+        require_async_oracle_smoke=True,
+    )
+
+    assert any("four concurrent oracle jobs" in issue.format() for issue in issues)
+    assert any("queued_update_reached_oracle" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_alpha_report_accepts_manifest_entry():
@@ -905,6 +956,20 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     assert "local=1 defer=1 oracle_direct=1 reject_or_clarify=1" in output
     assert "kame_reflex: total=4 native_audio=4 vllm=4 fallback=0 sources native_audio=4 providers vllm=4" in output
     assert "stack unknown_engine|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model" in output
+
+
+def test_realtime_voice_report_cli_requires_async_oracle_smoke_when_requested(tmp_path, capsys):
+    path = tmp_path / "voice-smoke.json"
+    path.write_text(json.dumps(_valid_alpha_report(), ensure_ascii=False), encoding="utf-8")
+
+    assert realtime_voice_report_main([str(path), "--alpha", "--require-async-oracle-smoke"]) == 1
+    assert "missing async oracle smoke proof" in capsys.readouterr().err
+
+    report = [*_valid_alpha_report(), _valid_async_oracle_smoke_entry()]
+    path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+
+    assert realtime_voice_report_main([str(path), "--alpha", "--require-async-oracle-smoke"]) == 0
+    assert "Realtime voice smoke report OK" in capsys.readouterr().out
 
 
 def test_realtime_voice_report_cli_enforces_minimum_alpha_runs(tmp_path, capsys):

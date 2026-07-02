@@ -165,6 +165,7 @@ def validate_realtime_voice_alpha_report_runs(
     min_runs: int = 1,
     max_collected_age_days: int | None = None,
     allow_loopback_validation: bool = True,
+    require_async_oracle_smoke: bool = False,
     now: datetime | None = None,
 ) -> list[RealtimeVoiceSmokeReportIssue]:
     issues: list[RealtimeVoiceSmokeReportIssue] = []
@@ -181,7 +182,10 @@ def validate_realtime_voice_alpha_report_runs(
             )
         )
     for label, entries in runs:
-        for issue in validate_realtime_voice_alpha_report(entries):
+        for issue in validate_realtime_voice_alpha_report(
+            entries,
+            require_async_oracle_smoke=require_async_oracle_smoke,
+        ):
             issues.append(
                 RealtimeVoiceSmokeReportIssue(
                     issue.kind,
@@ -416,6 +420,7 @@ def validate_realtime_voice_smoke_report(
     require_protocol: bool = True,
     require_manifest: bool = False,
     require_alpha_targets: bool = False,
+    require_async_oracle_smoke: bool = False,
 ) -> list[RealtimeVoiceSmokeReportIssue]:
     issues: list[RealtimeVoiceSmokeReportIssue] = []
     by_kind = _entries_by_kind(entries)
@@ -447,11 +452,20 @@ def validate_realtime_voice_smoke_report(
     barge_in_entries = by_kind.get("barge_in", [])
     session_turn_entries = by_kind.get("session_turn", [])
     audio_session_entries = by_kind.get("audio_session", [])
+    async_oracle_entries = by_kind.get("async_oracle_smoke", [])
     if require_alpha_targets and manifest_entries and _manifest_entry_is_kame_reflex(manifest_entries[0]):
         kame_route_entries = [*session_turn_entries, *audio_session_entries]
         issues.extend(_validate_kame_route_evidence(kame_route_entries))
         issues.extend(_validate_kame_reflex_provenance(kame_route_entries))
         issues.extend(_validate_kame_capability_honesty(entries))
+    if require_async_oracle_smoke and not async_oracle_entries:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "async_oracle_smoke",
+                "missing async oracle smoke proof",
+                "async_oracle_smoke",
+            )
+        )
 
     issues.extend(_validate_required_entries(
         entries=audio_entries,
@@ -544,6 +558,8 @@ def validate_realtime_voice_smoke_report(
                 else None
             ),
         ))
+    for entry in async_oracle_entries:
+        issues.extend(_validate_async_oracle_smoke_entry(entry))
 
     return issues
 
@@ -704,7 +720,11 @@ def _assistant_output_texts(entry: Mapping[str, Any]) -> list[tuple[str, str]]:
     return texts
 
 
-def validate_realtime_voice_alpha_report(entries: Sequence[Mapping[str, Any]]) -> list[RealtimeVoiceSmokeReportIssue]:
+def validate_realtime_voice_alpha_report(
+    entries: Sequence[Mapping[str, Any]],
+    *,
+    require_async_oracle_smoke: bool = False,
+) -> list[RealtimeVoiceSmokeReportIssue]:
     return validate_realtime_voice_smoke_report(
         entries,
         required_audio_fixtures=ALPHA_REQUIRED_AUDIO_FIXTURES,
@@ -715,6 +735,7 @@ def validate_realtime_voice_alpha_report(entries: Sequence[Mapping[str, Any]]) -
         require_protocol=True,
         require_manifest=True,
         require_alpha_targets=True,
+        require_async_oracle_smoke=require_async_oracle_smoke,
     )
 
 
@@ -1403,6 +1424,53 @@ def _validate_barge_in_entry(
             RealtimeVoiceSmokeReportIssue(
                 "barge_in",
                 f"barge_in_ack_ms {ack_ms} exceeds target {target_ms}",
+                identifier,
+            )
+        )
+    return issues
+
+
+def _validate_async_oracle_smoke_entry(
+    entry: Mapping[str, Any],
+) -> list[RealtimeVoiceSmokeReportIssue]:
+    identifier = str(entry.get("scenario") or entry.get("kind") or "async_oracle_smoke")
+    issues = _validate_common_ok(entry, kind="async_oracle_smoke", identifier=identifier)
+    if str(entry.get("scenario") or "") != "async_kame_oracle_jobs_fake":
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "async_oracle_smoke",
+                "unexpected async oracle smoke scenario",
+                identifier,
+            )
+        )
+    required_true_fields = (
+        "worker_overlap_proved",
+        "worker_overlap_within_capacity",
+        "fifth_job_queued",
+        "fifth_job_started_after_capacity_freed",
+        "queued_job_update_observed",
+        "queued_update_reached_oracle",
+        "spoken_cancel_control_observed",
+        "queued_cancel_smoke_ok",
+        "completed_result_status_visible",
+        "failed_job_reported",
+        "verbose_result_spoken_bounded",
+        "verbose_full_result_durable",
+    )
+    for field in required_true_fields:
+        if entry.get(field) is not True:
+            issues.append(
+                RealtimeVoiceSmokeReportIssue(
+                    "async_oracle_smoke",
+                    f"missing required async proof {field}",
+                    identifier,
+                )
+            )
+    if int(entry.get("max_worker_overlap") or 0) < 4:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "async_oracle_smoke",
+                "max_worker_overlap did not prove four concurrent oracle jobs",
                 identifier,
             )
         )
