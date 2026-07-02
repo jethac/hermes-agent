@@ -202,6 +202,10 @@ def default_pending_approvals() -> list[PendingApproval]:
         "link-cli spend-request create --merchant-name ExampleOps "
         "--merchant-url https://example.invalid --amount 4900 --request-approval"
     )
+    whatsapp_command = (
+        "hermes voiceops channel enable --surface whatsapp_business "
+        "--dry-run --require-approval"
+    )
     return [
         PendingApproval(
             approval_id="vops-m5-approval-001",
@@ -252,6 +256,31 @@ def default_pending_approvals() -> list[PendingApproval]:
             ),
             execution_status="not_executed",
             operator_next_step="Review the Link spend request details and budget impact before approving any spend.",
+        ),
+        PendingApproval(
+            approval_id="vops-m5-approval-003",
+            action_id="enable-whatsapp-egress",
+            provider="whatsapp-cloud",
+            title="Enable WhatsApp Business fallback egress",
+            category="channel_egress",
+            requester_surface="discord_voice",
+            risk_level="medium",
+            budget_impact_cents=0,
+            default_decision="hold_for_operator",
+            status="pending",
+            ttl_minutes=30,
+            approval_artifact="channel-policy.json",
+            command=whatsapp_command,
+            approval_contract=_approval_contract(
+                approval_id="vops-m5-approval-003",
+                action_id="enable-whatsapp-egress",
+                command=whatsapp_command,
+                approval_artifact="channel-policy.json",
+                required_preflight_gates=["channel_policy_review", "operator_confirmation"],
+                ttl_minutes=30,
+            ),
+            execution_status="not_executed",
+            operator_next_step="Review channel-policy.json and confirm recipient policy before enabling WhatsApp egress.",
         ),
     ]
 
@@ -330,7 +359,7 @@ def default_planned_services() -> list[ServiceState]:
             approval_required=True,
             notes="Customer-visible sends require a separate approval.",
             artifact_ref="channel-policy.json",
-            approval_ref=None,
+            approval_ref="vops-m5-approval-003",
             execution_status="not_executed",
             operator_next_step="Review channel-policy.json before any WhatsApp egress is enabled.",
         ),
@@ -509,6 +538,7 @@ def validate_operator_state(state: dict[str, Any]) -> list[str]:
         issues.append("invalid_approval_contracts")
         approval_contracts = {}
     approval_ids = [str(approval.get("approval_id") or "") for approval in pending_approvals]
+    approval_id_set = set(approval_ids)
     duplicate_approvals = sorted(approval_id for approval_id in set(approval_ids) if approval_ids.count(approval_id) > 1)
     if duplicate_approvals:
         issues.append(f"duplicate_pending_approval_ids:{','.join(duplicate_approvals)}")
@@ -631,6 +661,12 @@ def validate_operator_state(state: dict[str, Any]) -> list[str]:
             issues.append(f"invalid_service_status:{service_id}:{status}")
         if provider in APPROVAL_REQUIRED_SERVICE_PROVIDERS and service.get("approval_required") is not True:
             issues.append(f"external_service_missing_approval:{service_id}")
+        if service.get("approval_required") is True:
+            approval_ref = service.get("approval_ref")
+            if not approval_ref:
+                issues.append(f"external_service_missing_approval_ref:{service_id}")
+            elif str(approval_ref) not in approval_id_set:
+                issues.append(f"external_service_unknown_approval_ref:{service_id}:{approval_ref}")
         if service.get("external") is True and status == "provisioned":
             issues.append(f"external_service_claimed_provisioned:{service_id}")
         if service.get("external") is True:

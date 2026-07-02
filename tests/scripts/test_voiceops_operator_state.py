@@ -64,10 +64,11 @@ def test_operator_state_contains_required_dashboard_sections_and_boundaries():
 
     assert state["pending_approvals"]
     assert set(state["approval_contracts"]) == {approval["action_id"] for approval in state["pending_approvals"]}
+    approval_ids = {approval["approval_id"] for approval in state["pending_approvals"]}
     for approval in state["pending_approvals"]:
         assert approval["action_id"]
         assert approval["provider"]
-        assert approval["approval_artifact"] == "nemoclaw-action-packet.json"
+        assert approval["approval_artifact"] in {"channel-policy.json", "nemoclaw-action-packet.json"}
         assert approval["command"]
         assert approval["execution_status"] == "not_executed"
         assert approval["operator_next_step"]
@@ -88,6 +89,8 @@ def test_operator_state_contains_required_dashboard_sections_and_boundaries():
         assert service["artifact_ref"]
         if service["external"]:
             assert service["execution_status"] == "not_executed"
+        if service["approval_required"]:
+            assert service["approval_ref"] in approval_ids
     assert state["provisioned_services"]
     assert {task["domain"] for task in state["upcoming_tasks"]} == {"household", "business"}
     assert len(state["pending_approvals"]) <= state["bounds"]["max_pending_approvals"]
@@ -135,6 +138,9 @@ def test_operator_state_validates_safety_and_bounds():
     ]
     for approval in over_bounds["pending_approvals"]:
         _sync_approval_contract(over_bounds, approval)
+    for service in over_bounds["planned_services"]:
+        if service["approval_required"]:
+            service["approval_ref"] = "vops-m5-extra-00"
     assert validate_operator_state(over_bounds) == ["bounds_exceeded:pending_approvals"]
 
     missing_business = json.loads(json.dumps(state))
@@ -244,6 +250,18 @@ def test_operator_state_validates_audit_parentage_and_service_claims():
     external_planned_without_approval["planned_services"][0]["approval_required"] = False
     assert validate_operator_state(external_planned_without_approval) == [
         "external_service_missing_approval:stripe_projects_voiceops_budget"
+    ]
+
+    external_planned_without_approval_ref = json.loads(json.dumps(state))
+    external_planned_without_approval_ref["planned_services"][0]["approval_ref"] = None
+    assert validate_operator_state(external_planned_without_approval_ref) == [
+        "external_service_missing_approval_ref:stripe_projects_voiceops_budget"
+    ]
+
+    external_planned_with_unknown_approval_ref = json.loads(json.dumps(state))
+    external_planned_with_unknown_approval_ref["planned_services"][0]["approval_ref"] = "missing-approval"
+    assert validate_operator_state(external_planned_with_unknown_approval_ref) == [
+        "external_service_unknown_approval_ref:stripe_projects_voiceops_budget:missing-approval"
     ]
 
     external_claimed_provisioned = json.loads(json.dumps(state))
