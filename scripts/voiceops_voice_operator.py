@@ -2167,11 +2167,30 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         issues.append("progressive_tool_disclosure:unexpected_visible_tools")
     if sorted(tool_disclosure_smoke.get("hidden_core_tool_names") or []) != ["read_file", "terminal"]:
         issues.append("progressive_tool_disclosure:core_tools_not_hidden")
+    smoke_tool_refs = tool_disclosure_smoke.get("external_test_refs") if isinstance(tool_disclosure_smoke, Mapping) else None
+    proof_tool_refs = tool_disclosure.get("external_test_refs") if isinstance(tool_disclosure, Mapping) else None
+    if not isinstance(smoke_tool_refs, list) or not smoke_tool_refs:
+        issues.append("progressive_tool_disclosure:missing_external_test_refs")
+    else:
+        for test_ref in smoke_tool_refs:
+            if not _acceptance_test_ref_resolves(test_ref):
+                issues.append(f"progressive_tool_disclosure:invalid_external_test_ref:{test_ref}")
+    if not isinstance(proof_tool_refs, list) or not proof_tool_refs:
+        issues.append("progressive_tool_disclosure:missing_proof_external_test_refs")
+    elif smoke_tool_refs != proof_tool_refs:
+        issues.append("progressive_tool_disclosure:stale_proof_external_test_refs")
+    else:
+        for test_ref in proof_tool_refs:
+            if not _acceptance_test_ref_resolves(test_ref):
+                issues.append(f"progressive_tool_disclosure:invalid_proof_external_test_ref:{test_ref}")
     async_oracle_acceptance = report.get("async_oracle_acceptance", {})
     if not isinstance(async_oracle_acceptance, Mapping) or not async_oracle_acceptance:
         issues.append("missing_async_oracle_acceptance_matrix")
     else:
         recomputed_async_oracle_acceptance = _async_oracle_acceptance_matrix(recomputed_async_oracle_coverage)
+        for key in async_oracle_acceptance:
+            if key not in recomputed_async_oracle_acceptance:
+                issues.append(f"unexpected_async_oracle_acceptance:{key}")
         for key, recomputed_value in recomputed_async_oracle_acceptance.items():
             value = async_oracle_acceptance.get(key)
             if recomputed_value.get("ok") is not True:

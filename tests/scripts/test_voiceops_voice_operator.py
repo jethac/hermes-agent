@@ -695,6 +695,49 @@ def test_voice_operator_validation_rejects_missing_visible_queued_update_status(
     assert "missing_async_oracle_acceptance:job_control_updates_reach_oracle" in issues
 
 
+def test_voice_operator_validation_rejects_missing_tool_disclosure_test_refs():
+    report = _voice_operator_report()
+    report["tool_disclosure_smoke"]["external_test_refs"] = []
+    report["proofs"]["tool_disclosure"]["external_test_refs"] = []
+
+    issues = validate_voice_operator_report(report)
+
+    assert "progressive_tool_disclosure:missing_external_test_refs" in issues
+    assert "progressive_tool_disclosure:missing_proof_external_test_refs" in issues
+
+
+def test_voice_operator_validation_rejects_stale_tool_disclosure_test_ref():
+    report = _voice_operator_report()
+    report["tool_disclosure_smoke"]["external_test_refs"] = [
+        "tests/tools/test_tool_search.py::TestAssembly::test_missing_tool_search_contract"
+    ]
+    report["proofs"]["tool_disclosure"]["external_test_refs"] = report["tool_disclosure_smoke"][
+        "external_test_refs"
+    ]
+
+    issues = validate_voice_operator_report(report)
+
+    assert (
+        "progressive_tool_disclosure:invalid_external_test_ref:"
+        "tests/tools/test_tool_search.py::TestAssembly::test_missing_tool_search_contract"
+    ) in issues
+    assert (
+        "progressive_tool_disclosure:invalid_proof_external_test_ref:"
+        "tests/tools/test_tool_search.py::TestAssembly::test_missing_tool_search_contract"
+    ) in issues
+
+
+def test_voice_operator_validation_rejects_tool_disclosure_proof_ref_mismatch():
+    report = _voice_operator_report()
+    report["proofs"]["tool_disclosure"]["external_test_refs"] = [
+        "tests/tools/test_tool_search.py::TestAssembly::test_defer_core_all_hides_core_behind_bridge"
+    ]
+
+    issues = validate_voice_operator_report(report)
+
+    assert "progressive_tool_disclosure:stale_proof_external_test_refs" in issues
+
+
 def test_voice_operator_validation_rejects_completed_result_missing_from_status_view():
     report = _voice_operator_report()
     report["async_oracle_smoke"]["completed_result_status_visible"] = False
@@ -735,6 +778,24 @@ def test_voice_operator_validation_rejects_missing_shutdown_timeout_acceptance_r
     issues = validate_voice_operator_report(report)
 
     assert "missing_async_oracle_acceptance:shutdown_timeout_is_bounded" in issues
+
+
+def test_voice_operator_validation_rejects_unexpected_async_acceptance_row():
+    report = _voice_operator_report()
+    report["async_oracle_acceptance"]["unverified_magic_voice_capability"] = {
+        "ok": True,
+        "evidence": "invented",
+        "verification_mode": "loopback_smoke_plus_focused_tests",
+        "runtime_verified_by_this_report": True,
+        "test_refs": [
+            "tests/scripts/test_voiceops_voice_operator.py::test_voice_operator_validation_accepts_current_async_acceptance_test_refs"
+        ],
+        "test_ref_count": 1,
+    }
+
+    issues = validate_voice_operator_report(report)
+
+    assert "unexpected_async_oracle_acceptance:unverified_magic_voice_capability" in issues
 
 
 def test_voice_operator_validation_rejects_static_acceptance_without_test_refs():
