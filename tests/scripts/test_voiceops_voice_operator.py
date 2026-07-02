@@ -2000,6 +2000,19 @@ def test_live_evidence_requires_sidecar_production_provenance_and_fallback_reaso
     assert result["sidecar_session"]["ok"] is False
 
 
+def test_live_evidence_rejects_fatal_kame_reflex_fallback_reason():
+    evidence = _complete_live_evidence()
+    evidence["sidecar_session"]["fallback_reason"] = (
+        "transcription failed: KAME audio reflex failed and ASR reflex fallback is disabled: timed out"
+    )
+
+    result = validate_live_probe_evidence(evidence)
+
+    assert result["overall_status"] == "partial_live_evidence"
+    assert "sidecar_session:fatal_kame_reflex_fallback" in result["issues"]
+    assert result["sidecar_session"]["ok"] is False
+
+
 def test_live_evidence_requires_discord_and_sidecar_session_start_latencies():
     evidence = _complete_live_evidence()
     evidence["discord_live_probe"]["latency_metrics_ms"].pop("connect_ms")

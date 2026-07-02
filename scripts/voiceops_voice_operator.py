@@ -210,6 +210,14 @@ LIVE_EVIDENCE_DENIAL_PHRASES = (
     "i only process typed text",
 )
 
+FATAL_KAME_REFLEX_FALLBACK_PHRASES = (
+    "asr reflex fallback is disabled",
+    "kame audio reflex failed",
+    "kame audio reflex unavailable",
+    "kame_audio_reflex_failed",
+    "kame_audio_reflex_unavailable",
+)
+
 SECRET_VALUE_RE = re.compile(
     r"(?i)(sk[-_][a-z0-9]{8,}|pk[-_][a-z0-9]{8,}|rk[-_][a-z0-9]{8,}|"
     r"whsec_[a-z0-9]{8,}|xox[aboprs]-[a-z0-9-]{8,}|gh[pousr]_[a-z0-9_]{8,}|"
@@ -499,6 +507,11 @@ def _looks_like_forbidden_live_evidence_field(path: str) -> bool:
 def _looks_like_voice_denial_text(value: str) -> bool:
     lowered = value.lower()
     return any(phrase in lowered for phrase in LIVE_EVIDENCE_DENIAL_PHRASES)
+
+
+def _looks_like_fatal_kame_reflex_fallback(value: str) -> bool:
+    lowered = value.lower()
+    return any(phrase in lowered for phrase in FATAL_KAME_REFLEX_FALLBACK_PHRASES)
 
 
 def build_live_probe_evidence_template() -> dict[str, Any]:
@@ -1042,10 +1055,15 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
     if str(sidecar.get("sidecar_mode") or "").strip() != "production":
         issues.append("sidecar_session:sidecar_mode_not_production")
     fallback_reason = str(sidecar.get("fallback_reason") or "").strip()
+    fatal_kame_reflex_fallback = bool(
+        fallback_reason and _looks_like_fatal_kame_reflex_fallback(fallback_reason)
+    )
     if sidecar.get("fallback_mode_visible") is True and not fallback_reason:
         issues.append("sidecar_session:missing_fallback_reason")
     elif fallback_reason and _looks_secret_or_phone(fallback_reason):
         issues.append("sidecar_session:fallback_reason_secret_or_phone_like_value")
+    if fatal_kame_reflex_fallback:
+        issues.append("sidecar_session:fatal_kame_reflex_fallback")
     sidecar_latency = sidecar.get("latency_metrics_ms") if isinstance(sidecar.get("latency_metrics_ms"), Mapping) else {}
     session_start_ms = _non_negative_number(sidecar_latency.get("session_start_ms"))
     if session_start_ms is None:
@@ -1124,6 +1142,7 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             and str(sidecar.get("sidecar_mode") or "").strip() == "production"
             and (sidecar.get("fallback_mode_visible") is not True or bool(fallback_reason))
             and not _looks_secret_or_phone(fallback_reason)
+            and not fatal_kame_reflex_fallback
             and session_start_ms is not None
             and shutdown_ms is not None
             and sidecar.get("shutdown_bounded") is True
