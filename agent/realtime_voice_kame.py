@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 import json
 import re
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 
 class KameRoute(StrEnum):
@@ -363,6 +363,7 @@ class KameOracleRequest:
     interface_already_said: str = ""
     conversation_summary: str = ""
     priority: str = ""
+    job_updates: Sequence[str] = field(default_factory=tuple)
     max_spoken_sentences: int = 2
     requested_response_style: Mapping[str, Any] = field(default_factory=dict)
     cancellation_token: str = ""
@@ -430,6 +431,8 @@ class KameOracleRequest:
             metadata["kame_conversation_summary"] = self.conversation_summary
         if self.priority:
             metadata["kame_priority"] = self.priority
+        if self.job_updates:
+            metadata["kame_job_updates"] = tuple(_optional_text(update) for update in self.job_updates if _optional_text(update))
         if self.cancellation_token:
             metadata["kame_cancellation_token"] = self.cancellation_token
         if self.reflex_validation_error:
@@ -525,6 +528,7 @@ class KameOracleRequest:
             interface_already_said=_optional_text(payload.get("interface_already_said")) or "",
             conversation_summary=_optional_text(payload.get("conversation_summary")) or "",
             priority=_optional_text(payload.get("priority")) or "",
+            job_updates=_job_updates_from_payload(payload.get("job_updates")),
             max_spoken_sentences=_positive_int(
                 payload.get("max_spoken_sentences")
                 if payload.get("max_spoken_sentences") is not None
@@ -538,6 +542,20 @@ class KameOracleRequest:
             interface_audio_input_fallback=_bool(payload.get("interface_audio_input_fallback"), default=False),
             reflex_provider=_optional_text(payload.get("reflex_provider")) or "",
         )
+
+
+def _job_updates_from_payload(value: object) -> tuple[str, ...]:
+    if isinstance(value, str):
+        text = _optional_text(value)
+        return (text,) if text else ()
+    if not isinstance(value, Sequence) or isinstance(value, (bytes, bytearray)):
+        return ()
+    updates: list[str] = []
+    for item in value:
+        text = _optional_text(item)
+        if text:
+            updates.append(text)
+    return tuple(updates)
 
 
 def apply_kame_routing_policy(

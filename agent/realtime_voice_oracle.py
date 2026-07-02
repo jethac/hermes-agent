@@ -190,6 +190,7 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     reflex_validation_error = _metadata_text(metadata.get("kame_reflex_validation_error"))
     interface_already_said = _metadata_text(metadata.get("kame_interface_already_said"))
     summary = _metadata_text(metadata.get("kame_conversation_summary"))
+    job_updates = _metadata_text_sequence(metadata.get("kame_job_updates"))
     oracle_text_source = _metadata_text(metadata.get("kame_oracle_text_source"))
     interface_input_source = _metadata_text(metadata.get("kame_interface_input_source"))
     interface_audio_input_fallback = metadata.get("kame_interface_audio_input_fallback") is True
@@ -236,6 +237,8 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
         parts.append(f"The voice reflex already told the user: {interface_already_said}")
     if summary:
         parts.append(f"Ephemeral live voice summary: {summary}")
+    if job_updates:
+        parts.append(f"User added updates for this oracle job: {' | '.join(job_updates)}")
     max_sentences = response_style.get("max_sentences") or _metadata_positive_int(metadata.get("max_spoken_sentences"))
     policy = _metadata_text(response_style.get("policy")) or _metadata_text(metadata.get("voice_response_policy"))
     if max_sentences is not None:
@@ -276,6 +279,20 @@ def _metadata_text(value: object) -> str:
     if not isinstance(value, str):
         return ""
     return " ".join(value.split())[:1000]
+
+
+def _metadata_text_sequence(value: object) -> list[str]:
+    if isinstance(value, str):
+        text = _metadata_text(value)
+        return [text] if text else []
+    if not isinstance(value, (list, tuple)):
+        return []
+    items = []
+    for item in value:
+        text = _metadata_text(item)
+        if text:
+            items.append(text)
+    return items[:5]
 
 
 def _metadata_positive_int(value: object) -> Optional[int]:

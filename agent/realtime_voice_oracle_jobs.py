@@ -66,6 +66,7 @@ class OracleJob:
     result_summary: str = ""
     error: str = ""
     cancel_reason: str = ""
+    updates: list[dict[str, Any]] = field(default_factory=list)
     request: Optional[KameOracleRequest] = field(default=None, repr=False, compare=False)
 
     def to_status(self) -> dict[str, Any]:
@@ -85,6 +86,9 @@ class OracleJob:
             status["error"] = self.error
         if self.cancel_reason:
             status["cancel_reason"] = self.cancel_reason
+        if self.updates:
+            status["update_count"] = len(self.updates)
+            status["latest_update"] = str(self.updates[-1].get("text") or "")[:240]
         if self.request is not None:
             status["turn_id"] = self.request.turn_id
         return status
@@ -232,6 +236,34 @@ class OracleJobManager:
             job.updated_at = self._clock()
             if job.state == OracleJobState.QUEUED:
                 self._sort_queue_locked()
+            return job
+
+    async def add_update(
+        self,
+        job_id: str,
+        *,
+        text: str,
+        source: str = "user",
+        update_type: str = "clarification",
+    ) -> OracleJob:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise OracleJobNotFoundError(job_id)
+            if job.state in TERMINAL_STATES:
+                return job
+            update_text = _compact_update_text(text)
+            if not update_text:
+                return job
+            job.updates.append(
+                {
+                    "text": update_text,
+                    "source": str(source or "user")[:40],
+                    "type": str(update_type or "clarification")[:40],
+                    "created_at": self._clock(),
+                }
+            )
+            job.updated_at = self._clock()
             return job
 
     async def status_view(self) -> dict[str, Any]:
@@ -495,3 +527,7 @@ def _normalize_priority(value: object, *, default: str = "normal") -> str:
 
 def _priority_rank(priority: object) -> int:
     return {"high": 0, "normal": 1, "low": 2}.get(_normalize_priority(priority), 1)
+
+
+def _compact_update_text(value: object) -> str:
+    return " ".join(str(value or "").split())[:500]

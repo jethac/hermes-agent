@@ -623,6 +623,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         manager = self._oracle_job_manager
         job_id = str(event.payload.get("job_id") or "").strip()
         priority = str(event.payload.get("priority") or "").strip()
+        update_text = (
+            str(event.payload.get("update_text") or "").strip()
+            or str(event.payload.get("text") or "").strip()
+            or str(event.payload.get("clarification") or "").strip()
+        )
         reason = str(event.payload.get("reason") or "user requested update").strip()
         if manager is None:
             await self._emit(
@@ -634,7 +639,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 },
             )
             return
-        if not job_id or not priority:
+        if not job_id or (not priority and not update_text):
             await self._emit(
                 VoiceEventType.FRONTEND_STATE,
                 {
@@ -646,7 +651,17 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             )
             return
         try:
-            job = await manager.update_priority(job_id, priority=priority)
+            if priority:
+                job = await manager.update_priority(job_id, priority=priority)
+            else:
+                job = await manager.get(job_id)
+            if update_text:
+                job = await manager.add_update(
+                    job_id,
+                    text=update_text,
+                    source=str(event.payload.get("source") or event.payload.get("transport") or "user"),
+                    update_type=str(event.payload.get("update_type") or "clarification"),
+                )
         except OracleJobNotFoundError:
             await self._emit(
                 VoiceEventType.FRONTEND_STATE,
@@ -665,6 +680,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 "priority": job.priority,
                 "state": job.state.value,
                 "reason": reason,
+                "update_count": len(job.updates),
             },
         )
 
@@ -1008,7 +1024,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         request = job.request
         if request is None:
             raise RuntimeError("oracle job is missing its KAME request")
+        request = _oracle_request_for_job(job, request)
         metadata = dict(job.metadata)
+        metadata.update(request.to_metadata())
         oracle = self._oracle or NullRealtimeOracle()
         answer = ""
         scrubber = StreamingThinkScrubber()
@@ -2637,6 +2655,21 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
     if request.reflex_provider:
         payload["reflex_provider"] = request.reflex_provider
     return payload
+
+
+def _oracle_request_for_job(job: OracleJob, request: KameOracleRequest) -> KameOracleRequest:
+    updates = tuple(
+        str(update.get("text") or "").strip()
+        for update in job.updates
+        if str(update.get("text") or "").strip()
+    )
+    if not updates and request.priority == job.priority:
+        return request
+    return replace(
+        request,
+        priority=job.priority,
+        job_updates=tuple((*request.job_updates, *updates)),
+    )
 
 
 def _kame_interface_payload_with_metrics(

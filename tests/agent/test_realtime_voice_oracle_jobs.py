@@ -153,6 +153,45 @@ async def test_reprioritizing_queued_job_moves_it_ahead_before_capacity_frees():
 
 
 @pytest.mark.asyncio
+async def test_add_update_records_compact_status_without_running_job():
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+
+    first = await manager.submit(_request("running"))
+    second = await manager.submit(_request("second"))
+    await asyncio.sleep(0)
+
+    updated = await manager.add_update(
+        second.job_id,
+        text="also check the Stripe receipt before answering",
+        source="discord_voice",
+        update_type="clarification",
+    )
+    status = await manager.status_view()
+
+    assert updated.updates == [
+        {
+            "text": "also check the Stripe receipt before answering",
+            "source": "discord_voice",
+            "type": "clarification",
+            "created_at": updated.updates[0]["created_at"],
+        }
+    ]
+    queued_status = next(job for job in status["jobs"] if job["job_id"] == second.job_id)
+    assert queued_status["update_count"] == 1
+    assert queued_status["latest_update"] == "also check the Stripe receipt before answering"
+
+    await manager.cancel(first.job_id)
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
 async def test_max_concurrent_four_starts_four_and_queues_fifth():
     started = []
     release = asyncio.Event()
