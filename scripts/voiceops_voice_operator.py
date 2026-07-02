@@ -76,6 +76,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_max_concurrent_one_queues_second_job",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_max_concurrent_four_starts_four_and_queues_fifth",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_queue_limit_rejects_overflow",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_equal_priority_queued_jobs_start_fifo",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_spoken_tasks_create_async_oracle_jobs",
     ],
     "status_view": [

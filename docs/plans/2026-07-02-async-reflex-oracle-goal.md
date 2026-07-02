@@ -166,6 +166,12 @@ state harder to reason about. The reflex status view must show
 `waiting_for_approval` separately from `running` so the user can distinguish
 model compute from approval-blocked work.
 
+Queued jobs are ordered by explicit priority first and FIFO within the same
+priority. Spoken reprioritization may move a queued job ahead before capacity
+frees. The scheduler does not yet group or reorder by inferred user intent; that
+requires a separate policy because it would let the system decide that one
+spoken task is more important than another without an explicit user control.
+
 ### Reflex Status View
 
 The reflex needs a compact, live-readable status view, not direct access to
@@ -461,8 +467,6 @@ For real DGX Spark evidence:
 
 ## Open Questions
 
-- Should queued jobs be FIFO by default, priority based, or grouped by user
-  intent?
 - Should the reflex be allowed to auto-summarize completed background jobs, or
   should it wait for a quiet moment / user prompt?
 - How much job state should be committed to Hermes history versus an auxiliary

@@ -127,6 +127,30 @@ async def test_high_priority_queued_job_starts_before_low_priority_job():
 
 
 @pytest.mark.asyncio
+async def test_equal_priority_queued_jobs_start_fifo():
+    started = []
+    release_first = asyncio.Event()
+
+    async def runner(job):
+        started.append(job.job_id)
+        if job.job_id == "voice-oracle-001":
+            await release_first.wait()
+        return f"finished {job.job_id}"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+
+    await manager.submit(_request("running"))
+    second = await manager.submit(_request("second"), priority="normal")
+    third = await manager.submit(_request("third"), priority="normal")
+    await asyncio.sleep(0)
+
+    release_first.set()
+    await manager.wait_for_idle()
+
+    assert started == ["voice-oracle-001", second.job_id, third.job_id]
+
+
+@pytest.mark.asyncio
 async def test_reprioritizing_queued_job_moves_it_ahead_before_capacity_frees():
     events = []
     started = []
