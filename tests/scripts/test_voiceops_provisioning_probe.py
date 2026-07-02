@@ -2842,6 +2842,9 @@ def test_probe_cli_smoke_no_command_probes(tmp_path):
     assert "phone_target" in payload["required_failures"]
     assert payload["area_status"]["stripe_skills"] == "pass"
     assert payload["read_only_discovery_status"] == "not_requested"
+    assert payload["read_only_discovery_failed_probe_ids"] == []
+    assert isinstance(payload["read_only_discovery_missing_probe_ids"], list)
+    assert payload["read_only_discovery_timed_out_probe_ids"] == []
     assert payload["setup_closure_json"] == payload["artifacts"]["setup_closure_json"]
     assert Path(payload["artifacts"]["json"]).exists()
     assert Path(payload["artifacts"]["markdown"]).exists()

@@ -1833,6 +1833,10 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         if coverage.get(key) is not True:
             issues.append(f"missing_coverage:{key}")
     async_oracle_coverage = report.get("async_oracle_coverage", {})
+    recomputed_async_oracle_coverage = {
+        **_coverage_from_async_oracle_smoke(report.get("async_oracle_smoke", {})),
+        **_coverage_from_discord_session_cleanup_smoke(report.get("discord_session_cleanup_smoke", {})),
+    }
     for key in (
         "async_oracle_smoke_ok",
         "four_jobs_ran_concurrently",
@@ -1849,8 +1853,10 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "result_handling_bounded_and_durable",
         "discord_session_cleanup_preserves_oracle_state",
     ):
-        if async_oracle_coverage.get(key) is not True:
+        if recomputed_async_oracle_coverage.get(key) is not True:
             issues.append(f"missing_async_oracle_coverage:{key}")
+        if async_oracle_coverage.get(key) is not recomputed_async_oracle_coverage.get(key):
+            issues.append(f"stale_async_oracle_coverage:{key}")
     async_oracle_acceptance = report.get("async_oracle_acceptance", {})
     if not isinstance(async_oracle_acceptance, Mapping) or not async_oracle_acceptance:
         issues.append("missing_async_oracle_acceptance_matrix")

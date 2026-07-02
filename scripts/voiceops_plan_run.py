@@ -1598,6 +1598,9 @@ async def build_plan_run_async(
                 "run_command_probes": run_command_probes,
                 "run_readonly_discovery": run_readonly_discovery,
                 "read_only_discovery_status": provisioning["read_only_discovery"]["status"],
+                "read_only_discovery_failed_probe_ids": provisioning["read_only_discovery"]["failed_probe_ids"],
+                "read_only_discovery_missing_probe_ids": provisioning["read_only_discovery"]["missing_probe_ids"],
+                "read_only_discovery_timed_out_probe_ids": provisioning["read_only_discovery"].get("timed_out_probe_ids", []),
             },
         )
     )

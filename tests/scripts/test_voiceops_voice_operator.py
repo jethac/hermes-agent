@@ -476,6 +476,17 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert result_handling["runtime_verified_by_this_report"] is True
 
 
+def test_voice_operator_validation_recomputes_async_coverage_from_embedded_smoke():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["worker_overlap_proved"] = False
+    report["async_oracle_smoke"]["max_worker_overlap"] = 0
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:four_jobs_ran_concurrently" in issues
+    assert "stale_async_oracle_coverage:four_jobs_ran_concurrently" in issues
+
+
 def test_voice_operator_validation_rejects_static_acceptance_without_test_refs():
     report = _voice_operator_report()
     row = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]

@@ -1386,6 +1386,9 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     assert provisioning_result["details"]["post_approval_receipt_count"] == 4
     assert provisioning_result["details"]["post_approval_receipts_validation_issues"] == []
     assert provisioning_result["details"]["read_only_discovery_status"] == "pass"
+    assert provisioning_result["details"]["read_only_discovery_failed_probe_ids"] == []
+    assert provisioning_result["details"]["read_only_discovery_missing_probe_ids"] == []
+    assert provisioning_result["details"]["read_only_discovery_timed_out_probe_ids"] == []
     assert provisioning_result["details"]["nemoclaw_action_packet_status"] == "valid"
     assert provisioning_result["details"]["nemoclaw_action_packet_validation_issues"] == []
     assert provisioning_result["details"]["run_readonly_discovery"] is False
@@ -1450,6 +1453,9 @@ def test_plan_run_readonly_discovery_safety_is_evidence_derived(tmp_path, monkey
 
     assert provisioning_result["details"]["run_readonly_discovery"] is True
     assert provisioning_result["details"]["read_only_discovery_status"] == "pass"
+    assert provisioning_result["details"]["read_only_discovery_failed_probe_ids"] == []
+    assert provisioning_result["details"]["read_only_discovery_missing_probe_ids"] == []
+    assert provisioning_result["details"]["read_only_discovery_timed_out_probe_ids"] == []
     assert summary["safety"]["network_io"] is True
     assert summary["safety"]["network_io_scope"] == "allowlisted_read_only_discovery"
     assert summary["safety"]["mutating_network_io"] is False
