@@ -859,6 +859,23 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 assistant_metadata,
             )
             await self._emit_interface_event(VoiceEventType.INTERFACE_INTENT_FINAL, interface_payload)
+        local_reply = await self._kame_oracle_job_control_reply(oracle_request)
+        if local_reply:
+            control_metadata = {**assistant_metadata, "oracle_job_control": True}
+            if oracle_request is not None:
+                await self._emit_interface_event(
+                    VoiceEventType.INTERFACE_REPLY_LOCAL,
+                    {
+                        **_kame_interface_payload_with_metrics(oracle_request, generation, control_metadata),
+                        "text": local_reply,
+                        "oracle_job_control": True,
+                    },
+                )
+            self._active_task_interrupts_oracle = True
+            self._active_task = asyncio.create_task(
+                self._speak_kame_local_reply(local_reply, generation, control_metadata)
+            )
+            return
         local_reply = await self._kame_oracle_job_status_reply(oracle_request)
         if not local_reply:
             local_reply = _kame_local_reply(oracle_request)
@@ -909,6 +926,87 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if not _kame_oracle_job_status_requested(oracle_request):
             return ""
         return _kame_oracle_job_status_text(await manager.status_view())
+
+    async def _kame_oracle_job_control_reply(self, oracle_request: Optional[KameOracleRequest]) -> str:
+        manager = self._oracle_job_manager
+        if manager is None or oracle_request is None:
+            return ""
+        operation = _kame_oracle_job_control_operation(oracle_request, await manager.status_view())
+        if not operation:
+            return ""
+        kind = operation["kind"]
+        reason = operation.get("reason") or "spoken oracle job control"
+        if kind == "cancel_all":
+            cancelled = await manager.cancel_all(reason=reason)
+            await self._emit_interface_event(
+                VoiceEventType.INTERFACE_ORACLE_CANCEL,
+                {
+                    "all": True,
+                    "reason": reason,
+                    "cancelled_jobs": [job.job_id for job in cancelled],
+                    "spoken_control": True,
+                },
+            )
+            if cancelled:
+                return "I cancelled all current oracle jobs."
+            return "There were no active oracle jobs to cancel."
+        job_id = str(operation.get("job_id") or "").strip()
+        if not job_id:
+            return ""
+        try:
+            if kind == "cancel":
+                job = await manager.cancel(job_id, reason=reason)
+                await self._emit_interface_event(
+                    VoiceEventType.INTERFACE_ORACLE_CANCEL,
+                    {
+                        "job_id": job.job_id,
+                        "reason": reason,
+                        "spoken_control": True,
+                    },
+                )
+                label = _oracle_job_control_label(job.to_status())
+                return f"I cancelled {label}." if label else "I cancelled that oracle job."
+            if kind == "priority":
+                priority = str(operation.get("priority") or "").strip()
+                job = await manager.update_priority(job_id, priority=priority)
+                await self._emit_interface_event(
+                    VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                    {
+                        "job_id": job.job_id,
+                        "priority": job.priority,
+                        "state": job.state.value,
+                        "reason": reason,
+                        "update_count": len(job.updates),
+                        "spoken_control": True,
+                    },
+                )
+                label = _oracle_job_control_label(job.to_status())
+                target = f" for {label}" if label else ""
+                return f"I set {job.priority} priority{target}."
+            if kind == "update":
+                update_text = str(operation.get("update_text") or "").strip()
+                job = await manager.add_update(
+                    job_id,
+                    text=update_text,
+                    source=oracle_request.source or "voice",
+                    update_type="clarification",
+                )
+                await self._emit_interface_event(
+                    VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                    {
+                        "job_id": job.job_id,
+                        "priority": job.priority,
+                        "state": job.state.value,
+                        "reason": reason,
+                        "update_count": len(job.updates),
+                        "spoken_control": True,
+                    },
+                )
+                label = _oracle_job_control_label(job.to_status())
+                return f"I added that to {label}." if label else "I added that to the oracle job."
+        except OracleJobNotFoundError:
+            return "I could not find that oracle job."
+        return ""
 
     async def _submit_async_oracle_job_if_enabled(
         self,
@@ -2491,6 +2589,234 @@ def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
     if labels:
         return headline + " " + " | ".join(labels)
     return headline
+
+
+def _kame_oracle_job_control_operation(
+    request: KameOracleRequest,
+    status: Mapping[str, Any],
+) -> dict[str, Any]:
+    haystack = _oracle_job_control_text(request)
+    if not haystack:
+        return {}
+    jobs = _oracle_job_control_active_jobs(status)
+    if _oracle_job_control_cancel_all_requested(haystack):
+        return {
+            "kind": "cancel_all",
+            "reason": "spoken request to stop everything",
+        }
+    if not jobs:
+        return {}
+    priority = _oracle_job_control_priority(haystack)
+    if priority:
+        job = _oracle_job_control_match_job(haystack, jobs)
+        if job:
+            return {
+                "kind": "priority",
+                "job_id": str(job.get("job_id") or ""),
+                "priority": priority,
+                "reason": f"spoken request to set {priority} priority",
+            }
+    update_text = _oracle_job_control_update_text(haystack)
+    if update_text:
+        job = _oracle_job_control_match_job(haystack, jobs)
+        if job:
+            return {
+                "kind": "update",
+                "job_id": str(job.get("job_id") or ""),
+                "update_text": update_text,
+                "reason": "spoken update to oracle job",
+            }
+    if _oracle_job_control_cancel_one_requested(haystack):
+        job = _oracle_job_control_match_job(haystack, jobs)
+        if job:
+            return {
+                "kind": "cancel",
+                "job_id": str(job.get("job_id") or ""),
+                "reason": "spoken request to cancel oracle job",
+            }
+    return {}
+
+
+def _oracle_job_control_text(request: KameOracleRequest) -> str:
+    for value in (request.intent, request.transcript, request.oracle_text, request.local_reply):
+        text = " ".join(str(value or "").split()).lower()
+        if text:
+            return text
+    return ""
+
+
+def _oracle_job_control_active_jobs(status: Mapping[str, Any]) -> list[dict[str, Any]]:
+    jobs = status.get("jobs") if isinstance(status.get("jobs"), list) else []
+    active_states = {"running", "queued", "waiting_for_approval", "cancel_requested"}
+    return [
+        dict(job)
+        for job in jobs
+        if isinstance(job, Mapping) and str(job.get("state") or "") in active_states
+    ]
+
+
+def _oracle_job_control_cancel_all_requested(text: str) -> bool:
+    if _oracle_job_control_is_playback_only_stop(text):
+        return False
+    phrases = (
+        "stop everything",
+        "cancel everything",
+        "cancel all",
+        "stop all jobs",
+        "stop all tasks",
+        "cancel all jobs",
+        "cancel all tasks",
+        "kill all jobs",
+        "kill all tasks",
+    )
+    return any(phrase in text for phrase in phrases)
+
+
+def _oracle_job_control_cancel_one_requested(text: str) -> bool:
+    if _oracle_job_control_is_playback_only_stop(text):
+        return False
+    if "cancel" in text:
+        return True
+    if "stop that" in text or "stop this" in text:
+        return True
+    return "stop" in text and any(token in text for token in (" job", " jobs", " task", " tasks"))
+
+
+def _oracle_job_control_is_playback_only_stop(text: str) -> bool:
+    return any(
+        phrase in text
+        for phrase in (
+            "stop talking",
+            "stop speaking",
+            "be quiet",
+            "shut up",
+        )
+    )
+
+
+def _oracle_job_control_priority(text: str) -> str:
+    if "priority" not in text and not any(token in text for token in ("urgent", "important", "background")):
+        return ""
+    if any(token in text for token in ("highest", "urgent", "important", "high priority")):
+        return "high"
+    if any(token in text for token in ("low priority", "background", "later")):
+        return "low"
+    if any(token in text for token in ("normal priority", "default priority", "medium priority")):
+        return "normal"
+    return "high" if "priority" in text and "make" in text else ""
+
+
+def _oracle_job_control_update_text(text: str) -> str:
+    update_prefixes = (
+        "also ",
+        "and also ",
+        "add that ",
+        "add this ",
+        "add ",
+        "include ",
+        "update that ",
+        "update this ",
+        "tell it to ",
+        "ask it to ",
+    )
+    for prefix in update_prefixes:
+        if text.startswith(prefix):
+            return text[len(prefix):].strip(" .")
+    if " also " in text:
+        return text.split(" also ", 1)[1].strip(" .")
+    return ""
+
+
+def _oracle_job_control_match_job(text: str, jobs: list[dict[str, Any]]) -> dict[str, Any]:
+    if not jobs:
+        return {}
+    for job in jobs:
+        job_id = str(job.get("job_id") or "").strip().lower()
+        if job_id and job_id in text:
+            return job
+    ordinal = _oracle_job_control_ordinal(text)
+    if ordinal is not None and 0 <= ordinal < len(jobs):
+        return jobs[ordinal]
+    text_terms = _oracle_job_control_terms(text)
+    best: tuple[int, dict[str, Any]] = (0, {})
+    for job in jobs:
+        label = _oracle_job_control_label(job)
+        score = len(text_terms.intersection(_oracle_job_control_terms(label)))
+        if score > best[0]:
+            best = (score, job)
+    if best[0] > 0:
+        return best[1]
+    if len(jobs) == 1:
+        return jobs[0]
+    if any(token in text for token in ("that", "this", "current", "latest", "last")) or text.startswith(
+        ("also ", "and also ", "add ", "include ", "tell it ", "ask it ")
+    ):
+        return jobs[-1]
+    return {}
+
+
+def _oracle_job_control_ordinal(text: str) -> Optional[int]:
+    patterns = (
+        (0, r"\b(?:first|1st|task one|job one|task 1|job 1)\b"),
+        (1, r"\b(?:second|2nd|task two|job two|task 2|job 2)\b"),
+        (2, r"\b(?:third|3rd|task three|job three|task 3|job 3)\b"),
+        (3, r"\b(?:fourth|4th|task four|job four|task 4|job 4)\b"),
+        (4, r"\b(?:fifth|5th|task five|job five|task 5|job 5)\b"),
+    )
+    for index, pattern in patterns:
+        if re.search(pattern, text):
+            return index
+    return None
+
+
+def _oracle_job_control_terms(text: str) -> set[str]:
+    stop = {
+        "a",
+        "all",
+        "also",
+        "and",
+        "cancel",
+        "check",
+        "current",
+        "do",
+        "for",
+        "high",
+        "highest",
+        "it",
+        "job",
+        "jobs",
+        "low",
+        "make",
+        "normal",
+        "priority",
+        "run",
+        "running",
+        "set",
+        "stop",
+        "task",
+        "tasks",
+        "that",
+        "the",
+        "this",
+        "to",
+        "urgent",
+    }
+    return {
+        token
+        for token in re.findall(r"[a-z][a-z0-9_-]*", str(text or "").lower())
+        if token not in stop and len(token) > 2
+    }
+
+
+def _oracle_job_control_label(job: Mapping[str, Any]) -> str:
+    return " ".join(
+        str(value or "").strip()
+        for value in (
+            job.get("spoken_status"),
+            job.get("intent"),
+        )
+        if str(value or "").strip()
+    )[:120]
 
 
 def _async_oracle_jobs_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
