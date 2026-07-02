@@ -1313,7 +1313,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if self._closed:
             self._oracle_job_context_by_turn_id.pop(turn_id, None)
             return
-        playback_generation = self._playback_generation
+        if playback_generation != self._playback_generation:
+            self._oracle_job_context_by_turn_id.pop(turn_id, None)
+            return
         if event.type == OracleJobEventType.COMPLETED and not str(payload.get("result_summary") or "").strip():
             self._oracle_job_context_by_turn_id.pop(turn_id, None)
             return

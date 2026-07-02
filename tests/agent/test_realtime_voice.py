@@ -1790,11 +1790,13 @@ def test_kame_engine_async_oracle_job_allows_local_turn_while_running(monkeypatc
         assert completed.payload["result_summary"] == "The deployment is healthy."
         assert completed.payload["source_playback_generation"] == 1
         assert completed.payload["playback_generation"] == 2
+        assert not any(event.payload.get("oracle_job_result") for event in seen)
+        assert spoken == ["Checking that now.", "Yes, I can hear you."]
 
     asyncio.run(run())
 
 
-def test_oracle_direct_creates_async_oracle_job_without_blocking_voice_loop(monkeypatch):
+def test_oracle_direct_async_job_completion_after_local_turn_is_lifecycle_only(monkeypatch):
     class BlockingOracle:
         def __init__(self):
             self.requests = []
@@ -1879,22 +1881,21 @@ def test_oracle_direct_creates_async_oracle_job_without_blocking_voice_loop(monk
         oracle.release.set()
         async for event in engine.events():
             seen.append(event)
-            if event.type == VoiceEventType.ASSISTANT_COMMIT and event.payload.get("oracle_job_result"):
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
                 break
 
         await engine.close()
-        result_commit = next(
-            event
-            for event in seen
-            if event.type == VoiceEventType.ASSISTANT_COMMIT and event.payload.get("oracle_job_result")
-        )
-        assert result_commit.payload["text"] == "The deployment is healthy."
-        assert spoken[-2:] == ["Yes, I can hear you.", "The deployment is healthy."]
+        completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
+        assert completed.payload["result_summary"] == "The deployment is healthy."
+        assert completed.payload["source_playback_generation"] == 1
+        assert completed.payload["playback_generation"] == 2
+        assert not any(event.payload.get("oracle_job_result") for event in seen)
+        assert spoken == ["Yes, I can hear you."]
 
     asyncio.run(run())
 
 
-def test_completed_async_oracle_job_speaks_after_intervening_local_turn(monkeypatch):
+def test_completed_async_oracle_job_after_intervening_local_turn_is_lifecycle_only(monkeypatch):
     class BlockingOracle:
         def __init__(self):
             self.requests = []
@@ -1972,18 +1973,16 @@ def test_completed_async_oracle_job_speaks_after_intervening_local_turn(monkeypa
         oracle.release.set()
         async for event in engine.events():
             seen.append(event)
-            if event.type == VoiceEventType.ASSISTANT_COMMIT and event.payload.get("oracle_job_result"):
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
                 break
 
         await engine.close()
-        result_commit = next(
-            event
-            for event in seen
-            if event.type == VoiceEventType.ASSISTANT_COMMIT and event.payload.get("oracle_job_result")
-        )
-        assert result_commit.payload["text"] == "The deployment is healthy."
-        assert result_commit.payload["oracle_job_id"] == "voice-oracle-001"
-        assert spoken == ["Checking that now.", "Yes, I can hear you.", "The deployment is healthy."]
+        completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
+        assert completed.payload["result_summary"] == "The deployment is healthy."
+        assert completed.payload["source_playback_generation"] == 1
+        assert completed.payload["playback_generation"] == 2
+        assert not any(event.payload.get("oracle_job_result") for event in seen)
+        assert spoken == ["Checking that now.", "Yes, I can hear you."]
 
     asyncio.run(run())
 
@@ -4018,19 +4017,16 @@ def test_async_oracle_job_enters_waiting_for_approval_on_tool_call(monkeypatch):
         oracle.release.set()
         async for event in engine.events():
             seen.append(event)
-            if event.type == VoiceEventType.ASSISTANT_COMMIT and event.payload.get("oracle_job_result"):
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
                 break
 
         await engine.close()
         completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
-        result_commit = next(
-            event
-            for event in seen
-            if event.type == VoiceEventType.ASSISTANT_COMMIT and event.payload.get("oracle_job_result")
-        )
         assert completed.payload["result_summary"] == "The spend approval cleared."
-        assert result_commit.payload["text"] == "The spend approval cleared."
-        assert spoken[-1] == "The spend approval cleared."
+        assert completed.payload["source_playback_generation"] == 1
+        assert completed.payload["playback_generation"] == 2
+        assert not any(event.payload.get("oracle_job_result") for event in seen)
+        assert spoken[-1] == status_commit.payload["text"]
 
     asyncio.run(run())
 
