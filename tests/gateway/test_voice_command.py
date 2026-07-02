@@ -1193,6 +1193,26 @@ class TestVoiceChannelCommands:
         assert result == "No active realtime voice session."
 
     @pytest.mark.asyncio
+    async def test_voice_cancel_reports_control_send_failure(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.cancel_voice_oracle_job = AsyncMock(
+            return_value={"ok": False, "reason": "control_send_failed", "error": "websocket closed"}
+        )
+        event = self._make_discord_event("/voice cancel voice-oracle-001")
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_command(event)
+
+        mock_adapter.cancel_voice_oracle_job.assert_awaited_once_with(
+            111,
+            "voice-oracle-001",
+            reason="user requested /voice cancel",
+        )
+        assert result == (
+            "Could not deliver realtime oracle cancellation request; voice session was marked degraded."
+        )
+
+    @pytest.mark.asyncio
     async def test_voice_priority_delegates_to_discord_adapter(self, runner):
         mock_adapter = MagicMock()
         mock_adapter.update_voice_oracle_job = AsyncMock(
@@ -1218,6 +1238,25 @@ class TestVoiceChannelCommands:
         assert result == "Requested priority high for realtime oracle job voice-oracle-002."
 
     @pytest.mark.asyncio
+    async def test_voice_priority_reports_control_send_failure(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.update_voice_oracle_job = AsyncMock(
+            return_value={"ok": False, "reason": "control_send_failed", "error": "websocket closed"}
+        )
+        event = self._make_discord_event("/voice priority voice-oracle-002 high")
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_command(event)
+
+        mock_adapter.update_voice_oracle_job.assert_awaited_once_with(
+            111,
+            "voice-oracle-002",
+            priority="high",
+            reason="user requested /voice priority",
+        )
+        assert result == "Could not deliver realtime oracle priority request; voice session was marked degraded."
+
+    @pytest.mark.asyncio
     async def test_voice_update_delegates_to_discord_adapter(self, runner):
         mock_adapter = MagicMock()
         mock_adapter.update_voice_oracle_job = AsyncMock(
@@ -1241,6 +1280,25 @@ class TestVoiceChannelCommands:
             reason="user requested /voice update",
         )
         assert result == "Attached update to realtime oracle job voice-oracle-002."
+
+    @pytest.mark.asyncio
+    async def test_voice_update_reports_control_send_failure(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.update_voice_oracle_job = AsyncMock(
+            return_value={"ok": False, "reason": "control_send_failed", "error": "websocket closed"}
+        )
+        event = self._make_discord_event("/voice update voice-oracle-002 also check the Stripe receipt")
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_command(event)
+
+        mock_adapter.update_voice_oracle_job.assert_awaited_once_with(
+            111,
+            "voice-oracle-002",
+            update_text="also check the Stripe receipt",
+            reason="user requested /voice update",
+        )
+        assert result == "Could not deliver realtime oracle update request; voice session was marked degraded."
 
     @pytest.mark.asyncio
     async def test_voice_priority_and_update_validate_usage(self, runner):

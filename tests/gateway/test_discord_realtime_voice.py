@@ -1216,6 +1216,41 @@ async def test_discord_adapter_cancel_voice_oracle_job_delegates_to_session():
 
 
 @pytest.mark.asyncio
+async def test_discord_adapter_cancel_voice_oracle_job_marks_degraded_on_send_failure():
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    class Session:
+        async def cancel_oracle_job(self, job_id, *, reason):
+            raise RuntimeError("websocket closed")
+
+        async def close(self):
+            pass
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._realtime_voice_sessions = {111: Session()}
+    adapter._voice_session_states = {}
+    adapter._realtime_voice_cfg = {"fallback_policy": "text_only"}
+
+    result = await adapter.cancel_voice_oracle_job(
+        111,
+        "voice-oracle-001",
+        reason="user requested /voice cancel",
+    )
+    await asyncio.sleep(0)
+
+    assert result == {
+        "ok": False,
+        "reason": "control_send_failed",
+        "error": "websocket closed",
+    }
+    assert 111 not in adapter._realtime_voice_sessions
+    status = adapter.get_voice_session_status(111)
+    assert status["mode"] == "text_only_fallback"
+    assert status["session_state"] == "degraded"
+    assert status["fallback_reason"] == "control_send_failed: websocket closed"
+
+
+@pytest.mark.asyncio
 async def test_discord_adapter_update_voice_oracle_job_delegates_to_session():
     from plugins.platforms.discord.adapter import DiscordAdapter
 
@@ -1250,6 +1285,42 @@ async def test_discord_adapter_update_voice_oracle_job_delegates_to_session():
         ("voice-oracle-002", "high", "also check the Stripe receipt", "user requested /voice update")
     ]
     assert missing == {"ok": False, "reason": "no_active_realtime_voice_session"}
+
+
+@pytest.mark.asyncio
+async def test_discord_adapter_update_voice_oracle_job_marks_degraded_on_send_failure():
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    class Session:
+        async def update_oracle_job(self, job_id, *, priority, update_text, reason):
+            raise RuntimeError("websocket closed")
+
+        async def close(self):
+            pass
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._realtime_voice_sessions = {111: Session()}
+    adapter._voice_session_states = {}
+    adapter._realtime_voice_cfg = {"fallback_policy": "text_only"}
+
+    result = await adapter.update_voice_oracle_job(
+        111,
+        "voice-oracle-002",
+        priority="high",
+        reason="user requested /voice priority",
+    )
+    await asyncio.sleep(0)
+
+    assert result == {
+        "ok": False,
+        "reason": "control_send_failed",
+        "error": "websocket closed",
+    }
+    assert 111 not in adapter._realtime_voice_sessions
+    status = adapter.get_voice_session_status(111)
+    assert status["mode"] == "text_only_fallback"
+    assert status["session_state"] == "degraded"
+    assert status["fallback_reason"] == "control_send_failed: websocket closed"
 
 
 @pytest.mark.asyncio

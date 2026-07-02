@@ -26,6 +26,8 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Any, Tuple, Mapping
 
+from agent.realtime_voice_errors import sanitize_realtime_voice_error
+
 logger = logging.getLogger(__name__)
 
 
@@ -3779,7 +3781,16 @@ class DiscordAdapter(BasePlatformAdapter):
         session = getattr(self, "_realtime_voice_sessions", {}).get(guild_id)
         if session is None or not hasattr(session, "cancel_oracle_job"):
             return {"ok": False, "reason": "no_active_realtime_voice_session"}
-        await session.cancel_oracle_job(job_id, reason=reason)
+        try:
+            await session.cancel_oracle_job(job_id, reason=reason)
+        except Exception as exc:
+            error = sanitize_realtime_voice_error(exc)
+            self._handle_realtime_voice_degraded(guild_id, "control_send_failed", error)
+            return {
+                "ok": False,
+                "reason": "control_send_failed",
+                "error": error,
+            }
         return {
             "ok": True,
             "job_id": str(job_id or "all").strip() or "all",
@@ -3798,12 +3809,21 @@ class DiscordAdapter(BasePlatformAdapter):
         session = getattr(self, "_realtime_voice_sessions", {}).get(guild_id)
         if session is None or not hasattr(session, "update_oracle_job"):
             return {"ok": False, "reason": "no_active_realtime_voice_session"}
-        await session.update_oracle_job(
-            job_id,
-            priority=priority,
-            update_text=update_text,
-            reason=reason,
-        )
+        try:
+            await session.update_oracle_job(
+                job_id,
+                priority=priority,
+                update_text=update_text,
+                reason=reason,
+            )
+        except Exception as exc:
+            error = sanitize_realtime_voice_error(exc)
+            self._handle_realtime_voice_degraded(guild_id, "control_send_failed", error)
+            return {
+                "ok": False,
+                "reason": "control_send_failed",
+                "error": error,
+            }
         return {
             "ok": True,
             "job_id": str(job_id or "").strip(),

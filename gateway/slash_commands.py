@@ -2577,6 +2577,8 @@ class GatewaySlashCommandsMixin:
             if asyncio.iscoroutine(result):
                 result = await result
             if not isinstance(result, dict) or not result.get("ok"):
+                if isinstance(result, dict) and result.get("reason") == "control_send_failed":
+                    return "Could not deliver realtime oracle cancellation request; voice session was marked degraded."
                 return "No active realtime voice session."
             if job_id.lower() == "all":
                 return "Requested cancellation for all realtime oracle jobs."
@@ -2601,6 +2603,8 @@ class GatewaySlashCommandsMixin:
             if asyncio.iscoroutine(result):
                 result = await result
             if not isinstance(result, dict) or not result.get("ok"):
+                if isinstance(result, dict) and result.get("reason") == "control_send_failed":
+                    return "Could not deliver realtime oracle priority request; voice session was marked degraded."
                 return "No active realtime voice session."
             return f"Requested priority {priority} for realtime oracle job {job_id}."
         elif args.startswith("update "):
@@ -2621,6 +2625,8 @@ class GatewaySlashCommandsMixin:
             if asyncio.iscoroutine(result):
                 result = await result
             if not isinstance(result, dict) or not result.get("ok"):
+                if isinstance(result, dict) and result.get("reason") == "control_send_failed":
+                    return "Could not deliver realtime oracle update request; voice session was marked degraded."
                 return "No active realtime voice session."
             return f"Attached update to realtime oracle job {job_id}."
         elif args == "status":
