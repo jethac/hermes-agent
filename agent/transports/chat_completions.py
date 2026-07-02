@@ -543,10 +543,24 @@ class ChatCompletionsTransport(ProviderTransport):
         # Per-model default cap — profiles override get_max_tokens() when
         # they front several backends with different completion-token limits
         # (e.g. opencode-go: mimo-v2.5-pro = 131072).
+        raw_profile_max = profile.get_max_tokens(model)
         profile_max = _clamp_implicit_provider_max_tokens(
-            profile.get_max_tokens(model),
+            raw_profile_max,
             params.get("context_length"),
         )
+        if (
+            profile.name == "custom"
+            and profile_max == raw_profile_max
+            and _coerce_positive_int(raw_profile_max) is not None
+            and int(raw_profile_max) >= 32768
+            and _coerce_positive_int(params.get("context_length")) is None
+        ):
+            # Custom/local OpenAI-compatible gateways often default to a
+            # 64K-ish profile cap while serving a 64K context. If the caller
+            # does not have a context window to clamp against, keep enough
+            # room for prompt/tool input. Explicit user max_tokens and
+            # ephemeral retry caps still win above this branch.
+            profile_max = 8192
 
         if ephemeral is not None and max_tokens_fn:
             api_kwargs.update(max_tokens_fn(ephemeral))

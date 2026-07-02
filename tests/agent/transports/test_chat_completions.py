@@ -314,6 +314,18 @@ class TestChatCompletionsBuildKwargs:
         )
         assert kw["max_tokens"] == 8192
 
+    def test_custom_default_max_tokens_is_safe_without_context_length(self, transport):
+        from providers import get_provider_profile
+        profile = get_provider_profile("custom")
+        msgs = [{"role": "user", "content": "Hi"}]
+        kw = transport.build_kwargs(
+            model="nemotron-3-super-oracle",
+            messages=msgs,
+            provider_profile=profile,
+            max_tokens_param_fn=lambda value: {"max_tokens": value},
+        )
+        assert kw["max_tokens"] == 8192
+
     def test_explicit_max_tokens_can_exceed_implicit_context_clamp(self, transport):
         from providers import get_provider_profile
         profile = get_provider_profile("custom")
