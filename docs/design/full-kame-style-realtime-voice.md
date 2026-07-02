@@ -4,7 +4,7 @@ Status: design draft
 Target branch: `wip/full-kame-reflex-voice`
 Target deployment: one DGX Spark, with cloud providers allowed only as bring-up fallbacks
 Preferred local reflex: Gemma 4 E2B
-Preferred local oracle target: Hermes active oracle, ideally Gemma 4 26B-A4B when it is good enough for Hermes work
+Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to validate
 
 ## Purpose
 
@@ -27,7 +27,13 @@ This design relies on the following external model and serving assumptions:
 - Gemma 4 E2B/E4B use a USM-style Conformer audio encoder.
 - Gemma 4 audio input is bounded; Google's model card currently lists a 30 second audio limit.
 - vLLM exposes Gemma 4 multimodal serving controls through `--limit-mm-per-prompt`, including audio prompt limits and audio memory allocation controls.
-- Gemma 4 26B-A4B is the preferred first local oracle candidate on DGX Spark, but Hermes's configured oracle remains authoritative.
+- The oracle is selected through Hermes's normal `/model` flow. Voice realtime
+  config must not add a separate `oracle_model` selector.
+- Nemotron 3 Super is the preferred first Spark-local NVIDIA oracle target to
+  validate for the hackathon and appliance path. Gemma 4 26B-A4B remains a
+  comparison candidate if it proves better for Hermes-style work.
+- Nemotron 3 Ultra is a hosted or future multi-Spark fallback unless measured
+  one-Spark evidence proves otherwise.
 
 These assumptions must be checked against the exact model checkpoint and runtime before implementation is considered complete.
 
@@ -98,7 +104,13 @@ Initially the interface should have no direct tool access. If direct tools are a
 
 ### Oracle
 
-The oracle is whatever Hermes is configured to use. Today that may be Kimi K2.6 through Hermes. The DGX Spark target is to make the active Hermes oracle local, ideally Gemma 4 26B-A4B when it proves good enough for Hermes-style work.
+The oracle is whatever Hermes is configured to use. Today that may be Kimi K2.6
+through Hermes. For the DGX Spark path, the first preferred local NVIDIA oracle
+target is Nemotron 3 Super, selected through Hermes's normal `/model` flow after
+registering the local OpenAI-compatible endpoint. Gemma 4 26B-A4B remains a
+comparison candidate, not the VoiceOps-specific oracle selector. Nemotron 3
+Ultra is only a hosted or future multi-Spark fallback unless local evidence
+proves a one-Spark path.
 
 It owns:
 
@@ -138,12 +150,19 @@ Core input events:
 - `speech.start`
 - `speech.energy`
 - `speech.end`
-- `transcript.partial`
-- `transcript.final`
 - `barge_in.detected`
 - `playback.started`
 - `playback.stopped`
 - `session.stop`
+
+Optional ASR/fallback evidence events:
+
+- `transcript.partial`
+- `transcript.final`
+
+These transcript events are disabled unless ASR mode is `on_escalation`,
+`speculative`, `debug`, or `fallback`. They must not make the normal KAME path
+STT-first.
 
 Interface events:
 
@@ -151,19 +170,22 @@ Interface events:
 - `interface.intent.final`
 - `interface.reply.local`
 - `interface.reply.defer`
-- `interface.oracle.request`
-- `interface.oracle.cancel`
+- `interface.oracle.submit`
+- `interface.oracle.cancel_job`
+- `interface.oracle.update_job`
 - `interface.commit`
 
 Oracle events:
 
-- `oracle.accepted`
-- `oracle.hint`
-- `oracle.tool_call`
-- `oracle.tool_result`
-- `oracle.response.partial`
-- `oracle.response.final`
-- `oracle.error`
+- `oracle.job.accepted`
+- `oracle.job.queued`
+- `oracle.job.started`
+- `oracle.job.progress`
+- `oracle.job.waiting_for_approval`
+- `oracle.job.completed`
+- `oracle.job.failed`
+- `oracle.job.cancel_requested`
+- `oracle.job.cancelled`
 
 Output events:
 
@@ -173,7 +195,12 @@ Output events:
 - `assistant.audio.end`
 - `session.metrics`
 
-Only final user intents, committed assistant responses, oracle requests, and oracle results should enter durable Hermes conversation state. Partial transcripts, backchannels, cancelled utterances, and interrupted audio should stay ephemeral unless debugging is enabled.
+Only final user intents, committed assistant responses, user-visible oracle job
+results, cancellations, approvals, and external-action outcomes should enter
+durable Hermes conversation state. Oracle job lifecycle detail belongs in the
+voice-session task log/audit ledger. Partial transcripts, backchannels,
+cancelled utterances, status polls, progress fragments, and interrupted audio
+should stay ephemeral unless debugging is enabled.
 
 ## Routing Policy
 
@@ -183,11 +210,14 @@ The interface model should classify each turn into one of four paths.
 
 Use for greetings, short status checks, repeats, clarification prompts, "can you hear me", and low-risk conversational glue.
 
-`defer`: The interface speaks a short acknowledgement and starts an oracle request.
+`defer`: The interface speaks a short acknowledgement and submits a background
+oracle job. The voice loop remains live.
 
 Use for ordinary Hermes questions, tasks, code/project questions, memory-dependent questions, and anything needing current Hermes context.
 
-`oracle_direct`: The interface does not attempt a substantive local answer and hands off to the oracle immediately.
+`oracle_direct`: The interface submits a background oracle job immediately. It
+may speak a very short acknowledgement, but it must not pretend to know the
+answer.
 
 Use for high-stakes answers, tool use, filesystem work, MCP actions, long reasoning, or anything where a local guess would create confusion.
 
@@ -197,16 +227,21 @@ Use when the spoken turn is incomplete, ambiguous, unsafe, or impossible to rout
 
 The default should be conservative: local replies are allowed only when the answer does not depend on Hermes state. If unsure, acknowledge quickly and escalate.
 
-## Oracle Request Shape
+## Oracle Job Request Shape
 
-The interface should send a compact structured request:
+The interface should submit a compact structured oracle job request:
 
 ```json
 {
+  "job_id": "voice-oracle-001",
   "session_id": "voice-session-id",
   "turn_id": "turn-id",
   "source": "discord",
   "user_id": "discord-user-id",
+  "priority": "normal",
+  "route": "defer",
+  "oracle_text": "backend Hermes request text",
+  "reflex_intent": "compact live intent",
   "transcript": "clean final user utterance",
   "transcript_source": "asr_or_reflex",
   "transcript_confidence": 0.92,
@@ -216,6 +251,7 @@ The interface should send a compact structured request:
   "urgency": "interactive",
   "interface_already_said": "One second, checking that now.",
   "conversation_summary": "ephemeral live voice summary",
+  "metadata": {},
   "requested_response_style": {
     "spoken": true,
     "max_sentences": 2,
@@ -237,13 +273,14 @@ Required gates:
 - speech-like energy persists for a configured minimum duration
 - the active speaker is not the bot
 - optional VAD/speech classifier agrees when available
-- playback is currently active or an oracle response is currently streaming
+- playback is currently active or oracle job result speech is currently streaming
 
 On barge-in:
 
 1. stop mixer playback within the configured deadline
 2. cancel in-flight TTS generation for the interrupted response
-3. propagate cancellation to the oracle request if the response is no longer useful
+3. request oracle job cancellation only when the user explicitly cancels backend
+   work or the job result is no longer useful
 4. keep already spoken text as ephemeral history
 5. do not commit interrupted assistant text as a full assistant response
 
@@ -253,12 +290,14 @@ Target: playback stop within 150 ms of confirmed speech.
 
 The design should measure every turn with monotonic timestamps. Minimum required spans:
 
-- first decoded PCM to first partial transcript
-- speech boundary to final transcript
-- final transcript to interface decision
+- speech boundary to bounded audio segment ready
+- audio segment ready to reflex decision
+- ASR transcript spans when ASR mode is enabled
+- oracle job accepted, queued, started, waiting, completed, failed, and cancelled
+  lifecycle spans
 - interface decision to local first audio
-- interface decision to oracle request accepted
-- oracle accepted to oracle first token
+- interface decision to oracle job accepted
+- oracle job started to oracle first token
 - oracle first token to first TTS audio
 - first TTS audio to Discord playback start
 - speech boundary to first audible assistant audio
@@ -293,7 +332,10 @@ The oracle should stay warm. Model swapping during an interactive voice session 
 
 Preferred first local oracle track:
 
-- vLLM serving Gemma 4 26B-A4B or the best validated Hermes oracle candidate
+- vLLM serving Nemotron 3 Super with the best validated one-Spark settings, or
+  the best validated Hermes oracle candidate selected through `/model`
+- Gemma 4 26B-A4B benchmarked as a comparison candidate, not as a separate
+  realtime voice oracle setting
 - OpenAI-compatible endpoint consumed by Hermes's existing model provider path
 - fixed context and KV settings chosen for interactive work, not maximum benchmark context
 
@@ -350,6 +392,15 @@ max_spoken_sentences = 2
 # The local DGX Spark oracle endpoint is registered in Hermes's normal model
 # provider config and selected with `/model`, not through realtime voice.
 
+[voice.realtime.oracle_jobs]
+enabled = true
+max_concurrent = 4
+queue_limit = 16
+default_priority = "normal"
+overflow_policy = "queue"
+shutdown_timeout_seconds = 2
+speak_terminal_results = true
+
 [voice.realtime.routing]
 allow_local_greetings = true
 allow_local_clarifications = true
@@ -384,6 +435,8 @@ The GUI environment page should expose provider/model/base URL settings for:
 - local oracle provider target and base URL, when registering a local endpoint for the active Hermes `/model` selection
 - ASR provider/model
 - TTS provider/model/voice
+- oracle job capacity, queue policy, active/running/waiting/queued counts, and
+  cancellation state
 - barge-in thresholds
 - input noise gate thresholds
 - routing policy
@@ -442,11 +495,16 @@ Run Hermes's oracle through a local OpenAI-compatible server on the Spark.
 
 Deliverables:
 
-- vLLM or SGLang launch profile for the local oracle provider target used by Hermes's active `/model` selection
+- vLLM or SGLang launch profile for Nemotron 3 Super as the first preferred
+  Spark-local NVIDIA oracle target
+- model-provider registration so Hermes's active `/model` selection, not
+  realtime voice config, chooses that endpoint
 - warm-start and health-check scripts
 - preflight that confirms model, context, and endpoint readiness
 - latency comparison against current cloud oracle path
 - documented memory and context settings
+- proof that hosted Nemotron 3 Ultra or other hosted fallbacks are labeled as
+  `/model` fallbacks and not counted as one-Spark readiness evidence
 
 ### Phase 5: DGX Spark Local Interface And Speech
 
@@ -492,8 +550,15 @@ Unit tests:
 
 Integration tests:
 
-- fake Discord audio input to final transcript to local reply
-- fake Discord audio input to oracle request to spoken response
+- fake Discord audio input to bounded audio segment to local reply
+- fake Discord audio input to oracle job request to spoken response
+- `defer` submits a background oracle job and returns acknowledgement promptly
+- `oracle_direct` submits a background oracle job without blocking the next
+  reflex turn
+- `max_concurrent=4` starts four jobs and queues the fifth
+- `/voice status` includes oracle job active/running/queued/waiting capacity and
+  state
+- late output from cancelled jobs is not spoken or committed
 - sidecar unavailable fallback
 - TTS unavailable fallback
 - audio-native reflex unavailable fallback to STT-fed routing
@@ -517,6 +582,12 @@ voice production review is not enough for this branch. Required KAME gates are:
 
 - DGX Spark benchmark evidence accepted by the generated KAME matrix validator
 - Gemma 4 E2B direct-audio reflex launch evidence from the target DGX Spark runtime
+- Nemotron 3 Super evaluated as the preferred Spark-local oracle target selected
+  through Hermes `/model`
+- `max_concurrent=4` validated against the Nemotron 3 Super endpoint, or
+  explicitly marked as needing evidence
+- hosted Nemotron 3 Ultra excluded from one-Spark readiness claims unless local
+  evidence proves otherwise
 - oracle outcome comparison with and without oracle-verbatim ASR transcript hypotheses
 - all-local DGX Spark smoke with oracle, interface, ASR, TTS, and sidecar together
 - live Discord smoke for the full KAME path under production credentials
@@ -536,6 +607,8 @@ The full implementation is acceptable when:
 - barge-in responds to real speech energy, not silent packet arrival
 - local acknowledgements are consistently fast
 - oracle latency is measured and visible instead of guessed
+- oracle job capacity reports active, running, queued, and waiting-for-approval
+  work separately
 - sidecar shutdown leaves no orphan sessions or playback
 - Discord fallback is explicit and understandable
 - all interface, ASR, TTS, routing, fallback, and local-provider target choices are configurable from config and GUI
@@ -566,10 +639,14 @@ Already present:
 - DGX Spark launch/profile generation for interface, oracle, ASR, and TTS targets
 - benchmark matrix templates for local interface and speech candidates
 - GUI coverage for KAME interface, ASR, TTS, routing, barge-in, fallback, and local provider target settings
+- oracle job manager evidence for background execution, queueing, cancellation,
+  and status reporting
+- DGX Spark / Nemotron 3 Super `max_concurrent=4` capacity evidence
 
 Remaining for full KAME production readiness:
 
 - Gemma 4 E2B local reflex launch evidence from the actual DGX Spark runtime
+- DGX Spark / Nemotron 3 Super `max_concurrent=4` capacity evidence
 - benchmark evidence comparing E2B direct-audio routing against STT-fed fallback routing
 - benchmark evidence comparing oracle outcomes with and without ASR transcript hypotheses
 - all-local DGX Spark smoke evidence with the oracle, interface, ASR, and TTS services running together

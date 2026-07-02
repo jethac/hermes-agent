@@ -476,13 +476,53 @@ For real DGX Spark evidence:
 - record whether four concurrent jobs are actually viable with the configured
   context window and vLLM settings
 
-## Open Questions
+## Policy Decisions
 
-- How much job state should be committed to Hermes history versus an auxiliary
-  voice-session task log?
-- Should job updates be attached to the original oracle prompt or represented
-  as separate follow-up messages?
-- What is the right default `max_concurrent` for non-DGX local machines?
+### Job State Persistence
+
+Durable Hermes history records user-visible intent and outcomes:
+
+- final user requests that create oracle jobs
+- concise completed job summaries when they are user-visible
+- cancellations, failures, approvals, and executed tool results that affect the
+  user's durable understanding of the task
+
+The auxiliary voice-session task log records lifecycle and scheduling detail:
+
+- accepted, queued, started, progress, waiting-for-approval, completed, failed,
+  cancel-requested, and cancelled events
+- active/running/queued/waiting capacity snapshots
+- status polls, progress fragments, hidden routing metadata, and diagnostic
+  timing
+
+This keeps Hermes conversation history useful without carrying every voice-loop
+state transition through the oracle context. The audit/task log can be indexed
+or summarized later, but it is not the same thing as assistant chat history.
+
+### Job Updates
+
+User updates to a job attach to the job, not to a separate durable follow-up
+message by default.
+
+- Queued-job updates are folded into the original oracle request before worker
+  execution starts.
+- Running-job updates are delivered through the oracle update hook when the
+  active oracle supports it, and always remain visible in job status.
+- Updates become durable Hermes history only when they are user-visible,
+  approval-relevant, or materially change the final task outcome.
+
+This preserves the spoken control model: "also check the receipt" modifies the
+existing background job instead of creating a surprise second oracle turn.
+
+### Default Capacity
+
+Default `max_concurrent` is one for non-DGX and unknown local machines. Four is
+the first intended DGX Spark / Nemotron-3 Super target and must be enabled by
+config plus measured evidence before being claimed as production-ready.
+
+Status and readiness artifacts must show active, running, queued, and
+waiting-for-approval capacity separately so approval-blocked work cannot be
+mistaken for free capacity.
 
 ## Rollout Plan
 
