@@ -129,11 +129,14 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_speak_terminal_results_false_suppresses_result_speech_but_keeps_status",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_completed_event_preserves_full_result_without_bloating_status",
         "tests/agent/test_realtime_voice.py::test_session_persists_durable_async_oracle_job_records",
+        "tests/agent/test_realtime_voice_reference_sidecar_openai.py::test_reference_sidecar_forwards_speakable_oracle_result_to_openai_realtime",
+        "tests/agent/test_realtime_voice_reference_sidecar_gemini.py::test_reference_sidecar_forwards_speakable_oracle_result_to_gemini_live",
     ],
     "discord_session": [
         "tests/gateway/test_voice_command.py::TestDiscordVoiceChannelMethods::test_leave_voice_channel_cleans_up",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_degraded_marks_active_oracle_jobs_failed",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_session_close_cancels_oracle_jobs_before_session_closed",
+        "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_session_close_waits_for_oracle_cancel_ack_before_session_closed",
     ],
     "shutdown": [
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_shutdown_forces_cancelled_state_when_worker_ignores_cancel",

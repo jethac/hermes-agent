@@ -40,6 +40,7 @@ SIDECAR_CHANNELS = 1
 SIDECAR_FRAME_SAMPLES = SIDECAR_SAMPLE_RATE * DISCORD_FRAME_MS // 1000
 SIDECAR_FRAME_BYTES = SIDECAR_FRAME_SAMPLES * SIDECAR_CHANNELS * 2
 DEFAULT_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS = 150
+DEFAULT_ORACLE_CANCEL_DRAIN_TIMEOUT_SECONDS = 0.1
 
 
 def _is_legacy_audio_output_alias(event: VoiceEvent) -> bool:
@@ -220,6 +221,7 @@ class DiscordRealtimeVoiceSession:
         self._local_close_requested = False
         self._started = False
         self._activity = asyncio.Event()
+        self._oracle_cancel_drain_event = asyncio.Event()
         self._playback_pcm48_stereo_buffer = bytearray()
         self._active_playback_generation = 0
         self._first_tts_audio_received_at_by_generation: dict[int, float] = {}
@@ -325,7 +327,9 @@ class DiscordRealtimeVoiceSession:
             self._flush_playback_buffer()
             if bool(self.oracle_jobs.get("enabled")):
                 try:
+                    self._oracle_cancel_drain_event.clear()
                     await self.cancel_oracle_job("all", reason="voice session closing")
+                    await self._wait_for_oracle_cancel_drain()
                 except Exception as exc:
                     logger.debug("Discord realtime oracle cancel-all on close failed: %s", exc)
             try:
@@ -490,6 +494,25 @@ class DiscordRealtimeVoiceSession:
             payload["update_text"] = str(update_text).strip()
         await self._send_event(VoiceEventType.INTERFACE_ORACLE_UPDATE, payload)
 
+    def _oracle_cancel_drain_timeout_seconds(self) -> float:
+        raw = self.oracle_jobs.get("shutdown_timeout_seconds", DEFAULT_ORACLE_CANCEL_DRAIN_TIMEOUT_SECONDS)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return DEFAULT_ORACLE_CANCEL_DRAIN_TIMEOUT_SECONDS
+        if value <= 0:
+            return 0.0
+        return value
+
+    async def _wait_for_oracle_cancel_drain(self) -> None:
+        timeout_seconds = self._oracle_cancel_drain_timeout_seconds()
+        if timeout_seconds <= 0:
+            return
+        try:
+            await asyncio.wait_for(self._oracle_cancel_drain_event.wait(), timeout=timeout_seconds)
+        except asyncio.TimeoutError:
+            logger.debug("Discord realtime oracle cancel drain timed out after %.3fs", timeout_seconds)
+
     async def _send_event(self, event_type: VoiceEventType, payload: dict[str, Any]) -> None:
         self._sequence += 1
         await self.sidecar.send_event(
@@ -545,6 +568,13 @@ class DiscordRealtimeVoiceSession:
                     await self._notify_degraded("sidecar_session_error", error)
                     self._activity.set()
                     return
+                if event.type in {
+                    VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED,
+                    VoiceEventType.ORACLE_JOB_CANCELLED,
+                    VoiceEventType.ORACLE_JOB_COMPLETED,
+                    VoiceEventType.ORACLE_JOB_FAILED,
+                }:
+                    self._oracle_cancel_drain_event.set()
                 if event.type in {
                     VoiceEventType.TRANSCRIPT_PARTIAL,
                     VoiceEventType.TRANSCRIPT_FINAL,

@@ -574,6 +574,14 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert result_handling["live_external_evidence_required"] is False
     assert result_handling["test_ref_count"] == len(result_handling["test_refs"])
     assert result_handling["test_ref_count"] >= 1
+    assert (
+        "tests/agent/test_realtime_voice_reference_sidecar_openai.py::test_reference_sidecar_forwards_speakable_oracle_result_to_openai_realtime"
+        in result_handling["test_refs"]
+    )
+    assert (
+        "tests/agent/test_realtime_voice_reference_sidecar_gemini.py::test_reference_sidecar_forwards_speakable_oracle_result_to_gemini_live"
+        in result_handling["test_refs"]
+    )
     discord_cleanup = report["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"]
     assert discord_cleanup["ok"] is True
     assert discord_cleanup["evidence"] == "discord_session_cleanup_smoke_plus_focused_tests"
@@ -582,6 +590,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert discord_cleanup["live_external_evidence_required"] is False
     assert discord_cleanup["test_ref_count"] == len(discord_cleanup["test_refs"])
     assert discord_cleanup["test_ref_count"] >= 1
+    assert (
+        "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_session_close_waits_for_oracle_cancel_ack_before_session_closed"
+        in discord_cleanup["test_refs"]
+    )
     assert report["proofs"]["discord_session_cleanup"]["ok"] is True
     assert report["proofs"]["discord_session_cleanup"]["cancel_all_before_session_closed"] is True
     assert report["proofs"]["discord_session_cleanup"]["session_closed_sent"] is True

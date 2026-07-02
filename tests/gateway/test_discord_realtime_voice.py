@@ -2270,7 +2270,7 @@ async def test_discord_realtime_session_close_cancels_oracle_jobs_before_session
         text_channel_id=333,
         sidecar=sidecar,
         sidecar_base_url="http://127.0.0.1:8766",
-        oracle_jobs={"enabled": True},
+        oracle_jobs={"enabled": True, "shutdown_timeout_seconds": 0},
     )
 
     await session.start()
@@ -2288,6 +2288,53 @@ async def test_discord_realtime_session_close_cancels_oracle_jobs_before_session
         "transport": "discord_voice",
     }
     assert sidecar.closed is True
+
+
+@pytest.mark.asyncio
+async def test_discord_realtime_session_close_waits_for_oracle_cancel_ack_before_session_closed():
+    from agent.realtime_voice import VoiceEvent, VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    class AckingSidecar(FakeSidecar):
+        def __init__(self):
+            super().__init__()
+            self.timeline = []
+
+        async def send_event(self, event):
+            self.sent.append(event)
+            self.timeline.append(("sent", event.type.value))
+            if event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL:
+                await self._events.put(
+                    VoiceEvent(
+                        type=VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED,
+                        session_id=event.session_id,
+                        sequence=100,
+                        payload={
+                            "job_id": "voice-oracle-001",
+                            "state": "cancel_requested",
+                            "cancel_reason": event.payload.get("reason"),
+                        },
+                    )
+                )
+
+    sidecar = AckingSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+        oracle_jobs={"enabled": True, "shutdown_timeout_seconds": 0.25},
+        event_callback=lambda event_type, payload: sidecar.timeline.append(("observed", event_type)),
+    )
+
+    await session.start()
+    await session.close()
+
+    assert sidecar.closed is True
+    assert sidecar.timeline.index(("observed", VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED.value)) < sidecar.timeline.index(
+        ("sent", VoiceEventType.SESSION_CLOSED.value)
+    )
 
 
 @pytest.mark.asyncio
