@@ -1707,6 +1707,100 @@ def test_kame_engine_async_oracle_job_allows_local_turn_while_running(monkeypatc
     asyncio.run(run())
 
 
+def test_completed_async_oracle_job_speaks_after_intervening_local_turn(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release.wait()
+            yield "The deployment is healthy."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "check the deployment status",
+                    "intent": "Check the deployment status.",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "interface_already_said": "Checking that now.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "transcript": "can you hear me",
+                    "intent": "The user is checking whether Hermes can hear them.",
+                    "route": "local",
+                    "local_reply": "Yes, I can hear you.",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT:
+                break
+
+        oracle.release.set()
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT and event.payload.get("oracle_job_result"):
+                break
+
+        await engine.close()
+        result_commit = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.ASSISTANT_COMMIT and event.payload.get("oracle_job_result")
+        )
+        assert result_commit.payload["text"] == "The deployment is healthy."
+        assert result_commit.payload["oracle_job_id"] == "voice-oracle-001"
+        assert spoken == ["Checking that now.", "Yes, I can hear you.", "The deployment is healthy."]
+
+    asyncio.run(run())
+
+
 def test_kame_engine_local_status_question_uses_oracle_job_state(monkeypatch):
     class BlockingOracle:
         def __init__(self):
