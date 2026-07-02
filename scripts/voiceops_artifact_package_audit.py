@@ -892,6 +892,52 @@ def _iter_plan_run_commands(value: Any) -> list[str]:
     return commands
 
 
+def _audit_plan_run_package_audit_summary(
+    *,
+    artifact_root: Path,
+    plan_run: Mapping[str, Any],
+    checked_artifacts: list[str],
+    issues: list[str],
+) -> None:
+    package_audit = plan_run.get("package_audit")
+    if package_audit is None:
+        return
+    if not isinstance(package_audit, Mapping):
+        issues.append("plan_run:package_audit_summary_not_object")
+        return
+    expected = {
+        "ok": True,
+        "status": "pass",
+        "issues": [],
+        "checked_artifact_count": len(checked_artifacts),
+    }
+    for key, expected_value in expected.items():
+        if package_audit.get(key) != expected_value:
+            issues.append(f"plan_run:package_audit_summary_mismatch:{key}")
+    artifacts = package_audit.get("artifacts")
+    if artifacts is not None:
+        if not isinstance(artifacts, Mapping):
+            issues.append("plan_run:package_audit_artifacts_not_object")
+            return
+        expected_dir = artifact_root / "voiceops-package-audit" / "current"
+        for key in ("json", "markdown"):
+            path_text = artifacts.get(key)
+            if not isinstance(path_text, str) or not path_text:
+                issues.append(f"plan_run:package_audit_artifact_missing:{key}")
+                continue
+            path = Path(path_text)
+            try:
+                resolved = path.resolve()
+                expected_resolved = expected_dir.resolve()
+            except OSError:
+                issues.append(f"plan_run:package_audit_artifact_unresolvable:{key}")
+                continue
+            if not (resolved == expected_resolved or expected_resolved in resolved.parents):
+                issues.append(f"plan_run:package_audit_artifact_outside_output_dir:{key}")
+            if not path.is_file():
+                issues.append(f"plan_run:package_audit_artifact_missing_file:{key}")
+
+
 def _audit_plan_consistency(
     *,
     demo: Mapping[str, Any],
@@ -2049,6 +2095,12 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         plan_run=plan_run,
         plan_closure=plan_closure,
         plan_handoff=plan_handoff,
+        issues=issues,
+    )
+    _audit_plan_run_package_audit_summary(
+        artifact_root=artifact_root,
+        plan_run=plan_run,
+        checked_artifacts=checked_artifacts,
         issues=issues,
     )
     _audit_channel_policy(channel_policy, channel_review, issues)

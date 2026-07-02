@@ -519,6 +519,30 @@ def test_package_audit_rejects_plan_run_top_level_mirror_drift(tmp_path):
     assert "plan_run:next_actions_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_stale_embedded_package_audit_summary(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    plan_run["package_audit"] = {
+        "ok": True,
+        "status": "pass",
+        "issues": [],
+        "checked_artifact_count": 92,
+    }
+    _write_json(plan_run_path, plan_run)
+    assert audit_package(artifact_root)["ok"] is True
+
+    plan_run["package_audit"]["status"] = "fail"
+    plan_run["package_audit"]["checked_artifact_count"] = 91
+    _write_json(plan_run_path, plan_run)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "plan_run:package_audit_summary_mismatch:status" in report["issues"]
+    assert "plan_run:package_audit_summary_mismatch:checked_artifact_count" in report["issues"]
+
+
 def test_package_audit_rejects_unresolvable_handoff_blockers_ref(tmp_path):
     artifact_root = _generate_package(tmp_path)
     handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"

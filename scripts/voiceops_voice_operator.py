@@ -1421,6 +1421,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("cancelled_result_durable_completed") is False
         and smoke.get("cancelled_result_durable_text") is False
         and smoke.get("durable_cancelled_record_present") is True
+        and int(smoke.get("durable_completed_jobs") or 0) == int(smoke.get("completed_jobs") or 0)
         and int(smoke.get("durable_completed_jobs") or 0) >= 1,
         "playback_stop_does_not_cancel_jobs": smoke.get("playback_stop_does_not_cancel_jobs") is True
         and smoke.get("playback_stop_committed") is True
