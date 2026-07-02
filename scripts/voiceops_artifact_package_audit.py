@@ -131,6 +131,7 @@ EXPECTED_PACKAGE_ARTIFACTS = (
     "voiceops-spark-matrix/current/spark-operator-runbook.md",
     "voiceops-voice-operator/current/discord-loopback-smoke.json",
     "voiceops-voice-operator/current/async-oracle-smoke.json",
+    "voiceops-voice-operator/current/discord-session-cleanup-smoke.json",
     "voiceops-voice-operator/current/live-probe-closure-plan.json",
     "voiceops-voice-operator/current/live-probe-closure-plan.md",
     "voiceops-voice-operator/current/live-voice-evidence-scaffold/manifest.json",

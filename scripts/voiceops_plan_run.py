@@ -1504,6 +1504,35 @@ async def build_plan_run_async(
                         "verbose_spoken_result"
                     ],
                 },
+                "discord_session_cleanup_smoke": {
+                    "ok": voice_operator["proofs"]["discord_session_cleanup"]["ok"],
+                    "cancel_all_before_session_closed": voice_operator["proofs"]["discord_session_cleanup"][
+                        "cancel_all_before_session_closed"
+                    ],
+                    "session_closed_sent": voice_operator["proofs"]["discord_session_cleanup"][
+                        "session_closed_sent"
+                    ],
+                    "sidecar_closed": voice_operator["proofs"]["discord_session_cleanup"]["sidecar_closed"],
+                    "sidecar_close_calls": voice_operator["proofs"]["discord_session_cleanup"][
+                        "sidecar_close_calls"
+                    ],
+                    "degraded_active_job_preserved_failed": voice_operator["proofs"]["discord_session_cleanup"][
+                        "degraded_active_job_preserved_failed"
+                    ],
+                    "degraded_session_removed": voice_operator["proofs"]["discord_session_cleanup"][
+                        "degraded_session_removed"
+                    ],
+                    "degraded_fallback_reason": voice_operator["proofs"]["discord_session_cleanup"][
+                        "degraded_fallback_reason"
+                    ],
+                    "degraded_job_state": voice_operator["proofs"]["discord_session_cleanup"][
+                        "degraded_job_state"
+                    ],
+                    "degraded_job_error": voice_operator["proofs"]["discord_session_cleanup"][
+                        "degraded_job_error"
+                    ],
+                    "event_order": voice_operator["proofs"]["discord_session_cleanup"]["event_order"],
+                },
                 "async_oracle_acceptance": {
                     key: {
                         "ok": value.get("ok"),

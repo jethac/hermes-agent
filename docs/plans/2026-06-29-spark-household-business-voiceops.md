@@ -316,6 +316,7 @@ The command writes:
 - `voice-operator-readiness.md`
 - `discord-loopback-smoke.json`
 - `async-oracle-smoke.json`
+- `discord-session-cleanup-smoke.json`
 - `voice-operator-events.jsonl`
 - `live-voice-evidence-template.json`
 - `live-voice-evidence.example.json`

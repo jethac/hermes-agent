@@ -132,11 +132,37 @@ def _async_oracle_smoke_payload() -> dict:
     }
 
 
+def _discord_session_cleanup_smoke_payload() -> dict:
+    return {
+        "ok": True,
+        "scenario": "discord_session_cleanup_fake_sidecar",
+        "discord_network": False,
+        "provider_sidecar_network": False,
+        "cancel_all_before_session_closed": True,
+        "cancel_payload": {
+            "job_id": "all",
+            "all": True,
+            "reason": "voice session closing",
+            "transport": "discord_voice",
+        },
+        "session_closed_sent": True,
+        "sidecar_closed": True,
+        "sidecar_close_calls": 1,
+        "degraded_active_job_preserved_failed": True,
+        "degraded_session_removed": True,
+        "degraded_fallback_reason": "sidecar_event_stream_closed: sidecar event stream closed",
+        "degraded_job_state": "failed",
+        "degraded_job_error": "sidecar_event_stream_closed: sidecar event stream closed",
+        "event_order": ["interface.oracle.cancel", "session.closed"],
+    }
+
+
 def _voice_operator_report(live_evidence: dict | None = None, smoke: dict | None = None) -> dict:
     return build_voice_operator_report(
         smoke or _smoke_payload(),
         live_evidence=live_evidence,
         async_oracle_smoke=_async_oracle_smoke_payload(),
+        discord_session_cleanup_smoke=_discord_session_cleanup_smoke_payload(),
     )
 
 
@@ -373,12 +399,19 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert result_handling["test_ref_count"] >= 1
     discord_cleanup = report["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"]
     assert discord_cleanup["ok"] is True
-    assert discord_cleanup["evidence"] == "focused_discord_session_test_refs"
-    assert discord_cleanup["verification_mode"] == "static_focused_test_reference_inventory"
-    assert discord_cleanup["runtime_verified_by_this_report"] is False
+    assert discord_cleanup["evidence"] == "discord_session_cleanup_smoke_plus_focused_tests"
+    assert discord_cleanup["verification_mode"] == "loopback_smoke_plus_focused_tests"
+    assert discord_cleanup["runtime_verified_by_this_report"] is True
     assert discord_cleanup["live_external_evidence_required"] is False
     assert discord_cleanup["test_ref_count"] == len(discord_cleanup["test_refs"])
     assert discord_cleanup["test_ref_count"] >= 1
+    assert report["proofs"]["discord_session_cleanup"]["ok"] is True
+    assert report["proofs"]["discord_session_cleanup"]["cancel_all_before_session_closed"] is True
+    assert report["proofs"]["discord_session_cleanup"]["session_closed_sent"] is True
+    assert report["proofs"]["discord_session_cleanup"]["sidecar_closed"] is True
+    assert report["proofs"]["discord_session_cleanup"]["degraded_active_job_preserved_failed"] is True
+    assert report["proofs"]["discord_session_cleanup"]["degraded_session_removed"] is True
+    assert report["proofs"]["discord_session_cleanup"]["degraded_job_state"] == "failed"
     assert "tests/agent/test_realtime_voice.py::test_kame_engine_local_status_question_uses_oracle_job_state" in (
         report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["test_refs"]
     )
@@ -430,11 +463,13 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:failed_job_reported_without_crash" in issues
     assert "missing_async_oracle_coverage:queued_job_control_update_reaches_oracle" in issues
     assert "missing_async_oracle_coverage:result_handling_bounded_and_durable" in issues
+    assert "missing_async_oracle_coverage:discord_session_cleanup_preserves_oracle_state" in issues
     assert "missing_async_oracle_acceptance:four_oracle_jobs_reflex_responsive" in issues
     assert "missing_async_oracle_acceptance:fifth_job_obeys_overflow_policy" in issues
     assert "missing_async_oracle_acceptance:approval_wait_is_visible_and_redacted" in issues
     assert "missing_async_oracle_acceptance:failed_job_is_reported_without_crashing_session" in issues
     assert "missing_async_oracle_acceptance:queued_job_control_updates_reach_oracle" in issues
+    assert "missing_async_oracle_acceptance:discord_session_cleanup_preserves_oracle_state" in issues
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
     assert result_handling["ok"] is False
     assert result_handling["verification_mode"] == "loopback_smoke_plus_focused_tests"
@@ -455,6 +490,7 @@ def test_voice_operator_validation_rejects_static_acceptance_without_test_refs()
 def test_voice_operator_validation_rejects_static_acceptance_runtime_claim():
     report = _voice_operator_report()
     row = report["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"]
+    row["verification_mode"] = "static_focused_test_reference_inventory"
     row["runtime_verified_by_this_report"] = True
 
     issues = validate_voice_operator_report(report)
@@ -483,6 +519,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
 
     required_paths = {
         "async_oracle_smoke_json",
+        "discord_session_cleanup_smoke_json",
         "events_jsonl",
         "json",
         "live_evidence_example",
@@ -502,6 +539,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     smoke = json.loads(Path(paths["smoke_json"]).read_text(encoding="utf-8"))
     async_oracle_smoke = json.loads(Path(paths["async_oracle_smoke_json"]).read_text(encoding="utf-8"))
+    discord_cleanup_smoke = json.loads(Path(paths["discord_session_cleanup_smoke_json"]).read_text(encoding="utf-8"))
     live_template = json.loads(Path(paths["live_evidence_template"]).read_text(encoding="utf-8"))
     live_example = json.loads(Path(paths["live_evidence_example"]).read_text(encoding="utf-8"))
     live_scaffold_manifest_path = Path(paths["live_evidence_scaffold_manifest"])
@@ -522,6 +560,8 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert smoke["ok"] is True
     assert async_oracle_smoke["ok"] is True
     assert async_oracle_smoke["max_running"] == 4
+    assert discord_cleanup_smoke["ok"] is True
+    assert discord_cleanup_smoke["cancel_all_before_session_closed"] is True
     assert live_template["schema_version"] == "voiceops.milestone1.live_voice_evidence.v1"
     assert live_example["example_only"] is True
     assert "example_only_evidence_not_accepted" in validate_live_probe_evidence(live_example)["issues"]

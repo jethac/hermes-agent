@@ -1014,6 +1014,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(voice_result["artifacts"]["markdown"]).exists()
     assert Path(voice_result["artifacts"]["smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["async_oracle_smoke_json"]).exists()
+    assert Path(voice_result["artifacts"]["discord_session_cleanup_smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["events_jsonl"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_example"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_scaffold_manifest"]).exists()
@@ -1052,6 +1053,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["verbose_result_commit_marked_truncated"] is True
     assert voice_result["details"]["async_oracle_smoke"]["verbose_full_result_durable"] is True
     assert voice_result["details"]["async_oracle_smoke"]["verbose_spoken_result"] == "First sentence."
+    assert voice_result["details"]["discord_session_cleanup_smoke"]["ok"] is True
+    assert voice_result["details"]["discord_session_cleanup_smoke"]["cancel_all_before_session_closed"] is True
+    assert voice_result["details"]["discord_session_cleanup_smoke"]["session_closed_sent"] is True
+    assert voice_result["details"]["discord_session_cleanup_smoke"]["sidecar_closed"] is True
+    assert voice_result["details"]["discord_session_cleanup_smoke"]["degraded_active_job_preserved_failed"] is True
+    assert voice_result["details"]["discord_session_cleanup_smoke"]["degraded_session_removed"] is True
+    assert voice_result["details"]["discord_session_cleanup_smoke"]["degraded_job_state"] == "failed"
     assert voice_result["details"]["async_oracle_acceptance"]["four_oracle_jobs_reflex_responsive"]["ok"] is True
     assert voice_result["details"]["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
     assert voice_result["details"]["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
@@ -1080,6 +1088,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "verification_mode"
     ] == "loopback_smoke_plus_focused_tests"
     assert voice_result["details"]["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"][
+        "runtime_verified_by_this_report"
+    ] is True
+    assert voice_result["details"]["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"][
+        "verification_mode"
+    ] == "loopback_smoke_plus_focused_tests"
+    assert voice_result["details"]["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"][
         "runtime_verified_by_this_report"
     ] is True
 
@@ -1769,7 +1783,7 @@ def test_plan_run_cli_package_audit_writes_consistency_artifacts(tmp_path):
     assert payload["package_audit"]["ok"] is True
     assert payload["package_audit"]["status"] == "pass"
     assert payload["package_audit"]["issues"] == []
-    assert payload["package_audit"]["checked_artifact_count"] == 91
+    assert payload["package_audit"]["checked_artifact_count"] == 92
     assert Path(payload["package_audit"]["artifacts"]["json"]).exists()
     assert Path(payload["package_audit"]["artifacts"]["markdown"]).exists()
     assert str(artifact_root / "voiceops-package-audit" / "current") in payload["package_audit"]["artifacts"]["json"]
@@ -1923,7 +1937,7 @@ def test_plan_run_cli_dry_audit_can_run_package_audit_without_persistent_writes(
     assert payload["dry_audit"] is True
     assert payload["persistent_writes"] is False
     assert payload["package_audit"] == {
-            "checked_artifact_count": 91,
+            "checked_artifact_count": 92,
         "issues": [],
         "ok": True,
         "persistent_writes": False,

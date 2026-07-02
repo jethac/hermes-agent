@@ -13,6 +13,7 @@ import asyncio
 import datetime as dt
 import hashlib
 import json
+import logging
 import re
 import sys
 from dataclasses import asdict
@@ -220,6 +221,140 @@ def _positive_int(value: Any) -> int:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
         return 0
+
+
+class _CleanupSmokeSidecar:
+    def __init__(self) -> None:
+        self.started_with: Any = None
+        self.sent: list[Any] = []
+        self.closed = False
+        self.close_calls = 0
+        self._events: asyncio.Queue[Any] = asyncio.Queue()
+
+    async def start(self, config: Any) -> None:
+        self.started_with = config
+
+    async def send_event(self, event: Any) -> None:
+        self.sent.append(event)
+
+    async def close(self) -> None:
+        self.close_calls += 1
+        self.closed = True
+        await self._events.put(None)
+
+    async def events(self) -> Any:
+        while True:
+            event = await self._events.get()
+            if event is None:
+                return
+            yield event
+
+
+async def run_discord_session_cleanup_smoke() -> dict[str, Any]:
+    """Provider-free Discord session cleanup smoke for async oracle state."""
+
+    from agent.realtime_voice import VoiceEventType
+    from plugins.platforms.discord.adapter import DiscordAdapter
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    sidecar = _CleanupSmokeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+        oracle_jobs={"enabled": True},
+    )
+    await session.start()
+    await session.close()
+
+    event_types = [event.type for event in sidecar.sent]
+    cancel_event = next(
+        (event for event in sidecar.sent if event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL),
+        None,
+    )
+    session_closed_event = next(
+        (event for event in sidecar.sent if event.type == VoiceEventType.SESSION_CLOSED),
+        None,
+    )
+    cancel_index = event_types.index(VoiceEventType.INTERFACE_ORACLE_CANCEL) if cancel_event else -1
+    closed_index = event_types.index(VoiceEventType.SESSION_CLOSED) if session_closed_event else -1
+    cancel_all_before_session_closed = (
+        cancel_event is not None
+        and session_closed_event is not None
+        and 0 <= cancel_index < closed_index
+        and cancel_event.payload == {
+            "job_id": "all",
+            "all": True,
+            "reason": "voice session closing",
+            "transport": "discord_voice",
+        }
+    )
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._voice_session_states = {}
+    adapter._realtime_voice_sessions = {111: object()}
+    adapter._realtime_voice_cfg = {"fallback_policy": "text_only"}
+    adapter._handle_realtime_voice_event(
+        111,
+        "session.started",
+        {"oracle_jobs": {"enabled": True, "max_concurrent": 4, "queue_limit": 16}},
+    )
+    adapter._handle_realtime_voice_event(
+        111,
+        "oracle.job.started",
+        {
+            "job_id": "voice-oracle-001",
+            "state": "running",
+            "priority": "normal",
+            "route": "defer",
+            "intent": "Check the deployment status.",
+            "spoken_status": "Checking the deployment status.",
+        },
+    )
+    adapter_logger = logging.getLogger("plugins.platforms.discord.adapter")
+    adapter_logger_disabled = adapter_logger.disabled
+    adapter_logger.disabled = True
+    try:
+        adapter._handle_realtime_voice_degraded(
+            111,
+            "sidecar_event_stream_closed",
+            "sidecar event stream closed",
+        )
+    finally:
+        adapter_logger.disabled = adapter_logger_disabled
+    status = adapter.get_voice_session_status(111)
+    failed_jobs = status.get("oracle_jobs", {}).get("jobs") or []
+    failed_job = failed_jobs[0] if failed_jobs else {}
+    degraded_active_job_preserved_failed = (
+        111 not in adapter._realtime_voice_sessions
+        and status.get("sidecar_running") is False
+        and status.get("fallback_reason") == "sidecar_event_stream_closed: sidecar event stream closed"
+        and status.get("oracle_jobs", {}).get("capacity", {}).get("running") == 0
+        and failed_job.get("job_id") == "voice-oracle-001"
+        and failed_job.get("state") == "failed"
+        and failed_job.get("intent") == "Check the deployment status."
+        and failed_job.get("spoken_status") == "Checking the deployment status."
+        and failed_job.get("error") == "sidecar_event_stream_closed: sidecar event stream closed"
+    )
+    return {
+        "ok": bool(cancel_all_before_session_closed and sidecar.closed and degraded_active_job_preserved_failed),
+        "scenario": "discord_session_cleanup_fake_sidecar",
+        "discord_network": False,
+        "provider_sidecar_network": False,
+        "cancel_all_before_session_closed": cancel_all_before_session_closed,
+        "cancel_payload": dict(cancel_event.payload) if cancel_event is not None else {},
+        "session_closed_sent": session_closed_event is not None,
+        "sidecar_closed": sidecar.closed,
+        "sidecar_close_calls": sidecar.close_calls,
+        "degraded_active_job_preserved_failed": degraded_active_job_preserved_failed,
+        "degraded_session_removed": 111 not in adapter._realtime_voice_sessions,
+        "degraded_fallback_reason": status.get("fallback_reason"),
+        "degraded_job_state": failed_job.get("state"),
+        "degraded_job_error": failed_job.get("error"),
+        "event_order": [str(event_type.value) for event_type in event_types],
+    }
 
 
 def _non_negative_number(value: Any) -> float | None:
@@ -1250,6 +1385,17 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
     }
 
 
+def _coverage_from_discord_session_cleanup_smoke(smoke: Mapping[str, Any]) -> dict[str, bool]:
+    return {
+        "discord_session_cleanup_preserves_oracle_state": smoke.get("ok") is True
+        and smoke.get("cancel_all_before_session_closed") is True
+        and smoke.get("session_closed_sent") is True
+        and smoke.get("sidecar_closed") is True
+        and smoke.get("degraded_active_job_preserved_failed") is True
+        and smoke.get("degraded_session_removed") is True,
+    }
+
+
 def _async_oracle_acceptance_row(
     *,
     ok: bool,
@@ -1343,11 +1489,11 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             runtime_verified_by_this_report=True,
         ),
         "discord_session_cleanup_preserves_oracle_state": _async_oracle_acceptance_row(
-            ok=bool(ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["discord_session"]),
-            evidence="focused_discord_session_test_refs",
+            ok=bool(async_oracle_coverage.get("discord_session_cleanup_preserves_oracle_state")),
+            evidence="discord_session_cleanup_smoke_plus_focused_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["discord_session"],
-            verification_mode="static_focused_test_reference_inventory",
-            runtime_verified_by_this_report=False,
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
         ),
     }
 
@@ -1379,10 +1525,15 @@ def build_voice_operator_report(
     *,
     live_evidence: dict[str, Any] | None = None,
     async_oracle_smoke: dict[str, Any] | None = None,
+    discord_session_cleanup_smoke: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     coverage = _coverage_from_smoke(smoke)
     async_oracle_smoke = async_oracle_smoke or {}
-    async_oracle_coverage = _coverage_from_async_oracle_smoke(async_oracle_smoke)
+    discord_session_cleanup_smoke = discord_session_cleanup_smoke or {}
+    async_oracle_coverage = {
+        **_coverage_from_async_oracle_smoke(async_oracle_smoke),
+        **_coverage_from_discord_session_cleanup_smoke(discord_session_cleanup_smoke),
+    }
     async_oracle_acceptance = _async_oracle_acceptance_matrix(async_oracle_coverage)
     live_evidence = live_evidence or _load_live_evidence([])
     missing_live_gates = _live_evidence_missing_gates(live_evidence)
@@ -1520,6 +1671,26 @@ def build_voice_operator_report(
             "verbose_spoken_result": async_oracle_smoke.get("verbose_spoken_result"),
             "coverage": async_oracle_coverage,
         },
+        "discord_session_cleanup": {
+            "ok": bool(_coverage_from_discord_session_cleanup_smoke(discord_session_cleanup_smoke).get(
+                "discord_session_cleanup_preserves_oracle_state"
+            )),
+            "scenario": discord_session_cleanup_smoke.get("scenario"),
+            "cancel_all_before_session_closed": bool(
+                discord_session_cleanup_smoke.get("cancel_all_before_session_closed")
+            ),
+            "session_closed_sent": bool(discord_session_cleanup_smoke.get("session_closed_sent")),
+            "sidecar_closed": bool(discord_session_cleanup_smoke.get("sidecar_closed")),
+            "sidecar_close_calls": discord_session_cleanup_smoke.get("sidecar_close_calls"),
+            "degraded_active_job_preserved_failed": bool(
+                discord_session_cleanup_smoke.get("degraded_active_job_preserved_failed")
+            ),
+            "degraded_session_removed": bool(discord_session_cleanup_smoke.get("degraded_session_removed")),
+            "degraded_fallback_reason": discord_session_cleanup_smoke.get("degraded_fallback_reason"),
+            "degraded_job_state": discord_session_cleanup_smoke.get("degraded_job_state"),
+            "degraded_job_error": discord_session_cleanup_smoke.get("degraded_job_error"),
+            "event_order": discord_session_cleanup_smoke.get("event_order") or [],
+        },
         "live_evidence": {
             "ok": bool(live_evidence.get("loaded")) and not missing_live_gates and not live_evidence.get("issues"),
             "mode": live_evidence.get("mode"),
@@ -1604,6 +1775,7 @@ def build_voice_operator_report(
         "live_evidence": live_evidence,
         "smoke": smoke,
         "async_oracle_smoke": dict(async_oracle_smoke),
+        "discord_session_cleanup_smoke": dict(discord_session_cleanup_smoke),
         "live_probe_required_for_completion": {
             "status": live_probe_status,
             "reason": "Headless loopback does not prove a real Discord gateway join, live receiver transport, or production sidecar availability.",
@@ -1675,6 +1847,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "failed_job_reported_without_crash",
         "queued_job_control_update_reaches_oracle",
         "result_handling_bounded_and_durable",
+        "discord_session_cleanup_preserves_oracle_state",
     ):
         if async_oracle_coverage.get(key) is not True:
             issues.append(f"missing_async_oracle_coverage:{key}")
@@ -1928,6 +2101,7 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
         "markdown": output_dir / "voice-operator-readiness.md",
         "smoke_json": output_dir / "discord-loopback-smoke.json",
         "async_oracle_smoke_json": output_dir / "async-oracle-smoke.json",
+        "discord_session_cleanup_smoke_json": output_dir / "discord-session-cleanup-smoke.json",
         "events_jsonl": output_dir / "voice-operator-events.jsonl",
         "live_evidence_template": output_dir / "live-voice-evidence-template.json",
         "live_evidence_example": output_dir / "live-voice-evidence.example.json",
@@ -1938,6 +2112,7 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
     paths["markdown"].write_text(_markdown(report), encoding="utf-8")
     _write_json(paths["smoke_json"], report["smoke"])
     _write_json(paths["async_oracle_smoke_json"], report["async_oracle_smoke"])
+    _write_json(paths["discord_session_cleanup_smoke_json"], report["discord_session_cleanup_smoke"])
     _write_json(paths["live_evidence_template"], build_live_probe_evidence_template())
     _write_json(paths["live_evidence_example"], build_live_probe_evidence_example())
     paths.update(write_live_evidence_scaffold(output_dir))
@@ -1956,10 +2131,12 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
 async def build_voice_operator_report_from_smoke(live_evidence_paths: list[Path] | None = None) -> dict[str, Any]:
     smoke_result = await run_discord_realtime_voice_smoke()
     async_oracle_smoke = await run_async_oracle_smoke()
+    discord_session_cleanup_smoke = await run_discord_session_cleanup_smoke()
     return build_voice_operator_report(
         asdict(smoke_result),
         live_evidence=_load_live_evidence(live_evidence_paths),
         async_oracle_smoke=async_oracle_smoke,
+        discord_session_cleanup_smoke=discord_session_cleanup_smoke,
     )
 
 
