@@ -167,7 +167,7 @@ class OracleJobManager:
             raise ValueError("OracleJobManager requires a runner to submit jobs")
 
         async with self._lock:
-            if self._queued_count_locked() >= self.queue_limit and self._running_count_locked() >= self.max_concurrent:
+            if self._queued_count_locked() >= self.queue_limit and self._active_count_locked() >= self.max_concurrent:
                 if self.overflow_policy == "reject":
                     raise OracleJobQueueFullError("oracle job queue is full")
                 raise OracleJobQueueFullError("oracle job queue is full")
@@ -175,7 +175,7 @@ class OracleJobManager:
             job = self._job_from_request(request, priority=priority)
             self._jobs[job.job_id] = job
             await self._emit_locked(OracleJobEventType.ACCEPTED, job)
-            if self._running_count_locked() < self.max_concurrent:
+            if self._active_count_locked() < self.max_concurrent:
                 self._start_job_locked(job, runner)
             else:
                 self._queue.append(job.job_id)
@@ -254,6 +254,19 @@ class OracleJobManager:
             else:
                 await asyncio.sleep(0.01)
 
+    async def shutdown(self, *, reason: str = "session closed", timeout_seconds: float = 2.0) -> bool:
+        """Cancel pending work without letting non-cooperative oracle jobs hang close()."""
+        await self.cancel_all(reason=reason)
+        try:
+            await asyncio.wait_for(
+                self.wait_for_idle(),
+                timeout=_positive_float(timeout_seconds, default=2.0),
+            )
+            return True
+        except TimeoutError:
+            await self._force_cancel_remaining(reason=reason)
+            return False
+
     def _job_from_request(self, request: KameOracleRequest, *, priority: Optional[str]) -> OracleJob:
         self._sequence += 1
         now = self._clock()
@@ -327,7 +340,7 @@ class OracleJobManager:
         runner = self.runner
         if runner is None:
             return
-        while self._queue and self._running_count_locked() < self.max_concurrent:
+        while self._queue and self._active_count_locked() < self.max_concurrent:
             job_id = self._queue.popleft()
             job = self._jobs.get(job_id)
             if job is None or job.state != OracleJobState.QUEUED:
@@ -350,11 +363,50 @@ class OracleJobManager:
     def _running_count_locked(self) -> int:
         return sum(1 for job in self._jobs.values() if job.state == OracleJobState.RUNNING)
 
+    def _active_count_locked(self) -> int:
+        return sum(
+            1
+            for job in self._jobs.values()
+            if job.state
+            in {
+                OracleJobState.RUNNING,
+                OracleJobState.WAITING_FOR_APPROVAL,
+                OracleJobState.CANCEL_REQUESTED,
+            }
+        )
+
     def _queued_count_locked(self) -> int:
         return sum(1 for job in self._jobs.values() if job.state == OracleJobState.QUEUED)
 
     def _remove_queued_locked(self, job_id: str) -> None:
         self._queue = deque(existing for existing in self._queue if existing != job_id)
+
+    async def _force_cancel_remaining(self, *, reason: str) -> None:
+        async with self._lock:
+            queued_job_ids = list(self._queue)
+            self._queue.clear()
+            task_items = list(self._tasks.items())
+
+            for job_id in queued_job_ids:
+                job = self._jobs.get(job_id)
+                if job is None or job.state in TERMINAL_STATES:
+                    continue
+                job.state = OracleJobState.CANCELLED
+                job.cancel_reason = job.cancel_reason or reason
+                job.updated_at = self._clock()
+                await self._emit_locked(OracleJobEventType.CANCELLED, job)
+
+            for job_id, task in task_items:
+                job = self._jobs.get(job_id)
+                if job is not None and job.state not in TERMINAL_STATES:
+                    job.state = OracleJobState.CANCELLED
+                    job.cancel_reason = job.cancel_reason or reason
+                    job.updated_at = self._clock()
+                    await self._emit_locked(OracleJobEventType.CANCELLED, job)
+                if not task.done():
+                    task.cancel()
+                    task.add_done_callback(_consume_task_exception)
+                self._tasks.pop(job_id, None)
 
 
 def _spoken_status(job: OracleJob) -> str:
@@ -378,3 +430,22 @@ async def _maybe_await(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+def _consume_task_exception(task: asyncio.Task[Any]) -> None:
+    try:
+        task.exception()
+    except (asyncio.CancelledError, Exception):
+        pass
+
+
+def _positive_float(value: object, *, default: float) -> float:
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed <= 0:
+        return default
+    return parsed

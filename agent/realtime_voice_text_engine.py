@@ -229,8 +229,14 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 await self._active_task
         if self._oracle_job_manager is not None:
             with contextlib.suppress(Exception):
-                await self._oracle_job_manager.cancel_all(reason="session closed")
-                await self._oracle_job_manager.wait_for_idle()
+                await self._oracle_job_manager.shutdown(
+                    reason="session closed",
+                    timeout_seconds=_oracle_jobs_config_float(
+                        self.config,
+                        "shutdown_timeout_seconds",
+                        default=2.0,
+                    ),
+                )
         await self._notify_sidecar_session_stop(sidecar_stop_event)
         if self._sidecar_task and not self._sidecar_task.done():
             self._sidecar_task.cancel()
@@ -2459,6 +2465,21 @@ def _oracle_jobs_config_str(config: RealtimeVoiceSessionConfig, key: str, *, def
         return default
     value = str(config.oracle_jobs.get(key) or "").strip()
     return value or default
+
+
+def _oracle_jobs_config_float(config: Optional[RealtimeVoiceSessionConfig], key: str, *, default: float) -> float:
+    if config is None or not isinstance(config.oracle_jobs, Mapping):
+        return default
+    value = config.oracle_jobs.get(key)
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed <= 0:
+        return default
+    return parsed
 
 
 _ORACLE_JOB_EVENT_VOICE_TYPES: Mapping[OracleJobEventType, VoiceEventType] = {

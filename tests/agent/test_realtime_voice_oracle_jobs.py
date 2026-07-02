@@ -206,6 +206,81 @@ async def test_cancelling_running_job_calls_interrupt_and_ignores_late_result():
 
 
 @pytest.mark.asyncio
+async def test_cancel_requested_job_keeps_capacity_until_worker_stops():
+    started = []
+    cancellation_entered = asyncio.Event()
+    release_cancelled_worker = asyncio.Event()
+
+    async def runner(job):
+        started.append(job.job_id)
+        if job.job_id == "voice-oracle-001":
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancellation_entered.set()
+                await release_cancelled_worker.wait()
+                raise
+        return f"done {job.job_id}"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    first = await manager.submit(_request("first"))
+    second = await manager.submit(_request("second"))
+    await asyncio.sleep(0)
+
+    await manager.cancel(first.job_id, reason="stop first")
+    await asyncio.wait_for(cancellation_entered.wait(), timeout=1)
+    await asyncio.sleep(0)
+
+    assert started == [first.job_id]
+    assert (await manager.get(first.job_id)).state == OracleJobState.CANCEL_REQUESTED
+    assert (await manager.get(second.job_id)).state == OracleJobState.QUEUED
+
+    release_cancelled_worker.set()
+    await manager.wait_for_idle()
+
+    assert started == [first.job_id, second.job_id]
+    assert (await manager.get(first.job_id)).state == OracleJobState.CANCELLED
+    assert (await manager.get(second.job_id)).state == OracleJobState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_shutdown_forces_cancelled_state_when_worker_ignores_cancel():
+    started = asyncio.Event()
+    cancellation_entered = asyncio.Event()
+    release_worker = asyncio.Event()
+
+    async def runner(job):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancellation_entered.set()
+            await release_worker.wait()
+            return "late result"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    job = await manager.submit(_request("slow"))
+    await asyncio.wait_for(started.wait(), timeout=1)
+
+    drained = await manager.shutdown(reason="session closed", timeout_seconds=0.01)
+    status = await manager.status_view()
+
+    assert drained is False
+    assert (await manager.get(job.job_id)).state == OracleJobState.CANCELLED
+    assert (await manager.get(job.job_id)).cancel_reason == "session closed"
+    assert status["capacity"] == {
+        "running": 0,
+        "max_concurrent": 1,
+        "queued": 0,
+        "queue_limit": 16,
+    }
+    assert cancellation_entered.is_set()
+
+    release_worker.set()
+    await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
 async def test_failed_job_records_error_and_starts_next():
     async def runner(job):
         if job.job_id == "voice-oracle-001":

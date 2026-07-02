@@ -145,6 +145,7 @@ voice:
       queue_limit: 16
       default_priority: normal
       overflow_policy: queue
+      shutdown_timeout_seconds: 2
 ```
 
 The first deployment target is:
@@ -380,6 +381,8 @@ This requires generation/job relevance checks, not just "oracle returned text".
 ### Capacity And Hardware
 
 - Config exposes `max_concurrent`.
+- Config exposes a bounded oracle-job shutdown timeout so voice/session close
+  does not hang on a non-cooperative oracle worker.
 - Status reports running/queued/max capacity.
 - Tests cover `max_concurrent=1` and `max_concurrent=4`.
 - DGX Spark / Nemotron-3 Super target documents `max_concurrent=4` as the first
