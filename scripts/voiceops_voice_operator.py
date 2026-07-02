@@ -89,6 +89,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
     "status_view": [
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_status_view_reports_capacity_and_redacts_raw_metadata",
         "tests/agent/test_realtime_voice.py::test_kame_engine_local_status_question_uses_oracle_job_state",
+        "tests/gateway/test_voice_command.py::TestVoiceChannelCommands::test_voice_status_reports_realtime_latency_metrics",
         "tests/gateway/test_voice_command.py::TestVoiceChannelCommands::test_voice_jobs_reports_oracle_job_snapshot",
     ],
     "local_turns": [

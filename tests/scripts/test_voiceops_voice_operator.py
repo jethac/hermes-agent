@@ -958,8 +958,18 @@ def test_voice_operator_validation_accepts_current_async_acceptance_test_refs():
 
     assert validate_voice_operator_report(report) == []
     assert (
+        "tests/gateway/test_voice_command.py::TestVoiceChannelCommands::test_voice_status_reports_realtime_latency_metrics"
+        in report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["test_refs"]
+    )
+    assert (
         "tests/gateway/test_voice_command.py::TestVoiceChannelCommands::test_voice_jobs_reports_oracle_job_snapshot"
         in report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["test_refs"]
+    )
+    assert (
+        report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"][
+            "test_ref_count"
+        ]
+        == 4
     )
     assert (
         "tests/gateway/test_voice_command.py::TestDiscordVoiceChannelMethods::test_leave_voice_channel_cleans_up"

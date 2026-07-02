@@ -1456,6 +1456,8 @@ async def build_plan_run_async(
                 "live_probe_missing_gates": voice_operator["live_probe_required_for_completion"]["missing_gates"],
                 "latency_metrics_ms": voice_operator["latency_metrics_ms"],
                 "async_oracle_smoke": {
+                    "kind": "async_oracle_smoke",
+                    "scenario": voice_operator["proofs"]["async_oracle_jobs"]["scenario"],
                     "ok": voice_operator["proofs"]["async_oracle_jobs"]["ok"],
                     "max_running": voice_operator["proofs"]["async_oracle_jobs"]["max_running"],
                     "max_worker_overlap": voice_operator["proofs"]["async_oracle_jobs"]["max_worker_overlap"],

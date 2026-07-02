@@ -1046,6 +1046,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "test_ref_count": 3,
         "visible_tool_names": ["tool_call", "tool_describe", "tool_search"],
     }
+    assert voice_result["details"]["async_oracle_smoke"]["kind"] == "async_oracle_smoke"
+    assert voice_result["details"]["async_oracle_smoke"]["scenario"] == "async_kame_oracle_jobs_fake"
     assert voice_result["details"]["async_oracle_smoke"]["late_cancelled_output_attempted"] is True
     assert voice_result["details"]["async_oracle_smoke"]["max_worker_overlap"] == 4
     assert voice_result["details"]["async_oracle_smoke"]["worker_overlap_proved"] is True
