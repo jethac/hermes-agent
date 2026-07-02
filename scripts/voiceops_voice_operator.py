@@ -1408,7 +1408,10 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("local_turn_during_running_jobs_observed") is True
         and int(smoke.get("local_turn_active_job_count") or 0) >= 1,
         "status_turn_while_jobs_running": bool(smoke.get("status_turn_committed"))
-        and "4 running out of 4" in str(smoke.get("status_text") or ""),
+        and "4 running out of 4" in str(smoke.get("status_text") or "")
+        and "1 queued" in str(smoke.get("status_text") or "")
+        and smoke.get("status_turn_queued_visible") is True
+        and smoke.get("status_turn_no_oracle_request") is True,
         "fifth_job_queued_and_started_after_capacity_freed": int(smoke.get("queued_jobs") or 0) >= 1
         and smoke.get("fifth_job_queued") is True
         and smoke.get("fifth_job_started_after_capacity_freed") is True,
@@ -1940,6 +1943,16 @@ def build_voice_operator_report(
                 async_oracle_smoke.get("playback_stop_does_not_cancel_jobs")
             ),
             "status_turn_committed": bool(async_oracle_smoke.get("status_turn_committed")),
+            "status_turn_queued_visible": bool(async_oracle_smoke.get("status_turn_queued_visible")),
+            "status_turn_no_oracle_request": bool(
+                async_oracle_smoke.get("status_turn_no_oracle_request")
+            ),
+            "status_turn_oracle_request_count_before": async_oracle_smoke.get(
+                "status_turn_oracle_request_count_before"
+            ),
+            "status_turn_oracle_request_count_after": async_oracle_smoke.get(
+                "status_turn_oracle_request_count_after"
+            ),
             "status_text": async_oracle_smoke.get("status_text"),
             "terminal_status_committed": bool(async_oracle_smoke.get("terminal_status_committed")),
             "completed_result_status_visible": bool(async_oracle_smoke.get("completed_result_status_visible")),
@@ -2004,6 +2017,8 @@ def build_voice_operator_report(
             "terminal_result_auto_summarize_default": bool(
                 async_oracle_smoke.get("terminal_result_auto_summarize_default")
             ),
+            "terminal_result_default_event_count": async_oracle_smoke.get("terminal_result_default_event_count"),
+            "terminal_result_default_spoken": bool(async_oracle_smoke.get("terminal_result_default_spoken")),
             "terminal_result_suppression_config": async_oracle_smoke.get("terminal_result_suppression_config"),
             "terminal_result_suppressed": bool(async_oracle_smoke.get("terminal_result_suppressed")),
             "terminal_result_unsolicited_event_count": async_oracle_smoke.get(

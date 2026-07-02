@@ -132,6 +132,10 @@ def _async_oracle_smoke_payload() -> dict:
         "playback_stop_cancelled_jobs": False,
         "playback_stop_does_not_cancel_jobs": True,
         "status_turn_committed": True,
+        "status_turn_queued_visible": True,
+        "status_turn_no_oracle_request": True,
+        "status_turn_oracle_request_count_before": 4,
+        "status_turn_oracle_request_count_after": 4,
         "status_text": "Oracle jobs: 4 running out of 4, 1 queued. running: Starting smoke task 1.",
         "terminal_status_committed": True,
         "completed_result_status_visible": True,
@@ -184,6 +188,8 @@ def _async_oracle_smoke_payload() -> dict:
         "verbose_spoken_result": "First sentence.",
         "terminal_result_policy_smoke_ok": True,
         "terminal_result_auto_summarize_default": True,
+        "terminal_result_default_event_count": 1,
+        "terminal_result_default_spoken": True,
         "terminal_result_suppression_config": "oracle_jobs.speak_terminal_results=false",
         "terminal_result_suppressed": True,
         "terminal_result_unsolicited_event_count": 0,
@@ -519,6 +525,8 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["verbose_spoken_result"] == "First sentence."
     assert report["proofs"]["async_oracle_jobs"]["terminal_result_policy_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["terminal_result_auto_summarize_default"] is True
+    assert report["proofs"]["async_oracle_jobs"]["terminal_result_default_event_count"] == 1
+    assert report["proofs"]["async_oracle_jobs"]["terminal_result_default_spoken"] is True
     assert (
         report["proofs"]["async_oracle_jobs"]["terminal_result_suppression_config"]
         == "oracle_jobs.speak_terminal_results=false"
@@ -537,6 +545,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["shutdown_cancelled_jobs"] == 1
     assert report["proofs"]["async_oracle_jobs"]["local_turn_during_running_jobs_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["local_turn_active_job_count"] == 4
+    assert report["proofs"]["async_oracle_jobs"]["status_turn_queued_visible"] is True
+    assert report["proofs"]["async_oracle_jobs"]["status_turn_no_oracle_request"] is True
+    assert report["proofs"]["async_oracle_jobs"]["status_turn_oracle_request_count_before"] == 4
+    assert report["proofs"]["async_oracle_jobs"]["status_turn_oracle_request_count_after"] == 4
     assert report["proofs"]["tool_disclosure"]["ok"] is True
     assert report["proofs"]["tool_disclosure"]["visible_tool_names"] == [
         "tool_call",
@@ -755,6 +767,20 @@ def test_voice_operator_validation_rejects_local_turn_without_running_job_overla
     assert "missing_async_oracle_coverage:local_turn_while_jobs_running" in issues
     assert "stale_async_oracle_coverage:local_turn_while_jobs_running" in issues
     assert "missing_async_oracle_acceptance:four_oracle_jobs_reflex_responsive" in issues
+
+
+def test_voice_operator_validation_rejects_status_turn_without_queued_or_no_oracle_call_proof():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["status_turn_queued_visible"] = False
+    report["async_oracle_smoke"]["status_turn_no_oracle_request"] = False
+    report["async_oracle_smoke"]["status_turn_oracle_request_count_after"] = 5
+    report["async_oracle_smoke"]["status_text"] = "Oracle jobs: 4 running out of 4."
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:status_turn_while_jobs_running" in issues
+    assert "stale_async_oracle_coverage:status_turn_while_jobs_running" in issues
+    assert "missing_async_oracle_acceptance:status_reports_running_and_queued_without_oracle_call" in issues
 
 
 def test_voice_operator_validation_rejects_missing_queued_cancel_proof():

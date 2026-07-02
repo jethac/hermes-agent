@@ -835,6 +835,70 @@ async def _run_approval_cancel_capacity_smoke() -> dict[str, Any]:
 
 
 async def _run_terminal_result_policy_smoke() -> dict[str, Any]:
+    default_oracle = SmokeOracle()
+    default_engine = SmokeEngine(oracle=default_oracle)
+    default_recorder = EventRecorder(default_engine)
+    await default_engine.start(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-smoke-terminal-result-default",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            oracle_jobs={
+                "enabled": True,
+                "max_concurrent": 1,
+                "queue_limit": 4,
+                "shutdown_timeout_seconds": 0.01,
+            },
+            metadata={"transport": "smoke"},
+        )
+    )
+    default_collector = asyncio.create_task(default_recorder.run())
+    await default_engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.AUDIO_INPUT_CHUNK,
+            session_id="voice-smoke-terminal-result-default",
+            sequence=1,
+            payload={
+                "transcript": "default terminal result",
+                "intent": "Default terminal result",
+                "intent_source": "smoke_reflex",
+                "route": "defer",
+                "interface_already_said": "Checking default terminal result.",
+                "end_of_utterance": True,
+            },
+        )
+    )
+    await default_recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_STARTED
+            and event.payload.get("intent") == "Default terminal result"
+            for event in events
+        )
+    )
+    default_oracle.release("Default terminal result")
+    await default_recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ASSISTANT_COMMIT
+            and event.payload.get("oracle_job_result")
+            and "Finished Default terminal result." in str(event.payload.get("text") or "")
+            for event in events
+        )
+    )
+    default_result_events = [
+        event
+        for event in default_recorder.events
+        if event.type in {VoiceEventType.ASSISTANT_TEXT_PARTIAL, VoiceEventType.ASSISTANT_COMMIT}
+        and event.payload.get("oracle_job_result")
+    ]
+    default_result_spoken = any(
+        "Finished Default terminal result." in text for text in default_engine.spoken
+    )
+    await default_engine.close()
+    default_collector.cancel()
+    try:
+        await default_collector
+    except asyncio.CancelledError:
+        pass
+
     oracle = SmokeOracle()
     engine = SmokeEngine(oracle=oracle)
     recorder = EventRecorder(engine)
@@ -934,10 +998,14 @@ async def _run_terminal_result_policy_smoke() -> dict[str, Any]:
     status_text = str(status_commits[-1].payload.get("text") or "") if status_commits else ""
     terminal_result_status_available = "completed: Finished Suppress terminal result." in status_text
     return {
-        "ok": not unsolicited_result_events
+        "ok": bool(default_result_events)
+        and default_result_spoken
+        and not unsolicited_result_events
         and not unsolicited_result_spoken
         and terminal_result_status_available,
-        "terminal_result_auto_summarize_default": True,
+        "terminal_result_auto_summarize_default": bool(default_result_events),
+        "terminal_result_default_event_count": len(default_result_events),
+        "terminal_result_default_spoken": default_result_spoken,
         "terminal_result_suppression_config": "oracle_jobs.speak_terminal_results=false",
         "terminal_result_suppressed": not unsolicited_result_events and not unsolicited_result_spoken,
         "terminal_result_unsolicited_event_count": len(unsolicited_result_events),
@@ -1165,7 +1233,7 @@ async def run_smoke() -> dict[str, Any]:
             for event in events
         )
     )
-
+    status_turn_oracle_request_count_before = len(oracle.requests)
     await send(
         {
             "transcript": "what are you working on",
@@ -1182,6 +1250,7 @@ async def run_smoke() -> dict[str, Any]:
             for event in events
         )
     )
+    status_turn_oracle_request_count_after = len(oracle.requests)
 
     await send(
         {
@@ -1939,6 +2008,10 @@ async def run_smoke() -> dict[str, Any]:
         "terminal_result_auto_summarize_default": terminal_result_policy_smoke[
             "terminal_result_auto_summarize_default"
         ],
+        "terminal_result_default_event_count": terminal_result_policy_smoke[
+            "terminal_result_default_event_count"
+        ],
+        "terminal_result_default_spoken": terminal_result_policy_smoke["terminal_result_default_spoken"],
         "terminal_result_suppression_config": terminal_result_policy_smoke["terminal_result_suppression_config"],
         "terminal_result_suppressed": terminal_result_policy_smoke["terminal_result_suppressed"],
         "terminal_result_unsolicited_event_count": terminal_result_policy_smoke[
@@ -1973,6 +2046,15 @@ async def run_smoke() -> dict[str, Any]:
         "playback_stop_cancelled_jobs": playback_stop_cancelled_jobs,
         "playback_stop_does_not_cancel_jobs": playback_stop_did_not_cancel_jobs,
         "status_turn_committed": bool(running_status_commits),
+        "status_turn_queued_visible": (
+            bool(running_status_commits)
+            and "1 queued" in str(running_status_commits[-1].payload.get("text") or "")
+        ),
+        "status_turn_no_oracle_request": (
+            status_turn_oracle_request_count_before == status_turn_oracle_request_count_after
+        ),
+        "status_turn_oracle_request_count_before": status_turn_oracle_request_count_before,
+        "status_turn_oracle_request_count_after": status_turn_oracle_request_count_after,
         "status_text": str(running_status_commits[-1].payload.get("text") or "") if running_status_commits else "",
         "terminal_status_committed": bool(terminal_status_commits),
         "completed_result_status_visible": completed_result_status_visible,
