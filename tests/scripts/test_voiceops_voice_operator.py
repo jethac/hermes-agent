@@ -297,7 +297,22 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["durable_completed_jobs"] == 4
     assert report["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
     assert report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["ok"] is True
-    assert report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]["ok"] is True
+    result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
+    assert result_handling["ok"] is True
+    assert result_handling["evidence"] == "focused_result_handling_test_refs"
+    assert result_handling["verification_mode"] == "static_focused_test_reference_inventory"
+    assert result_handling["runtime_verified_by_this_report"] is False
+    assert result_handling["live_external_evidence_required"] is False
+    assert result_handling["test_ref_count"] == len(result_handling["test_refs"])
+    assert result_handling["test_ref_count"] >= 1
+    discord_cleanup = report["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"]
+    assert discord_cleanup["ok"] is True
+    assert discord_cleanup["evidence"] == "focused_discord_session_test_refs"
+    assert discord_cleanup["verification_mode"] == "static_focused_test_reference_inventory"
+    assert discord_cleanup["runtime_verified_by_this_report"] is False
+    assert discord_cleanup["live_external_evidence_required"] is False
+    assert discord_cleanup["test_ref_count"] == len(discord_cleanup["test_refs"])
+    assert discord_cleanup["test_ref_count"] >= 1
     assert "tests/agent/test_realtime_voice.py::test_kame_engine_local_status_question_uses_oracle_job_state" in (
         report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["test_refs"]
     )
@@ -347,6 +362,31 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:late_cancelled_output_not_durable" in issues
     assert "missing_async_oracle_acceptance:four_oracle_jobs_reflex_responsive" in issues
     assert "missing_async_oracle_acceptance:fifth_job_obeys_overflow_policy" in issues
+    result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
+    assert result_handling["ok"] is True
+    assert result_handling["verification_mode"] == "static_focused_test_reference_inventory"
+    assert result_handling["runtime_verified_by_this_report"] is False
+
+
+def test_voice_operator_validation_rejects_static_acceptance_without_test_refs():
+    report = _voice_operator_report()
+    row = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
+    row["test_refs"] = []
+    row["test_ref_count"] = 0
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_acceptance_test_refs:result_handling_is_bounded_and_durable" in issues
+
+
+def test_voice_operator_validation_rejects_static_acceptance_runtime_claim():
+    report = _voice_operator_report()
+    row = report["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"]
+    row["runtime_verified_by_this_report"] = True
+
+    issues = validate_voice_operator_report(report)
+
+    assert "invalid_async_oracle_acceptance_runtime_claim:discord_session_cleanup_preserves_oracle_state" in issues
 
 
 def test_voice_operator_validation_rejects_scheduler_only_async_concurrency():

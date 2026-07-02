@@ -1036,6 +1036,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"][
         "test_ref_count"
     ] >= 1
+    assert voice_result["details"]["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"][
+        "verification_mode"
+    ] == "static_focused_test_reference_inventory"
+    assert voice_result["details"]["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"][
+        "runtime_verified_by_this_report"
+    ] is False
 
     provisioning_result = next(
         result for result in summary["results"] if result["milestone"] == "milestone_2_real_spend_and_provisioning_preflight"

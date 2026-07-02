@@ -1461,6 +1461,8 @@ async def build_plan_run_async(
                         "ok": value.get("ok"),
                         "evidence": value.get("evidence"),
                         "test_ref_count": len(value.get("test_refs") or []),
+                        "verification_mode": value.get("verification_mode"),
+                        "runtime_verified_by_this_report": value.get("runtime_verified_by_this_report"),
                     }
                     for key, value in sorted(voice_operator["async_oracle_acceptance"].items())
                 },

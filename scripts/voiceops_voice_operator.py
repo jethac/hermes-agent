@@ -1218,50 +1218,84 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
     }
 
 
+def _async_oracle_acceptance_row(
+    *,
+    ok: bool,
+    evidence: str,
+    test_refs: list[str],
+    verification_mode: str,
+    runtime_verified_by_this_report: bool,
+    live_external_evidence_required: bool = False,
+) -> dict[str, Any]:
+    return {
+        "ok": ok,
+        "evidence": evidence,
+        "test_refs": test_refs,
+        "test_ref_count": len(test_refs),
+        "verification_mode": verification_mode,
+        "runtime_verified_by_this_report": runtime_verified_by_this_report,
+        "live_external_evidence_required": live_external_evidence_required,
+    }
+
+
 def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -> dict[str, dict[str, Any]]:
     smoke_ok = bool(async_oracle_coverage.get("async_oracle_smoke_ok"))
     return {
-        "four_oracle_jobs_reflex_responsive": {
-            "ok": smoke_ok
+        "four_oracle_jobs_reflex_responsive": _async_oracle_acceptance_row(
+            ok=smoke_ok
             and bool(async_oracle_coverage.get("four_jobs_ran_concurrently"))
             and bool(async_oracle_coverage.get("local_turn_while_jobs_running")),
-            "evidence": "async_oracle_smoke",
-            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["job_manager_capacity"]
+            evidence="async_oracle_smoke",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["job_manager_capacity"]
             + ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["local_turns"],
-        },
-        "fifth_job_obeys_overflow_policy": {
-            "ok": smoke_ok and bool(async_oracle_coverage.get("fifth_job_queued_and_started_after_capacity_freed")),
-            "evidence": "async_oracle_smoke",
-            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["job_manager_capacity"],
-        },
-        "status_reports_running_and_queued_without_oracle_call": {
-            "ok": smoke_ok and bool(async_oracle_coverage.get("status_turn_while_jobs_running")),
-            "evidence": "async_oracle_smoke_plus_status_tests",
-            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["status_view"],
-        },
-        "new_oracle_job_can_be_created_while_others_run": {
-            "ok": smoke_ok and bool(async_oracle_coverage.get("fifth_job_queued_and_started_after_capacity_freed")),
-            "evidence": "async_oracle_smoke",
-            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["local_turns"],
-        },
-        "cancellation_controls_are_isolated": {
-            "ok": smoke_ok
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "fifth_job_obeys_overflow_policy": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("fifth_job_queued_and_started_after_capacity_freed")),
+            evidence="async_oracle_smoke",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["job_manager_capacity"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "status_reports_running_and_queued_without_oracle_call": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("status_turn_while_jobs_running")),
+            evidence="async_oracle_smoke_plus_status_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["status_view"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "new_oracle_job_can_be_created_while_others_run": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("fifth_job_queued_and_started_after_capacity_freed")),
+            evidence="async_oracle_smoke",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["local_turns"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "cancellation_controls_are_isolated": _async_oracle_acceptance_row(
+            ok=smoke_ok
             and bool(async_oracle_coverage.get("one_job_cancelled_while_others_completed"))
             and bool(async_oracle_coverage.get("late_cancelled_output_not_spoken"))
             and bool(async_oracle_coverage.get("late_cancelled_output_not_durable")),
-            "evidence": "async_oracle_smoke_plus_cancellation_tests",
-            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["cancellation"],
-        },
-        "result_handling_is_bounded_and_durable": {
-            "ok": True,
-            "evidence": "focused_result_handling_tests",
-            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["result_handling"],
-        },
-        "discord_session_cleanup_preserves_oracle_state": {
-            "ok": True,
-            "evidence": "focused_discord_session_tests",
-            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["discord_session"],
-        },
+            evidence="async_oracle_smoke_plus_cancellation_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["cancellation"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "result_handling_is_bounded_and_durable": _async_oracle_acceptance_row(
+            ok=bool(ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["result_handling"]),
+            evidence="focused_result_handling_test_refs",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["result_handling"],
+            verification_mode="static_focused_test_reference_inventory",
+            runtime_verified_by_this_report=False,
+        ),
+        "discord_session_cleanup_preserves_oracle_state": _async_oracle_acceptance_row(
+            ok=bool(ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["discord_session"]),
+            evidence="focused_discord_session_test_refs",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["discord_session"],
+            verification_mode="static_focused_test_reference_inventory",
+            runtime_verified_by_this_report=False,
+        ),
     }
 
 
@@ -1568,6 +1602,17 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         for key, value in async_oracle_acceptance.items():
             if not isinstance(value, Mapping) or value.get("ok") is not True:
                 issues.append(f"missing_async_oracle_acceptance:{key}")
+                continue
+            test_refs = value.get("test_refs")
+            if not isinstance(test_refs, list) or not test_refs:
+                issues.append(f"missing_async_oracle_acceptance_test_refs:{key}")
+            if value.get("test_ref_count") != len(test_refs or []):
+                issues.append(f"invalid_async_oracle_acceptance_test_ref_count:{key}")
+            if value.get("verification_mode") == "static_focused_test_reference_inventory":
+                if value.get("runtime_verified_by_this_report") is not False:
+                    issues.append(f"invalid_async_oracle_acceptance_runtime_claim:{key}")
+            elif value.get("runtime_verified_by_this_report") is not True:
+                issues.append(f"missing_async_oracle_acceptance_runtime_verification:{key}")
     if report.get("requirements", {}).get("live_discord_join") is not False:
         issues.append("live_discord_join_must_not_be_claimed")
     return sorted(issues)
@@ -1595,7 +1640,10 @@ def _markdown(report: dict[str, Any]) -> str:
     for key, value in sorted(report["async_oracle_acceptance"].items()):
         refs = value.get("test_refs") or []
         ref_text = f"; refs={len(refs)}" if refs else ""
-        lines.append(f"- {key}: {value.get('ok')} ({value.get('evidence')}{ref_text})")
+        lines.append(
+            f"- {key}: {value.get('ok')} "
+            f"({value.get('evidence')}; mode={value.get('verification_mode')}{ref_text})"
+        )
     lines.extend(["", "## Latency Metrics", ""])
     for key, value in sorted(report["latency_metrics_ms"].items()):
         lines.append(f"- {key}: {value} ms")
