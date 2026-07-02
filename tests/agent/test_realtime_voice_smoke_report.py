@@ -220,28 +220,90 @@ def _valid_async_oracle_smoke_entry():
         "max_worker_overlap": 4,
         "worker_overlap_proved": True,
         "worker_overlap_within_capacity": True,
+        "noncooperative_cancel_overlap_observed": False,
+        "started_jobs": 10,
+        "queued_jobs": 1,
+        "completed_jobs": 6,
+        "failed_jobs": 1,
+        "cancelled_jobs": 2,
         "local_turn_during_running_jobs_observed": True,
         "local_turn_active_job_count": 4,
+        "status_turn_committed": True,
+        "terminal_status_committed": True,
         "fifth_job_queued": True,
         "fifth_job_started_after_capacity_freed": True,
         "queued_job_update_observed": True,
+        "queued_update_latest_update_visible": True,
+        "queued_update_started_with_priority": True,
         "queued_update_reached_oracle": True,
+        "running_job_update_observed": True,
+        "running_update_latest_update_visible": True,
+        "running_update_reached_oracle": True,
+        "running_update_delivery_metadata_ok": True,
         "spoken_cancel_control_observed": True,
+        "spoken_priority_control_observed": True,
+        "spoken_update_control_observed": True,
         "queued_cancel_smoke_ok": True,
+        "queued_cancel_requested_observed": True,
         "queued_cancel_observed": True,
+        "queued_cancel_spoken_control_observed": True,
         "queued_cancelled_before_start": True,
         "queued_cancel_not_sent_to_oracle": True,
         "queued_cancel_running_completed": True,
+        "shutdown_bounded_close_observed": True,
+        "shutdown_forced_cancel_observed": True,
+        "shutdown_close_cancel_entered": True,
+        "local_turn_committed": True,
         "completed_result_status_visible": True,
+        "late_cancelled_output_attempted": True,
+        "cancelled_result_spoken": False,
+        "cancelled_result_committed": False,
+        "cancelled_result_progress_leaked": False,
+        "cancelled_result_durable_completed": False,
+        "cancelled_result_durable_text": False,
+        "durable_cancelled_record_present": True,
+        "approval_wait_observed": True,
+        "approval_status_committed": True,
+        "approval_tool_progress_observed": True,
+        "approval_payload_redacted": True,
+        "approval_secret_leaked": False,
+        "approval_secret_canary_checked": True,
+        "approval_completed": True,
+        "cancel_drain_capacity_smoke_ok": True,
+        "cancel_drain_requested_observed": True,
+        "cancel_drain_cancelled_observed": True,
+        "cancel_drain_followup_queued": True,
+        "cancel_drain_active_visible": True,
+        "cancel_drain_misleading_running_capacity": False,
+        "cancel_drain_followup_started_after_cancel": True,
         "failed_job_reported": True,
+        "failed_job_spoken": True,
+        "durable_failed_record_present": True,
+        "session_survived_failed_job": True,
+        "playback_stop_cancelled_jobs": False,
         "verbose_result_spoken_bounded": True,
+        "verbose_result_committed_bounded": True,
+        "verbose_result_commit_marked_truncated": True,
         "verbose_full_result_durable": True,
+        "terminal_result_policy_smoke_ok": True,
+        "terminal_result_auto_summarize_default": True,
+        "terminal_result_suppressed": True,
+        "terminal_result_status_available": True,
+        "terminal_result_unsolicited_spoken": False,
         "audit_scalar_smoke_ok": True,
         "audit_scalar_payload_redacted": True,
         "audit_scalar_secret_canary_checked": True,
         "audit_scalar_result_text_omitted": True,
         "audit_scalar_completed_event_seen": True,
         "audit_scalar_waiting_event_seen": True,
+        "sidecar_control_smoke_ok": True,
+        "sidecar_control_update_observed": True,
+        "sidecar_control_update_reached_oracle": True,
+        "sidecar_control_cancel_requested": True,
+        "sidecar_control_cancelled": True,
+        "sidecar_control_completed_after_cancel": False,
+        "sidecar_control_feedback_update_sent": True,
+        "sidecar_control_feedback_cancel_sent": True,
     }
 
 
@@ -272,6 +334,9 @@ def test_realtime_voice_alpha_report_rejects_weak_async_oracle_smoke():
     weak_async_smoke["queued_update_reached_oracle"] = False
     weak_async_smoke["queued_cancel_not_sent_to_oracle"] = False
     weak_async_smoke["audit_scalar_payload_redacted"] = False
+    weak_async_smoke["running_update_delivery_metadata_ok"] = False
+    weak_async_smoke["terminal_result_unsolicited_spoken"] = True
+    weak_async_smoke["sidecar_control_completed_after_cancel"] = True
     report = [*_valid_alpha_report(), weak_async_smoke]
 
     issues = validate_realtime_voice_alpha_report(
@@ -285,6 +350,9 @@ def test_realtime_voice_alpha_report_rejects_weak_async_oracle_smoke():
     assert any("queued_update_reached_oracle" in issue.format() for issue in issues)
     assert any("queued_cancel_not_sent_to_oracle" in issue.format() for issue in issues)
     assert any("audit_scalar_payload_redacted" in issue.format() for issue in issues)
+    assert any("running_update_delivery_metadata_ok" in issue.format() for issue in issues)
+    assert any("terminal_result_unsolicited_spoken" in issue.format() for issue in issues)
+    assert any("sidecar_control_completed_after_cancel" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_alpha_report_accepts_manifest_entry():
