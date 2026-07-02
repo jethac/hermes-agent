@@ -1404,7 +1404,9 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and int(smoke.get("max_worker_overlap") or 0) >= 4
         and int(smoke.get("max_running") or 0) >= 4
         and int(smoke.get("started_jobs") or 0) >= 4,
-        "local_turn_while_jobs_running": bool(smoke.get("local_turn_committed")),
+        "local_turn_while_jobs_running": smoke.get("local_turn_committed") is True
+        and smoke.get("local_turn_during_running_jobs_observed") is True
+        and int(smoke.get("local_turn_active_job_count") or 0) >= 1,
         "status_turn_while_jobs_running": bool(smoke.get("status_turn_committed"))
         and "4 running out of 4" in str(smoke.get("status_text") or ""),
         "fifth_job_queued_and_started_after_capacity_freed": int(smoke.get("queued_jobs") or 0) >= 1
@@ -1448,6 +1450,20 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and "1 waiting for approval" in str(smoke.get("approval_capacity_status_text") or "")
         and smoke.get("approval_capacity_followup_started_after_approval") is True
         and int(smoke.get("approval_capacity_completed_jobs") or 0) == 2,
+        "approval_cancel_holds_capacity": smoke.get("approval_cancel_capacity_smoke_ok") is True
+        and smoke.get("approval_cancel_waiting_observed") is True
+        and smoke.get("approval_cancel_followup_queued") is True
+        and smoke.get("approval_cancel_requested_observed") is True
+        and smoke.get("approval_cancel_cancelled_observed") is True
+        and smoke.get("approval_cancel_late_output_attempted") is True
+        and smoke.get("approval_cancel_completed_after_cancel") is False
+        and smoke.get("approval_cancel_late_result_spoken") is False
+        and smoke.get("approval_cancel_followup_started_before_cancel_drained") is False
+        and smoke.get("approval_cancel_followup_started_after_cancel") is True
+        and smoke.get("approval_cancel_active_visible") is True
+        and smoke.get("approval_cancel_misleading_running_capacity") is False
+        and "1 queued" in str(smoke.get("approval_cancel_status_text") or "")
+        and "1 cancelling" in str(smoke.get("approval_cancel_status_text") or ""),
         "cancel_drain_holds_capacity": smoke.get("cancel_drain_capacity_smoke_ok") is True
         and smoke.get("cancel_drain_requested_observed") is True
         and smoke.get("cancel_drain_cancelled_observed") is True
@@ -1622,7 +1638,8 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
         "approval_wait_is_visible_and_redacted": _async_oracle_acceptance_row(
             ok=smoke_ok
             and bool(async_oracle_coverage.get("approval_wait_visible_and_redacted"))
-            and bool(async_oracle_coverage.get("approval_wait_holds_capacity")),
+            and bool(async_oracle_coverage.get("approval_wait_holds_capacity"))
+            and bool(async_oracle_coverage.get("approval_cancel_holds_capacity")),
             evidence="async_oracle_smoke_plus_approval_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["approval_wait"],
             verification_mode="loopback_smoke_plus_focused_tests",
@@ -1860,6 +1877,42 @@ def build_voice_operator_report(
             ),
             "approval_capacity_completed_jobs": async_oracle_smoke.get("approval_capacity_completed_jobs"),
             "approval_capacity_max_concurrent": async_oracle_smoke.get("approval_capacity_max_concurrent"),
+            "approval_cancel_capacity_smoke_ok": bool(
+                async_oracle_smoke.get("approval_cancel_capacity_smoke_ok")
+            ),
+            "approval_cancel_waiting_observed": bool(
+                async_oracle_smoke.get("approval_cancel_waiting_observed")
+            ),
+            "approval_cancel_followup_queued": bool(
+                async_oracle_smoke.get("approval_cancel_followup_queued")
+            ),
+            "approval_cancel_requested_observed": bool(
+                async_oracle_smoke.get("approval_cancel_requested_observed")
+            ),
+            "approval_cancel_cancelled_observed": bool(
+                async_oracle_smoke.get("approval_cancel_cancelled_observed")
+            ),
+            "approval_cancel_late_output_attempted": bool(
+                async_oracle_smoke.get("approval_cancel_late_output_attempted")
+            ),
+            "approval_cancel_completed_after_cancel": bool(
+                async_oracle_smoke.get("approval_cancel_completed_after_cancel")
+            ),
+            "approval_cancel_late_result_spoken": bool(
+                async_oracle_smoke.get("approval_cancel_late_result_spoken")
+            ),
+            "approval_cancel_followup_started_before_cancel_drained": bool(
+                async_oracle_smoke.get("approval_cancel_followup_started_before_cancel_drained")
+            ),
+            "approval_cancel_followup_started_after_cancel": bool(
+                async_oracle_smoke.get("approval_cancel_followup_started_after_cancel")
+            ),
+            "approval_cancel_active_visible": bool(async_oracle_smoke.get("approval_cancel_active_visible")),
+            "approval_cancel_misleading_running_capacity": bool(
+                async_oracle_smoke.get("approval_cancel_misleading_running_capacity")
+            ),
+            "approval_cancel_status_text": async_oracle_smoke.get("approval_cancel_status_text"),
+            "approval_cancel_max_concurrent": async_oracle_smoke.get("approval_cancel_max_concurrent"),
             "cancel_drain_capacity_smoke_ok": bool(async_oracle_smoke.get("cancel_drain_capacity_smoke_ok")),
             "cancel_drain_requested_observed": bool(async_oracle_smoke.get("cancel_drain_requested_observed")),
             "cancel_drain_cancelled_observed": bool(async_oracle_smoke.get("cancel_drain_cancelled_observed")),
@@ -1874,6 +1927,10 @@ def build_voice_operator_report(
             ),
             "cancel_drain_max_concurrent": async_oracle_smoke.get("cancel_drain_max_concurrent"),
             "local_turn_committed": bool(async_oracle_smoke.get("local_turn_committed")),
+            "local_turn_during_running_jobs_observed": bool(
+                async_oracle_smoke.get("local_turn_during_running_jobs_observed")
+            ),
+            "local_turn_active_job_count": async_oracle_smoke.get("local_turn_active_job_count"),
             "playback_stop_committed": bool(async_oracle_smoke.get("playback_stop_committed")),
             "playback_stop_jobs_still_running": bool(
                 async_oracle_smoke.get("playback_stop_jobs_still_running")
@@ -2045,6 +2102,9 @@ def build_voice_operator_report(
             "async_oracle_approval_wait_holds_capacity": async_oracle_coverage[
                 "approval_wait_holds_capacity"
             ],
+            "async_oracle_approval_cancel_holds_capacity": async_oracle_coverage[
+                "approval_cancel_holds_capacity"
+            ],
             "async_oracle_cancel_drain_holds_capacity": async_oracle_coverage[
                 "cancel_drain_holds_capacity"
             ],
@@ -2164,6 +2224,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "playback_stop_does_not_cancel_jobs",
         "approval_wait_visible_and_redacted",
         "approval_wait_holds_capacity",
+        "approval_cancel_holds_capacity",
         "cancel_drain_holds_capacity",
         "failed_job_reported_without_crash",
         "job_control_updates_reach_oracle",

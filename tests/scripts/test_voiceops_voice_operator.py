@@ -89,6 +89,23 @@ def _async_oracle_smoke_payload() -> dict:
         "approval_capacity_followup_started_after_approval": True,
         "approval_capacity_completed_jobs": 2,
         "approval_capacity_max_concurrent": 1,
+        "approval_cancel_capacity_smoke_ok": True,
+        "approval_cancel_waiting_observed": True,
+        "approval_cancel_followup_queued": True,
+        "approval_cancel_requested_observed": True,
+        "approval_cancel_cancelled_observed": True,
+        "approval_cancel_late_output_attempted": True,
+        "approval_cancel_completed_after_cancel": False,
+        "approval_cancel_late_result_spoken": False,
+        "approval_cancel_followup_started_before_cancel_drained": False,
+        "approval_cancel_followup_started_after_cancel": True,
+        "approval_cancel_active_visible": True,
+        "approval_cancel_misleading_running_capacity": False,
+        "approval_cancel_status_text": (
+            "Oracle jobs: 1 active out of 1, 0 running, 1 queued, 1 cancelling. "
+            "cancel_requested: Preparing cancellable spend approval."
+        ),
+        "approval_cancel_max_concurrent": 1,
         "cancel_drain_capacity_smoke_ok": True,
         "cancel_drain_requested_observed": True,
         "cancel_drain_cancelled_observed": True,
@@ -108,6 +125,8 @@ def _async_oracle_smoke_payload() -> dict:
         "shutdown_close_cancel_entered": True,
         "shutdown_cancelled_jobs": 1,
         "local_turn_committed": True,
+        "local_turn_during_running_jobs_observed": True,
+        "local_turn_active_job_count": 4,
         "playback_stop_committed": True,
         "playback_stop_jobs_still_running": True,
         "playback_stop_cancelled_jobs": False,
@@ -516,6 +535,8 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["shutdown_forced_cancel_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["shutdown_close_cancel_entered"] is True
     assert report["proofs"]["async_oracle_jobs"]["shutdown_cancelled_jobs"] == 1
+    assert report["proofs"]["async_oracle_jobs"]["local_turn_during_running_jobs_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["local_turn_active_job_count"] == 4
     assert report["proofs"]["tool_disclosure"]["ok"] is True
     assert report["proofs"]["tool_disclosure"]["visible_tool_names"] == [
         "tool_call",
@@ -567,6 +588,14 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     )
     assert report["async_oracle_acceptance"]["shutdown_timeout_is_bounded"]["ok"] is True
     assert report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_cancel_capacity_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_cancel_late_output_attempted"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_cancel_completed_after_cancel"] is False
+    assert report["proofs"]["async_oracle_jobs"]["approval_cancel_late_result_spoken"] is False
+    assert report["proofs"]["async_oracle_jobs"][
+        "approval_cancel_followup_started_before_cancel_drained"
+    ] is False
+    assert report["requirements"]["async_oracle_approval_cancel_holds_capacity"] is True
     assert (
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_cancelling_waiting_for_approval_keeps_capacity_until_worker_stops_and_drops_late_result"
         in report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["test_refs"]
@@ -716,6 +745,18 @@ def test_voice_operator_validation_recomputes_async_coverage_from_embedded_smoke
     assert "stale_async_oracle_coverage:four_jobs_ran_concurrently" in issues
 
 
+def test_voice_operator_validation_rejects_local_turn_without_running_job_overlap():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["local_turn_during_running_jobs_observed"] = False
+    report["async_oracle_smoke"]["local_turn_active_job_count"] = 0
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:local_turn_while_jobs_running" in issues
+    assert "stale_async_oracle_coverage:local_turn_while_jobs_running" in issues
+    assert "missing_async_oracle_acceptance:four_oracle_jobs_reflex_responsive" in issues
+
+
 def test_voice_operator_validation_rejects_missing_queued_cancel_proof():
     report = _voice_operator_report()
     report["async_oracle_smoke"]["queued_cancel_not_sent_to_oracle"] = False
@@ -746,6 +787,18 @@ def test_voice_operator_validation_rejects_missing_async_approval_secret_canary_
 
     assert "missing_async_oracle_coverage:approval_wait_visible_and_redacted" in issues
     assert "stale_async_oracle_coverage:approval_wait_visible_and_redacted" in issues
+    assert "missing_async_oracle_acceptance:approval_wait_is_visible_and_redacted" in issues
+
+
+def test_voice_operator_validation_rejects_missing_approval_cancel_capacity_proof():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["approval_cancel_late_output_attempted"] = False
+    report["async_oracle_smoke"]["approval_cancel_followup_started_before_cancel_drained"] = True
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:approval_cancel_holds_capacity" in issues
+    assert "stale_async_oracle_coverage:approval_cancel_holds_capacity" in issues
     assert "missing_async_oracle_acceptance:approval_wait_is_visible_and_redacted" in issues
 
 
