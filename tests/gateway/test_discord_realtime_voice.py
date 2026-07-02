@@ -1445,6 +1445,7 @@ def test_voice_status_oracle_job_lines_are_compact():
         {
             "enabled": True,
             "capacity": {
+                "active": 3,
                 "running": 1,
                 "max_concurrent": 4,
                 "queued": 2,
@@ -1473,7 +1474,7 @@ def test_voice_status_oracle_job_lines_are_compact():
     )
 
     assert lines == [
-        "Oracle jobs: running=1/4, queued=2, waiting_for_approval=1, cancel_requested=1",
+        "Oracle jobs: active=3/4, running=1, queued=2, waiting_for_approval=1, cancel_requested=1",
         "Oracle job: voice-oracle-001 running - Checking the deployment status. | update: include the staging region too.",
         "Oracle job: voice-oracle-002 waiting_for_approval - Waiting for Stripe spend approval.",
         "Oracle job: voice-oracle-003 cancel_requested - Stopping the stale deployment check.",

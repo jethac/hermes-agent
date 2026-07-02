@@ -1070,6 +1070,7 @@ class TestVoiceChannelCommands:
                 "oracle_jobs": {
                     "enabled": True,
                     "capacity": {
+                        "active": 2,
                         "running": 1,
                         "max_concurrent": 4,
                         "queued": 2,
@@ -1119,7 +1120,7 @@ class TestVoiceChannelCommands:
         assert "final_transcript_to_first_audio_ms=812ms" in result
         assert "Realtime counters:" in result
         assert "kame_oracle_bypassed=1" in result
-        assert "Oracle jobs: running=1/4, queued=2, waiting_for_approval=1" in result
+        assert "Oracle jobs: active=2/4, running=1, queued=2, waiting_for_approval=1" in result
         assert "Oracle job: voice-oracle-001 running - Checking the deployment status." in result
 
     @pytest.mark.asyncio

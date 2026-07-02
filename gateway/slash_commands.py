@@ -185,12 +185,16 @@ def _voice_status_oracle_job_lines(value: Any) -> list[str]:
     if not isinstance(value, dict) or not value.get("enabled"):
         return []
     capacity = value.get("capacity") if isinstance(value.get("capacity"), dict) else {}
+    active = capacity.get("active")
     running = capacity.get("running", 0)
     max_concurrent = capacity.get("max_concurrent", "?")
     queued = capacity.get("queued", 0)
     waiting_for_approval = capacity.get("waiting_for_approval", 0)
     cancel_requested = capacity.get("cancel_requested", 0)
-    headline = f"Oracle jobs: running={running}/{max_concurrent}, queued={queued}"
+    if isinstance(active, int) and not isinstance(active, bool) and active != running:
+        headline = f"Oracle jobs: active={active}/{max_concurrent}, running={running}, queued={queued}"
+    else:
+        headline = f"Oracle jobs: running={running}/{max_concurrent}, queued={queued}"
     if waiting_for_approval:
         headline = f"{headline}, waiting_for_approval={waiting_for_approval}"
     if cancel_requested:
