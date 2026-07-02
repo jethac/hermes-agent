@@ -102,7 +102,7 @@ def _async_oracle_smoke_payload() -> dict:
         "cancelled_result_progress_leaked": False,
         "cancelled_result_durable_completed": False,
         "cancelled_result_durable_text": False,
-        "durable_cancelled_record_present": False,
+        "durable_cancelled_record_present": True,
         "durable_completed_jobs": 1,
         "approval_wait_observed": True,
         "approval_status_committed": True,
@@ -387,7 +387,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_progress_leaked"] is False
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_completed"] is False
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_text"] is False
-    assert report["proofs"]["async_oracle_jobs"]["durable_cancelled_record_present"] is False
+    assert report["proofs"]["async_oracle_jobs"]["durable_cancelled_record_present"] is True
     assert report["proofs"]["async_oracle_jobs"]["durable_completed_jobs"] == 1
     assert report["proofs"]["async_oracle_jobs"]["approval_wait_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_status_committed"] is True

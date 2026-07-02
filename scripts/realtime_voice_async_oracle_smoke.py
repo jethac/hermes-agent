@@ -850,7 +850,7 @@ async def run_smoke() -> dict[str, Any]:
             and not cancelled_result_progress_leaked
             and not cancelled_result_durable_completed
             and not cancelled_result_durable_text
-            and not durable_cancelled_record_present
+            and durable_cancelled_record_present
             and durable_completed_jobs == 1
             and bool(approval_waiting)
             and bool(approval_tool_progress)

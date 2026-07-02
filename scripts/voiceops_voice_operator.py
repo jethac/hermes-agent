@@ -1378,7 +1378,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         "late_cancelled_output_not_durable": smoke.get("late_cancelled_output_attempted") is True
         and smoke.get("cancelled_result_durable_completed") is False
         and smoke.get("cancelled_result_durable_text") is False
-        and smoke.get("durable_cancelled_record_present") is False
+        and smoke.get("durable_cancelled_record_present") is True
         and int(smoke.get("durable_completed_jobs") or 0) >= 1,
         "approval_wait_visible_and_redacted": smoke.get("approval_wait_observed") is True
         and smoke.get("approval_status_committed") is True

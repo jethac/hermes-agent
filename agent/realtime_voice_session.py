@@ -311,7 +311,11 @@ class RealtimeVoiceSession:
             self.state = RealtimeVoiceSessionState.LISTENING
         elif event.type in DURABLE_ORACLE_RECORD_EVENT_TYPES:
             generation = _durable_oracle_record_generation(event)
-            if generation is not None and generation < self.transcript.active_playback_generation:
+            if (
+                generation is not None
+                and generation < self.transcript.active_playback_generation
+                and not _durable_oracle_record_survives_stale_generation(event)
+            ):
                 return
             if _oracle_record_is_ephemeral(event):
                 return
@@ -488,6 +492,15 @@ def _durable_oracle_record_generation(event: VoiceEvent) -> Optional[int]:
     if source_generation is not None:
         return source_generation
     return _payload_generation(event.payload)
+
+
+def _durable_oracle_record_survives_stale_generation(event: VoiceEvent) -> bool:
+    if event.type != VoiceEventType.ORACLE_JOB_CANCELLED:
+        return False
+    job_id = str(event.payload.get("job_id") or "").strip()
+    state = str(event.payload.get("state") or "").strip().lower()
+    cancel_reason = str(event.payload.get("cancel_reason") or "").strip()
+    return bool(job_id and state == "cancelled" and cancel_reason)
 
 
 def _durable_user_text_from_final_user_event(payload: Mapping[str, Any]) -> str:

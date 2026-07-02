@@ -13227,6 +13227,56 @@ def test_session_drops_stale_kame_oracle_job_record_by_source_generation():
     asyncio.run(run())
 
 
+def test_session_keeps_stale_generation_oracle_job_cancellation_audit_record():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-123"),
+        engine=TextOracleTTSEngine(oracle=FakeOracle()),
+    )
+    session.transcript.active_playback_generation = 3
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_JOB_COMPLETED,
+            session_id="voice-123",
+            sequence=1,
+            payload={
+                "job_id": "voice-oracle-001",
+                "state": "completed",
+                "result_summary": "stale result",
+                "source_playback_generation": 1,
+                "playback_generation": 3,
+            },
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_JOB_CANCELLED,
+            session_id="voice-123",
+            sequence=2,
+            payload={
+                "job_id": "voice-oracle-001",
+                "state": "cancelled",
+                "cancel_reason": "spoken request to cancel oracle job",
+                "source_playback_generation": 1,
+                "playback_generation": 3,
+            },
+        )
+    )
+
+    assert session.durable_oracle_records() == [
+        {
+            "type": VoiceEventType.ORACLE_JOB_CANCELLED.value,
+            "payload": {
+                "job_id": "voice-oracle-001",
+                "state": "cancelled",
+                "cancel_reason": "spoken request to cancel oracle job",
+                "source_playback_generation": 1,
+                "playback_generation": 3,
+            },
+        }
+    ]
+
+
 def test_session_ignores_stale_interrupted_commit_from_prior_generation():
     async def run():
         session = RealtimeVoiceSession(
