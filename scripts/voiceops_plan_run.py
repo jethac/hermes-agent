@@ -1476,6 +1476,15 @@ async def build_plan_run_async(
                     "session_survived_failed_job": voice_operator["proofs"]["async_oracle_jobs"][
                         "session_survived_failed_job"
                     ],
+                    "queued_job_update_observed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "queued_job_update_observed"
+                    ],
+                    "queued_update_started_with_priority": voice_operator["proofs"]["async_oracle_jobs"][
+                        "queued_update_started_with_priority"
+                    ],
+                    "queued_update_reached_oracle": voice_operator["proofs"]["async_oracle_jobs"][
+                        "queued_update_reached_oracle"
+                    ],
                 },
                 "async_oracle_acceptance": {
                     key: {

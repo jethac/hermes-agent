@@ -192,6 +192,36 @@ async def run_smoke() -> dict[str, Any]:
         )
     )
 
+    task_5_queued = next(
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ORACLE_JOB_QUEUED
+        and event.payload.get("intent") == "Run smoke task 5"
+    )
+    sequence += 1
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+            session_id="voice-smoke-async-oracle",
+            sequence=sequence,
+            payload={
+                "job_id": task_5_queued.payload["job_id"],
+                "priority": "high",
+                "update_text": "include smoke update context",
+                "reason": "smoke queued job update",
+            },
+        )
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+            and event.payload.get("job_id") == task_5_queued.payload["job_id"]
+            and event.payload.get("priority") == "high"
+            and event.payload.get("update_count") == 1
+            for event in events
+        )
+    )
+
     task_3_started = next(
         event
         for event in recorder.events
@@ -392,6 +422,24 @@ async def run_smoke() -> dict[str, Any]:
         and event.payload.get("text") == "Still listening."
         for event in recorder.events
     )
+    queued_job_update_observed = any(
+        event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+        and event.payload.get("job_id") == task_5_queued.payload["job_id"]
+        and event.payload.get("priority") == "high"
+        and event.payload.get("update_count") == 1
+        for event in recorder.events
+    )
+    queued_update_started_with_priority = any(
+        event.type == VoiceEventType.ORACLE_JOB_STARTED
+        and event.payload.get("job_id") == task_5_queued.payload["job_id"]
+        and event.payload.get("priority") == "high"
+        for event in recorder.events
+    )
+    queued_update_reached_oracle = any(
+        str(getattr(request, "intent", "")) == "Run smoke task 5"
+        and "include smoke update context" in tuple(getattr(request, "job_updates", ()))
+        for request in oracle.requests
+    )
     cancelled_job_id = str(task_3_started.payload["job_id"])
     fifth_job_id = next(
         (
@@ -483,6 +531,9 @@ async def run_smoke() -> dict[str, Any]:
             and failure_spoken
             and durable_failed_record_present
             and session_survived_failure
+            and queued_job_update_observed
+            and queued_update_started_with_priority
+            and queued_update_reached_oracle
         ),
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": scheduler_max_running,
@@ -521,6 +572,9 @@ async def run_smoke() -> dict[str, Any]:
         "failed_job_spoken": failure_spoken,
         "durable_failed_record_present": durable_failed_record_present,
         "session_survived_failed_job": session_survived_failure,
+        "queued_job_update_observed": queued_job_update_observed,
+        "queued_update_started_with_priority": queued_update_started_with_priority,
+        "queued_update_reached_oracle": queued_update_reached_oracle,
         "spoken": list(engine.spoken),
         "event_counts": {
             event_type.value: sum(event.type == event_type for event in recorder.events)

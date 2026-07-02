@@ -101,6 +101,12 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_async_oracle_job_failure_reports_in_voice",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_failed_job_records_error_and_starts_next",
     ],
+    "control_updates": [
+        "tests/agent/test_realtime_voice.py::test_kame_engine_can_reprioritize_queued_async_oracle_job",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_queued_async_oracle_job",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_priority_control_reprioritizes_queued_job",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_update_attaches_to_latest_async_oracle_job",
+    ],
     "result_handling": [
         "tests/agent/test_realtime_voice.py::test_completed_async_oracle_job_speaks_after_intervening_local_turn",
         "tests/agent/test_realtime_voice.py::test_kame_engine_status_recalls_recent_completed_async_oracle_job",
@@ -1234,6 +1240,9 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("failed_job_spoken") is True
         and smoke.get("durable_failed_record_present") is True
         and smoke.get("session_survived_failed_job") is True,
+        "queued_job_control_update_reaches_oracle": smoke.get("queued_job_update_observed") is True
+        and smoke.get("queued_update_started_with_priority") is True
+        and smoke.get("queued_update_reached_oracle") is True,
     }
 
 
@@ -1312,6 +1321,13 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             ok=smoke_ok and bool(async_oracle_coverage.get("failed_job_reported_without_crash")),
             evidence="async_oracle_smoke_plus_failure_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["failure_handling"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "queued_job_control_updates_reach_oracle": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("queued_job_control_update_reaches_oracle")),
+            evidence="async_oracle_smoke_plus_control_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["control_updates"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
@@ -1483,6 +1499,11 @@ def build_voice_operator_report(
             "failed_job_spoken": bool(async_oracle_smoke.get("failed_job_spoken")),
             "durable_failed_record_present": bool(async_oracle_smoke.get("durable_failed_record_present")),
             "session_survived_failed_job": bool(async_oracle_smoke.get("session_survived_failed_job")),
+            "queued_job_update_observed": bool(async_oracle_smoke.get("queued_job_update_observed")),
+            "queued_update_started_with_priority": bool(
+                async_oracle_smoke.get("queued_update_started_with_priority")
+            ),
+            "queued_update_reached_oracle": bool(async_oracle_smoke.get("queued_update_reached_oracle")),
             "coverage": async_oracle_coverage,
         },
         "live_evidence": {
@@ -1638,6 +1659,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "late_cancelled_output_not_durable",
         "approval_wait_visible_and_redacted",
         "failed_job_reported_without_crash",
+        "queued_job_control_update_reaches_oracle",
     ):
         if async_oracle_coverage.get(key) is not True:
             issues.append(f"missing_async_oracle_coverage:{key}")
