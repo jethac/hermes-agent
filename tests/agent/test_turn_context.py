@@ -222,6 +222,57 @@ def test_no_review_when_memory_disabled():
     assert ctx.should_review_memory is False
 
 
+def test_stale_low_context_window_self_heals_before_preflight_compression():
+    """Long-lived agents should not keep compacting from stale 65K metadata."""
+    agent = _FakeAgent()
+    agent.model = "gpt-5.5"
+    agent.provider = "openai-codex"
+    agent.base_url = "https://chatgpt.com/backend-api/codex"
+    agent.api_mode = "codex_responses"
+    agent._config_context_length = None
+    agent._primary_runtime = {
+        "compressor_context_length": 65_536,
+        "compressor_model": "gpt-5.5",
+        "compressor_base_url": "https://chatgpt.com/backend-api/codex",
+        "compressor_provider": "openai-codex",
+        "compressor_api_mode": "codex_responses",
+    }
+    agent.compression_enabled = True
+    agent._emit_status = MagicMock()
+    agent._compress_context = MagicMock(
+        side_effect=lambda messages, *_a, **_k: (messages, "SYSTEM")
+    )
+    with patch("agent.context_compressor.get_model_context_length", return_value=65_536):
+        agent.context_compressor = ContextCompressor(
+            model="gpt-5.5",
+            threshold_percent=0.85,
+            protect_first_n=2,
+            protect_last_n=2,
+            quiet_mode=True,
+            base_url="https://chatgpt.com/backend-api/codex",
+            provider="openai-codex",
+            api_mode="codex_responses",
+        )
+    assert agent.context_compressor.context_length == 65_536
+
+    history = [
+        {"role": "user" if i % 2 == 0 else "assistant", "content": f"turn {i}"}
+        for i in range(40)
+    ]
+    with (
+        patch("agent.turn_context.get_model_context_length", return_value=272_000),
+        patch("agent.turn_context.estimate_messages_tokens_rough", return_value=85_024),
+        patch("agent.turn_context.estimate_request_tokens_rough", return_value=85_024),
+    ):
+        _build(agent, conversation_history=history)
+
+    assert agent.context_compressor.context_length == 272_000
+    assert agent.context_compressor.threshold_tokens > 85_024
+    assert agent._primary_runtime["compressor_context_length"] == 272_000
+    agent._compress_context.assert_not_called()
+    agent._emit_status.assert_not_called()
+
+
 def test_ensure_db_session_runs_after_system_prompt_restore():
     """Regression for #45499.
 
@@ -363,4 +414,3 @@ def test_expired_cooldown_allows_preflight(tmp_path):
     assert isinstance(ctx, TurnContext)
     agent._emit_status.assert_called_once()
     agent._compress_context.assert_called()
-

@@ -33,6 +33,7 @@ from agent.iteration_budget import IterationBudget
 from agent.model_metadata import (
     estimate_messages_tokens_rough,
     estimate_request_tokens_rough,
+    get_model_context_length,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,104 @@ def _should_run_preflight_estimate(
     if len(messages) > protect_first_n + protect_last_n + 1:
         return True
     return estimate_messages_tokens_rough(messages) >= threshold_tokens
+
+
+def _refresh_stale_context_window(agent) -> None:
+    """Upgrade a live compressor if its cached context window is stale-low.
+
+    Long-lived agents can outlive metadata fixes or cache invalidation changes.
+    In that case the active model route is correct, but the compressor still
+    carries an old small window and preflight compression fires far too early.
+    Only upgrade when the provider-aware resolver reports a larger window for
+    the same active route; normal model switches and explicit config overrides
+    continue to own shrink/recalibration behavior.
+    """
+    compressor = getattr(agent, "context_compressor", None)
+    if compressor is None:
+        return
+    model = getattr(agent, "model", "") or ""
+    provider = getattr(agent, "provider", "") or ""
+    base_url = getattr(agent, "base_url", "") or ""
+    if not model or not (provider or base_url):
+        return
+    compressor_model = getattr(compressor, "model", "") or ""
+    compressor_provider = getattr(compressor, "provider", "") or ""
+    compressor_base_url = getattr(compressor, "base_url", "") or ""
+    if compressor_model and compressor_model != model:
+        return
+    if compressor_provider and provider and compressor_provider != provider:
+        return
+    if (
+        compressor_base_url
+        and base_url
+        and compressor_base_url.rstrip("/") != base_url.rstrip("/")
+    ):
+        return
+    try:
+        current_context = int(getattr(compressor, "context_length", 0) or 0)
+    except (TypeError, ValueError):
+        current_context = 0
+    if current_context <= 0:
+        return
+
+    api_key = getattr(agent, "api_key", "") or ""
+    if not isinstance(api_key, str):
+        api_key = ""
+
+    try:
+        resolved_context = get_model_context_length(
+            model,
+            base_url=base_url,
+            api_key=api_key,
+            provider=provider,
+            config_context_length=getattr(agent, "_config_context_length", None),
+        )
+    except Exception:
+        logger.debug("stale context-window refresh skipped", exc_info=True)
+        return
+
+    try:
+        resolved_context = int(resolved_context or 0)
+    except (TypeError, ValueError):
+        resolved_context = 0
+    if resolved_context <= current_context:
+        return
+
+    update_model = getattr(compressor, "update_model", None)
+    if not callable(update_model):
+        return
+
+    update_model(
+        model=model,
+        context_length=resolved_context,
+        base_url=base_url,
+        api_key=getattr(agent, "api_key", "") or "",
+        provider=provider,
+        api_mode=getattr(agent, "api_mode", "") or "",
+    )
+    primary_runtime = getattr(agent, "_primary_runtime", None)
+    if isinstance(primary_runtime, dict):
+        primary_runtime["compressor_context_length"] = resolved_context
+        primary_runtime["compressor_model"] = (
+            model or primary_runtime.get("compressor_model")
+        )
+        primary_runtime["compressor_base_url"] = (
+            base_url or primary_runtime.get("compressor_base_url")
+        )
+        primary_runtime["compressor_provider"] = (
+            provider or primary_runtime.get("compressor_provider")
+        )
+        primary_runtime["compressor_api_mode"] = (
+            getattr(agent, "api_mode", "")
+            or primary_runtime.get("compressor_api_mode")
+        )
+    logger.info(
+        "Upgraded stale context compressor window: model=%s provider=%s ctx %s -> %s",
+        model,
+        provider or "none",
+        f"{current_context:,}",
+        f"{resolved_context:,}",
+    )
 
 
 @dataclass
@@ -333,6 +432,8 @@ def build_turn_context(
             agent.session_id or "none",
             exc_info=True,
         )
+
+    _refresh_stale_context_window(agent)
 
     # ── Preflight context compression ──
     # Gate the (expensive) full token estimate behind a cheap pre-check.
