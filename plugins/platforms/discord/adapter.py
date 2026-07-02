@@ -224,6 +224,7 @@ def _discord_voice_oracle_jobs_update(
         if not isinstance(config, Mapping) or not config:
             return {}
         capacity = {
+            "active": 0,
             "running": 0,
             "max_concurrent": _discord_voice_nonnegative_int(config.get("max_concurrent")) or 1,
             "queued": 0,
@@ -274,6 +275,7 @@ def _discord_voice_oracle_jobs_update(
     waiting_for_approval = sum(1 for item in jobs if item.get("state") == "waiting_for_approval")
     capacity.update(
         {
+            "active": running + waiting_for_approval,
             "running": running,
             "queued": queued,
             "waiting_for_approval": waiting_for_approval,
@@ -298,10 +300,13 @@ def _discord_voice_oracle_jobs_from_live_status(
     if "enabled" not in status and not isinstance(raw_capacity, Mapping) and not isinstance(raw_jobs, list):
         return {}
     if isinstance(raw_capacity, Mapping):
-        for key in ("running", "max_concurrent", "queued", "waiting_for_approval", "queue_limit"):
+        for key in ("active", "running", "max_concurrent", "queued", "waiting_for_approval", "queue_limit"):
             parsed = _discord_voice_nonnegative_int(raw_capacity.get(key))
             if parsed is not None:
                 capacity[key] = parsed
+    active = _discord_voice_nonnegative_int(capacity.get("active"))
+    running = _discord_voice_nonnegative_int(capacity.get("running")) or 0
+    waiting_for_approval = _discord_voice_nonnegative_int(capacity.get("waiting_for_approval")) or 0
     jobs: list[dict[str, Any]] = []
     if isinstance(raw_jobs, list):
         for raw_job in raw_jobs:
@@ -330,9 +335,10 @@ def _discord_voice_oracle_jobs_from_live_status(
                 jobs.append(job)
     capacity.update(
         {
-            "running": _discord_voice_nonnegative_int(capacity.get("running")) or 0,
+            "active": active if active is not None else running + waiting_for_approval,
+            "running": running,
             "queued": _discord_voice_nonnegative_int(capacity.get("queued")) or 0,
-            "waiting_for_approval": _discord_voice_nonnegative_int(capacity.get("waiting_for_approval")) or 0,
+            "waiting_for_approval": waiting_for_approval,
             "max_concurrent": _discord_voice_nonnegative_int(capacity.get("max_concurrent")) or 1,
             "queue_limit": _discord_voice_nonnegative_int(capacity.get("queue_limit")) or 16,
         }
@@ -382,6 +388,11 @@ def _discord_voice_oracle_jobs_terminal(
         jobs.append(job)
     capacity.update(
         {
+            "active": sum(
+                1
+                for item in jobs
+                if item.get("state") in {"running", "cancel_requested", "waiting_for_approval"}
+            ),
             "running": sum(
                 1
                 for item in jobs

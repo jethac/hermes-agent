@@ -1063,6 +1063,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_waiting_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_followup_queued"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_active_visible"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_misleading_running_capacity"] is False
+    assert "1 active out of 1" in voice_result["details"]["async_oracle_smoke"]["approval_capacity_status_text"]
+    assert "0 running out of 1" not in voice_result["details"]["async_oracle_smoke"]["approval_capacity_status_text"]
     assert "1 queued" in voice_result["details"]["async_oracle_smoke"]["approval_capacity_status_text"]
     assert "1 waiting for approval" in voice_result["details"]["async_oracle_smoke"]["approval_capacity_status_text"]
     assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_followup_started_after_approval"] is True

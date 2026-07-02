@@ -2652,6 +2652,7 @@ def _kame_oracle_job_status_requested(request: KameOracleRequest) -> bool:
 def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
     capacity = status.get("capacity") if isinstance(status.get("capacity"), Mapping) else {}
     jobs = [dict(job) for job in status.get("jobs", []) if isinstance(job, Mapping)]
+    active = int(capacity.get("active") or 0)
     running = int(capacity.get("running") or 0)
     queued = int(capacity.get("queued") or 0)
     waiting_for_approval = int(capacity.get("waiting_for_approval") or 0)
@@ -2668,7 +2669,10 @@ def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
         if jobs:
             return "No oracle jobs are running or queued right now."
         return "I don't have any oracle jobs yet."
-    fragments = [f"{running} running out of {max_concurrent}"]
+    if active and active != running:
+        fragments = [f"{active} active out of {max_concurrent}", f"{running} running"]
+    else:
+        fragments = [f"{running} running out of {max_concurrent}"]
     if queued:
         fragments.append(f"{queued} queued")
     if waiting_for_approval:

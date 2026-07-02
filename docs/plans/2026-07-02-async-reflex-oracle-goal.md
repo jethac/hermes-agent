@@ -163,8 +163,10 @@ approval boundary still owns user intent, tool context, and a pending external
 effect. Letting approval-blocked jobs release capacity would allow a spoken
 approval queue to grow behind the user's back and would make spend/provisioning
 state harder to reason about. The reflex status view must show
-`waiting_for_approval` separately from `running` so the user can distinguish
-model compute from approval-blocked work.
+  `waiting_for_approval` separately from `running` so the user can distinguish
+  model compute from approval-blocked work. Status must also expose active
+  capacity, because approval-blocked jobs intentionally hold scheduler slots
+  even when no model tokens are currently streaming.
 
 Queued jobs are ordered by explicit priority first and FIFO within the same
 priority. Spoken reprioritization may move a queued job ahead before capacity
@@ -181,7 +183,7 @@ Example:
 
 ```json
 {
-  "capacity": {"running": 2, "max_concurrent": 4, "queued": 1},
+  "capacity": {"active": 2, "running": 1, "max_concurrent": 4, "queued": 1, "waiting_for_approval": 1},
   "jobs": [
     {
       "job_id": "voice-oracle-001",
@@ -406,6 +408,8 @@ automatically.
 - Config exposes a bounded oracle-job shutdown timeout so voice/session close
   does not hang on a non-cooperative oracle worker.
 - Status reports running/queued/max capacity.
+- Status reports active capacity separately from running jobs when approval
+  waits or cancellation waits consume slots.
 - Tests cover `max_concurrent=1` and `max_concurrent=4`.
 - DGX Spark / Nemotron-3 Super target documents `max_concurrent=4` as the first
   intended high-end local deployment setting.

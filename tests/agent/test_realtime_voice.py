@@ -4481,6 +4481,8 @@ def test_async_oracle_job_enters_waiting_for_approval_on_tool_call(monkeypatch):
             if event.type == VoiceEventType.ASSISTANT_COMMIT
         )
         assert "1 waiting for approval" in status_commit.payload["text"]
+        assert "1 active out of 1" in status_commit.payload["text"]
+        assert "0 running out of 1" not in status_commit.payload["text"]
         assert "waiting_for_approval: Preparing the spend request." in status_commit.payload["text"]
 
         oracle.release.set()

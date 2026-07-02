@@ -1497,6 +1497,12 @@ async def build_plan_run_async(
                     "approval_capacity_followup_queued": voice_operator["proofs"]["async_oracle_jobs"][
                         "approval_capacity_followup_queued"
                     ],
+                    "approval_capacity_active_visible": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_capacity_active_visible"
+                    ],
+                    "approval_capacity_misleading_running_capacity": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["approval_capacity_misleading_running_capacity"],
                     "approval_capacity_status_text": voice_operator["proofs"]["async_oracle_jobs"][
                         "approval_capacity_status_text"
                     ],

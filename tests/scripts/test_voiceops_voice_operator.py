@@ -80,8 +80,10 @@ def _async_oracle_smoke_payload() -> dict:
         "approval_capacity_smoke_ok": True,
         "approval_capacity_waiting_observed": True,
         "approval_capacity_followup_queued": True,
+        "approval_capacity_active_visible": True,
+        "approval_capacity_misleading_running_capacity": False,
         "approval_capacity_status_text": (
-            "Oracle jobs: 0 running out of 1, 1 queued, 1 waiting for approval. "
+            "Oracle jobs: 1 active out of 1, 0 running, 1 queued, 1 waiting for approval. "
             "waiting_for_approval: Preparing spend approval."
         ),
         "approval_capacity_followup_started_after_approval": True,
@@ -126,7 +128,7 @@ def _async_oracle_smoke_payload() -> dict:
         "approval_secret_canary_checked": True,
         "approval_completed": True,
         "approval_status_text": (
-            "Oracle jobs: 0 running out of 4, 1 waiting for approval. "
+            "Oracle jobs: 1 active out of 4, 0 running, 1 waiting for approval. "
             "waiting_for_approval: Preparing spend approval."
         ),
         "failed_job_reported": True,
@@ -165,7 +167,7 @@ def _async_oracle_smoke_payload() -> dict:
             "Finished Run smoke task 2.",
             "Finished Run smoke task 4.",
             "Preparing spend approval.",
-            "Oracle jobs: 0 running out of 4, 1 waiting for approval. "
+            "Oracle jobs: 1 active out of 4, 0 running, 1 waiting for approval. "
             "waiting_for_approval: Preparing spend approval.",
             "Approval smoke cleared.",
             "Testing failure handling.",
@@ -408,6 +410,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["approval_capacity_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_capacity_waiting_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_capacity_followup_queued"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_capacity_active_visible"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_capacity_misleading_running_capacity"] is False
+    assert "1 active out of 1" in report["proofs"]["async_oracle_jobs"]["approval_capacity_status_text"]
+    assert "0 running out of 1" not in report["proofs"]["async_oracle_jobs"]["approval_capacity_status_text"]
     assert "1 queued" in report["proofs"]["async_oracle_jobs"]["approval_capacity_status_text"]
     assert "1 waiting for approval" in report["proofs"]["async_oracle_jobs"]["approval_capacity_status_text"]
     assert report["proofs"]["async_oracle_jobs"]["approval_capacity_followup_started_after_approval"] is True

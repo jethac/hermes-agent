@@ -1748,6 +1748,7 @@ class TestDiscordVoiceChannelMethods:
         assert status["sidecar_running"] is False
         assert status["receiver_running"] is False
         assert status["oracle_jobs"]["capacity"] == {
+            "active": 0,
             "running": 0,
             "max_concurrent": 4,
             "queued": 0,
@@ -2551,6 +2552,7 @@ class TestDiscordVoiceChannelMethods:
         assert status["sidecar_running"] is False
         assert status["fallback_reason"] == "sidecar_event_stream_failed: websocket closed"
         assert status["oracle_jobs"]["capacity"] == {
+            "active": 0,
             "running": 0,
             "max_concurrent": 4,
             "queued": 0,

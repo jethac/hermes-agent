@@ -1354,6 +1354,7 @@ def test_discord_realtime_event_tracks_oracle_job_status():
     status = adapter.get_voice_session_status(111)
 
     assert status["oracle_jobs"]["capacity"] == {
+        "active": 1,
         "running": 0,
         "queued": 0,
         "waiting_for_approval": 1,

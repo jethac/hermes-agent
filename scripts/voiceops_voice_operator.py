@@ -1421,6 +1421,8 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         "approval_wait_holds_capacity": smoke.get("approval_capacity_smoke_ok") is True
         and smoke.get("approval_capacity_waiting_observed") is True
         and smoke.get("approval_capacity_followup_queued") is True
+        and smoke.get("approval_capacity_active_visible") is True
+        and smoke.get("approval_capacity_misleading_running_capacity") is False
         and "1 queued" in str(smoke.get("approval_capacity_status_text") or "")
         and "1 waiting for approval" in str(smoke.get("approval_capacity_status_text") or "")
         and smoke.get("approval_capacity_followup_started_after_approval") is True
@@ -1810,6 +1812,12 @@ def build_voice_operator_report(
             ),
             "approval_capacity_followup_queued": bool(
                 async_oracle_smoke.get("approval_capacity_followup_queued")
+            ),
+            "approval_capacity_active_visible": bool(
+                async_oracle_smoke.get("approval_capacity_active_visible")
+            ),
+            "approval_capacity_misleading_running_capacity": bool(
+                async_oracle_smoke.get("approval_capacity_misleading_running_capacity")
             ),
             "approval_capacity_status_text": async_oracle_smoke.get("approval_capacity_status_text"),
             "approval_capacity_followup_started_after_approval": bool(

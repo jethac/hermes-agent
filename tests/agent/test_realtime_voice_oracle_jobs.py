@@ -482,6 +482,7 @@ async def test_shutdown_forces_cancelled_state_when_worker_ignores_cancel():
     assert (await manager.get(job.job_id)).state == OracleJobState.CANCELLED
     assert (await manager.get(job.job_id)).cancel_reason == "session closed"
     assert status["capacity"] == {
+        "active": 0,
         "running": 0,
         "max_concurrent": 1,
         "queued": 0,
@@ -578,6 +579,7 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
 
     status = await manager.status_view()
     assert status["capacity"] == {
+        "active": 1,
         "running": 1,
         "max_concurrent": 1,
         "queued": 1,
@@ -716,6 +718,7 @@ async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
     assert waiting.state == OracleJobState.WAITING_FOR_APPROVAL
     assert (await manager.get(second.job_id)).state == OracleJobState.QUEUED
     assert status["capacity"] == {
+        "active": 1,
         "running": 0,
         "max_concurrent": 1,
         "queued": 1,

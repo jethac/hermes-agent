@@ -347,6 +347,7 @@ class OracleJobManager:
     async def status_view(self) -> dict[str, Any]:
         async with self._lock:
             jobs = [job.to_status() for job in self._jobs.values()]
+            active = self._active_count_locked()
             running = sum(1 for job in self._jobs.values() if job.state == OracleJobState.RUNNING)
             queued = sum(1 for job in self._jobs.values() if job.state == OracleJobState.QUEUED)
             waiting_for_approval = sum(
@@ -354,6 +355,7 @@ class OracleJobManager:
             )
         return {
             "capacity": {
+                "active": active,
                 "running": running,
                 "max_concurrent": self.max_concurrent,
                 "queued": queued,

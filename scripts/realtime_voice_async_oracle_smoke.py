@@ -355,7 +355,8 @@ async def _run_approval_capacity_smoke() -> dict[str, Any]:
     await recorder.wait_for(
         lambda events: any(
             event.type == VoiceEventType.ASSISTANT_COMMIT
-            and "0 running out of 1" in str(event.payload.get("text") or "")
+            and "1 active out of 1" in str(event.payload.get("text") or "")
+            and "0 running" in str(event.payload.get("text") or "")
             and "1 queued" in str(event.payload.get("text") or "")
             and "1 waiting for approval" in str(event.payload.get("text") or "")
             for event in events
@@ -396,12 +397,16 @@ async def _run_approval_capacity_smoke() -> dict[str, Any]:
     return {
         "ok": bool(approval_waiting)
         and bool(queued_followup)
+        and "1 active out of 1" in status_text
+        and "0 running out of 1" not in status_text
         and "1 queued" in status_text
         and "1 waiting for approval" in status_text
         and followup_started_after_approval
         and len(completed) == 2,
         "approval_capacity_waiting_observed": bool(approval_waiting),
         "approval_capacity_followup_queued": bool(queued_followup),
+        "approval_capacity_active_visible": "1 active out of 1" in status_text,
+        "approval_capacity_misleading_running_capacity": "0 running out of 1" in status_text,
         "approval_capacity_status_text": status_text,
         "approval_capacity_followup_started_after_approval": followup_started_after_approval,
         "approval_capacity_completed_jobs": len(completed),
@@ -1208,6 +1213,10 @@ async def run_smoke() -> dict[str, Any]:
         "approval_capacity_smoke_ok": approval_capacity_smoke["ok"],
         "approval_capacity_waiting_observed": approval_capacity_smoke["approval_capacity_waiting_observed"],
         "approval_capacity_followup_queued": approval_capacity_smoke["approval_capacity_followup_queued"],
+        "approval_capacity_active_visible": approval_capacity_smoke["approval_capacity_active_visible"],
+        "approval_capacity_misleading_running_capacity": approval_capacity_smoke[
+            "approval_capacity_misleading_running_capacity"
+        ],
         "approval_capacity_status_text": approval_capacity_smoke["approval_capacity_status_text"],
         "approval_capacity_followup_started_after_approval": approval_capacity_smoke[
             "approval_capacity_followup_started_after_approval"
