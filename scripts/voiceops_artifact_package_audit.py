@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.voiceops_channel_policy import CHANNEL_IDS, validate_policy
 from scripts.voiceops_provisioning_probe import validate_post_approval_receipts
-from scripts.voiceops_voice_operator import _load_live_evidence, validate_live_probe_evidence
+from scripts.voiceops_voice_operator import _load_live_evidence, validate_live_probe_evidence, validate_voice_operator_report
 
 
 DEFAULT_ARTIFACT_ROOT = Path("artifacts")
@@ -1373,6 +1373,26 @@ def _audit_post_approval_receipt_validation(
             issues.append(f"post_approval_receipts_validation:{key}_nonzero_without_loaded_receipts")
 
 
+def _audit_voice_operator_artifact_consistency(
+    *,
+    readiness: Mapping[str, Any],
+    discord_loopback_smoke: Mapping[str, Any],
+    async_oracle_smoke: Mapping[str, Any],
+    discord_session_cleanup_smoke: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    for issue in validate_voice_operator_report(dict(readiness)):
+        issues.append(f"voice_operator_readiness:{issue}")
+    expected_payloads = {
+        "smoke": discord_loopback_smoke,
+        "async_oracle_smoke": async_oracle_smoke,
+        "discord_session_cleanup_smoke": discord_session_cleanup_smoke,
+    }
+    for field, standalone_payload in expected_payloads.items():
+        if readiness.get(field) != standalone_payload:
+            issues.append(f"voice_operator_readiness:{field}_standalone_artifact_mismatch")
+
+
 def _audit_live_evidence_scaffold(
     *,
     manifest_path: Path,
@@ -1619,6 +1639,26 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         issues,
         "post_approval_receipts_validation",
     )
+    voice_operator_readiness = _read_json(
+        voice_dir / "voice-operator-readiness.json",
+        issues,
+        "voice_operator_readiness",
+    )
+    discord_loopback_smoke = _read_json(
+        voice_dir / "discord-loopback-smoke.json",
+        issues,
+        "discord_loopback_smoke",
+    )
+    async_oracle_smoke = _read_json(
+        voice_dir / "async-oracle-smoke.json",
+        issues,
+        "async_oracle_smoke",
+    )
+    discord_session_cleanup_smoke = _read_json(
+        voice_dir / "discord-session-cleanup-smoke.json",
+        issues,
+        "discord_session_cleanup_smoke",
+    )
     live_scaffold_dir = voice_dir / "live-voice-evidence-scaffold"
     live_scaffold_manifest = _read_json(live_scaffold_dir / "manifest.json", issues, "live_evidence_scaffold_manifest")
     live_scaffold_sections = {
@@ -1702,6 +1742,13 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         execution_plan=execution_plan,
         scaffold=post_approval_scaffold,
         stored_validation=post_approval_validation,
+        issues=issues,
+    )
+    _audit_voice_operator_artifact_consistency(
+        readiness=voice_operator_readiness,
+        discord_loopback_smoke=discord_loopback_smoke,
+        async_oracle_smoke=async_oracle_smoke,
+        discord_session_cleanup_smoke=discord_session_cleanup_smoke,
         issues=issues,
     )
     _audit_live_evidence_scaffold(

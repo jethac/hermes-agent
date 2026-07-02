@@ -94,6 +94,45 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert "static_package_consistency_only" in audit_markdown
 
 
+def test_package_audit_rejects_discord_loopback_smoke_artifact_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    smoke_path = artifact_root / "voiceops-voice-operator" / "current" / "discord-loopback-smoke.json"
+    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+    smoke["mixer_frames"] = 0
+    _write_json(smoke_path, smoke)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:smoke_standalone_artifact_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_async_oracle_smoke_artifact_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    smoke_path = artifact_root / "voiceops-voice-operator" / "current" / "async-oracle-smoke.json"
+    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+    smoke["worker_overlap_proved"] = False
+    _write_json(smoke_path, smoke)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:async_oracle_smoke_standalone_artifact_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_discord_session_cleanup_smoke_artifact_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    smoke_path = artifact_root / "voiceops-voice-operator" / "current" / "discord-session-cleanup-smoke.json"
+    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+    smoke["session_closed_sent"] = False
+    _write_json(smoke_path, smoke)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:discord_session_cleanup_smoke_standalone_artifact_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_missing_promised_runbook(tmp_path):
     artifact_root = _generate_package(tmp_path)
     missing_path = artifact_root / "voiceops-spark-matrix" / "current" / "spark-operator-runbook.md"
