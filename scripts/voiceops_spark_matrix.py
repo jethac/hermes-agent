@@ -26,6 +26,7 @@ EVIDENCE_SCHEMA_VERSION = "voiceops.spark_benchmark_evidence.v1"
 STACK_SMOKE_KIND = "voiceops_spark_stack_smoke"
 STACK_SMOKE_REQUIRED_COMPONENTS = ("reflex", "oracle", "asr", "tts", "sidecar")
 STACK_SMOKE_REQUIRED_ORACLE_ROUTES = ("tools", "files", "memory", "project_context")
+SPARK_BENCHMARK_EVIDENCE_NOT_BEFORE = dt.datetime(2026, 6, 29, tzinfo=dt.timezone.utc)
 SPARK_BENCHMARK_SCAFFOLD_EVIDENCE = (
     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
 )
@@ -301,6 +302,11 @@ def _has_parseable_timezone_timestamp(value: Any) -> bool:
     return _parse_timezone_timestamp(value) is not None
 
 
+def _timestamp_before_evidence_window(value: Any) -> bool:
+    parsed = _parse_timezone_timestamp(value)
+    return parsed is not None and parsed < SPARK_BENCHMARK_EVIDENCE_NOT_BEFORE
+
+
 def _verified(item: dict[str, Any]) -> bool:
     return item.get("verified") is True or item.get("ok") is True
 
@@ -571,6 +577,8 @@ def evaluate_candidate(candidate: Candidate, evidence: list[dict[str, Any]]) -> 
             item_issues.append("missing_measured_at")
         elif not _has_parseable_timezone_timestamp(item.get("measured_at")):
             item_issues.append("invalid_measured_at")
+        elif _timestamp_before_evidence_window(item.get("measured_at")):
+            item_issues.append("stale_measured_at")
         locality = str(item.get("locality") or "").strip()
         if locality != candidate.locality:
             item_issues.append("locality_mismatch")
@@ -663,6 +671,8 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
             issues.append("missing_measured_at")
         elif not _has_parseable_timezone_timestamp(item.get("measured_at")):
             issues.append("invalid_measured_at")
+        elif _timestamp_before_evidence_window(item.get("measured_at")):
+            issues.append("stale_measured_at")
         if not _matches_hardware(item.get("hardware")):
             issues.append("hardware_mismatch")
         if str(item.get("locality") or "") != "local_spark":
@@ -969,8 +979,12 @@ def _collector_attestation_issues(item: dict[str, Any]) -> list[str]:
     finished_at = _parse_timezone_timestamp(attestation.get("finished_at"))
     if started_at is None:
         issues.append("collector_attestation_invalid:started_at")
+    elif started_at < SPARK_BENCHMARK_EVIDENCE_NOT_BEFORE:
+        issues.append("collector_attestation_stale:started_at")
     if finished_at is None:
         issues.append("collector_attestation_invalid:finished_at")
+    elif finished_at < SPARK_BENCHMARK_EVIDENCE_NOT_BEFORE:
+        issues.append("collector_attestation_stale:finished_at")
     if started_at is not None and finished_at is not None and started_at > finished_at:
         issues.append("collector_attestation_invalid:timestamp_window")
     for field in ("raw_artifact_sha256", "redacted_artifact_sha256", "parent_manifest_sha256"):
@@ -1412,6 +1426,9 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "source_artifact_identity_must_match": True,
             "source_artifact_candidate_rows_require_candidate_identity": True,
             "source_artifact_kind_identity_only_for_kind_only_rows": True,
+            "benchmark_evidence_not_before": SPARK_BENCHMARK_EVIDENCE_NOT_BEFORE.isoformat(),
+            "measured_at_must_be_in_evidence_window": True,
+            "collector_attestation_timestamps_must_be_in_evidence_window": True,
             "accepted_source_artifact_identity_fields": [
                 "source_key",
                 "source_keys",

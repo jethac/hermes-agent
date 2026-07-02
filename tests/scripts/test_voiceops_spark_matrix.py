@@ -229,6 +229,9 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert closure["evidence_contract"]["source_artifacts_must_exist"] is True
     assert closure["evidence_contract"]["source_artifact_readable"] is True
     assert closure["evidence_contract"]["source_artifact_sha256_must_match"] is True
+    assert closure["evidence_contract"]["benchmark_evidence_not_before"] == "2026-06-29T00:00:00+00:00"
+    assert closure["evidence_contract"]["measured_at_must_be_in_evidence_window"] is True
+    assert closure["evidence_contract"]["collector_attestation_timestamps_must_be_in_evidence_window"] is True
     assert closure["evidence_contract"]["collector_attestation_required_for_one_spark_readiness"] is True
     assert closure["evidence_contract"]["placeholder_collector_attestation_accepted"] is False
     assert closure["evidence_contract"]["example_only_accepted"] is False
@@ -993,6 +996,31 @@ def test_spark_matrix_rejects_candidate_with_invalid_measured_at(tmp_path):
     assert matrix["role_status"]["oracle"] == "needs_evidence"
 
 
+def test_spark_matrix_rejects_stale_candidate_timestamps(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    evidence["measured_at"] = "2026-06-28T23:59:59Z"
+    evidence["collector_attestation"]["started_at"] = "2026-06-28T23:59:57Z"
+    evidence["collector_attestation"]["finished_at"] = "2026-06-28T23:59:58Z"
+    evidence["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "stale_measured_at" in evaluation["issues"]
+    assert "collector_attestation_stale:started_at" in evaluation["issues"]
+    assert "collector_attestation_stale:finished_at" in evaluation["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
 def test_spark_matrix_rejects_ultra_model_for_super_local_oracle_gate(tmp_path):
     evidence_path = tmp_path / "evidence.json"
     evidence_path.write_text(
@@ -1368,6 +1396,23 @@ def test_spark_matrix_rejects_stack_smoke_with_timezone_less_measured_at(tmp_pat
 
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "invalid_measured_at" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_rejects_stale_stack_smoke_timestamps(tmp_path):
+    evidence_path = tmp_path / "evidence.json"
+    stale = _stack_smoke()
+    stale["measured_at"] = "2026-06-28T23:59:59Z"
+    stale["collector_attestation"]["started_at"] = "2026-06-28T23:59:57Z"
+    stale["collector_attestation"]["finished_at"] = "2026-06-28T23:59:58Z"
+    evidence_path.write_text(json.dumps({"evidence": [stale]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "stale_measured_at" in matrix["stack_smoke"]["issues"]
+    assert "collector_attestation_stale:started_at" in matrix["stack_smoke"]["issues"]
+    assert "collector_attestation_stale:finished_at" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
 
 
