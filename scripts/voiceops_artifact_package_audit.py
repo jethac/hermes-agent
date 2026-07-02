@@ -23,7 +23,7 @@ from typing import Any, Mapping
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.voiceops_channel_policy import CHANNEL_IDS, validate_policy
-from scripts.voiceops_provisioning_probe import validate_post_approval_receipts
+from scripts.voiceops_provisioning_probe import load_preflight_evidence, validate_post_approval_receipts
 from scripts.voiceops_voice_operator import _load_live_evidence, validate_live_probe_evidence, validate_voice_operator_report
 
 
@@ -842,6 +842,18 @@ def _audit_plan_consistency(
         issues.append("demo_handoff:final_success_signal_mismatch")
     _audit_handoff_phase_contract("operator_handoff", plan_handoff, issues)
     _audit_handoff_phase_contract("demo_handoff", demo_handoff, issues)
+    _audit_handoff_validation_command_safety(
+        "operator_handoff",
+        plan_closure.get("next_actions"),
+        plan_handoff,
+        issues,
+    )
+    _audit_handoff_validation_command_safety(
+        "demo_handoff",
+        plan_closure.get("next_actions"),
+        demo_handoff,
+        issues,
+    )
     _audit_handoff_review_phase_contract("operator_handoff", plan_handoff, issues)
     _audit_handoff_review_phase_contract("demo_handoff", demo_handoff, issues)
     if demo_handoff.get("review_phases") != plan_handoff.get("review_phases"):
@@ -1123,6 +1135,41 @@ def _audit_handoff_command_order(
             issues.append(f"{label}:{phase_id}:first_safe_command_not_before_first_evidence")
 
 
+def _audit_handoff_validation_command_safety(
+    label: str,
+    next_actions: Any,
+    handoff: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    if not isinstance(next_actions, list):
+        issues.append(f"{label}:next_actions_missing_for_command_safety")
+        return
+    phases_by_gate = {
+        str(phase.get("gate_id")): phase
+        for phase in handoff.get("phases", [])
+        if isinstance(phase, Mapping) and str(phase.get("gate_id") or "").strip()
+    }
+    for action in next_actions:
+        if not isinstance(action, Mapping):
+            continue
+        gate_id = str(action.get("gate_id") or "").strip()
+        phase = phases_by_gate.get(gate_id)
+        if not isinstance(phase, Mapping):
+            issues.append(f"{label}:{gate_id}:missing_phase_for_command_safety")
+            continue
+        command_safety = phase.get("command_safety")
+        if not isinstance(command_safety, Mapping):
+            issues.append(f"{label}:{gate_id}:missing_command_safety")
+            continue
+        validation_commands = action.get("validation_commands")
+        if not isinstance(validation_commands, Mapping):
+            issues.append(f"{label}:{gate_id}:validation_commands_not_object")
+            continue
+        for command_key in validation_commands:
+            if command_key not in command_safety:
+                issues.append(f"{label}:{gate_id}:validation_command_missing_safety:{command_key}")
+
+
 def _audit_handoff_command_precedence(
     label: str,
     phase_id: str,
@@ -1377,6 +1424,23 @@ def _audit_post_approval_receipt_validation(
     for key in ("receipt_count", "credential_location_count", "rollback_receipt_count", "audit_event_count"):
         if stored_validation.get(key) not in (0, None):
             issues.append(f"post_approval_receipts_validation:{key}_nonzero_without_loaded_receipts")
+
+
+def _audit_preflight_evidence_scaffold(
+    *,
+    manifest_path: Path,
+    issues: list[str],
+) -> None:
+    validation = load_preflight_evidence(manifest_path)
+    validation_issues = validation.get("validation_issues") or []
+    if validation.get("loaded") is not True:
+        issues.append("preflight_evidence_scaffold:manifest_not_loaded")
+    if not any("example_only" in str(issue) for issue in validation_issues):
+        issues.append("preflight_evidence_scaffold:missing_example_only_validation_issue")
+    for issue in validation_issues:
+        issue_text = str(issue)
+        if issue_text.startswith("preflight_evidence_manifest:") and "example_only" not in issue_text:
+            issues.append(f"preflight_evidence_scaffold:{issue_text}")
 
 
 def _audit_voice_operator_artifact_consistency(
@@ -1825,6 +1889,16 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         execution_plan=execution_plan,
         scaffold=post_approval_scaffold,
         stored_validation=post_approval_validation,
+        issues=issues,
+    )
+    _audit_preflight_evidence_scaffold(
+        manifest_path=(
+            artifact_root
+            / "voiceops-provisioning"
+            / "current"
+            / "provisioning-preflight-scaffold"
+            / "provisioning-preflight-evidence.manifest.json"
+        ),
         issues=issues,
     )
     _audit_voice_operator_artifact_consistency(

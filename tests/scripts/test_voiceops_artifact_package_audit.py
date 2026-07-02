@@ -678,6 +678,29 @@ def test_package_audit_rejects_live_evidence_scaffold_manifest_path_tampering(tm
     )
 
 
+def test_package_audit_rejects_preflight_scaffold_manifest_path_tampering(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    manifest_path = (
+        artifact_root
+        / "voiceops-provisioning"
+        / "current"
+        / "provisioning-preflight-scaffold"
+        / "provisioning-preflight-evidence.manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["reports"]["stripe_projects"] = "/tmp/stripe-projects-evidence.json"
+    _write_json(manifest_path, manifest)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "preflight_evidence_scaffold:"
+        "preflight_evidence_manifest:stripe_projects:report_path:absolute_path_not_allowed"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_plan_run_model_arg_drift_from_demo(tmp_path):
     artifact_root = _generate_package(
         tmp_path,
@@ -879,6 +902,39 @@ def test_package_audit_rejects_handoff_safe_command_order_drift(tmp_path):
     assert "demo_handoff:local_spark_stack:first_safe_command_not_spark_lint" in report["issues"]
     assert "plan_run:live_discord_voice_operator:first_safe_command_not_no_write_audit" in report["issues"]
     assert "plan_run:local_spark_stack_matrix:first_safe_command_not_spark_lint" in report["issues"]
+
+
+def test_package_audit_rejects_handoff_validation_command_without_safety_label(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"
+    demo_handoff_path = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json"
+    closure_path = artifact_root / "voiceops-plan" / "current" / "readiness-closure-index.json"
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+
+    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    demo_handoff = json.loads(demo_handoff_path.read_text(encoding="utf-8"))
+    closure = json.loads(closure_path.read_text(encoding="utf-8"))
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+
+    for payload in (handoff, demo_handoff, closure["operator_handoff"], plan_run["closure_index"]["operator_handoff"]):
+        payload["phases"][2]["command_safety"].pop("matrix_only", None)
+
+    _write_json(handoff_path, handoff)
+    _write_json(demo_handoff_path, demo_handoff)
+    _write_json(closure_path, closure)
+    _write_json(plan_run_path, plan_run)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "operator_handoff:local_spark_stack_matrix:validation_command_missing_safety:matrix_only"
+        in report["issues"]
+    )
+    assert (
+        "demo_handoff:local_spark_stack_matrix:validation_command_missing_safety:matrix_only"
+        in report["issues"]
+    )
 
 
 def test_package_audit_rejects_channel_policy_live_egress_claim(tmp_path):
