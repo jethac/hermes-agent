@@ -180,12 +180,22 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
     readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
     readiness["proofs"]["async_oracle_jobs"]["completed_jobs"] = 0
+    readiness["proofs"]["async_oracle_jobs"]["worker_overlap_within_capacity"] = False
+    readiness["proofs"]["async_oracle_jobs"]["shutdown_bounded_close_observed"] = False
     _write_json(readiness_path, readiness)
 
     report = audit_package(artifact_root)
 
     assert report["ok"] is False
     assert "voice_operator_readiness:proofs.async_oracle_jobs.completed_jobs_mismatch" in report["issues"]
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.worker_overlap_within_capacity_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.shutdown_bounded_close_observed_mismatch"
+        in report["issues"]
+    )
 
 
 def test_package_audit_rejects_async_oracle_proof_identity_drift(tmp_path):

@@ -228,6 +228,10 @@ def _valid_async_oracle_smoke_entry():
         "queued_update_reached_oracle": True,
         "spoken_cancel_control_observed": True,
         "queued_cancel_smoke_ok": True,
+        "queued_cancel_observed": True,
+        "queued_cancelled_before_start": True,
+        "queued_cancel_not_sent_to_oracle": True,
+        "queued_cancel_running_completed": True,
         "completed_result_status_visible": True,
         "failed_job_reported": True,
         "verbose_result_spoken_bounded": True,
@@ -260,6 +264,7 @@ def test_realtime_voice_alpha_report_rejects_weak_async_oracle_smoke():
     weak_async_smoke["local_turn_during_running_jobs_observed"] = False
     weak_async_smoke["local_turn_active_job_count"] = 0
     weak_async_smoke["queued_update_reached_oracle"] = False
+    weak_async_smoke["queued_cancel_not_sent_to_oracle"] = False
     report = [*_valid_alpha_report(), weak_async_smoke]
 
     issues = validate_realtime_voice_alpha_report(
@@ -271,6 +276,7 @@ def test_realtime_voice_alpha_report_rejects_weak_async_oracle_smoke():
     assert any("local_turn_during_running_jobs_observed" in issue.format() for issue in issues)
     assert any("active oracle job overlap" in issue.format() for issue in issues)
     assert any("queued_update_reached_oracle" in issue.format() for issue in issues)
+    assert any("queued_cancel_not_sent_to_oracle" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_alpha_report_accepts_manifest_entry():

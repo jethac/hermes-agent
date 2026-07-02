@@ -1708,15 +1708,156 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "max_running": async_smoke.get("max_running"),
             "max_worker_overlap": async_smoke.get("max_worker_overlap"),
             "worker_overlap_proved": bool(async_smoke.get("worker_overlap_proved")),
+            "worker_overlap_within_capacity": bool(async_smoke.get("worker_overlap_within_capacity")),
+            "noncooperative_cancel_overlap_observed": bool(
+                async_smoke.get("noncooperative_cancel_overlap_observed")
+            ),
             "started_jobs": async_smoke.get("started_jobs"),
             "queued_jobs": async_smoke.get("queued_jobs"),
             "completed_jobs": async_smoke.get("completed_jobs"),
             "failed_jobs": async_smoke.get("failed_jobs"),
             "cancelled_jobs": async_smoke.get("cancelled_jobs"),
+            "shutdown_timeout_configured_ms": async_smoke.get("shutdown_timeout_configured_ms"),
+            "shutdown_close_elapsed_ms": async_smoke.get("shutdown_close_elapsed_ms"),
+            "shutdown_bounded_close_observed": bool(async_smoke.get("shutdown_bounded_close_observed")),
+            "shutdown_forced_cancel_observed": bool(async_smoke.get("shutdown_forced_cancel_observed")),
+            "shutdown_close_cancel_entered": bool(async_smoke.get("shutdown_close_cancel_entered")),
+            "shutdown_cancelled_jobs": async_smoke.get("shutdown_cancelled_jobs"),
+            "queued_cancel_smoke_ok": bool(async_smoke.get("queued_cancel_smoke_ok")),
+            "queued_cancel_observed": bool(async_smoke.get("queued_cancel_observed")),
+            "queued_cancelled_before_start": bool(async_smoke.get("queued_cancelled_before_start")),
+            "queued_cancel_not_sent_to_oracle": bool(async_smoke.get("queued_cancel_not_sent_to_oracle")),
+            "queued_cancel_reason": async_smoke.get("queued_cancel_reason"),
+            "queued_cancel_target_job_id": async_smoke.get("queued_cancel_target_job_id"),
+            "queued_cancel_running_completed": bool(async_smoke.get("queued_cancel_running_completed")),
+            "approval_capacity_smoke_ok": bool(async_smoke.get("approval_capacity_smoke_ok")),
+            "approval_capacity_waiting_observed": bool(async_smoke.get("approval_capacity_waiting_observed")),
+            "approval_capacity_followup_queued": bool(async_smoke.get("approval_capacity_followup_queued")),
+            "approval_capacity_active_visible": bool(async_smoke.get("approval_capacity_active_visible")),
+            "approval_capacity_misleading_running_capacity": bool(
+                async_smoke.get("approval_capacity_misleading_running_capacity")
+            ),
+            "approval_capacity_status_text": async_smoke.get("approval_capacity_status_text"),
+            "approval_capacity_followup_started_after_approval": bool(
+                async_smoke.get("approval_capacity_followup_started_after_approval")
+            ),
+            "approval_capacity_completed_jobs": async_smoke.get("approval_capacity_completed_jobs"),
+            "approval_capacity_max_concurrent": async_smoke.get("approval_capacity_max_concurrent"),
+            "approval_cancel_capacity_smoke_ok": bool(async_smoke.get("approval_cancel_capacity_smoke_ok")),
+            "approval_cancel_waiting_observed": bool(async_smoke.get("approval_cancel_waiting_observed")),
+            "approval_cancel_followup_queued": bool(async_smoke.get("approval_cancel_followup_queued")),
+            "approval_cancel_requested_observed": bool(async_smoke.get("approval_cancel_requested_observed")),
+            "approval_cancel_cancelled_observed": bool(async_smoke.get("approval_cancel_cancelled_observed")),
+            "approval_cancel_late_output_attempted": bool(async_smoke.get("approval_cancel_late_output_attempted")),
+            "approval_cancel_completed_after_cancel": bool(async_smoke.get("approval_cancel_completed_after_cancel")),
+            "approval_cancel_late_result_spoken": bool(async_smoke.get("approval_cancel_late_result_spoken")),
+            "approval_cancel_followup_started_before_cancel_drained": bool(
+                async_smoke.get("approval_cancel_followup_started_before_cancel_drained")
+            ),
+            "approval_cancel_followup_started_after_cancel": bool(
+                async_smoke.get("approval_cancel_followup_started_after_cancel")
+            ),
+            "approval_cancel_active_visible": bool(async_smoke.get("approval_cancel_active_visible")),
+            "approval_cancel_misleading_running_capacity": bool(
+                async_smoke.get("approval_cancel_misleading_running_capacity")
+            ),
+            "approval_cancel_status_text": async_smoke.get("approval_cancel_status_text"),
+            "approval_cancel_max_concurrent": async_smoke.get("approval_cancel_max_concurrent"),
+            "cancel_drain_capacity_smoke_ok": bool(async_smoke.get("cancel_drain_capacity_smoke_ok")),
+            "cancel_drain_requested_observed": bool(async_smoke.get("cancel_drain_requested_observed")),
+            "cancel_drain_cancelled_observed": bool(async_smoke.get("cancel_drain_cancelled_observed")),
+            "cancel_drain_followup_queued": bool(async_smoke.get("cancel_drain_followup_queued")),
+            "cancel_drain_active_visible": bool(async_smoke.get("cancel_drain_active_visible")),
+            "cancel_drain_misleading_running_capacity": bool(
+                async_smoke.get("cancel_drain_misleading_running_capacity")
+            ),
+            "cancel_drain_status_text": async_smoke.get("cancel_drain_status_text"),
+            "cancel_drain_followup_started_after_cancel": bool(
+                async_smoke.get("cancel_drain_followup_started_after_cancel")
+            ),
+            "cancel_drain_max_concurrent": async_smoke.get("cancel_drain_max_concurrent"),
+            "local_turn_committed": bool(async_smoke.get("local_turn_committed")),
+            "local_turn_during_running_jobs_observed": bool(
+                async_smoke.get("local_turn_during_running_jobs_observed")
+            ),
+            "local_turn_active_job_count": async_smoke.get("local_turn_active_job_count"),
+            "playback_stop_committed": bool(async_smoke.get("playback_stop_committed")),
+            "playback_stop_jobs_still_running": bool(async_smoke.get("playback_stop_jobs_still_running")),
+            "playback_stop_cancelled_jobs": bool(async_smoke.get("playback_stop_cancelled_jobs")),
+            "playback_stop_does_not_cancel_jobs": bool(async_smoke.get("playback_stop_does_not_cancel_jobs")),
+            "status_turn_committed": bool(async_smoke.get("status_turn_committed")),
+            "status_turn_queued_visible": bool(async_smoke.get("status_turn_queued_visible")),
+            "status_turn_no_oracle_request": bool(async_smoke.get("status_turn_no_oracle_request")),
+            "status_turn_oracle_request_count_before": async_smoke.get(
+                "status_turn_oracle_request_count_before"
+            ),
+            "status_turn_oracle_request_count_after": async_smoke.get(
+                "status_turn_oracle_request_count_after"
+            ),
             "status_text": async_smoke.get("status_text"),
+            "terminal_status_committed": bool(async_smoke.get("terminal_status_committed")),
+            "completed_result_status_visible": bool(async_smoke.get("completed_result_status_visible")),
+            "terminal_status_text": async_smoke.get("terminal_status_text"),
+            "fifth_job_id": async_smoke.get("fifth_job_id"),
+            "fifth_job_queued": bool(async_smoke.get("fifth_job_queued")),
+            "fifth_job_started_after_capacity_freed": bool(
+                async_smoke.get("fifth_job_started_after_capacity_freed")
+            ),
+            "cancelled_job_id": async_smoke.get("cancelled_job_id"),
+            "late_cancelled_output_attempted": bool(async_smoke.get("late_cancelled_output_attempted")),
+            "cancelled_result_spoken": bool(async_smoke.get("cancelled_result_spoken")),
+            "cancelled_result_committed": bool(async_smoke.get("cancelled_result_committed")),
+            "cancelled_result_progress_leaked": bool(async_smoke.get("cancelled_result_progress_leaked")),
+            "cancelled_result_durable_completed": bool(async_smoke.get("cancelled_result_durable_completed")),
+            "cancelled_result_durable_text": bool(async_smoke.get("cancelled_result_durable_text")),
+            "durable_cancelled_record_present": bool(async_smoke.get("durable_cancelled_record_present")),
+            "durable_completed_jobs": async_smoke.get("durable_completed_jobs"),
+            "approval_wait_observed": bool(async_smoke.get("approval_wait_observed")),
+            "approval_status_committed": bool(async_smoke.get("approval_status_committed")),
+            "approval_tool_progress_observed": bool(async_smoke.get("approval_tool_progress_observed")),
+            "approval_payload_redacted": bool(async_smoke.get("approval_payload_redacted")),
             "approval_secret_leaked": bool(async_smoke.get("approval_secret_leaked")),
             "approval_secret_canary_checked": bool(async_smoke.get("approval_secret_canary_checked")),
+            "approval_completed": bool(async_smoke.get("approval_completed")),
+            "approval_status_text": async_smoke.get("approval_status_text"),
+            "failed_job_reported": bool(async_smoke.get("failed_job_reported")),
+            "failed_job_spoken": bool(async_smoke.get("failed_job_spoken")),
+            "durable_failed_record_present": bool(async_smoke.get("durable_failed_record_present")),
+            "session_survived_failed_job": bool(async_smoke.get("session_survived_failed_job")),
+            "queued_job_update_observed": bool(async_smoke.get("queued_job_update_observed")),
+            "running_job_update_observed": bool(async_smoke.get("running_job_update_observed")),
+            "running_update_latest_update_visible": bool(async_smoke.get("running_update_latest_update_visible")),
+            "running_update_latest_update_text": async_smoke.get("running_update_latest_update_text"),
+            "running_update_reached_oracle": bool(async_smoke.get("running_update_reached_oracle")),
+            "running_update_delivery_metadata_ok": bool(
+                async_smoke.get("running_update_delivery_metadata_ok")
+            ),
+            "queued_update_latest_update_visible": bool(async_smoke.get("queued_update_latest_update_visible")),
+            "queued_update_latest_update_text": async_smoke.get("queued_update_latest_update_text"),
+            "queued_update_started_with_priority": bool(async_smoke.get("queued_update_started_with_priority")),
+            "queued_update_reached_oracle": bool(async_smoke.get("queued_update_reached_oracle")),
+            "verbose_result_spoken_bounded": bool(async_smoke.get("verbose_result_spoken_bounded")),
+            "verbose_result_committed_bounded": bool(async_smoke.get("verbose_result_committed_bounded")),
+            "verbose_result_commit_marked_truncated": bool(
+                async_smoke.get("verbose_result_commit_marked_truncated")
+            ),
+            "verbose_full_result_durable": bool(async_smoke.get("verbose_full_result_durable")),
+            "verbose_full_result_chars": async_smoke.get("verbose_full_result_chars"),
             "verbose_spoken_result": async_smoke.get("verbose_spoken_result"),
+            "terminal_result_policy_smoke_ok": bool(async_smoke.get("terminal_result_policy_smoke_ok")),
+            "terminal_result_auto_summarize_default": bool(
+                async_smoke.get("terminal_result_auto_summarize_default")
+            ),
+            "terminal_result_default_event_count": async_smoke.get("terminal_result_default_event_count"),
+            "terminal_result_default_spoken": bool(async_smoke.get("terminal_result_default_spoken")),
+            "terminal_result_suppression_config": async_smoke.get("terminal_result_suppression_config"),
+            "terminal_result_suppressed": bool(async_smoke.get("terminal_result_suppressed")),
+            "terminal_result_unsolicited_event_count": async_smoke.get(
+                "terminal_result_unsolicited_event_count"
+            ),
+            "terminal_result_unsolicited_spoken": bool(async_smoke.get("terminal_result_unsolicited_spoken")),
+            "terminal_result_status_available": bool(async_smoke.get("terminal_result_status_available")),
+            "terminal_result_status_text": async_smoke.get("terminal_result_status_text"),
         },
         issues=issues,
     )
