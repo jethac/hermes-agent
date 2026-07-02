@@ -3305,7 +3305,11 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.default_priority"]["type"] == "select"
         assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.default_priority"]["options"] == ["high", "normal", "low"]
         assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.overflow_policy"]["type"] == "select"
-        assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.overflow_policy"]["options"] == ["queue", "reject"]
+        assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.overflow_policy"]["options"] == [
+            "queue",
+            "reject",
+            "reprioritize",
+        ]
         assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.shutdown_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.speak_terminal_results"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.audit_ledger_path"]["type"] == "text"
@@ -3316,7 +3320,11 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.default_priority"]["type"] == "select"
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.default_priority"]["options"] == ["high", "normal", "low"]
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.overflow_policy"]["type"] == "select"
-        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.overflow_policy"]["options"] == ["queue", "reject"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.overflow_policy"]["options"] == [
+            "queue",
+            "reject",
+            "reprioritize",
+        ]
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.shutdown_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.speak_terminal_results"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.audit_ledger_path"]["type"] == "text"
@@ -3407,7 +3415,7 @@ class TestBuildSchemaFromConfig:
                             "max_concurrent": 4,
                             "queue_limit": 24,
                             "default_priority": "high",
-                            "overflow_policy": "reject",
+                            "overflow_policy": "reprioritize",
                             "shutdown_timeout_seconds": 3.5,
                             "speak_terminal_results": False,
                             "audit_ledger_path": "artifacts/voiceops/live-oracle-jobs.jsonl",
@@ -3427,7 +3435,7 @@ class TestBuildSchemaFromConfig:
             "max_concurrent": 4,
             "queue_limit": 24,
             "default_priority": "high",
-            "overflow_policy": "reject",
+            "overflow_policy": "reprioritize",
             "shutdown_timeout_seconds": 3.5,
             "speak_terminal_results": False,
             "audit_ledger_path": "artifacts/voiceops/live-oracle-jobs.jsonl",

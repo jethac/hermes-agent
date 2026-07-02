@@ -3741,6 +3741,128 @@ def test_kame_engine_reports_async_oracle_reject_policy_without_sync_fallback(mo
     asyncio.run(run())
 
 
+def test_kame_engine_reports_async_oracle_reprioritize_policy_without_sync_fallback(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await asyncio.Event().wait()
+            yield f"Finished {request.intent}."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                oracle_jobs={
+                    "enabled": True,
+                    "max_concurrent": 1,
+                    "queue_limit": 16,
+                    "overflow_policy": "reprioritize",
+                },
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "run task one",
+                    "intent": "Run task one.",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "interface_already_said": "Starting task one.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "transcript": "run task two",
+                    "intent": "Run task two.",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "interface_already_said": "Starting task two.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+        async for event in engine.events():
+            seen.append(event)
+            reprioritize_error = next(
+                (
+                    item
+                    for item in seen
+                    if item.type == VoiceEventType.ORACLE_ERROR
+                    and item.payload.get("reason") == "oracle_job_reprioritization_required"
+                ),
+                None,
+            )
+            reprioritize_partial = next(
+                (
+                    item
+                    for item in seen
+                    if item.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL
+                    and item.payload.get("oracle_job_reprioritization_required")
+                ),
+                None,
+            )
+            if reprioritize_error is not None and reprioritize_partial is not None:
+                break
+
+        await engine.close()
+        reprioritize_error = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.ORACLE_ERROR
+            and event.payload.get("reason") == "oracle_job_reprioritization_required"
+        )
+        reprioritize_partial = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL
+            and event.payload.get("oracle_job_reprioritization_required")
+        )
+        assert reprioritize_error.payload["error"] == "oracle job reprioritization required"
+        assert (
+            reprioritize_partial.payload["text"]
+            == "I am at oracle job capacity. Tell me which job to prioritize or cancel."
+        )
+        assert spoken[-1] == "I am at oracle job capacity. Tell me which job to prioritize or cancel."
+        assert len(oracle.requests) == 1
+        assert oracle.requests[0].intent == "Run task one."
+
+    asyncio.run(run())
+
+
 def test_kame_engine_spoken_priority_control_reprioritizes_queued_job(monkeypatch):
     class BlockingOracle:
         def __init__(self):

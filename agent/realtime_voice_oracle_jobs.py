@@ -127,6 +127,10 @@ class OracleJobQueueFullError(RuntimeError):
     """Raised when a new oracle job cannot be accepted."""
 
 
+class OracleJobReprioritizationRequiredError(OracleJobQueueFullError):
+    """Raised when capacity is full and the caller must reprioritize first."""
+
+
 class OracleJobNotFoundError(KeyError):
     """Raised when a requested oracle job does not exist."""
 
@@ -186,6 +190,8 @@ class OracleJobManager:
             active_count = self._active_count_locked()
             if self.overflow_policy == "reject" and active_count >= self.max_concurrent:
                 raise OracleJobQueueFullError("oracle job queue is full")
+            if self.overflow_policy == "reprioritize" and active_count >= self.max_concurrent:
+                raise OracleJobReprioritizationRequiredError("oracle job reprioritization required")
             if self._queued_count_locked() >= self.queue_limit and active_count >= self.max_concurrent:
                 raise OracleJobQueueFullError("oracle job queue is full")
 

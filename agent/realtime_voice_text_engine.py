@@ -37,6 +37,7 @@ from agent.realtime_voice_oracle_jobs import (
     OracleJobManager,
     OracleJobNotFoundError,
     OracleJobQueueFullError,
+    OracleJobReprioritizationRequiredError,
     OracleJobState,
 )
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
@@ -1029,6 +1030,19 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         )
         try:
             job = await manager.submit(oracle_request, priority=oracle_request.priority)
+        except OracleJobReprioritizationRequiredError:
+            self._oracle_job_context_by_turn_id.pop(oracle_request.turn_id, None)
+            await self._emit_oracle_error(
+                playback_generation,
+                metadata,
+                reason="oracle_job_reprioritization_required",
+                error="oracle job reprioritization required",
+            )
+            self._active_task_interrupts_oracle = False
+            self._active_task = asyncio.create_task(
+                self._speak_oracle_job_reprioritization_required_status(playback_generation, metadata)
+            )
+            return True
         except OracleJobQueueFullError:
             self._oracle_job_context_by_turn_id.pop(oracle_request.turn_id, None)
             await self._emit_oracle_error(
@@ -1115,6 +1129,29 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 "text": status_text,
                 "playback_generation": playback_generation,
                 "oracle_job_queue_full": True,
+                **metadata,
+                **_kame_route_metrics_payload(metadata, oracle_called=True),
+            },
+        )
+        with contextlib.suppress(Exception):
+            await self._speak_chunk(status_text, playback_generation)
+
+    async def _speak_oracle_job_reprioritization_required_status(
+        self,
+        playback_generation: int,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        status_text = self._planner.clean(
+            "I am at oracle job capacity. Tell me which job to prioritize or cancel."
+        )
+        if not status_text:
+            return
+        await self._emit(
+            VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+            {
+                "text": status_text,
+                "playback_generation": playback_generation,
+                "oracle_job_reprioritization_required": True,
                 **metadata,
                 **_kame_route_metrics_payload(metadata, oracle_called=True),
             },

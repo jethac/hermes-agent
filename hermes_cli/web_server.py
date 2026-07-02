@@ -966,7 +966,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "voice.realtime.oracle_jobs.overflow_policy": {
         "type": "select",
         "description": "Behavior when the KAME oracle job queue is full",
-        "options": ["queue", "reject"],
+        "options": ["queue", "reject", "reprioritize"],
         "category": "voice",
     },
     "voice.realtime.oracle_jobs.shutdown_timeout_seconds": {
@@ -1454,7 +1454,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.oracle_jobs.overflow_policy": {
         "type": "select",
         "description": "Behavior when the Discord KAME oracle job queue is full",
-        "options": ["queue", "reject"],
+        "options": ["queue", "reject", "reprioritize"],
         "category": "discord",
     },
     "discord.realtime_voice.oracle_jobs.shutdown_timeout_seconds": {
@@ -13914,7 +13914,7 @@ def _realtime_voice_oracle_jobs_payload(realtime: Mapping[str, Any]) -> Dict[str
     if default_priority not in {"high", "normal", "low"}:
         default_priority = "normal"
     overflow_policy = str(raw.get("overflow_policy") or "queue").strip().lower()
-    if overflow_policy not in {"queue", "reject"}:
+    if overflow_policy not in {"queue", "reject", "reprioritize"}:
         overflow_policy = "queue"
     return {
         "enabled": _truthy_config(raw.get("enabled"), default=False),

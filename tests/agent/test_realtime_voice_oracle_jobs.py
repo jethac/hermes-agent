@@ -8,6 +8,7 @@ from agent.realtime_voice import RealtimeVoiceSessionConfig, VoiceEventType
 from agent.realtime_voice_oracle_jobs import (
     OracleJobManager,
     OracleJobQueueFullError,
+    OracleJobReprioritizationRequiredError,
     OracleJobState,
 )
 
@@ -381,6 +382,34 @@ async def test_overflow_policy_reject_rejects_at_capacity_with_queue_space():
 
     with pytest.raises(OracleJobQueueFullError):
         await manager.submit(_request("should reject"))
+
+    status = await manager.status_view()
+    assert status["capacity"]["running"] == 1
+    assert status["capacity"]["queued"] == 0
+    assert len(status["jobs"]) == 1
+
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
+async def test_overflow_policy_reprioritize_requires_user_control_at_capacity():
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        queue_limit=16,
+        overflow_policy="reprioritize",
+        runner=runner,
+    )
+    await manager.submit(_request("running"))
+
+    with pytest.raises(OracleJobReprioritizationRequiredError):
+        await manager.submit(_request("needs reprioritization"))
 
     status = await manager.status_view()
     assert status["capacity"]["running"] == 1
