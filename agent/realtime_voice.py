@@ -74,6 +74,15 @@ class VoiceEventType(StrEnum):
     INTERFACE_ORACLE_REQUEST = "interface.oracle.request"
     INTERFACE_ORACLE_CANCEL = "interface.oracle.cancel"
     INTERFACE_COMMIT = "interface.commit"
+    ORACLE_JOB_ACCEPTED = "oracle.job.accepted"
+    ORACLE_JOB_QUEUED = "oracle.job.queued"
+    ORACLE_JOB_STARTED = "oracle.job.started"
+    ORACLE_JOB_PROGRESS = "oracle.job.progress"
+    ORACLE_JOB_WAITING_FOR_APPROVAL = "oracle.job.waiting_for_approval"
+    ORACLE_JOB_COMPLETED = "oracle.job.completed"
+    ORACLE_JOB_FAILED = "oracle.job.failed"
+    ORACLE_JOB_CANCEL_REQUESTED = "oracle.job.cancel_requested"
+    ORACLE_JOB_CANCELLED = "oracle.job.cancelled"
     ORACLE_ACCEPTED = "oracle.accepted"
     ORACLE_TOOL_CALL = "oracle.tool_call"
     ORACLE_TOOL_RESULT = "oracle.tool_result"
@@ -125,6 +134,15 @@ SERVER_EVENT_TYPES = frozenset(
         VoiceEventType.INTERFACE_ORACLE_REQUEST,
         VoiceEventType.INTERFACE_ORACLE_CANCEL,
         VoiceEventType.INTERFACE_COMMIT,
+        VoiceEventType.ORACLE_JOB_ACCEPTED,
+        VoiceEventType.ORACLE_JOB_QUEUED,
+        VoiceEventType.ORACLE_JOB_STARTED,
+        VoiceEventType.ORACLE_JOB_PROGRESS,
+        VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
+        VoiceEventType.ORACLE_JOB_COMPLETED,
+        VoiceEventType.ORACLE_JOB_FAILED,
+        VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED,
+        VoiceEventType.ORACLE_JOB_CANCELLED,
         VoiceEventType.ORACLE_ACCEPTED,
         VoiceEventType.ORACLE_TOOL_CALL,
         VoiceEventType.ORACLE_TOOL_RESULT,
@@ -211,6 +229,7 @@ class RealtimeVoiceSessionConfig:
     metrics_policy: Mapping[str, Any] = field(default_factory=dict)
     output_events: Mapping[str, Any] = field(default_factory=dict)
     quality_targets_ms: Mapping[str, Any] = field(default_factory=dict)
+    oracle_jobs: Mapping[str, Any] = field(default_factory=dict)
     barge_in_policy: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -264,6 +283,7 @@ class RealtimeVoiceSessionConfig:
             "metrics_policy": dict(self.metrics_policy),
             "output_events": dict(self.output_events),
             "quality_targets_ms": dict(self.quality_targets_ms),
+            "oracle_jobs": dict(self.oracle_jobs),
             "barge_in_policy": dict(self.barge_in_policy),
             "metadata": dict(self.metadata),
         }
@@ -337,6 +357,7 @@ class RealtimeVoiceSessionConfig:
             metrics_policy=_mapping(payload.get("metrics_policy")),
             output_events=_mapping(payload.get("output_events")),
             quality_targets_ms=_mapping(payload.get("quality_targets_ms")),
+            oracle_jobs=_mapping(payload.get("oracle_jobs")),
             barge_in_policy=_mapping(payload.get("barge_in_policy")),
             metadata=_mapping(payload.get("metadata")),
         )
@@ -436,12 +457,13 @@ def realtime_voice_session_contract_payload(config: RealtimeVoiceSessionConfig) 
         ("quality_targets_ms", config.quality_targets_ms),
         ("routing", config.routing_policy),
         ("metrics", config.metrics_policy),
+        ("oracle_jobs", config.oracle_jobs),
         ("barge_in", config.barge_in_policy),
     )
     for key, value in first_class_mappings:
         if isinstance(value, Mapping) and value:
             payload[key] = dict(value)
-    for key in ("language_support", "quality_targets_ms", "conversation_quality", "routing", "metrics", "barge_in"):
+    for key in ("language_support", "quality_targets_ms", "conversation_quality", "routing", "metrics", "oracle_jobs", "barge_in"):
         if key in payload:
             continue
         value = metadata.get(key)

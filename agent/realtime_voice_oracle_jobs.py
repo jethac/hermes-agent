@@ -1,0 +1,378 @@
+"""Async oracle job scheduling for KAME realtime voice sessions."""
+
+from __future__ import annotations
+
+import asyncio
+import inspect
+import time
+from collections import deque
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Any, Awaitable, Callable, Deque, Mapping, Optional
+
+from agent.realtime_voice_kame import KameOracleRequest
+
+
+class OracleJobState(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCEL_REQUESTED = "cancel_requested"
+    CANCELLED = "cancelled"
+
+
+class OracleJobEventType(StrEnum):
+    ACCEPTED = "oracle.job.accepted"
+    QUEUED = "oracle.job.queued"
+    STARTED = "oracle.job.started"
+    PROGRESS = "oracle.job.progress"
+    WAITING_FOR_APPROVAL = "oracle.job.waiting_for_approval"
+    COMPLETED = "oracle.job.completed"
+    FAILED = "oracle.job.failed"
+    CANCEL_REQUESTED = "oracle.job.cancel_requested"
+    CANCELLED = "oracle.job.cancelled"
+
+
+TERMINAL_STATES = frozenset(
+    {
+        OracleJobState.COMPLETED,
+        OracleJobState.FAILED,
+        OracleJobState.CANCELLED,
+    }
+)
+
+
+OracleJobRunner = Callable[["OracleJob"], Awaitable[Any]]
+OracleJobEventCallback = Callable[["OracleJobEvent"], Any]
+OracleJobInterruptCallback = Callable[["OracleJob", str], Any]
+
+
+@dataclass
+class OracleJob:
+    job_id: str
+    session_id: str
+    created_at: float
+    updated_at: float
+    state: OracleJobState
+    priority: str
+    route: str
+    oracle_text: str
+    reflex_intent: str
+    interface_already_said: str = ""
+    requested_response_style: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    result_summary: str = ""
+    error: str = ""
+    cancel_reason: str = ""
+    request: Optional[KameOracleRequest] = field(default=None, repr=False, compare=False)
+
+    def to_status(self) -> dict[str, Any]:
+        status: dict[str, Any] = {
+            "job_id": self.job_id,
+            "state": self.state.value,
+            "priority": self.priority,
+            "route": self.route,
+            "intent": self.reflex_intent,
+            "spoken_status": _spoken_status(self),
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+        if self.result_summary:
+            status["result_summary"] = self.result_summary
+        if self.error:
+            status["error"] = self.error
+        if self.cancel_reason:
+            status["cancel_reason"] = self.cancel_reason
+        return status
+
+
+@dataclass(frozen=True)
+class OracleJobEvent:
+    type: OracleJobEventType
+    job_id: str
+    session_id: str
+    state: OracleJobState
+    payload: Mapping[str, Any] = field(default_factory=dict)
+    timestamp_ms: int = field(default_factory=lambda: int(time.time() * 1000))
+
+    def to_status(self) -> dict[str, Any]:
+        return {
+            "type": self.type.value,
+            "job_id": self.job_id,
+            "session_id": self.session_id,
+            "state": self.state.value,
+            "timestamp_ms": self.timestamp_ms,
+            "payload": dict(self.payload),
+        }
+
+
+class OracleJobQueueFullError(RuntimeError):
+    """Raised when a new oracle job cannot be accepted."""
+
+
+class OracleJobNotFoundError(KeyError):
+    """Raised when a requested oracle job does not exist."""
+
+
+class OracleJobManager:
+    """Bounded async scheduler for KAME reflex-to-oracle work.
+
+    The manager owns scheduling state only. It does not call tools directly and
+    does not decide model routing. Callers provide an oracle runner that uses
+    Hermes' existing oracle path.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_concurrent: int = 1,
+        queue_limit: int = 16,
+        default_priority: str = "normal",
+        overflow_policy: str = "queue",
+        runner: Optional[OracleJobRunner] = None,
+        event_callback: Optional[OracleJobEventCallback] = None,
+        interrupt_callback: Optional[OracleJobInterruptCallback] = None,
+        id_prefix: str = "voice-oracle",
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        self.max_concurrent = max(1, int(max_concurrent or 1))
+        self.queue_limit = max(0, int(queue_limit or 0))
+        self.default_priority = str(default_priority or "normal")
+        self.overflow_policy = str(overflow_policy or "queue").strip().lower() or "queue"
+        self.runner = runner
+        self.event_callback = event_callback
+        self.interrupt_callback = interrupt_callback
+        self.id_prefix = str(id_prefix or "voice-oracle")
+        self._clock = clock
+        self._jobs: dict[str, OracleJob] = {}
+        self._queue: Deque[str] = deque()
+        self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._sequence = 0
+        self._lock = asyncio.Lock()
+
+    async def submit(
+        self,
+        request: KameOracleRequest,
+        *,
+        priority: Optional[str] = None,
+        runner: Optional[OracleJobRunner] = None,
+    ) -> OracleJob:
+        if runner is None:
+            runner = self.runner
+        if runner is None:
+            raise ValueError("OracleJobManager requires a runner to submit jobs")
+
+        async with self._lock:
+            if self._queued_count_locked() >= self.queue_limit and self._running_count_locked() >= self.max_concurrent:
+                if self.overflow_policy == "reject":
+                    raise OracleJobQueueFullError("oracle job queue is full")
+                raise OracleJobQueueFullError("oracle job queue is full")
+
+            job = self._job_from_request(request, priority=priority)
+            self._jobs[job.job_id] = job
+            await self._emit_locked(OracleJobEventType.ACCEPTED, job)
+            if self._running_count_locked() < self.max_concurrent:
+                self._start_job_locked(job, runner)
+            else:
+                self._queue.append(job.job_id)
+                await self._emit_locked(OracleJobEventType.QUEUED, job)
+            return job
+
+    async def cancel(self, job_id: str, *, reason: str = "cancelled") -> OracleJob:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise OracleJobNotFoundError(job_id)
+            if job.state in TERMINAL_STATES:
+                return job
+            reason = str(reason or "cancelled")
+            job.cancel_reason = reason
+            job.updated_at = self._clock()
+            if job.state == OracleJobState.QUEUED:
+                self._remove_queued_locked(job.job_id)
+                job.state = OracleJobState.CANCELLED
+                await self._emit_locked(OracleJobEventType.CANCELLED, job)
+                self._start_available_locked()
+                return job
+            job.state = OracleJobState.CANCEL_REQUESTED
+            await self._emit_locked(OracleJobEventType.CANCEL_REQUESTED, job)
+            task = self._tasks.get(job.job_id)
+            interrupt = self.interrupt_callback
+
+        if interrupt is not None:
+            await _maybe_await(interrupt(job, reason))
+        if task is not None:
+            task.cancel()
+        return job
+
+    async def cancel_all(self, *, reason: str = "cancelled") -> list[OracleJob]:
+        async with self._lock:
+            job_ids = [
+                job_id for job_id, job in self._jobs.items()
+                if job.state not in TERMINAL_STATES
+            ]
+        cancelled = []
+        for job_id in job_ids:
+            cancelled.append(await self.cancel(job_id, reason=reason))
+        return cancelled
+
+    async def status_view(self) -> dict[str, Any]:
+        async with self._lock:
+            jobs = [job.to_status() for job in self._jobs.values()]
+            running = sum(1 for job in self._jobs.values() if job.state == OracleJobState.RUNNING)
+            queued = sum(1 for job in self._jobs.values() if job.state == OracleJobState.QUEUED)
+        return {
+            "capacity": {
+                "running": running,
+                "max_concurrent": self.max_concurrent,
+                "queued": queued,
+                "queue_limit": self.queue_limit,
+            },
+            "jobs": jobs,
+        }
+
+    async def get(self, job_id: str) -> OracleJob:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise OracleJobNotFoundError(job_id)
+            return job
+
+    async def wait_for_idle(self) -> None:
+        while True:
+            async with self._lock:
+                tasks = [task for task in self._tasks.values() if not task.done()]
+                queued = bool(self._queue)
+            if not tasks and not queued:
+                return
+            if tasks:
+                await asyncio.wait(tasks, timeout=0.05)
+            else:
+                await asyncio.sleep(0.01)
+
+    def _job_from_request(self, request: KameOracleRequest, *, priority: Optional[str]) -> OracleJob:
+        self._sequence += 1
+        now = self._clock()
+        job_id = f"{self.id_prefix}-{self._sequence:03d}"
+        return OracleJob(
+            job_id=job_id,
+            session_id=request.session_id,
+            created_at=now,
+            updated_at=now,
+            state=OracleJobState.QUEUED,
+            priority=str(priority or self.default_priority),
+            route=request.route.value,
+            oracle_text=request.oracle_text,
+            reflex_intent=request.intent,
+            interface_already_said=request.interface_already_said,
+            requested_response_style=dict(request.requested_response_style or {}),
+            metadata=request.to_metadata(),
+            request=request,
+        )
+
+    def _start_job_locked(self, job: OracleJob, runner: OracleJobRunner) -> None:
+        job.state = OracleJobState.RUNNING
+        job.updated_at = self._clock()
+        task = asyncio.create_task(self._run_job(job.job_id, runner))
+        self._tasks[job.job_id] = task
+
+    async def _run_job(self, job_id: str, runner: OracleJobRunner) -> None:
+        async with self._lock:
+            job = self._jobs[job_id]
+            await self._emit_locked(OracleJobEventType.STARTED, job)
+        try:
+            result = await runner(job)
+        except asyncio.CancelledError:
+            async with self._lock:
+                job = self._jobs[job_id]
+                if job.state not in TERMINAL_STATES:
+                    job.state = OracleJobState.CANCELLED
+                    job.updated_at = self._clock()
+                    await self._emit_locked(OracleJobEventType.CANCELLED, job)
+                self._tasks.pop(job_id, None)
+                self._start_available_locked()
+            return
+        except Exception as exc:
+            async with self._lock:
+                job = self._jobs[job_id]
+                if job.state not in TERMINAL_STATES:
+                    job.state = OracleJobState.FAILED
+                    job.error = str(exc)
+                    job.updated_at = self._clock()
+                    await self._emit_locked(OracleJobEventType.FAILED, job)
+                self._tasks.pop(job_id, None)
+                self._start_available_locked()
+            return
+
+        async with self._lock:
+            job = self._jobs[job_id]
+            if job.state in {OracleJobState.CANCEL_REQUESTED, OracleJobState.CANCELLED}:
+                job.state = OracleJobState.CANCELLED
+                job.result_summary = ""
+                job.updated_at = self._clock()
+                await self._emit_locked(OracleJobEventType.CANCELLED, job)
+            elif job.state not in TERMINAL_STATES:
+                job.state = OracleJobState.COMPLETED
+                job.result_summary = _result_summary(result)
+                job.updated_at = self._clock()
+                await self._emit_locked(OracleJobEventType.COMPLETED, job)
+            self._tasks.pop(job_id, None)
+            self._start_available_locked()
+
+    def _start_available_locked(self) -> None:
+        runner = self.runner
+        if runner is None:
+            return
+        while self._queue and self._running_count_locked() < self.max_concurrent:
+            job_id = self._queue.popleft()
+            job = self._jobs.get(job_id)
+            if job is None or job.state != OracleJobState.QUEUED:
+                continue
+            self._start_job_locked(job, runner)
+
+    async def _emit_locked(self, event_type: OracleJobEventType, job: OracleJob) -> None:
+        callback = self.event_callback
+        if callback is None:
+            return
+        event = OracleJobEvent(
+            type=event_type,
+            job_id=job.job_id,
+            session_id=job.session_id,
+            state=job.state,
+            payload=job.to_status(),
+        )
+        await _maybe_await(callback(event))
+
+    def _running_count_locked(self) -> int:
+        return sum(1 for job in self._jobs.values() if job.state == OracleJobState.RUNNING)
+
+    def _queued_count_locked(self) -> int:
+        return sum(1 for job in self._jobs.values() if job.state == OracleJobState.QUEUED)
+
+    def _remove_queued_locked(self, job_id: str) -> None:
+        self._queue = deque(existing for existing in self._queue if existing != job_id)
+
+
+def _spoken_status(job: OracleJob) -> str:
+    if job.interface_already_said:
+        return job.interface_already_said
+    text = " ".join((job.reflex_intent or job.oracle_text or "").split())
+    return text[:160]
+
+
+def _result_summary(result: Any) -> str:
+    if isinstance(result, Mapping):
+        for key in ("result_summary", "summary", "text", "final_response"):
+            value = result.get(key)
+            if value:
+                return " ".join(str(value).split())[:2000]
+        return ""
+    return " ".join(str(result or "").split())[:2000]
+
+
+async def _maybe_await(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value

@@ -1,0 +1,256 @@
+import asyncio
+
+import pytest
+
+from agent.realtime_voice_kame import KameOracleRequest, KameRoute
+from agent.realtime_voice import RealtimeVoiceSessionConfig, VoiceEventType
+from agent.realtime_voice_oracle_jobs import (
+    OracleJobManager,
+    OracleJobQueueFullError,
+    OracleJobState,
+)
+
+
+def _request(text: str, *, route: KameRoute = KameRoute.ORACLE_DIRECT) -> KameOracleRequest:
+    return KameOracleRequest(
+        session_id="voice-session-1",
+        turn_id=f"turn:{text}",
+        source="discord_voice",
+        user_id="42",
+        intent=text,
+        route=route,
+        interface_already_said=f"I'm handling {text}.",
+    )
+
+
+def test_oracle_job_protocol_surface_is_wire_serializable():
+    assert VoiceEventType("oracle.job.accepted") == VoiceEventType.ORACLE_JOB_ACCEPTED
+
+    config = RealtimeVoiceSessionConfig(
+        session_id="voice-session-1",
+        oracle_jobs={
+            "max_concurrent": 4,
+            "queue_limit": 16,
+            "default_priority": "normal",
+            "overflow_policy": "queue",
+        },
+    )
+    wire = config.to_wire()
+    restored = RealtimeVoiceSessionConfig.from_wire(wire)
+
+    assert wire["oracle_jobs"]["max_concurrent"] == 4
+    assert restored.oracle_jobs == config.oracle_jobs
+
+
+@pytest.mark.asyncio
+async def test_submit_starts_job_with_stable_id_and_events():
+    events = []
+
+    async def runner(job):
+        return {"result_summary": f"done {job.oracle_text}"}
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.type.value),
+    )
+
+    job = await manager.submit(_request("check logs"))
+    await manager.wait_for_idle()
+    completed = await manager.get(job.job_id)
+
+    assert job.job_id == "voice-oracle-001"
+    assert completed.state == OracleJobState.COMPLETED
+    assert completed.result_summary == "done check logs"
+    assert events == [
+        "oracle.job.accepted",
+        "oracle.job.started",
+        "oracle.job.completed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_max_concurrent_one_queues_second_job():
+    started = []
+    release_first = asyncio.Event()
+
+    async def runner(job):
+        started.append(job.job_id)
+        if job.job_id == "voice-oracle-001":
+            await release_first.wait()
+        return f"finished {job.job_id}"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+
+    first = await manager.submit(_request("first"))
+    second = await manager.submit(_request("second"))
+    await asyncio.sleep(0)
+
+    assert (await manager.get(first.job_id)).state == OracleJobState.RUNNING
+    assert (await manager.get(second.job_id)).state == OracleJobState.QUEUED
+    assert started == ["voice-oracle-001"]
+
+    release_first.set()
+    await manager.wait_for_idle()
+
+    assert started == ["voice-oracle-001", "voice-oracle-002"]
+    assert (await manager.get(second.job_id)).state == OracleJobState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_max_concurrent_four_starts_four_and_queues_fifth():
+    started = []
+    release = asyncio.Event()
+
+    async def runner(job):
+        started.append(job.job_id)
+        await release.wait()
+        return f"finished {job.job_id}"
+
+    manager = OracleJobManager(max_concurrent=4, runner=runner)
+
+    jobs = [await manager.submit(_request(f"job {idx}")) for idx in range(5)]
+    await asyncio.sleep(0)
+
+    states = [(await manager.get(job.job_id)).state for job in jobs]
+    assert states == [
+        OracleJobState.RUNNING,
+        OracleJobState.RUNNING,
+        OracleJobState.RUNNING,
+        OracleJobState.RUNNING,
+        OracleJobState.QUEUED,
+    ]
+    assert started == [
+        "voice-oracle-001",
+        "voice-oracle-002",
+        "voice-oracle-003",
+        "voice-oracle-004",
+    ]
+
+    release.set()
+    await manager.wait_for_idle()
+    assert started[-1] == "voice-oracle-005"
+    assert (await manager.get(jobs[-1].job_id)).state == OracleJobState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_queue_limit_rejects_overflow():
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(max_concurrent=1, queue_limit=1, runner=runner)
+    await manager.submit(_request("running"))
+    await manager.submit(_request("queued"))
+
+    with pytest.raises(OracleJobQueueFullError):
+        await manager.submit(_request("overflow"))
+
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
+async def test_cancelling_queued_job_prevents_execution():
+    started = []
+    release = asyncio.Event()
+
+    async def runner(job):
+        started.append(job.job_id)
+        if job.job_id == "voice-oracle-001":
+            await release.wait()
+        return f"done {job.job_id}"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    first = await manager.submit(_request("first"))
+    second = await manager.submit(_request("second"))
+    await asyncio.sleep(0)
+
+    await manager.cancel(second.job_id, reason="user cancelled second")
+    release.set()
+    await manager.wait_for_idle()
+
+    assert started == [first.job_id]
+    cancelled = await manager.get(second.job_id)
+    assert cancelled.state == OracleJobState.CANCELLED
+    assert cancelled.cancel_reason == "user cancelled second"
+
+
+@pytest.mark.asyncio
+async def test_cancelling_running_job_calls_interrupt_and_ignores_late_result():
+    interrupts = []
+
+    async def runner(job):
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            return "late result should not survive"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        interrupt_callback=lambda job, reason: interrupts.append((job.job_id, reason)),
+    )
+    job = await manager.submit(_request("slow"))
+    await asyncio.sleep(0)
+
+    await manager.cancel(job.job_id, reason="stop that")
+    await manager.wait_for_idle()
+    cancelled = await manager.get(job.job_id)
+
+    assert interrupts == [(job.job_id, "stop that")]
+    assert cancelled.state == OracleJobState.CANCELLED
+    assert cancelled.result_summary == ""
+
+
+@pytest.mark.asyncio
+async def test_failed_job_records_error_and_starts_next():
+    async def runner(job):
+        if job.job_id == "voice-oracle-001":
+            raise RuntimeError("provider exploded")
+        return "second done"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    first = await manager.submit(_request("first"))
+    second = await manager.submit(_request("second"))
+    await manager.wait_for_idle()
+
+    failed = await manager.get(first.job_id)
+    completed = await manager.get(second.job_id)
+    assert failed.state == OracleJobState.FAILED
+    assert failed.error == "provider exploded"
+    assert completed.state == OracleJobState.COMPLETED
+    assert completed.result_summary == "second done"
+
+
+@pytest.mark.asyncio
+async def test_status_view_reports_capacity_and_redacts_raw_metadata():
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return {"result_summary": "safe summary", "tool_trace": "secret trace"}
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    await manager.submit(_request("inspect deployment", route=KameRoute.DEFER))
+    await manager.submit(_request("check stripe"))
+    await asyncio.sleep(0)
+
+    status = await manager.status_view()
+    assert status["capacity"] == {
+        "running": 1,
+        "max_concurrent": 1,
+        "queued": 1,
+        "queue_limit": 16,
+    }
+    assert status["jobs"][0]["spoken_status"] == "I'm handling inspect deployment."
+    assert "metadata" not in status["jobs"][0]
+    assert "oracle_text" not in status["jobs"][0]
+
+    release.set()
+    await manager.wait_for_idle()
+    done = await manager.status_view()
+    assert done["jobs"][0]["result_summary"] == "safe summary"
+    assert "secret trace" not in str(done)
