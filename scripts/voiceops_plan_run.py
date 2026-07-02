@@ -1375,6 +1375,15 @@ async def build_plan_run_async(
                 "live_probe_status": voice_operator["live_probe_required_for_completion"]["status"],
                 "live_probe_missing_gates": voice_operator["live_probe_required_for_completion"]["missing_gates"],
                 "latency_metrics_ms": voice_operator["latency_metrics_ms"],
+                "async_oracle_smoke": {
+                    "ok": voice_operator["proofs"]["async_oracle_jobs"]["ok"],
+                    "max_running": voice_operator["proofs"]["async_oracle_jobs"]["max_running"],
+                    "started_jobs": voice_operator["proofs"]["async_oracle_jobs"]["started_jobs"],
+                    "completed_jobs": voice_operator["proofs"]["async_oracle_jobs"]["completed_jobs"],
+                    "cancelled_jobs": voice_operator["proofs"]["async_oracle_jobs"]["cancelled_jobs"],
+                    "local_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["local_turn_committed"],
+                    "cancelled_result_spoken": voice_operator["proofs"]["async_oracle_jobs"]["cancelled_result_spoken"],
+                },
             },
         )
     )

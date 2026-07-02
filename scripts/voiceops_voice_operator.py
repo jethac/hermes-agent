@@ -22,6 +22,7 @@ from typing import Any, Mapping
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from hermes_cli.discord_realtime_voice_smoke import run_discord_realtime_voice_smoke
+from scripts.realtime_voice_async_oracle_smoke import run_smoke as run_async_oracle_smoke
 
 
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-voice-operator/current")
@@ -1151,6 +1152,18 @@ def _coverage_from_smoke(smoke: dict[str, Any]) -> dict[str, bool]:
     }
 
 
+def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, bool]:
+    return {
+        "async_oracle_smoke_ok": bool(smoke.get("ok")),
+        "four_jobs_ran_concurrently": int(smoke.get("max_running") or 0) >= 4
+        and int(smoke.get("started_jobs") or 0) >= 4,
+        "local_turn_while_jobs_running": bool(smoke.get("local_turn_committed")),
+        "one_job_cancelled_while_others_completed": int(smoke.get("cancelled_jobs") or 0) >= 1
+        and int(smoke.get("completed_jobs") or 0) >= 3,
+        "late_cancelled_output_not_spoken": smoke.get("cancelled_result_spoken") is False,
+    }
+
+
 def _live_evidence_missing_gates(live_evidence: dict[str, Any]) -> list[str]:
     missing: set[str] = set()
     if not live_evidence.get("loaded"):
@@ -1173,8 +1186,15 @@ def _live_evidence_missing_gates(live_evidence: dict[str, Any]) -> list[str]:
     return sorted(missing)
 
 
-def build_voice_operator_report(smoke: dict[str, Any], *, live_evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_voice_operator_report(
+    smoke: dict[str, Any],
+    *,
+    live_evidence: dict[str, Any] | None = None,
+    async_oracle_smoke: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     coverage = _coverage_from_smoke(smoke)
+    async_oracle_smoke = async_oracle_smoke or {}
+    async_oracle_coverage = _coverage_from_async_oracle_smoke(async_oracle_smoke)
     live_evidence = live_evidence or _load_live_evidence([])
     missing_live_gates = _live_evidence_missing_gates(live_evidence)
     live_probe_status = "needs_live_probe" if missing_live_gates else "live_evidence_supplied_not_readiness_claim"
@@ -1251,6 +1271,18 @@ def build_voice_operator_report(smoke: dict[str, Any], *, live_evidence: dict[st
             "shutdown_elapsed_ms": smoke.get("shutdown_elapsed_ms"),
             "shutdown_timed_out": bool(smoke.get("shutdown_timed_out")),
         },
+        "async_oracle_jobs": {
+            "ok": all(async_oracle_coverage.values()),
+            "scenario": async_oracle_smoke.get("scenario"),
+            "max_running": async_oracle_smoke.get("max_running"),
+            "started_jobs": async_oracle_smoke.get("started_jobs"),
+            "completed_jobs": async_oracle_smoke.get("completed_jobs"),
+            "cancelled_jobs": async_oracle_smoke.get("cancelled_jobs"),
+            "local_turn_committed": bool(async_oracle_smoke.get("local_turn_committed")),
+            "cancelled_job_id": async_oracle_smoke.get("cancelled_job_id"),
+            "cancelled_result_spoken": bool(async_oracle_smoke.get("cancelled_result_spoken")),
+            "coverage": async_oracle_coverage,
+        },
         "live_evidence": {
             "ok": bool(live_evidence.get("loaded")) and not missing_live_gates and not live_evidence.get("issues"),
             "mode": live_evidence.get("mode"),
@@ -1287,9 +1319,14 @@ def build_voice_operator_report(smoke: dict[str, Any], *, live_evidence: dict[st
             "short_voice_replies_default": True,
             "live_discord_join": False,
             "live_evidence_supplied": bool(live_evidence.get("loaded")),
+            "async_oracle_four_concurrent_jobs": async_oracle_coverage["four_jobs_ran_concurrently"],
+            "async_oracle_local_turn_while_running": async_oracle_coverage["local_turn_while_jobs_running"],
+            "async_oracle_cancellation_isolated": async_oracle_coverage["one_job_cancelled_while_others_completed"],
+            "async_oracle_late_cancelled_output_dropped": async_oracle_coverage["late_cancelled_output_not_spoken"],
         },
         "proofs": proofs,
         "coverage": coverage,
+        "async_oracle_coverage": async_oracle_coverage,
         "voice_capability_prompt_contract": {
             "must_state": [
                 "Hermes is connected to Discord voice when /voice join succeeds.",
@@ -1318,6 +1355,7 @@ def build_voice_operator_report(smoke: dict[str, Any], *, live_evidence: dict[st
         "latency_metrics_ms": smoke.get("latency_metrics_ms") or {},
         "live_evidence": live_evidence,
         "smoke": smoke,
+        "async_oracle_smoke": dict(async_oracle_smoke),
         "live_probe_required_for_completion": {
             "status": live_probe_status,
             "reason": "Headless loopback does not prove a real Discord gateway join, live receiver transport, or production sidecar availability.",
@@ -1374,6 +1412,16 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
     ):
         if coverage.get(key) is not True:
             issues.append(f"missing_coverage:{key}")
+    async_oracle_coverage = report.get("async_oracle_coverage", {})
+    for key in (
+        "async_oracle_smoke_ok",
+        "four_jobs_ran_concurrently",
+        "local_turn_while_jobs_running",
+        "one_job_cancelled_while_others_completed",
+        "late_cancelled_output_not_spoken",
+    ):
+        if async_oracle_coverage.get(key) is not True:
+            issues.append(f"missing_async_oracle_coverage:{key}")
     if report.get("requirements", {}).get("live_discord_join") is not False:
         issues.append("live_discord_join_must_not_be_claimed")
     return sorted(issues)
@@ -1585,6 +1633,7 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
         "json": output_dir / "voice-operator-readiness.json",
         "markdown": output_dir / "voice-operator-readiness.md",
         "smoke_json": output_dir / "discord-loopback-smoke.json",
+        "async_oracle_smoke_json": output_dir / "async-oracle-smoke.json",
         "events_jsonl": output_dir / "voice-operator-events.jsonl",
         "live_evidence_template": output_dir / "live-voice-evidence-template.json",
         "live_evidence_example": output_dir / "live-voice-evidence.example.json",
@@ -1594,6 +1643,7 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
     _write_json(paths["json"], report)
     paths["markdown"].write_text(_markdown(report), encoding="utf-8")
     _write_json(paths["smoke_json"], report["smoke"])
+    _write_json(paths["async_oracle_smoke_json"], report["async_oracle_smoke"])
     _write_json(paths["live_evidence_template"], build_live_probe_evidence_template())
     _write_json(paths["live_evidence_example"], build_live_probe_evidence_example())
     paths.update(write_live_evidence_scaffold(output_dir))
@@ -1611,7 +1661,12 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
 
 async def build_voice_operator_report_from_smoke(live_evidence_paths: list[Path] | None = None) -> dict[str, Any]:
     smoke_result = await run_discord_realtime_voice_smoke()
-    return build_voice_operator_report(asdict(smoke_result), live_evidence=_load_live_evidence(live_evidence_paths))
+    async_oracle_smoke = await run_async_oracle_smoke()
+    return build_voice_operator_report(
+        asdict(smoke_result),
+        live_evidence=_load_live_evidence(live_evidence_paths),
+        async_oracle_smoke=async_oracle_smoke,
+    )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

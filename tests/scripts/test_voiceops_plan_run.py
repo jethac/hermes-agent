@@ -1651,7 +1651,7 @@ def test_plan_run_cli_package_audit_writes_consistency_artifacts(tmp_path):
     assert payload["package_audit"]["ok"] is True
     assert payload["package_audit"]["status"] == "pass"
     assert payload["package_audit"]["issues"] == []
-    assert payload["package_audit"]["checked_artifact_count"] == 90
+    assert payload["package_audit"]["checked_artifact_count"] == 91
     assert Path(payload["package_audit"]["artifacts"]["json"]).exists()
     assert Path(payload["package_audit"]["artifacts"]["markdown"]).exists()
     assert str(artifact_root / "voiceops-package-audit" / "current") in payload["package_audit"]["artifacts"]["json"]
@@ -1786,7 +1786,7 @@ def test_plan_run_cli_dry_audit_can_run_package_audit_without_persistent_writes(
     assert payload["dry_audit"] is True
     assert payload["persistent_writes"] is False
     assert payload["package_audit"] == {
-        "checked_artifact_count": 90,
+            "checked_artifact_count": 91,
         "issues": [],
         "ok": True,
         "persistent_writes": False,

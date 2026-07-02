@@ -56,6 +56,44 @@ def _smoke_payload() -> dict:
     }
 
 
+def _async_oracle_smoke_payload() -> dict:
+    return {
+        "ok": True,
+        "scenario": "async_kame_oracle_jobs_fake",
+        "max_running": 4,
+        "started_jobs": 4,
+        "completed_jobs": 3,
+        "cancelled_jobs": 1,
+        "local_turn_committed": True,
+        "cancelled_job_id": "voice-oracle-003",
+        "cancelled_result_spoken": False,
+        "spoken": [
+            "Starting smoke task 1.",
+            "Starting smoke task 2.",
+            "Starting smoke task 3.",
+            "Starting smoke task 4.",
+            "Yes, I can hear you.",
+            "Finished Run smoke task 1.",
+            "Finished Run smoke task 2.",
+            "Finished Run smoke task 4.",
+        ],
+        "event_counts": {
+            "oracle.job.started": 4,
+            "oracle.job.completed": 3,
+            "oracle.job.cancelled": 1,
+            "assistant.commit": 4,
+        },
+    }
+
+
+def _voice_operator_report(live_evidence: dict | None = None, smoke: dict | None = None) -> dict:
+    return build_voice_operator_report(
+        smoke or _smoke_payload(),
+        live_evidence=live_evidence,
+        async_oracle_smoke=_async_oracle_smoke_payload(),
+    )
+
+
 def _collector_attestation(section_name: str) -> dict:
     return {
         "collector_name": "pytest.voiceops_live_fixture",
@@ -181,7 +219,7 @@ def _complete_sidecar_session_fields() -> dict:
 
 
 def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
-    report = build_voice_operator_report(_smoke_payload())
+    report = _voice_operator_report()
 
     assert report["schema_version"] == "voiceops.milestone1.voice_operator.v1"
     assert report["artifact_only"] is True
@@ -210,6 +248,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["requirements"]["barge_in_behavior"] is True
     assert report["requirements"]["latency_metrics"] is True
     assert report["requirements"]["sidecar_session_shutdown"] is True
+    assert report["requirements"]["async_oracle_four_concurrent_jobs"] is True
+    assert report["requirements"]["async_oracle_local_turn_while_running"] is True
+    assert report["requirements"]["async_oracle_cancellation_isolated"] is True
+    assert report["requirements"]["async_oracle_late_cancelled_output_dropped"] is True
     assert report["requirements"]["live_discord_join"] is False
     assert report["requirements"]["live_evidence_supplied"] is False
     assert report["proofs"]["lifecycle"]["sidecar_closed"] is True
@@ -219,6 +261,9 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["barge_in_energy"]["energy_gate_proven_by_smoke"] is False
     assert report["proofs"]["barge_in_energy"]["energy_gate_covered_by_tests"] is True
     assert report["proofs"]["shutdown"]["close_timeout_bounded"] is True
+    assert report["proofs"]["async_oracle_jobs"]["ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["max_running"] == 4
+    assert report["proofs"]["async_oracle_jobs"]["cancelled_result_spoken"] is False
     assert report["proofs"]["latency_metrics"]["oracle_metric_status"] == "needs_live_oracle_or_sidecar_probe"
     assert report["live_probe_required_for_completion"]["status"] == "needs_live_probe"
     assert report["live_probe_required_for_completion"]["missing_gates"] == [
@@ -238,7 +283,7 @@ def test_voice_operator_validation_rejects_missing_core_coverage():
     smoke["events"] = ["audio.output.chunk"]
     smoke["sidecar_closed"] = False
     smoke["shutdown_bounded"] = False
-    report = build_voice_operator_report(smoke)
+    report = _voice_operator_report(smoke=smoke)
 
     issues = validate_voice_operator_report(report)
     assert "missing_coverage:discord_receiver_callback_wiring" in issues
@@ -246,11 +291,24 @@ def test_voice_operator_validation_rejects_missing_core_coverage():
     assert "missing_coverage:sidecar_session_shutdown" in issues
 
 
+def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
+    report = build_voice_operator_report(_smoke_payload(), async_oracle_smoke={})
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:async_oracle_smoke_ok" in issues
+    assert "missing_async_oracle_coverage:four_jobs_ran_concurrently" in issues
+    assert "missing_async_oracle_coverage:local_turn_while_jobs_running" in issues
+    assert "missing_async_oracle_coverage:one_job_cancelled_while_others_completed" in issues
+    assert "missing_async_oracle_coverage:late_cancelled_output_not_spoken" in issues
+
+
 def test_write_voice_operator_report_artifacts(tmp_path):
-    report = build_voice_operator_report(_smoke_payload())
+    report = _voice_operator_report()
     paths = write_voice_operator_report(tmp_path, report)
 
     required_paths = {
+        "async_oracle_smoke_json",
         "events_jsonl",
         "json",
         "live_evidence_example",
@@ -269,6 +327,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     } <= set(paths)
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     smoke = json.loads(Path(paths["smoke_json"]).read_text(encoding="utf-8"))
+    async_oracle_smoke = json.loads(Path(paths["async_oracle_smoke_json"]).read_text(encoding="utf-8"))
     live_template = json.loads(Path(paths["live_evidence_template"]).read_text(encoding="utf-8"))
     live_example = json.loads(Path(paths["live_evidence_example"]).read_text(encoding="utf-8"))
     live_scaffold_manifest_path = Path(paths["live_evidence_scaffold_manifest"])
@@ -287,6 +346,8 @@ def test_write_voice_operator_report_artifacts(tmp_path):
         "live_turn",
     ]
     assert smoke["ok"] is True
+    assert async_oracle_smoke["ok"] is True
+    assert async_oracle_smoke["max_running"] == 4
     assert live_template["schema_version"] == "voiceops.milestone1.live_voice_evidence.v1"
     assert live_example["example_only"] is True
     assert "example_only_evidence_not_accepted" in validate_live_probe_evidence(live_example)["issues"]
@@ -425,7 +486,7 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     _write_attested_section(tmp_path / "sidecar-session.json", evidence["sidecar_session"], "sidecar_session")
     _write_attested_section(tmp_path / "live-turn.json", evidence["live_turn"], "live_turn")
     live_evidence = validate_live_probe_evidence(evidence)
-    report = build_voice_operator_report(_smoke_payload(), live_evidence=live_evidence)
+    report = _voice_operator_report(live_evidence=live_evidence)
 
     assert report["mode"]["discord_network"] is False
     assert report["mode"]["env_secret_reads"] is False
@@ -612,7 +673,7 @@ def test_voice_operator_rejects_loaded_evidence_with_missing_source_artifact_fil
         f"live_turn:source_artifact_not_found_candidates:{tmp_path / 'missing-live-turn.json'}"
         in live_evidence["issues"]
     )
-    report = build_voice_operator_report(_smoke_payload(), live_evidence=live_evidence)
+    report = _voice_operator_report(live_evidence=live_evidence)
     assert report["status"] == "needs_live_probe"
     assert report["proofs"]["live_evidence"]["ok"] is False
     assert report["live_probe_required_for_completion"]["missing_gates"] == [
@@ -899,7 +960,7 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
     )
 
     live_evidence = _load_live_evidence([manifest_path])
-    report = build_voice_operator_report(_smoke_payload(), live_evidence=live_evidence)
+    report = _voice_operator_report(live_evidence=live_evidence)
 
     assert live_evidence["overall_status"] == "live_evidence_supplied_not_readiness_claim"
     assert live_evidence["issues"] == []
@@ -1611,6 +1672,7 @@ def test_voice_operator_cli_smoke(tmp_path):
     assert Path(payload["artifacts"]["json"]).exists()
     assert Path(payload["artifacts"]["markdown"]).exists()
     assert Path(payload["artifacts"]["smoke_json"]).exists()
+    assert Path(payload["artifacts"]["async_oracle_smoke_json"]).exists()
     assert Path(payload["artifacts"]["events_jsonl"]).exists()
 
 

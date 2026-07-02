@@ -43,7 +43,7 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert report["readiness_claim"] is False
     assert report["readiness_scope"] == "static_package_consistency_only"
     assert "does not satisfy live Discord" in report["readiness_note"]
-    assert report["checked_artifact_count"] == 90
+    assert report["checked_artifact_count"] == 91
     assert str(artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json") in report[
         "checked_artifacts"
     ]
