@@ -20,9 +20,10 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["cancelled_jobs"] == 2
     assert report["queued_cancel_smoke_ok"] is True
     assert report["queued_cancel_observed"] is True
+    assert report["queued_cancel_spoken_control_observed"] is True
     assert report["queued_cancelled_before_start"] is True
     assert report["queued_cancel_not_sent_to_oracle"] is True
-    assert report["queued_cancel_reason"] == "queued task no longer needed"
+    assert report["queued_cancel_reason"] == "spoken request to cancel oracle job"
     assert report["queued_cancel_target_job_id"] == "voice-oracle-002"
     assert report["queued_cancel_running_completed"] is True
     assert report["shutdown_timeout_configured_ms"] == 10
@@ -59,6 +60,9 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["durable_failed_record_present"] is True
     assert report["session_survived_failed_job"] is True
     assert report["queued_job_update_observed"] is True
+    assert report["spoken_priority_control_observed"] is True
+    assert report["spoken_update_control_observed"] is True
+    assert report["spoken_cancel_control_observed"] is True
     assert report["queued_update_latest_update_visible"] is True
     assert report["queued_update_latest_update_text"] == "include smoke update context"
     assert report["queued_update_started_with_priority"] is True
@@ -68,4 +72,4 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["verbose_result_commit_marked_truncated"] is True
     assert report["verbose_full_result_durable"] is True
     assert report["verbose_spoken_result"] == "First sentence."
-    assert report["event_counts"]["interface.oracle.update"] >= 1
+    assert report["event_counts"]["interface.oracle.update"] >= 2

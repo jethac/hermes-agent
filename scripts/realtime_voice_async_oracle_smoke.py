@@ -197,17 +197,14 @@ async def _run_queued_cancel_smoke() -> dict[str, Any]:
         if event.type == VoiceEventType.ORACLE_JOB_QUEUED
         and event.payload.get("intent") == "Queued proof target"
     )
-    sequence += 1
-    await engine.receive_event(
-        VoiceEvent(
-            type=VoiceEventType.INTERFACE_ORACLE_CANCEL,
-            session_id="voice-smoke-queued-cancel",
-            sequence=sequence,
-            payload={
-                "job_id": queued_target.payload["job_id"],
-                "reason": "queued task no longer needed",
-            },
-        )
+    await send(
+        {
+            "transcript": "cancel task two",
+            "intent": "Cancel task two.",
+            "intent_source": "smoke_reflex",
+            "route": "local",
+            "local_reply": "Cancelling task two.",
+        }
     )
     await recorder.wait_for(
         lambda events: any(
@@ -253,13 +250,21 @@ async def _run_queued_cancel_smoke() -> dict[str, Any]:
         for event in recorder.events
     )
     cancelled_reason = str(target_cancelled[-1].payload.get("cancel_reason") or "") if target_cancelled else ""
+    spoken_cancel_observed = any(
+        event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL
+        and event.payload.get("job_id") == target_job_id
+        and event.payload.get("spoken_control") is True
+        for event in recorder.events
+    )
     return {
         "ok": bool(target_cancelled)
         and not target_started
         and not target_sent_to_oracle
         and running_completed
-        and cancelled_reason == "queued task no longer needed",
+        and cancelled_reason == "spoken request to cancel oracle job"
+        and spoken_cancel_observed,
         "queued_cancel_observed": bool(target_cancelled),
+        "queued_cancel_spoken_control_observed": spoken_cancel_observed,
         "queued_cancelled_before_start": not target_started,
         "queued_cancel_not_sent_to_oracle": not target_sent_to_oracle,
         "queued_cancel_reason": cancelled_reason,
@@ -360,19 +365,32 @@ async def run_smoke() -> dict[str, Any]:
         if event.type == VoiceEventType.ORACLE_JOB_QUEUED
         and event.payload.get("intent") == "Run smoke task 5"
     )
-    sequence += 1
-    await engine.receive_event(
-        VoiceEvent(
-            type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
-            session_id="voice-smoke-async-oracle",
-            sequence=sequence,
-            payload={
-                "job_id": task_5_queued.payload["job_id"],
-                "priority": "high",
-                "update_text": "include smoke update context",
-                "reason": "smoke queued job update",
-            },
+    await send(
+        {
+            "transcript": "make task five high priority",
+            "intent": "Make task five high priority.",
+            "intent_source": "smoke_reflex",
+            "route": "local",
+            "local_reply": "Making task five high priority.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+            and event.payload.get("job_id") == task_5_queued.payload["job_id"]
+            and event.payload.get("priority") == "high"
+            and event.payload.get("spoken_control") is True
+            for event in events
         )
+    )
+    await send(
+        {
+            "transcript": "task five also include smoke update context",
+            "intent": "Task five also include smoke update context.",
+            "intent_source": "smoke_reflex",
+            "route": "local",
+            "local_reply": "Adding that context.",
+        }
     )
     await recorder.wait_for(
         lambda events: any(
@@ -380,6 +398,7 @@ async def run_smoke() -> dict[str, Any]:
             and event.payload.get("job_id") == task_5_queued.payload["job_id"]
             and event.payload.get("priority") == "high"
             and event.payload.get("update_count") == 1
+            and event.payload.get("spoken_control") is True
             for event in events
         )
     )
@@ -390,17 +409,14 @@ async def run_smoke() -> dict[str, Any]:
         if event.type == VoiceEventType.ORACLE_JOB_STARTED
         and event.payload.get("intent") == "Run smoke task 3"
     )
-    sequence += 1
-    await engine.receive_event(
-        VoiceEvent(
-            type=VoiceEventType.INTERFACE_ORACLE_CANCEL,
-            session_id="voice-smoke-async-oracle",
-            sequence=sequence,
-            payload={
-                "job_id": task_3_started.payload["job_id"],
-                "reason": "smoke cancellation",
-            },
-        )
+    await send(
+        {
+            "transcript": "cancel task three",
+            "intent": "Cancel task three.",
+            "intent_source": "smoke_reflex",
+            "route": "local",
+            "local_reply": "Cancelling task three.",
+        }
     )
     await recorder.wait_for(
         lambda events: any(
@@ -658,6 +674,20 @@ async def run_smoke() -> dict[str, Any]:
         and event.payload.get("update_count") == 1
         for event in recorder.events
     )
+    spoken_priority_control_observed = any(
+        event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+        and event.payload.get("job_id") == task_5_queued.payload["job_id"]
+        and event.payload.get("priority") == "high"
+        and event.payload.get("spoken_control") is True
+        for event in recorder.events
+    )
+    spoken_update_control_observed = any(
+        event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+        and event.payload.get("job_id") == task_5_queued.payload["job_id"]
+        and event.payload.get("update_count") == 1
+        and event.payload.get("spoken_control") is True
+        for event in recorder.events
+    )
     queued_update_latest_update_visible = any(
         event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
         and event.payload.get("job_id") == task_5_queued.payload["job_id"]
@@ -676,6 +706,12 @@ async def run_smoke() -> dict[str, Any]:
         for request in oracle.requests
     )
     cancelled_job_id = str(task_3_started.payload["job_id"])
+    spoken_cancel_control_observed = any(
+        event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL
+        and event.payload.get("job_id") == cancelled_job_id
+        and event.payload.get("spoken_control") is True
+        for event in recorder.events
+    )
     fifth_job_id = next(
         (
             str(event.payload.get("job_id") or "")
@@ -827,6 +863,9 @@ async def run_smoke() -> dict[str, Any]:
             and durable_failed_record_present
             and session_survived_failure
             and queued_job_update_observed
+            and spoken_priority_control_observed
+            and spoken_update_control_observed
+            and spoken_cancel_control_observed
             and queued_update_latest_update_visible
             and queued_update_started_with_priority
             and queued_update_reached_oracle
@@ -858,6 +897,7 @@ async def run_smoke() -> dict[str, Any]:
         "shutdown_cancelled_jobs": len(close_cancelled_events),
         "queued_cancel_smoke_ok": queued_cancel_smoke["ok"],
         "queued_cancel_observed": queued_cancel_smoke["queued_cancel_observed"],
+        "queued_cancel_spoken_control_observed": queued_cancel_smoke["queued_cancel_spoken_control_observed"],
         "queued_cancelled_before_start": queued_cancel_smoke["queued_cancelled_before_start"],
         "queued_cancel_not_sent_to_oracle": queued_cancel_smoke["queued_cancel_not_sent_to_oracle"],
         "queued_cancel_reason": queued_cancel_smoke["queued_cancel_reason"],
@@ -896,6 +936,9 @@ async def run_smoke() -> dict[str, Any]:
         "durable_failed_record_present": durable_failed_record_present,
         "session_survived_failed_job": session_survived_failure,
         "queued_job_update_observed": queued_job_update_observed,
+        "spoken_priority_control_observed": spoken_priority_control_observed,
+        "spoken_update_control_observed": spoken_update_control_observed,
+        "spoken_cancel_control_observed": spoken_cancel_control_observed,
         "queued_update_latest_update_visible": queued_update_latest_update_visible,
         "queued_update_latest_update_text": "include smoke update context"
         if queued_update_latest_update_visible
