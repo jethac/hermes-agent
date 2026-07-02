@@ -791,6 +791,52 @@ def _audit_execution_plan_contracts(execution_plan: Mapping[str, Any], issues: l
             issues.append(f"execution_plan:{action_id}:receipt_slot_command_sha256_mismatch")
 
 
+def _audit_execution_plan_approval_surfaces(
+    *,
+    execution_plan: Mapping[str, Any],
+    packet: Mapping[str, Any],
+    channel_policy: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    packet_action_ids = {
+        str(action.get("action_id"))
+        for action in packet.get("approval_required_actions", [])
+        if isinstance(action, Mapping) and action.get("action_id")
+    }
+    route_ids = {
+        str(route.get("route_id"))
+        for route in channel_policy.get("approval_routing", [])
+        if isinstance(route, Mapping) and route.get("route_id")
+    }
+    policy_scope = channel_policy.get("scope") if isinstance(channel_policy.get("scope"), Mapping) else {}
+    channel_policy_ready = (
+        policy_scope.get("real_egress_enabled") is False
+        and policy_scope.get("review_required_for_real_egress") is True
+        and policy_scope.get("review_status") == "pending_human_review"
+        and "customer_visible_outbound" in route_ids
+    )
+
+    for action in execution_plan.get("approval_required_actions", []):
+        if not isinstance(action, Mapping):
+            continue
+        action_id = str(action.get("action_id") or "unknown")
+        approval_artifact = str(action.get("approval_artifact") or "")
+        if action_id in packet_action_ids:
+            continue
+        if approval_artifact == "nemoclaw-action-packet.json":
+            issues.append(f"execution_plan:{action_id}:missing_nemoclaw_packet_action")
+        elif approval_artifact == "channel-policy.json":
+            requires = {str(item) for item in action.get("requires", []) if item}
+            contract = action.get("approval_contract") if isinstance(action.get("approval_contract"), Mapping) else {}
+            required_gates = {str(item) for item in contract.get("required_preflight_gates", []) if item}
+            if "channel_policy" not in requires and "channel_policy" not in required_gates:
+                issues.append(f"execution_plan:{action_id}:channel_policy_gate_missing")
+            if not channel_policy_ready:
+                issues.append(f"execution_plan:{action_id}:channel_policy_surface_not_ready")
+        else:
+            issues.append(f"execution_plan:{action_id}:unknown_approval_artifact:{approval_artifact or 'missing'}")
+
+
 def _iter_plan_run_commands(value: Any) -> list[str]:
     commands: list[str] = []
     if isinstance(value, str):
@@ -1966,6 +2012,12 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     )
     _audit_channel_policy(channel_policy, channel_review, issues)
     _audit_execution_plan_contracts(execution_plan, issues)
+    _audit_execution_plan_approval_surfaces(
+        execution_plan=execution_plan,
+        packet=packet,
+        channel_policy=channel_policy,
+        issues=issues,
+    )
     _audit_post_approval_receipt_validation(
         artifact_root=artifact_root,
         execution_plan=execution_plan,

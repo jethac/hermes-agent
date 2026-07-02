@@ -636,6 +636,38 @@ def test_package_audit_rejects_execution_plan_command_hash_drift(tmp_path):
     assert "execution_plan:provision-voip-provider:receipt_slot_command_sha256_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_execution_plan_action_missing_claimed_nemoclaw_surface(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_path = artifact_root / "voiceops-provisioning" / "current" / "milestone2-execution-plan.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    action = next(item for item in plan["approval_required_actions"] if item["action_id"] == "publish-status")
+    action["approval_artifact"] = "nemoclaw-action-packet.json"
+    action["approval_contract"]["approval_artifact"] = "nemoclaw-action-packet.json"
+    plan["approval_contracts"]["publish-status"]["approval_artifact"] = "nemoclaw-action-packet.json"
+    _write_json(plan_path, plan)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "execution_plan:publish-status:missing_nemoclaw_packet_action" in report["issues"]
+
+
+def test_package_audit_rejects_execution_plan_unknown_approval_surface(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_path = artifact_root / "voiceops-provisioning" / "current" / "milestone2-execution-plan.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    action = next(item for item in plan["approval_required_actions"] if item["action_id"] == "publish-status")
+    action["approval_artifact"] = "unreviewed-egress-policy.json"
+    action["approval_contract"]["approval_artifact"] = "unreviewed-egress-policy.json"
+    plan["approval_contracts"]["publish-status"]["approval_artifact"] = "unreviewed-egress-policy.json"
+    _write_json(plan_path, plan)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "execution_plan:publish-status:unknown_approval_artifact:unreviewed-egress-policy.json" in report["issues"]
+
+
 def test_package_audit_rejects_scaffold_approval_decision_ref_path_escape(tmp_path):
     artifact_root = _generate_package(tmp_path)
     scaffold_path = (
