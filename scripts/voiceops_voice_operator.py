@@ -2148,6 +2148,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "job_control_updates_reach_oracle",
         "result_handling_bounded_and_durable",
         "discord_session_cleanup_preserves_oracle_state",
+        "shutdown_timeout_bounded",
     ):
         if recomputed_async_oracle_coverage.get(key) is not True:
             issues.append(f"missing_async_oracle_coverage:{key}")
@@ -2171,8 +2172,8 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         issues.append("missing_async_oracle_acceptance_matrix")
     else:
         recomputed_async_oracle_acceptance = _async_oracle_acceptance_matrix(recomputed_async_oracle_coverage)
-        for key, value in async_oracle_acceptance.items():
-            recomputed_value = recomputed_async_oracle_acceptance.get(key, {})
+        for key, recomputed_value in recomputed_async_oracle_acceptance.items():
+            value = async_oracle_acceptance.get(key)
             if recomputed_value.get("ok") is not True:
                 issues.append(f"missing_async_oracle_acceptance:{key}")
             if not isinstance(value, Mapping) or value.get("ok") is not True:

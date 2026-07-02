@@ -1150,6 +1150,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "completed: Finished Suppress terminal result." in voice_result["details"]["async_oracle_smoke"][
         "terminal_result_status_text"
     ]
+    assert voice_result["details"]["async_oracle_smoke"]["shutdown_timeout_configured_ms"] == 10
+    assert voice_result["details"]["async_oracle_smoke"]["shutdown_bounded_close_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["shutdown_forced_cancel_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["shutdown_close_cancel_entered"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["shutdown_cancelled_jobs"] == 1
     assert voice_result["details"]["discord_session_cleanup_smoke"]["ok"] is True
     assert voice_result["details"]["discord_session_cleanup_smoke"]["cancel_all_before_session_closed"] is True
     assert voice_result["details"]["discord_session_cleanup_smoke"]["session_closed_sent"] is True
@@ -1191,6 +1196,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "verification_mode"
     ] == "loopback_smoke_plus_focused_tests"
     assert voice_result["details"]["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"][
+        "runtime_verified_by_this_report"
+    ] is True
+    assert voice_result["details"]["async_oracle_acceptance"]["shutdown_timeout_is_bounded"][
+        "verification_mode"
+    ] == "loopback_smoke_plus_focused_tests"
+    assert voice_result["details"]["async_oracle_acceptance"]["shutdown_timeout_is_bounded"][
         "runtime_verified_by_this_report"
     ] is True
 

@@ -717,6 +717,26 @@ def test_voice_operator_validation_rejects_missing_terminal_result_suppression_p
     assert "missing_async_oracle_acceptance:result_handling_is_bounded_and_durable" in issues
 
 
+def test_voice_operator_validation_rejects_missing_shutdown_timeout_coverage():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["shutdown_bounded_close_observed"] = False
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:shutdown_timeout_bounded" in issues
+    assert "stale_async_oracle_coverage:shutdown_timeout_bounded" in issues
+    assert "missing_async_oracle_acceptance:shutdown_timeout_is_bounded" in issues
+
+
+def test_voice_operator_validation_rejects_missing_shutdown_timeout_acceptance_row():
+    report = _voice_operator_report()
+    del report["async_oracle_acceptance"]["shutdown_timeout_is_bounded"]
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_acceptance:shutdown_timeout_is_bounded" in issues
+
+
 def test_voice_operator_validation_rejects_static_acceptance_without_test_refs():
     report = _voice_operator_report()
     row = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]

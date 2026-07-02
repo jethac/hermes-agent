@@ -1686,6 +1686,21 @@ async def build_plan_run_async(
                     "terminal_result_status_text": voice_operator["proofs"]["async_oracle_jobs"][
                         "terminal_result_status_text"
                     ],
+                    "shutdown_timeout_configured_ms": voice_operator["proofs"]["async_oracle_jobs"][
+                        "shutdown_timeout_configured_ms"
+                    ],
+                    "shutdown_bounded_close_observed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "shutdown_bounded_close_observed"
+                    ],
+                    "shutdown_forced_cancel_observed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "shutdown_forced_cancel_observed"
+                    ],
+                    "shutdown_close_cancel_entered": voice_operator["proofs"]["async_oracle_jobs"][
+                        "shutdown_close_cancel_entered"
+                    ],
+                    "shutdown_cancelled_jobs": voice_operator["proofs"]["async_oracle_jobs"][
+                        "shutdown_cancelled_jobs"
+                    ],
                 },
                 "tool_disclosure": {
                     "ok": voice_operator["proofs"]["tool_disclosure"]["ok"],
