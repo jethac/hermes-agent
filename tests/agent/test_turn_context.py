@@ -366,6 +366,41 @@ def test_between_turns_refresh_no_churn_when_unchanged():
     assert agent.tools is same  # not replaced → no churn
 
 
+def test_codex_turn_refreshes_stale_low_context_window():
+    agent = _FakeAgent()
+    agent.model = "gpt-5.5"
+    agent.provider = "openai-codex"
+    agent.base_url = "https://chatgpt.com/backend-api/codex"
+    agent.api_mode = "codex_responses"
+    agent._config_context_length = None
+    agent._primary_runtime = {
+        "compressor_context_length": 65_536,
+        "compressor_model": "gpt-5.5",
+        "compressor_provider": "openai-codex",
+    }
+    agent.context_compressor = types.SimpleNamespace(
+        model="gpt-5.5",
+        provider="openai-codex",
+        base_url="https://chatgpt.com/backend-api/codex",
+        context_length=65_536,
+        protect_first_n=2,
+        protect_last_n=2,
+        update_model=MagicMock(),
+    )
+
+    _build(agent)
+
+    agent.context_compressor.update_model.assert_called_once_with(
+        model="gpt-5.5",
+        context_length=272_000,
+        base_url="https://chatgpt.com/backend-api/codex",
+        api_key="sk-x",
+        provider="openai-codex",
+        api_mode="codex_responses",
+    )
+    assert agent._primary_runtime["compressor_context_length"] == 272_000
+
+
 def test_preflight_skips_when_persisted_cooldown_survives_restart(tmp_path):
     agent = _make_agent_with_cooldown(
         tmp_path / "state.db",
