@@ -679,13 +679,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             return
         await self._emit_interface_event(
             VoiceEventType.INTERFACE_ORACLE_UPDATE,
-            {
-                "job_id": job.job_id,
-                "priority": job.priority,
-                "state": job.state.value,
-                "reason": reason,
-                "update_count": len(job.updates),
-            },
+            _oracle_job_update_event_payload(job, reason=reason),
         )
 
     async def _send_sidecar_event(self, event: VoiceEvent) -> bool:
@@ -976,11 +970,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 await self._emit_interface_event(
                     VoiceEventType.INTERFACE_ORACLE_UPDATE,
                     {
-                        "job_id": job.job_id,
-                        "priority": job.priority,
-                        "state": job.state.value,
-                        "reason": reason,
-                        "update_count": len(job.updates),
+                        **_oracle_job_update_event_payload(job, reason=reason),
                         "spoken_control": True,
                     },
                 )
@@ -999,11 +989,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 await self._emit_interface_event(
                     VoiceEventType.INTERFACE_ORACLE_UPDATE,
                     {
-                        "job_id": job.job_id,
-                        "priority": job.priority,
-                        "state": job.state.value,
-                        "reason": reason,
-                        "update_count": len(job.updates),
+                        **_oracle_job_update_event_payload(job, reason=reason),
                         "spoken_control": True,
                     },
                 )
@@ -1224,6 +1210,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             "reason": reason,
             "update_count": len(job.updates),
         }
+        latest_update = str(job.to_status().get("latest_update") or "").strip()
+        if latest_update:
+            metadata["latest_update"] = latest_update
         try:
             result = updater(updated_request, update_text, metadata)
             if hasattr(result, "__await__"):
@@ -3073,6 +3062,21 @@ def _oracle_job_payload(job: OracleJob) -> dict[str, Any]:
             payload["user_id"] = request.user_id
         if request.cancellation_token:
             payload["cancellation_token"] = request.cancellation_token
+    return payload
+
+
+def _oracle_job_update_event_payload(job: OracleJob, *, reason: str) -> dict[str, Any]:
+    status = job.to_status()
+    payload: dict[str, Any] = {
+        "job_id": job.job_id,
+        "priority": job.priority,
+        "state": job.state.value,
+        "reason": str(reason or "oracle job updated")[:240],
+        "update_count": len(job.updates),
+    }
+    latest_update = str(status.get("latest_update") or "").strip()
+    if latest_update:
+        payload["latest_update"] = latest_update
     return payload
 
 

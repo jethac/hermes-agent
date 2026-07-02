@@ -1176,6 +1176,19 @@ def test_discord_realtime_event_tracks_oracle_job_status():
     )
     adapter._handle_realtime_voice_event(
         111,
+        "interface.oracle.update",
+        {
+            "job_id": "voice-oracle-002",
+            "state": "queued",
+            "priority": "high",
+            "update_count": 1,
+            "latest_update": "also check the Stripe receipt before answering",
+            "metadata": {"tool_schema": "must not leak"},
+            "oracle_text": "must not leak",
+        },
+    )
+    adapter._handle_realtime_voice_event(
+        111,
         "oracle.job.waiting_for_approval",
         {
             "job_id": "voice-oracle-002",
@@ -1213,6 +1226,8 @@ def test_discord_realtime_event_tracks_oracle_job_status():
             "route": "oracle_direct",
             "intent": "Prepare Stripe spend.",
             "spoken_status": "Preparing the Stripe spend request.",
+            "update_count": 1,
+            "latest_update": "also check the Stripe receipt before answering",
         },
     ]
     assert "metadata" not in status["oracle_jobs"]["jobs"][0]
@@ -1281,6 +1296,7 @@ def test_voice_status_oracle_job_lines_are_compact():
                     "job_id": "voice-oracle-001",
                     "state": "running",
                     "spoken_status": "Checking the deployment status.",
+                    "latest_update": "include the staging region too.",
                 },
                 {
                     "job_id": "voice-oracle-002",
@@ -1293,7 +1309,7 @@ def test_voice_status_oracle_job_lines_are_compact():
 
     assert lines == [
         "Oracle jobs: running=1/4, queued=2, waiting_for_approval=1",
-        "Oracle job: voice-oracle-001 running - Checking the deployment status.",
+        "Oracle job: voice-oracle-001 running - Checking the deployment status. | update: include the staging region too.",
         "Oracle job: voice-oracle-002 waiting_for_approval - Waiting for Stripe spend approval.",
     ]
 

@@ -57,6 +57,7 @@ DISCORD_REALTIME_ORACLE_JOB_EVENTS = frozenset(
         "oracle.job.failed",
         "oracle.job.cancel_requested",
         "oracle.job.cancelled",
+        "interface.oracle.update",
     }
 )
 DISCORD_REALTIME_ORACLE_JOB_TERMINAL_STATES = frozenset({"completed", "failed", "cancelled"})
@@ -245,10 +246,26 @@ def _discord_voice_oracle_jobs_update(
     state = str(payload.get("state") or job.get("state") or "").strip()
     if state:
         job["state"] = state[:80]
-    for key in ("priority", "route", "intent", "spoken_status", "result_summary", "error", "cancel_reason"):
+    for key in (
+        "priority",
+        "route",
+        "intent",
+        "spoken_status",
+        "result_summary",
+        "error",
+        "cancel_reason",
+        "latest_update",
+        "update_text",
+    ):
         text = str(payload.get(key) or "").strip()
         if text:
-            job[key] = text[:500 if key == "result_summary" else 180]
+            if key == "update_text":
+                job["latest_update"] = text[:240]
+                continue
+            job[key] = text[:500 if key == "result_summary" else 240 if key == "latest_update" else 180]
+    update_count = _discord_voice_nonnegative_int(payload.get("update_count"))
+    if update_count is not None:
+        job["update_count"] = update_count
     jobs_by_id[job_id] = job
     jobs = list(jobs_by_id.values())[-12:]
     running = sum(1 for item in jobs if item.get("state") in {"running", "cancel_requested"})

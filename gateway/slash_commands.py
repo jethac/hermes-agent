@@ -202,6 +202,9 @@ def _voice_status_oracle_job_lines(value: Any) -> list[str]:
         job_id = str(job.get("job_id") or "").strip()
         state = str(job.get("state") or "").strip()
         label = str(job.get("spoken_status") or job.get("intent") or job.get("result_summary") or "").strip()
+        latest_update = str(job.get("latest_update") or "").strip()
+        if latest_update:
+            label = f"{label[:80]} | update: {latest_update[:80]}" if label else f"update: {latest_update[:100]}"
         parts = [part for part in (job_id, state) if part]
         if not parts:
             continue

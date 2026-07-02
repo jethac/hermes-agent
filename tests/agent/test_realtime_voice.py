@@ -2671,6 +2671,7 @@ def test_kame_engine_attaches_update_to_queued_async_oracle_job(monkeypatch):
             "state": "queued",
             "reason": "add receipt clarification",
             "update_count": 1,
+            "latest_update": "also check the Stripe receipt before answering",
         }
         assert oracle.requests[1].intent == "Run task 2"
         assert oracle.requests[1].job_updates == ("also check the Stripe receipt before answering",)
@@ -2770,6 +2771,7 @@ def test_kame_engine_attaches_update_to_running_async_oracle_job(monkeypatch):
             "state": "running",
             "reason": "add running receipt clarification",
             "update_count": 1,
+            "latest_update": "also check the Stripe receipt before answering",
         }
         updated_request, update_text, metadata = oracle.updates[0]
         assert updated_request.intent == "Run task one"
@@ -2780,6 +2782,7 @@ def test_kame_engine_attaches_update_to_running_async_oracle_job(monkeypatch):
             "state": "running",
             "reason": "add running receipt clarification",
             "update_count": 1,
+            "latest_update": "also check the Stripe receipt before answering",
         }
         assert "Starting task one." in spoken
 
@@ -3572,6 +3575,7 @@ def test_kame_engine_spoken_update_attaches_to_latest_async_oracle_job(monkeypat
         )
         assert update.payload["job_id"] == "voice-oracle-002"
         assert update.payload["update_count"] == 1
+        assert update.payload["latest_update"] == "check the stripe receipt before answering"
         assert oracle.requests[1].job_updates == ("check the stripe receipt before answering",)
         assert "I added that to Starting task 2. Run task 2." in spoken
 
