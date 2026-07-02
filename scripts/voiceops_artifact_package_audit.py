@@ -1391,6 +1391,78 @@ def _audit_voice_operator_artifact_consistency(
     for field, standalone_payload in expected_payloads.items():
         if readiness.get(field) != standalone_payload:
             issues.append(f"voice_operator_readiness:{field}_standalone_artifact_mismatch")
+    _audit_voice_operator_proof_consistency(readiness=readiness, issues=issues)
+
+
+def _compare_proof_fields(
+    *,
+    label: str,
+    proof: Mapping[str, Any],
+    expected: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    for field, expected_value in expected.items():
+        if proof.get(field) != expected_value:
+            issues.append(f"voice_operator_readiness:proofs.{label}.{field}_mismatch")
+
+
+def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], issues: list[str]) -> None:
+    proofs = readiness.get("proofs") if isinstance(readiness.get("proofs"), Mapping) else {}
+    smoke = readiness.get("smoke") if isinstance(readiness.get("smoke"), Mapping) else {}
+    async_smoke = readiness.get("async_oracle_smoke") if isinstance(readiness.get("async_oracle_smoke"), Mapping) else {}
+    cleanup_smoke = (
+        readiness.get("discord_session_cleanup_smoke")
+        if isinstance(readiness.get("discord_session_cleanup_smoke"), Mapping)
+        else {}
+    )
+    pcm_proof = proofs.get("pcm_conversion") if isinstance(proofs.get("pcm_conversion"), Mapping) else {}
+    _compare_proof_fields(
+        label="pcm_conversion",
+        proof=pcm_proof,
+        expected={
+            "input_pcm48_stereo_bytes": smoke.get("input_pcm48_bytes"),
+            "sidecar_pcm16_mono_bytes": smoke.get("sidecar_pcm16_bytes"),
+            "sidecar_pcm16_first_sample": smoke.get("sidecar_pcm16_first_sample"),
+            "sidecar_pcm16_checksum": smoke.get("sidecar_pcm16_checksum"),
+            "sentinel_expected_first_sample": 450,
+        },
+        issues=issues,
+    )
+    async_proof = proofs.get("async_oracle_jobs") if isinstance(proofs.get("async_oracle_jobs"), Mapping) else {}
+    _compare_proof_fields(
+        label="async_oracle_jobs",
+        proof=async_proof,
+        expected={
+            "scenario": async_smoke.get("scenario"),
+            "max_running": async_smoke.get("max_running"),
+            "max_worker_overlap": async_smoke.get("max_worker_overlap"),
+            "worker_overlap_proved": bool(async_smoke.get("worker_overlap_proved")),
+            "started_jobs": async_smoke.get("started_jobs"),
+            "queued_jobs": async_smoke.get("queued_jobs"),
+            "completed_jobs": async_smoke.get("completed_jobs"),
+            "failed_jobs": async_smoke.get("failed_jobs"),
+            "cancelled_jobs": async_smoke.get("cancelled_jobs"),
+            "status_text": async_smoke.get("status_text"),
+            "verbose_spoken_result": async_smoke.get("verbose_spoken_result"),
+        },
+        issues=issues,
+    )
+    cleanup_proof = proofs.get("discord_session_cleanup") if isinstance(proofs.get("discord_session_cleanup"), Mapping) else {}
+    _compare_proof_fields(
+        label="discord_session_cleanup",
+        proof=cleanup_proof,
+        expected={
+            "scenario": cleanup_smoke.get("scenario"),
+            "cancel_all_before_session_closed": bool(cleanup_smoke.get("cancel_all_before_session_closed")),
+            "session_closed_sent": bool(cleanup_smoke.get("session_closed_sent")),
+            "sidecar_closed": bool(cleanup_smoke.get("sidecar_closed")),
+            "sidecar_close_calls": cleanup_smoke.get("sidecar_close_calls"),
+            "degraded_job_state": cleanup_smoke.get("degraded_job_state"),
+            "degraded_job_error": cleanup_smoke.get("degraded_job_error"),
+            "event_order": cleanup_smoke.get("event_order") or [],
+        },
+        issues=issues,
+    )
 
 
 def _audit_live_evidence_scaffold(

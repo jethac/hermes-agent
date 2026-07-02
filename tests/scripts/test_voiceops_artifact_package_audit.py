@@ -133,6 +133,45 @@ def test_package_audit_rejects_discord_session_cleanup_smoke_artifact_drift(tmp_
     assert "voice_operator_readiness:discord_session_cleanup_smoke_standalone_artifact_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_pcm_conversion_proof_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["proofs"]["pcm_conversion"]["sidecar_pcm16_checksum"] = 999
+    _write_json(readiness_path, readiness)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:proofs.pcm_conversion.sidecar_pcm16_checksum_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["proofs"]["async_oracle_jobs"]["completed_jobs"] = 0
+    _write_json(readiness_path, readiness)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:proofs.async_oracle_jobs.completed_jobs_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_discord_session_cleanup_proof_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["proofs"]["discord_session_cleanup"]["event_order"] = []
+    _write_json(readiness_path, readiness)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:proofs.discord_session_cleanup.event_order_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_missing_promised_runbook(tmp_path):
     artifact_root = _generate_package(tmp_path)
     missing_path = artifact_root / "voiceops-spark-matrix" / "current" / "spark-operator-runbook.md"
