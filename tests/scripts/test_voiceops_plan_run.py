@@ -591,6 +591,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "spend_and_provisioning_preflight",
         "local_spark_stack_matrix",
     ]
+    assert [action["phase_id"] for action in next_actions] == [
+        "live_discord_voice",
+        "spend_and_provisioning_preflight",
+        "local_spark_stack",
+    ]
     assert next_actions[0]["order"] == 1
     assert next_actions[0]["can_run_here_now"] is False
     assert next_actions[0]["blocked_by_current_environment"]["needs_external_live_probe"] is True
@@ -1763,6 +1768,11 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
         "local_spark_stack_matrix",
     ]
     assert [action["gate_id"] for action in payload["next_actions"]] == payload["remaining_gates"]
+    assert [action["phase_id"] for action in payload["next_actions"]] == [
+        "live_discord_voice",
+        "spend_and_provisioning_preflight",
+        "local_spark_stack",
+    ]
     assert [action["phase_id"] for action in payload["review_actions"]] == ["multi_channel_policy_review"]
     assert payload["review_actions"][0]["status"] == "pending_human_review"
     assert payload["review_actions"][0]["real_egress_enabled"] is False

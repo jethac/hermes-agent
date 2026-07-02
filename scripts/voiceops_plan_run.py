@@ -677,6 +677,7 @@ def _build_next_actions(
         actions.append(
             {
                 "order": index,
+                "phase_id": phase.get("phase_id") if isinstance(phase, dict) else None,
                 "gate_id": gate_id,
                 "milestone": gate.get("milestone"),
                 "status": gate.get("status"),
