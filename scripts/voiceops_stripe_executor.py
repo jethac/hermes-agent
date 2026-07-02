@@ -291,19 +291,28 @@ def execute_approved_actions(
     for action_id, action in actions.items():
         decision_record = decisions.get(action_id, {})
         decision = str(decision_record.get("decision") or "hold")
+        if decision != "approve_once":
+            continue
+        command = str(action.get("command") or "")
+        issues.extend(_command_issues_for_action(action_id, command))
+        packet_action = packet_actions.get(action_id)
+        if packet_action is None:
+            issues.append(f"{action_id}:not_present_in_nemoclaw_packet")
+        elif str(packet_action.get("command") or "") != command:
+            issues.append(f"{action_id}:packet_command_mismatch")
+        if not execute:
+            issues.append(f"{action_id}:approve_once_requires_execute")
+
+    execution_gate_ok = not issues
+
+    for action_id, action in actions.items():
+        decision_record = decisions.get(action_id, {})
+        decision = str(decision_record.get("decision") or "hold")
         decision_by = str(decision_record.get("decision_by") or "operator-ref-unspecified")
         decision_at = str(decision_record.get("decision_at") or now())
         packet_action = packet_actions.get(action_id)
         command = str(action.get("command") or "")
         command_issues = _command_issues_for_action(action_id, command)
-        if decision == "approve_once":
-            issues.extend(command_issues)
-            if packet_action is None:
-                issues.append(f"{action_id}:not_present_in_nemoclaw_packet")
-            elif str(packet_action.get("command") or "") != command:
-                issues.append(f"{action_id}:packet_command_mismatch")
-            if not execute:
-                issues.append(f"{action_id}:approve_once_requires_execute")
 
         receipt_id = f"receipt-{action_id}-001"
         audit_event_id = f"audit-{action_id}-001"
@@ -322,7 +331,8 @@ def execute_approved_actions(
         result: CommandResult | None = None
         local_queue = action_id in {"call-user-phone", "publish-status"}
         should_execute = (
-            execute
+            execution_gate_ok
+            and execute
             and decision == "approve_once"
             and not command_issues
             and packet_action is not None

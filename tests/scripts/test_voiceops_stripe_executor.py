@@ -168,6 +168,52 @@ def test_stripe_executor_refuses_approve_once_without_execute(tmp_path):
     assert all(result["executed"] is False for result in report["command_results"])
 
 
+def test_stripe_executor_refuses_execute_with_invalid_confirmation(tmp_path):
+    plan = _plan()
+    packet = _packet_from_plan(plan)
+    calls = []
+
+    report = execute_approved_actions(
+        packet=packet,
+        plan=plan,
+        decisions_payload=_decisions(plan, {"provision-voip-provider"}),
+        output_dir=tmp_path,
+        execute=True,
+        confirmation="wrong-confirmation",
+        runner=lambda argv, _timeout_seconds: calls.append(list(argv)) or CommandResult(exit_code=0),
+        now=lambda: "2026-06-29T00:00:30Z",
+    )
+
+    assert report["ok"] is False
+    assert "execute_confirmation_missing_or_invalid" in report["issues"]
+    assert calls == []
+    assert all(result["executed"] is False for result in report["command_results"])
+
+
+def test_stripe_executor_refuses_execute_with_invalid_nemoclaw_packet(tmp_path):
+    plan = _plan()
+    packet = _packet_from_plan(plan)
+    packet["safety"]["live_spend"] = True
+    calls = []
+
+    report = execute_approved_actions(
+        packet=packet,
+        plan=plan,
+        decisions_payload=_decisions(plan, {"provision-voip-provider"}),
+        output_dir=tmp_path,
+        execute=True,
+        confirmation=LIVE_CONFIRMATION,
+        runner=lambda argv, _timeout_seconds: calls.append(list(argv)) or CommandResult(exit_code=0),
+        now=lambda: "2026-06-29T00:00:30Z",
+    )
+
+    assert report["ok"] is False
+    assert report["packet_validation_status"] == "invalid"
+    assert any(issue.startswith("nemoclaw_action_packet:") for issue in report["issues"])
+    assert calls == []
+    assert all(result["executed"] is False for result in report["command_results"])
+
+
 def test_stripe_executor_rejects_packet_plan_command_mismatch(tmp_path):
     plan = _plan()
     packet = _packet_from_plan(plan)
