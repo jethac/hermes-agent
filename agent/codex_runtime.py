@@ -95,6 +95,66 @@ def _coerce_usage_int(value: Any) -> int:
     return 0
 
 
+def _reconcile_codex_model_context_window(agent, reported_window: int) -> int:
+    """Return the context window Hermes should trust for a Codex turn.
+
+    Codex app-server token usage can include ``modelContextWindow``. For the
+    ChatGPT Codex OAuth route, Hermes has provider-aware model metadata because
+    that route intentionally differs from direct OpenAI limits. If a stale
+    runtime notification reports a different window, keep the Codex-aware value
+    so compression and tool budgets do not collapse to the wrong size.
+    """
+    provider = str(getattr(agent, "provider", "") or "").strip().lower()
+    if provider != "openai-codex":
+        return reported_window
+
+    api_key = getattr(agent, "api_key", "") or ""
+    if not isinstance(api_key, str):
+        api_key = ""
+    try:
+        from agent.model_metadata import get_model_context_length
+
+        resolved_window = get_model_context_length(
+            getattr(agent, "model", "") or "",
+            base_url=getattr(agent, "base_url", "") or "",
+            api_key=api_key,
+            provider=provider,
+            config_context_length=getattr(agent, "_config_context_length", None),
+            custom_providers=getattr(agent, "_custom_providers", None),
+        )
+    except Exception:
+        logger.debug("Codex app-server context-window reconciliation failed", exc_info=True)
+        return reported_window
+
+    if isinstance(resolved_window, int) and resolved_window > 0:
+        if resolved_window != reported_window:
+            logger.info(
+                "Ignoring Codex app-server modelContextWindow=%s for %s; "
+                "provider-aware window is %s",
+                f"{reported_window:,}",
+                getattr(agent, "model", "") or "unknown",
+                f"{resolved_window:,}",
+            )
+        return resolved_window
+    return reported_window
+
+
+def _apply_codex_model_context_window(agent, compressor, reported_window: Any) -> None:
+    if not isinstance(reported_window, int) or reported_window <= 0:
+        return
+    context_window = _reconcile_codex_model_context_window(agent, reported_window)
+    if not isinstance(context_window, int) or context_window <= 0:
+        return
+    updater = getattr(compressor, "update_context_length_preserving_usage", None)
+    if callable(updater):
+        updater(context_window)
+    else:
+        compressor.context_length = context_window
+    primary_runtime = getattr(agent, "_primary_runtime", None)
+    if isinstance(primary_runtime, dict):
+        primary_runtime["compressor_context_length"] = context_window
+
+
 def _record_codex_app_server_usage(agent, turn) -> dict[str, Any]:
     """Translate Codex app-server token usage into Hermes accounting.
 
@@ -163,9 +223,11 @@ def _record_codex_app_server_usage(agent, turn) -> dict[str, Any]:
     if compressor is not None:
         try:
             compressor.update_from_response(usage_dict)
-            context_window = getattr(turn, "model_context_window", None)
-            if isinstance(context_window, int) and context_window > 0:
-                compressor.context_length = context_window
+            _apply_codex_model_context_window(
+                agent,
+                compressor,
+                getattr(turn, "model_context_window", None),
+            )
         except Exception:
             logger.debug("codex app-server usage update failed", exc_info=True)
 

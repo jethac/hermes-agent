@@ -49,14 +49,20 @@ def fake_session(monkeypatch):
     )
 
 
-def _make_codex_agent():
+def _make_codex_agent(
+    *,
+    provider: str = "openai",
+    base_url: str = "https://stub.invalid",
+    model: str | None = None,
+):
     """Construct an AIAgent in codex_app_server mode without contacting any
     real provider. We pass api_mode explicitly so the constructor takes the
     fast path for direct credentials."""
     return run_agent.AIAgent(
         api_key="stub",
-        base_url="https://stub.invalid",
-        provider="openai",
+        base_url=base_url,
+        provider=provider,
+        model=model,
         api_mode="codex_app_server",
         quiet_mode=True,
         skip_context_files=True,
@@ -133,6 +139,45 @@ class TestRunConversationCodexPath:
         assert agent.context_compressor.last_completion_tokens == 25
         assert agent.context_compressor.last_total_tokens == 130
         assert agent.context_compressor.context_length == 200000
+        assert agent.context_compressor.threshold_tokens != 0
+
+    def test_codex_oauth_ignores_stale_app_server_context_window(self, monkeypatch):
+        def fake_run_turn(self, user_input: str, **kwargs):
+            return TurnResult(
+                final_text="done",
+                projected_messages=[{"role": "assistant", "content": "done"}],
+                turn_id="turn-usage-1",
+                thread_id="thread-usage-1",
+                token_usage_last={
+                    "totalTokens": 130,
+                    "inputTokens": 80,
+                    "cachedInputTokens": 20,
+                    "outputTokens": 25,
+                    "reasoningOutputTokens": 5,
+                },
+                model_context_window=65_536,
+            )
+
+        monkeypatch.setattr(CodexAppServerSession, "run_turn", fake_run_turn)
+        monkeypatch.setattr(
+            CodexAppServerSession, "ensure_started", lambda self: "thread-usage-1"
+        )
+        agent = _make_codex_agent(
+            provider="openai-codex",
+            base_url="https://chatgpt.com/backend-api/codex",
+            model="gpt-5.5",
+        )
+
+        with patch.object(agent, "_spawn_background_review", return_value=None):
+            result = agent.run_conversation("hello")
+
+        assert result["last_prompt_tokens"] == 100
+        assert agent.context_compressor.last_prompt_tokens == 100
+        assert agent.context_compressor.last_completion_tokens == 25
+        assert agent.context_compressor.last_total_tokens == 130
+        assert agent.context_compressor.context_length == 272_000
+        assert agent.context_compressor.threshold_tokens > 65_536
+        assert agent._primary_runtime["compressor_context_length"] == 272_000
 
     def test_projected_messages_are_spliced(self, fake_session):
         agent = _make_codex_agent()
@@ -718,4 +763,3 @@ class TestCodexToolProgressBridge:
 
         assert "on_event" in captured_init and captured_init["on_event"] is not None
         assert ("tool.started", "exec_command", "pytest") in events
-

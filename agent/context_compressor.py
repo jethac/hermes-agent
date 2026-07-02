@@ -844,6 +844,24 @@ class ContextCompressor(ContextEngine):
         self.awaiting_real_usage_after_compression = False
         self._ineffective_compression_count = 0
 
+    def update_context_length_preserving_usage(self, context_length: int) -> None:
+        """Recalibrate the active context window without clearing usage state.
+
+        Runtime transports can learn the provider-enforced window after a
+        response arrives. That update must recompute thresholds and budgets, but
+        it must not erase the token usage that was just recorded from that same
+        response.
+        """
+        self.context_length = context_length
+        self.threshold_tokens = self._compute_threshold_tokens(
+            context_length, self.threshold_percent, self.max_tokens,
+        )
+        target_tokens = int(self.threshold_tokens * self.summary_target_ratio)
+        self.tail_token_budget = target_tokens
+        self.max_summary_tokens = min(
+            int(context_length * 0.05), _SUMMARY_TOKENS_CEILING,
+        )
+
     # When the MINIMUM_CONTEXT_LENGTH floor meets/exceeds a small context
     # window, compacting at the percentage (50% → 32K of a 64K window) wastes
     # half the usable context. Trigger near the top of the window instead so a
