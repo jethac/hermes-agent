@@ -367,6 +367,7 @@ async def test_shutdown_forces_cancelled_state_when_worker_ignores_cancel():
         "max_concurrent": 1,
         "queued": 0,
         "queue_limit": 16,
+        "waiting_for_approval": 0,
     }
     assert cancellation_entered.is_set()
 
@@ -413,6 +414,7 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
         "max_concurrent": 1,
         "queued": 1,
         "queue_limit": 16,
+        "waiting_for_approval": 0,
     }
     assert status["jobs"][0]["spoken_status"] == "I'm handling inspect deployment."
     assert "metadata" not in status["jobs"][0]
@@ -423,3 +425,55 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
     done = await manager.status_view()
     assert done["jobs"][0]["result_summary"] == "safe summary"
     assert "secret trace" not in str(done)
+
+
+@pytest.mark.asyncio
+async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
+    events = []
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+    first = await manager.submit(_request("buy service credits"))
+    second = await manager.submit(_request("check logs"))
+    await asyncio.sleep(0)
+
+    waiting = await manager.mark_waiting_for_approval(
+        first.job_id,
+        reason="Stripe Link spend requires approval",
+        approval={
+            "approval_id": "approval-123",
+            "tool_name": "stripe_link_purchase",
+            "secret": "do not expose",
+            "arguments": {"card": "do not expose"},
+        },
+    )
+    status = await manager.status_view()
+
+    assert waiting.state == OracleJobState.WAITING_FOR_APPROVAL
+    assert (await manager.get(second.job_id)).state == OracleJobState.QUEUED
+    assert status["capacity"] == {
+        "running": 0,
+        "max_concurrent": 1,
+        "queued": 1,
+        "queue_limit": 16,
+        "waiting_for_approval": 1,
+    }
+    waiting_event = next(event for event in events if event["type"] == "oracle.job.waiting_for_approval")
+    assert waiting_event["state"] == "waiting_for_approval"
+    assert waiting_event["payload"]["approval_reason"] == "Stripe Link spend requires approval"
+    assert waiting_event["payload"]["approval"] == {
+        "approval_id": "approval-123",
+        "tool_name": "stripe_link_purchase",
+    }
+    assert "do not expose" not in str(waiting_event)
+
+    release.set()
+    await manager.wait_for_idle()

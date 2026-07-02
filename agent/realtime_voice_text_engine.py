@@ -37,6 +37,7 @@ from agent.realtime_voice_oracle_jobs import (
     OracleJobManager,
     OracleJobNotFoundError,
     OracleJobQueueFullError,
+    OracleJobState,
 )
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, wants_realtime_sidecar
@@ -1140,6 +1141,20 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             if isinstance(item, Mapping):
                 oracle_tool_event_type = _oracle_tool_event_type(item)
                 if oracle_tool_event_type is not None:
+                    if oracle_tool_event_type == VoiceEventType.ORACLE_TOOL_CALL and _oracle_tool_event_waits_for_approval(item):
+                        manager = self._oracle_job_manager
+                        if manager is not None:
+                            with contextlib.suppress(OracleJobNotFoundError):
+                                await manager.mark_waiting_for_approval(
+                                    job.job_id,
+                                    reason=_oracle_tool_approval_reason(item),
+                                    approval=_oracle_tool_event_payload(item),
+                                )
+                    elif oracle_tool_event_type == VoiceEventType.ORACLE_TOOL_RESULT:
+                        manager = self._oracle_job_manager
+                        if manager is not None and job.state == OracleJobState.WAITING_FOR_APPROVAL:
+                            with contextlib.suppress(OracleJobNotFoundError):
+                                await manager.mark_running(job.job_id)
                     await self._emit_oracle_job_progress(
                         job,
                         phase="tool",
@@ -3426,6 +3441,27 @@ async def _with_next_timeout(stream: AsyncIterator[Any], *, timeout_seconds: flo
 
 _ORACLE_TOOL_CALL_EVENT_NAMES = frozenset({"oracle.tool_call", "tool_call", "tool.call"})
 _ORACLE_TOOL_RESULT_EVENT_NAMES = frozenset({"oracle.tool_result", "tool_result", "tool.result"})
+_ORACLE_TOOL_APPROVAL_TRUE_KEYS = frozenset(
+    {
+        "approval_required",
+        "requires_approval",
+        "needs_approval",
+        "awaiting_approval",
+        "waiting_for_approval",
+        "requires_user_approval",
+        "human_approval_required",
+        "pending_approval",
+    }
+)
+_ORACLE_TOOL_APPROVAL_STATUS_VALUES = frozenset(
+    {
+        "approval_required",
+        "awaiting_approval",
+        "waiting_for_approval",
+        "pending_approval",
+        "requires_approval",
+    }
+)
 
 
 def _oracle_tool_event_type(item: Mapping[str, Any]) -> Optional[VoiceEventType]:
@@ -3435,6 +3471,43 @@ def _oracle_tool_event_type(item: Mapping[str, Any]) -> Optional[VoiceEventType]
     if raw_type in _ORACLE_TOOL_RESULT_EVENT_NAMES:
         return VoiceEventType.ORACLE_TOOL_RESULT
     return None
+
+
+def _oracle_tool_event_waits_for_approval(item: Mapping[str, Any]) -> bool:
+    for key in _ORACLE_TOOL_APPROVAL_TRUE_KEYS:
+        if _metadata_bool(item.get(key), default=False):
+            return True
+    status = str(item.get("approval_status") or item.get("status") or item.get("state") or "").strip().lower()
+    if status in _ORACLE_TOOL_APPROVAL_STATUS_VALUES:
+        return True
+    approval = item.get("approval")
+    if isinstance(approval, Mapping):
+        for key in _ORACLE_TOOL_APPROVAL_TRUE_KEYS:
+            if _metadata_bool(approval.get(key), default=False):
+                return True
+        nested_status = str(
+            approval.get("status") or approval.get("state") or approval.get("approval_status") or ""
+        ).strip().lower()
+        if nested_status in _ORACLE_TOOL_APPROVAL_STATUS_VALUES:
+            return True
+    return False
+
+
+def _oracle_tool_approval_reason(item: Mapping[str, Any]) -> str:
+    for key in ("approval_reason", "reason", "message", "summary"):
+        text = str(item.get(key) or "").strip()
+        if text:
+            return " ".join(text.split())[:240]
+    approval = item.get("approval")
+    if isinstance(approval, Mapping):
+        for key in ("approval_reason", "reason", "message", "summary"):
+            text = str(approval.get(key) or "").strip()
+            if text:
+                return " ".join(text.split())[:240]
+    tool_name = str(item.get("tool_name") or item.get("name") or "").strip()
+    if tool_name:
+        return f"{tool_name} is waiting for approval"
+    return "waiting for approval"
 
 
 def _oracle_stream_text_delta(item: Any) -> str:

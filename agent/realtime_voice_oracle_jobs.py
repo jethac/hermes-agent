@@ -266,17 +266,60 @@ class OracleJobManager:
             job.updated_at = self._clock()
             return job
 
+    async def mark_waiting_for_approval(
+        self,
+        job_id: str,
+        *,
+        reason: str = "waiting for approval",
+        approval: Optional[Mapping[str, Any]] = None,
+    ) -> OracleJob:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise OracleJobNotFoundError(job_id)
+            if job.state in TERMINAL_STATES or job.state == OracleJobState.CANCEL_REQUESTED:
+                return job
+            job.state = OracleJobState.WAITING_FOR_APPROVAL
+            job.updated_at = self._clock()
+            payload = dict(job.to_status())
+            payload["approval_reason"] = str(reason or "waiting for approval")[:240]
+            if approval:
+                payload["approval"] = _compact_approval_payload(approval)
+            await self._emit_locked(
+                OracleJobEventType.WAITING_FOR_APPROVAL,
+                job,
+                payload=payload,
+            )
+            return job
+
+    async def mark_running(self, job_id: str) -> OracleJob:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise OracleJobNotFoundError(job_id)
+            if job.state in TERMINAL_STATES or job.state == OracleJobState.CANCEL_REQUESTED:
+                return job
+            if job.state != OracleJobState.RUNNING:
+                job.state = OracleJobState.RUNNING
+                job.updated_at = self._clock()
+                await self._emit_locked(OracleJobEventType.STARTED, job)
+            return job
+
     async def status_view(self) -> dict[str, Any]:
         async with self._lock:
             jobs = [job.to_status() for job in self._jobs.values()]
             running = sum(1 for job in self._jobs.values() if job.state == OracleJobState.RUNNING)
             queued = sum(1 for job in self._jobs.values() if job.state == OracleJobState.QUEUED)
+            waiting_for_approval = sum(
+                1 for job in self._jobs.values() if job.state == OracleJobState.WAITING_FOR_APPROVAL
+            )
         return {
             "capacity": {
                 "running": running,
                 "max_concurrent": self.max_concurrent,
                 "queued": queued,
                 "queue_limit": self.queue_limit,
+                "waiting_for_approval": waiting_for_approval,
             },
             "jobs": jobs,
         }
@@ -393,7 +436,13 @@ class OracleJobManager:
                 continue
             self._start_job_locked(job, runner)
 
-    async def _emit_locked(self, event_type: OracleJobEventType, job: OracleJob) -> None:
+    async def _emit_locked(
+        self,
+        event_type: OracleJobEventType,
+        job: OracleJob,
+        *,
+        payload: Optional[Mapping[str, Any]] = None,
+    ) -> None:
         callback = self.event_callback
         if callback is None:
             return
@@ -402,7 +451,7 @@ class OracleJobManager:
             job_id=job.job_id,
             session_id=job.session_id,
             state=job.state,
-            payload=job.to_status(),
+            payload=dict(payload) if payload is not None else job.to_status(),
         )
         await _maybe_await(callback(event))
 
@@ -531,3 +580,29 @@ def _priority_rank(priority: object) -> int:
 
 def _compact_update_text(value: object) -> str:
     return " ".join(str(value or "").split())[:500]
+
+
+def _compact_approval_payload(value: Mapping[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "approval_id",
+        "approval_kind",
+        "approval_reason",
+        "status",
+        "tool_name",
+        "tool_call_id",
+        "summary",
+        "message",
+        "reason",
+    }
+    compact: dict[str, Any] = {}
+    for key, raw in value.items():
+        text_key = str(key)
+        if text_key not in allowed:
+            continue
+        if isinstance(raw, bool):
+            compact[text_key] = raw
+        elif isinstance(raw, (int, float)):
+            compact[text_key] = raw
+        elif raw is not None:
+            compact[text_key] = " ".join(str(raw).split())[:240]
+    return compact
