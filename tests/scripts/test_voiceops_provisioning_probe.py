@@ -364,7 +364,7 @@ def test_probe_passes_with_safe_local_tools_and_redacts_outputs(tmp_path):
     assert report["read_only_discovery"]["required_for_live_provisioning_approval"] is True
     assert report["read_only_discovery"]["auth_context"] == "isolated_home"
     assert report["read_only_discovery"]["proves_existing_local_auth"] is False
-    assert report["read_only_discovery"]["timeout_seconds"] == 3
+    assert report["read_only_discovery"]["timeout_seconds"] == 20
     assert report["read_only_discovery"]["timed_out_probe_ids"] == []
     assert all(any(arg in {"--version", "--help"} for arg in call[1:]) for call in calls)
     joined_calls = " ".join(" ".join(call) for call in calls)
@@ -442,7 +442,7 @@ def test_readonly_discovery_reports_timeouts_without_granting_readiness(tmp_path
         runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
         readonly_discovery_runner=fake_readonly_runner,
         run_readonly_discovery=True,
-        timeout_seconds=7,
+        readonly_discovery_timeout_seconds=7,
     )
 
     discovery = report["read_only_discovery"]
@@ -465,6 +465,40 @@ def test_readonly_discovery_reports_timeouts_without_granting_readiness(tmp_path
     assert "probe timed out" in stripe_probe["stderr_excerpt"]
     assert "read_only_discovery_passed" in report["required_failures"]
     assert report["ready"] is False
+
+
+def test_readonly_discovery_timeout_can_be_overridden_independently(tmp_path):
+    command_timeouts = []
+    discovery_timeouts = []
+
+    def fake_which(command: str) -> str | None:
+        return f"/usr/local/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None
+
+    def fake_runner(_argv: Sequence[str], timeout_seconds: int) -> CommandResult:
+        command_timeouts.append(timeout_seconds)
+        return CommandResult(exit_code=0)
+
+    def fake_readonly_runner(_argv: Sequence[str], timeout_seconds: int) -> CommandResult:
+        discovery_timeouts.append(timeout_seconds)
+        return CommandResult(exit_code=0)
+
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
+        env_files=[],
+        which=fake_which,
+        runner=fake_runner,
+        readonly_discovery_runner=fake_readonly_runner,
+        run_commands=True,
+        run_readonly_discovery=True,
+        timeout_seconds=5,
+        readonly_discovery_timeout_seconds=13,
+    )
+
+    assert set(command_timeouts) == {5}
+    assert discovery_timeouts == [13, 13]
+    assert report["probe"]["timeout_seconds"] == 5
+    assert report["probe"]["read_only_discovery_timeout_seconds"] == 13
+    assert report["read_only_discovery"]["timeout_seconds"] == 13
 
 
 def test_probe_reports_required_failures_without_running_missing_tools():
@@ -2858,5 +2892,6 @@ def test_parse_args_defaults_to_requested_artifact_dir():
     assert args.post_approval_receipts is None
     assert args.nemoclaw_action_packet is None
     assert args.refresh_preflight_source_hashes is None
+    assert args.timeout_seconds is None
     assert args.run_command_probes is False
     assert args.run_readonly_discovery is False

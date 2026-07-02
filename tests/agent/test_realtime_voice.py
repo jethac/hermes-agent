@@ -3219,7 +3219,7 @@ def test_kame_oracle_job_control_uses_latest_job_for_pronoun_cancel_and_priority
     }
 
 
-def test_kame_engine_reports_async_oracle_queue_full_without_sync_fallback(monkeypatch):
+def test_kame_engine_reports_async_oracle_reject_policy_without_sync_fallback(monkeypatch):
     class BlockingOracle:
         def __init__(self):
             self.requests = []
@@ -3246,7 +3246,12 @@ def test_kame_engine_reports_async_oracle_queue_full_without_sync_fallback(monke
                 session_id="voice-123",
                 engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
                 interface_audio_input="native_audio",
-                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 0},
+                oracle_jobs={
+                    "enabled": True,
+                    "max_concurrent": 1,
+                    "queue_limit": 16,
+                    "overflow_policy": "reject",
+                },
                 metadata={"transport": "discord_voice"},
             )
         )

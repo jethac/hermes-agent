@@ -25,6 +25,8 @@ from typing import Any, Callable, Iterable, Mapping, MutableMapping, Sequence
 
 
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-provisioning/current")
+DEFAULT_COMMAND_PROBE_TIMEOUT_SECONDS = 3
+DEFAULT_READONLY_DISCOVERY_TIMEOUT_SECONDS = 20
 FORBIDDEN_ENV_ROOT = Path("/Users/jethac/.hermes/hermes-agent").expanduser()
 PREFLIGHT_EVIDENCE_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence.v1"
 PREFLIGHT_EVIDENCE_MANIFEST_SCHEMA_VERSION = "voiceops.milestone2.preflight_evidence_manifest.v1"
@@ -2045,16 +2047,27 @@ def build_probe_report(
     readonly_discovery_runner: CommandRunner = _readonly_discovery_subprocess_runner,
     run_commands: bool = False,
     run_readonly_discovery: bool = False,
-    timeout_seconds: int = 3,
+    timeout_seconds: int | None = None,
+    readonly_discovery_timeout_seconds: int | None = None,
 ) -> dict[str, Any]:
     env, env_sources = _merge_env_sources(os.environ if env is None else env, _default_env_files() if env_files is None else env_files)
     payment_skill_bundle = load_payment_skill_bundle_evidence(repo_root)
+    command_timeout_seconds = (
+        DEFAULT_COMMAND_PROBE_TIMEOUT_SECONDS
+        if timeout_seconds is None
+        else timeout_seconds
+    )
+    effective_readonly_discovery_timeout_seconds = (
+        DEFAULT_READONLY_DISCOVERY_TIMEOUT_SECONDS
+        if readonly_discovery_timeout_seconds is None
+        else readonly_discovery_timeout_seconds
+    )
     command_results = [
         _run_probe(
             probe,
             which=which,
             runner=runner,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=command_timeout_seconds,
             run_commands=run_commands,
         )
         for probe in _command_manifest()
@@ -2065,7 +2078,7 @@ def build_probe_report(
         else _build_readonly_discovery_report(
             which=which,
             runner=readonly_discovery_runner,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=effective_readonly_discovery_timeout_seconds,
             run_discovery=run_readonly_discovery,
         )
     )
@@ -2339,7 +2352,8 @@ def build_probe_report(
             "run_readonly_discovery": run_readonly_discovery,
             "read_only_discovery_evidence_path": str(read_only_discovery_evidence_path) if read_only_discovery_evidence_path else None,
             "nemoclaw_action_packet_path": str(nemoclaw_action_packet_path) if nemoclaw_action_packet_path else None,
-            "timeout_seconds": timeout_seconds,
+            "timeout_seconds": command_timeout_seconds,
+            "read_only_discovery_timeout_seconds": effective_readonly_discovery_timeout_seconds,
             "active_probe_policy": "version_help_only",
             "read_only_discovery_policy": "exact_allowlist_only",
             "blocked_capabilities": BLOCKED_CAPABILITIES,
@@ -4014,7 +4028,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "ingests evidence without running discovery commands."
         ),
     )
-    parser.add_argument("--timeout-seconds", type=int, default=3)
+    parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=None,
+        help=(
+            "Timeout for fast local version/help probes. Read-only discovery uses "
+            f"{DEFAULT_READONLY_DISCOVERY_TIMEOUT_SECONDS}s by default because provider CLIs may perform network I/O."
+        ),
+    )
     parser.add_argument(
         "--run-command-probes",
         action="store_true",

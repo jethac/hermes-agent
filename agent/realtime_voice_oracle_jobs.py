@@ -176,15 +176,16 @@ class OracleJobManager:
             raise ValueError("OracleJobManager requires a runner to submit jobs")
 
         async with self._lock:
-            if self._queued_count_locked() >= self.queue_limit and self._active_count_locked() >= self.max_concurrent:
-                if self.overflow_policy == "reject":
-                    raise OracleJobQueueFullError("oracle job queue is full")
+            active_count = self._active_count_locked()
+            if self.overflow_policy == "reject" and active_count >= self.max_concurrent:
+                raise OracleJobQueueFullError("oracle job queue is full")
+            if self._queued_count_locked() >= self.queue_limit and active_count >= self.max_concurrent:
                 raise OracleJobQueueFullError("oracle job queue is full")
 
             job = self._job_from_request(request, priority=priority)
             self._jobs[job.job_id] = job
             await self._emit_locked(OracleJobEventType.ACCEPTED, job)
-            if self._active_count_locked() < self.max_concurrent:
+            if active_count < self.max_concurrent:
                 self._start_job_locked(job, runner)
             else:
                 self._queue.append(job.job_id)

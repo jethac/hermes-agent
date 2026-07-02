@@ -35,6 +35,8 @@ from scripts.voiceops_artifact_package_audit import audit_package, write_audit a
 from scripts.voiceops_channel_policy import build_channel_policy, build_review_packet, validate_policy, write_channel_policy
 from scripts.voiceops_operator_state import build_operator_state, validate_operator_state, write_operator_state
 from scripts.voiceops_provisioning_probe import (
+    DEFAULT_COMMAND_PROBE_TIMEOUT_SECONDS,
+    DEFAULT_READONLY_DISCOVERY_TIMEOUT_SECONDS,
     PHONE_PROVIDER_ENV_KEYS,
     PHONE_TARGET_ENV_KEYS,
     build_probe_report,
@@ -1317,7 +1319,8 @@ def build_plan_run(
     post_approval_receipts: Path | None = None,
     run_command_probes: bool = False,
     run_readonly_discovery: bool = False,
-    timeout_seconds: int = 3,
+    timeout_seconds: int | None = None,
+    readonly_discovery_timeout_seconds: int | None = None,
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     return asyncio.run(
@@ -1336,6 +1339,7 @@ def build_plan_run(
             run_command_probes=run_command_probes,
             run_readonly_discovery=run_readonly_discovery,
             timeout_seconds=timeout_seconds,
+            readonly_discovery_timeout_seconds=readonly_discovery_timeout_seconds,
             env=env,
         )
     )
@@ -1356,7 +1360,8 @@ async def build_plan_run_async(
     post_approval_receipts: Path | None = None,
     run_command_probes: bool = False,
     run_readonly_discovery: bool = False,
-    timeout_seconds: int = 3,
+    timeout_seconds: int | None = None,
+    readonly_discovery_timeout_seconds: int | None = None,
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     evidence_paths = evidence_paths or []
@@ -1564,6 +1569,7 @@ async def build_plan_run_async(
         run_commands=run_command_probes,
         run_readonly_discovery=run_readonly_discovery,
         timeout_seconds=timeout_seconds,
+        readonly_discovery_timeout_seconds=readonly_discovery_timeout_seconds,
     )
     provisioning_paths = write_probe_artifacts(provisioning_dir, provisioning)
     results.append(
@@ -2153,7 +2159,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Output directory for --package-audit. Defaults to ARTIFACT_ROOT/voiceops-package-audit/current.",
     )
-    parser.add_argument("--timeout-seconds", type=int, default=3)
+    parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=None,
+        help=f"Timeout for fast local provisioning probes; defaults to {DEFAULT_COMMAND_PROBE_TIMEOUT_SECONDS}s.",
+    )
+    parser.add_argument(
+        "--readonly-discovery-timeout-seconds",
+        "--read-only-discovery-timeout-seconds",
+        type=int,
+        default=None,
+        dest="readonly_discovery_timeout_seconds",
+        help=(
+            "Timeout for allowlisted read-only provider discovery; defaults to "
+            f"{DEFAULT_READONLY_DISCOVERY_TIMEOUT_SECONDS}s."
+        ),
+    )
     parser.add_argument(
         "--run-command-probes",
         action="store_true",
@@ -2237,6 +2259,7 @@ def main(argv: list[str] | None = None) -> int:
                 run_command_probes=False,
                 run_readonly_discovery=False,
                 timeout_seconds=args.timeout_seconds,
+                readonly_discovery_timeout_seconds=args.readonly_discovery_timeout_seconds,
             )
             package_audit_report = None
             if args.package_audit:
@@ -2298,6 +2321,7 @@ def main(argv: list[str] | None = None) -> int:
         run_command_probes=args.run_command_probes,
         run_readonly_discovery=args.run_readonly_discovery,
         timeout_seconds=args.timeout_seconds,
+        readonly_discovery_timeout_seconds=args.readonly_discovery_timeout_seconds,
     )
     paths = write_plan_run(args.output_dir, summary)
     package_audit_report = None

@@ -248,6 +248,34 @@ async def test_queue_limit_rejects_overflow():
 
 
 @pytest.mark.asyncio
+async def test_overflow_policy_reject_rejects_at_capacity_with_queue_space():
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        queue_limit=16,
+        overflow_policy="reject",
+        runner=runner,
+    )
+    await manager.submit(_request("running"))
+
+    with pytest.raises(OracleJobQueueFullError):
+        await manager.submit(_request("should reject"))
+
+    status = await manager.status_view()
+    assert status["capacity"]["running"] == 1
+    assert status["capacity"]["queued"] == 0
+    assert len(status["jobs"]) == 1
+
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
 async def test_cancelling_queued_job_prevents_execution():
     started = []
     release = asyncio.Event()

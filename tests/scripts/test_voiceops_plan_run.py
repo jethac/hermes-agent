@@ -1995,6 +1995,8 @@ def test_parse_args_defaults_to_plan_artifact_paths():
     assert args.reflex_model is None
     assert args.voice_live_evidence == []
     assert args.provisioning_preflight_evidence is None
+    assert args.timeout_seconds is None
+    assert args.readonly_discovery_timeout_seconds is None
     assert args.run_command_probes is False
     assert args.run_readonly_discovery is False
     assert args.dry_audit is False
