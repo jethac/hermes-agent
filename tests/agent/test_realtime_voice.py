@@ -12093,6 +12093,8 @@ def test_session_persists_durable_async_oracle_job_records():
                 "job_id": "voice-oracle-001",
                 "state": "completed",
                 "result_summary": "The spend approval cleared.",
+                "result_text": "The spend approval cleared with a longer durable explanation.",
+                "result_text_chars": 61,
             },
         ),
         VoiceEvent(
@@ -12138,6 +12140,8 @@ def test_session_persists_durable_async_oracle_job_records():
                 "job_id": "voice-oracle-001",
                 "state": "completed",
                 "result_summary": "The spend approval cleared.",
+                "result_text": "The spend approval cleared with a longer durable explanation.",
+                "result_text_chars": 61,
             },
         },
         {

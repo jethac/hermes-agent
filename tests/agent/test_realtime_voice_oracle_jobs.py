@@ -428,6 +428,39 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
 
 
 @pytest.mark.asyncio
+async def test_completed_event_preserves_full_result_without_bloating_status():
+    events = []
+    full_text = "First sentence.\n\n" + ("detail " * 500)
+
+    async def runner(job):
+        return {
+            "result_summary": "Short spoken summary.",
+            "result_text": full_text,
+        }
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+    job = await manager.submit(_request("write a detailed report"))
+    await manager.wait_for_idle()
+
+    completed = await manager.get(job.job_id)
+    status = await manager.status_view()
+    completed_event = next(event for event in events if event["type"] == "oracle.job.completed")
+
+    assert completed.result_summary == "Short spoken summary."
+    assert completed.result_text == full_text
+    assert completed_event["payload"]["result_summary"] == "Short spoken summary."
+    assert completed_event["payload"]["result_text"] == full_text
+    assert completed_event["payload"]["result_text_chars"] == len(full_text)
+    assert status["jobs"][0]["result_summary"] == "Short spoken summary."
+    assert "result_text" not in status["jobs"][0]
+    assert full_text not in str(status)
+
+
+@pytest.mark.asyncio
 async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
     events = []
     release = asyncio.Event()

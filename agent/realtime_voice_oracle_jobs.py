@@ -64,6 +64,7 @@ class OracleJob:
     requested_response_style: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
     result_summary: str = ""
+    result_text: str = ""
     error: str = ""
     cancel_reason: str = ""
     updates: list[dict[str, Any]] = field(default_factory=list)
@@ -415,13 +416,15 @@ class OracleJobManager:
             if job.state in {OracleJobState.CANCEL_REQUESTED, OracleJobState.CANCELLED}:
                 job.state = OracleJobState.CANCELLED
                 job.result_summary = ""
+                job.result_text = ""
                 job.updated_at = self._clock()
                 await self._emit_locked(OracleJobEventType.CANCELLED, job)
             elif job.state not in TERMINAL_STATES:
                 job.state = OracleJobState.COMPLETED
                 job.result_summary = _result_summary(result)
+                job.result_text = _result_text(result)
                 job.updated_at = self._clock()
-                await self._emit_locked(OracleJobEventType.COMPLETED, job)
+                await self._emit_locked(OracleJobEventType.COMPLETED, job, payload=_completion_payload(job))
             self._tasks.pop(job_id, None)
             self._start_available_locked()
 
@@ -531,6 +534,27 @@ def _result_summary(result: Any) -> str:
                 return " ".join(str(value).split())[:2000]
         return ""
     return " ".join(str(result or "").split())[:2000]
+
+
+def _result_text(result: Any) -> str:
+    if isinstance(result, Mapping):
+        for key in ("result_text", "text", "final_response", "result_summary", "summary"):
+            value = result.get(key)
+            if value:
+                text = str(value)
+                if text.strip():
+                    return text
+        return ""
+    text = str(result or "")
+    return text if text.strip() else ""
+
+
+def _completion_payload(job: OracleJob) -> dict[str, Any]:
+    payload = job.to_status()
+    if job.result_text:
+        payload["result_text"] = job.result_text
+        payload["result_text_chars"] = len(job.result_text)
+    return payload
 
 
 async def _maybe_await(value: Any) -> Any:
