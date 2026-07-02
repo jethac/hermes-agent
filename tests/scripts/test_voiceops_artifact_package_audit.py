@@ -188,6 +188,19 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     assert "voice_operator_readiness:proofs.async_oracle_jobs.completed_jobs_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_async_oracle_proof_identity_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["proofs"]["async_oracle_jobs"]["kind"] = "generic_smoke"
+    _write_json(readiness_path, readiness)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:proofs.async_oracle_jobs.kind_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_discord_session_cleanup_proof_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"

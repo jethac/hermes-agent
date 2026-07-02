@@ -1703,6 +1703,7 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
         label="async_oracle_jobs",
         proof=async_proof,
         expected={
+            "kind": async_smoke.get("kind"),
             "scenario": async_smoke.get("scenario"),
             "max_running": async_smoke.get("max_running"),
             "max_worker_overlap": async_smoke.get("max_worker_overlap"),

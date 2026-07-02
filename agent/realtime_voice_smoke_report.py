@@ -1446,6 +1446,7 @@ def _validate_async_oracle_smoke_entry(
     required_true_fields = (
         "worker_overlap_proved",
         "worker_overlap_within_capacity",
+        "local_turn_during_running_jobs_observed",
         "fifth_job_queued",
         "fifth_job_started_after_capacity_freed",
         "queued_job_update_observed",
@@ -1471,6 +1472,14 @@ def _validate_async_oracle_smoke_entry(
             RealtimeVoiceSmokeReportIssue(
                 "async_oracle_smoke",
                 "max_worker_overlap did not prove four concurrent oracle jobs",
+                identifier,
+            )
+        )
+    if int(entry.get("local_turn_active_job_count") or 0) < 1:
+        issues.append(
+            RealtimeVoiceSmokeReportIssue(
+                "async_oracle_smoke",
+                "local turn did not prove an active oracle job overlap",
                 identifier,
             )
         )

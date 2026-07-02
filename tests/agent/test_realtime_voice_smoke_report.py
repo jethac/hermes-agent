@@ -220,6 +220,8 @@ def _valid_async_oracle_smoke_entry():
         "max_worker_overlap": 4,
         "worker_overlap_proved": True,
         "worker_overlap_within_capacity": True,
+        "local_turn_during_running_jobs_observed": True,
+        "local_turn_active_job_count": 4,
         "fifth_job_queued": True,
         "fifth_job_started_after_capacity_freed": True,
         "queued_job_update_observed": True,
@@ -255,6 +257,8 @@ def test_realtime_voice_alpha_report_accepts_async_oracle_smoke_when_requested()
 def test_realtime_voice_alpha_report_rejects_weak_async_oracle_smoke():
     weak_async_smoke = _valid_async_oracle_smoke_entry()
     weak_async_smoke["max_worker_overlap"] = 3
+    weak_async_smoke["local_turn_during_running_jobs_observed"] = False
+    weak_async_smoke["local_turn_active_job_count"] = 0
     weak_async_smoke["queued_update_reached_oracle"] = False
     report = [*_valid_alpha_report(), weak_async_smoke]
 
@@ -264,6 +268,8 @@ def test_realtime_voice_alpha_report_rejects_weak_async_oracle_smoke():
     )
 
     assert any("four concurrent oracle jobs" in issue.format() for issue in issues)
+    assert any("local_turn_during_running_jobs_observed" in issue.format() for issue in issues)
+    assert any("active oracle job overlap" in issue.format() for issue in issues)
     assert any("queued_update_reached_oracle" in issue.format() for issue in issues)
 
 

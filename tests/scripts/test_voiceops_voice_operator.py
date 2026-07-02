@@ -58,6 +58,7 @@ def _smoke_payload() -> dict:
 
 def _async_oracle_smoke_payload() -> dict:
     return {
+        "kind": "async_oracle_smoke",
         "ok": True,
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": 4,
@@ -440,6 +441,8 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["barge_in_energy"]["energy_gate_covered_by_tests"] is True
     assert report["proofs"]["shutdown"]["close_timeout_bounded"] is True
     assert report["proofs"]["async_oracle_jobs"]["ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["kind"] == "async_oracle_smoke"
+    assert report["proofs"]["async_oracle_jobs"]["scenario"] == "async_kame_oracle_jobs_fake"
     assert report["proofs"]["async_oracle_jobs"]["max_running"] == 4
     assert report["proofs"]["async_oracle_jobs"]["queued_jobs"] == 1
     assert report["proofs"]["async_oracle_jobs"]["failed_jobs"] == 1

@@ -1836,6 +1836,7 @@ def build_voice_operator_report(
         },
         "async_oracle_jobs": {
             "ok": all(async_oracle_coverage.values()),
+            "kind": async_oracle_smoke.get("kind"),
             "scenario": async_oracle_smoke.get("scenario"),
             "max_running": async_oracle_smoke.get("max_running"),
             "max_worker_overlap": async_oracle_smoke.get("max_worker_overlap"),
