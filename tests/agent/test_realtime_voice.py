@@ -4080,7 +4080,10 @@ def test_kame_engine_async_oracle_job_failure_reports_in_voice(monkeypatch):
 
         async def stream_answer_for_request(self, request):
             self.requests.append(request)
-            raise RuntimeError("oracle backend unavailable")
+            raise RuntimeError(
+                "oracle backend unavailable Bearer raw-token token=sk-secret "
+                "at https://user:pass@voice.local/v1?api_key=raw"
+            )
             yield ""
 
     async def run():
@@ -4133,13 +4136,29 @@ def test_kame_engine_async_oracle_job_failure_reports_in_voice(monkeypatch):
         )
         assert failed.payload["job_id"] == "voice-oracle-001"
         assert failed.payload["state"] == "failed"
-        assert failed.payload["error"] == "oracle backend unavailable"
+        assert failed.payload["error"] == (
+            "oracle backend unavailable Bearer *** token=*** at https://***@voice.local/v1"
+        )
         assert commit.payload["oracle_job_id"] == "voice-oracle-001"
-        assert commit.payload["text"] == "I couldn't finish Check the deployment status: oracle backend unavailable"
+        assert commit.payload["text"] == (
+            "I couldn't finish Check the deployment status: "
+            "oracle backend unavailable Bearer *** token=*** at https://***@voice.local/v1"
+        )
         assert spoken == [
             "Checking that now.",
-            "I couldn't finish Check the deployment status: oracle backend unavailable",
+            (
+                "I couldn't finish Check the deployment status: "
+                "oracle backend unavailable Bearer *** token=*** at https://***@voice.local/v1"
+            ),
         ]
+        combined = json.dumps(
+            {"failed": failed.payload, "commit": commit.payload, "spoken": spoken},
+            sort_keys=True,
+        )
+        assert "raw-token" not in combined
+        assert "sk-secret" not in combined
+        assert "user:pass" not in combined
+        assert "api_key=raw" not in combined
 
     asyncio.run(run())
 
