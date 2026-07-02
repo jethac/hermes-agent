@@ -6,10 +6,13 @@ import subprocess
 from pathlib import Path
 
 from scripts.hackathon_voiceops_demo import (
+    DEFAULT_REQUEST,
     _demo_milestone2_report,
     build_demo,
     build_readiness_report,
     parse_args,
+    prepare_voiceops_action_packet,
+    prepare_voiceops_action_packet_from_demo,
     write_demo,
 )
 from scripts.voiceops_operator_state import validate_operator_state
@@ -34,6 +37,60 @@ def _discord_live_env() -> dict[str, str]:
         "DISCORD_VOICE_CHANNEL_ID": "123",
         "DISCORD_VOICE_CHANNEL_NAME": "General",
     }
+
+
+def _fake_which(command: str) -> str:
+    return f"/usr/local/bin/{command}"
+
+
+def test_prepare_voiceops_action_packet_returns_packet_plan_and_validation(tmp_path):
+    args = parse_args(["--output-dir", str(tmp_path), "--budget-cents", "20000"])
+    demo = build_demo(args)
+    readiness = build_readiness_report(demo, env=_discord_live_env(), which=_fake_which)
+    prepared_from_demo = prepare_voiceops_action_packet_from_demo(demo, readiness)
+    prepared_from_request = prepare_voiceops_action_packet(
+        request=DEFAULT_REQUEST,
+        budget_cents=20_000,
+        env=_discord_live_env(),
+        which=_fake_which,
+    )
+    paths = write_demo(tmp_path / "written", demo)
+    written_packet = json.loads(Path(paths["nemoclaw_packet"]).read_text(encoding="utf-8"))
+    written_plan = json.loads(Path(paths["milestone2_execution_plan"]).read_text(encoding="utf-8"))
+
+    for prepared in (prepared_from_demo, prepared_from_request):
+        packet = prepared["nemoclaw_action_packet"]
+        plan = prepared["milestone2_execution_plan"]
+        action_ids = {action["action_id"] for action in packet["approval_required_actions"]}
+
+        assert prepared["schema_version"] == "voiceops.action_packet_preparation.v1"
+        assert prepared["request"] == DEFAULT_REQUEST
+        assert prepared["safety"] == {
+            "executes_commands": False,
+            "network_io": False,
+            "live_spend": False,
+            "provider_provisioning": False,
+            "credential_retrieval": False,
+            "outbound_phone_calls": False,
+            "secret_values_emitted": False,
+            "requires_operator_approval": True,
+        }
+        assert prepared["nemoclaw_action_packet_validation"]["status"] == "valid"
+        assert {"provision-voip-provider", "buy-service-credit", "call-user-phone"} <= action_ids
+        assert packet["dry_run_commands"] == [action["command"] for action in packet["approval_required_actions"]]
+        assert plan["spend_policy"]["budget_cap_cents"] == 20_000
+        assert plan["demo_refs"]["nemoclaw_packet"] == "nemoclaw-action-packet.json"
+        assert {
+            action["action_id"]
+            for action in plan["approval_required_actions"]
+        } >= action_ids
+
+    assert prepared_from_demo["nemoclaw_action_packet"] == written_packet
+    assert prepared_from_demo["milestone2_execution_plan"]["spend_policy"] == written_plan["spend_policy"]
+    assert [
+        action["action_id"]
+        for action in prepared_from_demo["milestone2_execution_plan"]["approval_required_actions"]
+    ] == [action["action_id"] for action in written_plan["approval_required_actions"]]
 
 
 def test_voiceops_demo_writes_headless_artifacts(tmp_path):

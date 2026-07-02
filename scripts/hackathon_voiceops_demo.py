@@ -31,6 +31,9 @@ DEFAULT_REQUEST = (
     "Provision yourself a VoIP provider account, then call my phone with "
     "this same context so we can continue outside Discord."
 )
+DEFAULT_DEMO_NAME = "Hermes VoiceOps on DGX Spark"
+DEFAULT_ACTIVE_MODEL = "Nemotron 3 Super local on DGX Spark via Hermes /model"
+DEFAULT_REFLEX_MODEL = "Gemma 4 E2B audio-native reflex on Spark"
 SPARK_BENCHMARK_SCAFFOLD_EVIDENCE = (
     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
 )
@@ -1966,6 +1969,74 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def prepare_voiceops_action_packet(
+    *,
+    request: str = DEFAULT_REQUEST,
+    budget_cents: int = 20_000,
+    approval_required_over_cents: int = 1_000,
+    active_model: str = DEFAULT_ACTIVE_MODEL,
+    reflex_model: str = DEFAULT_REFLEX_MODEL,
+    demo_name: str = DEFAULT_DEMO_NAME,
+    env: Mapping[str, str] | None = None,
+    env_files: Iterable[Path] = (),
+    which: Callable[[str], str | None] = shutil.which,
+) -> dict[str, Any]:
+    """Prepare the VoiceOps spend/provisioning packet without executing actions.
+
+    This is the reusable oracle-side preparation surface for the Milestone 0
+    utterance. It performs local static validation only: no spend, provisioning,
+    network calls, secret value emission, outbound messages, or phone calls.
+    """
+    if budget_cents < 0:
+        raise ValueError("budget_cents must be non-negative")
+    if approval_required_over_cents < 0:
+        raise ValueError("approval_required_over_cents must be non-negative")
+    args = argparse.Namespace(
+        demo_name=demo_name,
+        request=request,
+        budget_cents=budget_cents,
+        approval_required_over_cents=approval_required_over_cents,
+        active_model=active_model,
+        reflex_model=reflex_model,
+    )
+    demo = build_demo(args)
+    readiness = build_readiness_report(demo, env={} if env is None else env, env_files=env_files, which=which)
+    return prepare_voiceops_action_packet_from_demo(demo, readiness)
+
+
+def prepare_voiceops_action_packet_from_demo(demo: dict[str, Any], readiness: dict[str, Any]) -> dict[str, Any]:
+    packet = _nemoclaw_action_packet(demo)
+    validation = _validate_nemoclaw_action_packet(packet)
+    milestone2_plan = build_milestone2_execution_plan(_demo_milestone2_report(demo, readiness))
+    phone_context = _phone_context_packet(demo)
+    approval_action_ids = [action["action_id"] for action in packet["approval_required_actions"]]
+    return {
+        "schema_version": "voiceops.action_packet_preparation.v1",
+        "artifact_id": "voiceops-action-packet-preparation",
+        "source": "hermes_oracle_non_mutating_preparation",
+        "source_channel": "discord_voice",
+        "request": demo["demo"]["request"],
+        "spend_policy": demo["spend_policy"],
+        "ops_actions": demo["ops_actions"],
+        "audit_events": demo["audit_events"],
+        "nemoclaw_action_packet": packet,
+        "nemoclaw_action_packet_validation": validation,
+        "milestone2_execution_plan": milestone2_plan,
+        "phone_context": phone_context,
+        "approval_required_action_ids": approval_action_ids,
+        "safety": {
+            "executes_commands": False,
+            "network_io": False,
+            "live_spend": False,
+            "provider_provisioning": False,
+            "credential_retrieval": False,
+            "outbound_phone_calls": False,
+            "secret_values_emitted": False,
+            "requires_operator_approval": True,
+        },
+    }
+
+
 def _spark_evidence_boundary_from_path(active_path: Mapping[str, Any]) -> str:
     if active_path.get("spark_local") is True:
         return "Spark target selected, live evidence pending"
@@ -2887,14 +2958,14 @@ def write_demo(
     operator_state = _operator_state_packet(demo, readiness)
     readiness_closure = _demo_closure_summary()
     operator_handoff = _operator_handoff_preview(demo, readiness)
+    action_preparation = prepare_voiceops_action_packet_from_demo(demo, readiness)
     _write_json(paths["json"], _demo_package(demo, readiness=readiness, operator_state=operator_state, paths=paths))
     paths["markdown"].write_text(_markdown(demo), encoding="utf-8")
     _write_jsonl(paths["audit_ledger"], demo["audit_events"])
     paths["demo_script"].write_text(_demo_script(demo), encoding="utf-8")
-    nemoclaw_packet = _nemoclaw_action_packet(demo)
-    _write_json(paths["nemoclaw_packet"], nemoclaw_packet)
-    _write_json(paths["nemoclaw_packet_validation"], _validate_nemoclaw_action_packet(nemoclaw_packet))
-    _write_json(paths["phone_context"], _phone_context_packet(demo))
+    _write_json(paths["nemoclaw_packet"], action_preparation["nemoclaw_action_packet"])
+    _write_json(paths["nemoclaw_packet_validation"], action_preparation["nemoclaw_action_packet_validation"])
+    _write_json(paths["phone_context"], action_preparation["phone_context"])
     _write_json(paths["readiness_json"], readiness)
     paths["readiness_markdown"].write_text(_readiness_markdown(readiness), encoding="utf-8")
     _write_json(paths["readiness_closure_summary_json"], readiness_closure)
@@ -2907,7 +2978,7 @@ def write_demo(
         _operator_handoff_preview_markdown(operator_handoff),
         encoding="utf-8",
     )
-    _write_json(paths["milestone2_execution_plan"], build_milestone2_execution_plan(_demo_milestone2_report(demo, readiness)))
+    _write_json(paths["milestone2_execution_plan"], action_preparation["milestone2_execution_plan"])
     _write_json(paths["operator_state"], operator_state)
     _write_jsonl(paths["operator_state_events"], operator_state["recent_audit_events"])
     paths["dashboard"].write_text(_dashboard_html(demo, readiness), encoding="utf-8")
@@ -2921,17 +2992,17 @@ def write_demo(
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/hackathon-voiceops-demo/current"))
-    parser.add_argument("--demo-name", default="Hermes VoiceOps on DGX Spark")
+    parser.add_argument("--demo-name", default=DEFAULT_DEMO_NAME)
     parser.add_argument("--request", default=DEFAULT_REQUEST)
     parser.add_argument("--budget-cents", type=int, default=20_000)
     parser.add_argument("--approval-required-over-cents", type=int, default=1_000)
     parser.add_argument(
         "--active-model",
         dest="active_model",
-        default="Nemotron 3 Super local on DGX Spark via Hermes /model",
+        default=DEFAULT_ACTIVE_MODEL,
         help="Hermes active model selected through /model.",
     )
-    parser.add_argument("--reflex-model", default="Gemma 4 E2B audio-native reflex on Spark")
+    parser.add_argument("--reflex-model", default=DEFAULT_REFLEX_MODEL)
     parser.add_argument(
         "--hermes-home",
         type=Path,
