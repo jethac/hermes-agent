@@ -555,6 +555,16 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_spoken_tasks_create_async_oracle_jobs"
         in job_creation["test_refs"]
     )
+    cancellation = report["async_oracle_acceptance"]["cancellation_controls_are_isolated"]
+    assert cancellation["ok"] is True
+    assert (
+        "tests/agent/test_realtime_voice.py::test_session_cancelled_oracle_job_removes_prior_completed_record"
+        in cancellation["test_refs"]
+    )
+    assert (
+        "tests/agent/test_realtime_voice.py::test_session_ignores_completed_record_after_oracle_job_cancelled"
+        in cancellation["test_refs"]
+    )
     assert report["async_oracle_acceptance"]["shutdown_timeout_is_bounded"]["ok"] is True
     assert report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_secret_leaked"] is False
@@ -579,6 +589,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_running_async_oracle_job" in (
         report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]["test_refs"]
     )
+    assert (
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_add_update_redacts_secret_like_text_from_status_and_events"
+        in report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]["test_refs"]
+    )
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
     assert result_handling["ok"] is True
     assert result_handling["evidence"] == "async_oracle_smoke_plus_result_tests"
@@ -593,6 +607,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     )
     assert (
         "tests/agent/test_realtime_voice_reference_sidecar_gemini.py::test_reference_sidecar_forwards_speakable_oracle_result_to_gemini_live"
+        in result_handling["test_refs"]
+    )
+    assert (
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_audit_ledger_path_records_redacted_lifecycle_events"
         in result_handling["test_refs"]
     )
     discord_cleanup = report["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"]
@@ -879,6 +897,17 @@ def test_voice_operator_validation_rejects_stale_async_acceptance_test_ref():
         "status_reports_running_and_queued_without_oracle_call:"
         "tests/gateway/test_voice_command.py::test_voice_jobs_reports_oracle_job_snapshot"
     ) in issues
+
+
+def test_voice_operator_validation_rejects_missing_current_async_acceptance_test_ref():
+    report = _voice_operator_report()
+    row = report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]
+    row["test_refs"] = row["test_refs"][:-1]
+    row["test_ref_count"] = len(row["test_refs"])
+
+    issues = validate_voice_operator_report(report)
+
+    assert "stale_async_oracle_acceptance:job_control_updates_reach_oracle:test_refs" in issues
 
 
 def test_voice_operator_validation_rejects_static_acceptance_runtime_claim():

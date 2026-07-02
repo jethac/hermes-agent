@@ -310,6 +310,63 @@ async def test_add_update_records_compact_status_without_running_job():
 
 
 @pytest.mark.asyncio
+async def test_add_update_redacts_secret_like_text_from_status_and_events():
+    events = []
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+
+    running = await manager.submit(_request("running"))
+    queued = await manager.submit(_request("queued"))
+    await asyncio.sleep(0)
+
+    updated = await manager.add_update(
+        queued.job_id,
+        text=(
+            "use Authorization: Bearer raw-token and "
+            "sk_test_abcdefghijklmnopqrstuvwxyz before answering"
+        ),
+        source="discord_voice",
+        update_type="clarification",
+    )
+    status = await manager.status_view()
+    progress = next(
+        event
+        for event in events
+        if event["type"] == "oracle.job.progress"
+        and event["job_id"] == queued.job_id
+        and event["payload"].get("operation") == "update"
+    )
+    combined = json.dumps(
+        {
+            "stored": updated.updates,
+            "status": status,
+            "event": progress,
+        },
+        sort_keys=True,
+    )
+
+    queued_status = next(job for job in status["jobs"] if job["job_id"] == queued.job_id)
+    assert "Bearer ***" in queued_status["latest_update"]
+    assert "sk_tes" in queued_status["latest_update"]
+    assert progress["payload"]["latest_update"] == queued_status["latest_update"]
+    assert "raw-token" not in combined
+    assert "sk_test_abcdefghijklmnopqrstuvwxyz" not in combined
+
+    await manager.cancel(running.job_id)
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
 async def test_max_concurrent_four_starts_four_and_queues_fifth():
     started = []
     release = asyncio.Event()
@@ -877,7 +934,10 @@ async def test_audit_ledger_path_records_redacted_lifecycle_events(tmp_path):
     await asyncio.sleep(0)
     await manager.add_update(
         job.job_id,
-        text="include redacted receipt reference",
+        text=(
+            "include redacted receipt reference with Authorization: Bearer raw-token "
+            "and sk_test_abcdefghijklmnopqrstuvwxyz"
+        ),
         source="discord_voice",
         update_type="clarification",
     )
@@ -913,7 +973,9 @@ async def test_audit_ledger_path_records_redacted_lifecycle_events(tmp_path):
     waiting = next(row for row in rows if row["event_type"] == "oracle.job.waiting_for_approval")
     progress = next(row for row in rows if row["event_type"] == "oracle.job.progress")
     assert progress["payload"]["operation"] == "update"
-    assert progress["payload"]["latest_update"] == "include redacted receipt reference"
+    assert "include redacted receipt reference" in progress["payload"]["latest_update"]
+    assert "Bearer ***" in progress["payload"]["latest_update"]
+    assert "sk_tes" in progress["payload"]["latest_update"]
     assert waiting["payload"]["approval"] == {
         "approval_id": "approval-123",
         "tool_name": "stripe_link_purchase",
@@ -926,3 +988,5 @@ async def test_audit_ledger_path_records_redacted_lifecycle_events(tmp_path):
     assert "oracle_text" not in rows[0]["payload"]
     assert "do not expose" not in str(rows)
     assert "Long private result" not in str(rows)
+    assert "raw-token" not in str(rows)
+    assert "sk_test_abcdefghijklmnopqrstuvwxyz" not in str(rows)

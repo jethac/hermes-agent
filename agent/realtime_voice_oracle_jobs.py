@@ -13,6 +13,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Deque, Mapping, Optional
 
+from agent.redact import redact_sensitive_text
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_kame import KameOracleRequest
 from agent.think_scrubber import StreamingThinkScrubber, strip_leading_reasoning_trace
@@ -690,7 +691,7 @@ def _priority_rank(priority: object) -> int:
 
 
 def _compact_update_text(value: object) -> str:
-    return " ".join(str(value or "").split())[:500]
+    return " ".join(redact_sensitive_text(str(value or ""), force=True).split())[:500]
 
 
 def _compact_approval_payload(value: Mapping[str, Any]) -> dict[str, Any]:

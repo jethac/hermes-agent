@@ -319,6 +319,19 @@ class RealtimeVoiceSession:
                 return
             if _oracle_record_is_ephemeral(event):
                 return
+            job_id = _oracle_job_record_id(event)
+            if event.type == VoiceEventType.ORACLE_JOB_CANCELLED and job_id:
+                self.transcript.committed_oracle_records = [
+                    record
+                    for record in self.transcript.committed_oracle_records
+                    if not _durable_record_is_oracle_job_completed(record, job_id)
+                ]
+            elif event.type == VoiceEventType.ORACLE_JOB_COMPLETED and job_id:
+                if any(
+                    _durable_record_is_oracle_job_cancelled(record, job_id)
+                    for record in self.transcript.committed_oracle_records
+                ):
+                    return
             self.transcript.committed_oracle_records.append(
                 {
                     "type": event.type.value,
@@ -492,6 +505,38 @@ def _durable_oracle_record_generation(event: VoiceEvent) -> Optional[int]:
     if source_generation is not None:
         return source_generation
     return _payload_generation(event.payload)
+
+
+def _oracle_job_record_id(event: VoiceEvent) -> str:
+    if event.type not in {
+        VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
+        VoiceEventType.ORACLE_JOB_COMPLETED,
+        VoiceEventType.ORACLE_JOB_FAILED,
+        VoiceEventType.ORACLE_JOB_CANCELLED,
+    }:
+        return ""
+    return str(event.payload.get("job_id") or "").strip()
+
+
+def _durable_record_job_id(record: Mapping[str, Any]) -> str:
+    payload = record.get("payload")
+    if not isinstance(payload, Mapping):
+        return ""
+    return str(payload.get("job_id") or "").strip()
+
+
+def _durable_record_is_oracle_job_completed(record: Mapping[str, Any], job_id: str) -> bool:
+    return (
+        record.get("type") == VoiceEventType.ORACLE_JOB_COMPLETED.value
+        and _durable_record_job_id(record) == job_id
+    )
+
+
+def _durable_record_is_oracle_job_cancelled(record: Mapping[str, Any], job_id: str) -> bool:
+    return (
+        record.get("type") == VoiceEventType.ORACLE_JOB_CANCELLED.value
+        and _durable_record_job_id(record) == job_id
+    )
 
 
 def _durable_oracle_record_survives_stale_generation(event: VoiceEvent) -> bool:

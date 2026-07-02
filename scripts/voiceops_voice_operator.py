@@ -106,6 +106,8 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_barge_in_during_async_ack_does_not_interrupt_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_stop_talking_does_not_cancel_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_barge_in_during_async_result_speech_does_not_interrupt_completed_job",
+        "tests/agent/test_realtime_voice.py::test_session_cancelled_oracle_job_removes_prior_completed_record",
+        "tests/agent/test_realtime_voice.py::test_session_ignores_completed_record_after_oracle_job_cancelled",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_cancelled_oracle_late_output_is_not_mixed",
     ],
     "approval_wait": [
@@ -121,6 +123,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_can_reprioritize_queued_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_queued_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_running_async_oracle_job",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_add_update_redacts_secret_like_text_from_status_and_events",
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_priority_control_reprioritizes_queued_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_update_attaches_to_latest_async_oracle_job",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_event_tracks_oracle_job_status",
@@ -132,6 +135,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_async_terminal_result_speech_is_capped_without_losing_full_result",
         "tests/agent/test_realtime_voice.py::test_kame_engine_speak_terminal_results_false_suppresses_result_speech_but_keeps_status",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_completed_event_preserves_full_result_without_bloating_status",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_audit_ledger_path_records_redacted_lifecycle_events",
         "tests/agent/test_realtime_voice.py::test_session_persists_durable_async_oracle_job_records",
         "tests/agent/test_realtime_voice_reference_sidecar_openai.py::test_reference_sidecar_forwards_speakable_oracle_result_to_openai_realtime",
         "tests/agent/test_realtime_voice_reference_sidecar_gemini.py::test_reference_sidecar_forwards_speakable_oracle_result_to_gemini_live",
@@ -2216,6 +2220,15 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
                 continue
             if value.get("ok") is not recomputed_value.get("ok"):
                 issues.append(f"stale_async_oracle_acceptance:{key}")
+            for field in (
+                "evidence",
+                "test_refs",
+                "verification_mode",
+                "runtime_verified_by_this_report",
+                "live_external_evidence_required",
+            ):
+                if value.get(field) != recomputed_value.get(field):
+                    issues.append(f"stale_async_oracle_acceptance:{key}:{field}")
             test_refs = value.get("test_refs")
             if not isinstance(test_refs, list) or not test_refs:
                 issues.append(f"missing_async_oracle_acceptance_test_refs:{key}")
