@@ -447,24 +447,40 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert live_closure["evidence_contract"]["placeholder_collector_attestation_accepted"] is False
     assert "kind/evidence_type" in live_closure["evidence_contract"]["manifest_report_identity"]
     assert "standalone non-expanded evidence files" in live_closure["evidence_contract"]["standalone_report_identity"]
-    assert live_closure["evidence_shapes"]["discord_live_probe"]["kind"] == "discord_live_probe"
-    assert live_closure["evidence_shapes"]["discord_live_probe"]["collector_attestation"]["example_only"] is True
-    assert live_closure["evidence_shapes"]["discord_live_probe"]["require_inbound"] is True
-    assert live_closure["evidence_shapes"]["sidecar_session"]["kind"] == "sidecar_session"
-    assert live_closure["evidence_shapes"]["sidecar_session"]["source_artifact"] == "sidecar-session.json"
-    assert live_closure["evidence_shapes"]["sidecar_session"]["collector_attestation"]["example_only"] is True
-    assert live_closure["evidence_shapes"]["sidecar_session"]["shutdown_bounded"] is True
-    assert live_closure["evidence_shapes"]["sidecar_session"]["shutdown_timed_out"] is False
-    assert live_closure["evidence_shapes"]["sidecar_session"]["sidecar_mode"] == "production"
-    assert live_closure["evidence_shapes"]["sidecar_session"]["fallback_reason"] == "none"
-    assert live_closure["evidence_shapes"]["sidecar_session"]["healthcheck_observed"] is True
-    assert live_closure["evidence_shapes"]["sidecar_session"]["provider_transport_observed"] is True
-    assert live_closure["evidence_shapes"]["sidecar_session"]["session_id_redacted"] is True
-    assert live_closure["evidence_shapes"]["sidecar_session"]["latency_metrics_ms"]["session_start_ms"] == 110
-    assert live_closure["evidence_shapes"]["sidecar_session"]["latency_metrics_ms"]["shutdown_ms"] == 80
-    assert live_closure["evidence_shapes"]["live_turn"]["kind"] == "live_turn"
-    assert live_closure["evidence_shapes"]["live_turn"]["source_artifact"] == "live-turn.json"
-    assert live_closure["evidence_shapes"]["live_turn"]["collector_attestation"]["example_only"] is True
+    assert "evidence_shapes" not in live_closure
+    example_shapes = live_closure["non_accepted_example_shapes"]
+    assert example_shapes["discord_live_probe"]["kind"] == "discord_live_probe"
+    assert example_shapes["discord_live_probe"]["example_only"] is True
+    assert example_shapes["discord_live_probe"]["source_artifact"] == "sections/discord-live-probe-source.json"
+    assert example_shapes["discord_live_probe"]["collector_attestation"]["example_only"] is True
+    assert example_shapes["discord_live_probe"]["require_inbound"] is True
+    assert example_shapes["sidecar_session"]["kind"] == "sidecar_session"
+    assert example_shapes["sidecar_session"]["example_only"] is True
+    assert example_shapes["sidecar_session"]["source_artifact"] == "sections/sidecar-session-source.json"
+    assert example_shapes["sidecar_session"]["collector_attestation"]["example_only"] is True
+    assert example_shapes["sidecar_session"]["shutdown_bounded"] is True
+    assert example_shapes["sidecar_session"]["shutdown_timed_out"] is False
+    assert example_shapes["sidecar_session"]["sidecar_mode"] == "production"
+    assert example_shapes["sidecar_session"]["fallback_reason"] == "none"
+    assert example_shapes["sidecar_session"]["healthcheck_observed"] is True
+    assert example_shapes["sidecar_session"]["provider_transport_observed"] is True
+    assert example_shapes["sidecar_session"]["session_id_redacted"] is True
+    assert example_shapes["sidecar_session"]["latency_metrics_ms"]["session_start_ms"] == 110
+    assert example_shapes["sidecar_session"]["latency_metrics_ms"]["shutdown_ms"] == 80
+    assert example_shapes["live_turn"]["kind"] == "live_turn"
+    assert example_shapes["live_turn"]["example_only"] is True
+    assert example_shapes["live_turn"]["source_artifact"] == "sections/live-turn-source.json"
+    assert example_shapes["live_turn"]["collector_attestation"]["example_only"] is True
+    example_shape_validation = validate_live_probe_evidence(
+        {
+            "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
+            **example_shapes,
+        }
+    )
+    assert example_shape_validation["overall_status"] == "partial_live_evidence"
+    assert "discord_live_probe:example_only_evidence_not_accepted" in example_shape_validation["issues"]
+    assert "sidecar_session:example_only_evidence_not_accepted" in example_shape_validation["issues"]
+    assert "live_turn:example_only_evidence_not_accepted" in example_shape_validation["issues"]
     assert "hermes_cli.realtime_voice_live_evidence" in live_closure["recommended_collection"]["live_bundle_manifest"]
     assert "--run-doctor-report" in live_closure["recommended_collection"]["live_bundle_manifest"]
     assert "--require-inbound" in live_closure["recommended_collection"]["live_bundle_manifest"]
@@ -479,6 +495,8 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert "Live Probe Boundary" in markdown
     assert "Supplied Live Evidence" in markdown
     assert "VoiceOps Milestone 1 Live Probe Closure" in closure_markdown
+    assert "Non-Accepted Example Shapes" in closure_markdown
+    assert "They are rejected by validation" in closure_markdown
     assert "live-voice-evidence-scaffold/manifest.json" in closure_markdown
     assert "voiceops.realtime_voice_live_evidence_manifest.v1" in closure_markdown
     assert "source_artifact" in closure_markdown

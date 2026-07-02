@@ -1672,10 +1672,11 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "live_turn": "Write live-turn.json with kind=live_turn, transcript_observed, assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, speech_end_to_first_audio_ms, barge_in_stop_ms, source_artifact, and collector_attestation.",
             "ingest": report["live_probe_required_for_completion"]["ingest_command"],
         },
-        "evidence_shapes": {
+        "non_accepted_example_shapes": {
             "discord_live_probe": {
                 "kind": "discord_live_probe",
-                "source_artifact": "absolute/or/resolved-discord-live-probe.json",
+                "example_only": True,
+                "source_artifact": "sections/discord-live-probe-source.json",
                 "collector_attestation": _example_collector_attestation("discord_live_probe"),
                 "ok": True,
                 "connect_perm": True,
@@ -1700,7 +1701,8 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             },
             "sidecar_session": {
                 "kind": "sidecar_session",
-                "source_artifact": "sidecar-session.json",
+                "example_only": True,
+                "source_artifact": "sections/sidecar-session-source.json",
                 "collector_attestation": _example_collector_attestation("sidecar_session"),
                 "sidecar_running": True,
                 "sidecar_healthy": True,
@@ -1718,7 +1720,8 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             },
             "live_turn": {
                 "kind": "live_turn",
-                "source_artifact": "live-turn.json",
+                "example_only": True,
+                "source_artifact": "sections/live-turn-source.json",
                 "collector_attestation": _example_collector_attestation("live_turn"),
                 "transcript_observed": True,
                 "assistant_audio_observed": True,
@@ -1763,8 +1766,17 @@ def _live_probe_closure_markdown(plan: dict[str, Any]) -> str:
     )
     for label, command in plan["recommended_collection"].items():
         lines.append(f"- {label}: {command}")
-    lines.extend(["", "## Evidence Shapes", ""])
-    for label, shape in plan["evidence_shapes"].items():
+    lines.extend(
+        [
+            "",
+            "## Non-Accepted Example Shapes",
+            "",
+            "These examples intentionally contain `example_only: true` and placeholder collector attestations. "
+            "They are rejected by validation until replaced with real redacted source artifacts and attestations.",
+            "",
+        ]
+    )
+    for label, shape in plan["non_accepted_example_shapes"].items():
         lines.append(f"### {label}")
         lines.append("")
         lines.append("```json")
