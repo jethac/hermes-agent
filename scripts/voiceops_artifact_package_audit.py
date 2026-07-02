@@ -23,6 +23,7 @@ from typing import Any, Mapping
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.voiceops_channel_policy import CHANNEL_IDS, validate_policy
+from scripts.voiceops_operator_state import validate_operator_state
 from scripts.voiceops_provisioning_probe import load_preflight_evidence, validate_post_approval_receipts
 from scripts.voiceops_voice_operator import _load_live_evidence, validate_live_probe_evidence, validate_voice_operator_report
 
@@ -742,6 +743,8 @@ def _audit_action_consistency(
 
 
 def _audit_service_claims(operator_state: Mapping[str, Any], issues: list[str]) -> None:
+    for issue in validate_operator_state(dict(operator_state)):
+        issues.append(f"operator_state:validation:{issue}")
     for service in operator_state.get("planned_services", []):
         if not isinstance(service, Mapping):
             continue
@@ -1389,16 +1392,25 @@ def _resolve_package_artifact_path(artifact_root: Path, path_text: str) -> Path:
 def _audit_post_approval_receipt_scaffold(
     scaffold: Mapping[str, Any],
     execution_plan: Mapping[str, Any],
+    scaffold_path: Path,
     issues: list[str],
 ) -> None:
     if scaffold.get("example_only") is not True:
         issues.append("post_approval_receipts_scaffold:must_remain_example_only")
-    recomputed_scaffold = validate_post_approval_receipts(scaffold, execution_plan)
+    recomputed_scaffold = validate_post_approval_receipts(scaffold, execution_plan, receipt_path=scaffold_path)
     scaffold_issues = recomputed_scaffold.get("validation_issues")
     if recomputed_scaffold.get("status") != "invalid":
         issues.append("post_approval_receipts_scaffold:unexpectedly_valid")
     if not any("example_only" in str(issue) for issue in scaffold_issues or []):
         issues.append("post_approval_receipts_scaffold:missing_example_only_validation_issue")
+    for issue in scaffold_issues or []:
+        issue_text = str(issue)
+        if (
+            ":approval_decision_ref:" in issue_text
+            and not issue_text.endswith(":file_not_found")
+            and ":file_not_found_at:" not in issue_text
+        ):
+            issues.append(f"post_approval_receipts_scaffold:{issue_text}")
 
 
 def _audit_post_approval_receipt_validation(
@@ -1409,7 +1421,14 @@ def _audit_post_approval_receipt_validation(
     stored_validation: Mapping[str, Any],
     issues: list[str],
 ) -> None:
-    _audit_post_approval_receipt_scaffold(scaffold, execution_plan, issues)
+    scaffold_path = (
+        artifact_root
+        / "voiceops-provisioning"
+        / "current"
+        / "post-approval-receipts-scaffold"
+        / "post-approval-receipts.json"
+    )
+    _audit_post_approval_receipt_scaffold(scaffold, execution_plan, scaffold_path, issues)
     if stored_validation.get("loaded") is True:
         receipt_path_text = str(stored_validation.get("path") or "").strip()
         if not receipt_path_text:

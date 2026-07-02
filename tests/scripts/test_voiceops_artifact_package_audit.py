@@ -446,6 +446,22 @@ def test_package_audit_rejects_external_service_execution_claim(tmp_path):
     assert "planned_services:provision-voip-provider:external_status_invalid" in report["issues"]
 
 
+def test_package_audit_rejects_operator_state_approval_ref_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    state_path = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["planned_services"][0]["approval_ref"] = None
+    _write_json(state_path, state)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "operator_state:validation:external_service_missing_approval_ref:provision-voip-provider"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_closure_gate_mismatch(tmp_path):
     artifact_root = _generate_package(tmp_path)
     closure_path = artifact_root / "voiceops-plan" / "current" / "readiness-closure-index.json"
@@ -590,6 +606,33 @@ def test_package_audit_rejects_forged_post_approval_receipt_validation(tmp_path)
     assert "post_approval_receipts_validation:status_not_not_supplied_without_loaded_receipts" in report["issues"]
     assert "post_approval_receipts_validation:receipt_count_nonzero_without_loaded_receipts" in report["issues"]
     assert "post_approval_receipts_validation:ledger_rows_present_without_loaded_receipts" in report["issues"]
+
+
+def test_package_audit_rejects_scaffold_approval_decision_ref_path_escape(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    scaffold_path = (
+        artifact_root
+        / "voiceops-provisioning"
+        / "current"
+        / "post-approval-receipts-scaffold"
+        / "post-approval-receipts.json"
+    )
+    scaffold = json.loads(scaffold_path.read_text(encoding="utf-8"))
+    scaffold["receipts"][0]["approval_decision_ref"] = "/tmp/approval-decision.json"
+    scaffold["receipts"][1]["approval_decision_ref"] = "../approval-decision.json"
+    _write_json(scaffold_path, scaffold)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "post_approval_receipts_scaffold:post_approval_receipts:receipt-example-provision-voip-provider:approval_decision_ref:absolute_path_not_allowed"
+        in report["issues"]
+    )
+    assert (
+        "post_approval_receipts_scaffold:post_approval_receipts:receipt-example-buy-service-credit:approval_decision_ref:parent_traversal_not_allowed"
+        in report["issues"]
+    )
 
 
 def test_package_audit_resolves_loaded_post_approval_receipt_path_and_recomputes(tmp_path):
