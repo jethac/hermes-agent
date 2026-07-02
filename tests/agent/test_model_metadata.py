@@ -470,9 +470,43 @@ class TestCodexOAuthContextLength:
         assert stale_key not in remaining, "Stale entry was not invalidated from the cache file"
         assert remaining.get(other_key) == 128_000, "Unrelated cache entries must not be touched"
 
+    def test_stale_codex_cache_at_64k_is_invalidated(self, tmp_path, monkeypatch):
+        """A stale low cache entry must not make gpt-5.5 look like a 64K
+        model. Known Codex slugs should use Codex's enforced window even if a
+        previous local/custom run cached the Hermes minimum-context value.
+        """
+        from agent import model_metadata as mm
+
+        cache_file = tmp_path / "context_length_cache.yaml"
+        monkeypatch.setattr(mm, "_get_context_cache_path", lambda: cache_file)
+
+        base_url = "https://chatgpt.com/backend-api/codex"
+        stale_key = f"gpt-5.5@{base_url}"
+        other_key = "other-model@https://api.openai.com/v1"
+        import yaml as _yaml
+        cache_file.write_text(_yaml.dump({"context_lengths": {
+            stale_key: 65_536,
+            other_key: 128_000,
+        }}))
+
+        with patch("agent.model_metadata.requests.get") as mock_get:
+            ctx = mm.get_model_context_length(
+                model="gpt-5.5",
+                base_url=base_url,
+                api_key="",
+                provider="openai-codex",
+            )
+
+        assert ctx == 272_000
+        mock_get.assert_not_called()
+        remaining = _yaml.safe_load(cache_file.read_text()).get("context_lengths", {})
+        assert remaining.get(stale_key) == 272_000
+        assert remaining.get(other_key) == 128_000, "Unrelated cache entries must not be touched"
+
     def test_fresh_codex_cache_under_400k_is_respected(self, tmp_path, monkeypatch):
         """Codex entries at the correct 272k must NOT be invalidated —
-        only stale pre-fix values (>= 400k) get dropped."""
+        only stale values that differ from the Codex-enforced window get
+        dropped."""
         from agent import model_metadata as mm
 
         cache_file = tmp_path / "context_length_cache.yaml"

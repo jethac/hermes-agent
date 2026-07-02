@@ -1869,17 +1869,23 @@ def get_model_context_length(
     if base_url and provider != "lmstudio":
         cached = get_cached_context_length(model, base_url)
         if cached is not None:
-            # Invalidate stale Codex OAuth cache entries: pre-PR #14935 builds
-            # resolved gpt-5.x to the direct-API value (e.g. 1.05M) via
-            # models.dev and persisted it. Codex OAuth caps at 272K for every
-            # slug, so any cached Codex entry at or above 400K is a leftover
-            # from the old resolution path. Drop it and fall through to the
-            # live /models probe in step 5 below.
-            if provider == "openai-codex" and cached >= 400_000:
+            # Invalidate stale Codex OAuth cache entries. Pre-Codex-aware
+            # builds could cache direct-API values (e.g. 1.05M), while local
+            # custom-endpoint experiments could also leave undersized 64K
+            # entries. For known Codex slugs, reject any cached value that
+            # differs from the Codex-enforced fallback and fall through to the
+            # live/fallback resolver below. If the cache already matches the
+            # known Codex value, keep the fast no-network path.
+            codex_fallback_ctx = (
+                _resolve_codex_oauth_context_length(model, access_token="")
+                if provider == "openai-codex"
+                else None
+            )
+            if codex_fallback_ctx and cached != codex_fallback_ctx:
                 logger.info(
-                    "Dropping stale Codex cache entry %s@%s -> %s (pre-fix value); "
-                    "re-resolving via live /models probe",
-                    model, base_url, f"{cached:,}",
+                    "Dropping stale Codex cache entry %s@%s -> %s "
+                    "(expected %s); re-resolving via Codex context resolver",
+                    model, base_url, f"{cached:,}", f"{codex_fallback_ctx:,}",
                 )
                 _invalidate_cached_context_length(model, base_url)
             # Invalidate stale 32k cache entries for Kimi-family models.
