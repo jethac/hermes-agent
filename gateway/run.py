@@ -10090,6 +10090,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     base_url=self._base_url or _msg_runtime.get("base_url") or "",
                     api_key=_msg_runtime.get("api_key") or "",
                     config_context_length=_msg_config_ctx,
+                    provider=_msg_runtime.get("provider") or "",
                 )
                 _ctx_result = await preprocess_context_references_async(
                     message_text,
@@ -11685,7 +11686,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
 
         # Format context source hint
-        if config_context_length is not None:
+        if config_context_length is not None and context_length == config_context_length:
             ctx_source = "config"
         elif context_length == DEFAULT_FALLBACK_CONTEXT:
             ctx_source = "default — set model.context_length in config to override"

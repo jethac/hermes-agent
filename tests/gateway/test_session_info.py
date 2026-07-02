@@ -51,6 +51,29 @@ class TestFormatSessionInfo:
         assert "32K" in info
         assert "config" in info
 
+    def test_codex_stale_config_context_is_not_displayed_as_config(self, runner, tmp_path):
+        p1, p2, p3 = _patch_info(
+            tmp_path,
+            (
+                "model:\n"
+                "  default: gpt-5.5\n"
+                "  provider: openai-codex\n"
+                "  base_url: https://chatgpt.com/backend-api/codex\n"
+                "  context_length: 65536\n"
+            ),
+            "gpt-5.5",
+            {
+                "provider": "openai-codex",
+                "base_url": "https://chatgpt.com/backend-api/codex",
+                "api_key": "",
+            },
+        )
+        with p1, p2, p3:
+            info = runner._format_session_info()
+        assert "272K" in info
+        assert "detected" in info
+        assert "65K" not in info
+
     def test_default_fallback_hint(self, runner, tmp_path):
         p1, p2, p3 = _patch_info(tmp_path, "model:\n  default: unknown-model-xyz\n",
                                   "unknown-model-xyz",

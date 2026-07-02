@@ -294,6 +294,60 @@ async def test_status_command_resolves_persisted_codex_context_without_config_ov
 
 
 @pytest.mark.asyncio
+async def test_status_command_resolves_stale_codex_config_context(monkeypatch):
+    session_entry = SessionEntry(
+        session_key=build_session_key(_make_source()),
+        session_id="sess-1",
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+        platform=Platform.TELEGRAM,
+        chat_type="dm",
+        total_tokens=0,
+        last_prompt_tokens=65_521,
+    )
+    runner = _make_runner(session_entry)
+    runner._session_db._db.get_session.return_value = {
+        "input_tokens": 60_000,
+        "output_tokens": 1_000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0,
+        "model": "gpt-5.5",
+        "billing_provider": "openai-codex",
+        "billing_base_url": "https://chatgpt.com/backend-api/codex",
+    }
+    monkeypatch.setattr(
+        "gateway.run._load_gateway_config",
+        lambda: {
+            "model": {
+                "default": "gpt-5.5",
+                "provider": "openai-codex",
+                "base_url": "https://chatgpt.com/backend-api/codex",
+                "context_length": 65_536,
+            }
+        },
+    )
+    calls = []
+
+    def _resolve_display_context_length(*args, **kwargs):
+        calls.append((args, kwargs))
+        assert kwargs["config_context_length"] == 65_536
+        return 272_000
+
+    monkeypatch.setattr(
+        "hermes_cli.model_switch.resolve_display_context_length",
+        _resolve_display_context_length,
+    )
+
+    result = await runner._handle_message(_make_event("/status"))
+
+    assert calls
+    assert "**Model:** `gpt-5.5` (openai-codex)" in result
+    assert "**Context:** 65,521 / 272,000 (24%)" in result
+    assert "65,536" not in result
+
+
+@pytest.mark.asyncio
 async def test_status_command_includes_cached_agent_model_and_context():
     session_entry = SessionEntry(
         session_key=build_session_key(_make_source()),

@@ -700,16 +700,16 @@ class GatewaySlashCommandsMixin:
         if not context_total:
             model_cfg = user_config.get("model", {}) if isinstance(user_config, dict) else {}
             configured_context = model_cfg.get("context_length") if isinstance(model_cfg, dict) else None
-            if isinstance(configured_context, int) and configured_context > 0:
-                context_total = configured_context
-            elif model_name:
+            if model_name:
                 try:
                     from hermes_cli.config import get_compatible_custom_providers
                     from hermes_cli.model_switch import resolve_display_context_length
 
                     custom_provs = get_compatible_custom_providers(user_config)
                     config_context = None
-                    if isinstance(configured_context, str) and configured_context.strip():
+                    if isinstance(configured_context, int) and configured_context > 0:
+                        config_context = configured_context
+                    elif isinstance(configured_context, str) and configured_context.strip():
                         config_context = int(configured_context)
                     context_total = resolve_display_context_length(
                         model_name,
