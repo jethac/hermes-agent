@@ -3294,6 +3294,14 @@ def test_kame_engine_spoken_stop_everything_cancels_all_async_oracle_jobs(monkey
             for event in seen
             if event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL and event.payload.get("all") is True
         )
+        playback_stop = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.BARGE_IN and event.payload.get("oracle_job_control") is True
+        )
+        assert playback_stop.payload["reason"] == "spoken request to stop everything"
+        assert playback_stop.payload["frontend_cancel_requested"] is False
+        assert playback_stop.payload["playback_generation"] > playback_stop.payload["cancelled_playback_generation"]
         assert interface_cancel.payload["spoken_control"] is True
         assert interface_cancel.payload["cancelled_jobs"] == [
             "voice-oracle-001",

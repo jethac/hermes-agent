@@ -949,6 +949,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         kind = operation["kind"]
         reason = operation.get("reason") or "spoken oracle job control"
         if kind == "cancel_all":
+            await self._stop_playback_for_spoken_cancel_all(reason=reason)
             cancelled = await manager.cancel_all(reason=reason)
             await self._emit_interface_event(
                 VoiceEventType.INTERFACE_ORACLE_CANCEL,
@@ -1012,6 +1013,28 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         except OracleJobNotFoundError:
             return "I could not find that oracle job."
         return ""
+
+    async def _stop_playback_for_spoken_cancel_all(self, *, reason: str) -> None:
+        cancelled_generation = max(0, self._playback_generation - 1)
+        self._frontend_output_active = False
+        payload = {
+            "reason": reason or "spoken request to stop everything",
+            "playback_generation": self._playback_generation,
+            "cancelled_playback_generation": cancelled_generation,
+            "frontend_cancel_requested": self._sidecar is not None,
+            "backend_interrupt_requested": False,
+            "oracle_job_control": True,
+        }
+        await self._emit(VoiceEventType.BARGE_IN, payload)
+        if self._sidecar is not None and self.config is not None:
+            await self._send_sidecar_event(
+                VoiceEvent(
+                    type=VoiceEventType.BARGE_IN,
+                    session_id=self.config.session_id,
+                    sequence=self._sequence,
+                    payload=payload,
+                )
+            )
 
     async def _submit_async_oracle_job_if_enabled(
         self,
