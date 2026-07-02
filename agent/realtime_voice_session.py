@@ -495,12 +495,30 @@ def _durable_oracle_record_generation(event: VoiceEvent) -> Optional[int]:
 
 
 def _durable_oracle_record_survives_stale_generation(event: VoiceEvent) -> bool:
-    if event.type != VoiceEventType.ORACLE_JOB_CANCELLED:
+    expected_state_by_type = {
+        VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL: "waiting_for_approval",
+        VoiceEventType.ORACLE_JOB_COMPLETED: "completed",
+        VoiceEventType.ORACLE_JOB_FAILED: "failed",
+        VoiceEventType.ORACLE_JOB_CANCELLED: "cancelled",
+    }
+    expected_state = expected_state_by_type.get(event.type)
+    if expected_state is None:
         return False
     job_id = str(event.payload.get("job_id") or "").strip()
     state = str(event.payload.get("state") or "").strip().lower()
+    if not job_id or state != expected_state:
+        return False
+    if event.type == VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL:
+        return bool(event.payload.get("approval") or str(event.payload.get("approval_reason") or "").strip())
+    if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
+        return bool(
+            str(event.payload.get("result_summary") or "").strip()
+            or str(event.payload.get("result_text") or "").strip()
+        )
+    if event.type == VoiceEventType.ORACLE_JOB_FAILED:
+        return bool(str(event.payload.get("error") or "").strip())
     cancel_reason = str(event.payload.get("cancel_reason") or "").strip()
-    return bool(job_id and state == "cancelled" and cancel_reason)
+    return bool(cancel_reason)
 
 
 def _durable_user_text_from_final_user_event(payload: Mapping[str, Any]) -> str:

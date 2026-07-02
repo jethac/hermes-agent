@@ -93,13 +93,41 @@ class SmokeOracle:
 
 
 class SmokeEngine(KameInterfaceOracleEngine):
-    def __init__(self, *, oracle: SmokeOracle) -> None:
-        super().__init__(oracle=oracle)
+    def __init__(self, *, oracle: SmokeOracle, sidecar: Any = None) -> None:
+        super().__init__(oracle=oracle, sidecar=sidecar)
         self.spoken: list[str] = []
 
     async def _speak_chunk(self, text: str, playback_generation: int) -> None:
         self.spoken.append(text)
         await asyncio.sleep(0)
+
+
+class SmokeSidecar:
+    def __init__(self) -> None:
+        self.started = False
+        self.closed = False
+        self.received: list[VoiceEvent] = []
+        self._events: asyncio.Queue[VoiceEvent | None] = asyncio.Queue()
+
+    async def start(self, _config: RealtimeVoiceSessionConfig) -> None:
+        self.started = True
+
+    async def send_event(self, event: VoiceEvent) -> None:
+        self.received.append(event)
+
+    async def events(self):
+        while True:
+            event = await self._events.get()
+            if event is None:
+                return
+            yield event
+
+    async def inject(self, event: VoiceEvent) -> None:
+        await self._events.put(event)
+
+    async def close(self) -> None:
+        self.closed = True
+        await self._events.put(None)
 
 
 class EventRecorder:
@@ -694,6 +722,155 @@ async def _run_terminal_result_policy_smoke() -> dict[str, Any]:
     }
 
 
+async def _run_sidecar_control_smoke() -> dict[str, Any]:
+    oracle = SmokeOracle()
+    sidecar = SmokeSidecar()
+    engine = SmokeEngine(oracle=oracle, sidecar=sidecar)
+    recorder = EventRecorder(engine)
+    await engine.start(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-smoke-sidecar-control",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            oracle_jobs={
+                "enabled": True,
+                "max_concurrent": 1,
+                "queue_limit": 4,
+                "speak_terminal_results": True,
+                "shutdown_timeout_seconds": 0.01,
+            },
+            metadata={"transport": "smoke"},
+        )
+    )
+    collector = asyncio.create_task(recorder.run())
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.AUDIO_INPUT_CHUNK,
+            session_id="voice-smoke-sidecar-control",
+            sequence=1,
+            payload={
+                "transcript": "sidecar controlled task",
+                "intent": "Sidecar controlled task",
+                "intent_source": "smoke_reflex",
+                "route": "defer",
+                "interface_already_said": "Starting sidecar controlled task.",
+                "end_of_utterance": True,
+            },
+        )
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_STARTED
+            and event.payload.get("intent") == "Sidecar controlled task"
+            for event in events
+        )
+    )
+    started = next(
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ORACLE_JOB_STARTED
+        and event.payload.get("intent") == "Sidecar controlled task"
+    )
+    job_id = str(started.payload.get("job_id") or "")
+    await sidecar.inject(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+            session_id="voice-smoke-sidecar-control",
+            sequence=2,
+            payload={
+                "job_id": job_id,
+                "priority": "high",
+                "update_text": "include sidecar update context",
+                "reason": "sidecar smoke update",
+                "transport": "discord_voice",
+                "sidecar_control": True,
+            },
+        )
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+            and event.payload.get("job_id") == job_id
+            and event.payload.get("priority") == "high"
+            and event.payload.get("latest_update") == "include sidecar update context"
+            for event in events
+        )
+    )
+    await sidecar.inject(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_CANCEL,
+            session_id="voice-smoke-sidecar-control",
+            sequence=3,
+            payload={
+                "job_id": job_id,
+                "reason": "sidecar smoke cancel",
+                "transport": "discord_voice",
+                "sidecar_control": True,
+            },
+        )
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_CANCELLED
+            and event.payload.get("job_id") == job_id
+            for event in events
+        )
+    )
+    await engine.close()
+    collector.cancel()
+    try:
+        await collector
+    except asyncio.CancelledError:
+        pass
+
+    update_observed = any(
+        event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+        and event.payload.get("job_id") == job_id
+        and event.payload.get("latest_update") == "include sidecar update context"
+        for event in recorder.events
+    )
+    update_reached_oracle = any(
+        update_text == "include sidecar update context"
+        and str(getattr(request, "intent", "")) == "Sidecar controlled task"
+        and metadata.get("job_id") == job_id
+        for request, update_text, metadata in oracle.updates
+    )
+    cancel_requested = any(
+        event.type == VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED
+        and event.payload.get("job_id") == job_id
+        for event in recorder.events
+    )
+    cancelled = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ORACLE_JOB_CANCELLED
+        and event.payload.get("job_id") == job_id
+    ]
+    completed = any(
+        event.type == VoiceEventType.ORACLE_JOB_COMPLETED
+        and event.payload.get("job_id") == job_id
+        for event in recorder.events
+    )
+    feedback_types = {event.type for event in sidecar.received}
+    return {
+        "ok": update_observed
+        and update_reached_oracle
+        and cancel_requested
+        and bool(cancelled)
+        and not completed
+        and VoiceEventType.INTERFACE_ORACLE_UPDATE in feedback_types
+        and VoiceEventType.INTERFACE_ORACLE_CANCEL in feedback_types,
+        "sidecar_control_job_id": job_id,
+        "sidecar_control_update_observed": update_observed,
+        "sidecar_control_update_reached_oracle": update_reached_oracle,
+        "sidecar_control_cancel_requested": cancel_requested,
+        "sidecar_control_cancelled": bool(cancelled),
+        "sidecar_control_cancel_reason": str(cancelled[-1].payload.get("cancel_reason") or "") if cancelled else "",
+        "sidecar_control_completed_after_cancel": completed,
+        "sidecar_control_feedback_update_sent": VoiceEventType.INTERFACE_ORACLE_UPDATE in feedback_types,
+        "sidecar_control_feedback_cancel_sent": VoiceEventType.INTERFACE_ORACLE_CANCEL in feedback_types,
+    }
+
+
 async def run_smoke() -> dict[str, Any]:
     oracle = SmokeOracle()
     engine = SmokeEngine(oracle=oracle)
@@ -1048,6 +1225,7 @@ async def run_smoke() -> dict[str, Any]:
     approval_capacity_smoke = await _run_approval_capacity_smoke()
     cancel_drain_capacity_smoke = await _run_cancel_drain_capacity_smoke()
     terminal_result_policy_smoke = await _run_terminal_result_policy_smoke()
+    sidecar_control_smoke = await _run_sidecar_control_smoke()
 
     started = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_STARTED]
     queued = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_QUEUED]
@@ -1374,7 +1552,7 @@ async def run_smoke() -> dict[str, Any]:
             and not cancelled_result_durable_completed
             and not cancelled_result_durable_text
             and durable_cancelled_record_present
-            and durable_completed_jobs == 1
+            and durable_completed_jobs == len(completed)
             and bool(approval_waiting)
             and bool(approval_tool_progress)
             and bool(approval_status_commits)
@@ -1407,6 +1585,7 @@ async def run_smoke() -> dict[str, Any]:
             and approval_capacity_smoke["ok"]
             and cancel_drain_capacity_smoke["ok"]
             and terminal_result_policy_smoke["ok"]
+            and sidecar_control_smoke["ok"]
         ),
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": scheduler_max_running,
@@ -1471,6 +1650,24 @@ async def run_smoke() -> dict[str, Any]:
         "terminal_result_unsolicited_spoken": terminal_result_policy_smoke["terminal_result_unsolicited_spoken"],
         "terminal_result_status_available": terminal_result_policy_smoke["terminal_result_status_available"],
         "terminal_result_status_text": terminal_result_policy_smoke["terminal_result_status_text"],
+        "sidecar_control_smoke_ok": sidecar_control_smoke["ok"],
+        "sidecar_control_job_id": sidecar_control_smoke["sidecar_control_job_id"],
+        "sidecar_control_update_observed": sidecar_control_smoke["sidecar_control_update_observed"],
+        "sidecar_control_update_reached_oracle": sidecar_control_smoke[
+            "sidecar_control_update_reached_oracle"
+        ],
+        "sidecar_control_cancel_requested": sidecar_control_smoke["sidecar_control_cancel_requested"],
+        "sidecar_control_cancelled": sidecar_control_smoke["sidecar_control_cancelled"],
+        "sidecar_control_cancel_reason": sidecar_control_smoke["sidecar_control_cancel_reason"],
+        "sidecar_control_completed_after_cancel": sidecar_control_smoke[
+            "sidecar_control_completed_after_cancel"
+        ],
+        "sidecar_control_feedback_update_sent": sidecar_control_smoke[
+            "sidecar_control_feedback_update_sent"
+        ],
+        "sidecar_control_feedback_cancel_sent": sidecar_control_smoke[
+            "sidecar_control_feedback_cancel_sent"
+        ],
         "local_turn_committed": bool(local_commits),
         "playback_stop_committed": bool(stop_talking_commits),
         "playback_stop_jobs_still_running": playback_stop_jobs_still_running,

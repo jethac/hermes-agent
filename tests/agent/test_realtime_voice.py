@@ -13849,7 +13849,7 @@ def test_session_drops_stale_durable_oracle_records_after_barge_in():
     ]
 
 
-def test_session_drops_stale_kame_oracle_job_record_by_source_generation():
+def test_session_keeps_stale_completed_oracle_job_record_by_source_generation():
     class SourceGenerationEngine:
         @property
         def kind(self):
@@ -13889,12 +13889,23 @@ def test_session_drops_stale_kame_oracle_job_record_by_source_generation():
 
         assert [event.type for event in events] == [VoiceEventType.ORACLE_JOB_COMPLETED]
         assert events[0].payload["result_summary"] == "Old job result"
-        assert session.durable_oracle_records() == []
+        assert session.durable_oracle_records() == [
+            {
+                "type": VoiceEventType.ORACLE_JOB_COMPLETED.value,
+                "payload": {
+                    "job_id": "voice-oracle-001",
+                    "state": "completed",
+                    "result_summary": "Old job result",
+                    "source_playback_generation": 1,
+                    "playback_generation": 2,
+                },
+            }
+        ]
 
     asyncio.run(run())
 
 
-def test_session_keeps_stale_generation_oracle_job_cancellation_audit_record():
+def test_session_keeps_stale_generation_oracle_job_terminal_audit_records():
     session = RealtimeVoiceSession(
         RealtimeVoiceSessionConfig(session_id="voice-123"),
         engine=TextOracleTTSEngine(oracle=FakeOracle()),
@@ -13931,6 +13942,16 @@ def test_session_keeps_stale_generation_oracle_job_cancellation_audit_record():
     )
 
     assert session.durable_oracle_records() == [
+        {
+            "type": VoiceEventType.ORACLE_JOB_COMPLETED.value,
+            "payload": {
+                "job_id": "voice-oracle-001",
+                "state": "completed",
+                "result_summary": "stale result",
+                "source_playback_generation": 1,
+                "playback_generation": 3,
+            },
+        },
         {
             "type": VoiceEventType.ORACLE_JOB_CANCELLED.value,
             "payload": {

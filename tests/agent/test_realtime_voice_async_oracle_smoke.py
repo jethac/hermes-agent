@@ -46,7 +46,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["cancelled_result_durable_completed"] is False
     assert report["cancelled_result_durable_text"] is False
     assert report["durable_cancelled_record_present"] is True
-    assert report["durable_completed_jobs"] == 1
+    assert report["durable_completed_jobs"] == report["completed_jobs"]
     assert report["approval_wait_observed"] is True
     assert report["approval_status_committed"] is True
     assert report["approval_tool_progress_observed"] is True
@@ -90,5 +90,14 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["verbose_result_commit_marked_truncated"] is True
     assert report["verbose_full_result_durable"] is True
     assert report["verbose_spoken_result"] == "First sentence."
+    assert report["sidecar_control_smoke_ok"] is True
+    assert report["sidecar_control_update_observed"] is True
+    assert report["sidecar_control_update_reached_oracle"] is True
+    assert report["sidecar_control_cancel_requested"] is True
+    assert report["sidecar_control_cancelled"] is True
+    assert report["sidecar_control_cancel_reason"] == "sidecar smoke cancel"
+    assert report["sidecar_control_completed_after_cancel"] is False
+    assert report["sidecar_control_feedback_update_sent"] is True
+    assert report["sidecar_control_feedback_cancel_sent"] is True
     assert report["event_counts"]["interface.oracle.update"] >= 2
     assert report["event_counts"]["oracle.job.progress"] >= 1
