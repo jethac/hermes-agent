@@ -1640,6 +1640,7 @@ class TestDiscordVoiceChannelMethods:
             "running": 0,
             "max_concurrent": 4,
             "queued": 0,
+            "waiting_for_approval": 0,
             "queue_limit": 16,
         }
         assert status["oracle_jobs"]["jobs"] == [
@@ -2442,6 +2443,7 @@ class TestDiscordVoiceChannelMethods:
             "running": 0,
             "max_concurrent": 4,
             "queued": 0,
+            "waiting_for_approval": 0,
             "queue_limit": 16,
         }
         assert status["oracle_jobs"]["jobs"] == [

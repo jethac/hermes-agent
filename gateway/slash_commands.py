@@ -188,7 +188,11 @@ def _voice_status_oracle_job_lines(value: Any) -> list[str]:
     running = capacity.get("running", 0)
     max_concurrent = capacity.get("max_concurrent", "?")
     queued = capacity.get("queued", 0)
-    lines = [f"Oracle jobs: running={running}/{max_concurrent}, queued={queued}"]
+    waiting_for_approval = capacity.get("waiting_for_approval", 0)
+    headline = f"Oracle jobs: running={running}/{max_concurrent}, queued={queued}"
+    if waiting_for_approval:
+        headline = f"{headline}, waiting_for_approval={waiting_for_approval}"
+    lines = [headline]
     jobs = value.get("jobs")
     if not isinstance(jobs, list):
         return lines

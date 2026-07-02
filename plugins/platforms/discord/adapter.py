@@ -224,6 +224,7 @@ def _discord_voice_oracle_jobs_update(
             "running": 0,
             "max_concurrent": _discord_voice_nonnegative_int(config.get("max_concurrent")) or 1,
             "queued": 0,
+            "waiting_for_approval": 0,
             "queue_limit": _discord_voice_nonnegative_int(config.get("queue_limit")) or 16,
         }
         return {"enabled": bool(config.get("enabled")), "capacity": capacity, "jobs": []}
@@ -249,12 +250,14 @@ def _discord_voice_oracle_jobs_update(
             job[key] = text[:500 if key == "result_summary" else 180]
     jobs_by_id[job_id] = job
     jobs = list(jobs_by_id.values())[-12:]
-    running = sum(1 for item in jobs if item.get("state") in {"running", "cancel_requested", "waiting_for_approval"})
+    running = sum(1 for item in jobs if item.get("state") in {"running", "cancel_requested"})
     queued = sum(1 for item in jobs if item.get("state") == "queued")
+    waiting_for_approval = sum(1 for item in jobs if item.get("state") == "waiting_for_approval")
     capacity.update(
         {
             "running": running,
             "queued": queued,
+            "waiting_for_approval": waiting_for_approval,
             "max_concurrent": _discord_voice_nonnegative_int(capacity.get("max_concurrent")) or 1,
             "queue_limit": _discord_voice_nonnegative_int(capacity.get("queue_limit")) or 16,
         }
@@ -306,9 +309,10 @@ def _discord_voice_oracle_jobs_terminal(
             "running": sum(
                 1
                 for item in jobs
-                if item.get("state") in {"running", "cancel_requested", "waiting_for_approval"}
+                if item.get("state") in {"running", "cancel_requested"}
             ),
             "queued": sum(1 for item in jobs if item.get("state") == "queued"),
+            "waiting_for_approval": sum(1 for item in jobs if item.get("state") == "waiting_for_approval"),
             "max_concurrent": _discord_voice_nonnegative_int(capacity.get("max_concurrent")) or 1,
             "queue_limit": _discord_voice_nonnegative_int(capacity.get("queue_limit")) or 16,
         }

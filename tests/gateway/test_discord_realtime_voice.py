@@ -1053,12 +1053,25 @@ def test_discord_realtime_event_tracks_oracle_job_status():
             "result_summary": "The deployment is healthy.",
         },
     )
+    adapter._handle_realtime_voice_event(
+        111,
+        "oracle.job.waiting_for_approval",
+        {
+            "job_id": "voice-oracle-002",
+            "state": "waiting_for_approval",
+            "priority": "normal",
+            "route": "oracle_direct",
+            "intent": "Prepare Stripe spend.",
+            "spoken_status": "Preparing the Stripe spend request.",
+        },
+    )
 
     status = adapter.get_voice_session_status(111)
 
     assert status["oracle_jobs"]["capacity"] == {
         "running": 0,
         "queued": 0,
+        "waiting_for_approval": 1,
         "max_concurrent": 4,
         "queue_limit": 16,
     }
@@ -1071,7 +1084,15 @@ def test_discord_realtime_event_tracks_oracle_job_status():
             "intent": "Check the deployment status.",
             "spoken_status": "Checking the deployment status.",
             "result_summary": "The deployment is healthy.",
-        }
+        },
+        {
+            "job_id": "voice-oracle-002",
+            "state": "waiting_for_approval",
+            "priority": "normal",
+            "route": "oracle_direct",
+            "intent": "Prepare Stripe spend.",
+            "spoken_status": "Preparing the Stripe spend request.",
+        },
     ]
     assert "metadata" not in status["oracle_jobs"]["jobs"][0]
     assert "oracle_text" not in status["oracle_jobs"]["jobs"][0]
@@ -1083,20 +1104,26 @@ def test_voice_status_oracle_job_lines_are_compact():
     lines = _voice_status_oracle_job_lines(
         {
             "enabled": True,
-            "capacity": {"running": 1, "max_concurrent": 4, "queued": 2},
+            "capacity": {"running": 1, "max_concurrent": 4, "queued": 2, "waiting_for_approval": 1},
             "jobs": [
                 {
                     "job_id": "voice-oracle-001",
                     "state": "running",
                     "spoken_status": "Checking the deployment status.",
+                },
+                {
+                    "job_id": "voice-oracle-002",
+                    "state": "waiting_for_approval",
+                    "spoken_status": "Waiting for Stripe spend approval.",
                 }
             ],
         }
     )
 
     assert lines == [
-        "Oracle jobs: running=1/4, queued=2",
+        "Oracle jobs: running=1/4, queued=2, waiting_for_approval=1",
         "Oracle job: voice-oracle-001 running - Checking the deployment status.",
+        "Oracle job: voice-oracle-002 waiting_for_approval - Waiting for Stripe spend approval.",
     ]
 
 
