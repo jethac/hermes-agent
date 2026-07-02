@@ -454,6 +454,55 @@ async def test_failed_job_records_error_and_starts_next():
 
 
 @pytest.mark.asyncio
+async def test_failed_job_sanitizes_error_for_status_events_and_audit(tmp_path):
+    events = []
+
+    async def runner(job):
+        raise RuntimeError(
+            "provider failed Bearer raw-token token=sk-secret "
+            "at https://user:pass@example.invalid/v1?api_key=raw"
+        )
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=events.append,
+        audit_ledger_path=tmp_path / "audit.jsonl",
+    )
+    job = await manager.submit(_request("secret-bearing failure"))
+    await manager.wait_for_idle()
+
+    failed = await manager.get(job.job_id)
+    status = await manager.status_view()
+    failed_event = next(event for event in events if event.type.value == "oracle.job.failed")
+    audit_lines = (tmp_path / "audit.jsonl").read_text().splitlines()
+    audit_failed = next(
+        json.loads(line)
+        for line in audit_lines
+        if json.loads(line)["event_type"] == "oracle.job.failed"
+    )
+
+    combined = json.dumps(
+        {
+            "stored": failed.error,
+            "status": status,
+            "event": failed_event.to_status(),
+            "audit": audit_failed,
+        },
+        sort_keys=True,
+    )
+    assert failed.state == OracleJobState.FAILED
+    assert "provider failed" in failed.error
+    assert "Bearer ***" in failed.error
+    assert "token=***" in failed.error
+    assert "https://***@example.invalid/v1" in failed.error
+    assert "raw-token" not in combined
+    assert "sk-secret" not in combined
+    assert "user:pass" not in combined
+    assert "api_key=raw" not in combined
+
+
+@pytest.mark.asyncio
 async def test_status_view_reports_capacity_and_redacts_raw_metadata():
     release = asyncio.Event()
 

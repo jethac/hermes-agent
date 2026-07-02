@@ -12,6 +12,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Deque, Mapping, Optional
 
+from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_kame import KameOracleRequest
 from agent.think_scrubber import StreamingThinkScrubber, strip_leading_reasoning_trace
 
@@ -429,7 +430,7 @@ class OracleJobManager:
                 job = self._jobs[job_id]
                 if job.state not in TERMINAL_STATES:
                     job.state = OracleJobState.FAILED
-                    job.error = str(exc)
+                    job.error = sanitize_realtime_voice_error(exc)
                     job.updated_at = self._clock()
                     await self._emit_locked(OracleJobEventType.FAILED, job)
                 self._tasks.pop(job_id, None)
