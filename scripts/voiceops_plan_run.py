@@ -1455,6 +1455,18 @@ async def build_plan_run_async(
                         "durable_cancelled_record_present"
                     ],
                     "durable_completed_jobs": voice_operator["proofs"]["async_oracle_jobs"]["durable_completed_jobs"],
+                    "approval_wait_observed": voice_operator["proofs"]["async_oracle_jobs"]["approval_wait_observed"],
+                    "approval_status_committed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_status_committed"
+                    ],
+                    "approval_tool_progress_observed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_tool_progress_observed"
+                    ],
+                    "approval_payload_redacted": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_payload_redacted"
+                    ],
+                    "approval_completed": voice_operator["proofs"]["async_oracle_jobs"]["approval_completed"],
+                    "approval_status_text": voice_operator["proofs"]["async_oracle_jobs"]["approval_status_text"],
                 },
                 "async_oracle_acceptance": {
                     key: {

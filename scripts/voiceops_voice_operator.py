@@ -92,6 +92,11 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_stop_talking_does_not_cancel_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_barge_in_during_async_result_speech_does_not_interrupt_completed_job",
     ],
+    "approval_wait": [
+        "tests/agent/test_realtime_voice.py::test_async_oracle_job_enters_waiting_for_approval_on_tool_call",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_waiting_for_approval_holds_capacity_and_emits_redacted_event",
+        "tests/gateway/test_discord_realtime_voice.py::test_voice_status_oracle_job_lines_are_compact",
+    ],
     "result_handling": [
         "tests/agent/test_realtime_voice.py::test_completed_async_oracle_job_speaks_after_intervening_local_turn",
         "tests/agent/test_realtime_voice.py::test_kame_engine_status_recalls_recent_completed_async_oracle_job",
@@ -1215,6 +1220,11 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("cancelled_result_durable_text") is False
         and smoke.get("durable_cancelled_record_present") is True
         and int(smoke.get("durable_completed_jobs") or 0) >= 3,
+        "approval_wait_visible_and_redacted": smoke.get("approval_wait_observed") is True
+        and smoke.get("approval_status_committed") is True
+        and smoke.get("approval_tool_progress_observed") is True
+        and smoke.get("approval_payload_redacted") is True
+        and smoke.get("approval_completed") is True,
     }
 
 
@@ -1279,6 +1289,13 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             and bool(async_oracle_coverage.get("late_cancelled_output_not_durable")),
             evidence="async_oracle_smoke_plus_cancellation_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["cancellation"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "approval_wait_is_visible_and_redacted": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("approval_wait_visible_and_redacted")),
+            evidence="async_oracle_smoke_plus_approval_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["approval_wait"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
@@ -1439,6 +1456,12 @@ def build_voice_operator_report(
             "cancelled_result_durable_text": bool(async_oracle_smoke.get("cancelled_result_durable_text")),
             "durable_cancelled_record_present": bool(async_oracle_smoke.get("durable_cancelled_record_present")),
             "durable_completed_jobs": async_oracle_smoke.get("durable_completed_jobs"),
+            "approval_wait_observed": bool(async_oracle_smoke.get("approval_wait_observed")),
+            "approval_status_committed": bool(async_oracle_smoke.get("approval_status_committed")),
+            "approval_tool_progress_observed": bool(async_oracle_smoke.get("approval_tool_progress_observed")),
+            "approval_payload_redacted": bool(async_oracle_smoke.get("approval_payload_redacted")),
+            "approval_completed": bool(async_oracle_smoke.get("approval_completed")),
+            "approval_status_text": async_oracle_smoke.get("approval_status_text"),
             "coverage": async_oracle_coverage,
         },
         "live_evidence": {
@@ -1592,6 +1615,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "late_cancelled_output_not_spoken",
         "late_cancelled_output_attempted",
         "late_cancelled_output_not_durable",
+        "approval_wait_visible_and_redacted",
     ):
         if async_oracle_coverage.get(key) is not True:
             issues.append(f"missing_async_oracle_coverage:{key}")

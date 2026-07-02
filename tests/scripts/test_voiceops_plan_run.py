@@ -1030,9 +1030,24 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["cancelled_result_durable_completed"] is False
     assert voice_result["details"]["async_oracle_smoke"]["cancelled_result_durable_text"] is False
     assert voice_result["details"]["async_oracle_smoke"]["durable_cancelled_record_present"] is True
-    assert voice_result["details"]["async_oracle_smoke"]["durable_completed_jobs"] == 4
+    assert voice_result["details"]["async_oracle_smoke"]["durable_completed_jobs"] == 5
+    assert voice_result["details"]["async_oracle_smoke"]["approval_wait_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_status_committed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_tool_progress_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_payload_redacted"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_completed"] is True
+    assert "waiting_for_approval: Preparing spend approval." in voice_result["details"]["async_oracle_smoke"][
+        "approval_status_text"
+    ]
     assert voice_result["details"]["async_oracle_acceptance"]["four_oracle_jobs_reflex_responsive"]["ok"] is True
     assert voice_result["details"]["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
+    assert voice_result["details"]["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
+    assert (
+        voice_result["details"]["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"][
+            "runtime_verified_by_this_report"
+        ]
+        is True
+    )
     assert voice_result["details"]["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"][
         "test_ref_count"
     ] >= 1

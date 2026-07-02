@@ -64,9 +64,9 @@ def _async_oracle_smoke_payload() -> dict:
         "max_worker_overlap": 5,
         "worker_overlap_proved": True,
         "noncooperative_cancel_overlap_observed": True,
-        "started_jobs": 5,
+        "started_jobs": 7,
         "queued_jobs": 1,
-        "completed_jobs": 4,
+        "completed_jobs": 5,
         "cancelled_jobs": 1,
         "local_turn_committed": True,
         "status_turn_committed": True,
@@ -82,7 +82,13 @@ def _async_oracle_smoke_payload() -> dict:
         "cancelled_result_durable_completed": False,
         "cancelled_result_durable_text": False,
         "durable_cancelled_record_present": True,
-        "durable_completed_jobs": 4,
+        "durable_completed_jobs": 5,
+        "approval_wait_observed": True,
+        "approval_status_committed": True,
+        "approval_tool_progress_observed": True,
+        "approval_payload_redacted": True,
+        "approval_completed": True,
+        "approval_status_text": "Oracle jobs: 0 running out of 4. waiting_for_approval: Preparing spend approval.",
         "spoken": [
             "Starting smoke task 1.",
             "Starting smoke task 2.",
@@ -92,12 +98,16 @@ def _async_oracle_smoke_payload() -> dict:
             "Finished Run smoke task 1.",
             "Finished Run smoke task 2.",
             "Finished Run smoke task 4.",
+            "Preparing spend approval.",
+            "Oracle jobs: 0 running out of 4. waiting_for_approval: Preparing spend approval.",
+            "Approval smoke cleared.",
         ],
         "event_counts": {
-            "oracle.job.started": 4,
-            "oracle.job.completed": 3,
+            "oracle.job.started": 7,
+            "oracle.job.completed": 5,
             "oracle.job.cancelled": 1,
-            "assistant.commit": 4,
+            "oracle.job.waiting_for_approval": 1,
+            "assistant.commit": 6,
         },
     }
 
@@ -294,9 +304,22 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_completed"] is False
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_text"] is False
     assert report["proofs"]["async_oracle_jobs"]["durable_cancelled_record_present"] is True
-    assert report["proofs"]["async_oracle_jobs"]["durable_completed_jobs"] == 4
+    assert report["proofs"]["async_oracle_jobs"]["durable_completed_jobs"] == 5
+    assert report["proofs"]["async_oracle_jobs"]["approval_wait_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_status_committed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_tool_progress_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_payload_redacted"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_completed"] is True
+    assert "waiting_for_approval: Preparing spend approval." in report["proofs"]["async_oracle_jobs"][
+        "approval_status_text"
+    ]
     assert report["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
     assert report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["ok"] is True
+    assert report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
+    assert (
+        report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["verification_mode"]
+        == "loopback_smoke_plus_focused_tests"
+    )
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
     assert result_handling["ok"] is True
     assert result_handling["evidence"] == "focused_result_handling_test_refs"
@@ -360,8 +383,10 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:late_cancelled_output_attempted" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_not_spoken" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_not_durable" in issues
+    assert "missing_async_oracle_coverage:approval_wait_visible_and_redacted" in issues
     assert "missing_async_oracle_acceptance:four_oracle_jobs_reflex_responsive" in issues
     assert "missing_async_oracle_acceptance:fifth_job_obeys_overflow_policy" in issues
+    assert "missing_async_oracle_acceptance:approval_wait_is_visible_and_redacted" in issues
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
     assert result_handling["ok"] is True
     assert result_handling["verification_mode"] == "static_focused_test_reference_inventory"
