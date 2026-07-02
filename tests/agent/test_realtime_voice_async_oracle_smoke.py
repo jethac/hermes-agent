@@ -91,6 +91,13 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["verbose_result_commit_marked_truncated"] is True
     assert report["verbose_full_result_durable"] is True
     assert report["verbose_spoken_result"] == "First sentence."
+    assert report["audit_scalar_smoke_ok"] is True
+    assert report["audit_scalar_payload_redacted"] is True
+    assert report["audit_scalar_secret_canary_checked"] is True
+    assert report["audit_scalar_result_text_omitted"] is True
+    assert report["audit_scalar_completed_event_seen"] is True
+    assert report["audit_scalar_waiting_event_seen"] is True
+    assert report["audit_scalar_row_count"] >= 3
     assert report["terminal_result_policy_smoke_ok"] is True
     assert report["terminal_result_auto_summarize_default"] is True
     assert report["terminal_result_default_event_count"] >= 1

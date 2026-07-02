@@ -1688,6 +1688,27 @@ async def build_plan_run_async(
                     "terminal_result_status_text": voice_operator["proofs"]["async_oracle_jobs"][
                         "terminal_result_status_text"
                     ],
+                    "audit_scalar_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
+                        "audit_scalar_smoke_ok"
+                    ],
+                    "audit_scalar_payload_redacted": voice_operator["proofs"]["async_oracle_jobs"][
+                        "audit_scalar_payload_redacted"
+                    ],
+                    "audit_scalar_secret_canary_checked": voice_operator["proofs"]["async_oracle_jobs"][
+                        "audit_scalar_secret_canary_checked"
+                    ],
+                    "audit_scalar_result_text_omitted": voice_operator["proofs"]["async_oracle_jobs"][
+                        "audit_scalar_result_text_omitted"
+                    ],
+                    "audit_scalar_completed_event_seen": voice_operator["proofs"]["async_oracle_jobs"][
+                        "audit_scalar_completed_event_seen"
+                    ],
+                    "audit_scalar_waiting_event_seen": voice_operator["proofs"]["async_oracle_jobs"][
+                        "audit_scalar_waiting_event_seen"
+                    ],
+                    "audit_scalar_row_count": voice_operator["proofs"]["async_oracle_jobs"][
+                        "audit_scalar_row_count"
+                    ],
                     "shutdown_timeout_configured_ms": voice_operator["proofs"]["async_oracle_jobs"][
                         "shutdown_timeout_configured_ms"
                     ],

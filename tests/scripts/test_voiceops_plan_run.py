@@ -1155,6 +1155,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "completed: Finished Suppress terminal result." in voice_result["details"]["async_oracle_smoke"][
         "terminal_result_status_text"
     ]
+    assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_payload_redacted"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_secret_canary_checked"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_result_text_omitted"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_completed_event_seen"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_waiting_event_seen"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_row_count"] == 5
     assert voice_result["details"]["async_oracle_smoke"]["shutdown_timeout_configured_ms"] == 10
     assert voice_result["details"]["async_oracle_smoke"]["shutdown_bounded_close_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["shutdown_forced_cancel_observed"] is True

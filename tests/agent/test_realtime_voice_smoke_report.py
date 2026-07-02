@@ -236,6 +236,12 @@ def _valid_async_oracle_smoke_entry():
         "failed_job_reported": True,
         "verbose_result_spoken_bounded": True,
         "verbose_full_result_durable": True,
+        "audit_scalar_smoke_ok": True,
+        "audit_scalar_payload_redacted": True,
+        "audit_scalar_secret_canary_checked": True,
+        "audit_scalar_result_text_omitted": True,
+        "audit_scalar_completed_event_seen": True,
+        "audit_scalar_waiting_event_seen": True,
     }
 
 
@@ -265,6 +271,7 @@ def test_realtime_voice_alpha_report_rejects_weak_async_oracle_smoke():
     weak_async_smoke["local_turn_active_job_count"] = 0
     weak_async_smoke["queued_update_reached_oracle"] = False
     weak_async_smoke["queued_cancel_not_sent_to_oracle"] = False
+    weak_async_smoke["audit_scalar_payload_redacted"] = False
     report = [*_valid_alpha_report(), weak_async_smoke]
 
     issues = validate_realtime_voice_alpha_report(
@@ -277,6 +284,7 @@ def test_realtime_voice_alpha_report_rejects_weak_async_oracle_smoke():
     assert any("active oracle job overlap" in issue.format() for issue in issues)
     assert any("queued_update_reached_oracle" in issue.format() for issue in issues)
     assert any("queued_cancel_not_sent_to_oracle" in issue.format() for issue in issues)
+    assert any("audit_scalar_payload_redacted" in issue.format() for issue in issues)
 
 
 def test_realtime_voice_alpha_report_accepts_manifest_entry():

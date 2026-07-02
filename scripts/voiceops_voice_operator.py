@@ -1501,7 +1501,13 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("terminal_result_suppressed") is True
         and smoke.get("terminal_result_status_available") is True
         and int(smoke.get("terminal_result_unsolicited_event_count") or 0) == 0
-        and smoke.get("terminal_result_unsolicited_spoken") is False,
+        and smoke.get("terminal_result_unsolicited_spoken") is False
+        and smoke.get("audit_scalar_smoke_ok") is True
+        and smoke.get("audit_scalar_payload_redacted") is True
+        and smoke.get("audit_scalar_secret_canary_checked") is True
+        and smoke.get("audit_scalar_result_text_omitted") is True
+        and smoke.get("audit_scalar_completed_event_seen") is True
+        and smoke.get("audit_scalar_waiting_event_seen") is True,
         "shutdown_timeout_bounded": smoke.get("shutdown_bounded_close_observed") is True
         and smoke.get("shutdown_forced_cancel_observed") is True
         and int(smoke.get("shutdown_cancelled_jobs") or 0) >= 1,
@@ -2032,6 +2038,19 @@ def build_voice_operator_report(
             ),
             "terminal_result_status_available": bool(async_oracle_smoke.get("terminal_result_status_available")),
             "terminal_result_status_text": async_oracle_smoke.get("terminal_result_status_text"),
+            "audit_scalar_smoke_ok": bool(async_oracle_smoke.get("audit_scalar_smoke_ok")),
+            "audit_scalar_payload_redacted": bool(async_oracle_smoke.get("audit_scalar_payload_redacted")),
+            "audit_scalar_secret_canary_checked": bool(
+                async_oracle_smoke.get("audit_scalar_secret_canary_checked")
+            ),
+            "audit_scalar_result_text_omitted": bool(
+                async_oracle_smoke.get("audit_scalar_result_text_omitted")
+            ),
+            "audit_scalar_completed_event_seen": bool(
+                async_oracle_smoke.get("audit_scalar_completed_event_seen")
+            ),
+            "audit_scalar_waiting_event_seen": bool(async_oracle_smoke.get("audit_scalar_waiting_event_seen")),
+            "audit_scalar_row_count": async_oracle_smoke.get("audit_scalar_row_count"),
             "coverage": async_oracle_coverage,
         },
         "discord_session_cleanup": {

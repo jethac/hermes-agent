@@ -10,11 +10,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
 
 from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceEvent, VoiceEventType
+from agent.realtime_voice_kame import KameOracleRequest
+from agent.realtime_voice_oracle_jobs import OracleJobManager
 from agent.realtime_voice_session import RealtimeVoiceSession
 from agent.realtime_voice_text_engine import KameInterfaceOracleEngine
 
@@ -1164,6 +1167,99 @@ async def _run_sidecar_control_smoke() -> dict[str, Any]:
     }
 
 
+async def _run_audit_scalar_redaction_smoke() -> dict[str, Any]:
+    """Prove oracle job JSONL audit rows redact scalar payload fields."""
+    release = asyncio.Event()
+    secret_prefix = "sk" + "_test_"
+    live_prefix = "sk" + "_live_"
+    result_secret = secret_prefix + "abcdefghijklmnopqrstuvwxyz"
+    approval_secret = secret_prefix + "zyxwvutsrqponmlkjihgfedcba"
+    approval_summary_secret = secret_prefix + "qwertyuiopasdfghjklzxcvbnm"
+    live_secret = live_prefix + "abcdefghijklmnopqrstuvwxyz"
+
+    async def runner(_job):
+        await release.wait()
+        return {
+            "result_summary": (
+                f"Created provider credential {result_secret} "
+                "with Authorization: Bearer raw-token"
+            ),
+            "result_text": (
+                "Full result includes provider_token=raw-provider-token "
+                f"and {live_secret}"
+            ),
+        }
+
+    request = KameOracleRequest(
+        session_id="voice-smoke-audit",
+        turn_id="turn:audit-scalar-redaction",
+        source="discord_voice",
+        user_id="42",
+        intent="Provision voice provider",
+        interface_already_said="I'm preparing the voice provider action.",
+    )
+    with tempfile.TemporaryDirectory(prefix="voiceops-audit-smoke-") as tmpdir:
+        ledger_path = Path(tmpdir) / "voiceops-oracle-jobs.jsonl"
+        manager = OracleJobManager(max_concurrent=1, runner=runner, audit_ledger_path=ledger_path)
+        job = await manager.submit(request)
+        await asyncio.sleep(0)
+        await manager.mark_waiting_for_approval(
+            job.job_id,
+            reason=(
+                "Approve Stripe spend with Authorization: Bearer approval-token "
+                f"and {approval_secret}"
+            ),
+            approval={
+                "approval_id": "approval-smoke-123",
+                "tool_name": "stripe_link_purchase",
+                "summary": f"Charge uses {approval_summary_secret}",
+            },
+        )
+        await manager.mark_running(job.job_id)
+        release.set()
+        await manager.wait_for_idle()
+        rows = [
+            json.loads(line)
+            for line in ledger_path.read_text(encoding="utf-8").splitlines()
+        ]
+
+    combined = json.dumps(rows, sort_keys=True)
+    completed_rows = [row for row in rows if row.get("event_type") == VoiceEventType.ORACLE_JOB_COMPLETED.value]
+    waiting_rows = [
+        row for row in rows if row.get("event_type") == VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL.value
+    ]
+    raw_canaries_absent = all(
+        canary not in combined
+        for canary in (
+            result_secret,
+            approval_secret,
+            approval_summary_secret,
+            live_secret,
+            "raw-token",
+            "approval-token",
+            "raw-provider-token",
+        )
+    )
+    result_text_omitted = bool(completed_rows) and all(
+        "result_text" not in (row.get("payload") or {}) for row in completed_rows
+    )
+    return {
+        "ok": bool(rows)
+        and bool(completed_rows)
+        and bool(waiting_rows)
+        and raw_canaries_absent
+        and result_text_omitted
+        and "Authorization: Bearer ***" in combined
+        and "sk_tes" in combined,
+        "audit_scalar_payload_redacted": raw_canaries_absent,
+        "audit_scalar_secret_canary_checked": True,
+        "audit_scalar_result_text_omitted": result_text_omitted,
+        "audit_scalar_completed_event_seen": bool(completed_rows),
+        "audit_scalar_waiting_event_seen": bool(waiting_rows),
+        "audit_scalar_row_count": len(rows),
+    }
+
+
 async def run_smoke() -> dict[str, Any]:
     oracle = SmokeOracle()
     engine = SmokeEngine(oracle=oracle)
@@ -1521,6 +1617,7 @@ async def run_smoke() -> dict[str, Any]:
     approval_cancel_capacity_smoke = await _run_approval_cancel_capacity_smoke()
     terminal_result_policy_smoke = await _run_terminal_result_policy_smoke()
     sidecar_control_smoke = await _run_sidecar_control_smoke()
+    audit_scalar_smoke = await _run_audit_scalar_redaction_smoke()
 
     started = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_STARTED]
     queued = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_QUEUED]
@@ -1916,6 +2013,7 @@ async def run_smoke() -> dict[str, Any]:
             and approval_cancel_capacity_smoke["ok"]
             and terminal_result_policy_smoke["ok"]
             and sidecar_control_smoke["ok"]
+            and audit_scalar_smoke["ok"]
         ),
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": scheduler_max_running,
@@ -2039,6 +2137,15 @@ async def run_smoke() -> dict[str, Any]:
         "sidecar_control_feedback_cancel_sent": sidecar_control_smoke[
             "sidecar_control_feedback_cancel_sent"
         ],
+        "audit_scalar_smoke_ok": audit_scalar_smoke["ok"],
+        "audit_scalar_payload_redacted": audit_scalar_smoke["audit_scalar_payload_redacted"],
+        "audit_scalar_secret_canary_checked": audit_scalar_smoke[
+            "audit_scalar_secret_canary_checked"
+        ],
+        "audit_scalar_result_text_omitted": audit_scalar_smoke["audit_scalar_result_text_omitted"],
+        "audit_scalar_completed_event_seen": audit_scalar_smoke["audit_scalar_completed_event_seen"],
+        "audit_scalar_waiting_event_seen": audit_scalar_smoke["audit_scalar_waiting_event_seen"],
+        "audit_scalar_row_count": audit_scalar_smoke["audit_scalar_row_count"],
         "local_turn_committed": bool(local_commits),
         "local_turn_during_running_jobs_observed": local_turn_active_job_count >= 1,
         "local_turn_active_job_count": local_turn_active_job_count,

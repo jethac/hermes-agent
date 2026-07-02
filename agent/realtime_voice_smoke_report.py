@@ -1461,6 +1461,12 @@ def _validate_async_oracle_smoke_entry(
         "failed_job_reported",
         "verbose_result_spoken_bounded",
         "verbose_full_result_durable",
+        "audit_scalar_smoke_ok",
+        "audit_scalar_payload_redacted",
+        "audit_scalar_secret_canary_checked",
+        "audit_scalar_result_text_omitted",
+        "audit_scalar_completed_event_seen",
+        "audit_scalar_waiting_event_seen",
     )
     for field in required_true_fields:
         if entry.get(field) is not True:

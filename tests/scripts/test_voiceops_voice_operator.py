@@ -200,6 +200,13 @@ def _async_oracle_smoke_payload() -> dict:
             "No oracle jobs are running or queued right now. Recent: "
             "completed: Finished Suppress terminal result."
         ),
+        "audit_scalar_smoke_ok": True,
+        "audit_scalar_payload_redacted": True,
+        "audit_scalar_secret_canary_checked": True,
+        "audit_scalar_result_text_omitted": True,
+        "audit_scalar_completed_event_seen": True,
+        "audit_scalar_waiting_event_seen": True,
+        "audit_scalar_row_count": 5,
         "spoken": [
             "Starting smoke task 1.",
             "Starting smoke task 2.",
@@ -541,6 +548,13 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert "completed: Finished Suppress terminal result." in report["proofs"]["async_oracle_jobs"][
         "terminal_result_status_text"
     ]
+    assert report["proofs"]["async_oracle_jobs"]["audit_scalar_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["audit_scalar_payload_redacted"] is True
+    assert report["proofs"]["async_oracle_jobs"]["audit_scalar_secret_canary_checked"] is True
+    assert report["proofs"]["async_oracle_jobs"]["audit_scalar_result_text_omitted"] is True
+    assert report["proofs"]["async_oracle_jobs"]["audit_scalar_completed_event_seen"] is True
+    assert report["proofs"]["async_oracle_jobs"]["audit_scalar_waiting_event_seen"] is True
+    assert report["proofs"]["async_oracle_jobs"]["audit_scalar_row_count"] == 5
     assert report["proofs"]["async_oracle_jobs"]["shutdown_timeout_configured_ms"] == 10
     assert report["proofs"]["async_oracle_jobs"]["shutdown_bounded_close_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["shutdown_forced_cancel_observed"] is True

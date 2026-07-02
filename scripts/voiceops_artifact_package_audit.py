@@ -1858,6 +1858,13 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "terminal_result_unsolicited_spoken": bool(async_smoke.get("terminal_result_unsolicited_spoken")),
             "terminal_result_status_available": bool(async_smoke.get("terminal_result_status_available")),
             "terminal_result_status_text": async_smoke.get("terminal_result_status_text"),
+            "audit_scalar_smoke_ok": bool(async_smoke.get("audit_scalar_smoke_ok")),
+            "audit_scalar_payload_redacted": bool(async_smoke.get("audit_scalar_payload_redacted")),
+            "audit_scalar_secret_canary_checked": bool(async_smoke.get("audit_scalar_secret_canary_checked")),
+            "audit_scalar_result_text_omitted": bool(async_smoke.get("audit_scalar_result_text_omitted")),
+            "audit_scalar_completed_event_seen": bool(async_smoke.get("audit_scalar_completed_event_seen")),
+            "audit_scalar_waiting_event_seen": bool(async_smoke.get("audit_scalar_waiting_event_seen")),
+            "audit_scalar_row_count": async_smoke.get("audit_scalar_row_count"),
         },
         issues=issues,
     )
