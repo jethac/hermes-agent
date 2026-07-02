@@ -166,6 +166,7 @@ class OracleJobManager:
         self._jobs: dict[str, OracleJob] = {}
         self._queue: Deque[str] = deque()
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._runners: dict[str, OracleJobRunner] = {}
         self._sequence = 0
         self._lock = asyncio.Lock()
 
@@ -190,6 +191,7 @@ class OracleJobManager:
 
             job = self._job_from_request(request, priority=priority)
             self._jobs[job.job_id] = job
+            self._runners[job.job_id] = runner
             await self._emit_locked(OracleJobEventType.ACCEPTED, job)
             if active_count < self.max_concurrent:
                 self._start_job_locked(job, runner)
@@ -213,6 +215,7 @@ class OracleJobManager:
                 self._remove_queued_locked(job.job_id)
                 job.state = OracleJobState.CANCELLED
                 await self._emit_locked(OracleJobEventType.CANCELLED, job)
+                self._runners.pop(job.job_id, None)
                 self._start_available_locked()
                 return job
             job.state = OracleJobState.CANCEL_REQUESTED
@@ -441,6 +444,7 @@ class OracleJobManager:
                     job.updated_at = self._clock()
                     await self._emit_locked(OracleJobEventType.CANCELLED, job)
                 self._tasks.pop(job_id, None)
+                self._runners.pop(job_id, None)
                 self._start_available_locked()
             return
         except Exception as exc:
@@ -452,6 +456,7 @@ class OracleJobManager:
                     job.updated_at = self._clock()
                     await self._emit_locked(OracleJobEventType.FAILED, job)
                 self._tasks.pop(job_id, None)
+                self._runners.pop(job_id, None)
                 self._start_available_locked()
             return
 
@@ -470,17 +475,20 @@ class OracleJobManager:
                 job.updated_at = self._clock()
                 await self._emit_locked(OracleJobEventType.COMPLETED, job, payload=_completion_payload(job))
             self._tasks.pop(job_id, None)
+            self._runners.pop(job_id, None)
             self._start_available_locked()
 
     def _start_available_locked(self) -> None:
-        runner = self.runner
-        if runner is None:
-            return
         while self._queue and self._active_count_locked() < self.max_concurrent:
             job_id = self._queue.popleft()
             job = self._jobs.get(job_id)
             if job is None or job.state != OracleJobState.QUEUED:
                 continue
+            runner = self._runners.get(job_id) or self.runner
+            if runner is None:
+                logger.warning("Realtime voice oracle job %s has no runner; leaving queued", job_id)
+                self._queue.appendleft(job_id)
+                return
             self._start_job_locked(job, runner)
 
     async def _emit_locked(
@@ -551,6 +559,7 @@ class OracleJobManager:
                 job.cancel_reason = job.cancel_reason or reason
                 job.updated_at = self._clock()
                 await self._emit_locked(OracleJobEventType.CANCELLED, job)
+                self._runners.pop(job_id, None)
 
             for job_id, task in task_items:
                 job = self._jobs.get(job_id)
@@ -563,6 +572,7 @@ class OracleJobManager:
                     task.cancel()
                     task.add_done_callback(_consume_task_exception)
                 self._tasks.pop(job_id, None)
+                self._runners.pop(job_id, None)
 
 
 def _spoken_status(job: OracleJob) -> str:

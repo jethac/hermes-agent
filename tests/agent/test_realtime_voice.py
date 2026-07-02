@@ -1619,6 +1619,89 @@ def test_kame_engine_async_oracle_job_emits_lifecycle_without_blocking_ack(monke
     asyncio.run(run())
 
 
+def test_kame_engine_documented_oracle_jobs_config_enables_async_scheduler(monkeypatch):
+    class ImmediateOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "The documented async config worked."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = ImmediateOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle, sidecar=FakeSidecar())
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                frontend_model="gemma-4-E2B-it",
+                interface_audio_input="native_audio",
+                sidecar_base_url="http://voice.local:8765",
+                oracle_jobs={
+                    "max_concurrent": 1,
+                    "queue_limit": 4,
+                    "default_priority": "normal",
+                    "overflow_policy": "queue",
+                    "shutdown_timeout_seconds": 0.01,
+                },
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "check the deployment status",
+                    "intent": "Check the deployment status.",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "interface_already_said": "Checking that now.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        events = engine.events()
+        while True:
+            event = await asyncio.wait_for(events.__anext__(), timeout=1)
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
+                break
+
+        await engine.close()
+
+        lifecycle = [
+            event.type
+            for event in seen
+            if event.type in {
+                VoiceEventType.ORACLE_JOB_ACCEPTED,
+                VoiceEventType.ORACLE_JOB_STARTED,
+                VoiceEventType.ORACLE_JOB_COMPLETED,
+            }
+        ]
+        assert lifecycle == [
+            VoiceEventType.ORACLE_JOB_ACCEPTED,
+            VoiceEventType.ORACLE_JOB_STARTED,
+            VoiceEventType.ORACLE_JOB_COMPLETED,
+        ]
+        assert len(oracle.requests) == 1
+        assert spoken[0] == "Checking that now."
+
+    asyncio.run(run())
+
+
 def test_kame_engine_async_oracle_job_writes_configured_audit_ledger(monkeypatch, tmp_path):
     class BlockingOracle:
         def __init__(self):

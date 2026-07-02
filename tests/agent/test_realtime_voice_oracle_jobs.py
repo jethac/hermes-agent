@@ -100,6 +100,69 @@ async def test_max_concurrent_one_queues_second_job():
 
 
 @pytest.mark.asyncio
+async def test_queued_job_uses_runner_supplied_at_submission_time():
+    calls = []
+    release_first = asyncio.Event()
+
+    async def default_runner(job):
+        calls.append(("default", job.job_id))
+        if job.job_id == "voice-oracle-001":
+            await release_first.wait()
+        return f"default {job.job_id}"
+
+    async def override_runner(job):
+        calls.append(("override", job.job_id))
+        return f"override {job.job_id}"
+
+    manager = OracleJobManager(max_concurrent=1, runner=default_runner)
+
+    first = await manager.submit(_request("first"))
+    second = await manager.submit(_request("second"), runner=override_runner)
+    await asyncio.sleep(0)
+
+    assert (await manager.get(first.job_id)).state == OracleJobState.RUNNING
+    assert (await manager.get(second.job_id)).state == OracleJobState.QUEUED
+
+    release_first.set()
+    await manager.wait_for_idle()
+
+    assert calls == [("default", first.job_id), ("override", second.job_id)]
+    assert (await manager.get(first.job_id)).result_summary == f"default {first.job_id}"
+    assert (await manager.get(second.job_id)).result_summary == f"override {second.job_id}"
+
+
+@pytest.mark.asyncio
+async def test_queued_job_with_submission_runner_starts_without_default_runner():
+    calls = []
+    release_first = asyncio.Event()
+
+    async def first_runner(job):
+        calls.append(("first", job.job_id))
+        await release_first.wait()
+        return "first done"
+
+    async def second_runner(job):
+        calls.append(("second", job.job_id))
+        return "second done"
+
+    manager = OracleJobManager(max_concurrent=1)
+
+    first = await manager.submit(_request("first"), runner=first_runner)
+    second = await manager.submit(_request("second"), runner=second_runner)
+    await asyncio.sleep(0)
+
+    assert (await manager.get(first.job_id)).state == OracleJobState.RUNNING
+    assert (await manager.get(second.job_id)).state == OracleJobState.QUEUED
+
+    release_first.set()
+    await manager.wait_for_idle()
+
+    assert calls == [("first", first.job_id), ("second", second.job_id)]
+    assert (await manager.get(first.job_id)).state == OracleJobState.COMPLETED
+    assert (await manager.get(second.job_id)).state == OracleJobState.COMPLETED
+
+
+@pytest.mark.asyncio
 async def test_high_priority_queued_job_starts_before_low_priority_job():
     started = []
     release_first = asyncio.Event()

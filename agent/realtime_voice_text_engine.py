@@ -2969,7 +2969,9 @@ def _oracle_job_control_label(job: Mapping[str, Any]) -> str:
 def _async_oracle_jobs_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
     if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
         return False
-    return isinstance(config.oracle_jobs, Mapping) and _metadata_bool(config.oracle_jobs.get("enabled"), default=False)
+    if not isinstance(config.oracle_jobs, Mapping) or not config.oracle_jobs:
+        return False
+    return _metadata_bool(config.oracle_jobs.get("enabled"), default=True)
 
 
 def _oracle_job_terminal_speech_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
