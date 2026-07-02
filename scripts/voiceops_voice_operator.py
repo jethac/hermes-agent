@@ -1405,6 +1405,10 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("cancelled_result_durable_text") is False
         and smoke.get("durable_cancelled_record_present") is True
         and int(smoke.get("durable_completed_jobs") or 0) >= 1,
+        "playback_stop_does_not_cancel_jobs": smoke.get("playback_stop_does_not_cancel_jobs") is True
+        and smoke.get("playback_stop_committed") is True
+        and smoke.get("playback_stop_jobs_still_running") is True
+        and smoke.get("playback_stop_cancelled_jobs") is False,
         "approval_wait_visible_and_redacted": smoke.get("approval_wait_observed") is True
         and smoke.get("approval_status_committed") is True
         and smoke.get("approval_tool_progress_observed") is True
@@ -1556,7 +1560,8 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             and bool(async_oracle_coverage.get("one_job_cancelled_while_others_completed"))
             and bool(async_oracle_coverage.get("queued_job_cancelled_before_start"))
             and bool(async_oracle_coverage.get("late_cancelled_output_not_spoken"))
-            and bool(async_oracle_coverage.get("late_cancelled_output_not_durable")),
+            and bool(async_oracle_coverage.get("late_cancelled_output_not_durable"))
+            and bool(async_oracle_coverage.get("playback_stop_does_not_cancel_jobs")),
             evidence="async_oracle_smoke_plus_cancellation_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["cancellation"],
             verification_mode="loopback_smoke_plus_focused_tests",
@@ -1783,6 +1788,14 @@ def build_voice_operator_report(
             "queued_cancel_target_job_id": async_oracle_smoke.get("queued_cancel_target_job_id"),
             "queued_cancel_running_completed": bool(async_oracle_smoke.get("queued_cancel_running_completed")),
             "local_turn_committed": bool(async_oracle_smoke.get("local_turn_committed")),
+            "playback_stop_committed": bool(async_oracle_smoke.get("playback_stop_committed")),
+            "playback_stop_jobs_still_running": bool(
+                async_oracle_smoke.get("playback_stop_jobs_still_running")
+            ),
+            "playback_stop_cancelled_jobs": bool(async_oracle_smoke.get("playback_stop_cancelled_jobs")),
+            "playback_stop_does_not_cancel_jobs": bool(
+                async_oracle_smoke.get("playback_stop_does_not_cancel_jobs")
+            ),
             "status_turn_committed": bool(async_oracle_smoke.get("status_turn_committed")),
             "status_text": async_oracle_smoke.get("status_text"),
             "terminal_status_committed": bool(async_oracle_smoke.get("terminal_status_committed")),
@@ -1912,9 +1925,13 @@ def build_voice_operator_report(
                 "fifth_job_queued_and_started_after_capacity_freed"
             ],
             "async_oracle_cancellation_isolated": async_oracle_coverage["one_job_cancelled_while_others_completed"]
-            and async_oracle_coverage["queued_job_cancelled_before_start"],
+            and async_oracle_coverage["queued_job_cancelled_before_start"]
+            and async_oracle_coverage["playback_stop_does_not_cancel_jobs"],
             "async_oracle_late_cancelled_output_attempted": async_oracle_coverage[
                 "late_cancelled_output_attempted"
+            ],
+            "async_oracle_playback_stop_preserves_jobs": async_oracle_coverage[
+                "playback_stop_does_not_cancel_jobs"
             ],
             "async_oracle_late_cancelled_output_dropped": async_oracle_coverage["late_cancelled_output_not_spoken"],
             "async_oracle_late_cancelled_output_not_durable": async_oracle_coverage[
@@ -2029,6 +2046,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "late_cancelled_output_not_spoken",
         "late_cancelled_output_attempted",
         "late_cancelled_output_not_durable",
+        "playback_stop_does_not_cancel_jobs",
         "approval_wait_visible_and_redacted",
         "failed_job_reported_without_crash",
         "queued_job_control_update_reaches_oracle",

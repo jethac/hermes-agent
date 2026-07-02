@@ -327,6 +327,24 @@ async def run_smoke() -> dict[str, Any]:
 
     await send(
         {
+            "transcript": "stop talking",
+            "intent": "Stop talking.",
+            "intent_source": "smoke_reflex",
+            "route": "local",
+            "local_reply": "Okay.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ASSISTANT_COMMIT
+            and event.payload.get("local_reply")
+            and event.payload.get("text") == "Okay."
+            for event in events
+        )
+    )
+
+    await send(
+        {
             "transcript": "what are you working on",
             "intent": "What are you working on?",
             "intent_source": "smoke_reflex",
@@ -623,6 +641,34 @@ async def run_smoke() -> dict[str, Any]:
         for event in status_commits
         if str(event.payload.get("text") or "").startswith("Oracle jobs: 4 running out of 4, 1 queued.")
     ]
+    stop_talking_commits = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ASSISTANT_COMMIT
+        and event.payload.get("local_reply")
+        and event.payload.get("text") == "Okay."
+    ]
+    stop_talking_commit_index = (
+        recorder.events.index(stop_talking_commits[-1])
+        if stop_talking_commits
+        else -1
+    )
+    first_running_status_index = (
+        recorder.events.index(running_status_commits[0])
+        if running_status_commits
+        else -1
+    )
+    events_after_stop_until_status = (
+        recorder.events[stop_talking_commit_index + 1 : first_running_status_index + 1]
+        if stop_talking_commit_index >= 0 and first_running_status_index >= stop_talking_commit_index
+        else []
+    )
+    playback_stop_cancelled_jobs = any(
+        event.type in {VoiceEventType.INTERFACE_ORACLE_CANCEL, VoiceEventType.ORACLE_JOB_CANCELLED}
+        for event in events_after_stop_until_status
+    )
+    playback_stop_jobs_still_running = bool(running_status_commits)
+    playback_stop_did_not_cancel_jobs = bool(stop_talking_commits) and playback_stop_jobs_still_running and not playback_stop_cancelled_jobs
     terminal_status_commits = [
         event
         for event in recorder.events
@@ -840,6 +886,7 @@ async def run_smoke() -> dict[str, Any]:
             and scheduler_max_running == 4
             and oracle.max_running == 4
             and len(local_commits) >= 2
+            and playback_stop_did_not_cancel_jobs
             and bool(running_status_commits)
             and len(completed) == 6
             and len(failed) == 1
@@ -906,6 +953,10 @@ async def run_smoke() -> dict[str, Any]:
         "queued_cancel_target_job_id": queued_cancel_smoke["queued_cancel_target_job_id"],
         "queued_cancel_running_completed": queued_cancel_smoke["queued_cancel_running_completed"],
         "local_turn_committed": bool(local_commits),
+        "playback_stop_committed": bool(stop_talking_commits),
+        "playback_stop_jobs_still_running": playback_stop_jobs_still_running,
+        "playback_stop_cancelled_jobs": playback_stop_cancelled_jobs,
+        "playback_stop_does_not_cancel_jobs": playback_stop_did_not_cancel_jobs,
         "status_turn_committed": bool(running_status_commits),
         "status_text": str(running_status_commits[-1].payload.get("text") or "") if running_status_commits else "",
         "terminal_status_committed": bool(terminal_status_commits),

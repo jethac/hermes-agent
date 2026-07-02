@@ -1060,6 +1060,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_reason"] == "spoken request to cancel oracle job"
     assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_target_job_id"] == "voice-oracle-002"
     assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_running_completed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["playback_stop_committed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["playback_stop_jobs_still_running"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["playback_stop_cancelled_jobs"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["playback_stop_does_not_cancel_jobs"] is True
     assert voice_result["details"]["async_oracle_smoke"]["status_turn_committed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["terminal_status_committed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["completed_result_status_visible"] is True

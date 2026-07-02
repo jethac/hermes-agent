@@ -1489,6 +1489,18 @@ async def build_plan_run_async(
                         "queued_cancel_running_completed"
                     ],
                     "local_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["local_turn_committed"],
+                    "playback_stop_committed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "playback_stop_committed"
+                    ],
+                    "playback_stop_jobs_still_running": voice_operator["proofs"]["async_oracle_jobs"][
+                        "playback_stop_jobs_still_running"
+                    ],
+                    "playback_stop_cancelled_jobs": voice_operator["proofs"]["async_oracle_jobs"][
+                        "playback_stop_cancelled_jobs"
+                    ],
+                    "playback_stop_does_not_cancel_jobs": voice_operator["proofs"]["async_oracle_jobs"][
+                        "playback_stop_does_not_cancel_jobs"
+                    ],
                     "status_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["status_turn_committed"],
                     "status_text": voice_operator["proofs"]["async_oracle_jobs"]["status_text"],
                     "terminal_status_committed": voice_operator["proofs"]["async_oracle_jobs"][

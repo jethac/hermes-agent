@@ -84,6 +84,10 @@ def _async_oracle_smoke_payload() -> dict:
         "shutdown_close_cancel_entered": True,
         "shutdown_cancelled_jobs": 1,
         "local_turn_committed": True,
+        "playback_stop_committed": True,
+        "playback_stop_jobs_still_running": True,
+        "playback_stop_cancelled_jobs": False,
+        "playback_stop_does_not_cancel_jobs": True,
         "status_turn_committed": True,
         "status_text": "Oracle jobs: 4 running out of 4, 1 queued. running: Starting smoke task 1.",
         "terminal_status_committed": True,
@@ -354,6 +358,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["requirements"]["async_oracle_status_turn_while_running"] is True
     assert report["requirements"]["async_oracle_fifth_job_queued_and_started"] is True
     assert report["requirements"]["async_oracle_cancellation_isolated"] is True
+    assert report["requirements"]["async_oracle_playback_stop_preserves_jobs"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_attempted"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_dropped"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_not_durable"] is True
@@ -378,6 +383,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["queued_cancel_reason"] == "spoken request to cancel oracle job"
     assert report["proofs"]["async_oracle_jobs"]["queued_cancel_target_job_id"] == "voice-oracle-002"
     assert report["proofs"]["async_oracle_jobs"]["queued_cancel_running_completed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["playback_stop_committed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["playback_stop_jobs_still_running"] is True
+    assert report["proofs"]["async_oracle_jobs"]["playback_stop_cancelled_jobs"] is False
+    assert report["proofs"]["async_oracle_jobs"]["playback_stop_does_not_cancel_jobs"] is True
     assert report["proofs"]["async_oracle_jobs"]["status_turn_committed"] is True
     assert report["proofs"]["async_oracle_jobs"]["terminal_status_committed"] is True
     assert report["proofs"]["async_oracle_jobs"]["completed_result_status_visible"] is True
@@ -524,6 +533,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:late_cancelled_output_attempted" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_not_spoken" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_not_durable" in issues
+    assert "missing_async_oracle_coverage:playback_stop_does_not_cancel_jobs" in issues
     assert "missing_async_oracle_coverage:approval_wait_visible_and_redacted" in issues
     assert "missing_async_oracle_coverage:failed_job_reported_without_crash" in issues
     assert "missing_async_oracle_coverage:queued_job_control_update_reaches_oracle" in issues
