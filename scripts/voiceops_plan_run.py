@@ -1614,6 +1614,30 @@ async def build_plan_run_async(
                     "verbose_spoken_result": voice_operator["proofs"]["async_oracle_jobs"][
                         "verbose_spoken_result"
                     ],
+                    "terminal_result_policy_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
+                        "terminal_result_policy_smoke_ok"
+                    ],
+                    "terminal_result_auto_summarize_default": voice_operator["proofs"]["async_oracle_jobs"][
+                        "terminal_result_auto_summarize_default"
+                    ],
+                    "terminal_result_suppression_config": voice_operator["proofs"]["async_oracle_jobs"][
+                        "terminal_result_suppression_config"
+                    ],
+                    "terminal_result_suppressed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "terminal_result_suppressed"
+                    ],
+                    "terminal_result_unsolicited_event_count": voice_operator["proofs"]["async_oracle_jobs"][
+                        "terminal_result_unsolicited_event_count"
+                    ],
+                    "terminal_result_unsolicited_spoken": voice_operator["proofs"]["async_oracle_jobs"][
+                        "terminal_result_unsolicited_spoken"
+                    ],
+                    "terminal_result_status_available": voice_operator["proofs"]["async_oracle_jobs"][
+                        "terminal_result_status_available"
+                    ],
+                    "terminal_result_status_text": voice_operator["proofs"]["async_oracle_jobs"][
+                        "terminal_result_status_text"
+                    ],
                 },
                 "tool_disclosure": {
                     "ok": voice_operator["proofs"]["tool_disclosure"]["ok"],

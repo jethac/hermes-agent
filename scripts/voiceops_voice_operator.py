@@ -118,6 +118,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_status_recalls_recent_completed_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_async_oracle_job_failure_reports_in_voice",
         "tests/agent/test_realtime_voice.py::test_kame_engine_async_terminal_result_speech_is_capped_without_losing_full_result",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_speak_terminal_results_false_suppresses_result_speech_but_keeps_status",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_completed_event_preserves_full_result_without_bloating_status",
         "tests/agent/test_realtime_voice.py::test_session_persists_durable_async_oracle_job_records",
     ],
@@ -1437,7 +1438,13 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("verbose_result_committed_bounded") is True
         and smoke.get("verbose_result_commit_marked_truncated") is True
         and smoke.get("verbose_full_result_durable") is True
-        and smoke.get("completed_result_status_visible") is True,
+        and smoke.get("completed_result_status_visible") is True
+        and smoke.get("terminal_result_policy_smoke_ok") is True
+        and smoke.get("terminal_result_auto_summarize_default") is True
+        and smoke.get("terminal_result_suppressed") is True
+        and smoke.get("terminal_result_status_available") is True
+        and int(smoke.get("terminal_result_unsolicited_event_count") or 0) == 0
+        and smoke.get("terminal_result_unsolicited_spoken") is False,
         "shutdown_timeout_bounded": smoke.get("shutdown_bounded_close_observed") is True
         and smoke.get("shutdown_forced_cancel_observed") is True
         and int(smoke.get("shutdown_cancelled_jobs") or 0) >= 1,
@@ -1871,6 +1878,20 @@ def build_voice_operator_report(
             "verbose_full_result_durable": bool(async_oracle_smoke.get("verbose_full_result_durable")),
             "verbose_full_result_chars": async_oracle_smoke.get("verbose_full_result_chars"),
             "verbose_spoken_result": async_oracle_smoke.get("verbose_spoken_result"),
+            "terminal_result_policy_smoke_ok": bool(async_oracle_smoke.get("terminal_result_policy_smoke_ok")),
+            "terminal_result_auto_summarize_default": bool(
+                async_oracle_smoke.get("terminal_result_auto_summarize_default")
+            ),
+            "terminal_result_suppression_config": async_oracle_smoke.get("terminal_result_suppression_config"),
+            "terminal_result_suppressed": bool(async_oracle_smoke.get("terminal_result_suppressed")),
+            "terminal_result_unsolicited_event_count": async_oracle_smoke.get(
+                "terminal_result_unsolicited_event_count"
+            ),
+            "terminal_result_unsolicited_spoken": bool(
+                async_oracle_smoke.get("terminal_result_unsolicited_spoken")
+            ),
+            "terminal_result_status_available": bool(async_oracle_smoke.get("terminal_result_status_available")),
+            "terminal_result_status_text": async_oracle_smoke.get("terminal_result_status_text"),
             "coverage": async_oracle_coverage,
         },
         "discord_session_cleanup": {

@@ -144,6 +144,17 @@ def _async_oracle_smoke_payload() -> dict:
         "verbose_full_result_durable": True,
         "verbose_full_result_chars": 48,
         "verbose_spoken_result": "First sentence.",
+        "terminal_result_policy_smoke_ok": True,
+        "terminal_result_auto_summarize_default": True,
+        "terminal_result_suppression_config": "oracle_jobs.speak_terminal_results=false",
+        "terminal_result_suppressed": True,
+        "terminal_result_unsolicited_event_count": 0,
+        "terminal_result_unsolicited_spoken": False,
+        "terminal_result_status_available": True,
+        "terminal_result_status_text": (
+            "No oracle jobs are running or queued right now. Recent: "
+            "completed: Finished Suppress terminal result."
+        ),
         "spoken": [
             "Starting smoke task 1.",
             "Starting smoke task 2.",
@@ -444,6 +455,19 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["verbose_result_commit_marked_truncated"] is True
     assert report["proofs"]["async_oracle_jobs"]["verbose_full_result_durable"] is True
     assert report["proofs"]["async_oracle_jobs"]["verbose_spoken_result"] == "First sentence."
+    assert report["proofs"]["async_oracle_jobs"]["terminal_result_policy_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["terminal_result_auto_summarize_default"] is True
+    assert (
+        report["proofs"]["async_oracle_jobs"]["terminal_result_suppression_config"]
+        == "oracle_jobs.speak_terminal_results=false"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["terminal_result_suppressed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["terminal_result_unsolicited_event_count"] == 0
+    assert report["proofs"]["async_oracle_jobs"]["terminal_result_unsolicited_spoken"] is False
+    assert report["proofs"]["async_oracle_jobs"]["terminal_result_status_available"] is True
+    assert "completed: Finished Suppress terminal result." in report["proofs"]["async_oracle_jobs"][
+        "terminal_result_status_text"
+    ]
     assert report["proofs"]["async_oracle_jobs"]["shutdown_timeout_configured_ms"] == 10
     assert report["proofs"]["async_oracle_jobs"]["shutdown_bounded_close_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["shutdown_forced_cancel_observed"] is True
@@ -629,6 +653,17 @@ def test_voice_operator_validation_rejects_missing_visible_queued_update_status(
 def test_voice_operator_validation_rejects_completed_result_missing_from_status_view():
     report = _voice_operator_report()
     report["async_oracle_smoke"]["completed_result_status_visible"] = False
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:result_handling_bounded_and_durable" in issues
+    assert "stale_async_oracle_coverage:result_handling_bounded_and_durable" in issues
+    assert "missing_async_oracle_acceptance:result_handling_is_bounded_and_durable" in issues
+
+
+def test_voice_operator_validation_rejects_missing_terminal_result_suppression_policy():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["terminal_result_suppressed"] = False
 
     issues = validate_voice_operator_report(report)
 

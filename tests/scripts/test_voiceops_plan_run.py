@@ -1113,6 +1113,19 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["verbose_result_commit_marked_truncated"] is True
     assert voice_result["details"]["async_oracle_smoke"]["verbose_full_result_durable"] is True
     assert voice_result["details"]["async_oracle_smoke"]["verbose_spoken_result"] == "First sentence."
+    assert voice_result["details"]["async_oracle_smoke"]["terminal_result_policy_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["terminal_result_auto_summarize_default"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["terminal_result_suppression_config"]
+        == "oracle_jobs.speak_terminal_results=false"
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["terminal_result_suppressed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["terminal_result_unsolicited_event_count"] == 0
+    assert voice_result["details"]["async_oracle_smoke"]["terminal_result_unsolicited_spoken"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["terminal_result_status_available"] is True
+    assert "completed: Finished Suppress terminal result." in voice_result["details"]["async_oracle_smoke"][
+        "terminal_result_status_text"
+    ]
     assert voice_result["details"]["discord_session_cleanup_smoke"]["ok"] is True
     assert voice_result["details"]["discord_session_cleanup_smoke"]["cancel_all_before_session_closed"] is True
     assert voice_result["details"]["discord_session_cleanup_smoke"]["session_closed_sent"] is True

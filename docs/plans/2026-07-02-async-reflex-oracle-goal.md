@@ -363,6 +363,13 @@ When a job completes:
 
 This requires generation/job relevance checks, not just "oracle returned text".
 
+Default policy: `oracle_jobs.speak_terminal_results` is enabled, so completed
+jobs may speak a concise terminal summary when the current playback generation
+is still relevant. Operators can disable unsolicited terminal summaries with
+`oracle_jobs.speak_terminal_results: false`; in that mode completed results stay
+durable and visible through reflex status questions, but they are not spoken
+automatically.
+
 ## Acceptance Criteria
 
 ### Core Async Behavior
@@ -467,8 +474,6 @@ For real DGX Spark evidence:
 
 ## Open Questions
 
-- Should the reflex be allowed to auto-summarize completed background jobs, or
-  should it wait for a quiet moment / user prompt?
 - How much job state should be committed to Hermes history versus an auxiliary
   voice-session task log?
 - Should job updates be attached to the original oracle prompt or represented

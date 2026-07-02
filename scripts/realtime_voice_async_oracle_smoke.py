@@ -409,6 +409,119 @@ async def _run_approval_capacity_smoke() -> dict[str, Any]:
     }
 
 
+async def _run_terminal_result_policy_smoke() -> dict[str, Any]:
+    oracle = SmokeOracle()
+    engine = SmokeEngine(oracle=oracle)
+    recorder = EventRecorder(engine)
+    await engine.start(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-smoke-terminal-result-policy",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            oracle_jobs={
+                "enabled": True,
+                "max_concurrent": 1,
+                "queue_limit": 4,
+                "speak_terminal_results": False,
+                "shutdown_timeout_seconds": 0.01,
+            },
+            metadata={"transport": "smoke"},
+        )
+    )
+    collector = asyncio.create_task(recorder.run())
+    sequence = 0
+
+    async def send(payload: dict[str, Any]) -> None:
+        nonlocal sequence
+        sequence += 1
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-smoke-terminal-result-policy",
+                sequence=sequence,
+                payload={**payload, "end_of_utterance": True},
+            )
+        )
+
+    await send(
+        {
+            "transcript": "suppress terminal result",
+            "intent": "Suppress terminal result",
+            "intent_source": "smoke_reflex",
+            "route": "defer",
+            "interface_already_said": "Checking terminal result policy.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_STARTED
+            and event.payload.get("intent") == "Suppress terminal result"
+            for event in events
+        )
+    )
+    oracle.release("Suppress terminal result")
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_COMPLETED
+            and event.payload.get("intent") == "Suppress terminal result"
+            for event in events
+        )
+    )
+    unsolicited_result_events = [
+        event
+        for event in recorder.events
+        if event.type in {VoiceEventType.ASSISTANT_TEXT_PARTIAL, VoiceEventType.ASSISTANT_COMMIT}
+        and event.payload.get("oracle_job_result")
+    ]
+    unsolicited_result_spoken = any("Finished Suppress terminal result" in text for text in engine.spoken)
+
+    await send(
+        {
+            "transcript": "what completed",
+            "intent": "What completed?",
+            "intent_source": "smoke_reflex",
+            "route": "local",
+            "local_reply": "Let me check.",
+            "max_spoken_sentences": 5,
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ASSISTANT_COMMIT
+            and str(event.payload.get("text") or "").startswith(
+                "No oracle jobs are running or queued right now. Recent:"
+            )
+            for event in events
+        )
+    )
+    status_commits = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ASSISTANT_COMMIT
+        and str(event.payload.get("text") or "").startswith("No oracle jobs are running or queued right now. Recent:")
+    ]
+    await engine.close()
+    collector.cancel()
+    try:
+        await collector
+    except asyncio.CancelledError:
+        pass
+
+    status_text = str(status_commits[-1].payload.get("text") or "") if status_commits else ""
+    terminal_result_status_available = "completed: Finished Suppress terminal result." in status_text
+    return {
+        "ok": not unsolicited_result_events
+        and not unsolicited_result_spoken
+        and terminal_result_status_available,
+        "terminal_result_auto_summarize_default": True,
+        "terminal_result_suppression_config": "oracle_jobs.speak_terminal_results=false",
+        "terminal_result_suppressed": not unsolicited_result_events and not unsolicited_result_spoken,
+        "terminal_result_unsolicited_event_count": len(unsolicited_result_events),
+        "terminal_result_unsolicited_spoken": unsolicited_result_spoken,
+        "terminal_result_status_available": terminal_result_status_available,
+        "terminal_result_status_text": status_text,
+    }
+
+
 async def run_smoke() -> dict[str, Any]:
     oracle = SmokeOracle()
     engine = SmokeEngine(oracle=oracle)
@@ -741,6 +854,7 @@ async def run_smoke() -> dict[str, Any]:
         pass
     queued_cancel_smoke = await _run_queued_cancel_smoke()
     approval_capacity_smoke = await _run_approval_capacity_smoke()
+    terminal_result_policy_smoke = await _run_terminal_result_policy_smoke()
 
     started = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_STARTED]
     queued = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_QUEUED]
@@ -1064,6 +1178,7 @@ async def run_smoke() -> dict[str, Any]:
             and shutdown_forced_cancel_observed
             and queued_cancel_smoke["ok"]
             and approval_capacity_smoke["ok"]
+            and terminal_result_policy_smoke["ok"]
         ),
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": scheduler_max_running,
@@ -1099,6 +1214,18 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "approval_capacity_completed_jobs": approval_capacity_smoke["approval_capacity_completed_jobs"],
         "approval_capacity_max_concurrent": approval_capacity_smoke["approval_capacity_max_concurrent"],
+        "terminal_result_policy_smoke_ok": terminal_result_policy_smoke["ok"],
+        "terminal_result_auto_summarize_default": terminal_result_policy_smoke[
+            "terminal_result_auto_summarize_default"
+        ],
+        "terminal_result_suppression_config": terminal_result_policy_smoke["terminal_result_suppression_config"],
+        "terminal_result_suppressed": terminal_result_policy_smoke["terminal_result_suppressed"],
+        "terminal_result_unsolicited_event_count": terminal_result_policy_smoke[
+            "terminal_result_unsolicited_event_count"
+        ],
+        "terminal_result_unsolicited_spoken": terminal_result_policy_smoke["terminal_result_unsolicited_spoken"],
+        "terminal_result_status_available": terminal_result_policy_smoke["terminal_result_status_available"],
+        "terminal_result_status_text": terminal_result_policy_smoke["terminal_result_status_text"],
         "local_turn_committed": bool(local_commits),
         "playback_stop_committed": bool(stop_talking_commits),
         "playback_stop_jobs_still_running": playback_stop_jobs_still_running,
