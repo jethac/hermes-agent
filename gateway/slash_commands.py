@@ -181,6 +181,31 @@ def _voice_status_metric_lines(value: Any) -> list[str]:
     return lines
 
 
+def _voice_status_oracle_job_lines(value: Any) -> list[str]:
+    if not isinstance(value, dict) or not value.get("enabled"):
+        return []
+    capacity = value.get("capacity") if isinstance(value.get("capacity"), dict) else {}
+    running = capacity.get("running", 0)
+    max_concurrent = capacity.get("max_concurrent", "?")
+    queued = capacity.get("queued", 0)
+    lines = [f"Oracle jobs: running={running}/{max_concurrent}, queued={queued}"]
+    jobs = value.get("jobs")
+    if not isinstance(jobs, list):
+        return lines
+    for job in jobs[-3:]:
+        if not isinstance(job, dict):
+            continue
+        job_id = str(job.get("job_id") or "").strip()
+        state = str(job.get("state") or "").strip()
+        label = str(job.get("spoken_status") or job.get("intent") or job.get("result_summary") or "").strip()
+        parts = [part for part in (job_id, state) if part]
+        if not parts:
+            continue
+        prefix = " ".join(parts)
+        lines.append(f"Oracle job: {prefix}" + (f" - {label[:120]}" if label else ""))
+    return lines
+
+
 class GatewaySlashCommandsMixin:
     """In-session slash-command handlers for GatewayRunner."""
 
@@ -2601,6 +2626,7 @@ class GatewaySlashCommandsMixin:
                         lines.append(f"Last realtime event: {session['last_realtime_event']}")
                     latency_metrics = session.get("latency_metrics_ms")
                     lines.extend(_voice_status_metric_lines(latency_metrics))
+                    lines.extend(_voice_status_oracle_job_lines(session.get("oracle_jobs")))
                     quality_misses = session.get("quality_target_misses")
                     if isinstance(quality_misses, list) and quality_misses:
                         lines.append(f"Quality target misses: {len(quality_misses)}")

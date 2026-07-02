@@ -370,6 +370,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
             "kame_speech_end_to_interface_decision_ms": 321,
             "kame_speech_end_to_playback_start_ms": 2345,
         },
+        oracle_jobs={"enabled": True, "max_concurrent": 4, "queue_limit": 16},
     )
 
     await session.start()
@@ -414,6 +415,7 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         "kame_speech_end_to_interface_decision_ms": 321,
         "kame_speech_end_to_playback_start_ms": 2345,
     }
+    assert sidecar.started_with.oracle_jobs == {"enabled": True, "max_concurrent": 4, "queue_limit": 16}
     assert sidecar.started_with.barge_in_policy == {
         "stop_playback_deadline_ms": 95,
     }
@@ -454,6 +456,11 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
     assert sidecar.started_with.metadata["quality_targets_ms"] == {
         "kame_speech_end_to_interface_decision_ms": 321,
         "kame_speech_end_to_playback_start_ms": 2345,
+    }
+    assert sidecar.started_with.metadata["oracle_jobs"] == {
+        "enabled": True,
+        "max_concurrent": 4,
+        "queue_limit": 16,
     }
     assert sidecar.started_with.metadata["barge_in"] == {
         "stop_playback_deadline_ms": 95,
@@ -1010,6 +1017,87 @@ def test_discord_realtime_event_does_not_double_count_assistant_audio_alias():
     assert status["last_realtime_event"] == "assistant.audio.chunk"
     assert status["latency_metrics_ms"]["audio_output_chunks"] == 1
     assert status["latency_metrics_ms"]["kame_speech_end_to_first_audio_ms"] == 820
+
+
+def test_discord_realtime_event_tracks_oracle_job_status():
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._voice_session_states = {}
+
+    adapter._handle_realtime_voice_event(
+        111,
+        "session.started",
+        {"oracle_jobs": {"enabled": True, "max_concurrent": 4, "queue_limit": 16}},
+    )
+    adapter._handle_realtime_voice_event(
+        111,
+        "oracle.job.started",
+        {
+            "job_id": "voice-oracle-001",
+            "state": "running",
+            "priority": "normal",
+            "route": "defer",
+            "intent": "Check the deployment status.",
+            "spoken_status": "Checking the deployment status.",
+            "metadata": {"tool_schema": "must not leak"},
+            "oracle_text": "must not leak",
+        },
+    )
+    adapter._handle_realtime_voice_event(
+        111,
+        "oracle.job.completed",
+        {
+            "job_id": "voice-oracle-001",
+            "state": "completed",
+            "result_summary": "The deployment is healthy.",
+        },
+    )
+
+    status = adapter.get_voice_session_status(111)
+
+    assert status["oracle_jobs"]["capacity"] == {
+        "running": 0,
+        "queued": 0,
+        "max_concurrent": 4,
+        "queue_limit": 16,
+    }
+    assert status["oracle_jobs"]["jobs"] == [
+        {
+            "job_id": "voice-oracle-001",
+            "state": "completed",
+            "priority": "normal",
+            "route": "defer",
+            "intent": "Check the deployment status.",
+            "spoken_status": "Checking the deployment status.",
+            "result_summary": "The deployment is healthy.",
+        }
+    ]
+    assert "metadata" not in status["oracle_jobs"]["jobs"][0]
+    assert "oracle_text" not in status["oracle_jobs"]["jobs"][0]
+
+
+def test_voice_status_oracle_job_lines_are_compact():
+    from gateway.slash_commands import _voice_status_oracle_job_lines
+
+    lines = _voice_status_oracle_job_lines(
+        {
+            "enabled": True,
+            "capacity": {"running": 1, "max_concurrent": 4, "queued": 2},
+            "jobs": [
+                {
+                    "job_id": "voice-oracle-001",
+                    "state": "running",
+                    "spoken_status": "Checking the deployment status.",
+                }
+            ],
+        }
+    )
+
+    assert lines == [
+        "Oracle jobs: running=1/4, queued=2",
+        "Oracle job: voice-oracle-001 running - Checking the deployment status.",
+    ]
 
 
 @pytest.mark.asyncio

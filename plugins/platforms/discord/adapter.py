@@ -44,6 +44,19 @@ DISCORD_VOICE_ARCHITECTURE_KAME = "kame_frontend_oracle"
 DISCORD_VOICE_FRONTEND_ROLE = "low_latency_voice_interface"
 DISCORD_VOICE_ORACLE_ROLE = "hermes_backend_oracle"
 DISCORD_REALTIME_AUDIO_OUTPUT_EVENTS = frozenset({"audio.output.chunk", "assistant.audio.chunk"})
+DISCORD_REALTIME_ORACLE_JOB_EVENTS = frozenset(
+    {
+        "oracle.job.accepted",
+        "oracle.job.queued",
+        "oracle.job.started",
+        "oracle.job.progress",
+        "oracle.job.waiting_for_approval",
+        "oracle.job.completed",
+        "oracle.job.failed",
+        "oracle.job.cancel_requested",
+        "oracle.job.cancelled",
+    }
+)
 
 
 @dataclass
@@ -91,6 +104,7 @@ class DiscordVoiceSessionState:
     latency_metrics_ms: Dict[str, int] = field(default_factory=dict)
     quality_target_misses: List[Dict[str, Any]] = field(default_factory=list)
     frontend_state: Dict[str, Any] = field(default_factory=dict)
+    oracle_jobs: Dict[str, Any] = field(default_factory=dict)
     updated_at: float = field(default_factory=time.monotonic)
 
     def update(self, **values: Any) -> "DiscordVoiceSessionState":
@@ -192,6 +206,57 @@ def _discord_voice_frontend_state(value: Any) -> Dict[str, Any]:
         if key in value and isinstance(value.get(key), bool):
             state[key] = value[key]
     return state
+
+
+def _discord_voice_oracle_jobs_update(
+    existing: Any,
+    event_type: str,
+    payload: Mapping[str, Any],
+) -> Dict[str, Any]:
+    if event_type == "session.started":
+        config = payload.get("oracle_jobs")
+        if not isinstance(config, Mapping) or not config:
+            return {}
+        capacity = {
+            "running": 0,
+            "max_concurrent": _discord_voice_nonnegative_int(config.get("max_concurrent")) or 1,
+            "queued": 0,
+            "queue_limit": _discord_voice_nonnegative_int(config.get("queue_limit")) or 16,
+        }
+        return {"enabled": bool(config.get("enabled")), "capacity": capacity, "jobs": []}
+    if event_type not in DISCORD_REALTIME_ORACLE_JOB_EVENTS:
+        return {}
+    job_id = str(payload.get("job_id") or "").strip()
+    if not job_id:
+        return {}
+    current = existing if isinstance(existing, Mapping) else {}
+    capacity = dict(current.get("capacity") or {})
+    jobs_by_id = {
+        str(job.get("job_id")): dict(job)
+        for job in current.get("jobs", [])
+        if isinstance(job, Mapping) and job.get("job_id")
+    }
+    job = jobs_by_id.get(job_id, {"job_id": job_id})
+    state = str(payload.get("state") or job.get("state") or "").strip()
+    if state:
+        job["state"] = state[:80]
+    for key in ("priority", "route", "intent", "spoken_status", "result_summary", "error", "cancel_reason"):
+        text = str(payload.get(key) or "").strip()
+        if text:
+            job[key] = text[:500 if key == "result_summary" else 180]
+    jobs_by_id[job_id] = job
+    jobs = list(jobs_by_id.values())[-12:]
+    running = sum(1 for item in jobs if item.get("state") in {"running", "cancel_requested", "waiting_for_approval"})
+    queued = sum(1 for item in jobs if item.get("state") == "queued")
+    capacity.update(
+        {
+            "running": running,
+            "queued": queued,
+            "max_concurrent": _discord_voice_nonnegative_int(capacity.get("max_concurrent")) or 1,
+            "queue_limit": _discord_voice_nonnegative_int(capacity.get("queue_limit")) or 16,
+        }
+    )
+    return {"enabled": True, "capacity": capacity, "jobs": jobs}
 
 
 def _discord_voice_provider_context(value: Any) -> str:
@@ -3583,6 +3648,7 @@ class DiscordAdapter(BasePlatformAdapter):
                 "latency_metrics_ms": {},
                 "quality_target_misses": [],
                 "frontend_state": {},
+                "oracle_jobs": {},
                 **playback,
                 **architecture,
             }
@@ -3636,6 +3702,15 @@ class DiscordAdapter(BasePlatformAdapter):
             "latency_metrics_ms": dict(state.latency_metrics_ms),
             "quality_target_misses": [dict(item) for item in state.quality_target_misses],
             "frontend_state": dict(state.frontend_state),
+            "oracle_jobs": {
+                "enabled": bool(getattr(state, "oracle_jobs", {}).get("enabled")),
+                "capacity": dict(getattr(state, "oracle_jobs", {}).get("capacity") or {}),
+                "jobs": [
+                    dict(item)
+                    for item in getattr(state, "oracle_jobs", {}).get("jobs", [])
+                    if isinstance(item, dict)
+                ],
+            },
             **playback,
         }
 
@@ -3686,6 +3761,7 @@ class DiscordAdapter(BasePlatformAdapter):
             metrics_policy=cfg.get("metrics") if isinstance(cfg.get("metrics"), dict) else {},
             output_events=cfg.get("output_events") if isinstance(cfg.get("output_events"), dict) else {},
             quality_targets_ms=cfg.get("quality_targets_ms") if isinstance(cfg.get("quality_targets_ms"), dict) else {},
+            oracle_jobs=cfg.get("oracle_jobs") if isinstance(cfg.get("oracle_jobs"), dict) else {},
             barge_in_stop_playback_deadline_ms=int(cfg.get("barge_in_stop_playback_deadline_ms") or 150),
             mixer=getattr(self, "_voice_mixers", {}).get(guild_id),
             degraded_callback=lambda reason, error: self._handle_realtime_voice_degraded(
@@ -3802,6 +3878,13 @@ class DiscordAdapter(BasePlatformAdapter):
             current_frontend_state = dict(self._voice_state(guild_id).frontend_state)
             current_frontend_state.update(frontend_state)
             updates["frontend_state"] = current_frontend_state
+        oracle_jobs = _discord_voice_oracle_jobs_update(
+            self._voice_state(guild_id).oracle_jobs,
+            event_type,
+            payload,
+        )
+        if oracle_jobs:
+            updates["oracle_jobs"] = oracle_jobs
         if not is_audio_output:
             text = str(
                 payload.get("text")

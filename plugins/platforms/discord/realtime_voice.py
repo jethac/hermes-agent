@@ -162,6 +162,7 @@ class DiscordRealtimeVoiceSession:
         metrics_policy: Optional[dict] = None,
         output_events: Optional[dict] = None,
         quality_targets_ms: Optional[dict] = None,
+        oracle_jobs: Optional[dict] = None,
         barge_in_stop_playback_deadline_ms: int = DEFAULT_BARGE_IN_STOP_PLAYBACK_DEADLINE_MS,
         sidecar: Any = None,
         mixer: Any = None,
@@ -201,6 +202,7 @@ class DiscordRealtimeVoiceSession:
         self.metrics_policy = dict(metrics_policy or {})
         self.output_events = dict(output_events or {})
         self.quality_targets_ms = dict(quality_targets_ms or {})
+        self.oracle_jobs = dict(oracle_jobs or {})
         try:
             self.barge_in_stop_playback_deadline_ms = max(0, int(barge_in_stop_playback_deadline_ms))
         except (TypeError, ValueError):
@@ -259,6 +261,7 @@ class DiscordRealtimeVoiceSession:
             metrics_policy=dict(self.metrics_policy),
             output_events=dict(self.output_events),
             quality_targets_ms=dict(self.quality_targets_ms),
+            oracle_jobs=dict(self.oracle_jobs),
             barge_in_policy={
                 "stop_playback_deadline_ms": self.barge_in_stop_playback_deadline_ms,
             },
@@ -296,6 +299,7 @@ class DiscordRealtimeVoiceSession:
                 "metrics": dict(self.metrics_policy),
                 "output_events": dict(self.output_events),
                 "quality_targets_ms": dict(self.quality_targets_ms),
+                "oracle_jobs": dict(self.oracle_jobs),
                 "barge_in": {
                     "stop_playback_deadline_ms": self.barge_in_stop_playback_deadline_ms,
                 },
