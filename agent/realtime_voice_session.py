@@ -75,6 +75,10 @@ STALE_GENERATION_EVENT_TYPES = frozenset(
 DURABLE_ORACLE_RECORD_EVENT_TYPES = frozenset(
     {
         VoiceEventType.INTERFACE_ORACLE_REQUEST,
+        VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
+        VoiceEventType.ORACLE_JOB_COMPLETED,
+        VoiceEventType.ORACLE_JOB_FAILED,
+        VoiceEventType.ORACLE_JOB_CANCELLED,
         VoiceEventType.ORACLE_TOOL_RESULT,
         VoiceEventType.ORACLE_RESPONSE_FINAL,
         VoiceEventType.ORACLE_ERROR,

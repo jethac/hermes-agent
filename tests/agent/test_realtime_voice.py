@@ -12043,6 +12043,112 @@ def test_session_persists_only_durable_oracle_records():
     ]
 
 
+def test_session_persists_durable_async_oracle_job_records():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-123"),
+        engine=TextOracleTTSEngine(oracle=FakeOracle()),
+    )
+
+    events = [
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_JOB_PROGRESS,
+            session_id="voice-123",
+            sequence=1,
+            payload={
+                "job_id": "voice-oracle-001",
+                "phase": "tool",
+                "tool_event": {"tool_name": "stripe_link_purchase", "arguments": {"card": "secret"}},
+            },
+        ),
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
+            session_id="voice-123",
+            sequence=2,
+            payload={
+                "job_id": "voice-oracle-001",
+                "state": "waiting_for_approval",
+                "approval_reason": "Stripe Link spend requires approval",
+                "approval": {
+                    "approval_id": "approval-123",
+                    "tool_name": "stripe_link_purchase",
+                },
+            },
+        ),
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_JOB_COMPLETED,
+            session_id="voice-123",
+            sequence=3,
+            payload={
+                "job_id": "voice-oracle-001",
+                "state": "completed",
+                "result_summary": "The spend approval cleared.",
+            },
+        ),
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_JOB_FAILED,
+            session_id="voice-123",
+            sequence=4,
+            payload={
+                "job_id": "voice-oracle-002",
+                "state": "failed",
+                "error": "oracle backend unavailable",
+            },
+        ),
+        VoiceEvent(
+            type=VoiceEventType.ORACLE_JOB_CANCELLED,
+            session_id="voice-123",
+            sequence=5,
+            payload={
+                "job_id": "voice-oracle-003",
+                "state": "cancelled",
+                "cancel_reason": "user cancelled queued job",
+            },
+        ),
+    ]
+    for event in events:
+        session._apply_server_event(event)
+
+    assert session.durable_oracle_records() == [
+        {
+            "type": VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL.value,
+            "payload": {
+                "job_id": "voice-oracle-001",
+                "state": "waiting_for_approval",
+                "approval_reason": "Stripe Link spend requires approval",
+                "approval": {
+                    "approval_id": "approval-123",
+                    "tool_name": "stripe_link_purchase",
+                },
+            },
+        },
+        {
+            "type": VoiceEventType.ORACLE_JOB_COMPLETED.value,
+            "payload": {
+                "job_id": "voice-oracle-001",
+                "state": "completed",
+                "result_summary": "The spend approval cleared.",
+            },
+        },
+        {
+            "type": VoiceEventType.ORACLE_JOB_FAILED.value,
+            "payload": {
+                "job_id": "voice-oracle-002",
+                "state": "failed",
+                "error": "oracle backend unavailable",
+            },
+        },
+        {
+            "type": VoiceEventType.ORACLE_JOB_CANCELLED.value,
+            "payload": {
+                "job_id": "voice-oracle-003",
+                "state": "cancelled",
+                "cancel_reason": "user cancelled queued job",
+            },
+        },
+    ]
+    assert "secret" not in str(session.durable_oracle_records())
+
+
 def test_session_drops_stale_durable_oracle_records_after_barge_in():
     session = RealtimeVoiceSession(
         RealtimeVoiceSessionConfig(session_id="voice-123"),
