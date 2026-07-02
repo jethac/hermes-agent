@@ -30,6 +30,13 @@ from agent.realtime_voice import (
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_kame import KameOracleRequest, KameRoute, kame_local_reply_denies_voice_capability
 from agent.realtime_voice_oracle import HermesRealtimeOracle, NullRealtimeOracle
+from agent.realtime_voice_oracle_jobs import (
+    OracleJob,
+    OracleJobEvent,
+    OracleJobEventType,
+    OracleJobManager,
+    OracleJobQueueFullError,
+)
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, wants_realtime_sidecar
 from agent.think_scrubber import StreamingThinkScrubber, strip_leading_reasoning_trace
@@ -62,6 +69,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._input_generation_active = False
         self._completed_input_generations: set[int] = set()
         self._frontend_output_active = False
+        self._active_task_interrupts_oracle = True
         self._assistant_metadata_by_generation: dict[int, dict] = {}
         self._cancellation_token_by_generation: dict[int, str] = {}
         self._interface_decision_at_by_generation: dict[int, float] = {}
@@ -69,6 +77,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._first_audio_metric_generations: set[int] = set()
         self._speech_energy_ms_by_user: dict[str, int] = {}
         self._kame_committed_turns: list[tuple[str, str]] = []
+        self._oracle_job_manager: Optional[OracleJobManager] = None
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -100,6 +109,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         "sidecar": False,
                     },
                 )
+        if _async_oracle_jobs_enabled(config):
+            self._oracle_job_manager = OracleJobManager(
+                max_concurrent=_oracle_jobs_config_int(config, "max_concurrent", default=1),
+                queue_limit=_oracle_jobs_config_int(config, "queue_limit", default=16),
+                default_priority=_oracle_jobs_config_str(config, "default_priority", default="normal"),
+                overflow_policy=_oracle_jobs_config_str(config, "overflow_policy", default="queue"),
+                runner=self._run_oracle_job,
+                event_callback=self._emit_oracle_job_event,
+                interrupt_callback=self._interrupt_oracle_job,
+            )
         await self._emit(
             VoiceEventType.SESSION_STARTED,
             {
@@ -182,6 +201,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             if audio:
                 if _allow_kame_transcript_events(self.config):
                     await self._emit(VoiceEventType.TRANSCRIPT_PARTIAL, {"text": "", "stability": 0.1})
+                self._active_task_interrupts_oracle = True
                 self._active_task = asyncio.create_task(self._transcribe_and_answer(audio, chunk.codec))
 
     async def events(self) -> AsyncIterator[VoiceEvent]:
@@ -202,6 +222,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._active_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._active_task
+        if self._oracle_job_manager is not None:
+            with contextlib.suppress(Exception):
+                await self._oracle_job_manager.cancel_all(reason="session closed")
+                await self._oracle_job_manager.wait_for_idle()
         await self._notify_sidecar_session_stop(sidecar_stop_event)
         if self._sidecar_task and not self._sidecar_task.done():
             self._sidecar_task.cancel()
@@ -297,7 +321,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if backend_interrupt_requested and self._active_task is not None:
             self._active_task.cancel()
         oracle = self._oracle
-        if hasattr(oracle, "interrupt"):
+        if (not backend_interrupt_requested or self._active_task_interrupts_oracle) and hasattr(oracle, "interrupt"):
             oracle.interrupt("Realtime voice barge-in")  # type: ignore[attr-defined]
         self._clear_inbound_audio()
         cancelled_kame_oracle = bool(
@@ -709,6 +733,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         "text": local_reply,
                     },
                 )
+            self._active_task_interrupts_oracle = True
             self._active_task = asyncio.create_task(
                 self._speak_kame_local_reply(local_reply, generation, assistant_metadata)
             )
@@ -721,6 +746,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     _kame_defer_reply_payload_with_metrics(oracle_request, generation, assistant_metadata),
                 )
             await self._emit_interface_event(VoiceEventType.INTERFACE_ORACLE_REQUEST, interface_payload)
+            if await self._submit_async_oracle_job_if_enabled(
+                oracle_request,
+                generation,
+                assistant_metadata,
+            ):
+                return
+        self._active_task_interrupts_oracle = True
         self._active_task = asyncio.create_task(
             self._answer_and_speak(
                 transcript,
@@ -729,6 +761,207 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 oracle_request=oracle_request,
             )
         )
+
+    async def _submit_async_oracle_job_if_enabled(
+        self,
+        oracle_request: KameOracleRequest,
+        playback_generation: int,
+        metadata: dict,
+    ) -> bool:
+        manager = self._oracle_job_manager
+        if manager is None or oracle_request.route not in {KameRoute.DEFER, KameRoute.ORACLE_DIRECT}:
+            return False
+        self._cancellation_token_by_generation.pop(playback_generation, None)
+        try:
+            job = await manager.submit(oracle_request)
+        except OracleJobQueueFullError:
+            await self._emit_oracle_error(
+                playback_generation,
+                metadata,
+                reason="oracle_job_queue_full",
+                error="oracle job queue is full",
+            )
+            self._active_task_interrupts_oracle = False
+            self._active_task = asyncio.create_task(
+                self._speak_oracle_job_capacity_status(playback_generation, metadata)
+            )
+            return True
+        except Exception as exc:
+            await self._emit_oracle_error(
+                playback_generation,
+                metadata,
+                reason="oracle_job_submit_failed",
+                error=sanitize_realtime_voice_error(exc),
+            )
+            return False
+
+        metadata["oracle_job_id"] = job.job_id
+        self._assistant_metadata_by_generation[playback_generation] = metadata
+        self._active_task_interrupts_oracle = False
+        self._active_task = asyncio.create_task(
+            self._speak_kame_oracle_job_ack(oracle_request, playback_generation, metadata)
+        )
+        return True
+
+    async def _speak_kame_oracle_job_ack(
+        self,
+        oracle_request: KameOracleRequest,
+        playback_generation: int,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        try:
+            text = self._planner.clean(_oracle_reflex_narration_text(self.config, oracle_request))
+            if not text:
+                return
+            await self._emit(
+                VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+                {
+                    "text": text,
+                    "playback_generation": playback_generation,
+                    "reflex_narration": oracle_request.route == KameRoute.DEFER,
+                    "acknowledgement": oracle_request.route != KameRoute.DEFER,
+                    "oracle_job_ack": True,
+                    **metadata,
+                    **_kame_route_metrics_payload(metadata, oracle_called=True),
+                },
+            )
+            await self._speak_chunk(text, playback_generation)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "oracle_job_ack_tts_failed",
+                    "error": sanitize_realtime_voice_error(exc),
+                    "sidecar": self._sidecar is not None,
+                },
+            )
+        finally:
+            self._assistant_metadata_by_generation.pop(playback_generation, None)
+            self._interface_decision_at_by_generation.pop(playback_generation, None)
+            self._oracle_first_token_at_by_generation.pop(playback_generation, None)
+            self._first_audio_metric_generations.discard(playback_generation)
+
+    async def _speak_oracle_job_capacity_status(
+        self,
+        playback_generation: int,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        status_text = self._planner.clean("I am at oracle job capacity right now.")
+        if not status_text:
+            return
+        await self._emit(
+            VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+            {
+                "text": status_text,
+                "playback_generation": playback_generation,
+                "oracle_job_queue_full": True,
+                **metadata,
+                **_kame_route_metrics_payload(metadata, oracle_called=True),
+            },
+        )
+        with contextlib.suppress(Exception):
+            await self._speak_chunk(status_text, playback_generation)
+
+    async def _run_oracle_job(self, job: OracleJob) -> Mapping[str, Any]:
+        request = job.request
+        if request is None:
+            raise RuntimeError("oracle job is missing its KAME request")
+        metadata = dict(job.metadata)
+        oracle = self._oracle or NullRealtimeOracle()
+        answer = ""
+        scrubber = StreamingThinkScrubber()
+        accepted_at = time.perf_counter()
+        await self._emit_oracle_job_progress(job, phase="accepted", delta="", text="")
+        async for item in _stream_oracle_answer(
+            oracle,
+            request.oracle_text or request.intent,
+            metadata,
+            oracle_request=request,
+            timeout_seconds=_oracle_timeout_seconds(self.config),
+        ):
+            if isinstance(item, Mapping):
+                oracle_tool_event_type = _oracle_tool_event_type(item)
+                if oracle_tool_event_type is not None:
+                    await self._emit_oracle_job_progress(
+                        job,
+                        phase="tool",
+                        delta="",
+                        text=answer,
+                        tool_event=_oracle_tool_event_payload(item),
+                    )
+                    continue
+            delta = _oracle_stream_text_delta(item)
+            if not delta:
+                continue
+            delta = scrubber.feed(delta)
+            if not delta:
+                continue
+            answer += delta
+            await self._emit_oracle_job_progress(job, phase="stream", delta=delta, text=answer)
+        tail = scrubber.flush()
+        if tail:
+            answer += tail
+            await self._emit_oracle_job_progress(job, phase="stream", delta=tail, text=answer)
+        answer = strip_leading_reasoning_trace(answer)
+        await self._emit_oracle_job_progress(
+            job,
+            phase="final",
+            delta="",
+            text=answer,
+            metrics={"oracle_job_total_stream_ms": _elapsed_perf_ms(accepted_at, time.perf_counter())},
+        )
+        return {"result_summary": answer}
+
+    async def _emit_oracle_job_progress(
+        self,
+        job: OracleJob,
+        *,
+        phase: str,
+        delta: str,
+        text: str,
+        metrics: Optional[Mapping[str, int]] = None,
+        tool_event: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            **_oracle_job_payload(job),
+            "phase": phase,
+            "delta": delta,
+            "text": text if phase == "final" else "",
+            "final": phase == "final",
+        }
+        if metrics:
+            payload["metrics"] = _nonnegative_int_metrics(metrics)
+        if tool_event:
+            payload["tool_event"] = dict(tool_event)
+        await self._emit_oracle_job_voice_event(VoiceEventType.ORACLE_JOB_PROGRESS, payload)
+
+    async def _emit_oracle_job_event(self, event: OracleJobEvent) -> None:
+        voice_event_type = _voice_event_type_for_oracle_job_event(event.type)
+        if voice_event_type is None:
+            return
+        await self._emit_oracle_job_voice_event(
+            voice_event_type,
+            {
+                **dict(event.payload),
+                "job_id": event.job_id,
+                "session_id": event.session_id,
+                "state": event.state.value,
+                "timestamp_ms": event.timestamp_ms,
+            },
+        )
+
+    async def _emit_oracle_job_voice_event(self, event_type: VoiceEventType, payload: dict[str, Any]) -> None:
+        event = await self._emit(event_type, payload)
+        if event is not None and self._sidecar is not None:
+            await self._send_sidecar_event(event)
+
+    async def _interrupt_oracle_job(self, job: OracleJob, reason: str) -> None:
+        oracle = self._oracle
+        if hasattr(oracle, "interrupt"):
+            oracle.interrupt(f"Realtime voice oracle job {job.job_id} cancelled: {reason}")  # type: ignore[attr-defined]
 
     def _kame_oracle_request(
         self,
@@ -1894,6 +2127,88 @@ def _kame_local_reply(request: Optional[KameOracleRequest]) -> str:
     if request.route not in {KameRoute.LOCAL, KameRoute.REJECT_OR_CLARIFY}:
         return ""
     return request.local_reply.strip()
+
+
+def _async_oracle_jobs_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        return False
+    return isinstance(config.oracle_jobs, Mapping) and _metadata_bool(config.oracle_jobs.get("enabled"), default=False)
+
+
+def _oracle_jobs_config_int(config: RealtimeVoiceSessionConfig, key: str, *, default: int) -> int:
+    if not isinstance(config.oracle_jobs, Mapping):
+        return default
+    value = config.oracle_jobs.get(key)
+    if isinstance(value, bool) or value is None:
+        return default
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _oracle_jobs_config_str(config: RealtimeVoiceSessionConfig, key: str, *, default: str) -> str:
+    if not isinstance(config.oracle_jobs, Mapping):
+        return default
+    value = str(config.oracle_jobs.get(key) or "").strip()
+    return value or default
+
+
+_ORACLE_JOB_EVENT_VOICE_TYPES: Mapping[OracleJobEventType, VoiceEventType] = {
+    OracleJobEventType.ACCEPTED: VoiceEventType.ORACLE_JOB_ACCEPTED,
+    OracleJobEventType.QUEUED: VoiceEventType.ORACLE_JOB_QUEUED,
+    OracleJobEventType.STARTED: VoiceEventType.ORACLE_JOB_STARTED,
+    OracleJobEventType.PROGRESS: VoiceEventType.ORACLE_JOB_PROGRESS,
+    OracleJobEventType.WAITING_FOR_APPROVAL: VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
+    OracleJobEventType.COMPLETED: VoiceEventType.ORACLE_JOB_COMPLETED,
+    OracleJobEventType.FAILED: VoiceEventType.ORACLE_JOB_FAILED,
+    OracleJobEventType.CANCEL_REQUESTED: VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED,
+    OracleJobEventType.CANCELLED: VoiceEventType.ORACLE_JOB_CANCELLED,
+}
+
+
+def _voice_event_type_for_oracle_job_event(event_type: OracleJobEventType) -> Optional[VoiceEventType]:
+    return _ORACLE_JOB_EVENT_VOICE_TYPES.get(event_type)
+
+
+def _oracle_job_payload(job: OracleJob) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "job_id": job.job_id,
+        "session_id": job.session_id,
+        "state": job.state.value,
+        "priority": job.priority,
+        "route": job.route,
+        "intent": job.reflex_intent,
+        "oracle_text": job.oracle_text,
+        "interface_already_said": job.interface_already_said,
+        "requested_response_style": dict(job.requested_response_style or {}),
+    }
+    request = job.request
+    if request is not None:
+        playback_generation = _playback_generation_from_turn_id(request.turn_id)
+        payload.update(
+            {
+                "turn_id": request.turn_id,
+                "source": request.source,
+                "mode": request.mode,
+                "urgency": request.urgency,
+                "playback_generation": playback_generation,
+                "intent_source": request.intent_source,
+                "oracle_text_source": request.oracle_text_source,
+            }
+        )
+        if request.user_id:
+            payload["user_id"] = request.user_id
+        if request.cancellation_token:
+            payload["cancellation_token"] = request.cancellation_token
+    return payload
+
+
+def _playback_generation_from_turn_id(turn_id: str) -> int:
+    try:
+        return int(str(turn_id).rsplit(":", 1)[-1])
+    except (TypeError, ValueError):
+        return 0
 
 
 def _kame_interface_payload(request: KameOracleRequest, playback_generation: int) -> dict[str, Any]:
