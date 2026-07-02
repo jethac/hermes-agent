@@ -439,6 +439,7 @@ Add a local smoke report mode that proves:
 - reflex still accepts a local "can you hear me?" turn while jobs run
 - queued oracle job updates are visible in the reflex/status event stream
 - one job can be cancelled while others complete
+- queued oracle jobs can be cancelled before worker execution
 - late cancelled output is not played
 - completed oracle results are visible in a later reflex status query
 

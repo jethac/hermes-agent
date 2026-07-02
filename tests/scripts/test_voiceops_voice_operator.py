@@ -70,6 +70,13 @@ def _async_oracle_smoke_payload() -> dict:
         "completed_jobs": 6,
         "failed_jobs": 1,
         "cancelled_jobs": 2,
+        "queued_cancel_smoke_ok": True,
+        "queued_cancel_observed": True,
+        "queued_cancelled_before_start": True,
+        "queued_cancel_not_sent_to_oracle": True,
+        "queued_cancel_reason": "queued task no longer needed",
+        "queued_cancel_target_job_id": "voice-oracle-002",
+        "queued_cancel_running_completed": True,
         "shutdown_timeout_configured_ms": 10,
         "shutdown_close_elapsed_ms": 15.0,
         "shutdown_bounded_close_observed": True,
@@ -359,6 +366,13 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["max_running"] == 4
     assert report["proofs"]["async_oracle_jobs"]["queued_jobs"] == 1
     assert report["proofs"]["async_oracle_jobs"]["failed_jobs"] == 1
+    assert report["proofs"]["async_oracle_jobs"]["queued_cancel_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["queued_cancel_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["queued_cancelled_before_start"] is True
+    assert report["proofs"]["async_oracle_jobs"]["queued_cancel_not_sent_to_oracle"] is True
+    assert report["proofs"]["async_oracle_jobs"]["queued_cancel_reason"] == "queued task no longer needed"
+    assert report["proofs"]["async_oracle_jobs"]["queued_cancel_target_job_id"] == "voice-oracle-002"
+    assert report["proofs"]["async_oracle_jobs"]["queued_cancel_running_completed"] is True
     assert report["proofs"]["async_oracle_jobs"]["status_turn_committed"] is True
     assert report["proofs"]["async_oracle_jobs"]["terminal_status_committed"] is True
     assert report["proofs"]["async_oracle_jobs"]["completed_result_status_visible"] is True
@@ -493,6 +507,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:status_turn_while_jobs_running" in issues
     assert "missing_async_oracle_coverage:fifth_job_queued_and_started_after_capacity_freed" in issues
     assert "missing_async_oracle_coverage:one_job_cancelled_while_others_completed" in issues
+    assert "missing_async_oracle_coverage:queued_job_cancelled_before_start" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_attempted" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_not_spoken" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_not_durable" in issues
@@ -522,6 +537,17 @@ def test_voice_operator_validation_recomputes_async_coverage_from_embedded_smoke
 
     assert "missing_async_oracle_coverage:four_jobs_ran_concurrently" in issues
     assert "stale_async_oracle_coverage:four_jobs_ran_concurrently" in issues
+
+
+def test_voice_operator_validation_rejects_missing_queued_cancel_proof():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["queued_cancel_not_sent_to_oracle"] = False
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:queued_job_cancelled_before_start" in issues
+    assert "stale_async_oracle_coverage:queued_job_cancelled_before_start" in issues
+    assert "missing_async_oracle_acceptance:cancellation_controls_are_isolated" in issues
 
 
 def test_voice_operator_validation_rejects_async_approval_secret_leak():

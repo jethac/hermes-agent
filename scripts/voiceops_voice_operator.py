@@ -1363,6 +1363,11 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("fifth_job_started_after_capacity_freed") is True,
         "one_job_cancelled_while_others_completed": int(smoke.get("cancelled_jobs") or 0) >= 1
         and int(smoke.get("completed_jobs") or 0) >= 4,
+        "queued_job_cancelled_before_start": smoke.get("queued_cancel_smoke_ok") is True
+        and smoke.get("queued_cancel_observed") is True
+        and smoke.get("queued_cancelled_before_start") is True
+        and smoke.get("queued_cancel_not_sent_to_oracle") is True
+        and smoke.get("queued_cancel_running_completed") is True,
         "late_cancelled_output_attempted": smoke.get("late_cancelled_output_attempted") is True,
         "late_cancelled_output_not_spoken": smoke.get("late_cancelled_output_attempted") is True
         and smoke.get("cancelled_result_spoken") is False
@@ -1468,6 +1473,7 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
         "cancellation_controls_are_isolated": _async_oracle_acceptance_row(
             ok=smoke_ok
             and bool(async_oracle_coverage.get("one_job_cancelled_while_others_completed"))
+            and bool(async_oracle_coverage.get("queued_job_cancelled_before_start"))
             and bool(async_oracle_coverage.get("late_cancelled_output_not_spoken"))
             and bool(async_oracle_coverage.get("late_cancelled_output_not_durable")),
             evidence="async_oracle_smoke_plus_cancellation_tests",
@@ -1686,6 +1692,13 @@ def build_voice_operator_report(
             "shutdown_forced_cancel_observed": bool(async_oracle_smoke.get("shutdown_forced_cancel_observed")),
             "shutdown_close_cancel_entered": bool(async_oracle_smoke.get("shutdown_close_cancel_entered")),
             "shutdown_cancelled_jobs": async_oracle_smoke.get("shutdown_cancelled_jobs"),
+            "queued_cancel_smoke_ok": bool(async_oracle_smoke.get("queued_cancel_smoke_ok")),
+            "queued_cancel_observed": bool(async_oracle_smoke.get("queued_cancel_observed")),
+            "queued_cancelled_before_start": bool(async_oracle_smoke.get("queued_cancelled_before_start")),
+            "queued_cancel_not_sent_to_oracle": bool(async_oracle_smoke.get("queued_cancel_not_sent_to_oracle")),
+            "queued_cancel_reason": async_oracle_smoke.get("queued_cancel_reason"),
+            "queued_cancel_target_job_id": async_oracle_smoke.get("queued_cancel_target_job_id"),
+            "queued_cancel_running_completed": bool(async_oracle_smoke.get("queued_cancel_running_completed")),
             "local_turn_committed": bool(async_oracle_smoke.get("local_turn_committed")),
             "status_turn_committed": bool(async_oracle_smoke.get("status_turn_committed")),
             "status_text": async_oracle_smoke.get("status_text"),
@@ -1803,7 +1816,8 @@ def build_voice_operator_report(
             "async_oracle_fifth_job_queued_and_started": async_oracle_coverage[
                 "fifth_job_queued_and_started_after_capacity_freed"
             ],
-            "async_oracle_cancellation_isolated": async_oracle_coverage["one_job_cancelled_while_others_completed"],
+            "async_oracle_cancellation_isolated": async_oracle_coverage["one_job_cancelled_while_others_completed"]
+            and async_oracle_coverage["queued_job_cancelled_before_start"],
             "async_oracle_late_cancelled_output_attempted": async_oracle_coverage[
                 "late_cancelled_output_attempted"
             ],
@@ -1914,6 +1928,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "status_turn_while_jobs_running",
         "fifth_job_queued_and_started_after_capacity_freed",
         "one_job_cancelled_while_others_completed",
+        "queued_job_cancelled_before_start",
         "late_cancelled_output_not_spoken",
         "late_cancelled_output_attempted",
         "late_cancelled_output_not_durable",

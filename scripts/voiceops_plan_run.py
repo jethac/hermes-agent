@@ -1471,6 +1471,23 @@ async def build_plan_run_async(
                     "completed_jobs": voice_operator["proofs"]["async_oracle_jobs"]["completed_jobs"],
                     "failed_jobs": voice_operator["proofs"]["async_oracle_jobs"]["failed_jobs"],
                     "cancelled_jobs": voice_operator["proofs"]["async_oracle_jobs"]["cancelled_jobs"],
+                    "queued_cancel_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
+                        "queued_cancel_smoke_ok"
+                    ],
+                    "queued_cancel_observed": voice_operator["proofs"]["async_oracle_jobs"]["queued_cancel_observed"],
+                    "queued_cancelled_before_start": voice_operator["proofs"]["async_oracle_jobs"][
+                        "queued_cancelled_before_start"
+                    ],
+                    "queued_cancel_not_sent_to_oracle": voice_operator["proofs"]["async_oracle_jobs"][
+                        "queued_cancel_not_sent_to_oracle"
+                    ],
+                    "queued_cancel_reason": voice_operator["proofs"]["async_oracle_jobs"]["queued_cancel_reason"],
+                    "queued_cancel_target_job_id": voice_operator["proofs"]["async_oracle_jobs"][
+                        "queued_cancel_target_job_id"
+                    ],
+                    "queued_cancel_running_completed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "queued_cancel_running_completed"
+                    ],
                     "local_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["local_turn_committed"],
                     "status_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["status_turn_committed"],
                     "status_text": voice_operator["proofs"]["async_oracle_jobs"]["status_text"],

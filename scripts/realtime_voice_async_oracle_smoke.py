@@ -125,6 +125,149 @@ class EventRecorder:
                 await asyncio.wait_for(self._condition.wait(), timeout=remaining)
 
 
+async def _run_queued_cancel_smoke() -> dict[str, Any]:
+    oracle = SmokeOracle()
+    engine = SmokeEngine(oracle=oracle)
+    recorder = EventRecorder(engine)
+    await engine.start(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-smoke-queued-cancel",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            oracle_jobs={
+                "enabled": True,
+                "max_concurrent": 1,
+                "queue_limit": 4,
+                "speak_terminal_results": True,
+                "shutdown_timeout_seconds": 0.01,
+            },
+            metadata={"transport": "smoke"},
+        )
+    )
+    collector = asyncio.create_task(recorder.run())
+    sequence = 0
+
+    async def send(payload: dict[str, Any]) -> None:
+        nonlocal sequence
+        sequence += 1
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-smoke-queued-cancel",
+                sequence=sequence,
+                payload={**payload, "end_of_utterance": True},
+            )
+        )
+
+    await send(
+        {
+            "transcript": "queued proof running",
+            "intent": "Queued proof running",
+            "intent_source": "smoke_reflex",
+            "route": "defer",
+            "interface_already_said": "Starting queued proof running.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_STARTED
+            and event.payload.get("intent") == "Queued proof running"
+            for event in events
+        )
+    )
+    await send(
+        {
+            "transcript": "queued proof target",
+            "intent": "Queued proof target",
+            "intent_source": "smoke_reflex",
+            "route": "defer",
+            "interface_already_said": "Starting queued proof target.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_QUEUED
+            and event.payload.get("intent") == "Queued proof target"
+            for event in events
+        )
+    )
+
+    queued_target = next(
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ORACLE_JOB_QUEUED
+        and event.payload.get("intent") == "Queued proof target"
+    )
+    sequence += 1
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_CANCEL,
+            session_id="voice-smoke-queued-cancel",
+            sequence=sequence,
+            payload={
+                "job_id": queued_target.payload["job_id"],
+                "reason": "queued task no longer needed",
+            },
+        )
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_CANCELLED
+            and event.payload.get("job_id") == queued_target.payload["job_id"]
+            for event in events
+        )
+    )
+    oracle.release("Queued proof running")
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_COMPLETED
+            and event.payload.get("intent") == "Queued proof running"
+            for event in events
+        )
+    )
+    await engine.close()
+    collector.cancel()
+    try:
+        await collector
+    except asyncio.CancelledError:
+        pass
+
+    target_job_id = str(queued_target.payload.get("job_id") or "")
+    target_cancelled = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ORACLE_JOB_CANCELLED
+        and event.payload.get("job_id") == target_job_id
+    ]
+    target_started = any(
+        event.type == VoiceEventType.ORACLE_JOB_STARTED
+        and event.payload.get("job_id") == target_job_id
+        for event in recorder.events
+    )
+    target_sent_to_oracle = any(
+        str(getattr(request, "intent", "")) == "Queued proof target"
+        for request in oracle.requests
+    )
+    running_completed = any(
+        event.type == VoiceEventType.ORACLE_JOB_COMPLETED
+        and event.payload.get("intent") == "Queued proof running"
+        for event in recorder.events
+    )
+    cancelled_reason = str(target_cancelled[-1].payload.get("cancel_reason") or "") if target_cancelled else ""
+    return {
+        "ok": bool(target_cancelled)
+        and not target_started
+        and not target_sent_to_oracle
+        and running_completed
+        and cancelled_reason == "queued task no longer needed",
+        "queued_cancel_observed": bool(target_cancelled),
+        "queued_cancelled_before_start": not target_started,
+        "queued_cancel_not_sent_to_oracle": not target_sent_to_oracle,
+        "queued_cancel_reason": cancelled_reason,
+        "queued_cancel_target_job_id": target_job_id,
+        "queued_cancel_running_completed": running_completed,
+    }
+
+
 async def run_smoke() -> dict[str, Any]:
     oracle = SmokeOracle()
     engine = SmokeEngine(oracle=oracle)
@@ -425,6 +568,7 @@ async def run_smoke() -> dict[str, Any]:
         await collector
     except asyncio.CancelledError:
         pass
+    queued_cancel_smoke = await _run_queued_cancel_smoke()
 
     started = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_STARTED]
     queued = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_QUEUED]
@@ -693,6 +837,7 @@ async def run_smoke() -> dict[str, Any]:
             and completed_result_status_visible
             and shutdown_bounded_close_observed
             and shutdown_forced_cancel_observed
+            and queued_cancel_smoke["ok"]
         ),
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": scheduler_max_running,
@@ -711,6 +856,13 @@ async def run_smoke() -> dict[str, Any]:
         "shutdown_forced_cancel_observed": shutdown_forced_cancel_observed,
         "shutdown_close_cancel_entered": close_cancel_entered,
         "shutdown_cancelled_jobs": len(close_cancelled_events),
+        "queued_cancel_smoke_ok": queued_cancel_smoke["ok"],
+        "queued_cancel_observed": queued_cancel_smoke["queued_cancel_observed"],
+        "queued_cancelled_before_start": queued_cancel_smoke["queued_cancelled_before_start"],
+        "queued_cancel_not_sent_to_oracle": queued_cancel_smoke["queued_cancel_not_sent_to_oracle"],
+        "queued_cancel_reason": queued_cancel_smoke["queued_cancel_reason"],
+        "queued_cancel_target_job_id": queued_cancel_smoke["queued_cancel_target_job_id"],
+        "queued_cancel_running_completed": queued_cancel_smoke["queued_cancel_running_completed"],
         "local_turn_committed": bool(local_commits),
         "status_turn_committed": bool(running_status_commits),
         "status_text": str(running_status_commits[-1].payload.get("text") or "") if running_status_commits else "",

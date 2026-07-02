@@ -18,6 +18,13 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["completed_jobs"] == 6
     assert report["failed_jobs"] == 1
     assert report["cancelled_jobs"] == 2
+    assert report["queued_cancel_smoke_ok"] is True
+    assert report["queued_cancel_observed"] is True
+    assert report["queued_cancelled_before_start"] is True
+    assert report["queued_cancel_not_sent_to_oracle"] is True
+    assert report["queued_cancel_reason"] == "queued task no longer needed"
+    assert report["queued_cancel_target_job_id"] == "voice-oracle-002"
+    assert report["queued_cancel_running_completed"] is True
     assert report["shutdown_timeout_configured_ms"] == 10
     assert report["shutdown_bounded_close_observed"] is True
     assert report["shutdown_forced_cancel_observed"] is True

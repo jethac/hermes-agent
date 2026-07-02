@@ -1038,6 +1038,13 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["noncooperative_cancel_overlap_observed"] is False
     assert voice_result["details"]["async_oracle_smoke"]["queued_jobs"] == 1
     assert voice_result["details"]["async_oracle_smoke"]["failed_jobs"] == 1
+    assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["queued_cancelled_before_start"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_not_sent_to_oracle"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_reason"] == "queued task no longer needed"
+    assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_target_job_id"] == "voice-oracle-002"
+    assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_running_completed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["status_turn_committed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["terminal_status_committed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["completed_result_status_visible"] is True
