@@ -1377,6 +1377,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
 
     async def _interrupt_oracle_job(self, job: OracleJob, reason: str) -> None:
         oracle = self._oracle
+        interrupt_request = getattr(oracle, "interrupt_request", None)
+        if callable(interrupt_request) and job.request is not None:
+            interrupt_request(job.request, f"Realtime voice oracle job {job.job_id} cancelled: {reason}")
+            return
         if hasattr(oracle, "interrupt"):
             oracle.interrupt(f"Realtime voice oracle job {job.job_id} cancelled: {reason}")  # type: ignore[attr-defined]
 

@@ -21,6 +21,7 @@ class HermesRealtimeOracle:
     def __init__(self, config: RealtimeVoiceSessionConfig):
         self.config = config
         self._active_agent = None
+        self._active_agents: dict[str, Any] = {}
         self._active_lock = threading.Lock()
 
     async def answer(self, transcript: str) -> str:
@@ -53,7 +54,12 @@ class HermesRealtimeOracle:
 
         def run() -> None:
             try:
-                self._answer_sync(text, stream_callback=on_delta, metadata=metadata)
+                self._answer_sync(
+                    text,
+                    stream_callback=on_delta,
+                    metadata=metadata,
+                    active_keys=_active_agent_keys(metadata),
+                )
             except Exception as exc:
                 loop.call_soon_threadsafe(queue.put_nowait, f"\n\n[realtime voice oracle error: {exc}]")
             finally:
@@ -85,8 +91,29 @@ class HermesRealtimeOracle:
 
     def interrupt(self, message: str = "Realtime voice turn interrupted") -> None:
         with self._active_lock:
-            agent = self._active_agent
-        if agent is not None:
+            agents = list({id(agent): agent for agent in self._active_agents.values()}.values())
+            if not agents and self._active_agent is not None:
+                agents = [self._active_agent]
+        for agent in agents:
+            with contextlib.suppress(Exception):
+                agent.interrupt(message)
+
+    def interrupt_request(
+        self,
+        request: KameOracleRequest,
+        message: str = "Realtime voice turn interrupted",
+    ) -> None:
+        keys = _active_agent_keys(request.to_metadata())
+        with self._active_lock:
+            agents = [
+                self._active_agents[key]
+                for key in keys
+                if key in self._active_agents
+            ]
+            agents = list({id(agent): agent for agent in agents}.values())
+        if not agents:
+            return self.interrupt(message)
+        for agent in agents:
             with contextlib.suppress(Exception):
                 agent.interrupt(message)
 
@@ -95,6 +122,7 @@ class HermesRealtimeOracle:
         transcript: str,
         stream_callback: Optional[callable] = None,
         metadata: Optional[Mapping[str, object]] = None,
+        active_keys: Optional[tuple[str, ...]] = None,
     ) -> str:
         from run_agent import AIAgent
 
@@ -106,8 +134,11 @@ class HermesRealtimeOracle:
         prompt_metadata = dict(self.config.metadata or {})
         prompt_metadata.update(metadata or {})
         prompt = _voice_oracle_prompt(transcript, prompt_metadata)
+        active_keys = tuple(active_keys or _active_agent_keys(prompt_metadata))
         with self._active_lock:
             self._active_agent = agent
+            for key in active_keys:
+                self._active_agents[key] = agent
         try:
             result = agent.run_conversation(
                 prompt,
@@ -119,6 +150,9 @@ class HermesRealtimeOracle:
             with self._active_lock:
                 if self._active_agent is agent:
                     self._active_agent = None
+                for key in active_keys:
+                    if self._active_agents.get(key) is agent:
+                        self._active_agents.pop(key, None)
 
 
 def _voice_oracle_prompt(transcript: str, metadata: Mapping[str, object]) -> str:
@@ -143,6 +177,15 @@ def _voice_oracle_prompt(transcript: str, metadata: Mapping[str, object]) -> str
     if kame_context:
         prompt += f"\n{kame_context}"
     return f"{prompt}\n\nUser said: {transcript}"
+
+
+def _active_agent_keys(metadata: Mapping[str, object]) -> tuple[str, ...]:
+    keys = []
+    for key in ("kame_turn_id", "kame_cancellation_token"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            keys.append(f"{key}:{value.strip()}")
+    return tuple(dict.fromkeys(keys))
 
 
 def _voice_language_context(metadata: Mapping[str, object]) -> str:

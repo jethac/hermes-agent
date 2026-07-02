@@ -3334,6 +3334,10 @@ def test_kame_engine_interface_cancel_stops_one_async_oracle_job(monkeypatch):
             self.requests = []
             self.started = asyncio.Event()
             self.interrupted = False
+            self.interrupted_requests = []
+
+        def interrupt_request(self, request, message: str = ""):
+            self.interrupted_requests.append((request.turn_id, request.oracle_text, message))
 
         def interrupt(self, message: str = ""):
             self.interrupted = True
@@ -3400,7 +3404,14 @@ def test_kame_engine_interface_cancel_stops_one_async_oracle_job(monkeypatch):
                 break
 
         await engine.close()
-        assert oracle.interrupted is True
+        assert oracle.interrupted is False
+        assert oracle.interrupted_requests == [
+            (
+                "voice-123:1",
+                "check the deployment status",
+                "Realtime voice oracle job voice-oracle-001 cancelled: user requested cancellation",
+            )
+        ]
         cancel_requested = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED)
         cancelled = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_CANCELLED)
         assert cancel_requested.payload["job_id"] == "voice-oracle-001"
