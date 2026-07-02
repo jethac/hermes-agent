@@ -330,6 +330,16 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
         "require_oracle_for_files": True,
         "local_confidence_threshold": 0.88,
     }
+    assert cfg["oracle_jobs"] == {
+        "enabled": True,
+        "max_concurrent": 1,
+        "queue_limit": 16,
+        "default_priority": "normal",
+        "overflow_policy": "queue",
+        "shutdown_timeout_seconds": 2.0,
+        "speak_terminal_results": True,
+        "audit_ledger_path": "",
+    }
     assert cfg["quality_targets_ms"]["kame_speech_end_to_interface_decision_ms"] == 321
     assert cfg["quality_targets_ms"]["kame_speech_end_to_playback_start_ms"] == 2345
 

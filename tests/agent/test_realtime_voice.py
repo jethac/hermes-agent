@@ -46,7 +46,12 @@ from agent.realtime_voice_oracle import _voice_oracle_prompt
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState, create_realtime_voice_engine
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, sidecar_ws_url, wants_realtime_sidecar
-from agent.realtime_voice_text_engine import KameInterfaceOracleEngine, TextOracleTTSEngine, _take_speakable_chunk
+from agent.realtime_voice_text_engine import (
+    KameInterfaceOracleEngine,
+    TextOracleTTSEngine,
+    _kame_oracle_job_control_operation,
+    _take_speakable_chunk,
+)
 
 
 def _write_test_wav(path, pcm: bytes = b"\x01\x00\x02\x00\x03\x00\x04\x00", *, sample_rate: int = 16000) -> bytes:
@@ -3162,6 +3167,56 @@ def test_kame_engine_spoken_cancel_matches_descriptive_job_intent(monkeypatch):
         assert "I cancelled Starting log check. Check provisioning logs." in spoken
 
     asyncio.run(run())
+
+
+def test_kame_oracle_job_control_uses_latest_job_for_pronoun_cancel_and_priority():
+    status = {
+        "jobs": [
+            {
+                "job_id": "voice-oracle-001",
+                "state": "running",
+                "spoken_status": "Checking provisioning logs.",
+            },
+            {
+                "job_id": "voice-oracle-002",
+                "state": "queued",
+                "spoken_status": "Drafting procurement memo.",
+            },
+        ]
+    }
+    cancel_request = KameOracleRequest(
+        session_id="voice-123",
+        turn_id="voice-123:3",
+        source="discord_voice",
+        user_id="42",
+        intent="Cancel it.",
+        route=KameRoute.LOCAL,
+        local_reply="Cancelling it.",
+    )
+    priority_request = KameOracleRequest(
+        session_id="voice-123",
+        turn_id="voice-123:4",
+        source="discord_voice",
+        user_id="42",
+        intent="Make it highest priority.",
+        route=KameRoute.LOCAL,
+        local_reply="Making it highest priority.",
+    )
+
+    cancel = _kame_oracle_job_control_operation(cancel_request, status)
+    priority = _kame_oracle_job_control_operation(priority_request, status)
+
+    assert cancel == {
+        "kind": "cancel",
+        "job_id": "voice-oracle-002",
+        "reason": "spoken request to cancel oracle job",
+    }
+    assert priority == {
+        "kind": "priority",
+        "job_id": "voice-oracle-002",
+        "priority": "high",
+        "reason": "spoken request to set high priority",
+    }
 
 
 def test_kame_engine_reports_async_oracle_queue_full_without_sync_fallback(monkeypatch):

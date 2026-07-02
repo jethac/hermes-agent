@@ -2875,7 +2875,7 @@ def _oracle_job_control_match_job(text: str, jobs: list[dict[str, Any]]) -> dict
     update_fallback = text.startswith(("also ", "and also ", "add ", "include ", "tell it ", "ask it "))
     if text_terms and not update_fallback:
         return {}
-    if any(token in text for token in ("that", "this", "current", "latest", "last")) or update_fallback:
+    if _oracle_job_control_has_fallback_reference(text) or update_fallback:
         return jobs[-1]
     return {}
 
@@ -2892,6 +2892,10 @@ def _oracle_job_control_ordinal(text: str) -> Optional[int]:
         if re.search(pattern, text):
             return index
     return None
+
+
+def _oracle_job_control_has_fallback_reference(text: str) -> bool:
+    return re.search(r"\b(?:that|this|current|latest|last|it)\b", text) is not None
 
 
 def _oracle_job_control_terms(text: str) -> set[str]:

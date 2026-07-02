@@ -3391,7 +3391,7 @@ class DiscordAdapter(BasePlatformAdapter):
                 "log_provider_spans": True,
             },
             "oracle_jobs": {
-                "enabled": False,
+                "enabled": True,
                 "max_concurrent": 1,
                 "queue_limit": 16,
                 "default_priority": "normal",
