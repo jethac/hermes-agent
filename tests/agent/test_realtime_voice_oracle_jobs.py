@@ -358,6 +358,43 @@ async def test_cancelling_running_job_calls_interrupt_and_ignores_late_result():
 
 
 @pytest.mark.asyncio
+async def test_cancelling_running_job_still_cancels_when_interrupt_callback_fails():
+    cancelled = asyncio.Event()
+    interrupt_calls = []
+
+    async def runner(job):
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    def interrupt(job, reason):
+        interrupt_calls.append((job.job_id, reason))
+        raise RuntimeError("provider interrupt failed with api_key=raw-token")
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        interrupt_callback=interrupt,
+    )
+    job = await manager.submit(_request("slow"))
+    await asyncio.sleep(0)
+
+    await manager.cancel(job.job_id, reason="user changed topic")
+    await manager.wait_for_idle()
+    stored = await manager.get(job.job_id)
+    status = await manager.status_view()
+
+    assert interrupt_calls == [(job.job_id, "user changed topic")]
+    assert cancelled.is_set()
+    assert stored.state == OracleJobState.CANCELLED
+    assert stored.cancel_reason == "user changed topic"
+    assert status["capacity"]["running"] == 0
+    assert status["capacity"]["queued"] == 0
+
+
+@pytest.mark.asyncio
 async def test_cancel_requested_job_keeps_capacity_until_worker_stops():
     started = []
     cancellation_entered = asyncio.Event()

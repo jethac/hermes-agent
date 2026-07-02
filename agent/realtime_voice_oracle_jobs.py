@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -15,6 +16,9 @@ from typing import Any, Awaitable, Callable, Deque, Mapping, Optional
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_kame import KameOracleRequest
 from agent.think_scrubber import StreamingThinkScrubber, strip_leading_reasoning_trace
+
+
+logger = logging.getLogger(__name__)
 
 
 class OracleJobState(StrEnum):
@@ -216,10 +220,18 @@ class OracleJobManager:
             task = self._tasks.get(job.job_id)
             interrupt = self.interrupt_callback
 
-        if interrupt is not None:
-            await _maybe_await(interrupt(job, reason))
-        if task is not None:
-            task.cancel()
+        try:
+            if interrupt is not None:
+                await _maybe_await(interrupt(job, reason))
+        except Exception as exc:
+            logger.warning(
+                "Realtime voice oracle interrupt callback failed for job %s: %s",
+                job.job_id,
+                sanitize_realtime_voice_error(exc),
+            )
+        finally:
+            if task is not None:
+                task.cancel()
         return job
 
     async def cancel_all(self, *, reason: str = "cancelled") -> list[OracleJob]:
