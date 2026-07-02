@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import re
 import shlex
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -265,6 +267,225 @@ def _artifact_label(artifact_root: Path, path: Path) -> str:
         return str(path.relative_to(artifact_root))
     except ValueError:
         return str(path)
+
+
+def _dollars(cents: Any) -> str:
+    try:
+        value = int(cents)
+    except (TypeError, ValueError):
+        value = 0
+    return f"${value / 100:,.2f}"
+
+
+def _squash_text(value: str) -> str:
+    return " ".join(html.unescape(value).split())
+
+
+class _DashboardTableParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.tables: dict[str, list[list[str]]] = {}
+        self.current_heading: str | None = None
+        self._capture_heading = False
+        self._heading_parts: list[str] = []
+        self._table_heading: str | None = None
+        self._table_rows: list[list[str]] = []
+        self._row_cells: list[str] | None = None
+        self._capture_cell = False
+        self._cell_parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "h2":
+            self._capture_heading = True
+            self._heading_parts = []
+        elif tag == "table":
+            self._table_heading = self.current_heading
+            self._table_rows = []
+        elif tag == "tr" and self._table_heading is not None:
+            self._row_cells = []
+        elif tag in {"td", "th"} and self._row_cells is not None:
+            self._capture_cell = True
+            self._cell_parts = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "h2" and self._capture_heading:
+            self.current_heading = _squash_text("".join(self._heading_parts))
+            self._capture_heading = False
+        elif tag in {"td", "th"} and self._capture_cell:
+            if self._row_cells is not None:
+                self._row_cells.append(_squash_text("".join(self._cell_parts)))
+            self._capture_cell = False
+            self._cell_parts = []
+        elif tag == "tr" and self._row_cells is not None:
+            if self._row_cells:
+                self._table_rows.append(self._row_cells)
+            self._row_cells = None
+        elif tag == "table" and self._table_heading is not None:
+            self.tables[self._table_heading] = self._table_rows
+            self._table_heading = None
+            self._table_rows = []
+
+    def handle_data(self, data: str) -> None:
+        if self._capture_heading:
+            self._heading_parts.append(data)
+        if self._capture_cell:
+            self._cell_parts.append(data)
+
+
+def _dashboard_tables(dashboard_html: str) -> dict[str, list[list[str]]]:
+    parser = _DashboardTableParser()
+    parser.feed(dashboard_html)
+    parser.close()
+    return parser.tables
+
+
+def _dashboard_metrics(dashboard_html: str) -> dict[str, str]:
+    metrics: dict[str, str] = {}
+    pattern = re.compile(
+        r'<div class="metric"><small>(?P<label>.*?)</small><strong>(?P<value>.*?)</strong>',
+        re.DOTALL,
+    )
+    for match in pattern.finditer(dashboard_html):
+        metrics[_squash_text(match.group("label"))] = _squash_text(match.group("value"))
+    return metrics
+
+
+def _assert_dashboard_table(
+    tables: Mapping[str, list[list[str]]],
+    heading: str,
+    expected_rows: list[list[str]],
+    issues: list[str],
+) -> None:
+    observed_rows = tables.get(heading)
+    if observed_rows is None:
+        issues.append(f"dashboard:{heading}:missing_table")
+        return
+    if observed_rows != expected_rows:
+        issues.append(f"dashboard:{heading}:rows_mismatch")
+
+
+def _audit_dashboard_consistency(
+    *,
+    demo: Mapping[str, Any],
+    readiness: Mapping[str, Any],
+    operator_state: Mapping[str, Any],
+    dashboard_html: str,
+    issues: list[str],
+) -> None:
+    metrics = _dashboard_metrics(dashboard_html)
+    expected_metrics = {
+        "Budget": _dollars((demo.get("spend_policy") or {}).get("limit_cents")),
+        "Approval queued": _dollars((demo.get("totals") or {}).get("approval_required_cents")),
+        "Live/Spark gaps": str(len(readiness.get("live_demo_missing_evidence") or [])),
+        "Audit events": str(len(demo.get("audit_events") or [])),
+    }
+    for label, expected in expected_metrics.items():
+        if metrics.get(label) != expected:
+            issues.append(f"dashboard:metric:{label}:mismatch")
+
+    tables = _dashboard_tables(dashboard_html)
+    budget_status = operator_state.get("budget_status") if isinstance(operator_state.get("budget_status"), Mapping) else {}
+    held_actions = [
+        str(action.get("action_id"))
+        for action in demo.get("ops_actions", [])
+        if isinstance(action, Mapping) and action.get("status") == "held-budget"
+    ]
+    held_action_text = ", ".join(held_actions) if held_actions else "none"
+    _assert_dashboard_table(
+        tables,
+        "Budget Status",
+        [
+            ["Limit", _dollars(budget_status.get("approved_budget_cents"))],
+            ["Approval threshold", _dollars(budget_status.get("approval_required_over_cents"))],
+            ["Reserved approval spend", _dollars(budget_status.get("reserved_cents"))],
+            ["Spent", _dollars(budget_status.get("spent_cents"))],
+            ["Remaining before approval", _dollars(budget_status.get("remaining_cents"))],
+            ["Held over budget", f"{_dollars(budget_status.get('held_budget_cents'))} ({held_action_text})"],
+        ],
+        issues,
+    )
+    _assert_dashboard_table(
+        tables,
+        "Pending Approvals",
+        [["Action", "Provider", "Spend", "Purpose"]]
+        + [
+            [
+                str(approval.get("action_id")),
+                str(approval.get("provider")),
+                _dollars(approval.get("budget_impact_cents")),
+                str(approval.get("title")),
+            ]
+            for approval in operator_state.get("pending_approvals", [])
+            if isinstance(approval, Mapping)
+        ],
+        issues,
+    )
+    _assert_dashboard_table(
+        tables,
+        "Action Ledger",
+        [["Action", "Provider", "Status", "Spend", "Gate"]]
+        + [
+            [
+                str(action.get("action_id")),
+                str(action.get("provider")),
+                str(action.get("status")),
+                _dollars(action.get("estimated_cents")),
+                "approval required" if action.get("requires_approval") else "no approval",
+            ]
+            for action in demo.get("ops_actions", [])
+            if isinstance(action, Mapping)
+        ],
+        issues,
+    )
+    _assert_dashboard_table(
+        tables,
+        "Recent Audit Events",
+        [["Event", "Action", "Status", "Amount", "Evidence"]]
+        + [
+            [
+                str(event.get("audit_id")),
+                str(event.get("event_type")),
+                str(event.get("status")),
+                _dollars(event.get("amount_cents")),
+                str(event.get("summary")),
+            ]
+            for event in operator_state.get("recent_audit_events", [])
+            if isinstance(event, Mapping)
+        ],
+        issues,
+    )
+    _assert_dashboard_table(
+        tables,
+        "Planned Services",
+        [["Action", "Provider", "Status", "Purpose"]]
+        + [
+            [
+                str(service.get("service_id")),
+                str(service.get("provider")),
+                str(service.get("status")),
+                str(service.get("display_name")),
+            ]
+            for service in operator_state.get("planned_services", [])
+            if isinstance(service, Mapping)
+        ],
+        issues,
+    )
+    _assert_dashboard_table(
+        tables,
+        "Provisioned Services",
+        [["Service", "Provider", "Status", "Capability"]]
+        + [
+            [
+                str(service.get("service_id")),
+                str(service.get("provider")),
+                str(service.get("status")),
+                str(service.get("display_name")),
+            ]
+            for service in operator_state.get("provisioned_services", [])
+            if isinstance(service, Mapping)
+        ],
+        issues,
+    )
 
 
 def _dry_run_metadata_rows(script_text: str, issues: list[str]) -> list[dict[str, Any]]:
@@ -1446,6 +1667,13 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         spark_matrix=spark_matrix,
         demo_closure=demo_closure,
         plan_closure=plan_closure,
+        operator_state=operator_state,
+        dashboard_html=dashboard_html,
+        issues=issues,
+    )
+    _audit_dashboard_consistency(
+        demo=demo,
+        readiness=readiness,
         operator_state=operator_state,
         dashboard_html=dashboard_html,
         issues=issues,

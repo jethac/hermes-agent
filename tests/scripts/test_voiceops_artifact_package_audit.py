@@ -184,6 +184,41 @@ def test_package_audit_rejects_live_dashboard_claim_with_open_gates(tmp_path):
     assert "dashboard:missing_non_live_token:needs_live_probe" in report["issues"]
 
 
+def test_package_audit_rejects_dashboard_metric_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    dashboard = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-dashboard.html"
+    dashboard.write_text(
+        dashboard.read_text(encoding="utf-8").replace(
+            '<div class="metric"><small>Live/Spark gaps</small><strong>3</strong></div>',
+            '<div class="metric"><small>Live/Spark gaps</small><strong>0</strong></div>',
+        ),
+        encoding="utf-8",
+    )
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "dashboard:metric:Live/Spark gaps:mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_dashboard_table_row_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    dashboard = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-dashboard.html"
+    dashboard.write_text(
+        dashboard.read_text(encoding="utf-8").replace(
+            '<td>stripe-projects</td><td><span class="pill ok">queued</span></td><td>$25.00</td>',
+            '<td>stripe-projects</td><td><span class="pill ok">ready</span></td><td>$25.00</td>',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "dashboard:Action Ledger:rows_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_spark_readiness_claim_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     demo_path = artifact_root / "hackathon-voiceops-demo" / "current" / "voiceops-demo.json"
