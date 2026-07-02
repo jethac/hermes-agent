@@ -542,6 +542,17 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         in overflow_policy["test_refs"]
     )
     assert report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["ok"] is True
+    job_creation = report["async_oracle_acceptance"]["new_oracle_job_can_be_created_while_others_run"]
+    assert job_creation["ok"] is True
+    assert job_creation["evidence"] == "async_oracle_smoke_plus_job_creation_tests"
+    assert (
+        "tests/agent/test_realtime_voice.py::test_kame_engine_can_create_oracle_job_while_another_is_running"
+        in job_creation["test_refs"]
+    )
+    assert (
+        "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_spoken_tasks_create_async_oracle_jobs"
+        in job_creation["test_refs"]
+    )
     assert report["async_oracle_acceptance"]["shutdown_timeout_is_bounded"]["ok"] is True
     assert report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_secret_leaked"] is False

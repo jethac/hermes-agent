@@ -95,6 +95,10 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_async_oracle_job_allows_local_turn_while_running",
         "tests/agent/test_realtime_voice.py::test_oracle_direct_async_job_completion_after_local_turn_is_lifecycle_only",
     ],
+    "job_creation_while_running": [
+        "tests/agent/test_realtime_voice.py::test_kame_engine_can_create_oracle_job_while_another_is_running",
+        "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_spoken_tasks_create_async_oracle_jobs",
+    ],
     "cancellation": [
         "tests/agent/test_realtime_voice.py::test_kame_engine_interface_cancel_stops_one_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_can_cancel_queued_async_oracle_job_before_it_starts",
@@ -1592,8 +1596,8 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
         ),
         "new_oracle_job_can_be_created_while_others_run": _async_oracle_acceptance_row(
             ok=smoke_ok and bool(async_oracle_coverage.get("fifth_job_queued_and_started_after_capacity_freed")),
-            evidence="async_oracle_smoke",
-            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["local_turns"],
+            evidence="async_oracle_smoke_plus_job_creation_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["job_creation_while_running"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
