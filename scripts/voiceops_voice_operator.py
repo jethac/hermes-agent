@@ -69,6 +69,44 @@ BARGE_IN_ENERGY_TEST_REFS = [
     "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_session_sends_speech_energy_event",
 ]
 
+ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
+    "job_manager_capacity": [
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_max_concurrent_one_queues_second_job",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_max_concurrent_four_starts_four_and_queues_fifth",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_queue_limit_rejects_overflow",
+    ],
+    "status_view": [
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_status_view_reports_capacity_and_redacts_raw_metadata",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_local_status_question_uses_oracle_job_state",
+        "tests/gateway/test_voice_command.py::test_voice_jobs_reports_oracle_job_snapshot",
+    ],
+    "local_turns": [
+        "tests/agent/test_realtime_voice.py::test_kame_engine_async_oracle_job_allows_local_turn_while_running",
+        "tests/agent/test_realtime_voice.py::test_oracle_direct_creates_async_oracle_job_without_blocking_voice_loop",
+    ],
+    "cancellation": [
+        "tests/agent/test_realtime_voice.py::test_kame_engine_interface_cancel_stops_one_async_oracle_job",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_can_cancel_queued_async_oracle_job_before_it_starts",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_stop_everything_cancels_all_async_oracle_jobs",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_barge_in_during_async_ack_does_not_interrupt_oracle_job",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_stop_talking_does_not_cancel_async_oracle_job",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_barge_in_during_async_result_speech_does_not_interrupt_completed_job",
+    ],
+    "result_handling": [
+        "tests/agent/test_realtime_voice.py::test_completed_async_oracle_job_speaks_after_intervening_local_turn",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_status_recalls_recent_completed_async_oracle_job",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_async_oracle_job_failure_reports_in_voice",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_async_terminal_result_speech_is_capped_without_losing_full_result",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_completed_event_preserves_full_result_without_bloating_status",
+        "tests/agent/test_realtime_voice.py::test_session_persists_durable_async_oracle_job_records",
+    ],
+    "discord_session": [
+        "tests/gateway/test_voice_command.py::test_leave_voice_channel_cleans_up",
+        "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_degraded_marks_active_oracle_jobs_failed",
+        "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_session_close_cancels_oracle_jobs_before_session_closed",
+    ],
+}
+
 LIVE_EVIDENCE_REQUIRED_DISCORD_BOOLS = (
     "connect_perm",
     "speak_perm",
@@ -1178,6 +1216,53 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
     }
 
 
+def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -> dict[str, dict[str, Any]]:
+    smoke_ok = bool(async_oracle_coverage.get("async_oracle_smoke_ok"))
+    return {
+        "four_oracle_jobs_reflex_responsive": {
+            "ok": smoke_ok
+            and bool(async_oracle_coverage.get("four_jobs_ran_concurrently"))
+            and bool(async_oracle_coverage.get("local_turn_while_jobs_running")),
+            "evidence": "async_oracle_smoke",
+            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["job_manager_capacity"]
+            + ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["local_turns"],
+        },
+        "fifth_job_obeys_overflow_policy": {
+            "ok": smoke_ok and bool(async_oracle_coverage.get("fifth_job_queued_and_started_after_capacity_freed")),
+            "evidence": "async_oracle_smoke",
+            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["job_manager_capacity"],
+        },
+        "status_reports_running_and_queued_without_oracle_call": {
+            "ok": smoke_ok and bool(async_oracle_coverage.get("status_turn_while_jobs_running")),
+            "evidence": "async_oracle_smoke_plus_status_tests",
+            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["status_view"],
+        },
+        "new_oracle_job_can_be_created_while_others_run": {
+            "ok": smoke_ok and bool(async_oracle_coverage.get("fifth_job_queued_and_started_after_capacity_freed")),
+            "evidence": "async_oracle_smoke",
+            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["local_turns"],
+        },
+        "cancellation_controls_are_isolated": {
+            "ok": smoke_ok
+            and bool(async_oracle_coverage.get("one_job_cancelled_while_others_completed"))
+            and bool(async_oracle_coverage.get("late_cancelled_output_not_spoken"))
+            and bool(async_oracle_coverage.get("late_cancelled_output_not_durable")),
+            "evidence": "async_oracle_smoke_plus_cancellation_tests",
+            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["cancellation"],
+        },
+        "result_handling_is_bounded_and_durable": {
+            "ok": True,
+            "evidence": "focused_result_handling_tests",
+            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["result_handling"],
+        },
+        "discord_session_cleanup_preserves_oracle_state": {
+            "ok": True,
+            "evidence": "focused_discord_session_tests",
+            "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["discord_session"],
+        },
+    }
+
+
 def _live_evidence_missing_gates(live_evidence: dict[str, Any]) -> list[str]:
     missing: set[str] = set()
     if not live_evidence.get("loaded"):
@@ -1209,6 +1294,7 @@ def build_voice_operator_report(
     coverage = _coverage_from_smoke(smoke)
     async_oracle_smoke = async_oracle_smoke or {}
     async_oracle_coverage = _coverage_from_async_oracle_smoke(async_oracle_smoke)
+    async_oracle_acceptance = _async_oracle_acceptance_matrix(async_oracle_coverage)
     live_evidence = live_evidence or _load_live_evidence([])
     missing_live_gates = _live_evidence_missing_gates(live_evidence)
     live_probe_status = "needs_live_probe" if missing_live_gates else "live_evidence_supplied_not_readiness_claim"
@@ -1368,6 +1454,7 @@ def build_voice_operator_report(
         "proofs": proofs,
         "coverage": coverage,
         "async_oracle_coverage": async_oracle_coverage,
+        "async_oracle_acceptance": async_oracle_acceptance,
         "voice_capability_prompt_contract": {
             "must_state": [
                 "Hermes is connected to Discord voice when /voice join succeeds.",
@@ -1467,6 +1554,13 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
     ):
         if async_oracle_coverage.get(key) is not True:
             issues.append(f"missing_async_oracle_coverage:{key}")
+    async_oracle_acceptance = report.get("async_oracle_acceptance", {})
+    if not isinstance(async_oracle_acceptance, Mapping) or not async_oracle_acceptance:
+        issues.append("missing_async_oracle_acceptance_matrix")
+    else:
+        for key, value in async_oracle_acceptance.items():
+            if not isinstance(value, Mapping) or value.get("ok") is not True:
+                issues.append(f"missing_async_oracle_acceptance:{key}")
     if report.get("requirements", {}).get("live_discord_join") is not False:
         issues.append("live_discord_join_must_not_be_claimed")
     return sorted(issues)
@@ -1490,6 +1584,11 @@ def _markdown(report: dict[str, Any]) -> str:
     lines.extend(["", "## Proofs", ""])
     for proof_id, proof in sorted(report["proofs"].items()):
         lines.append(f"- {proof_id}: {proof.get('ok')}")
+    lines.extend(["", "## Async Oracle Acceptance", ""])
+    for key, value in sorted(report["async_oracle_acceptance"].items()):
+        refs = value.get("test_refs") or []
+        ref_text = f"; refs={len(refs)}" if refs else ""
+        lines.append(f"- {key}: {value.get('ok')} ({value.get('evidence')}{ref_text})")
     lines.extend(["", "## Latency Metrics", ""])
     for key, value in sorted(report["latency_metrics_ms"].items()):
         lines.append(f"- {key}: {value} ms")

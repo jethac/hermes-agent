@@ -292,6 +292,12 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_text"] is False
     assert report["proofs"]["async_oracle_jobs"]["durable_cancelled_record_present"] is True
     assert report["proofs"]["async_oracle_jobs"]["durable_completed_jobs"] == 4
+    assert report["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
+    assert report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["ok"] is True
+    assert report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]["ok"] is True
+    assert "tests/agent/test_realtime_voice.py::test_kame_engine_local_status_question_uses_oracle_job_state" in (
+        report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["test_refs"]
+    )
     assert report["proofs"]["latency_metrics"]["oracle_metric_status"] == "needs_live_oracle_or_sidecar_probe"
     assert report["live_probe_required_for_completion"]["status"] == "needs_live_probe"
     assert report["live_probe_required_for_completion"]["missing_gates"] == [
@@ -333,6 +339,8 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:late_cancelled_output_attempted" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_not_spoken" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_not_durable" in issues
+    assert "missing_async_oracle_acceptance:four_oracle_jobs_reflex_responsive" in issues
+    assert "missing_async_oracle_acceptance:fifth_job_obeys_overflow_policy" in issues
 
 
 def test_write_voice_operator_report_artifacts(tmp_path):

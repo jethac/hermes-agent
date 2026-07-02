@@ -1275,7 +1275,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 previous_task=previous_task,
             )
         )
-        self._active_task_interrupts_oracle = True
+        self._active_task_interrupts_oracle = False
         self._active_task = task
         if event.type == OracleJobEventType.COMPLETED:
             task.add_done_callback(lambda _task, key=turn_id: self._oracle_job_context_by_turn_id.pop(key, None))

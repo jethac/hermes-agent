@@ -1410,6 +1410,14 @@ async def build_plan_run_async(
                     ],
                     "durable_completed_jobs": voice_operator["proofs"]["async_oracle_jobs"]["durable_completed_jobs"],
                 },
+                "async_oracle_acceptance": {
+                    key: {
+                        "ok": value.get("ok"),
+                        "evidence": value.get("evidence"),
+                        "test_ref_count": len(value.get("test_refs") or []),
+                    }
+                    for key, value in sorted(voice_operator["async_oracle_acceptance"].items())
+                },
             },
         )
     )

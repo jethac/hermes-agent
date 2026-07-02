@@ -977,6 +977,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["cancelled_result_durable_text"] is False
     assert voice_result["details"]["async_oracle_smoke"]["durable_cancelled_record_present"] is True
     assert voice_result["details"]["async_oracle_smoke"]["durable_completed_jobs"] == 4
+    assert voice_result["details"]["async_oracle_acceptance"]["four_oracle_jobs_reflex_responsive"]["ok"] is True
+    assert voice_result["details"]["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
+    assert voice_result["details"]["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"][
+        "test_ref_count"
+    ] >= 1
 
     provisioning_result = next(
         result for result in summary["results"] if result["milestone"] == "milestone_2_real_spend_and_provisioning_preflight"
