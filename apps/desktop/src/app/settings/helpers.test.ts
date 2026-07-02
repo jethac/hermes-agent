@@ -205,6 +205,14 @@ describe('settings helpers', () => {
       expect(voiceKeys).toContain('voice.realtime.tts_voice')
       expect(voiceKeys).toContain('voice.realtime.routing.local_confidence_threshold')
       expect(voiceKeys).toContain('voice.realtime.metrics.log_provider_spans')
+      expect(voiceKeys).toContain('voice.realtime.oracle_tool_router.voiceops_toolsets')
+      expect(voiceKeys).toContain('voice.realtime.oracle_tool_router.default_toolsets')
+    })
+
+    it('surfaces tool-search context pressure controls in advanced settings', () => {
+      const advancedKeys = SECTIONS.find(section => section.id === 'advanced')?.keys ?? []
+
+      expect(advancedKeys).toContain('tools.tool_search.defer_core')
     })
 
     it('renders dropdowns for per-backend model/device sub-fields', () => {

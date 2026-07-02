@@ -234,6 +234,7 @@ class RealtimeVoiceSessionConfig:
     output_events: Mapping[str, Any] = field(default_factory=dict)
     quality_targets_ms: Mapping[str, Any] = field(default_factory=dict)
     oracle_jobs: Mapping[str, Any] = field(default_factory=dict)
+    oracle_tool_router: Mapping[str, Any] = field(default_factory=dict)
     barge_in_policy: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -288,6 +289,7 @@ class RealtimeVoiceSessionConfig:
             "output_events": dict(self.output_events),
             "quality_targets_ms": dict(self.quality_targets_ms),
             "oracle_jobs": dict(self.oracle_jobs),
+            "oracle_tool_router": dict(self.oracle_tool_router),
             "barge_in_policy": dict(self.barge_in_policy),
             "metadata": dict(self.metadata),
         }
@@ -362,6 +364,7 @@ class RealtimeVoiceSessionConfig:
             output_events=_mapping(payload.get("output_events")),
             quality_targets_ms=_mapping(payload.get("quality_targets_ms")),
             oracle_jobs=_mapping(payload.get("oracle_jobs")),
+            oracle_tool_router=_mapping(payload.get("oracle_tool_router")),
             barge_in_policy=_mapping(payload.get("barge_in_policy")),
             metadata=_mapping(payload.get("metadata")),
         )

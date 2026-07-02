@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import threading
 from typing import Any, AsyncIterator, Mapping, Optional
 
@@ -126,13 +127,21 @@ class HermesRealtimeOracle:
     ) -> str:
         from run_agent import AIAgent
 
-        agent = AIAgent(
+        prompt_metadata = dict(self.config.metadata or {})
+        prompt_metadata.update(metadata or {})
+        enabled_toolsets = _voice_oracle_enabled_toolsets(
+            transcript,
+            prompt_metadata,
+            self.config,
+        )
+        agent_kwargs: dict[str, Any] = dict(
             model="",
             platform="desktop_voice",
             session_id=self.config.session_id,
         )
-        prompt_metadata = dict(self.config.metadata or {})
-        prompt_metadata.update(metadata or {})
+        if enabled_toolsets is not None:
+            agent_kwargs["enabled_toolsets"] = enabled_toolsets
+        agent = AIAgent(**agent_kwargs)
         prompt = _voice_oracle_prompt(transcript, prompt_metadata)
         active_keys = tuple(active_keys or _active_agent_keys(prompt_metadata))
         with self._active_lock:
@@ -153,6 +162,123 @@ class HermesRealtimeOracle:
                 for key in active_keys:
                     if self._active_agents.get(key) is agent:
                         self._active_agents.pop(key, None)
+
+
+def _voice_oracle_enabled_toolsets(
+    transcript: str,
+    metadata: Mapping[str, object],
+    config: RealtimeVoiceSessionConfig,
+) -> Optional[list[str]]:
+    router = config.oracle_tool_router if isinstance(config.oracle_tool_router, Mapping) else {}
+    if _metadata_bool(router.get("enabled"), default=True) is False:
+        return None
+
+    mode = str(router.get("mode") or "deterministic").strip().lower()
+    if mode not in {"", "deterministic"}:
+        return _toolset_list_or_none(router.get("default_toolsets"))
+
+    if _looks_like_voiceops_request(transcript, metadata):
+        return _toolset_list_or_none(router.get("voiceops_toolsets")) or ["voiceops"]
+    return _toolset_list_or_none(router.get("default_toolsets"))
+
+
+def _looks_like_voiceops_request(transcript: str, metadata: Mapping[str, object]) -> bool:
+    haystack = " ".join(
+        part
+        for part in (
+            transcript,
+            _metadata_text(metadata.get("kame_intent")),
+            _metadata_text(metadata.get("kame_transcript")),
+            _metadata_text(metadata.get("kame_asr_transcript")),
+            _metadata_text(metadata.get("kame_oracle_text_source")),
+        )
+        if part
+    )
+    text = re.sub(r"\s+", " ", haystack.casefold()).strip()
+    if not text:
+        return False
+    if "voiceops" in text:
+        return True
+
+    money_or_commerce = _contains_any(
+        text,
+        (
+            "stripe",
+            "spending money",
+            "spending budget",
+            "budget",
+            "pay for",
+            "payment",
+            "payments",
+            "purchase",
+            "buy ",
+            "buying",
+            "spend",
+            "credit card",
+            "checkout",
+            "subscription",
+            "invoice",
+        ),
+    )
+    provisioning = _contains_any(
+        text,
+        (
+            "provision",
+            "set up",
+            "setup",
+            "sign up",
+            "create an account",
+            "open an account",
+            "saas",
+            "provider account",
+            "voip",
+            "twilio",
+            "telnyx",
+            "plivo",
+            "sip",
+            "outbound call",
+            "phone",
+            "call my phone",
+            "call me",
+        ),
+    )
+    if money_or_commerce and provisioning:
+        return True
+    return _contains_any(text, ("provision", "set up", "setup", "sign up")) and _contains_any(
+        text,
+        ("voip", "phone provider", "phone service", "outbound call", "call my phone"),
+    )
+
+
+def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
+    return any(needle in text for needle in needles)
+
+
+def _toolset_list_or_none(raw: object) -> Optional[list[str]]:
+    if raw is None or raw is False:
+        return None
+    if isinstance(raw, str):
+        items = re.split(r"[, ]+", raw)
+    elif isinstance(raw, (list, tuple, set)):
+        items = [str(item) for item in raw]
+    else:
+        return None
+    toolsets = [item.strip() for item in items if item and item.strip()]
+    return list(dict.fromkeys(toolsets)) or None
+
+
+def _metadata_bool(value: object, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in {"1", "true", "yes", "on", "enabled"}:
+            return True
+        if token in {"0", "false", "no", "off", "disabled"}:
+            return False
+    return default
 
 
 def _voice_oracle_prompt(transcript: str, metadata: Mapping[str, object]) -> str:

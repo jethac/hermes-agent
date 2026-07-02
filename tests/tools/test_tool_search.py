@@ -95,13 +95,13 @@ class TestConfigParsing:
 
 
 # ---------------------------------------------------------------------------
-# Classification — the hard invariant: core tools NEVER defer.
+# Classification — by default core tools stay visible.
 # ---------------------------------------------------------------------------
 
 
 class TestClassification:
-    def test_core_tools_never_defer(self):
-        """The critical invariant from the OpenClaw report."""
+    def test_core_tools_do_not_defer_by_default(self):
+        """The default invariant from the OpenClaw report."""
         from tools.tool_search import is_deferrable_tool_name
         # Sample of core tools from _HERMES_CORE_TOOLS.
         for core_name in ["terminal", "read_file", "write_file", "patch",
@@ -109,7 +109,7 @@ class TestClassification:
                           "web_search", "session_search", "clarify",
                           "execute_code", "delegate_task", "send_message"]:
             assert not is_deferrable_tool_name(core_name), (
-                f"Core tool '{core_name}' must NEVER be deferrable"
+                f"Core tool '{core_name}' must not be deferrable by default"
             )
 
     def test_bridge_tools_never_defer(self):
@@ -429,7 +429,7 @@ class TestRegression_OpenClawCron84141:
     resulted in the agent receiving only ``sessions_send`` — the catalog
     builder silently dropped the requested core tool.
 
-    Our defense: core tools are NEVER deferred. This test exercises the
+    Our default defense: core tools are not deferred. This test exercises the
     full assembly pipeline with a mixed core+MCP toolset and asserts that
     every core tool survives.
     """
@@ -600,7 +600,7 @@ class TestRegression_ToolsetScoping:
         )
         names = scoped_deferrable_names(defs)
         assert "mcp_helper_op" in names
-        # core tools are never deferrable
+        # core tools are not deferrable by default
         assert "terminal" not in names
 
     def test_scoped_deferrable_names_can_include_core_tools_with_flag(self):

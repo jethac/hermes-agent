@@ -178,3 +178,160 @@ def test_hermes_realtime_oracle_runs_concurrent_kame_requests_and_targets_interr
         assert all("Verbatim ASR evidence" in call["prompt"] for call in calls)
 
     asyncio.run(run())
+
+
+def test_voice_oracle_preserves_default_tool_surface_for_general_voice_turn(monkeypatch):
+    init_kwargs = []
+
+    class FakeAIAgent:
+        def __init__(self, **kwargs):
+            init_kwargs.append(kwargs)
+
+        def run_conversation(self, prompt, *, persist_user_message=None, stream_callback=None):
+            if stream_callback is not None:
+                stream_callback("ok")
+            return {"final_response": "ok"}
+
+    async def run():
+        monkeypatch.setattr(run_agent, "AIAgent", FakeAIAgent)
+        oracle = HermesRealtimeOracle(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-general",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_tool_router={
+                    "enabled": True,
+                    "mode": "deterministic",
+                    "voiceops_toolsets": ["voiceops"],
+                    "default_toolsets": [],
+                },
+            )
+        )
+        chunks = []
+        async for delta in oracle.stream_answer("tell me a short joke"):
+            chunks.append(delta)
+        assert chunks == ["ok"]
+
+    asyncio.run(run())
+    assert init_kwargs == [
+        {
+            "model": "",
+            "platform": "desktop_voice",
+            "session_id": "voice-general",
+        }
+    ]
+
+
+def test_voice_oracle_routes_voiceops_request_to_voiceops_toolset(monkeypatch):
+    init_kwargs = []
+    prompts = []
+
+    class FakeAIAgent:
+        def __init__(self, **kwargs):
+            init_kwargs.append(kwargs)
+
+        def run_conversation(self, prompt, *, persist_user_message=None, stream_callback=None):
+            prompts.append(prompt)
+            if stream_callback is not None:
+                stream_callback("preparing action packet")
+            return {"final_response": "prepared"}
+
+    async def run():
+        monkeypatch.setattr(run_agent, "AIAgent", FakeAIAgent)
+        oracle = HermesRealtimeOracle(
+            RealtimeVoiceSessionConfig(
+                session_id="voiceops-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                metadata={
+                    "transport": "discord_voice",
+                    "voice_architecture": "kame_frontend_oracle",
+                },
+                oracle_tool_router={
+                    "enabled": True,
+                    "mode": "deterministic",
+                    "voiceops_toolsets": ["voiceops"],
+                    "default_toolsets": [],
+                },
+            )
+        )
+        request = KameOracleRequest(
+            session_id="voiceops-123",
+            turn_id="voiceops-123:1",
+            source="discord_voice",
+            user_id="jetha",
+            intent="Use Stripe spending money to provision VoIP and call my phone.",
+            route=KameRoute.ORACLE_DIRECT,
+            transcript="give yourself a Stripe budget, set up a VoIP account, and call my phone",
+            transcript_source="reflex_audio",
+            asr_transcript="give yourself a Stripe budget, set up a VoIP account, and call my phone",
+            asr_transcript_source="asr",
+            cancellation_token="voiceops-123:1:cancel",
+        )
+        chunks = []
+        async for delta in oracle.stream_answer_for_request(request):
+            chunks.append(delta)
+        assert chunks == ["preparing action packet"]
+
+    asyncio.run(run())
+    assert init_kwargs == [
+        {
+            "model": "",
+            "platform": "desktop_voice",
+            "session_id": "voiceops-123",
+            "enabled_toolsets": ["voiceops"],
+        }
+    ]
+    assert "Hermes backend oracle" in prompts[0]
+    assert "Verbatim ASR evidence" in prompts[0]
+
+
+def test_voice_oracle_tool_router_can_be_disabled(monkeypatch):
+    init_kwargs = []
+
+    class FakeAIAgent:
+        def __init__(self, **kwargs):
+            init_kwargs.append(kwargs)
+
+        def run_conversation(self, prompt, *, persist_user_message=None, stream_callback=None):
+            if stream_callback is not None:
+                stream_callback("ok")
+            return {"final_response": "ok"}
+
+    async def run():
+        monkeypatch.setattr(run_agent, "AIAgent", FakeAIAgent)
+        oracle = HermesRealtimeOracle(
+            RealtimeVoiceSessionConfig(
+                session_id="voiceops-disabled",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_tool_router={
+                    "enabled": False,
+                    "mode": "deterministic",
+                    "voiceops_toolsets": ["voiceops"],
+                },
+            )
+        )
+        request = KameOracleRequest(
+            session_id="voiceops-disabled",
+            turn_id="voiceops-disabled:1",
+            source="discord_voice",
+            user_id="jetha",
+            intent="Use Stripe spending money to provision VoIP and call my phone.",
+            route=KameRoute.ORACLE_DIRECT,
+            transcript="give yourself a Stripe budget and call my phone",
+            transcript_source="reflex_audio",
+            asr_transcript="give yourself a Stripe budget and call my phone",
+            asr_transcript_source="asr",
+            cancellation_token="voiceops-disabled:1:cancel",
+        )
+        chunks = []
+        async for delta in oracle.stream_answer_for_request(request):
+            chunks.append(delta)
+        assert chunks == ["ok"]
+
+    asyncio.run(run())
+    assert init_kwargs == [
+        {
+            "model": "",
+            "platform": "desktop_voice",
+            "session_id": "voiceops-disabled",
+        }
+    ]

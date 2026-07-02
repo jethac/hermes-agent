@@ -75,6 +75,12 @@ def test_discord_realtime_config_derives_reference_sidecar_and_env_token(monkeyp
                         "speak_terminal_results": False,
                         "audit_ledger_path": "artifacts/voiceops/oracle-jobs.jsonl",
                     },
+                    "oracle_tool_router": {
+                        "enabled": True,
+                        "mode": "deterministic",
+                        "voiceops_toolsets": ["voiceops"],
+                        "default_toolsets": [],
+                    },
                 },
             },
             "discord": {
@@ -106,6 +112,12 @@ def test_discord_realtime_config_derives_reference_sidecar_and_env_token(monkeyp
         "speak_terminal_results": False,
         "audit_ledger_path": "artifacts/voiceops/oracle-jobs.jsonl",
     }
+    assert cfg["oracle_tool_router"] == {
+        "enabled": True,
+        "mode": "deterministic",
+        "voiceops_toolsets": ["voiceops"],
+        "default_toolsets": [],
+    }
 
 
 def test_discord_realtime_config_overrides_shared_oracle_jobs(monkeypatch):
@@ -130,6 +142,12 @@ def test_discord_realtime_config_overrides_shared_oracle_jobs(monkeypatch):
                         "speak_terminal_results": True,
                         "audit_ledger_path": "artifacts/shared.jsonl",
                     },
+                    "oracle_tool_router": {
+                        "enabled": True,
+                        "mode": "deterministic",
+                        "voiceops_toolsets": ["voiceops"],
+                        "default_toolsets": [],
+                    },
                 },
             },
             "discord": {
@@ -138,6 +156,9 @@ def test_discord_realtime_config_overrides_shared_oracle_jobs(monkeypatch):
                         "max_concurrent": 2,
                         "shutdown_timeout_seconds": 0.75,
                         "audit_ledger_path": "artifacts/discord.jsonl",
+                    },
+                    "oracle_tool_router": {
+                        "voiceops_toolsets": ["voiceops", "discord"],
                     },
                 },
             },
@@ -157,6 +178,12 @@ def test_discord_realtime_config_overrides_shared_oracle_jobs(monkeypatch):
         "shutdown_timeout_seconds": 0.75,
         "speak_terminal_results": True,
         "audit_ledger_path": "artifacts/discord.jsonl",
+    }
+    assert cfg["oracle_tool_router"] == {
+        "enabled": True,
+        "mode": "deterministic",
+        "voiceops_toolsets": ["voiceops", "discord"],
+        "default_toolsets": [],
     }
 
 
@@ -443,6 +470,12 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
             "kame_speech_end_to_playback_start_ms": 2345,
         },
         oracle_jobs={"enabled": True, "max_concurrent": 4, "queue_limit": 16},
+        oracle_tool_router={
+            "enabled": True,
+            "mode": "deterministic",
+            "voiceops_toolsets": ["voiceops"],
+            "default_toolsets": [],
+        },
     )
 
     await session.start()
@@ -488,6 +521,12 @@ async def test_discord_realtime_session_streams_downsampled_pcm_to_sidecar():
         "kame_speech_end_to_playback_start_ms": 2345,
     }
     assert sidecar.started_with.oracle_jobs == {"enabled": True, "max_concurrent": 4, "queue_limit": 16}
+    assert sidecar.started_with.oracle_tool_router == {
+        "enabled": True,
+        "mode": "deterministic",
+        "voiceops_toolsets": ["voiceops"],
+        "default_toolsets": [],
+    }
     assert sidecar.started_with.barge_in_policy == {
         "stop_playback_deadline_ms": 95,
     }

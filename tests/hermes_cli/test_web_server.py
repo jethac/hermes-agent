@@ -3183,6 +3183,8 @@ class TestBuildSchemaFromConfig:
             assert entry["type"] == "select"
             assert "options" in entry
             assert "local" in entry["options"]
+        assert CONFIG_SCHEMA["tools.tool_search.defer_core"]["type"] == "select"
+        assert CONFIG_SCHEMA["tools.tool_search.defer_core"]["options"] == ["off", "all"]
 
     def test_realtime_voice_language_policy_fields_are_exposed(self):
         from hermes_cli.web_server import CONFIG_SCHEMA
@@ -3223,6 +3225,11 @@ class TestBuildSchemaFromConfig:
         assert "vLLM base URL" in CONFIG_SCHEMA["voice.realtime.vllm_base_url"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.vllm_model"]["type"] == "string"
         assert "audio reflex model" in CONFIG_SCHEMA["voice.realtime.vllm_model"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.enabled"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.mode"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.mode"]["options"] == ["deterministic"]
+        assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.voiceops_toolsets"]["type"] == "list"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.default_toolsets"]["type"] == "list"
         assert CONFIG_SCHEMA["voice.realtime.oracle_timeout_seconds"]["type"] == "number"
         assert "oracle voice response" in CONFIG_SCHEMA["voice.realtime.oracle_timeout_seconds"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.max_spoken_sentences"]["type"] == "number"
@@ -3518,6 +3525,11 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.metrics.enabled"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.metrics.log_turn_spans"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.metrics.log_provider_spans"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.enabled"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.mode"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.mode"]["options"] == ["deterministic"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.voiceops_toolsets"]["type"] == "list"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.default_toolsets"]["type"] == "list"
         assert CONFIG_SCHEMA[
             "discord.realtime_voice.quality_targets_ms.kame_speech_end_to_interface_decision_ms"
         ]["type"] == "number"

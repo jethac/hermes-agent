@@ -861,6 +861,10 @@ export const SECTIONS: DesktopConfigSection[] = [
       'voice.realtime.metrics.enabled',
       'voice.realtime.metrics.log_turn_spans',
       'voice.realtime.metrics.log_provider_spans',
+      'voice.realtime.oracle_tool_router.enabled',
+      'voice.realtime.oracle_tool_router.mode',
+      'voice.realtime.oracle_tool_router.voiceops_toolsets',
+      'voice.realtime.oracle_tool_router.default_toolsets',
       'voice.realtime.output_events.caption_aliases',
       'voice.realtime.output_events.audio_aliases',
       'voice.realtime.sidecar_base_url',
@@ -894,6 +898,7 @@ export const SECTIONS: DesktopConfigSection[] = [
     icon: Wrench,
     keys: [
       'toolsets',
+      'tools.tool_search.defer_core',
       'terminal.backend',
       'terminal.timeout',
       'terminal.docker_image',

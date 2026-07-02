@@ -645,6 +645,12 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "ElevenLabs Scribe model",
         "options": ["scribe_v2", "scribe_v1"],
     },
+    "tools.tool_search.defer_core": {
+        "type": "select",
+        "description": "Whether tool_search may defer core Hermes tools behind tool_call",
+        "options": ["off", "all"],
+        "category": "tools",
+    },
     "voice.realtime.enabled": {
         "type": "boolean",
         "description": "Enable the realtime voice websocket path",
@@ -976,6 +982,27 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "voice.realtime.oracle_jobs.audit_ledger_path": {
         "type": "text",
         "description": "Optional JSONL path for redacted VoiceOps oracle-job lifecycle audit events",
+        "category": "voice",
+    },
+    "voice.realtime.oracle_tool_router.enabled": {
+        "type": "boolean",
+        "description": "Let realtime voice choose narrow Hermes oracle toolsets from reflex intent metadata",
+        "category": "voice",
+    },
+    "voice.realtime.oracle_tool_router.mode": {
+        "type": "select",
+        "description": "Realtime voice oracle tool routing mode",
+        "options": ["deterministic"],
+        "category": "voice",
+    },
+    "voice.realtime.oracle_tool_router.voiceops_toolsets": {
+        "type": "list",
+        "description": "Toolsets exposed to the Hermes oracle for VoiceOps spend/provision/phone requests",
+        "category": "voice",
+    },
+    "voice.realtime.oracle_tool_router.default_toolsets": {
+        "type": "list",
+        "description": "Optional toolsets exposed to the Hermes oracle for non-VoiceOps realtime voice turns",
         "category": "voice",
     },
     "voice.realtime.output_events.caption_aliases": {
@@ -1431,6 +1458,27 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.oracle_jobs.audit_ledger_path": {
         "type": "text",
         "description": "Optional JSONL path for redacted Discord VoiceOps oracle-job lifecycle audit events",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_tool_router.enabled": {
+        "type": "boolean",
+        "description": "Let Discord realtime voice choose narrow Hermes oracle toolsets from reflex intent metadata",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_tool_router.mode": {
+        "type": "select",
+        "description": "Discord realtime voice oracle tool routing mode",
+        "options": ["deterministic"],
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_tool_router.voiceops_toolsets": {
+        "type": "list",
+        "description": "Toolsets exposed to the Hermes oracle for Discord VoiceOps spend/provision/phone requests",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_tool_router.default_toolsets": {
+        "type": "list",
+        "description": "Optional toolsets exposed to the Hermes oracle for non-VoiceOps Discord realtime voice turns",
         "category": "discord",
     },
     "discord.realtime_voice.output_events.caption_aliases": {

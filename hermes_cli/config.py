@@ -2155,6 +2155,12 @@ DEFAULT_CONFIG = {
                 "speak_terminal_results": True,
                 "audit_ledger_path": "",
             },
+            "oracle_tool_router": {
+                "enabled": True,
+                "mode": "deterministic",
+                "voiceops_toolsets": ["voiceops"],
+                "default_toolsets": [],
+            },
             "output_events": {
                 "caption_aliases": False,
                 "audio_aliases": False,
@@ -2560,6 +2566,12 @@ DEFAULT_CONFIG = {
                 "log_turn_spans": True,
                 "log_provider_spans": True,
             },
+            "oracle_tool_router": {
+                "enabled": True,
+                "mode": "deterministic",
+                "voiceops_toolsets": ["voiceops"],
+                "default_toolsets": [],
+            },
             "output_events": {
                 "caption_aliases": False,
                 "audio_aliases": False,
@@ -2866,7 +2878,9 @@ DEFAULT_CONFIG = {
     # tool_search / tool_describe / tool_call — and surfaced on demand.
     #
     # Core Hermes tools (terminal, read_file, write_file, patch,
-    # search_files, todo, memory, browser_*, etc.) are NEVER deferred.
+    # search_files, todo, memory, browser_*, etc.) stay visible by default.
+    # Set defer_core="all" to hide them behind tool_search/tool_call too
+    # for context-pressure-sensitive voice/oracle sessions.
     # See tools/tool_search.py for full design notes and the
     # openclaw-tool-search-report PDF in this PR for the rationale.
     "tools": {
@@ -2887,6 +2901,9 @@ DEFAULT_CONFIG = {
             "search_default_limit": 5,
             # Hard upper bound the model can request via ``limit``. Range 1..50.
             "max_search_limit": 20,
+            # "off" (default) — keep core Hermes tools visible.
+            # "all" — also defer core Hermes tools behind tool_search/tool_call.
+            "defer_core": "off",
         },
     },
 

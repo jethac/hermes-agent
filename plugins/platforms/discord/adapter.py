@@ -108,6 +108,7 @@ class DiscordVoiceSessionState:
     quality_target_misses: List[Dict[str, Any]] = field(default_factory=list)
     frontend_state: Dict[str, Any] = field(default_factory=dict)
     oracle_jobs: Dict[str, Any] = field(default_factory=dict)
+    oracle_tool_router: Dict[str, Any] = field(default_factory=dict)
     updated_at: float = field(default_factory=time.monotonic)
 
     def update(self, **values: Any) -> "DiscordVoiceSessionState":
@@ -399,6 +400,7 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
     barge_in = _discord_mapping_config(config.get("barge_in"))
     input_noise_gate = _discord_mapping_config(config.get("input_noise_gate") or config.get("noise_gate"))
     output_events = _discord_mapping_config(config.get("output_events"))
+    oracle_tool_router = _discord_mapping_config(config.get("oracle_tool_router") or config.get("tool_router"))
 
     _discord_set_realtime_default(config, "frontend_provider", interface.get("provider"))
     _discord_set_realtime_default(config, "frontend_model", interface.get("model"))
@@ -466,6 +468,8 @@ def _discord_normalize_realtime_voice_config(realtime: Mapping[str, Any]) -> Dic
     _discord_set_realtime_default(config, "input_noise_gate_preroll_ms", input_noise_gate.get("preroll_ms"))
     if output_events and not isinstance(config.get("output_events"), Mapping):
         config["output_events"] = dict(output_events)
+    if oracle_tool_router and not isinstance(config.get("oracle_tool_router"), Mapping):
+        config["oracle_tool_router"] = dict(oracle_tool_router)
     _discord_reconcile_kame_native_audio_config(config)
     return config
 
@@ -3396,6 +3400,12 @@ class DiscordAdapter(BasePlatformAdapter):
                 "speak_terminal_results": True,
                 "audit_ledger_path": "",
             },
+            "oracle_tool_router": {
+                "enabled": True,
+                "mode": "deterministic",
+                "voiceops_toolsets": ["voiceops"],
+                "default_toolsets": [],
+            },
             "output_events": {
                 "caption_aliases": False,
                 "audio_aliases": False,
@@ -3894,6 +3904,7 @@ class DiscordAdapter(BasePlatformAdapter):
             output_events=cfg.get("output_events") if isinstance(cfg.get("output_events"), dict) else {},
             quality_targets_ms=cfg.get("quality_targets_ms") if isinstance(cfg.get("quality_targets_ms"), dict) else {},
             oracle_jobs=cfg.get("oracle_jobs") if isinstance(cfg.get("oracle_jobs"), dict) else {},
+            oracle_tool_router=cfg.get("oracle_tool_router") if isinstance(cfg.get("oracle_tool_router"), dict) else {},
             barge_in_stop_playback_deadline_ms=int(cfg.get("barge_in_stop_playback_deadline_ms") or 150),
             mixer=getattr(self, "_voice_mixers", {}).get(guild_id),
             degraded_callback=lambda reason, error: self._handle_realtime_voice_degraded(
