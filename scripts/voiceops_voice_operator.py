@@ -132,6 +132,12 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
     ],
 }
 
+TOOL_DISCLOSURE_TEST_REFS = [
+    "tests/tools/test_tool_search.py::TestAssembly::test_defer_core_all_hides_core_behind_bridge",
+    "tests/agent/test_realtime_voice_oracle.py::test_voice_oracle_applies_scoped_tool_search_override",
+    "tests/hermes_cli/test_web_server.py::TestBuildSchemaFromConfig::test_realtime_voice_ws_config_defaults_oracle_tool_router",
+]
+
 LIVE_EVIDENCE_REQUIRED_DISCORD_BOOLS = (
     "connect_perm",
     "speak_perm",
@@ -1437,6 +1443,60 @@ def _coverage_from_discord_session_cleanup_smoke(smoke: Mapping[str, Any]) -> di
     }
 
 
+def run_tool_disclosure_smoke() -> dict[str, Any]:
+    """Local proof that realtime voice can collapse core tools behind tool_search."""
+
+    from tools.tool_search import BRIDGE_TOOL_NAMES, ToolSearchConfig, assemble_tool_defs
+
+    core_tool_defs = [
+        {
+            "type": "function",
+            "function": {
+                "name": "terminal",
+                "description": "Run shell commands.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a file.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+    ]
+    config = ToolSearchConfig.from_raw({"enabled": "on", "defer_core": "all"})
+    result = assemble_tool_defs(core_tool_defs, context_length=272_000, config=config)
+    visible_names = sorted((tool.get("function") or {}).get("name") for tool in result.tool_defs)
+    hidden_core_names = sorted(
+        name
+        for name in ("terminal", "read_file")
+        if name not in visible_names
+    )
+    bridge_names = sorted(BRIDGE_TOOL_NAMES)
+    return {
+        "ok": result.activated
+        and result.deferred_count == len(core_tool_defs)
+        and visible_names == bridge_names
+        and hidden_core_names == ["read_file", "terminal"],
+        "scenario": "voice_scoped_core_tool_deferral",
+        "provider_network": False,
+        "model_call": False,
+        "config": {
+            "enabled": config.enabled,
+            "defer_core": config.defer_core,
+        },
+        "input_core_tools": ["terminal", "read_file"],
+        "visible_tool_names": visible_names,
+        "hidden_core_tool_names": hidden_core_names,
+        "bridge_tool_names": bridge_names,
+        "deferred_count": result.deferred_count,
+        "deferred_tokens": result.deferred_tokens,
+        "external_test_refs": TOOL_DISCLOSURE_TEST_REFS,
+    }
+
+
 def _async_oracle_acceptance_row(
     *,
     ok: bool,
@@ -1607,10 +1667,12 @@ def build_voice_operator_report(
     live_evidence: dict[str, Any] | None = None,
     async_oracle_smoke: dict[str, Any] | None = None,
     discord_session_cleanup_smoke: dict[str, Any] | None = None,
+    tool_disclosure_smoke: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     coverage = _coverage_from_smoke(smoke)
     async_oracle_smoke = async_oracle_smoke or {}
     discord_session_cleanup_smoke = discord_session_cleanup_smoke or {}
+    tool_disclosure_smoke = tool_disclosure_smoke or run_tool_disclosure_smoke()
     async_oracle_coverage = {
         **_coverage_from_async_oracle_smoke(async_oracle_smoke),
         **_coverage_from_discord_session_cleanup_smoke(discord_session_cleanup_smoke),
@@ -1795,6 +1857,18 @@ def build_voice_operator_report(
             "degraded_job_error": discord_session_cleanup_smoke.get("degraded_job_error"),
             "event_order": discord_session_cleanup_smoke.get("event_order") or [],
         },
+        "tool_disclosure": {
+            "ok": tool_disclosure_smoke.get("ok") is True,
+            "scenario": tool_disclosure_smoke.get("scenario"),
+            "config": dict(tool_disclosure_smoke.get("config") or {}),
+            "input_core_tools": tool_disclosure_smoke.get("input_core_tools") or [],
+            "visible_tool_names": tool_disclosure_smoke.get("visible_tool_names") or [],
+            "hidden_core_tool_names": tool_disclosure_smoke.get("hidden_core_tool_names") or [],
+            "bridge_tool_names": tool_disclosure_smoke.get("bridge_tool_names") or [],
+            "deferred_count": tool_disclosure_smoke.get("deferred_count"),
+            "deferred_tokens": tool_disclosure_smoke.get("deferred_tokens"),
+            "external_test_refs": tool_disclosure_smoke.get("external_test_refs") or [],
+        },
         "live_evidence": {
             "ok": bool(live_evidence.get("loaded")) and not missing_live_gates and not live_evidence.get("issues"),
             "mode": live_evidence.get("mode"),
@@ -1846,6 +1920,7 @@ def build_voice_operator_report(
             "async_oracle_late_cancelled_output_not_durable": async_oracle_coverage[
                 "late_cancelled_output_not_durable"
             ],
+            "progressive_tool_disclosure": tool_disclosure_smoke.get("ok") is True,
         },
         "proofs": proofs,
         "coverage": coverage,
@@ -1881,6 +1956,7 @@ def build_voice_operator_report(
         "smoke": smoke,
         "async_oracle_smoke": dict(async_oracle_smoke),
         "discord_session_cleanup_smoke": dict(discord_session_cleanup_smoke),
+        "tool_disclosure_smoke": dict(tool_disclosure_smoke),
         "live_probe_required_for_completion": {
             "status": live_probe_status,
             "reason": "Headless loopback does not prove a real Discord gateway join, live receiver transport, or production sidecar availability.",
@@ -1963,6 +2039,19 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
             issues.append(f"missing_async_oracle_coverage:{key}")
         if async_oracle_coverage.get(key) is not recomputed_async_oracle_coverage.get(key):
             issues.append(f"stale_async_oracle_coverage:{key}")
+    tool_disclosure_smoke = report.get("tool_disclosure_smoke", {})
+    tool_disclosure = report.get("proofs", {}).get("tool_disclosure", {})
+    if not isinstance(tool_disclosure_smoke, Mapping) or tool_disclosure_smoke.get("ok") is not True:
+        issues.append("missing_coverage:progressive_tool_disclosure")
+    if report.get("requirements", {}).get("progressive_tool_disclosure") is not True:
+        issues.append("missing_requirement:progressive_tool_disclosure")
+    if not isinstance(tool_disclosure, Mapping) or tool_disclosure.get("ok") is not True:
+        issues.append("missing_proof:progressive_tool_disclosure")
+    expected_visible = sorted(["tool_call", "tool_describe", "tool_search"])
+    if sorted(tool_disclosure_smoke.get("visible_tool_names") or []) != expected_visible:
+        issues.append("progressive_tool_disclosure:unexpected_visible_tools")
+    if sorted(tool_disclosure_smoke.get("hidden_core_tool_names") or []) != ["read_file", "terminal"]:
+        issues.append("progressive_tool_disclosure:core_tools_not_hidden")
     async_oracle_acceptance = report.get("async_oracle_acceptance", {})
     if not isinstance(async_oracle_acceptance, Mapping) or not async_oracle_acceptance:
         issues.append("missing_async_oracle_acceptance_matrix")
@@ -2254,11 +2343,13 @@ async def build_voice_operator_report_from_smoke(live_evidence_paths: list[Path]
     smoke_result = await run_discord_realtime_voice_smoke()
     async_oracle_smoke = await run_async_oracle_smoke()
     discord_session_cleanup_smoke = await run_discord_session_cleanup_smoke()
+    tool_disclosure_smoke = run_tool_disclosure_smoke()
     return build_voice_operator_report(
         asdict(smoke_result),
         live_evidence=_load_live_evidence(live_evidence_paths),
         async_oracle_smoke=async_oracle_smoke,
         discord_session_cleanup_smoke=discord_session_cleanup_smoke,
+        tool_disclosure_smoke=tool_disclosure_smoke,
     )
 
 

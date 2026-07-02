@@ -357,6 +357,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["requirements"]["async_oracle_late_cancelled_output_attempted"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_dropped"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_not_durable"] is True
+    assert report["requirements"]["progressive_tool_disclosure"] is True
     assert report["requirements"]["live_discord_join"] is False
     assert report["requirements"]["live_evidence_supplied"] is False
     assert report["proofs"]["lifecycle"]["sidecar_closed"] is True
@@ -420,6 +421,14 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["shutdown_forced_cancel_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["shutdown_close_cancel_entered"] is True
     assert report["proofs"]["async_oracle_jobs"]["shutdown_cancelled_jobs"] == 1
+    assert report["proofs"]["tool_disclosure"]["ok"] is True
+    assert report["proofs"]["tool_disclosure"]["visible_tool_names"] == [
+        "tool_call",
+        "tool_describe",
+        "tool_search",
+    ]
+    assert report["proofs"]["tool_disclosure"]["hidden_core_tool_names"] == ["read_file", "terminal"]
+    assert report["tool_disclosure_smoke"]["ok"] is True
     assert report["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
     assert report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["ok"] is True
     assert report["async_oracle_acceptance"]["shutdown_timeout_is_bounded"]["ok"] is True
