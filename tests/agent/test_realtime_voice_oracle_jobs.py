@@ -490,6 +490,61 @@ async def test_completed_event_preserves_full_result_without_bloating_status():
 
 
 @pytest.mark.asyncio
+async def test_completed_result_redacts_hidden_reasoning_from_status_and_event():
+    events = []
+    visible_text = "Visible details.\nSecond line."
+
+    async def runner(job):
+        return {
+            "result_summary": "<think>private scratchpad</think> Visible summary.",
+            "result_text": f"<think>private scratchpad</think>\n{visible_text}",
+        }
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+    job = await manager.submit(_request("write a visible report"))
+    await manager.wait_for_idle()
+
+    completed = await manager.get(job.job_id)
+    status = await manager.status_view()
+    completed_event = next(event for event in events if event["type"] == "oracle.job.completed")
+
+    assert completed.result_summary == "Visible summary."
+    assert completed.result_text == visible_text
+    assert status["jobs"][0]["result_summary"] == "Visible summary."
+    assert completed_event["payload"]["result_summary"] == "Visible summary."
+    assert completed_event["payload"]["result_text"] == visible_text
+    assert completed_event["payload"]["result_text_chars"] == len(visible_text)
+    assert "private scratchpad" not in str(status)
+    assert "private scratchpad" not in str(completed_event)
+
+
+@pytest.mark.asyncio
+async def test_completed_result_redacts_orphan_close_reasoning_trace():
+    async def runner(job):
+        return {
+            "result_summary": (
+                'We need to reply with exactly "ready". No extra text. '
+                "Let's do that.</think>\nready"
+            )
+        }
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    job = await manager.submit(_request("say ready"))
+    await manager.wait_for_idle()
+
+    completed = await manager.get(job.job_id)
+    status = await manager.status_view()
+
+    assert completed.result_summary == "ready"
+    assert status["jobs"][0]["result_summary"] == "ready"
+    assert "No extra text" not in str(status)
+
+
+@pytest.mark.asyncio
 async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
     events = []
     release = asyncio.Event()

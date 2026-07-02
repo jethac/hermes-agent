@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Deque, Mapping, Optional
 
 from agent.realtime_voice_kame import KameOracleRequest
+from agent.think_scrubber import StreamingThinkScrubber, strip_leading_reasoning_trace
 
 
 class OracleJobState(StrEnum):
@@ -538,9 +539,11 @@ def _result_summary(result: Any) -> str:
         for key in ("result_summary", "summary", "text", "final_response"):
             value = result.get(key)
             if value:
-                return " ".join(str(value).split())[:2000]
+                summary = _visible_result_summary(value)
+                if summary:
+                    return summary
         return ""
-    return " ".join(str(result or "").split())[:2000]
+    return _visible_result_summary(result)
 
 
 def _result_text(result: Any) -> str:
@@ -548,12 +551,32 @@ def _result_text(result: Any) -> str:
         for key in ("result_text", "text", "final_response", "result_summary", "summary"):
             value = result.get(key)
             if value:
-                text = str(value)
+                text = _visible_result_text(value)
                 if text.strip():
                     return text
         return ""
-    text = str(result or "")
+    text = _visible_result_text(result)
     return text if text.strip() else ""
+
+
+def _visible_result_summary(value: Any) -> str:
+    return " ".join(_visible_result_text(value).split())[:2000]
+
+
+def _visible_result_text(value: Any) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    without_leading_trace = strip_leading_reasoning_trace(text)
+    text = without_leading_trace.lstrip() if without_leading_trace != text else without_leading_trace
+    without_blocks = _strip_reasoning_blocks(text)
+    text = without_blocks.lstrip() if without_blocks != text else without_blocks
+    return text
+
+
+def _strip_reasoning_blocks(text: str) -> str:
+    scrubber = StreamingThinkScrubber()
+    return scrubber.feed(text) + scrubber.flush()
 
 
 def _completion_payload(job: OracleJob) -> dict[str, Any]:
