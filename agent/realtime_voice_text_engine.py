@@ -785,7 +785,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 assistant_metadata,
             )
             await self._emit_interface_event(VoiceEventType.INTERFACE_INTENT_FINAL, interface_payload)
-        local_reply = _kame_local_reply(oracle_request)
+        local_reply = await self._kame_oracle_job_status_reply(oracle_request)
+        if not local_reply:
+            local_reply = _kame_local_reply(oracle_request)
         if local_reply:
             if oracle_request is not None:
                 await self._emit_interface_event(
@@ -823,6 +825,16 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 oracle_request=oracle_request,
             )
         )
+
+    async def _kame_oracle_job_status_reply(self, oracle_request: Optional[KameOracleRequest]) -> str:
+        manager = self._oracle_job_manager
+        if manager is None or oracle_request is None:
+            return ""
+        if oracle_request.route not in {KameRoute.LOCAL, KameRoute.REJECT_OR_CLARIFY}:
+            return ""
+        if not _kame_oracle_job_status_requested(oracle_request):
+            return ""
+        return _kame_oracle_job_status_text(await manager.status_view())
 
     async def _submit_async_oracle_job_if_enabled(
         self,
@@ -2342,6 +2354,67 @@ def _kame_local_reply(request: Optional[KameOracleRequest]) -> str:
     if request.route not in {KameRoute.LOCAL, KameRoute.REJECT_OR_CLARIFY}:
         return ""
     return request.local_reply.strip()
+
+
+def _kame_oracle_job_status_requested(request: KameOracleRequest) -> bool:
+    haystack = " ".join(
+        str(value or "")
+        for value in (
+            request.intent,
+            request.transcript,
+            request.local_reply,
+            request.oracle_text,
+        )
+    ).lower()
+    if not haystack.strip():
+        return False
+    status_phrases = (
+        "what are you working on",
+        "what are you doing",
+        "job status",
+        "jobs status",
+        "oracle jobs",
+        "background jobs",
+        "active jobs",
+        "running jobs",
+        "what's running",
+        "what is running",
+    )
+    if any(phrase in haystack for phrase in status_phrases):
+        return True
+    return "status" in haystack and any(token in haystack for token in ("job", "jobs", "task", "tasks", "oracle"))
+
+
+def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
+    capacity = status.get("capacity") if isinstance(status.get("capacity"), Mapping) else {}
+    jobs = [dict(job) for job in status.get("jobs", []) if isinstance(job, Mapping)]
+    running = int(capacity.get("running") or 0)
+    queued = int(capacity.get("queued") or 0)
+    max_concurrent = capacity.get("max_concurrent") or "?"
+    active_jobs = [
+        job
+        for job in jobs
+        if str(job.get("state") or "") in {"running", "queued", "waiting_for_approval", "cancel_requested"}
+    ]
+    if not active_jobs:
+        if jobs:
+            return "No oracle jobs are running or queued right now."
+        return "I don't have any oracle jobs yet."
+    fragments = [f"{running} running out of {max_concurrent}"]
+    if queued:
+        fragments.append(f"{queued} queued")
+    headline = "Oracle jobs: " + ", ".join(fragments) + "."
+    labels = []
+    for job in active_jobs[:3]:
+        label = str(job.get("spoken_status") or job.get("intent") or "").strip()
+        state = str(job.get("state") or "").strip()
+        if label and state:
+            labels.append(f"{state}: {label[:90]}")
+        elif label:
+            labels.append(label[:90])
+    if labels:
+        return headline + " " + " | ".join(labels)
+    return headline
 
 
 def _async_oracle_jobs_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
