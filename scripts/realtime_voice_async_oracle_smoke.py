@@ -27,6 +27,7 @@ class SmokeOracle:
         self.running = 0
         self.max_running = 0
         self.requests: list[Any] = []
+        self.updates: list[tuple[Any, str, dict[str, Any]]] = []
         self.releases: dict[str, asyncio.Event] = {}
         self.late_cancelled_output_attempted = False
         self.close_cancel_entered = asyncio.Event()
@@ -86,6 +87,9 @@ class SmokeOracle:
 
     def release(self, intent: str) -> None:
         self.releases.setdefault(intent, asyncio.Event()).set()
+
+    async def update_request(self, request: Any, update_text: str, metadata: dict[str, Any]) -> None:
+        self.updates.append((request, update_text, dict(metadata)))
 
 
 class SmokeEngine(KameInterfaceOracleEngine):
@@ -414,6 +418,169 @@ async def _run_approval_capacity_smoke() -> dict[str, Any]:
     }
 
 
+async def _run_cancel_drain_capacity_smoke() -> dict[str, Any]:
+    oracle = SmokeOracle()
+    engine = SmokeEngine(oracle=oracle)
+    recorder = EventRecorder(engine)
+    await engine.start(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-smoke-cancel-drain-capacity",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            oracle_jobs={
+                "enabled": True,
+                "max_concurrent": 1,
+                "queue_limit": 4,
+                "speak_terminal_results": True,
+                "shutdown_timeout_seconds": 0.01,
+            },
+            metadata={"transport": "smoke"},
+        )
+    )
+    collector = asyncio.create_task(recorder.run())
+    sequence = 0
+
+    async def send(payload: dict[str, Any]) -> None:
+        nonlocal sequence
+        sequence += 1
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-smoke-cancel-drain-capacity",
+                sequence=sequence,
+                payload={**payload, "end_of_utterance": True},
+            )
+        )
+
+    await send(
+        {
+            "transcript": "run smoke task 3",
+            "intent": "Run smoke task 3",
+            "intent_source": "smoke_reflex",
+            "route": "defer",
+            "interface_already_said": "Starting cancellable smoke task.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_STARTED
+            and event.payload.get("intent") == "Run smoke task 3"
+            for event in events
+        )
+    )
+    await send(
+        {
+            "transcript": "run drain followup",
+            "intent": "Drain followup",
+            "intent_source": "smoke_reflex",
+            "route": "defer",
+            "interface_already_said": "Queueing the follow-up.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_QUEUED
+            and event.payload.get("intent") == "Drain followup"
+            for event in events
+        )
+    )
+    await send(
+        {
+            "transcript": "cancel task one",
+            "intent": "Cancel task one.",
+            "intent_source": "smoke_reflex",
+            "route": "local",
+            "local_reply": "Cancelling task one.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(event.type == VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED for event in events)
+    )
+    await send(
+        {
+            "transcript": "what are you working on",
+            "intent": "What are you working on?",
+            "intent_source": "smoke_reflex",
+            "route": "local",
+            "local_reply": "Let me check.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ASSISTANT_COMMIT
+            and "1 active out of 1" in str(event.payload.get("text") or "")
+            and "0 running" in str(event.payload.get("text") or "")
+            and "1 queued" in str(event.payload.get("text") or "")
+            and "1 cancelling" in str(event.payload.get("text") or "")
+            for event in events
+        )
+    )
+    status_commits = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ASSISTANT_COMMIT
+        and "1 cancelling" in str(event.payload.get("text") or "")
+    ]
+    oracle.release("Run smoke task 3")
+    await recorder.wait_for(
+        lambda events: any(event.type == VoiceEventType.ORACLE_JOB_CANCELLED for event in events)
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_STARTED
+            and event.payload.get("intent") == "Drain followup"
+            for event in events
+        )
+    )
+    oracle.release("Drain followup")
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_COMPLETED
+            and event.payload.get("intent") == "Drain followup"
+            for event in events
+        )
+    )
+    await engine.close()
+    collector.cancel()
+    try:
+        await collector
+    except asyncio.CancelledError:
+        pass
+
+    cancel_requested = [
+        event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED
+    ]
+    cancelled = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_CANCELLED]
+    followup_queued = any(
+        event.type == VoiceEventType.ORACLE_JOB_QUEUED
+        and event.payload.get("intent") == "Drain followup"
+        for event in recorder.events
+    )
+    followup_started = any(
+        event.type == VoiceEventType.ORACLE_JOB_STARTED
+        and event.payload.get("intent") == "Drain followup"
+        for event in recorder.events
+    )
+    status_text = str(status_commits[-1].payload.get("text") or "") if status_commits else ""
+    return {
+        "ok": bool(cancel_requested)
+        and bool(cancelled)
+        and followup_queued
+        and followup_started
+        and "1 active out of 1" in status_text
+        and "0 running out of 1" not in status_text
+        and "1 queued" in status_text
+        and "1 cancelling" in status_text,
+        "cancel_drain_requested_observed": bool(cancel_requested),
+        "cancel_drain_cancelled_observed": bool(cancelled),
+        "cancel_drain_followup_queued": followup_queued,
+        "cancel_drain_active_visible": "1 active out of 1" in status_text,
+        "cancel_drain_misleading_running_capacity": "0 running out of 1" in status_text,
+        "cancel_drain_status_text": status_text,
+        "cancel_drain_followup_started_after_cancel": followup_started,
+        "cancel_drain_max_concurrent": 1,
+    }
+
+
 async def _run_terminal_result_policy_smoke() -> dict[str, Any]:
     oracle = SmokeOracle()
     engine = SmokeEngine(oracle=oracle)
@@ -610,6 +777,26 @@ async def run_smoke() -> dict[str, Any]:
         lambda events: any(
             event.type == VoiceEventType.ASSISTANT_COMMIT
             and str(event.payload.get("text") or "").startswith("Oracle jobs: 4 running out of 4, 1 queued.")
+            for event in events
+        )
+    )
+
+    await send(
+        {
+            "transcript": "task one also include running update context",
+            "intent": "Task one also include running update context.",
+            "intent_source": "smoke_reflex",
+            "route": "local",
+            "local_reply": "Adding that to task one.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+            and event.payload.get("job_id") == "voice-oracle-001"
+            and event.payload.get("update_count") == 1
+            and event.payload.get("latest_update") == "include running update context"
+            and event.payload.get("spoken_control") is True
             for event in events
         )
     )
@@ -859,6 +1046,7 @@ async def run_smoke() -> dict[str, Any]:
         pass
     queued_cancel_smoke = await _run_queued_cancel_smoke()
     approval_capacity_smoke = await _run_approval_capacity_smoke()
+    cancel_drain_capacity_smoke = await _run_cancel_drain_capacity_smoke()
     terminal_result_policy_smoke = await _run_terminal_result_policy_smoke()
 
     started = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_STARTED]
@@ -1008,6 +1196,36 @@ async def run_smoke() -> dict[str, Any]:
         str(getattr(request, "intent", "")) == "Run smoke task 5"
         and "include smoke update context" in tuple(getattr(request, "job_updates", ()))
         for request in oracle.requests
+    )
+    running_update_records = [
+        (request, update_text, metadata)
+        for request, update_text, metadata in oracle.updates
+        if str(getattr(request, "intent", "")) == "Run smoke task 1"
+        and update_text == "include running update context"
+    ]
+    running_job_update_observed = any(
+        event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+        and event.payload.get("job_id") == "voice-oracle-001"
+        and event.payload.get("update_count") == 1
+        and event.payload.get("spoken_control") is True
+        for event in recorder.events
+    )
+    running_update_latest_update_visible = any(
+        event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+        and event.payload.get("job_id") == "voice-oracle-001"
+        and event.payload.get("latest_update") == "include running update context"
+        for event in recorder.events
+    )
+    running_update_reached_oracle = any(
+        "include running update context" in tuple(getattr(request, "job_updates", ()))
+        for request, _, _ in running_update_records
+    )
+    running_update_delivery_metadata_ok = any(
+        metadata.get("job_id") == "voice-oracle-001"
+        and metadata.get("state") == "running"
+        and metadata.get("update_count") == 1
+        and metadata.get("latest_update") == "include running update context"
+        for _, _, metadata in running_update_records
     )
     cancelled_job_id = str(task_3_started.payload["job_id"])
     spoken_cancel_control_observed = any(
@@ -1171,6 +1389,10 @@ async def run_smoke() -> dict[str, Any]:
             and spoken_priority_control_observed
             and spoken_update_control_observed
             and spoken_cancel_control_observed
+            and running_job_update_observed
+            and running_update_latest_update_visible
+            and running_update_reached_oracle
+            and running_update_delivery_metadata_ok
             and queued_update_latest_update_visible
             and queued_update_started_with_priority
             and queued_update_reached_oracle
@@ -1183,6 +1405,7 @@ async def run_smoke() -> dict[str, Any]:
             and shutdown_forced_cancel_observed
             and queued_cancel_smoke["ok"]
             and approval_capacity_smoke["ok"]
+            and cancel_drain_capacity_smoke["ok"]
             and terminal_result_policy_smoke["ok"]
         ),
         "scenario": "async_kame_oracle_jobs_fake",
@@ -1223,6 +1446,19 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "approval_capacity_completed_jobs": approval_capacity_smoke["approval_capacity_completed_jobs"],
         "approval_capacity_max_concurrent": approval_capacity_smoke["approval_capacity_max_concurrent"],
+        "cancel_drain_capacity_smoke_ok": cancel_drain_capacity_smoke["ok"],
+        "cancel_drain_requested_observed": cancel_drain_capacity_smoke["cancel_drain_requested_observed"],
+        "cancel_drain_cancelled_observed": cancel_drain_capacity_smoke["cancel_drain_cancelled_observed"],
+        "cancel_drain_followup_queued": cancel_drain_capacity_smoke["cancel_drain_followup_queued"],
+        "cancel_drain_active_visible": cancel_drain_capacity_smoke["cancel_drain_active_visible"],
+        "cancel_drain_misleading_running_capacity": cancel_drain_capacity_smoke[
+            "cancel_drain_misleading_running_capacity"
+        ],
+        "cancel_drain_status_text": cancel_drain_capacity_smoke["cancel_drain_status_text"],
+        "cancel_drain_followup_started_after_cancel": cancel_drain_capacity_smoke[
+            "cancel_drain_followup_started_after_cancel"
+        ],
+        "cancel_drain_max_concurrent": cancel_drain_capacity_smoke["cancel_drain_max_concurrent"],
         "terminal_result_policy_smoke_ok": terminal_result_policy_smoke["ok"],
         "terminal_result_auto_summarize_default": terminal_result_policy_smoke[
             "terminal_result_auto_summarize_default"
@@ -1272,6 +1508,13 @@ async def run_smoke() -> dict[str, Any]:
         "durable_failed_record_present": durable_failed_record_present,
         "session_survived_failed_job": session_survived_failure,
         "queued_job_update_observed": queued_job_update_observed,
+        "running_job_update_observed": running_job_update_observed,
+        "running_update_latest_update_visible": running_update_latest_update_visible,
+        "running_update_latest_update_text": "include running update context"
+        if running_update_latest_update_visible
+        else "",
+        "running_update_reached_oracle": running_update_reached_oracle,
+        "running_update_delivery_metadata_ok": running_update_delivery_metadata_ok,
         "spoken_priority_control_observed": spoken_priority_control_observed,
         "spoken_update_control_observed": spoken_update_control_observed,
         "spoken_cancel_control_observed": spoken_cancel_control_observed,
@@ -1297,6 +1540,7 @@ async def run_smoke() -> dict[str, Any]:
                 VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
                 VoiceEventType.ORACLE_JOB_COMPLETED,
                 VoiceEventType.ORACLE_JOB_FAILED,
+                VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED,
                 VoiceEventType.ORACLE_JOB_CANCELLED,
                 VoiceEventType.INTERFACE_ORACLE_UPDATE,
                 VoiceEventType.ASSISTANT_COMMIT,

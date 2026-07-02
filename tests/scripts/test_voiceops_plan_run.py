@@ -1072,6 +1072,18 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_followup_started_after_approval"] is True
     assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_completed_jobs"] == 2
     assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_max_concurrent"] == 1
+    assert voice_result["details"]["async_oracle_smoke"]["cancel_drain_capacity_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["cancel_drain_requested_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["cancel_drain_cancelled_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["cancel_drain_followup_queued"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["cancel_drain_active_visible"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["cancel_drain_misleading_running_capacity"] is False
+    assert "1 active out of 1" in voice_result["details"]["async_oracle_smoke"]["cancel_drain_status_text"]
+    assert "0 running out of 1" not in voice_result["details"]["async_oracle_smoke"]["cancel_drain_status_text"]
+    assert "1 queued" in voice_result["details"]["async_oracle_smoke"]["cancel_drain_status_text"]
+    assert "1 cancelling" in voice_result["details"]["async_oracle_smoke"]["cancel_drain_status_text"]
+    assert voice_result["details"]["async_oracle_smoke"]["cancel_drain_followup_started_after_cancel"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["cancel_drain_max_concurrent"] == 1
     assert voice_result["details"]["async_oracle_smoke"]["playback_stop_committed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["playback_stop_jobs_still_running"] is True
     assert voice_result["details"]["async_oracle_smoke"]["playback_stop_cancelled_jobs"] is False
@@ -1105,6 +1117,14 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["durable_failed_record_present"] is True
     assert voice_result["details"]["async_oracle_smoke"]["session_survived_failed_job"] is True
     assert voice_result["details"]["async_oracle_smoke"]["queued_job_update_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["running_job_update_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["running_update_latest_update_visible"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["running_update_latest_update_text"]
+        == "include running update context"
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["running_update_reached_oracle"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["running_update_delivery_metadata_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["queued_update_latest_update_visible"] is True
     assert (
         voice_result["details"]["async_oracle_smoke"]["queued_update_latest_update_text"]
@@ -1153,7 +1173,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         is True
     )
     assert (
-        voice_result["details"]["async_oracle_acceptance"]["queued_job_control_updates_reach_oracle"][
+        voice_result["details"]["async_oracle_acceptance"]["job_control_updates_reach_oracle"][
             "runtime_verified_by_this_report"
         ]
         is True

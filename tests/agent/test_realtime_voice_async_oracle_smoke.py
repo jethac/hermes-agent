@@ -56,6 +56,18 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["approval_completed"] is True
     assert "1 waiting for approval" in report["approval_status_text"]
     assert "waiting_for_approval: Preparing spend approval." in report["approval_status_text"]
+    assert report["cancel_drain_capacity_smoke_ok"] is True
+    assert report["cancel_drain_requested_observed"] is True
+    assert report["cancel_drain_cancelled_observed"] is True
+    assert report["cancel_drain_followup_queued"] is True
+    assert report["cancel_drain_active_visible"] is True
+    assert report["cancel_drain_misleading_running_capacity"] is False
+    assert "1 active out of 1" in report["cancel_drain_status_text"]
+    assert "0 running out of 1" not in report["cancel_drain_status_text"]
+    assert "1 queued" in report["cancel_drain_status_text"]
+    assert "1 cancelling" in report["cancel_drain_status_text"]
+    assert report["cancel_drain_followup_started_after_cancel"] is True
+    assert report["cancel_drain_max_concurrent"] == 1
     assert report["failed_job_reported"] is True
     assert report["failed_job_spoken"] is True
     assert report["durable_failed_record_present"] is True
@@ -64,6 +76,11 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["spoken_priority_control_observed"] is True
     assert report["spoken_update_control_observed"] is True
     assert report["spoken_cancel_control_observed"] is True
+    assert report["running_job_update_observed"] is True
+    assert report["running_update_latest_update_visible"] is True
+    assert report["running_update_latest_update_text"] == "include running update context"
+    assert report["running_update_reached_oracle"] is True
+    assert report["running_update_delivery_metadata_ok"] is True
     assert report["queued_update_latest_update_visible"] is True
     assert report["queued_update_latest_update_text"] == "include smoke update context"
     assert report["queued_update_started_with_priority"] is True

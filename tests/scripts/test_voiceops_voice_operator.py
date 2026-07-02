@@ -89,6 +89,18 @@ def _async_oracle_smoke_payload() -> dict:
         "approval_capacity_followup_started_after_approval": True,
         "approval_capacity_completed_jobs": 2,
         "approval_capacity_max_concurrent": 1,
+        "cancel_drain_capacity_smoke_ok": True,
+        "cancel_drain_requested_observed": True,
+        "cancel_drain_cancelled_observed": True,
+        "cancel_drain_followup_queued": True,
+        "cancel_drain_active_visible": True,
+        "cancel_drain_misleading_running_capacity": False,
+        "cancel_drain_status_text": (
+            "Oracle jobs: 1 active out of 1, 0 running, 1 queued, 1 cancelling. "
+            "cancel_requested: Starting cancellable smoke task."
+        ),
+        "cancel_drain_followup_started_after_cancel": True,
+        "cancel_drain_max_concurrent": 1,
         "shutdown_timeout_configured_ms": 10,
         "shutdown_close_elapsed_ms": 15.0,
         "shutdown_bounded_close_observed": True,
@@ -136,6 +148,11 @@ def _async_oracle_smoke_payload() -> dict:
         "durable_failed_record_present": True,
         "session_survived_failed_job": True,
         "queued_job_update_observed": True,
+        "running_job_update_observed": True,
+        "running_update_latest_update_visible": True,
+        "running_update_latest_update_text": "include running update context",
+        "running_update_reached_oracle": True,
+        "running_update_delivery_metadata_ok": True,
         "queued_update_latest_update_visible": True,
         "queued_update_latest_update_text": "include smoke update context",
         "queued_update_started_with_priority": True,
@@ -383,6 +400,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["requirements"]["async_oracle_cancellation_isolated"] is True
     assert report["requirements"]["async_oracle_playback_stop_preserves_jobs"] is True
     assert report["requirements"]["async_oracle_approval_wait_holds_capacity"] is True
+    assert report["requirements"]["async_oracle_cancel_drain_holds_capacity"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_attempted"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_dropped"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_not_durable"] is True
@@ -419,6 +437,18 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["approval_capacity_followup_started_after_approval"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_capacity_completed_jobs"] == 2
     assert report["proofs"]["async_oracle_jobs"]["approval_capacity_max_concurrent"] == 1
+    assert report["proofs"]["async_oracle_jobs"]["cancel_drain_capacity_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["cancel_drain_requested_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["cancel_drain_cancelled_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["cancel_drain_followup_queued"] is True
+    assert report["proofs"]["async_oracle_jobs"]["cancel_drain_active_visible"] is True
+    assert report["proofs"]["async_oracle_jobs"]["cancel_drain_misleading_running_capacity"] is False
+    assert "1 active out of 1" in report["proofs"]["async_oracle_jobs"]["cancel_drain_status_text"]
+    assert "0 running out of 1" not in report["proofs"]["async_oracle_jobs"]["cancel_drain_status_text"]
+    assert "1 queued" in report["proofs"]["async_oracle_jobs"]["cancel_drain_status_text"]
+    assert "1 cancelling" in report["proofs"]["async_oracle_jobs"]["cancel_drain_status_text"]
+    assert report["proofs"]["async_oracle_jobs"]["cancel_drain_followup_started_after_cancel"] is True
+    assert report["proofs"]["async_oracle_jobs"]["cancel_drain_max_concurrent"] == 1
     assert report["proofs"]["async_oracle_jobs"]["playback_stop_committed"] is True
     assert report["proofs"]["async_oracle_jobs"]["playback_stop_jobs_still_running"] is True
     assert report["proofs"]["async_oracle_jobs"]["playback_stop_cancelled_jobs"] is False
@@ -452,6 +482,11 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["durable_failed_record_present"] is True
     assert report["proofs"]["async_oracle_jobs"]["session_survived_failed_job"] is True
     assert report["proofs"]["async_oracle_jobs"]["queued_job_update_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["running_job_update_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["running_update_latest_update_visible"] is True
+    assert report["proofs"]["async_oracle_jobs"]["running_update_latest_update_text"] == "include running update context"
+    assert report["proofs"]["async_oracle_jobs"]["running_update_reached_oracle"] is True
+    assert report["proofs"]["async_oracle_jobs"]["running_update_delivery_metadata_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["queued_update_latest_update_visible"] is True
     assert report["proofs"]["async_oracle_jobs"]["queued_update_latest_update_text"] == "include smoke update context"
     assert report["proofs"]["async_oracle_jobs"]["queued_update_started_with_priority"] is True
@@ -502,13 +537,16 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         report["async_oracle_acceptance"]["failed_job_is_reported_without_crashing_session"]["verification_mode"]
         == "loopback_smoke_plus_focused_tests"
     )
-    assert report["async_oracle_acceptance"]["queued_job_control_updates_reach_oracle"]["ok"] is True
+    assert report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]["ok"] is True
     assert (
-        report["async_oracle_acceptance"]["queued_job_control_updates_reach_oracle"]["verification_mode"]
+        report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]["verification_mode"]
         == "loopback_smoke_plus_focused_tests"
     )
     assert "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_event_tracks_oracle_job_status" in (
-        report["async_oracle_acceptance"]["queued_job_control_updates_reach_oracle"]["test_refs"]
+        report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]["test_refs"]
+    )
+    assert "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_running_async_oracle_job" in (
+        report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]["test_refs"]
     )
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
     assert result_handling["ok"] is True
@@ -585,15 +623,16 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:playback_stop_does_not_cancel_jobs" in issues
     assert "missing_async_oracle_coverage:approval_wait_visible_and_redacted" in issues
     assert "missing_async_oracle_coverage:approval_wait_holds_capacity" in issues
+    assert "missing_async_oracle_coverage:cancel_drain_holds_capacity" in issues
     assert "missing_async_oracle_coverage:failed_job_reported_without_crash" in issues
-    assert "missing_async_oracle_coverage:queued_job_control_update_reaches_oracle" in issues
+    assert "missing_async_oracle_coverage:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_coverage:result_handling_bounded_and_durable" in issues
     assert "missing_async_oracle_coverage:discord_session_cleanup_preserves_oracle_state" in issues
     assert "missing_async_oracle_acceptance:four_oracle_jobs_reflex_responsive" in issues
     assert "missing_async_oracle_acceptance:fifth_job_obeys_overflow_policy" in issues
     assert "missing_async_oracle_acceptance:approval_wait_is_visible_and_redacted" in issues
     assert "missing_async_oracle_acceptance:failed_job_is_reported_without_crashing_session" in issues
-    assert "missing_async_oracle_acceptance:queued_job_control_updates_reach_oracle" in issues
+    assert "missing_async_oracle_acceptance:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_acceptance:discord_session_cleanup_preserves_oracle_state" in issues
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
     assert result_handling["ok"] is False
@@ -651,9 +690,9 @@ def test_voice_operator_validation_rejects_missing_visible_queued_update_status(
 
     issues = validate_voice_operator_report(report)
 
-    assert "missing_async_oracle_coverage:queued_job_control_update_reaches_oracle" in issues
-    assert "stale_async_oracle_coverage:queued_job_control_update_reaches_oracle" in issues
-    assert "missing_async_oracle_acceptance:queued_job_control_updates_reach_oracle" in issues
+    assert "missing_async_oracle_coverage:job_control_updates_reach_oracle" in issues
+    assert "stale_async_oracle_coverage:job_control_updates_reach_oracle" in issues
+    assert "missing_async_oracle_acceptance:job_control_updates_reach_oracle" in issues
 
 
 def test_voice_operator_validation_rejects_completed_result_missing_from_status_view():

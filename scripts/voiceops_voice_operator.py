@@ -109,6 +109,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
     "control_updates": [
         "tests/agent/test_realtime_voice.py::test_kame_engine_can_reprioritize_queued_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_queued_async_oracle_job",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_running_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_priority_control_reprioritizes_queued_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_update_attaches_to_latest_async_oracle_job",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_event_tracks_oracle_job_status",
@@ -1427,15 +1428,28 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and "1 waiting for approval" in str(smoke.get("approval_capacity_status_text") or "")
         and smoke.get("approval_capacity_followup_started_after_approval") is True
         and int(smoke.get("approval_capacity_completed_jobs") or 0) == 2,
+        "cancel_drain_holds_capacity": smoke.get("cancel_drain_capacity_smoke_ok") is True
+        and smoke.get("cancel_drain_requested_observed") is True
+        and smoke.get("cancel_drain_cancelled_observed") is True
+        and smoke.get("cancel_drain_followup_queued") is True
+        and smoke.get("cancel_drain_active_visible") is True
+        and smoke.get("cancel_drain_misleading_running_capacity") is False
+        and "1 queued" in str(smoke.get("cancel_drain_status_text") or "")
+        and "1 cancelling" in str(smoke.get("cancel_drain_status_text") or "")
+        and smoke.get("cancel_drain_followup_started_after_cancel") is True,
         "failed_job_reported_without_crash": int(smoke.get("failed_jobs") or 0) >= 1
         and smoke.get("failed_job_reported") is True
         and smoke.get("failed_job_spoken") is True
         and smoke.get("durable_failed_record_present") is True
         and smoke.get("session_survived_failed_job") is True,
-        "queued_job_control_update_reaches_oracle": smoke.get("queued_job_update_observed") is True
+        "job_control_updates_reach_oracle": smoke.get("queued_job_update_observed") is True
         and smoke.get("queued_update_latest_update_visible") is True
         and smoke.get("queued_update_started_with_priority") is True
-        and smoke.get("queued_update_reached_oracle") is True,
+        and smoke.get("queued_update_reached_oracle") is True
+        and smoke.get("running_job_update_observed") is True
+        and smoke.get("running_update_latest_update_visible") is True
+        and smoke.get("running_update_reached_oracle") is True
+        and smoke.get("running_update_delivery_metadata_ok") is True,
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
         and smoke.get("verbose_result_committed_bounded") is True
         and smoke.get("verbose_result_commit_marked_truncated") is True
@@ -1600,8 +1614,8 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
-        "queued_job_control_updates_reach_oracle": _async_oracle_acceptance_row(
-            ok=smoke_ok and bool(async_oracle_coverage.get("queued_job_control_update_reaches_oracle")),
+        "job_control_updates_reach_oracle": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("job_control_updates_reach_oracle")),
             evidence="async_oracle_smoke_plus_control_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["control_updates"],
             verification_mode="loopback_smoke_plus_focused_tests",
@@ -1825,6 +1839,19 @@ def build_voice_operator_report(
             ),
             "approval_capacity_completed_jobs": async_oracle_smoke.get("approval_capacity_completed_jobs"),
             "approval_capacity_max_concurrent": async_oracle_smoke.get("approval_capacity_max_concurrent"),
+            "cancel_drain_capacity_smoke_ok": bool(async_oracle_smoke.get("cancel_drain_capacity_smoke_ok")),
+            "cancel_drain_requested_observed": bool(async_oracle_smoke.get("cancel_drain_requested_observed")),
+            "cancel_drain_cancelled_observed": bool(async_oracle_smoke.get("cancel_drain_cancelled_observed")),
+            "cancel_drain_followup_queued": bool(async_oracle_smoke.get("cancel_drain_followup_queued")),
+            "cancel_drain_active_visible": bool(async_oracle_smoke.get("cancel_drain_active_visible")),
+            "cancel_drain_misleading_running_capacity": bool(
+                async_oracle_smoke.get("cancel_drain_misleading_running_capacity")
+            ),
+            "cancel_drain_status_text": async_oracle_smoke.get("cancel_drain_status_text"),
+            "cancel_drain_followup_started_after_cancel": bool(
+                async_oracle_smoke.get("cancel_drain_followup_started_after_cancel")
+            ),
+            "cancel_drain_max_concurrent": async_oracle_smoke.get("cancel_drain_max_concurrent"),
             "local_turn_committed": bool(async_oracle_smoke.get("local_turn_committed")),
             "playback_stop_committed": bool(async_oracle_smoke.get("playback_stop_committed")),
             "playback_stop_jobs_still_running": bool(
@@ -1868,6 +1895,15 @@ def build_voice_operator_report(
             "durable_failed_record_present": bool(async_oracle_smoke.get("durable_failed_record_present")),
             "session_survived_failed_job": bool(async_oracle_smoke.get("session_survived_failed_job")),
             "queued_job_update_observed": bool(async_oracle_smoke.get("queued_job_update_observed")),
+            "running_job_update_observed": bool(async_oracle_smoke.get("running_job_update_observed")),
+            "running_update_latest_update_visible": bool(
+                async_oracle_smoke.get("running_update_latest_update_visible")
+            ),
+            "running_update_latest_update_text": async_oracle_smoke.get("running_update_latest_update_text"),
+            "running_update_reached_oracle": bool(async_oracle_smoke.get("running_update_reached_oracle")),
+            "running_update_delivery_metadata_ok": bool(
+                async_oracle_smoke.get("running_update_delivery_metadata_ok")
+            ),
             "queued_update_latest_update_visible": bool(
                 async_oracle_smoke.get("queued_update_latest_update_visible")
             ),
@@ -1988,6 +2024,9 @@ def build_voice_operator_report(
             "async_oracle_approval_wait_holds_capacity": async_oracle_coverage[
                 "approval_wait_holds_capacity"
             ],
+            "async_oracle_cancel_drain_holds_capacity": async_oracle_coverage[
+                "cancel_drain_holds_capacity"
+            ],
             "async_oracle_late_cancelled_output_dropped": async_oracle_coverage["late_cancelled_output_not_spoken"],
             "async_oracle_late_cancelled_output_not_durable": async_oracle_coverage[
                 "late_cancelled_output_not_durable"
@@ -2104,8 +2143,9 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "playback_stop_does_not_cancel_jobs",
         "approval_wait_visible_and_redacted",
         "approval_wait_holds_capacity",
+        "cancel_drain_holds_capacity",
         "failed_job_reported_without_crash",
-        "queued_job_control_update_reaches_oracle",
+        "job_control_updates_reach_oracle",
         "result_handling_bounded_and_durable",
         "discord_session_cleanup_preserves_oracle_state",
     ):
