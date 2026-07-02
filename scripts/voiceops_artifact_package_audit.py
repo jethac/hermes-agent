@@ -147,7 +147,10 @@ EXPECTED_PACKAGE_ARTIFACTS = (
     "voiceops-voice-operator/current/voice-operator-readiness.md",
 )
 OPTIONAL_PACKAGE_ARTIFACTS = (
+    "voiceops-provisioning/current/approval-decisions.json",
+    "voiceops-provisioning/current/approval-decisions/provision-voip-provider.json",
     "voiceops-provisioning/current/post-approval-receipts.json",
+    "voiceops-provisioning/current/stripe-executor-report.json",
 )
 AUDITED_PACKAGE_DIRS = tuple(
     sorted(

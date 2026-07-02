@@ -572,6 +572,49 @@ def test_package_audit_resolves_loaded_post_approval_receipt_path_and_recomputes
     assert "post_approval_receipts_validation:validation_issues_mismatch" in report["issues"]
 
 
+def test_package_audit_allows_documented_post_approval_executor_sidecars(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    provisioning_dir = artifact_root / "voiceops-provisioning" / "current"
+    decision_dir = provisioning_dir / "approval-decisions"
+    decision_dir.mkdir()
+    _write_json(
+        provisioning_dir / "approval-decisions.json",
+        {
+            "schema_version": "voiceops.approval_decisions.v1",
+            "decisions": [{"action_id": "provision-voip-provider", "decision": "approve_once"}],
+        },
+    )
+    _write_json(
+        decision_dir / "provision-voip-provider.json",
+        {
+            "schema_version": "voiceops.approval_decision.v1",
+            "action_id": "provision-voip-provider",
+            "decision": "approve_once",
+            "redacted": True,
+        },
+    )
+    _write_json(
+        provisioning_dir / "stripe-executor-report.json",
+        {
+            "schema_version": "voiceops.stripe_executor_report.v1",
+            "execute": True,
+            "actions": [{"action_id": "provision-voip-provider", "status": "executed"}],
+            "redacted": True,
+        },
+    )
+
+    report = audit_package(artifact_root)
+
+    unexpected = [issue for issue in report["issues"] if issue.startswith("package_artifact:unexpected:")]
+    assert "package_artifact:unexpected:voiceops-provisioning/current/approval-decisions.json" not in unexpected
+    assert (
+        "package_artifact:unexpected:voiceops-provisioning/current/approval-decisions/"
+        "provision-voip-provider.json"
+        not in unexpected
+    )
+    assert "package_artifact:unexpected:voiceops-provisioning/current/stripe-executor-report.json" not in unexpected
+
+
 def test_package_audit_rejects_empty_loaded_post_approval_receipts(tmp_path):
     artifact_root = _generate_package(tmp_path)
     receipt_path = artifact_root / "voiceops-provisioning" / "current" / "post-approval-receipts.json"
