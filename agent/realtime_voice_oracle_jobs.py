@@ -213,6 +213,9 @@ class OracleJobManager:
             job.updated_at = self._clock()
             if job.state == OracleJobState.QUEUED:
                 self._remove_queued_locked(job.job_id)
+                job.state = OracleJobState.CANCEL_REQUESTED
+                await self._emit_locked(OracleJobEventType.CANCEL_REQUESTED, job)
+                job.updated_at = self._clock()
                 job.state = OracleJobState.CANCELLED
                 await self._emit_locked(OracleJobEventType.CANCELLED, job)
                 self._runners.pop(job.job_id, None)

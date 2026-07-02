@@ -394,6 +394,7 @@ async def test_overflow_policy_reject_rejects_at_capacity_with_queue_space():
 @pytest.mark.asyncio
 async def test_cancelling_queued_job_prevents_execution():
     started = []
+    events = []
     release = asyncio.Event()
 
     async def runner(job):
@@ -402,7 +403,11 @@ async def test_cancelling_queued_job_prevents_execution():
             await release.wait()
         return f"done {job.job_id}"
 
-    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
     first = await manager.submit(_request("first"))
     second = await manager.submit(_request("second"))
     await asyncio.sleep(0)
@@ -415,6 +420,13 @@ async def test_cancelling_queued_job_prevents_execution():
     cancelled = await manager.get(second.job_id)
     assert cancelled.state == OracleJobState.CANCELLED
     assert cancelled.cancel_reason == "user cancelled second"
+    queued_cancel_lifecycle = [
+        event["type"]
+        for event in events
+        if event["job_id"] == second.job_id
+        and event["type"] in {"oracle.job.cancel_requested", "oracle.job.cancelled"}
+    ]
+    assert queued_cancel_lifecycle == ["oracle.job.cancel_requested", "oracle.job.cancelled"]
 
 
 @pytest.mark.asyncio

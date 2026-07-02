@@ -19,6 +19,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["failed_jobs"] == 1
     assert report["cancelled_jobs"] == 2
     assert report["queued_cancel_smoke_ok"] is True
+    assert report["queued_cancel_requested_observed"] is True
     assert report["queued_cancel_observed"] is True
     assert report["queued_cancel_spoken_control_observed"] is True
     assert report["queued_cancelled_before_start"] is True

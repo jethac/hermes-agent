@@ -261,6 +261,12 @@ async def _run_queued_cancel_smoke() -> dict[str, Any]:
         pass
 
     target_job_id = str(queued_target.payload.get("job_id") or "")
+    target_cancel_requested = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED
+        and event.payload.get("job_id") == target_job_id
+    ]
     target_cancelled = [
         event
         for event in recorder.events
@@ -289,12 +295,14 @@ async def _run_queued_cancel_smoke() -> dict[str, Any]:
         for event in recorder.events
     )
     return {
-        "ok": bool(target_cancelled)
+        "ok": bool(target_cancel_requested)
+        and bool(target_cancelled)
         and not target_started
         and not target_sent_to_oracle
         and running_completed
         and cancelled_reason == "spoken request to cancel oracle job"
         and spoken_cancel_observed,
+        "queued_cancel_requested_observed": bool(target_cancel_requested),
         "queued_cancel_observed": bool(target_cancelled),
         "queued_cancel_spoken_control_observed": spoken_cancel_observed,
         "queued_cancelled_before_start": not target_started,
@@ -1605,6 +1613,7 @@ async def run_smoke() -> dict[str, Any]:
         "shutdown_close_cancel_entered": close_cancel_entered,
         "shutdown_cancelled_jobs": len(close_cancelled_events),
         "queued_cancel_smoke_ok": queued_cancel_smoke["ok"],
+        "queued_cancel_requested_observed": queued_cancel_smoke["queued_cancel_requested_observed"],
         "queued_cancel_observed": queued_cancel_smoke["queued_cancel_observed"],
         "queued_cancel_spoken_control_observed": queued_cancel_smoke["queued_cancel_spoken_control_observed"],
         "queued_cancelled_before_start": queued_cancel_smoke["queued_cancelled_before_start"],
