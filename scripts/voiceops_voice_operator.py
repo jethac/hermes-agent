@@ -94,6 +94,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_barge_in_during_async_ack_does_not_interrupt_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_stop_talking_does_not_cancel_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_barge_in_during_async_result_speech_does_not_interrupt_completed_job",
+        "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_cancelled_oracle_late_output_is_not_mixed",
     ],
     "approval_wait": [
         "tests/agent/test_realtime_voice.py::test_async_oracle_job_enters_waiting_for_approval_on_tool_call",

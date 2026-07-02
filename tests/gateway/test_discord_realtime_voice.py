@@ -1596,6 +1596,123 @@ async def test_discord_realtime_spoken_tasks_create_async_oracle_jobs():
 
 
 @pytest.mark.asyncio
+async def test_discord_realtime_cancelled_oracle_late_output_is_not_mixed(monkeypatch):
+    from agent.realtime_voice import AudioChunk, VoiceAudioCodec, VoiceEventType
+    from agent.realtime_voice_text_engine import KameInterfaceOracleEngine
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    class LateOutputOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+            self.late_output_attempted = False
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                await self.release.wait()
+                self.late_output_attempted = True
+            yield f"Finished {request.intent}."
+
+    async def fake_speak(self, text, playback_generation):
+        if "Finished" not in text:
+            return
+        payload = AudioChunk(
+            codec=VoiceAudioCodec.PCM16,
+            data=b"\x01\x00" * 320,
+            sample_rate_hz=16000,
+            channels=1,
+        ).to_payload()
+        payload["playback_generation"] = playback_generation
+        await self._emit(VoiceEventType.AUDIO_OUTPUT_CHUNK, payload)
+
+    async def wait_for(predicate):
+        deadline = asyncio.get_running_loop().time() + 1.0
+        while not predicate():
+            if asyncio.get_running_loop().time() >= deadline:
+                raise AssertionError("timed out waiting for Discord cancelled oracle event")
+            await asyncio.sleep(0.01)
+
+    monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+    oracle = LateOutputOracle()
+    observed = []
+    mixer = SimpleNamespace(
+        speech_active=False,
+        stop_speech=MagicMock(),
+        enqueue_speech_frame=MagicMock(),
+        finish_speech_stream=MagicMock(),
+    )
+    sidecar = ScriptedKameSidecar(
+        oracle=oracle,
+        utterances=[
+            {
+                "transcript": "check provisioning logs",
+                "intent": "Check provisioning logs",
+                "intent_source": "reflex_audio",
+                "route": "defer",
+                "interface_already_said": "Checking provisioning logs.",
+            },
+        ],
+    )
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        mixer=mixer,
+        sidecar_base_url="http://127.0.0.1:8766",
+        engine="kame_interface_oracle",
+        frontend_provider="gemma4",
+        frontend_model="gemma-4-E2B-it",
+        interface_audio_input="native_audio",
+        oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+        event_callback=lambda event_type, payload: observed.append((event_type, payload)),
+    )
+
+    await session.start()
+    await session.handle_speech_end(user_id=42)
+    await wait_for(
+        lambda: any(
+            event_type == VoiceEventType.ORACLE_JOB_STARTED.value
+            and payload.get("job_id") == "voice-oracle-001"
+            for event_type, payload in observed
+        )
+    )
+    await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+    await session.cancel_oracle_job("voice-oracle-001", reason="test cancellation")
+    oracle.release.set()
+    await wait_for(
+        lambda: any(
+            event_type == VoiceEventType.ORACLE_JOB_CANCELLED.value
+            and payload.get("job_id") == "voice-oracle-001"
+            for event_type, payload in observed
+        )
+    )
+    await wait_for(lambda: oracle.late_output_attempted)
+    await session.wait_until_idle()
+    await session.close()
+
+    mixer.enqueue_speech_frame.assert_not_called()
+    assert not any(
+        event_type == VoiceEventType.ORACLE_JOB_COMPLETED.value
+        and payload.get("job_id") == "voice-oracle-001"
+        for event_type, payload in observed
+    )
+    assert not any(
+        event_type == VoiceEventType.ASSISTANT_COMMIT.value
+        and payload.get("oracle_job_result")
+        and payload.get("oracle_job_id") == "voice-oracle-001"
+        for event_type, payload in observed
+    )
+
+
+@pytest.mark.asyncio
 async def test_discord_adapter_cancel_voice_oracle_job_delegates_to_session():
     from plugins.platforms.discord.adapter import DiscordAdapter
 
