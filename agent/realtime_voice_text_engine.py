@@ -1212,15 +1212,22 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         voice_event_type = _voice_event_type_for_oracle_job_event(event.type)
         if voice_event_type is None:
             return
+        payload = {
+            **dict(event.payload),
+            "job_id": event.job_id,
+            "session_id": event.session_id,
+            "state": event.state.value,
+            "timestamp_ms": event.timestamp_ms,
+        }
+        turn_id = str(payload.get("turn_id") or "").strip()
+        context = self._oracle_job_context_by_turn_id.get(turn_id)
+        if context is not None:
+            source_playback_generation, _, _ = context
+            payload.setdefault("source_playback_generation", source_playback_generation)
+            payload.setdefault("playback_generation", self._playback_generation)
         await self._emit_oracle_job_voice_event(
             voice_event_type,
-            {
-                **dict(event.payload),
-                "job_id": event.job_id,
-                "session_id": event.session_id,
-                "state": event.state.value,
-                "timestamp_ms": event.timestamp_ms,
-            },
+            payload,
         )
         if event.type in {
             OracleJobEventType.COMPLETED,

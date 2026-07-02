@@ -1703,6 +1703,8 @@ def test_kame_engine_async_oracle_job_allows_local_turn_while_running(monkeypatc
         await engine.close()
         completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
         assert completed.payload["result_summary"] == "The deployment is healthy."
+        assert completed.payload["source_playback_generation"] == 1
+        assert completed.payload["playback_generation"] == 2
 
     asyncio.run(run())
 
@@ -12420,6 +12422,9 @@ def test_session_drops_stale_durable_oracle_records_after_barge_in():
             VoiceEventType.ORACLE_TOOL_RESULT,
             VoiceEventType.ORACLE_RESPONSE_FINAL,
             VoiceEventType.ORACLE_ERROR,
+            VoiceEventType.ORACLE_JOB_COMPLETED,
+            VoiceEventType.ORACLE_JOB_FAILED,
+            VoiceEventType.ORACLE_JOB_CANCELLED,
         ],
         start=1,
     ):
