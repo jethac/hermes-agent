@@ -38,6 +38,15 @@ DEFAULT_GEMINI_LIVE_VOICE = "Puck"
 DEFAULT_KAME_REFLEX_MODEL = "gemma-4-E2B-it"
 DEFAULT_KAME_ORACLE_MODEL = "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
 DEFAULT_KAME_ORACLE_PROVIDER_NAME = "KAME Local Oracle"
+DEFAULT_KAME_ORACLE_JOBS = {
+    "enabled": True,
+    "max_concurrent": 4,
+    "queue_limit": 16,
+    "default_priority": "normal",
+    "overflow_policy": "queue",
+    "shutdown_timeout_seconds": 2.0,
+    "speak_terminal_results": True,
+}
 KAME_QUALITY_TARGETS_MS = {
     "audio_to_partial_transcript_ms": 300,
     "final_transcript_to_first_text_ms": 500,
@@ -1250,6 +1259,7 @@ def build_kame_realtime_voice_profile(
             "log_turn_spans": bool(metrics_log_turn_spans),
             "log_provider_spans": bool(metrics_log_provider_spans),
         },
+        "oracle_jobs": copy.deepcopy(DEFAULT_KAME_ORACLE_JOBS),
         "output_events": {
             "caption_aliases": False,
             "audio_aliases": False,
@@ -1397,6 +1407,7 @@ def _kame_nested_config(profile: Mapping[str, Any]) -> dict[str, Any]:
             "log_provider_spans": True,
         },
     )
+    oracle_jobs = _mapping_or_default(profile.get("oracle_jobs"), DEFAULT_KAME_ORACLE_JOBS)
     output_events = _mapping_or_default(
         profile.get("output_events"),
         {
@@ -1450,6 +1461,7 @@ def _kame_nested_config(profile: Mapping[str, Any]) -> dict[str, Any]:
         "turn_acknowledgement": turn_acknowledgement,
         "routing": routing,
         "metrics": metrics,
+        "oracle_jobs": oracle_jobs,
         "output_events": output_events,
         "quality_targets_ms": quality_targets_ms,
     }

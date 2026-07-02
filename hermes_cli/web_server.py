@@ -936,6 +936,43 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Log realtime voice provider latency spans",
         "category": "voice",
     },
+    "voice.realtime.oracle_jobs.enabled": {
+        "type": "boolean",
+        "description": "Run KAME oracle turns as bounded background jobs instead of blocking the live reflex",
+        "category": "voice",
+    },
+    "voice.realtime.oracle_jobs.max_concurrent": {
+        "type": "number",
+        "description": "Maximum concurrent Hermes oracle jobs for one realtime voice session",
+        "category": "voice",
+    },
+    "voice.realtime.oracle_jobs.queue_limit": {
+        "type": "number",
+        "description": "Maximum queued KAME oracle jobs accepted while workers are busy",
+        "category": "voice",
+    },
+    "voice.realtime.oracle_jobs.default_priority": {
+        "type": "select",
+        "description": "Default priority for spoken KAME oracle jobs",
+        "options": ["high", "normal", "low"],
+        "category": "voice",
+    },
+    "voice.realtime.oracle_jobs.overflow_policy": {
+        "type": "select",
+        "description": "Behavior when the KAME oracle job queue is full",
+        "options": ["queue", "reject"],
+        "category": "voice",
+    },
+    "voice.realtime.oracle_jobs.shutdown_timeout_seconds": {
+        "type": "number",
+        "description": "Seconds to wait for background oracle jobs during voice session shutdown",
+        "category": "voice",
+    },
+    "voice.realtime.oracle_jobs.speak_terminal_results": {
+        "type": "boolean",
+        "description": "Speak concise completed or failed oracle job results when still relevant",
+        "category": "voice",
+    },
     "voice.realtime.output_events.caption_aliases": {
         "type": "boolean",
         "description": "Emit assistant.caption.partial/final aliases alongside legacy assistant text events",
@@ -13747,6 +13784,40 @@ def _realtime_voice_metrics_policy_payload(realtime: Mapping[str, Any]) -> Dict[
     }
 
 
+def _realtime_voice_oracle_jobs_payload(realtime: Mapping[str, Any]) -> Dict[str, Any]:
+    raw = realtime.get("oracle_jobs") if isinstance(realtime, Mapping) else {}
+    if not isinstance(raw, Mapping):
+        raw = {}
+    default_priority = str(raw.get("default_priority") or "normal").strip().lower()
+    if default_priority not in {"high", "normal", "low"}:
+        default_priority = "normal"
+    overflow_policy = str(raw.get("overflow_policy") or "queue").strip().lower()
+    if overflow_policy not in {"queue", "reject"}:
+        overflow_policy = "queue"
+    return {
+        "enabled": _truthy_config(raw.get("enabled"), default=False),
+        "max_concurrent": _bounded_int_config(
+            raw.get("max_concurrent"),
+            default=1,
+            minimum=1,
+            maximum=16,
+        ),
+        "queue_limit": _bounded_int_config(
+            raw.get("queue_limit"),
+            default=16,
+            minimum=0,
+            maximum=256,
+        ),
+        "default_priority": default_priority,
+        "overflow_policy": overflow_policy,
+        "shutdown_timeout_seconds": _positive_float_config(
+            raw.get("shutdown_timeout_seconds"),
+            default=2.0,
+        ),
+        "speak_terminal_results": _truthy_config(raw.get("speak_terminal_results"), default=True),
+    }
+
+
 def _realtime_voice_output_events_payload(realtime: Mapping[str, Any]) -> Dict[str, Any]:
     raw = realtime.get("output_events") if isinstance(realtime, Mapping) else {}
     if not isinstance(raw, Mapping):
@@ -15783,6 +15854,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     routing_policy = _realtime_voice_routing_policy_payload(realtime)
     metrics_policy = _realtime_voice_metrics_policy_payload(realtime)
     output_events_policy = _realtime_voice_output_events_payload(realtime)
+    oracle_jobs_policy = _realtime_voice_oracle_jobs_payload(realtime)
     turn_acknowledgement = _realtime_voice_turn_acknowledgement_payload(realtime)
     barge_in_policy = {
         "min_rms": _bounded_int_config(
@@ -15976,6 +16048,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         metrics_policy=metrics_policy,
         output_events=output_events_policy,
         quality_targets_ms=quality_targets_ms,
+        oracle_jobs=oracle_jobs_policy,
         barge_in_policy=barge_in_policy,
         metadata={
             "source": "desktop",
@@ -16035,6 +16108,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "quality_targets_ms": quality_targets_ms,
             "routing": routing_policy,
             "metrics": metrics_policy,
+            "oracle_jobs": oracle_jobs_policy,
             "output_events": output_events_policy,
             "turn_acknowledgement": turn_acknowledgement,
             "conversation_quality": conversation_quality,

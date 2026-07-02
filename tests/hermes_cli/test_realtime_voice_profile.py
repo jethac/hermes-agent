@@ -331,6 +331,15 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
         "require_oracle_for_files": True,
         "local_confidence_threshold": 0.75,
     }
+    assert realtime["oracle_jobs"] == {
+        "enabled": True,
+        "max_concurrent": 4,
+        "queue_limit": 16,
+        "default_priority": "normal",
+        "overflow_policy": "queue",
+        "shutdown_timeout_seconds": 2.0,
+        "speak_terminal_results": True,
+    }
     assert realtime["metrics"] == {
         "enabled": True,
         "log_turn_spans": True,
@@ -739,6 +748,15 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["fallback_policy"] == "legacy_voice"
     assert discord_rt["routing"]["require_oracle_for_tools"] is True
     assert discord_rt["metrics"]["log_turn_spans"] is True
+    assert discord_rt["oracle_jobs"] == {
+        "enabled": True,
+        "max_concurrent": 4,
+        "queue_limit": 16,
+        "default_priority": "normal",
+        "overflow_policy": "queue",
+        "shutdown_timeout_seconds": 2.0,
+        "speak_terminal_results": True,
+    }
     assert discord_rt["turn_acknowledgement"] == {
         "enabled": True,
         "text": "One moment.",

@@ -3280,6 +3280,16 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.metrics.enabled"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.metrics.log_turn_spans"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.metrics.log_provider_spans"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.enabled"]["type"] == "boolean"
+        assert "background jobs" in CONFIG_SCHEMA["voice.realtime.oracle_jobs.enabled"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.max_concurrent"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.queue_limit"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.default_priority"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.default_priority"]["options"] == ["high", "normal", "low"]
+        assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.overflow_policy"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.overflow_policy"]["options"] == ["queue", "reject"]
+        assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.shutdown_timeout_seconds"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_jobs.speak_terminal_results"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.output_events.caption_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.output_events.audio_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
@@ -3349,6 +3359,48 @@ class TestBuildSchemaFromConfig:
             "anthropic_messages",
             "codex_responses",
         ]
+
+    def test_realtime_voice_ws_config_passes_oracle_jobs_from_config(self, monkeypatch):
+        import hermes_cli.web_server as web_server
+
+        monkeypatch.setattr(web_server, "load_env", lambda: {})
+        monkeypatch.setattr(
+            web_server,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "kame_interface_oracle",
+                        "oracle_jobs": {
+                            "enabled": True,
+                            "max_concurrent": 4,
+                            "queue_limit": 24,
+                            "default_priority": "high",
+                            "overflow_policy": "reject",
+                            "shutdown_timeout_seconds": 3.5,
+                            "speak_terminal_results": False,
+                        },
+                    }
+                }
+            },
+        )
+
+        config = web_server._realtime_voice_config_from_request(
+            SimpleNamespace(query_params={"session_id": "voice-config-test"})
+        )
+
+        assert config.session_id == "voice-config-test"
+        assert config.oracle_jobs == {
+            "enabled": True,
+            "max_concurrent": 4,
+            "queue_limit": 24,
+            "default_priority": "high",
+            "overflow_policy": "reject",
+            "shutdown_timeout_seconds": 3.5,
+            "speak_terminal_results": False,
+        }
+        assert config.metadata["oracle_jobs"] == config.oracle_jobs
 
     def test_discord_realtime_voice_config_fields_are_exposed(self):
         from hermes_cli.web_server import CONFIG_SCHEMA

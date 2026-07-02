@@ -1155,6 +1155,21 @@ class TestCliRefreshIntervalConfig:
         assert DEFAULT_CONFIG["display"]["cli_refresh_interval"] == 1.0
 
 
+class TestRealtimeVoiceOracleJobsConfig:
+    def test_default_realtime_voice_config_exposes_oracle_jobs(self):
+        oracle_jobs = DEFAULT_CONFIG["voice"]["realtime"]["oracle_jobs"]
+
+        assert oracle_jobs == {
+            "enabled": False,
+            "max_concurrent": 1,
+            "queue_limit": 16,
+            "default_priority": "normal",
+            "overflow_policy": "queue",
+            "shutdown_timeout_seconds": 2.0,
+            "speak_terminal_results": True,
+        }
+
+
 class TestDiscordChannelPromptsConfig:
     def test_default_config_includes_discord_channel_prompts(self):
         assert DEFAULT_CONFIG["discord"]["channel_prompts"] == {}
