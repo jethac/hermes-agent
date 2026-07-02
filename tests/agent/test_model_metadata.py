@@ -124,6 +124,39 @@ class TestEstimateMessagesTokensRough:
 # =========================================================================
 
 class TestDefaultContextLengths:
+    def test_codex_gpt55_ignores_stale_low_config_context(self):
+        with patch("agent.model_metadata.get_cached_context_length", return_value=None), \
+             patch("agent.model_metadata.save_context_length") as save_context_length_mock:
+            assert get_model_context_length(
+                "gpt-5.5",
+                base_url="https://chatgpt.com/backend-api/codex",
+                provider="openai-codex",
+                config_context_length=65_536,
+            ) == 272_000
+
+        save_context_length_mock.assert_called_once_with(
+            "gpt-5.5",
+            "https://chatgpt.com/backend-api/codex",
+            272_000,
+        )
+
+    def test_codex_gpt55_ignores_direct_api_config_context(self):
+        with patch("agent.model_metadata.get_cached_context_length", return_value=None), \
+             patch("agent.model_metadata.save_context_length"):
+            assert get_model_context_length(
+                "gpt-5.5",
+                base_url="https://chatgpt.com/backend-api/codex",
+                provider="openai-codex",
+                config_context_length=1_050_000,
+            ) == 272_000
+
+    def test_non_codex_still_honors_config_context(self):
+        assert get_model_context_length(
+            "gpt-5.5",
+            provider="openai",
+            config_context_length=65_536,
+        ) == 65_536
+
     def test_grok_substring_matching(self):
         # Longest-first substring matching must resolve the real xAI model
         # IDs to the correct fallback entries without 128k probe-down.

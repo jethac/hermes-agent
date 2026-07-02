@@ -1787,7 +1787,9 @@ def get_model_context_length(
     """Get the context length for a model.
 
     Resolution order:
-    0. Explicit config override (model.context_length or custom_providers per-model)
+    0. Codex OAuth server-enforced windows (before config overrides; the
+       provider cap is authoritative for this route)
+    0a. Explicit config override (model.context_length or custom_providers per-model)
     1. Persistent cache (previously discovered via probing).  Nous URLs
        bypass the cache here so step 5b can always reconcile against
        the authoritative portal /v1/models response.
@@ -1808,7 +1810,33 @@ def get_model_context_length(
     7. Hardcoded defaults (broad family patterns, longest-key-first)
     8. Local server query (last resort)
     9. Default fallback (256K)"""
-    # 0. Explicit config override — user knows best
+    provider_normalized = (provider or "").strip().lower()
+
+    # 0. Codex OAuth context is server-enforced. A stale config value like
+    # 65,536 must not make Hermes compact at a quarter of the real gpt-5.5
+    # Codex window, and a direct-API value like 1.05M must not let Hermes
+    # overflow the Codex backend. Neutralize only the stale config override
+    # here, then let the normal cache/live resolver below handle the route so
+    # fast-path cache hits and stale-cache invalidation retain their behavior.
+    if provider_normalized == "openai-codex":
+        codex_ctx = _resolve_codex_oauth_context_length(model, access_token="")
+        if codex_ctx:
+            if (
+                config_context_length is not None
+                and isinstance(config_context_length, int)
+                and config_context_length > 0
+                and config_context_length != codex_ctx
+            ):
+                logger.info(
+                    "Ignoring model.context_length=%s for Codex OAuth model %s; "
+                    "provider-enforced window is %s",
+                    f"{config_context_length:,}",
+                    model,
+                    f"{codex_ctx:,}",
+                )
+                config_context_length = None
+
+    # 0a. Explicit config override — user knows best
     if config_context_length is not None and isinstance(config_context_length, int) and config_context_length > 0:
         return config_context_length
 
