@@ -1070,3 +1070,71 @@ async def test_audit_ledger_path_records_redacted_lifecycle_events(tmp_path):
     assert "Long private result" not in str(rows)
     assert "raw-token" not in str(rows)
     assert "sk_test_abcdefghijklmnopqrstuvwxyz" not in str(rows)
+
+
+@pytest.mark.asyncio
+async def test_audit_ledger_force_redacts_scalar_payload_fields(tmp_path):
+    ledger_path = tmp_path / "voiceops-oracle-jobs.jsonl"
+    release = asyncio.Event()
+    test_secret = "sk_test_" + "abcdefghijklmnopqrstuvwxyz"
+    approval_secret = "sk_test_" + "zyxwvutsrqponmlkjihgfedcba"
+    approval_summary_secret = "sk_test_" + "qwertyuiopasdfghjklzxcvbnm"
+    live_secret = "sk_live_" + "abcdefghijklmnopqrstuvwxyz"
+
+    async def runner(job):
+        await release.wait()
+        return {
+            "result_summary": (
+                f"Created provider credential {test_secret} "
+                "with Authorization: Bearer raw-token"
+            ),
+            "result_text": (
+                "Full result includes provider_token=raw-provider-token "
+                f"and {live_secret}"
+            ),
+        }
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        audit_ledger_path=ledger_path,
+    )
+    job = await manager.submit(_request("provision voice provider"))
+    await asyncio.sleep(0)
+    await manager.mark_waiting_for_approval(
+        job.job_id,
+        reason=(
+            "Approve Stripe spend with Authorization: Bearer approval-token "
+            f"and {approval_secret}"
+        ),
+        approval={
+            "approval_id": "approval-123",
+            "tool_name": "stripe_link_purchase",
+            "summary": f"Charge uses {approval_summary_secret}",
+        },
+    )
+    await manager.mark_running(job.job_id)
+    release.set()
+    await manager.wait_for_idle()
+
+    rows = [
+        json.loads(line)
+        for line in ledger_path.read_text(encoding="utf-8").splitlines()
+    ]
+    waiting = next(row for row in rows if row["event_type"] == "oracle.job.waiting_for_approval")
+    completed = next(row for row in rows if row["event_type"] == "oracle.job.completed")
+    combined = json.dumps(rows, sort_keys=True)
+
+    assert "approval_reason" in waiting["payload"]
+    assert "result_summary" in completed["payload"]
+    assert "result_text_chars" in completed["payload"]
+    assert "result_text" not in completed["payload"]
+    assert "Authorization: Bearer ***" in combined
+    assert "sk_tes" in combined
+    assert "raw-token" not in combined
+    assert "approval-token" not in combined
+    assert "raw-provider-token" not in combined
+    assert test_secret not in combined
+    assert approval_secret not in combined
+    assert approval_summary_secret not in combined
+    assert live_secret not in combined

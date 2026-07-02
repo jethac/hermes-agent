@@ -716,7 +716,7 @@ def _compact_approval_payload(value: Mapping[str, Any]) -> dict[str, Any]:
         elif isinstance(raw, (int, float)):
             compact[text_key] = raw
         elif raw is not None:
-            compact[text_key] = " ".join(str(raw).split())[:240]
+            compact[text_key] = " ".join(redact_sensitive_text(str(raw), force=True).split())[:240]
     return compact
 
 
@@ -780,4 +780,4 @@ def _compact_audit_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _compact_audit_scalar(value: Any) -> str:
-    return " ".join(str(value or "").split())[:2000]
+    return " ".join(redact_sensitive_text(str(value or ""), force=True).split())[:2000]
