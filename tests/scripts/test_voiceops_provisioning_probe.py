@@ -2459,6 +2459,54 @@ def test_post_approval_receipts_reject_approval_decision_hash_mismatch(tmp_path)
     )
 
 
+def test_post_approval_receipts_reject_approval_decision_missing_required_fields(tmp_path):
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    payload = _complete_post_approval_receipts(plan)
+    _write_approval_decision_artifacts(tmp_path, payload)
+    receipt = payload["receipts"][0]
+    decision_path = tmp_path / receipt["approval_decision_ref"]
+    decision_payload = json.loads(decision_path.read_text(encoding="utf-8"))
+    decision_payload.pop("decision_by")
+    decision_path.write_text(json.dumps(decision_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    receipt["approval_decision_sha256"] = hashlib.sha256(decision_path.read_bytes()).hexdigest()
+    payload = _with_post_approval_attestation(payload)
+    receipt_path = tmp_path / "post-approval-receipts.json"
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = load_post_approval_receipts(receipt_path, plan)
+
+    assert loaded["status"] == "invalid"
+    assert (
+        "post_approval_receipts:receipt-provision-voip-provider-001:approval_decision_ref:decision_by_missing"
+        in loaded["validation_issues"]
+    )
+
+
+def test_post_approval_receipts_reject_approval_decision_approval_id_mismatch(tmp_path):
+    report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
+    plan = build_milestone2_execution_plan(report)
+    payload = _complete_post_approval_receipts(plan)
+    _write_approval_decision_artifacts(tmp_path, payload)
+    receipt = payload["receipts"][0]
+    decision_path = tmp_path / receipt["approval_decision_ref"]
+    decision_payload = json.loads(decision_path.read_text(encoding="utf-8"))
+    decision_payload["approval_id"] = "approval-other"
+    decision_path.write_text(json.dumps(decision_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    receipt["approval_decision_sha256"] = hashlib.sha256(decision_path.read_bytes()).hexdigest()
+    payload = _with_post_approval_attestation(payload)
+    receipt_path = tmp_path / "post-approval-receipts.json"
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = load_post_approval_receipts(receipt_path, plan)
+
+    assert loaded["status"] == "invalid"
+    assert (
+        "post_approval_receipts:receipt-provision-voip-provider-001:approval_decision_ref:approval_id_mismatch"
+        in loaded["validation_issues"]
+    )
+
+
 def test_post_approval_receipts_reject_absolute_approval_decision_ref(tmp_path):
     report = build_probe_report(env={}, env_files=[], which=lambda _command: None)
     plan = build_milestone2_execution_plan(report)

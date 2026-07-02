@@ -3695,8 +3695,10 @@ def _approval_decision_artifact_issues(
         f"post_approval_receipts:{receipt_id}:approval_decision_ref:{issue}"
         for issue in _post_approval_receipt_secret_issues(decision_payload)
     )
-    for field in ("action_id", "decision", "decision_by", "decision_at"):
-        if field in decision_payload and decision_payload.get(field) != receipt.get(field):
+    for field in ("action_id", "approval_id", "decision", "decision_by", "decision_at"):
+        if field not in decision_payload:
+            issues.append(f"post_approval_receipts:{receipt_id}:approval_decision_ref:{field}_missing")
+        elif decision_payload.get(field) != receipt.get(field):
             issues.append(f"post_approval_receipts:{receipt_id}:approval_decision_ref:{field}_mismatch")
     return issues
 
