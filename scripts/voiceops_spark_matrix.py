@@ -805,14 +805,9 @@ def _source_value_is_redacted_placeholder(value: str) -> bool:
 
 
 def _source_artifact_identity_issues(item: dict[str, Any], source_payload: dict[str, Any]) -> list[str]:
-    expected = {
-        value
-        for value in (
-            str(item.get("candidate_id") or "").strip(),
-            str(item.get("kind") or "").strip(),
-        )
-        if value
-    }
+    expected_candidate = str(item.get("candidate_id") or "").strip()
+    expected_kind = str(item.get("kind") or "").strip()
+    expected = expected_candidate or expected_kind
     if not expected:
         return []
     actual = set(_source_identity_values(source_payload.get("source_key")))
@@ -824,7 +819,7 @@ def _source_artifact_identity_issues(item: dict[str, Any], source_payload: dict[
     actual = {str(value).strip() for value in actual if str(value).strip()}
     if not actual:
         return ["source_artifact_identity_missing"]
-    if expected.isdisjoint(actual):
+    if expected not in actual:
         return ["source_artifact_identity_mismatch"]
     return []
 
@@ -1415,6 +1410,8 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "source_artifact_must_not_contain_likely_secret_or_phone_values": True,
             "source_artifact_sha256_must_match": True,
             "source_artifact_identity_must_match": True,
+            "source_artifact_candidate_rows_require_candidate_identity": True,
+            "source_artifact_kind_identity_only_for_kind_only_rows": True,
             "accepted_source_artifact_identity_fields": [
                 "source_key",
                 "source_keys",

@@ -598,6 +598,36 @@ def test_spark_matrix_rejects_candidate_with_mismatched_source_artifact_identity
     assert matrix["role_status"]["oracle"] == "needs_evidence"
 
 
+def test_spark_matrix_rejects_candidate_source_artifact_with_only_generic_kind_identity(tmp_path):
+    source_path = tmp_path / "artifacts/test/generic-kind-identity.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(
+        json.dumps({"redacted": True, "source": "generic KAME output", "source_key": "kame_benchmark_result"}),
+        encoding="utf-8",
+    )
+    evidence_path = tmp_path / "evidence.json"
+    evidence = _base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super")
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    evidence["kind"] = "kame_benchmark_result"
+    evidence["source_artifact"] = "artifacts/test/generic-kind-identity.json"
+    evidence["source_artifact_sha256"] = source_sha256
+    evidence["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
+    evidence["metrics"] = {
+        "decode_tok_s": 24,
+        "prefill_tok_s": 3100,
+        "first_token_ms": 2100,
+        "steady_state_memory_gb": 86,
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+    evaluation = next(item for item in matrix["evaluations"] if item["candidate_id"] == "oracle-nemotron3-super-local")
+
+    assert evaluation["status"] == "fails_target"
+    assert "source_artifact_identity_mismatch" in evaluation["issues"]
+    assert matrix["role_status"]["oracle"] == "needs_evidence"
+
+
 def test_spark_matrix_rejects_candidate_with_stale_source_and_attestation_hashes(tmp_path):
     sources_dir = tmp_path / "sources"
     sources_dir.mkdir()
