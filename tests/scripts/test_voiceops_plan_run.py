@@ -531,6 +531,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert summary["closure_index"]["schema_version"] == "voiceops.closure_index.v1"
     assert summary["closure_index"]["closure_status"] == "needs_external_evidence"
     assert summary["closure_status"] == summary["closure_index"]["closure_status"]
+    assert summary["readiness_ok"] is False
     assert summary["closure_index"]["source_plan_run_artifact"].endswith("voiceops-plan-run.json")
     assert summary["closure_index"]["remaining_gates"] == summary["closure_index"]["gates"]
     assert summary["ready_for_demo"] is False
@@ -552,6 +553,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "dgx_spark_likely" in summary["current_environment"]["spark"]
     assert summary["closure_index"]["current_environment"] == summary["current_environment"]
     blockers = summary["closure_index"]["current_environment_blockers"]
+    assert summary["current_environment_blockers"] == blockers
     assert blockers["hard_failure"] is False
     assert blockers["secret_values_emitted"] is False
     assert blockers["diagnostic_only"] is True
@@ -1168,10 +1170,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     handoff_markdown = Path(paths["operator_handoff_markdown"]).read_text(encoding="utf-8")
     assert payload["artifact_id"] == "voiceops-plan-run"
     assert payload["ok"] is True
+    assert payload["readiness_ok"] is False
     assert payload["ready_for_demo"] is False
     assert payload["artifacts"]["json"] == paths["json"]
     assert payload["artifact_manifest"]["json"] == "voiceops-plan-run.json"
     assert payload["blockers"] == summary["blockers"]
+    assert payload["current_environment_blockers"] == closure["current_environment_blockers"]
     assert payload["closure_status"] == closure["closure_status"]
     assert payload["remaining_gates"] == [gate["gate_id"] for gate in closure["remaining_gates"]]
     assert payload["next_actions"] == closure["next_actions"]

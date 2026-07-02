@@ -799,6 +799,16 @@ def _audit_plan_consistency(
         issues.append("plan_run:closure_status_mismatch")
     if plan_run.get("readiness_gaps") != plan_closure.get("readiness_gaps"):
         issues.append("plan_run:readiness_gaps_mismatch")
+    expected_readiness_ok = (
+        plan_closure.get("closure_status") == "complete"
+        and plan_closure.get("readiness_gaps") == []
+    )
+    if plan_run.get("readiness_ok") != expected_readiness_ok:
+        issues.append("plan_run:readiness_ok_mismatch")
+    if plan_run.get("current_environment_blockers") != plan_closure.get(
+        "current_environment_blockers"
+    ):
+        issues.append("plan_run:current_environment_blockers_mismatch")
     expected_remaining_gate_ids = [
         str(gate.get("gate_id"))
         for gate in plan_closure.get("remaining_gates", [])
@@ -818,6 +828,12 @@ def _audit_plan_consistency(
     _audit_plan_safety("plan_closure", plan_closure.get("safety"), issues)
     if plan_handoff != plan_closure.get("operator_handoff"):
         issues.append("operator_handoff:mismatch_with_closure")
+    blockers_ref = plan_handoff.get("diagnostic_blockers_ref")
+    if blockers_ref and (
+        blockers_ref not in plan_run
+        and blockers_ref not in plan_closure
+    ):
+        issues.append("operator_handoff:diagnostic_blockers_ref_unresolvable")
     _audit_plan_model_args(demo=demo, plan_run=plan_run, issues=issues)
     for label, payload in (
         ("demo_closure", demo_closure),

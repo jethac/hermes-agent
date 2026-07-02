@@ -1735,6 +1735,13 @@ async def build_plan_run_async(
     _sync_demo_closure_summary(demo_dir, _plan_model_flag_args(summary.get("plan_args")))
     _sync_demo_handoff_preview(demo_dir, summary["closure_index"]["operator_handoff"])
     summary["closure_status"] = summary["closure_index"]["closure_status"]
+    summary["readiness_ok"] = (
+        summary["closure_status"] == "complete"
+        and summary["readiness_gaps"] == []
+    )
+    summary["current_environment_blockers"] = summary["closure_index"][
+        "current_environment_blockers"
+    ]
     summary["remaining_gates"] = [
         gate["gate_id"] for gate in summary["closure_index"]["remaining_gates"]
     ]
@@ -1777,6 +1784,7 @@ def _markdown(summary: dict[str, Any]) -> str:
         "# VoiceOps Plan Run Summary",
         "",
         f"- OK: {'yes' if summary['ok'] else 'no'}",
+        f"- Readiness OK: {'yes' if summary.get('readiness_ok') else 'no'}",
         f"- Artifact root: `{summary['artifact_root']}`",
         f"- Safety: {_safety_summary_line(summary.get('safety', {}))}",
         f"- Hard failures: {', '.join(summary['hard_failures']) if summary['hard_failures'] else 'none'}",

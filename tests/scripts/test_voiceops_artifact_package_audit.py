@@ -482,6 +482,8 @@ def test_package_audit_rejects_plan_run_top_level_mirror_drift(tmp_path):
     plan_run["hard_failures"] = ["milestone_0_hackathon_demo"]
     plan_run["readiness_gaps"] = []
     plan_run["closure_status"] = "complete"
+    plan_run["readiness_ok"] = True
+    plan_run["current_environment_blockers"] = {}
     plan_run["remaining_gates"] = []
     plan_run["next_actions"] = plan_run["next_actions"][:-1]
     _write_json(plan_run_path, plan_run)
@@ -495,8 +497,32 @@ def test_package_audit_rejects_plan_run_top_level_mirror_drift(tmp_path):
     assert "plan_run:hard_failures_not_empty" in report["issues"]
     assert "plan_run:readiness_gaps_mismatch" in report["issues"]
     assert "plan_run:closure_status_mismatch" in report["issues"]
+    assert "plan_run:readiness_ok_mismatch" in report["issues"]
+    assert "plan_run:current_environment_blockers_mismatch" in report["issues"]
     assert "plan_run:remaining_gates_mismatch" in report["issues"]
     assert "plan_run:next_actions_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_unresolvable_handoff_blockers_ref(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"
+    closure_path = artifact_root / "voiceops-plan" / "current" / "readiness-closure-index.json"
+    demo_handoff_path = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json"
+
+    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    closure = json.loads(closure_path.read_text(encoding="utf-8"))
+    demo_handoff = json.loads(demo_handoff_path.read_text(encoding="utf-8"))
+    handoff["diagnostic_blockers_ref"] = "missing_blockers_field"
+    closure["operator_handoff"] = handoff
+    demo_handoff["diagnostic_blockers_ref"] = "missing_blockers_field"
+    _write_json(handoff_path, handoff)
+    _write_json(closure_path, closure)
+    _write_json(demo_handoff_path, demo_handoff)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "operator_handoff:diagnostic_blockers_ref_unresolvable" in report["issues"]
 
 
 def test_package_audit_rejects_missing_channel_policy_review_action(tmp_path):
