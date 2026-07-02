@@ -6,9 +6,23 @@ import re
 import urllib.parse
 from typing import Any
 
+from agent.redact import redact_sensitive_text
+
 
 _BEARER_RE = re.compile(r"\b(Bearer\s+)[A-Za-z0-9._~+/\-=]+", re.IGNORECASE)
-_SECRET_ASSIGNMENT_RE = re.compile(r"\b(token|api[_-]?key|password|secret)=([^&\s]+)", re.IGNORECASE)
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"\b("
+    r"token"
+    r"|api[_-]?key"
+    r"|access[_-]?token"
+    r"|refresh[_-]?token"
+    r"|auth[_-]?token"
+    r"|provider[_-]?token"
+    r"|password"
+    r"|secret"
+    r")=([^&\s]+)",
+    re.IGNORECASE,
+)
 _URL_RE = re.compile(r"\b([a-z][a-z0-9+.-]*://[^\s<>'\"]+)", re.IGNORECASE)
 
 
@@ -19,6 +33,7 @@ def sanitize_realtime_voice_error(error: Any) -> str:
     if not text:
         return "unknown realtime voice error"
 
+    text = redact_sensitive_text(text, force=True)
     text = _BEARER_RE.sub(r"\1***", text)
     text = _SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}=***", text)
     return _URL_RE.sub(_redact_url, text)

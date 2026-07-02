@@ -145,12 +145,25 @@ class FakeSidecar:
 
 
 def test_realtime_voice_error_sanitizer_redacts_credentials():
+    provider_secret = "sk" + "_test_" + "abcdefghijklmnopqrstuvwxyz"
     sanitized = sanitize_realtime_voice_error(
-        "failed Bearer secret-token at http://user:pass@voice.local:8765/v1?token=abc&api_key=def secret=raw"
+        "failed Bearer secret-token "
+        "provider_token=raw-provider-token "
+        f"access_token={provider_secret} "
+        "max_tokens=8192 "
+        "at http://user:pass@voice.local:8765/v1?token=abc&api_key=def secret=raw"
     )
 
-    assert sanitized == "failed Bearer *** at http://***@voice.local:8765/v1 secret=***"
+    assert sanitized == (
+        "failed Bearer *** "
+        "provider_token=*** "
+        "access_token=*** "
+        "max_tokens=8192 "
+        "at http://***@voice.local:8765/v1 secret=***"
+    )
     assert "secret-token" not in sanitized
+    assert "raw-provider-token" not in sanitized
+    assert provider_secret not in sanitized
     assert "user:pass" not in sanitized
     assert "token=abc" not in sanitized
     assert "api_key=def" not in sanitized
