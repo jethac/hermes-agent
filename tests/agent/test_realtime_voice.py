@@ -8696,27 +8696,60 @@ def test_reference_sidecar_forwards_provider_kame_oracle_events():
                 payload={"turn_id": "turn-3", "intent": "Check the file.", "playback_generation": 5},
             ),
             VoiceEvent(
-                type=VoiceEventType.INTERFACE_COMMIT,
+                type=VoiceEventType.ORACLE_JOB_ACCEPTED,
                 session_id="voice-123",
                 sequence=8,
+                payload={
+                    "job_id": "voice-oracle-001",
+                    "state": "queued",
+                    "intent": "Check the file.",
+                    "playback_generation": 5,
+                },
+            ),
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_JOB_STARTED,
+                session_id="voice-123",
+                sequence=9,
+                payload={
+                    "job_id": "voice-oracle-001",
+                    "state": "running",
+                    "intent": "Check the file.",
+                    "playback_generation": 5,
+                },
+            ),
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_JOB_COMPLETED,
+                session_id="voice-123",
+                sequence=10,
+                payload={
+                    "job_id": "voice-oracle-001",
+                    "state": "completed",
+                    "result_summary": "Done.",
+                    "playback_generation": 5,
+                },
+            ),
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_COMMIT,
+                session_id="voice-123",
+                sequence=11,
                 payload={"turn_id": "turn-2", "text": "Hello.", "local_reply": True},
             ),
             VoiceEvent(
                 type=VoiceEventType.ASSISTANT_CAPTION_FINAL,
                 session_id="voice-123",
-                sequence=9,
+                sequence=12,
                 payload={"text": "Hello.", "playback_generation": 4},
             ),
             VoiceEvent(
                 type=VoiceEventType.ASSISTANT_AUDIO_CHUNK,
                 session_id="voice-123",
-                sequence=10,
+                sequence=13,
                 payload={"codec": "opus", "data_b64": "", "playback_generation": 4},
             ),
             VoiceEvent(
                 type=VoiceEventType.SESSION_METRICS,
                 session_id="voice-123",
-                sequence=11,
+                sequence=14,
                 payload={"metrics": {"kame_oracle_called": 1}},
             ),
         ]
@@ -8754,19 +8787,34 @@ def test_reference_sidecar_records_inbound_kame_feedback_events():
         )
         await sidecar.receive_event(
             VoiceEvent(
-                type=VoiceEventType.ORACLE_RESPONSE_FINAL,
+                type=VoiceEventType.ORACLE_JOB_STARTED,
                 session_id="voice-123",
                 sequence=2,
+                payload={
+                    "job_id": "voice-oracle-001",
+                    "state": "running",
+                    "spoken_status": "Checking the file.",
+                    "playback_generation": 3,
+                },
+            )
+        )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_RESPONSE_FINAL,
+                session_id="voice-123",
+                sequence=3,
                 payload={"turn_id": "voice-123:1", "text": "Done.", "playback_generation": 3},
             )
         )
 
         assert [record["type"] for record in sidecar._kame_feedback_events] == [
             VoiceEventType.INTERFACE_ORACLE_REQUEST.value,
+            VoiceEventType.ORACLE_JOB_STARTED.value,
             VoiceEventType.ORACLE_RESPONSE_FINAL.value,
         ]
         assert [record["type"] for record in sidecar._kame_feedback_events_by_generation[3]] == [
             VoiceEventType.INTERFACE_ORACLE_REQUEST.value,
+            VoiceEventType.ORACLE_JOB_STARTED.value,
             VoiceEventType.ORACLE_RESPONSE_FINAL.value,
         ]
         assert sidecar._kame_last_interface_event == {
@@ -8815,14 +8863,34 @@ def test_reference_sidecar_forwards_oracle_feedback_to_live_frontends():
                 },
             )
         )
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_JOB_STARTED,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "job_id": "voice-oracle-001",
+                    "state": "running",
+                    "spoken_status": "Checking the deployment note.",
+                    "playback_generation": 3,
+                },
+            )
+        )
 
-        assert [event.type for event in openai.received] == [VoiceEventType.ORACLE_HINT]
-        assert [event.type for event in gemini.received] == [VoiceEventType.ORACLE_HINT]
+        assert [event.type for event in openai.received] == [
+            VoiceEventType.ORACLE_HINT,
+            VoiceEventType.ORACLE_JOB_STARTED,
+        ]
+        assert [event.type for event in gemini.received] == [
+            VoiceEventType.ORACLE_HINT,
+            VoiceEventType.ORACLE_JOB_STARTED,
+        ]
         assert sidecar._kame_last_oracle_event == {
-            "type": VoiceEventType.ORACLE_HINT.value,
+            "type": VoiceEventType.ORACLE_JOB_STARTED.value,
             "payload": {
-                "turn_id": "voice-123:3",
-                "delta": "Hermes found the deployment note.",
+                "job_id": "voice-oracle-001",
+                "state": "running",
+                "spoken_status": "Checking the deployment note.",
                 "playback_generation": 3,
             },
         }

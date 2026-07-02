@@ -226,6 +226,7 @@ class DiscordRealtimeVoiceSession:
         self._playback_start_metric_generations: set[int] = set()
         self._last_input_user_id: Optional[str] = None
         self._input_user_ids_since_result: set[str] = set()
+        self._pending_final_user_id: Optional[str] = None
 
     async def start(self) -> None:
         config = RealtimeVoiceSessionConfig(
@@ -423,6 +424,7 @@ class DiscordRealtimeVoiceSession:
     async def handle_pcm_frame(self, *, user_id: int | str, pcm48_stereo: bytes) -> None:
         if self._closed or not self._started or not pcm48_stereo:
             return
+        self._pending_final_user_id = None
         self._last_input_user_id = str(user_id)
         self._input_user_ids_since_result.add(str(user_id))
         pcm16_mono = discord_pcm48_stereo_to_pcm16_mono(pcm48_stereo)
@@ -538,9 +540,14 @@ class DiscordRealtimeVoiceSession:
                     VoiceEventType.INTERFACE_INTENT_PARTIAL,
                     VoiceEventType.INTERFACE_INTENT_FINAL,
                 }:
+                    inferred_user_id = None
                     if "user_id" not in event.payload:
                         if len(self._input_user_ids_since_result) == 1:
-                            event.payload["user_id"] = next(iter(self._input_user_ids_since_result))
+                            inferred_user_id = next(iter(self._input_user_ids_since_result))
+                            event.payload["user_id"] = inferred_user_id
+                        elif event.type == VoiceEventType.TRANSCRIPT_FINAL and self._pending_final_user_id:
+                            inferred_user_id = self._pending_final_user_id
+                            event.payload["user_id"] = inferred_user_id
                         elif len(self._input_user_ids_since_result) > 1:
                             logger.info(
                                 "Discord realtime voice left untagged provider event without user_id "
@@ -548,8 +555,14 @@ class DiscordRealtimeVoiceSession:
                                 event.type.value,
                                 sorted(self._input_user_ids_since_result),
                             )
+                    else:
+                        inferred_user_id = str(event.payload.get("user_id") or "").strip() or None
+                    if event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
+                        self._pending_final_user_id = inferred_user_id
+                        self._input_user_ids_since_result.clear()
                     if event.type == VoiceEventType.TRANSCRIPT_FINAL:
                         self._input_user_ids_since_result.clear()
+                        self._pending_final_user_id = None
                 await self._notify_event_observed(event)
                 self._activity.set()
             if not self._local_close_requested and not self._closed:

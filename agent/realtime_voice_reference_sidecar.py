@@ -67,6 +67,20 @@ class KameAudioSegmentTooLongError(RuntimeError):
     """Raised when a buffered audio segment exceeds the interface model limit."""
 
 
+ORACLE_JOB_EVENT_TYPES = frozenset(
+    {
+        VoiceEventType.ORACLE_JOB_ACCEPTED,
+        VoiceEventType.ORACLE_JOB_QUEUED,
+        VoiceEventType.ORACLE_JOB_STARTED,
+        VoiceEventType.ORACLE_JOB_PROGRESS,
+        VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
+        VoiceEventType.ORACLE_JOB_COMPLETED,
+        VoiceEventType.ORACLE_JOB_FAILED,
+        VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED,
+        VoiceEventType.ORACLE_JOB_CANCELLED,
+    }
+)
+
 PROVIDER_FORWARDED_EVENT_TYPES = frozenset(
     {
         VoiceEventType.TRANSCRIPT_PARTIAL,
@@ -100,7 +114,7 @@ PROVIDER_FORWARDED_EVENT_TYPES = frozenset(
         VoiceEventType.TOOL_PENDING,
         VoiceEventType.TOOL_RESULT,
     }
-)
+) | ORACLE_JOB_EVENT_TYPES
 
 KAME_FEEDBACK_EVENT_TYPES = frozenset(
     {
@@ -119,7 +133,7 @@ KAME_FEEDBACK_EVENT_TYPES = frozenset(
         VoiceEventType.ORACLE_ERROR,
         VoiceEventType.SESSION_METRICS,
     }
-)
+) | ORACLE_JOB_EVENT_TYPES
 KAME_LIVE_FRONTEND_ORACLE_CONTEXT_EVENT_TYPES = frozenset(
     {
         VoiceEventType.ORACLE_ACCEPTED,
@@ -130,7 +144,7 @@ KAME_LIVE_FRONTEND_ORACLE_CONTEXT_EVENT_TYPES = frozenset(
         VoiceEventType.ORACLE_RESPONSE_FINAL,
         VoiceEventType.ORACLE_ERROR,
     }
-)
+) | ORACLE_JOB_EVENT_TYPES
 
 
 @dataclass(frozen=True)
@@ -1919,7 +1933,7 @@ class ReferenceRealtimeVoiceSidecarSession:
             VoiceEventType.ORACLE_RESPONSE_PARTIAL,
             VoiceEventType.ORACLE_RESPONSE_FINAL,
             VoiceEventType.ORACLE_ERROR,
-        }:
+        } or event.type in ORACLE_JOB_EVENT_TYPES:
             self._kame_last_oracle_event = record
 
     def _clear_kame_feedback_state(self) -> None:
