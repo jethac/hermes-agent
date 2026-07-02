@@ -14,7 +14,7 @@ import logging
 import sys
 import time
 from array import array
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
 from agent.realtime_voice import (
     AudioChunk,
@@ -343,6 +343,17 @@ class DiscordRealtimeVoiceSession:
             except asyncio.CancelledError:
                 pass
         await self.sidecar.close()
+
+    async def get_oracle_job_status(self) -> dict[str, Any]:
+        getter = getattr(self.sidecar, "get_oracle_job_status", None)
+        if not callable(getter):
+            return {}
+        status = getter()
+        if inspect.isawaitable(status):
+            status = await status
+        if not isinstance(status, Mapping):
+            return {}
+        return dict(status)
 
     async def _stop_mixer_speech_for_shutdown(self) -> None:
         with contextlib.suppress(Exception):

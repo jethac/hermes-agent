@@ -1149,6 +1149,99 @@ class TestVoiceChannelCommands:
         )
 
     @pytest.mark.asyncio
+    async def test_voice_jobs_prefers_live_oracle_job_status(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.get_voice_session_status.return_value = {
+            "oracle_jobs": {
+                "enabled": True,
+                "capacity": {"running": 0, "max_concurrent": 4, "queued": 0},
+                "jobs": [
+                    {
+                        "job_id": "voice-oracle-stale",
+                        "state": "completed",
+                        "spoken_status": "Old status.",
+                    }
+                ],
+            }
+        }
+        mock_adapter.get_voice_session_status_live = AsyncMock(
+            return_value={
+                "oracle_jobs": {
+                    "enabled": True,
+                    "capacity": {"running": 1, "max_concurrent": 4, "queued": 0},
+                    "jobs": [
+                        {
+                            "job_id": "voice-oracle-live",
+                            "state": "running",
+                            "spoken_status": "Checking the live status.",
+                        }
+                    ],
+                }
+            }
+        )
+        event = self._make_discord_event("/voice jobs")
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_command(event)
+
+        mock_adapter.get_voice_session_status_live.assert_awaited_once_with(111)
+        assert result == (
+            "Oracle jobs: running=1/4, queued=0\n"
+            "Oracle job: voice-oracle-live running - Checking the live status."
+        )
+
+    @pytest.mark.asyncio
+    async def test_voice_status_prefers_live_oracle_job_status(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.get_voice_channel_info.return_value = {
+            "channel_name": "General",
+            "member_count": 1,
+            "members": [{"display_name": "jetha"}],
+            "voice_session": {
+                "mode": "realtime_active",
+                "session_state": "ready",
+                "mixer_installed": True,
+                "sidecar_running": True,
+                "playback_active": False,
+                "oracle_jobs": {
+                    "enabled": True,
+                    "capacity": {"running": 0, "max_concurrent": 4, "queued": 0},
+                    "jobs": [
+                        {
+                            "job_id": "voice-oracle-stale",
+                            "state": "completed",
+                            "spoken_status": "Old status.",
+                        }
+                    ],
+                },
+            },
+        }
+        mock_adapter.get_voice_session_status_live = AsyncMock(
+            return_value={
+                "oracle_jobs": {
+                    "enabled": True,
+                    "capacity": {"running": 1, "max_concurrent": 4, "queued": 0},
+                    "jobs": [
+                        {
+                            "job_id": "voice-oracle-live",
+                            "state": "running",
+                            "spoken_status": "Checking the live status.",
+                        }
+                    ],
+                }
+            }
+        )
+        event = self._make_discord_event("/voice status")
+        runner.adapters[event.source.platform] = mock_adapter
+        runner._voice_mode["discord:123"] = "all"
+
+        result = await runner._handle_voice_command(event)
+
+        mock_adapter.get_voice_session_status_live.assert_awaited_once_with(111)
+        assert "Oracle job: voice-oracle-live running - Checking the live status." in result
+        assert "voice-oracle-stale" not in result
+
+    @pytest.mark.asyncio
     async def test_voice_cancel_delegates_to_discord_adapter(self, runner):
         mock_adapter = MagicMock()
         mock_adapter.cancel_voice_oracle_job = AsyncMock(

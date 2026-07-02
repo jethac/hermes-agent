@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -185,6 +186,17 @@ class RealtimeVoiceSession:
         self.state = RealtimeVoiceSessionState.CLOSING
         await self.engine.close()
         self.state = RealtimeVoiceSessionState.CLOSED
+
+    async def get_oracle_job_status(self) -> Dict[str, Any]:
+        getter = getattr(self.engine, "get_oracle_job_status", None)
+        if not callable(getter):
+            return {}
+        status = getter()
+        if inspect.isawaitable(status):
+            status = await status
+        if not isinstance(status, Mapping):
+            return {}
+        return dict(status)
 
     def durable_messages(self) -> List[dict]:
         messages: List[dict] = []

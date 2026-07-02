@@ -2556,6 +2556,18 @@ class GatewaySlashCommandsMixin:
 
         adapter = self.adapters.get(platform)
 
+        def _explicit_adapter_getter(adapter_obj: object, name: str):
+            if adapter_obj is None:
+                return None
+            adapter_dict = getattr(adapter_obj, "__dict__", {})
+            if isinstance(adapter_dict, dict) and name in adapter_dict:
+                getter = getattr(adapter_obj, name, None)
+                return getter if callable(getter) else None
+            if hasattr(type(adapter_obj), name):
+                getter = getattr(adapter_obj, name, None)
+                return getter if callable(getter) else None
+            return None
+
         if args in {"on", "enable"}:
             self._voice_mode[voice_key] = "voice_only"
             self._save_voice_modes()
@@ -2580,8 +2592,13 @@ class GatewaySlashCommandsMixin:
             return await self._handle_voice_channel_leave(event)
         elif args == "jobs":
             guild_id = self._get_guild_id(event)
-            if guild_id and adapter and hasattr(adapter, "get_voice_session_status"):
-                session = adapter.get_voice_session_status(guild_id)
+            status_getter = None
+            if adapter:
+                status_getter = _explicit_adapter_getter(adapter, "get_voice_session_status_live")
+                if status_getter is None:
+                    status_getter = getattr(adapter, "get_voice_session_status", None)
+            if guild_id and callable(status_getter):
+                session = status_getter(guild_id)
                 if asyncio.iscoroutine(session):
                     session = await session
                 if isinstance(session, dict):
@@ -2669,6 +2686,13 @@ class GatewaySlashCommandsMixin:
                 info = adapter.get_voice_channel_info(guild_id)
                 if info:
                     session = info.get("voice_session") or {}
+                    live_status_getter = _explicit_adapter_getter(adapter, "get_voice_session_status_live")
+                    if callable(live_status_getter):
+                        live_session = live_status_getter(guild_id)
+                        if asyncio.iscoroutine(live_session):
+                            live_session = await live_session
+                        if isinstance(live_session, dict):
+                            session = {**session, **live_session}
                     voice_mode = session.get("mode") or "unknown"
                     session_state = session.get("session_state") or "unknown"
                     fallback_reason = session.get("fallback_reason")

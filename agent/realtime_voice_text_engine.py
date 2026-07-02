@@ -222,6 +222,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 return
             yield event
 
+    async def get_oracle_job_status(self) -> dict[str, Any]:
+        manager = self._oracle_job_manager
+        if manager is None:
+            return {}
+        status = await manager.status_view()
+        return {"enabled": True, **status}
+
     async def close(self) -> None:
         await self._close()
 

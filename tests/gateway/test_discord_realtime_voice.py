@@ -79,6 +79,11 @@ class ScriptedKameSidecar:
         async for event in self.session.events():
             yield event
 
+    async def get_oracle_job_status(self):
+        if self.session is None:
+            return {}
+        return await self.session.get_oracle_job_status()
+
     async def close(self):
         self.closed = True
         if self.session is not None:
@@ -1147,6 +1152,66 @@ def test_discord_realtime_event_records_kame_reflex_provenance():
     }
 
 
+@pytest.mark.asyncio
+async def test_discord_adapter_live_voice_status_overrides_stale_oracle_snapshot():
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    class LiveSession:
+        async def get_oracle_job_status(self):
+            return {
+                "enabled": True,
+                "capacity": {
+                    "running": 1,
+                    "max_concurrent": 4,
+                    "queued": 0,
+                    "waiting_for_approval": 0,
+                    "queue_limit": 16,
+                },
+                "jobs": [
+                    {
+                        "job_id": "voice-oracle-live",
+                        "state": "running",
+                        "spoken_status": "Checking the live status.",
+                        "metadata": {"secret": "do-not-leak"},
+                        "oracle_text": "raw oracle prompt",
+                    }
+                ],
+            }
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._voice_session_states = {}
+    adapter._voice_mixers = {}
+    adapter._voice_receivers = {}
+    adapter._voice_text_channels = {}
+    adapter._realtime_voice_sessions = {111: LiveSession()}
+
+    adapter._handle_realtime_voice_event(
+        111,
+        "session.started",
+        {"oracle_jobs": {"enabled": True, "max_concurrent": 4, "queue_limit": 16}},
+    )
+    adapter._handle_realtime_voice_event(
+        111,
+        "oracle.job.completed",
+        {
+            "job_id": "voice-oracle-stale",
+            "state": "completed",
+            "spoken_status": "Old status.",
+        },
+    )
+
+    status = await adapter.get_voice_session_status_live(111)
+    job = status["oracle_jobs"]["jobs"][0]
+
+    assert status["oracle_jobs"]["capacity"]["running"] == 1
+    assert job == {
+        "job_id": "voice-oracle-live",
+        "state": "running",
+        "spoken_status": "Checking the live status.",
+    }
+    assert adapter.get_voice_session_status(111)["oracle_jobs"]["jobs"][0]["job_id"] == "voice-oracle-live"
+
+
 def test_discord_realtime_event_records_tts_failure_provenance():
     from plugins.platforms.discord.adapter import DiscordAdapter
 
@@ -1593,6 +1658,62 @@ async def test_discord_realtime_spoken_tasks_create_async_oracle_jobs():
         and payload.get("text") == "Drafting the vendor memo."
         for event_type, payload in observed
     )
+
+
+@pytest.mark.asyncio
+async def test_discord_realtime_live_oracle_status_reflects_job_manager():
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    class BlockingOracle:
+        def __init__(self):
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.started.set()
+            await self.release.wait()
+            yield f"Finished {request.intent}."
+
+    oracle = BlockingOracle()
+    sidecar = ScriptedKameSidecar(
+        oracle=oracle,
+        utterances=[
+            {
+                "transcript": "check provisioning logs",
+                "intent": "Check provisioning logs",
+                "intent_source": "reflex_audio",
+                "route": "defer",
+                "interface_already_said": "Checking provisioning logs.",
+            },
+        ],
+    )
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+        engine="kame_interface_oracle",
+        oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+    )
+
+    await session.start()
+    await session.handle_speech_end(user_id=42)
+    await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+    status = await session.get_oracle_job_status()
+
+    await session.close()
+
+    assert status["enabled"] is True
+    assert status["capacity"]["running"] == 1
+    assert status["capacity"]["max_concurrent"] == 1
+    assert status["capacity"]["queued"] == 0
+    assert status["jobs"][0]["job_id"] == "voice-oracle-001"
+    assert status["jobs"][0]["state"] == "running"
+    assert status["jobs"][0]["intent"] == "Check provisioning logs"
+    assert "metadata" not in status["jobs"][0]
+    assert "oracle_text" not in status["jobs"][0]
 
 
 @pytest.mark.asyncio

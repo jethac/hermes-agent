@@ -11,6 +11,7 @@ Uses discord.py library for:
 
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import math
@@ -281,6 +282,63 @@ def _discord_voice_oracle_jobs_update(
         }
     )
     return {"enabled": True, "capacity": capacity, "jobs": jobs}
+
+
+def _discord_voice_oracle_jobs_from_live_status(
+    status: Any,
+    existing: Any = None,
+) -> Dict[str, Any]:
+    if not isinstance(status, Mapping):
+        return {}
+    current = existing if isinstance(existing, Mapping) else {}
+    current_capacity = current.get("capacity") if isinstance(current.get("capacity"), Mapping) else {}
+    capacity: Dict[str, Any] = dict(current_capacity)
+    raw_capacity = status.get("capacity")
+    raw_jobs = status.get("jobs")
+    if "enabled" not in status and not isinstance(raw_capacity, Mapping) and not isinstance(raw_jobs, list):
+        return {}
+    if isinstance(raw_capacity, Mapping):
+        for key in ("running", "max_concurrent", "queued", "waiting_for_approval", "queue_limit"):
+            parsed = _discord_voice_nonnegative_int(raw_capacity.get(key))
+            if parsed is not None:
+                capacity[key] = parsed
+    jobs: list[dict[str, Any]] = []
+    if isinstance(raw_jobs, list):
+        for raw_job in raw_jobs:
+            if not isinstance(raw_job, Mapping):
+                continue
+            job: dict[str, Any] = {}
+            for key in (
+                "job_id",
+                "state",
+                "priority",
+                "route",
+                "intent",
+                "spoken_status",
+                "result_summary",
+                "error",
+                "cancel_reason",
+                "latest_update",
+            ):
+                text = str(raw_job.get(key) or "").strip()
+                if text:
+                    job[key] = text[:500 if key == "result_summary" else 240 if key == "latest_update" else 180]
+            update_count = _discord_voice_nonnegative_int(raw_job.get("update_count"))
+            if update_count is not None:
+                job["update_count"] = update_count
+            if job.get("job_id"):
+                jobs.append(job)
+    capacity.update(
+        {
+            "running": _discord_voice_nonnegative_int(capacity.get("running")) or 0,
+            "queued": _discord_voice_nonnegative_int(capacity.get("queued")) or 0,
+            "waiting_for_approval": _discord_voice_nonnegative_int(capacity.get("waiting_for_approval")) or 0,
+            "max_concurrent": _discord_voice_nonnegative_int(capacity.get("max_concurrent")) or 1,
+            "queue_limit": _discord_voice_nonnegative_int(capacity.get("queue_limit")) or 16,
+        }
+    )
+    enabled = bool(status.get("enabled") or current.get("enabled") or jobs or capacity)
+    return {"enabled": enabled, "capacity": capacity, "jobs": jobs[-12:]}
 
 
 def _discord_voice_oracle_jobs_degraded(existing: Any, reason: str) -> Dict[str, Any]:
@@ -3811,6 +3869,28 @@ class DiscordAdapter(BasePlatformAdapter):
             },
             **playback,
         }
+
+    async def get_voice_session_status_live(self, guild_id: int) -> Dict[str, Any]:
+        status = self.get_voice_session_status(guild_id)
+        session = getattr(self, "_realtime_voice_sessions", {}).get(guild_id)
+        getter = getattr(session, "get_oracle_job_status", None)
+        if session is None or not callable(getter):
+            return status
+        try:
+            live_status = getter()
+            if inspect.isawaitable(live_status):
+                live_status = await live_status
+        except Exception as exc:
+            logger.debug("Discord realtime live oracle job status failed: %s", exc)
+            return status
+        live_oracle_jobs = _discord_voice_oracle_jobs_from_live_status(
+            live_status,
+            status.get("oracle_jobs"),
+        )
+        if live_oracle_jobs:
+            status["oracle_jobs"] = live_oracle_jobs
+            self._update_voice_state(guild_id, oracle_jobs=live_oracle_jobs)
+        return status
 
     async def cancel_voice_oracle_job(
         self,
