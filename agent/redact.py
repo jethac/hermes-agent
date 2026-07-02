@@ -150,6 +150,27 @@ _CFG_ANCHORED_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# Free-text log/result assignments such as ``provider_token=...``. Keep this
+# narrower than _SECRET_CFG_NAMES so diagnostics like ``max_tokens=8192`` do not
+# get masked merely because they contain the plural word "tokens".
+_INLINE_SECRET_ASSIGN_NAMES = (
+    r"api[_.\-]?key"
+    r"|access[_.\-]?token"
+    r"|refresh[_.\-]?token"
+    r"|auth[_.\-]?token"
+    r"|provider[_.\-]?token"
+    r"|secret"
+    r"|passwd"
+    r"|password"
+    r"|credential"
+)
+_INLINE_SECRET_ASSIGN_RE = re.compile(
+    rf"(?<![A-Za-z0-9_.\-])"
+    rf"([A-Za-z0-9_.\-]*(?:{_INLINE_SECRET_ASSIGN_NAMES})[A-Za-z0-9_.\-]*)"
+    rf"=(['\"]?)([^\s&,'\")\]}}]+)\2",
+    re.IGNORECASE,
+)
+
 # Unquoted YAML / colon config (e.g. ``password: secret``,
 # ``spring.datasource.password: hunter2``). The secret keyword must be part of
 # the KEY (anchored to the start of the line/indent), and the value is a single
@@ -550,6 +571,7 @@ def redact_sensitive_text(
             if "://" not in text:
                 text = _CFG_DOTTED_RE.sub(_redact_env, text)
                 text = _CFG_ANCHORED_RE.sub(_redact_env, text)
+                text = _INLINE_SECRET_ASSIGN_RE.sub(_redact_env, text)
 
         # JSON fields: "apiKey": "***"  (skip for code files — false positives)
         if ":" in text and '"' in text:

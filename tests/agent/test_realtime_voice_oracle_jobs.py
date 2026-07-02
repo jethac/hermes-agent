@@ -859,6 +859,55 @@ async def test_completed_result_redacts_orphan_close_reasoning_trace():
 
 
 @pytest.mark.asyncio
+async def test_completed_result_redacts_secret_like_text_from_status_and_events():
+    events = []
+    test_secret = "sk" + "_test_" + "abcdefghijklmnopqrstuvwxyz"
+    live_secret = "sk" + "_live_" + "abcdefghijklmnopqrstuvwxyz"
+
+    async def runner(job):
+        return {
+            "result_summary": (
+                f"Created provider credential {test_secret} "
+                "with Authorization: Bearer raw-token"
+            ),
+            "result_text": (
+                "Full provider result includes provider_token=raw-provider-token "
+                f"and {live_secret} with max_tokens=8192"
+            ),
+        }
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+    job = await manager.submit(_request("provision voice provider"))
+    await manager.wait_for_idle()
+
+    completed = await manager.get(job.job_id)
+    status = await manager.status_view()
+    completed_event = next(event for event in events if event["type"] == "oracle.job.completed")
+    combined = json.dumps(
+        {
+            "stored_summary": completed.result_summary,
+            "stored_text": completed.result_text,
+            "status": status,
+            "event": completed_event,
+        },
+        sort_keys=True,
+    )
+
+    assert "Authorization: Bearer ***" in combined
+    assert "sk_tes" in combined
+    assert "sk_liv" in combined
+    assert "max_tokens=8192" in combined
+    assert "raw-token" not in combined
+    assert "raw-provider-token" not in combined
+    assert test_secret not in combined
+    assert live_secret not in combined
+
+
+@pytest.mark.asyncio
 async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
     events = []
     release = asyncio.Event()

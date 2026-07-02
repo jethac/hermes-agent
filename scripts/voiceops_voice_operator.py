@@ -137,6 +137,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_async_terminal_result_speech_is_capped_without_losing_full_result",
         "tests/agent/test_realtime_voice.py::test_kame_engine_speak_terminal_results_false_suppresses_result_speech_but_keeps_status",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_completed_event_preserves_full_result_without_bloating_status",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_completed_result_redacts_secret_like_text_from_status_and_events",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_audit_ledger_path_records_redacted_lifecycle_events",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_audit_ledger_force_redacts_scalar_payload_fields",
         "tests/agent/test_realtime_voice.py::test_session_persists_durable_async_oracle_job_records",

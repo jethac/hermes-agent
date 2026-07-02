@@ -629,7 +629,7 @@ def _visible_result_text(value: Any) -> str:
     text = without_leading_trace.lstrip() if without_leading_trace != text else without_leading_trace
     without_blocks = _strip_reasoning_blocks(text)
     text = without_blocks.lstrip() if without_blocks != text else without_blocks
-    return text
+    return redact_sensitive_text(text, force=True)
 
 
 def _strip_reasoning_blocks(text: str) -> str:
