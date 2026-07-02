@@ -1005,6 +1005,18 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Optional toolsets exposed to the Hermes oracle for non-VoiceOps realtime voice turns",
         "category": "voice",
     },
+    "voice.realtime.oracle_tool_router.tool_search.enabled": {
+        "type": "select",
+        "description": "Tool-search activation for realtime voice oracle sessions",
+        "options": ["auto", "on", "off"],
+        "category": "voice",
+    },
+    "voice.realtime.oracle_tool_router.tool_search.defer_core": {
+        "type": "select",
+        "description": "Whether realtime voice oracle sessions defer core Hermes tools behind tool_search/tool_call",
+        "options": ["off", "all"],
+        "category": "voice",
+    },
     "voice.realtime.output_events.caption_aliases": {
         "type": "boolean",
         "description": "Emit assistant.caption.partial/final aliases alongside legacy assistant text events",
@@ -1479,6 +1491,18 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.oracle_tool_router.default_toolsets": {
         "type": "list",
         "description": "Optional toolsets exposed to the Hermes oracle for non-VoiceOps Discord realtime voice turns",
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_tool_router.tool_search.enabled": {
+        "type": "select",
+        "description": "Tool-search activation for Discord realtime voice oracle sessions",
+        "options": ["auto", "on", "off"],
+        "category": "discord",
+    },
+    "discord.realtime_voice.oracle_tool_router.tool_search.defer_core": {
+        "type": "select",
+        "description": "Whether Discord realtime voice oracle sessions defer core Hermes tools behind tool_search/tool_call",
+        "options": ["off", "all"],
         "category": "discord",
     },
     "discord.realtime_voice.output_events.caption_aliases": {
@@ -13935,7 +13959,23 @@ def _realtime_voice_oracle_tool_router_payload(realtime: Mapping[str, Any]) -> D
             raw.get("default_toolsets"),
             default=[],
         ),
+        "tool_search": _realtime_voice_oracle_tool_search_payload(raw.get("tool_search")),
     }
+
+
+def _realtime_voice_oracle_tool_search_payload(raw: Any) -> Dict[str, Any]:
+    if raw is False:
+        return {"enabled": "off", "defer_core": "off"}
+    if not isinstance(raw, Mapping):
+        raw = {}
+
+    enabled = str(raw.get("enabled") or "on").strip().lower()
+    if enabled not in {"auto", "on", "off"}:
+        enabled = "on"
+    defer_core = str(raw.get("defer_core") or "all").strip().lower()
+    if defer_core not in {"off", "all"}:
+        defer_core = "all"
+    return {"enabled": enabled, "defer_core": defer_core}
 
 
 def _sanitize_realtime_voice_toolset_list(value: Any, *, default: Sequence[str]) -> List[str]:

@@ -3230,6 +3230,17 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.mode"]["options"] == ["deterministic"]
         assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.voiceops_toolsets"]["type"] == "list"
         assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.default_toolsets"]["type"] == "list"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.tool_search.enabled"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.tool_search.enabled"]["options"] == [
+            "auto",
+            "on",
+            "off",
+        ]
+        assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.tool_search.defer_core"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.tool_search.defer_core"]["options"] == [
+            "off",
+            "all",
+        ]
         assert CONFIG_SCHEMA["voice.realtime.oracle_timeout_seconds"]["type"] == "number"
         assert "oracle voice response" in CONFIG_SCHEMA["voice.realtime.oracle_timeout_seconds"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.max_spoken_sentences"]["type"] == "number"
@@ -3440,6 +3451,10 @@ class TestBuildSchemaFromConfig:
                             "mode": "deterministic",
                             "voiceops_toolsets": ["voiceops", "stripe", "bad toolset!"],
                             "default_toolsets": "memory,search",
+                            "tool_search": {
+                                "enabled": "off",
+                                "defer_core": "off",
+                            },
                         },
                     }
                 }
@@ -3456,6 +3471,10 @@ class TestBuildSchemaFromConfig:
             "mode": "deterministic",
             "voiceops_toolsets": ["voiceops", "stripe"],
             "default_toolsets": ["memory", "search"],
+            "tool_search": {
+                "enabled": "off",
+                "defer_core": "off",
+            },
         }
         assert config.metadata["oracle_tool_router"] == config.oracle_tool_router
 
@@ -3485,6 +3504,10 @@ class TestBuildSchemaFromConfig:
             "mode": "deterministic",
             "voiceops_toolsets": ["voiceops"],
             "default_toolsets": [],
+            "tool_search": {
+                "enabled": "on",
+                "defer_core": "all",
+            },
         }
 
     def test_discord_realtime_voice_config_fields_are_exposed(self):
@@ -3594,6 +3617,8 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.mode"]["options"] == ["deterministic"]
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.voiceops_toolsets"]["type"] == "list"
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.default_toolsets"]["type"] == "list"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.tool_search.enabled"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.tool_search.defer_core"]["type"] == "select"
         assert CONFIG_SCHEMA[
             "discord.realtime_voice.quality_targets_ms.kame_speech_end_to_interface_decision_ms"
         ]["type"] == "number"

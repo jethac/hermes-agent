@@ -2160,6 +2160,10 @@ DEFAULT_CONFIG = {
                 "mode": "deterministic",
                 "voiceops_toolsets": ["voiceops"],
                 "default_toolsets": [],
+                "tool_search": {
+                    "enabled": "on",
+                    "defer_core": "all",
+                },
             },
             "output_events": {
                 "caption_aliases": False,
@@ -2571,6 +2575,10 @@ DEFAULT_CONFIG = {
                 "mode": "deterministic",
                 "voiceops_toolsets": ["voiceops"],
                 "default_toolsets": [],
+                "tool_search": {
+                    "enabled": "on",
+                    "defer_core": "all",
+                },
             },
             "output_events": {
                 "caption_aliases": False,

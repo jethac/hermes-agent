@@ -33,8 +33,10 @@ import json
 import logging
 import math
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 logger = logging.getLogger("tools.tool_search")
 
@@ -126,6 +128,28 @@ class ToolSearchConfig:
         )
 
 
+_TOOL_SEARCH_CONFIG_OVERRIDE: ContextVar[Optional[ToolSearchConfig]] = ContextVar(
+    "hermes_tool_search_config_override",
+    default=None,
+)
+
+
+@contextmanager
+def tool_search_config_override(raw: Any) -> Iterator[ToolSearchConfig]:
+    """Temporarily override tool-search config in the current context.
+
+    Realtime voice uses this to shrink only its oracle tool surface without
+    mutating the user's global Hermes config or changing normal text sessions.
+    """
+
+    config = raw if isinstance(raw, ToolSearchConfig) else ToolSearchConfig.from_raw(raw)
+    token = _TOOL_SEARCH_CONFIG_OVERRIDE.set(config)
+    try:
+        yield config
+    finally:
+        _TOOL_SEARCH_CONFIG_OVERRIDE.reset(token)
+
+
 def _safe_int(value: Any, fallback: int) -> int:
     try:
         return int(value)
@@ -142,6 +166,9 @@ def _safe_float(value: Any, fallback: float) -> float:
 
 def load_config() -> ToolSearchConfig:
     """Load tool-search config from the user config file."""
+    override = _TOOL_SEARCH_CONFIG_OVERRIDE.get()
+    if override is not None:
+        return override
     try:
         from hermes_cli.config import load_config as _load
         cfg = _load() or {}
@@ -753,6 +780,7 @@ __all__ = [
     "CatalogEntry",
     "AssemblyResult",
     "load_config",
+    "tool_search_config_override",
     "is_deferrable_tool_name",
     "classify_tools",
     "estimate_tokens_from_schemas",

@@ -180,7 +180,7 @@ def test_hermes_realtime_oracle_runs_concurrent_kame_requests_and_targets_interr
     asyncio.run(run())
 
 
-def test_voice_oracle_preserves_default_tool_surface_for_general_voice_turn(monkeypatch):
+def test_voice_oracle_preserves_default_toolset_selection_for_general_voice_turn(monkeypatch):
     init_kwargs = []
 
     class FakeAIAgent:
@@ -219,6 +219,91 @@ def test_voice_oracle_preserves_default_tool_surface_for_general_voice_turn(monk
             "session_id": "voice-general",
         }
     ]
+
+
+def test_voice_oracle_applies_scoped_tool_search_override(monkeypatch):
+    observed = []
+
+    class FakeAIAgent:
+        def __init__(self, **kwargs):
+            from tools.tool_search import load_config
+
+            cfg = load_config()
+            observed.append((kwargs, cfg.enabled, cfg.defer_core))
+
+        def run_conversation(self, prompt, *, persist_user_message=None, stream_callback=None):
+            return {"final_response": "ok"}
+
+    async def run():
+        monkeypatch.setattr(run_agent, "AIAgent", FakeAIAgent)
+        oracle = HermesRealtimeOracle(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-tool-search",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_tool_router={
+                    "enabled": True,
+                    "mode": "deterministic",
+                    "voiceops_toolsets": ["voiceops"],
+                    "default_toolsets": [],
+                    "tool_search": {
+                        "enabled": "on",
+                        "defer_core": "all",
+                    },
+                },
+            )
+        )
+        assert await oracle.answer("tell me a short joke") == "ok"
+
+    asyncio.run(run())
+    assert observed == [
+        (
+            {
+                "model": "",
+                "platform": "desktop_voice",
+                "session_id": "voice-tool-search",
+            },
+            "on",
+            "all",
+        )
+    ]
+
+
+def test_voice_oracle_router_disabled_does_not_apply_tool_search_override(monkeypatch):
+    observed = []
+
+    class FakeAIAgent:
+        def __init__(self, **kwargs):
+            from tools.tool_search import load_config
+
+            cfg = load_config()
+            observed.append((cfg.enabled, cfg.defer_core))
+
+        def run_conversation(self, prompt, *, persist_user_message=None, stream_callback=None):
+            return {"final_response": "ok"}
+
+    async def run():
+        monkeypatch.setattr(run_agent, "AIAgent", FakeAIAgent)
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config",
+            lambda: {"tools": {"tool_search": {"enabled": "off", "defer_core": "off"}}},
+        )
+        oracle = HermesRealtimeOracle(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-tool-search-disabled",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_tool_router={
+                    "enabled": False,
+                    "tool_search": {
+                        "enabled": "on",
+                        "defer_core": "all",
+                    },
+                },
+            )
+        )
+        assert await oracle.answer("tell me a short joke") == "ok"
+
+    asyncio.run(run())
+    assert observed == [("off", "off")]
 
 
 def test_voice_oracle_routes_voiceops_request_to_voiceops_toolset(monkeypatch):

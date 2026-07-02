@@ -93,6 +93,21 @@ class TestConfigParsing:
             cfg = ToolSearchConfig.from_raw({"defer_core": value})
             assert cfg.defer_core == "all"
 
+    def test_context_override_is_scoped(self, monkeypatch):
+        from tools.tool_search import load_config, tool_search_config_override
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config",
+            lambda: {"tools": {"tool_search": {"enabled": "off", "defer_core": "off"}}},
+        )
+
+        assert load_config().enabled == "off"
+        with tool_search_config_override({"enabled": "on", "defer_core": "all"}):
+            cfg = load_config()
+            assert cfg.enabled == "on"
+            assert cfg.defer_core == "all"
+        assert load_config().enabled == "off"
+
 
 # ---------------------------------------------------------------------------
 # Classification — by default core tools stay visible.

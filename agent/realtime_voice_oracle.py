@@ -126,6 +126,7 @@ class HermesRealtimeOracle:
         active_keys: Optional[tuple[str, ...]] = None,
     ) -> str:
         from run_agent import AIAgent
+        from tools.tool_search import tool_search_config_override
 
         prompt_metadata = dict(self.config.metadata or {})
         prompt_metadata.update(metadata or {})
@@ -134,6 +135,7 @@ class HermesRealtimeOracle:
             prompt_metadata,
             self.config,
         )
+        tool_search_config = _voice_oracle_tool_search_config(self.config)
         agent_kwargs: dict[str, Any] = dict(
             model="",
             platform="desktop_voice",
@@ -141,27 +143,49 @@ class HermesRealtimeOracle:
         )
         if enabled_toolsets is not None:
             agent_kwargs["enabled_toolsets"] = enabled_toolsets
-        agent = AIAgent(**agent_kwargs)
-        prompt = _voice_oracle_prompt(transcript, prompt_metadata)
-        active_keys = tuple(active_keys or _active_agent_keys(prompt_metadata))
-        with self._active_lock:
-            self._active_agent = agent
-            for key in active_keys:
-                self._active_agents[key] = agent
-        try:
-            result = agent.run_conversation(
-                prompt,
-                persist_user_message=transcript,
-                stream_callback=stream_callback,
-            )
-            return str(result.get("final_response") or "").strip()
-        finally:
+        config_context = (
+            tool_search_config_override(tool_search_config)
+            if tool_search_config is not None
+            else contextlib.nullcontext()
+        )
+        with config_context:
+            agent = AIAgent(**agent_kwargs)
+            prompt = _voice_oracle_prompt(transcript, prompt_metadata)
+            active_keys = tuple(active_keys or _active_agent_keys(prompt_metadata))
             with self._active_lock:
-                if self._active_agent is agent:
-                    self._active_agent = None
                 for key in active_keys:
-                    if self._active_agents.get(key) is agent:
-                        self._active_agents.pop(key, None)
+                    self._active_agents[key] = agent
+                self._active_agent = agent
+            try:
+                result = agent.run_conversation(
+                    prompt,
+                    persist_user_message=transcript,
+                    stream_callback=stream_callback,
+                )
+                return str(result.get("final_response") or "").strip()
+            finally:
+                with self._active_lock:
+                    if self._active_agent is agent:
+                        self._active_agent = None
+                    for key in active_keys:
+                        if self._active_agents.get(key) is agent:
+                            self._active_agents.pop(key, None)
+
+
+def _voice_oracle_tool_search_config(config: RealtimeVoiceSessionConfig) -> Optional[Mapping[str, Any]]:
+    router = config.oracle_tool_router if isinstance(config.oracle_tool_router, Mapping) else {}
+    if _metadata_bool(router.get("enabled"), default=True) is False:
+        return None
+
+    raw = router.get("tool_search")
+    if raw is False or raw is None:
+        return {"enabled": "on", "defer_core": "all"}
+    if isinstance(raw, Mapping):
+        return raw
+    token = str(raw).strip().lower()
+    if token in {"off", "false", "0", "no", "disabled"}:
+        return {"enabled": "off", "defer_core": "off"}
+    return {"enabled": "on", "defer_core": "all"}
 
 
 def _voice_oracle_enabled_toolsets(
