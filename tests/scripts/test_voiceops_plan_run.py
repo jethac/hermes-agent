@@ -1060,6 +1060,14 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_reason"] == "spoken request to cancel oracle job"
     assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_target_job_id"] == "voice-oracle-002"
     assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_running_completed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_waiting_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_followup_queued"] is True
+    assert "1 queued" in voice_result["details"]["async_oracle_smoke"]["approval_capacity_status_text"]
+    assert "1 waiting for approval" in voice_result["details"]["async_oracle_smoke"]["approval_capacity_status_text"]
+    assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_followup_started_after_approval"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_completed_jobs"] == 2
+    assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_max_concurrent"] == 1
     assert voice_result["details"]["async_oracle_smoke"]["playback_stop_committed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["playback_stop_jobs_still_running"] is True
     assert voice_result["details"]["async_oracle_smoke"]["playback_stop_cancelled_jobs"] is False

@@ -1488,6 +1488,27 @@ async def build_plan_run_async(
                     "queued_cancel_running_completed": voice_operator["proofs"]["async_oracle_jobs"][
                         "queued_cancel_running_completed"
                     ],
+                    "approval_capacity_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_capacity_smoke_ok"
+                    ],
+                    "approval_capacity_waiting_observed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_capacity_waiting_observed"
+                    ],
+                    "approval_capacity_followup_queued": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_capacity_followup_queued"
+                    ],
+                    "approval_capacity_status_text": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_capacity_status_text"
+                    ],
+                    "approval_capacity_followup_started_after_approval": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["approval_capacity_followup_started_after_approval"],
+                    "approval_capacity_completed_jobs": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_capacity_completed_jobs"
+                    ],
+                    "approval_capacity_max_concurrent": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_capacity_max_concurrent"
+                    ],
                     "local_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["local_turn_committed"],
                     "playback_stop_committed": voice_operator["proofs"]["async_oracle_jobs"][
                         "playback_stop_committed"

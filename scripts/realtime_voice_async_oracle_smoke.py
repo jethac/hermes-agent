@@ -273,6 +273,142 @@ async def _run_queued_cancel_smoke() -> dict[str, Any]:
     }
 
 
+async def _run_approval_capacity_smoke() -> dict[str, Any]:
+    oracle = SmokeOracle()
+    engine = SmokeEngine(oracle=oracle)
+    recorder = EventRecorder(engine)
+    await engine.start(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-smoke-approval-capacity",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            oracle_jobs={
+                "enabled": True,
+                "max_concurrent": 1,
+                "queue_limit": 4,
+                "speak_terminal_results": True,
+                "shutdown_timeout_seconds": 0.01,
+            },
+            metadata={"transport": "smoke"},
+        )
+    )
+    collector = asyncio.create_task(recorder.run())
+    sequence = 0
+
+    async def send(payload: dict[str, Any]) -> None:
+        nonlocal sequence
+        sequence += 1
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-smoke-approval-capacity",
+                sequence=sequence,
+                payload={**payload, "end_of_utterance": True},
+            )
+        )
+
+    await send(
+        {
+            "transcript": "prepare approval spend",
+            "intent": "Prepare approval spend",
+            "intent_source": "smoke_reflex",
+            "route": "defer",
+            "interface_already_said": "Preparing spend approval.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(event.type == VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL for event in events)
+    )
+    approval_waiting = [
+        event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL
+    ]
+    await send(
+        {
+            "transcript": "run approval blocked followup",
+            "intent": "Approval blocked followup",
+            "intent_source": "smoke_reflex",
+            "route": "defer",
+            "interface_already_said": "Queueing the follow-up.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_QUEUED
+            and event.payload.get("intent") == "Approval blocked followup"
+            for event in events
+        )
+    )
+    queued_followup = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ORACLE_JOB_QUEUED
+        and event.payload.get("intent") == "Approval blocked followup"
+    ]
+    await send(
+        {
+            "transcript": "what are you waiting on",
+            "intent": "What are you working on?",
+            "intent_source": "smoke_reflex",
+            "route": "local",
+            "local_reply": "Let me check.",
+        }
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ASSISTANT_COMMIT
+            and "0 running out of 1" in str(event.payload.get("text") or "")
+            and "1 queued" in str(event.payload.get("text") or "")
+            and "1 waiting for approval" in str(event.payload.get("text") or "")
+            for event in events
+        )
+    )
+    status_commits = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ASSISTANT_COMMIT
+        and "1 waiting for approval" in str(event.payload.get("text") or "")
+    ]
+    oracle.release("Prepare approval spend")
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_STARTED
+            and event.payload.get("intent") == "Approval blocked followup"
+            for event in events
+        )
+    )
+    oracle.release("Approval blocked followup")
+    await recorder.wait_for(
+        lambda events: sum(event.type == VoiceEventType.ORACLE_JOB_COMPLETED for event in events) == 2
+    )
+    await engine.close()
+    collector.cancel()
+    try:
+        await collector
+    except asyncio.CancelledError:
+        pass
+
+    followup_started_after_approval = any(
+        event.type == VoiceEventType.ORACLE_JOB_STARTED
+        and event.payload.get("intent") == "Approval blocked followup"
+        for event in recorder.events
+    )
+    completed = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_COMPLETED]
+    status_text = str(status_commits[-1].payload.get("text") or "") if status_commits else ""
+    return {
+        "ok": bool(approval_waiting)
+        and bool(queued_followup)
+        and "1 queued" in status_text
+        and "1 waiting for approval" in status_text
+        and followup_started_after_approval
+        and len(completed) == 2,
+        "approval_capacity_waiting_observed": bool(approval_waiting),
+        "approval_capacity_followup_queued": bool(queued_followup),
+        "approval_capacity_status_text": status_text,
+        "approval_capacity_followup_started_after_approval": followup_started_after_approval,
+        "approval_capacity_completed_jobs": len(completed),
+        "approval_capacity_max_concurrent": 1,
+    }
+
+
 async def run_smoke() -> dict[str, Any]:
     oracle = SmokeOracle()
     engine = SmokeEngine(oracle=oracle)
@@ -604,6 +740,7 @@ async def run_smoke() -> dict[str, Any]:
     except asyncio.CancelledError:
         pass
     queued_cancel_smoke = await _run_queued_cancel_smoke()
+    approval_capacity_smoke = await _run_approval_capacity_smoke()
 
     started = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_STARTED]
     queued = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_QUEUED]
@@ -926,6 +1063,7 @@ async def run_smoke() -> dict[str, Any]:
             and shutdown_bounded_close_observed
             and shutdown_forced_cancel_observed
             and queued_cancel_smoke["ok"]
+            and approval_capacity_smoke["ok"]
         ),
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": scheduler_max_running,
@@ -952,6 +1090,15 @@ async def run_smoke() -> dict[str, Any]:
         "queued_cancel_reason": queued_cancel_smoke["queued_cancel_reason"],
         "queued_cancel_target_job_id": queued_cancel_smoke["queued_cancel_target_job_id"],
         "queued_cancel_running_completed": queued_cancel_smoke["queued_cancel_running_completed"],
+        "approval_capacity_smoke_ok": approval_capacity_smoke["ok"],
+        "approval_capacity_waiting_observed": approval_capacity_smoke["approval_capacity_waiting_observed"],
+        "approval_capacity_followup_queued": approval_capacity_smoke["approval_capacity_followup_queued"],
+        "approval_capacity_status_text": approval_capacity_smoke["approval_capacity_status_text"],
+        "approval_capacity_followup_started_after_approval": approval_capacity_smoke[
+            "approval_capacity_followup_started_after_approval"
+        ],
+        "approval_capacity_completed_jobs": approval_capacity_smoke["approval_capacity_completed_jobs"],
+        "approval_capacity_max_concurrent": approval_capacity_smoke["approval_capacity_max_concurrent"],
         "local_turn_committed": bool(local_commits),
         "playback_stop_committed": bool(stop_talking_commits),
         "playback_stop_jobs_still_running": playback_stop_jobs_still_running,

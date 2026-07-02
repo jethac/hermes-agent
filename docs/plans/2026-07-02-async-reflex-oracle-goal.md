@@ -157,6 +157,15 @@ DGX Spark / Nemotron-3 Super: max_concurrent=4
 Other hardware and cloud providers can use lower values. A local laptop may
 default to one running oracle job.
 
+Approval-blocked jobs count against `max_concurrent` until the approval wait
+resolves, fails, or is cancelled. This is intentional: a job waiting at an
+approval boundary still owns user intent, tool context, and a pending external
+effect. Letting approval-blocked jobs release capacity would allow a spoken
+approval queue to grow behind the user's back and would make spend/provisioning
+state harder to reason about. The reflex status view must show
+`waiting_for_approval` separately from `running` so the user can distinguish
+model compute from approval-blocked work.
+
 ### Reflex Status View
 
 The reflex needs a compact, live-readable status view, not direct access to
@@ -461,7 +470,6 @@ For real DGX Spark evidence:
 - Should job updates be attached to the original oracle prompt or represented
   as separate follow-up messages?
 - What is the right default `max_concurrent` for non-DGX local machines?
-- Should approval-blocked jobs count against `max_concurrent`?
 
 ## Rollout Plan
 

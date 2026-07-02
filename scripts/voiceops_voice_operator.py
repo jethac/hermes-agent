@@ -1416,6 +1416,13 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("approval_secret_leaked") is False
         and smoke.get("approval_secret_canary_checked") is True
         and smoke.get("approval_completed") is True,
+        "approval_wait_holds_capacity": smoke.get("approval_capacity_smoke_ok") is True
+        and smoke.get("approval_capacity_waiting_observed") is True
+        and smoke.get("approval_capacity_followup_queued") is True
+        and "1 queued" in str(smoke.get("approval_capacity_status_text") or "")
+        and "1 waiting for approval" in str(smoke.get("approval_capacity_status_text") or "")
+        and smoke.get("approval_capacity_followup_started_after_approval") is True
+        and int(smoke.get("approval_capacity_completed_jobs") or 0) == 2,
         "failed_job_reported_without_crash": int(smoke.get("failed_jobs") or 0) >= 1
         and smoke.get("failed_job_reported") is True
         and smoke.get("failed_job_spoken") is True
@@ -1568,7 +1575,9 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             runtime_verified_by_this_report=True,
         ),
         "approval_wait_is_visible_and_redacted": _async_oracle_acceptance_row(
-            ok=smoke_ok and bool(async_oracle_coverage.get("approval_wait_visible_and_redacted")),
+            ok=smoke_ok
+            and bool(async_oracle_coverage.get("approval_wait_visible_and_redacted"))
+            and bool(async_oracle_coverage.get("approval_wait_holds_capacity")),
             evidence="async_oracle_smoke_plus_approval_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["approval_wait"],
             verification_mode="loopback_smoke_plus_focused_tests",
@@ -1787,6 +1796,19 @@ def build_voice_operator_report(
             "queued_cancel_reason": async_oracle_smoke.get("queued_cancel_reason"),
             "queued_cancel_target_job_id": async_oracle_smoke.get("queued_cancel_target_job_id"),
             "queued_cancel_running_completed": bool(async_oracle_smoke.get("queued_cancel_running_completed")),
+            "approval_capacity_smoke_ok": bool(async_oracle_smoke.get("approval_capacity_smoke_ok")),
+            "approval_capacity_waiting_observed": bool(
+                async_oracle_smoke.get("approval_capacity_waiting_observed")
+            ),
+            "approval_capacity_followup_queued": bool(
+                async_oracle_smoke.get("approval_capacity_followup_queued")
+            ),
+            "approval_capacity_status_text": async_oracle_smoke.get("approval_capacity_status_text"),
+            "approval_capacity_followup_started_after_approval": bool(
+                async_oracle_smoke.get("approval_capacity_followup_started_after_approval")
+            ),
+            "approval_capacity_completed_jobs": async_oracle_smoke.get("approval_capacity_completed_jobs"),
+            "approval_capacity_max_concurrent": async_oracle_smoke.get("approval_capacity_max_concurrent"),
             "local_turn_committed": bool(async_oracle_smoke.get("local_turn_committed")),
             "playback_stop_committed": bool(async_oracle_smoke.get("playback_stop_committed")),
             "playback_stop_jobs_still_running": bool(
@@ -1933,6 +1955,9 @@ def build_voice_operator_report(
             "async_oracle_playback_stop_preserves_jobs": async_oracle_coverage[
                 "playback_stop_does_not_cancel_jobs"
             ],
+            "async_oracle_approval_wait_holds_capacity": async_oracle_coverage[
+                "approval_wait_holds_capacity"
+            ],
             "async_oracle_late_cancelled_output_dropped": async_oracle_coverage["late_cancelled_output_not_spoken"],
             "async_oracle_late_cancelled_output_not_durable": async_oracle_coverage[
                 "late_cancelled_output_not_durable"
@@ -2048,6 +2073,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "late_cancelled_output_not_durable",
         "playback_stop_does_not_cancel_jobs",
         "approval_wait_visible_and_redacted",
+        "approval_wait_holds_capacity",
         "failed_job_reported_without_crash",
         "queued_job_control_update_reaches_oracle",
         "result_handling_bounded_and_durable",
