@@ -685,6 +685,9 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
     else:
         routes = {route.get("route_id"): route for route in policy.get("approval_routing", [])}
         approval_route_map = policy.get("approval_route_map") if isinstance(policy.get("approval_route_map"), dict) else {}
+        unknown_route_map_channels = sorted(set(approval_route_map) - known_channels)
+        if unknown_route_map_channels:
+            issues.append(f"approval_route_map_unknown_channels:{','.join(unknown_route_map_channels)}")
         for channel in policy.get("channel_authorization", []):
             channel_id = str(channel.get("channel_id") or "")
             if channel_id not in known_channels:
@@ -692,6 +695,10 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
             channel_route_map = approval_route_map.get(channel_id)
             if not isinstance(channel_route_map, dict):
                 channel_route_map = {}
+            approval_required = {str(item) for item in channel.get("approval_required_for") or []}
+            extra_route_items = sorted(set(channel_route_map) - approval_required)
+            if extra_route_items:
+                issues.append(f"approval_route_map_extra_items:{channel_id}:{','.join(extra_route_items)}")
             for approval_item in channel.get("approval_required_for") or []:
                 route_id = str(channel_route_map.get(approval_item) or "")
                 if not route_id:

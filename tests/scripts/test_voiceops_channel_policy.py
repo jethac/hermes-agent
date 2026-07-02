@@ -221,7 +221,10 @@ def test_channel_policy_validates_channel_specific_required_boundaries():
 
     unsafe = json.loads(json.dumps(policy))
     unsafe["channel_authorization"][2]["approval_required_for"].remove("any_sms_send")
-    assert validate_policy(unsafe) == ["missing_approval_requirements:phone_sms:any_sms_send"]
+    assert validate_policy(unsafe) == [
+        "missing_approval_requirements:phone_sms:any_sms_send",
+        "approval_route_map_extra_items:phone_sms:any_sms_send",
+    ]
 
     unsafe = json.loads(json.dumps(policy))
     unsafe["channel_authorization"][1]["prohibited_actions"].remove("payment_link_send")
@@ -281,6 +284,16 @@ def test_channel_policy_validates_approval_route_map_coverage():
     assert validate_policy(wrong_channel) == [
         "approval_route_map_route_not_applicable:discord:customer_visible_message:approved_phone_handoff_call"
     ]
+
+    extra_item = json.loads(json.dumps(policy))
+    extra_item["approval_route_map"]["discord"]["unapproved_voice_call"] = "approved_phone_handoff_call"
+    assert validate_policy(extra_item) == [
+        "approval_route_map_extra_items:discord:unapproved_voice_call"
+    ]
+
+    extra_channel = json.loads(json.dumps(policy))
+    extra_channel["approval_route_map"]["telegram"] = {"customer_visible_message": "customer_visible_outbound"}
+    assert validate_policy(extra_channel) == ["approval_route_map_unknown_channels:telegram"]
 
 
 def test_channel_policy_rejects_execution_permissions_in_level_3_escalation():
