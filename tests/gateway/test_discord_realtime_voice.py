@@ -41,6 +41,50 @@ class FakeSidecar:
         await self._events.put(event)
 
 
+class ScriptedKameSidecar:
+    def __init__(self, *, oracle, utterances):
+        self.oracle = oracle
+        self.utterances = list(utterances)
+        self.started_with = None
+        self.sent = []
+        self.session = None
+        self.closed = False
+
+    async def start(self, config):
+        from agent.realtime_voice_session import RealtimeVoiceSession
+        from agent.realtime_voice_text_engine import KameInterfaceOracleEngine
+
+        self.started_with = config
+        self.session = RealtimeVoiceSession(
+            config,
+            engine=KameInterfaceOracleEngine(oracle=self.oracle),
+        )
+        await self.session.start()
+
+    async def send_event(self, event):
+        self.sent.append(event)
+        payload = dict(event.payload)
+        if event.type.value == "audio.input.chunk" and payload.get("end_of_utterance") is True and self.utterances:
+            payload.update(self.utterances.pop(0))
+            event = type(event)(
+                type=event.type,
+                session_id=event.session_id,
+                sequence=event.sequence,
+                timestamp_ms=event.timestamp_ms,
+                payload=payload,
+            )
+        await self.session.receive_client_event(event)
+
+    async def events(self):
+        async for event in self.session.events():
+            yield event
+
+    async def close(self):
+        self.closed = True
+        if self.session is not None:
+            await self.session.close()
+
+
 def test_discord_realtime_config_derives_reference_sidecar_and_env_token(monkeypatch):
     from plugins.platforms.discord.adapter import DiscordAdapter
 
@@ -1438,6 +1482,117 @@ async def test_discord_realtime_session_sends_oracle_job_update_event():
         "priority": "high",
         "update_text": "also check the Stripe receipt",
     }
+
+
+@pytest.mark.asyncio
+async def test_discord_realtime_spoken_tasks_create_async_oracle_jobs():
+    from agent.realtime_voice import VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release.wait()
+            yield f"Finished {request.intent}."
+
+    async def wait_for(predicate):
+        deadline = asyncio.get_running_loop().time() + 1.0
+        while not predicate():
+            if asyncio.get_running_loop().time() >= deadline:
+                raise AssertionError("timed out waiting for Discord async oracle event")
+            await asyncio.sleep(0.01)
+
+    oracle = BlockingOracle()
+    observed = []
+    sidecar = ScriptedKameSidecar(
+        oracle=oracle,
+        utterances=[
+            {
+                "transcript": "check provisioning logs",
+                "intent": "Check provisioning logs",
+                "intent_source": "reflex_audio",
+                "route": "defer",
+                "interface_already_said": "Checking provisioning logs.",
+            },
+            {
+                "transcript": "draft the vendor memo",
+                "intent": "Draft vendor memo",
+                "intent_source": "reflex_audio",
+                "route": "defer",
+                "interface_already_said": "Drafting the vendor memo.",
+            },
+        ],
+    )
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+        engine="kame_interface_oracle",
+        frontend_provider="gemma4",
+        frontend_model="gemma-4-E2B-it",
+        interface_audio_input="native_audio",
+        oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+        event_callback=lambda event_type, payload: observed.append((event_type, payload)),
+    )
+
+    await session.start()
+    await session.handle_speech_end(user_id=42)
+    await wait_for(
+        lambda: any(
+            event_type == VoiceEventType.ORACLE_JOB_STARTED.value
+            and payload.get("intent") == "Check provisioning logs"
+            for event_type, payload in observed
+        )
+    )
+    await session.handle_speech_end(user_id=42)
+    await wait_for(
+        lambda: any(
+            event_type == VoiceEventType.ORACLE_JOB_QUEUED.value
+            and payload.get("intent") == "Draft vendor memo"
+            for event_type, payload in observed
+        )
+    )
+
+    await session.close()
+
+    accepted = [
+        payload
+        for event_type, payload in observed
+        if event_type == VoiceEventType.ORACLE_JOB_ACCEPTED.value
+    ]
+    assert [payload["intent"] for payload in accepted] == [
+        "Check provisioning logs",
+        "Draft vendor memo",
+    ]
+    assert [request.intent for request in oracle.requests] == ["Check provisioning logs"]
+    assert any(
+        event_type == VoiceEventType.ORACLE_JOB_STARTED.value
+        and payload.get("job_id") == "voice-oracle-001"
+        for event_type, payload in observed
+    )
+    assert any(
+        event_type == VoiceEventType.ORACLE_JOB_QUEUED.value
+        and payload.get("job_id") == "voice-oracle-002"
+        for event_type, payload in observed
+    )
+    assert any(
+        event_type == VoiceEventType.INTERFACE_REPLY_DEFER.value
+        and payload.get("text") == "Checking provisioning logs."
+        for event_type, payload in observed
+    )
+    assert any(
+        event_type == VoiceEventType.INTERFACE_REPLY_DEFER.value
+        and payload.get("text") == "Drafting the vendor memo."
+        for event_type, payload in observed
+    )
 
 
 @pytest.mark.asyncio

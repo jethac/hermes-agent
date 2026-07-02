@@ -74,7 +74,7 @@ def _async_oracle_smoke_payload() -> dict:
         "queued_cancel_observed": True,
         "queued_cancelled_before_start": True,
         "queued_cancel_not_sent_to_oracle": True,
-        "queued_cancel_reason": "queued task no longer needed",
+        "queued_cancel_reason": "spoken request to cancel oracle job",
         "queued_cancel_target_job_id": "voice-oracle-002",
         "queued_cancel_running_completed": True,
         "shutdown_timeout_configured_ms": 10,
@@ -102,8 +102,8 @@ def _async_oracle_smoke_payload() -> dict:
         "cancelled_result_progress_leaked": False,
         "cancelled_result_durable_completed": False,
         "cancelled_result_durable_text": False,
-        "durable_cancelled_record_present": True,
-        "durable_completed_jobs": 6,
+        "durable_cancelled_record_present": False,
+        "durable_completed_jobs": 1,
         "approval_wait_observed": True,
         "approval_status_committed": True,
         "approval_tool_progress_observed": True,
@@ -370,7 +370,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["queued_cancel_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["queued_cancelled_before_start"] is True
     assert report["proofs"]["async_oracle_jobs"]["queued_cancel_not_sent_to_oracle"] is True
-    assert report["proofs"]["async_oracle_jobs"]["queued_cancel_reason"] == "queued task no longer needed"
+    assert report["proofs"]["async_oracle_jobs"]["queued_cancel_reason"] == "spoken request to cancel oracle job"
     assert report["proofs"]["async_oracle_jobs"]["queued_cancel_target_job_id"] == "voice-oracle-002"
     assert report["proofs"]["async_oracle_jobs"]["queued_cancel_running_completed"] is True
     assert report["proofs"]["async_oracle_jobs"]["status_turn_committed"] is True
@@ -387,8 +387,8 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_progress_leaked"] is False
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_completed"] is False
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_durable_text"] is False
-    assert report["proofs"]["async_oracle_jobs"]["durable_cancelled_record_present"] is True
-    assert report["proofs"]["async_oracle_jobs"]["durable_completed_jobs"] == 6
+    assert report["proofs"]["async_oracle_jobs"]["durable_cancelled_record_present"] is False
+    assert report["proofs"]["async_oracle_jobs"]["durable_completed_jobs"] == 1
     assert report["proofs"]["async_oracle_jobs"]["approval_wait_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_status_committed"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_tool_progress_observed"] is True

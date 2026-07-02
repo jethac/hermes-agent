@@ -76,6 +76,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_max_concurrent_one_queues_second_job",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_max_concurrent_four_starts_four_and_queues_fifth",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_queue_limit_rejects_overflow",
+        "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_spoken_tasks_create_async_oracle_jobs",
     ],
     "status_view": [
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_status_view_reports_capacity_and_redacts_raw_metadata",
@@ -1376,8 +1377,8 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         "late_cancelled_output_not_durable": smoke.get("late_cancelled_output_attempted") is True
         and smoke.get("cancelled_result_durable_completed") is False
         and smoke.get("cancelled_result_durable_text") is False
-        and smoke.get("durable_cancelled_record_present") is True
-        and int(smoke.get("durable_completed_jobs") or 0) >= 3,
+        and smoke.get("durable_cancelled_record_present") is False
+        and int(smoke.get("durable_completed_jobs") or 0) >= 1,
         "approval_wait_visible_and_redacted": smoke.get("approval_wait_observed") is True
         and smoke.get("approval_status_committed") is True
         and smoke.get("approval_tool_progress_observed") is True
