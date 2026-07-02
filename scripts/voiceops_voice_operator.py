@@ -9,6 +9,7 @@ provider sidecar, send messages, or place calls.
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
 import datetime as dt
 import hashlib
@@ -79,11 +80,11 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
     "status_view": [
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_status_view_reports_capacity_and_redacts_raw_metadata",
         "tests/agent/test_realtime_voice.py::test_kame_engine_local_status_question_uses_oracle_job_state",
-        "tests/gateway/test_voice_command.py::test_voice_jobs_reports_oracle_job_snapshot",
+        "tests/gateway/test_voice_command.py::TestVoiceChannelCommands::test_voice_jobs_reports_oracle_job_snapshot",
     ],
     "local_turns": [
         "tests/agent/test_realtime_voice.py::test_kame_engine_async_oracle_job_allows_local_turn_while_running",
-        "tests/agent/test_realtime_voice.py::test_oracle_direct_creates_async_oracle_job_without_blocking_voice_loop",
+        "tests/agent/test_realtime_voice.py::test_oracle_direct_async_job_completion_after_local_turn_is_lifecycle_only",
     ],
     "cancellation": [
         "tests/agent/test_realtime_voice.py::test_kame_engine_interface_cancel_stops_one_async_oracle_job",
@@ -109,7 +110,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_update_attaches_to_latest_async_oracle_job",
     ],
     "result_handling": [
-        "tests/agent/test_realtime_voice.py::test_completed_async_oracle_job_speaks_after_intervening_local_turn",
+        "tests/agent/test_realtime_voice.py::test_completed_async_oracle_job_after_intervening_local_turn_is_lifecycle_only",
         "tests/agent/test_realtime_voice.py::test_kame_engine_status_recalls_recent_completed_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_async_oracle_job_failure_reports_in_voice",
         "tests/agent/test_realtime_voice.py::test_kame_engine_async_terminal_result_speech_is_capped_without_losing_full_result",
@@ -117,7 +118,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_session_persists_durable_async_oracle_job_records",
     ],
     "discord_session": [
-        "tests/gateway/test_voice_command.py::test_leave_voice_channel_cleans_up",
+        "tests/gateway/test_voice_command.py::TestDiscordVoiceChannelMethods::test_leave_voice_channel_cleans_up",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_degraded_marks_active_oracle_jobs_failed",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_session_close_cancels_oracle_jobs_before_session_closed",
     ],
@@ -1516,6 +1517,38 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
     }
 
 
+def _acceptance_test_ref_resolves(test_ref: Any) -> bool:
+    if not isinstance(test_ref, str) or "::" not in test_ref:
+        return False
+    path_text, *node_parts = test_ref.split("::")
+    if not path_text or not node_parts or any(not part for part in node_parts):
+        return False
+    path = Path(path_text)
+    if path.is_absolute() or ".." in path.parts:
+        return False
+    test_path = Path(__file__).resolve().parents[1] / path
+    if not test_path.is_file():
+        return False
+    try:
+        module = ast.parse(test_path.read_text(encoding="utf-8"), filename=str(test_path))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return False
+
+    body: list[ast.stmt] = list(module.body)
+    found: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef | None = None
+    for raw_part in node_parts:
+        part = raw_part.split("[", 1)[0]
+        found = None
+        for node in body:
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == part:
+                found = node
+                break
+        if found is None:
+            return False
+        body = list(found.body) if isinstance(found, ast.ClassDef) else []
+    return isinstance(found, (ast.FunctionDef, ast.AsyncFunctionDef))
+
+
 def _live_evidence_missing_gates(live_evidence: dict[str, Any]) -> list[str]:
     missing: set[str] = set()
     if not live_evidence.get("loaded"):
@@ -1901,6 +1934,10 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
             test_refs = value.get("test_refs")
             if not isinstance(test_refs, list) or not test_refs:
                 issues.append(f"missing_async_oracle_acceptance_test_refs:{key}")
+            else:
+                for test_ref in test_refs:
+                    if not _acceptance_test_ref_resolves(test_ref):
+                        issues.append(f"invalid_async_oracle_acceptance_test_ref:{key}:{test_ref}")
             if value.get("test_ref_count") != len(test_refs or []):
                 issues.append(f"invalid_async_oracle_acceptance_test_ref_count:{key}")
             if value.get("verification_mode") == "static_focused_test_reference_inventory":

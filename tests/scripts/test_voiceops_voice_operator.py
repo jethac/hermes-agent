@@ -538,6 +538,35 @@ def test_voice_operator_validation_rejects_static_acceptance_without_test_refs()
     assert "missing_async_oracle_acceptance_test_refs:result_handling_is_bounded_and_durable" in issues
 
 
+def test_voice_operator_validation_accepts_current_async_acceptance_test_refs():
+    report = _voice_operator_report()
+
+    assert validate_voice_operator_report(report) == []
+    assert (
+        "tests/gateway/test_voice_command.py::TestVoiceChannelCommands::test_voice_jobs_reports_oracle_job_snapshot"
+        in report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["test_refs"]
+    )
+    assert (
+        "tests/gateway/test_voice_command.py::TestDiscordVoiceChannelMethods::test_leave_voice_channel_cleans_up"
+        in report["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"]["test_refs"]
+    )
+
+
+def test_voice_operator_validation_rejects_stale_async_acceptance_test_ref():
+    report = _voice_operator_report()
+    row = report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]
+    row["test_refs"] = ["tests/gateway/test_voice_command.py::test_voice_jobs_reports_oracle_job_snapshot"]
+    row["test_ref_count"] = 1
+
+    issues = validate_voice_operator_report(report)
+
+    assert (
+        "invalid_async_oracle_acceptance_test_ref:"
+        "status_reports_running_and_queued_without_oracle_call:"
+        "tests/gateway/test_voice_command.py::test_voice_jobs_reports_oracle_job_snapshot"
+    ) in issues
+
+
 def test_voice_operator_validation_rejects_static_acceptance_runtime_claim():
     report = _voice_operator_report()
     row = report["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"]

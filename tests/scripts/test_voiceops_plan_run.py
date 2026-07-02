@@ -1480,9 +1480,20 @@ def test_plan_run_readonly_discovery_safety_is_evidence_derived(tmp_path, monkey
         for phase in summary["closure_index"]["operator_handoff"]["phases"]
         if phase["gate_id"] == "spend_and_provisioning_preflight"
     )
+    demo_handoff = json.loads(
+        (artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    demo_provisioning_phase = next(
+        phase
+        for phase in demo_handoff["phases"]
+        if phase["gate_id"] == "spend_and_provisioning_preflight"
+    )
     assert provisioning_gate["read_only_discovery_status"] == "pass"
     assert provisioning_action["blocked_by_current_environment"]["needs_read_only_discovery"] is False
     assert provisioning_phase["blocked_by_current_environment"]["needs_read_only_discovery"] is False
+    assert demo_provisioning_phase["blocked_by_current_environment"]["needs_read_only_discovery"] is False
     assert summary["safety"]["network_io"] is True
     assert summary["safety"]["network_io_scope"] == "allowlisted_read_only_discovery"
     assert summary["safety"]["mutating_network_io"] is False

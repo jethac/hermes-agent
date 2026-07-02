@@ -608,7 +608,14 @@ def _sync_demo_handoff_preview(demo_dir: Path, plan_handoff: dict[str, Any]) -> 
         plan_phase = plan_phases.get(str(phase.get("phase_id")))
         if not isinstance(plan_phase, dict):
             continue
-        for key in ("commands", "expected_artifacts", "success_check"):
+        for key in (
+            "status",
+            "can_run_here_now",
+            "blocked_by_current_environment",
+            "commands",
+            "expected_artifacts",
+            "success_check",
+        ):
             phase[key] = plan_phase.get(key)
         for key in ("diagnostic_command", "first_safe_command", "first_evidence_command", "command_safety"):
             if plan_phase.get(key):
