@@ -1045,6 +1045,17 @@ def _optional_evidence_structural_issues(report_key: str, payload: dict[str, Any
 def _strict_live_evidence_validation(manifest_path: Path) -> dict[str, Any]:
     from scripts.voiceops_voice_operator import _load_live_evidence
 
+    expanded_manifest_path = manifest_path.expanduser()
+    if not expanded_manifest_path.is_file():
+        return {
+            "schema_version": "voiceops.realtime_voice_live_evidence_validation.v1",
+            "manifest": str(manifest_path),
+            "loaded": False,
+            "overall_status": "partial_live_evidence",
+            "issues": ["live_evidence_manifest_not_found"],
+            "section_refs": {},
+            "missing_gates": ["discord_join", "discord_playback", "live_receiver", "live_turn", "production_sidecar"],
+        }
     evidence = _load_live_evidence([manifest_path])
     return {
         "schema_version": "voiceops.realtime_voice_live_evidence_validation.v1",
