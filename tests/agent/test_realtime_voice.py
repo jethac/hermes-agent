@@ -1790,6 +1790,245 @@ def test_kame_engine_local_status_question_uses_oracle_job_state(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_fifth_async_oracle_job_queues_and_starts_after_capacity_frees(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.releases = {}
+            self.request_count_changed = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.request_count_changed.set()
+            event = self.releases.setdefault(request.intent, asyncio.Event())
+            await event.wait()
+            yield f"Finished {request.intent}."
+
+        def release(self, intent):
+            self.releases.setdefault(intent, asyncio.Event()).set()
+
+        async def wait_for_requests(self, count):
+            while len(self.requests) < count:
+                self.request_count_changed.clear()
+                await asyncio.wait_for(self.request_count_changed.wait(), timeout=1)
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                oracle_jobs={"enabled": True, "max_concurrent": 4, "queue_limit": 4},
+                metadata={"transport": "discord_voice"},
+            )
+        )
+
+        seen = []
+        for index in range(1, 6):
+            await engine.receive_event(
+                VoiceEvent(
+                    type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                    session_id="voice-123",
+                    sequence=index,
+                    payload={
+                        "transcript": f"run task {index}",
+                        "intent": f"Run task {index}",
+                        "intent_source": "reflex_audio",
+                        "route": "defer",
+                        "interface_already_said": f"Starting task {index}.",
+                        "end_of_utterance": True,
+                    },
+                )
+            )
+
+        queued = None
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_QUEUED:
+                queued = event
+            started_ids = [
+                item.payload["job_id"]
+                for item in seen
+                if item.type == VoiceEventType.ORACLE_JOB_STARTED
+            ]
+            if queued is not None and started_ids == [
+                "voice-oracle-001",
+                "voice-oracle-002",
+                "voice-oracle-003",
+                "voice-oracle-004",
+            ]:
+                break
+
+        started = [event for event in seen if event.type == VoiceEventType.ORACLE_JOB_STARTED]
+        assert queued is not None
+        assert [event.payload["job_id"] for event in started] == [
+            "voice-oracle-001",
+            "voice-oracle-002",
+            "voice-oracle-003",
+            "voice-oracle-004",
+        ]
+        assert queued.payload["job_id"] == "voice-oracle-005"
+        assert queued.payload["state"] == "queued"
+        await oracle.wait_for_requests(4)
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=6,
+                payload={
+                    "transcript": "what are you working on",
+                    "intent": "What are you working on?",
+                    "route": "local",
+                    "local_reply": "Let me check.",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+        async for event in engine.events():
+            seen.append(event)
+            if (
+                event.type == VoiceEventType.ASSISTANT_COMMIT
+                and str(event.payload.get("text") or "").startswith("Oracle jobs:")
+            ):
+                break
+        status_commit = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.ASSISTANT_COMMIT
+            and str(event.payload.get("text") or "").startswith("Oracle jobs:")
+        )
+        assert status_commit.payload["text"].startswith("Oracle jobs: 4 running out of 4, 1 queued.")
+
+        oracle.release("Run task 1")
+        async for event in engine.events():
+            seen.append(event)
+            started_ids = [
+                item.payload["job_id"]
+                for item in seen
+                if item.type == VoiceEventType.ORACLE_JOB_STARTED
+            ]
+            if "voice-oracle-005" in started_ids:
+                break
+        await oracle.wait_for_requests(5)
+
+        await engine.close()
+        assert len(oracle.requests) == 5
+
+    asyncio.run(run())
+
+
+def test_kame_engine_can_cancel_queued_async_oracle_job_before_it_starts(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+            self.release_first = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release_first.wait()
+            yield f"Finished {request.intent}."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        for index in range(1, 3):
+            await engine.receive_event(
+                VoiceEvent(
+                    type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                    session_id="voice-123",
+                    sequence=index,
+                    payload={
+                        "transcript": f"run task {index}",
+                        "intent": f"Run task {index}",
+                        "intent_source": "reflex_audio",
+                        "route": "defer",
+                        "interface_already_said": f"Starting task {index}.",
+                        "end_of_utterance": True,
+                    },
+                )
+            )
+
+        seen = []
+        queued = None
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_QUEUED:
+                queued = event
+            started_ids = [
+                item.payload["job_id"]
+                for item in seen
+                if item.type == VoiceEventType.ORACLE_JOB_STARTED
+            ]
+            if queued is not None and started_ids == ["voice-oracle-001"]:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+        assert queued is not None
+        assert len(oracle.requests) == 1
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_CANCEL,
+                session_id="voice-123",
+                sequence=3,
+                payload={"job_id": "voice-oracle-002", "reason": "queued task no longer needed"},
+            )
+        )
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_CANCELLED:
+                break
+
+        cancelled = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_CANCELLED)
+        assert cancelled.payload["job_id"] == "voice-oracle-002"
+        assert cancelled.payload["state"] == "cancelled"
+        assert cancelled.payload["cancel_reason"] == "queued task no longer needed"
+        assert len(oracle.requests) == 1
+
+        oracle.release_first.set()
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
+                break
+
+        await engine.close()
+        assert len(oracle.requests) == 1
+        assert not any(
+            event.type == VoiceEventType.ORACLE_JOB_STARTED and event.payload["job_id"] == "voice-oracle-002"
+            for event in seen
+        )
+
+    asyncio.run(run())
+
+
 def test_kame_engine_barge_in_during_async_ack_does_not_interrupt_oracle_job(monkeypatch):
     class InterruptibleBlockingOracle:
         def __init__(self):
