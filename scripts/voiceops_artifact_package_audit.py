@@ -643,15 +643,21 @@ def _audit_spark_model_claims(
 
 def _audit_action_consistency(
     *,
+    demo: Mapping[str, Any],
     packet: Mapping[str, Any],
     packet_validation: Mapping[str, Any],
     operator_state: Mapping[str, Any],
     audit_rows: list[dict[str, Any]],
+    operator_state_event_rows: list[dict[str, Any]],
     dry_run_rows: list[dict[str, Any]],
     issues: list[str],
 ) -> None:
     if packet_validation.get("status") != "valid" or packet_validation.get("ok") is not True:
         issues.append("nemoclaw:validation_not_valid")
+    if audit_rows != list(demo.get("audit_events") or []):
+        issues.append("audit_ledger:rows_mismatch_demo_audit_events")
+    if operator_state_event_rows != list(operator_state.get("recent_audit_events") or []):
+        issues.append("operator_state_events:rows_mismatch_operator_state")
 
     actions = {
         str(action.get("action_id")): action
@@ -1761,6 +1767,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     )
     dashboard_html = _read_text(demo_dir / "operator-dashboard.html", issues, "operator_dashboard")
     audit_rows = _read_jsonl(demo_dir / "audit-ledger.jsonl", issues, "audit_ledger")
+    operator_state_event_rows = _read_jsonl(demo_dir / "operator-state-events.jsonl", issues, "operator_state_events")
     dry_run_rows = _dry_run_metadata_rows(
         _read_text(demo_dir / "stripe-actions-dry-run.sh", issues, "stripe_actions"),
         issues,
@@ -1791,10 +1798,12 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         issues=issues,
     )
     _audit_action_consistency(
+        demo=demo,
         packet=packet,
         packet_validation=packet_validation,
         operator_state=operator_state,
         audit_rows=audit_rows,
+        operator_state_event_rows=operator_state_event_rows,
         dry_run_rows=dry_run_rows,
         issues=issues,
     )

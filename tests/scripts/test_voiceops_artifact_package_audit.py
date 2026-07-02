@@ -197,6 +197,32 @@ def test_package_audit_rejects_unexpected_package_artifact(tmp_path):
     assert "package_artifact:unexpected:hackathon-voiceops-demo/current/stale-live-claim.json" in report["issues"]
 
 
+def test_package_audit_rejects_audit_ledger_drift_from_demo(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    ledger_path = artifact_root / "hackathon-voiceops-demo" / "current" / "audit-ledger.jsonl"
+    rows = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows[1]["status"] = "executed"
+    ledger_path.write_text("\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n", encoding="utf-8")
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "audit_ledger:rows_mismatch_demo_audit_events" in report["issues"]
+
+
+def test_package_audit_rejects_operator_state_event_drift_from_operator_state(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    events_path = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-state-events.jsonl"
+    rows = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows[1]["status"] = "executed"
+    events_path.write_text("\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n", encoding="utf-8")
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "operator_state_events:rows_mismatch_operator_state" in report["issues"]
+
+
 def test_package_audit_rejects_malformed_promised_scaffold_json(tmp_path):
     artifact_root = _generate_package(tmp_path)
     scaffold_path = (
