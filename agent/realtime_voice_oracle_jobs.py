@@ -85,6 +85,8 @@ class OracleJob:
             status["error"] = self.error
         if self.cancel_reason:
             status["cancel_reason"] = self.cancel_reason
+        if self.request is not None:
+            status["turn_id"] = self.request.turn_id
         return status
 
 

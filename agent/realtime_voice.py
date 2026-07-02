@@ -108,6 +108,7 @@ CLIENT_EVENT_TYPES = frozenset(
         VoiceEventType.PLAYBACK_STARTED,
         VoiceEventType.PLAYBACK_STOPPED,
         VoiceEventType.BARGE_IN,
+        VoiceEventType.INTERFACE_ORACLE_CANCEL,
         VoiceEventType.SESSION_STOP,
         VoiceEventType.SESSION_CLOSED,
     }

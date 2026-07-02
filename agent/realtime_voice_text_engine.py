@@ -35,6 +35,7 @@ from agent.realtime_voice_oracle_jobs import (
     OracleJobEvent,
     OracleJobEventType,
     OracleJobManager,
+    OracleJobNotFoundError,
     OracleJobQueueFullError,
 )
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
@@ -78,6 +79,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         self._speech_energy_ms_by_user: dict[str, int] = {}
         self._kame_committed_turns: list[tuple[str, str]] = []
         self._oracle_job_manager: Optional[OracleJobManager] = None
+        self._oracle_job_context_by_turn_id: dict[str, tuple[int, dict, KameOracleRequest]] = {}
 
     @property
     def kind(self) -> RealtimeVoiceEngineKind:
@@ -149,6 +151,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             return
         if event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
             await self._handle_interface_intent_final(event)
+            return
+        if event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL:
+            await self._handle_oracle_job_cancel_event(event)
             return
         if event.type != VoiceEventType.AUDIO_INPUT_CHUNK:
             return
@@ -548,6 +553,63 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         )
         return True
 
+    async def _handle_oracle_job_cancel_event(self, event: VoiceEvent) -> None:
+        manager = self._oracle_job_manager
+        reason = str(event.payload.get("reason") or "user requested cancellation").strip()
+        job_id = str(event.payload.get("job_id") or "").strip()
+        cancel_all = _metadata_bool(event.payload.get("all"), default=False) or job_id.lower() == "all"
+        if manager is None:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "oracle_jobs_unavailable",
+                    "sidecar": self._sidecar is not None,
+                },
+            )
+            return
+        if cancel_all:
+            cancelled = await manager.cancel_all(reason=reason)
+            await self._emit_interface_event(
+                VoiceEventType.INTERFACE_ORACLE_CANCEL,
+                {
+                    "all": True,
+                    "reason": reason,
+                    "cancelled_jobs": [job.job_id for job in cancelled],
+                },
+            )
+            return
+        if not job_id:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "oracle_job_cancel_missing_job_id",
+                    "sidecar": self._sidecar is not None,
+                },
+            )
+            return
+        try:
+            await manager.cancel(job_id, reason=reason)
+        except OracleJobNotFoundError:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "oracle_job_not_found",
+                    "job_id": job_id,
+                    "sidecar": self._sidecar is not None,
+                },
+            )
+            return
+        await self._emit_interface_event(
+            VoiceEventType.INTERFACE_ORACLE_CANCEL,
+            {
+                "job_id": job_id,
+                "reason": reason,
+            },
+        )
+
     async def _send_sidecar_event(self, event: VoiceEvent) -> bool:
         if self._sidecar is None:
             return False
@@ -772,9 +834,15 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if manager is None or oracle_request.route not in {KameRoute.DEFER, KameRoute.ORACLE_DIRECT}:
             return False
         self._cancellation_token_by_generation.pop(playback_generation, None)
+        self._oracle_job_context_by_turn_id[oracle_request.turn_id] = (
+            playback_generation,
+            dict(metadata),
+            oracle_request,
+        )
         try:
             job = await manager.submit(oracle_request)
         except OracleJobQueueFullError:
+            self._oracle_job_context_by_turn_id.pop(oracle_request.turn_id, None)
             await self._emit_oracle_error(
                 playback_generation,
                 metadata,
@@ -787,6 +855,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             )
             return True
         except Exception as exc:
+            self._oracle_job_context_by_turn_id.pop(oracle_request.turn_id, None)
             await self._emit_oracle_error(
                 playback_generation,
                 metadata,
@@ -952,11 +1021,157 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 "timestamp_ms": event.timestamp_ms,
             },
         )
+        if event.type in {
+            OracleJobEventType.COMPLETED,
+            OracleJobEventType.FAILED,
+            OracleJobEventType.CANCELLED,
+        }:
+            self._schedule_oracle_job_terminal_speech(event)
 
     async def _emit_oracle_job_voice_event(self, event_type: VoiceEventType, payload: dict[str, Any]) -> None:
         event = await self._emit(event_type, payload)
         if event is not None and self._sidecar is not None:
             await self._send_sidecar_event(event)
+
+    def _schedule_oracle_job_terminal_speech(self, event: OracleJobEvent) -> None:
+        payload = dict(event.payload)
+        turn_id = str(payload.get("turn_id") or "").strip()
+        context = self._oracle_job_context_by_turn_id.get(turn_id)
+        if context is None:
+            return
+        playback_generation, metadata, oracle_request = context
+        if event.type in {OracleJobEventType.CANCELLED, OracleJobEventType.FAILED}:
+            self._oracle_job_context_by_turn_id.pop(turn_id, None)
+        if event.type == OracleJobEventType.CANCELLED:
+            return
+        if not _oracle_job_terminal_speech_enabled(self.config):
+            self._oracle_job_context_by_turn_id.pop(turn_id, None)
+            return
+        if self._closed or playback_generation != self._playback_generation:
+            self._oracle_job_context_by_turn_id.pop(turn_id, None)
+            return
+        if event.type == OracleJobEventType.COMPLETED and not str(payload.get("result_summary") or "").strip():
+            self._oracle_job_context_by_turn_id.pop(turn_id, None)
+            return
+        previous_task = self._active_task if self._active_task and not self._active_task.done() else None
+        task = asyncio.create_task(
+            self._speak_oracle_job_terminal_event(
+                event,
+                playback_generation,
+                metadata,
+                oracle_request,
+                previous_task=previous_task,
+            )
+        )
+        self._active_task_interrupts_oracle = True
+        self._active_task = task
+        if event.type == OracleJobEventType.COMPLETED:
+            task.add_done_callback(lambda _task, key=turn_id: self._oracle_job_context_by_turn_id.pop(key, None))
+
+    async def _speak_oracle_job_terminal_event(
+        self,
+        event: OracleJobEvent,
+        playback_generation: int,
+        metadata: Mapping[str, Any],
+        oracle_request: KameOracleRequest,
+        *,
+        previous_task: Optional[asyncio.Task[None]] = None,
+    ) -> None:
+        if previous_task is not None:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await previous_task
+        if self._closed or playback_generation != self._playback_generation:
+            return
+        payload = dict(event.payload)
+        metadata = {
+            **dict(metadata),
+            "oracle_job_id": event.job_id,
+        }
+        if event.type == OracleJobEventType.FAILED:
+            raw_text = _oracle_job_failed_status_text(payload)
+            outcome = "oracle_job_failed"
+        else:
+            raw_text = str(payload.get("result_summary") or "").strip()
+            outcome = "oracle_job_completed"
+        spoken_text = self._planner.clean(strip_leading_reasoning_trace(raw_text))
+        if not spoken_text:
+            return
+        spoken_text, spoken_truncated = _limit_spoken_text(
+            spoken_text,
+            max_sentences=_effective_max_spoken_sentences(self.config, oracle_request=oracle_request),
+        )
+        if not spoken_text:
+            return
+        metadata = {
+            **metadata,
+            **_voice_response_policy_payload(
+                policy=_voice_response_policy(self.config, oracle_request=oracle_request),
+                max_sentences=_effective_max_spoken_sentences(self.config, oracle_request=oracle_request),
+                truncated=spoken_truncated,
+            ),
+        }
+        self._assistant_metadata_by_generation[playback_generation] = metadata
+        await self._emit(
+            VoiceEventType.ASSISTANT_TEXT_PARTIAL,
+            {
+                "text": spoken_text,
+                "playback_generation": playback_generation,
+                "oracle_job_id": event.job_id,
+                "oracle_job_result": event.type == OracleJobEventType.COMPLETED,
+                "oracle_job_failed": event.type == OracleJobEventType.FAILED,
+                **metadata,
+                **_kame_route_metrics_payload(metadata, oracle_called=True),
+            },
+        )
+        try:
+            await self._speak_chunk(spoken_text, playback_generation)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "oracle_job_result_tts_failed",
+                    "error": sanitize_realtime_voice_error(exc),
+                    "sidecar": self._sidecar is not None,
+                },
+            )
+            return
+        try:
+            if playback_generation != self._playback_generation:
+                return
+            plan = self._planner.plan(spoken_text)
+            if not plan.committed_text:
+                return
+            await self._emit_interface_commit(
+                playback_generation,
+                metadata,
+                text=plan.committed_text,
+            )
+            await self._emit_session_metrics(
+                playback_generation,
+                metadata,
+                oracle_called=True,
+                outcome=outcome,
+            )
+            await self._emit(
+                VoiceEventType.ASSISTANT_COMMIT,
+                {
+                    "text": plan.committed_text,
+                    "playback_generation": playback_generation,
+                    "oracle_job_id": event.job_id,
+                    "oracle_job_result": event.type == OracleJobEventType.COMPLETED,
+                    "oracle_job_failed": event.type == OracleJobEventType.FAILED,
+                    **metadata,
+                    **_kame_route_metrics_payload(metadata, oracle_called=True),
+                },
+            )
+        finally:
+            self._assistant_metadata_by_generation.pop(playback_generation, None)
+            self._interface_decision_at_by_generation.pop(playback_generation, None)
+            self._oracle_first_token_at_by_generation.pop(playback_generation, None)
+            self._first_audio_metric_generations.discard(playback_generation)
 
     async def _interrupt_oracle_job(self, job: OracleJob, reason: str) -> None:
         oracle = self._oracle
@@ -2133,6 +2348,25 @@ def _async_oracle_jobs_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> 
     if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
         return False
     return isinstance(config.oracle_jobs, Mapping) and _metadata_bool(config.oracle_jobs.get("enabled"), default=False)
+
+
+def _oracle_job_terminal_speech_enabled(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
+    if config is None or not isinstance(config.oracle_jobs, Mapping):
+        return False
+    return _metadata_bool(config.oracle_jobs.get("speak_terminal_results"), default=True)
+
+
+def _oracle_job_failed_status_text(payload: Mapping[str, Any]) -> str:
+    intent = str(payload.get("intent") or payload.get("spoken_status") or "").strip()
+    intent = intent.rstrip(".!?。！？")
+    error = str(payload.get("error") or "").strip()
+    if intent and error:
+        return f"I couldn't finish {intent}: {error}"
+    if intent:
+        return f"I couldn't finish {intent}."
+    if error:
+        return f"That oracle job failed: {error}"
+    return "That oracle job failed."
 
 
 def _oracle_jobs_config_int(config: RealtimeVoiceSessionConfig, key: str, *, default: int) -> int:
