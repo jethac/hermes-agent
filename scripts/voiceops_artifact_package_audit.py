@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.voiceops_channel_policy import CHANNEL_IDS, validate_policy
 from scripts.voiceops_operator_state import validate_operator_state
 from scripts.voiceops_provisioning_probe import load_preflight_evidence, validate_post_approval_receipts
+from scripts.voiceops_spark_matrix import build_matrix
 from scripts.voiceops_voice_operator import _load_live_evidence, validate_live_probe_evidence, validate_voice_operator_report
 
 
@@ -39,6 +40,15 @@ EXPECTED_HANDOFF_PHASES = (
 EXPECTED_REVIEW_PHASES = (
     (1, "multi_channel_policy_review"),
 )
+EXPECTED_SPARK_SCAFFOLD_LINT_ISSUES = {
+    "collector_attestation_example_only_not_accepted",
+    "collector_attestation_invalid:collector_version",
+    "example_only_evidence_not_accepted",
+    "missing_benchmark_evidence",
+    "missing_oracle_authority_proof",
+    "no_single_evidence_record_satisfies_targets",
+    "source_artifact_example_only_not_accepted",
+}
 LOCAL_MODEL_MARKERS = ("local", "dgx", "spark", "localhost", "127.0.0.1", "vllm")
 HOSTED_MODEL_MARKERS = ("hosted", "cloud", "provider", "remote", "api", "nous")
 SECRET_SCAN_PATTERNS = (
@@ -835,6 +845,37 @@ def _audit_execution_plan_approval_surfaces(
                 issues.append(f"execution_plan:{action_id}:channel_policy_surface_not_ready")
         else:
             issues.append(f"execution_plan:{action_id}:unknown_approval_artifact:{approval_artifact or 'missing'}")
+
+
+def _audit_spark_evidence_scaffold(evidence_path: Path, issues: list[str]) -> None:
+    matrix = build_matrix([evidence_path])
+    if matrix.get("ready_for_one_spark_demo") is True:
+        issues.append("spark_evidence_scaffold:unexpectedly_valid")
+    if not evidence_path.exists():
+        issues.append(f"spark_evidence_scaffold:missing:{evidence_path}")
+
+    unexpected_issues: set[str] = set()
+    observed_issues: set[str] = set()
+    for load_issue in matrix.get("evidence_load_issues", []):
+        unexpected_issues.add(f"evidence_load:{load_issue}")
+    for evaluation in matrix.get("evaluations", []):
+        scope = str(evaluation.get("candidate_id") or "unknown_candidate")
+        for issue in evaluation.get("issues", []):
+            issue_text = str(issue)
+            observed_issues.add(issue_text)
+            if issue_text not in EXPECTED_SPARK_SCAFFOLD_LINT_ISSUES:
+                unexpected_issues.add(f"{scope}:{issue_text}")
+    stack_smoke = matrix.get("stack_smoke") if isinstance(matrix.get("stack_smoke"), Mapping) else {}
+    for issue in stack_smoke.get("issues", []):
+        issue_text = str(issue)
+        observed_issues.add(issue_text)
+        if issue_text not in EXPECTED_SPARK_SCAFFOLD_LINT_ISSUES:
+            unexpected_issues.add(f"stack_smoke:{issue_text}")
+
+    if "example_only_evidence_not_accepted" not in observed_issues:
+        unexpected_issues.add("missing_example_only_rejection")
+    for issue in sorted(unexpected_issues):
+        issues.append(f"spark_evidence_scaffold:{issue}")
 
 
 def _iter_plan_run_commands(value: Any) -> list[str]:
@@ -2047,6 +2088,10 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         manifest=live_scaffold_manifest,
         sections=live_scaffold_sections,
         issues=issues,
+    )
+    _audit_spark_evidence_scaffold(
+        spark_dir / "spark-benchmark-scaffold" / "spark-benchmark-evidence.json",
+        issues,
     )
     _audit_markdown_consistency(
         spark_local_target_selected=spark_local_target_selected,

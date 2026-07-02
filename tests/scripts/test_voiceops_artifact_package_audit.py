@@ -668,6 +668,30 @@ def test_package_audit_rejects_execution_plan_unknown_approval_surface(tmp_path)
     assert "execution_plan:publish-status:unknown_approval_artifact:unreviewed-egress-policy.json" in report["issues"]
 
 
+def test_package_audit_rejects_spark_scaffold_source_hash_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    evidence_path = (
+        artifact_root
+        / "voiceops-spark-matrix"
+        / "current"
+        / "spark-benchmark-scaffold"
+        / "spark-benchmark-evidence.json"
+    )
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    evidence["evidence"][0]["source_artifact_sha256"] = "0" * 64
+    evidence["evidence"][0]["collector_attestation"]["redacted_artifact_sha256"] = "0" * 64
+    _write_json(evidence_path, evidence)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "spark_evidence_scaffold:reflex-gemma4-e2b:source_artifact_sha256_mismatch" in report["issues"]
+    assert (
+        "spark_evidence_scaffold:reflex-gemma4-e2b:collector_attestation_redacted_sha256_mismatch"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_scaffold_approval_decision_ref_path_escape(tmp_path):
     artifact_root = _generate_package(tmp_path)
     scaffold_path = (
