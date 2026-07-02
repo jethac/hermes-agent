@@ -447,6 +447,16 @@ async def test_cancel_requested_job_keeps_capacity_until_worker_stops():
     assert started == [first.job_id]
     assert (await manager.get(first.job_id)).state == OracleJobState.CANCEL_REQUESTED
     assert (await manager.get(second.job_id)).state == OracleJobState.QUEUED
+    status = await manager.status_view()
+    assert status["capacity"] == {
+        "active": 1,
+        "running": 0,
+        "max_concurrent": 1,
+        "queued": 1,
+        "queue_limit": 16,
+        "waiting_for_approval": 0,
+        "cancel_requested": 1,
+    }
 
     release_cancelled_worker.set()
     await manager.wait_for_idle()
@@ -488,6 +498,7 @@ async def test_shutdown_forces_cancelled_state_when_worker_ignores_cancel():
         "queued": 0,
         "queue_limit": 16,
         "waiting_for_approval": 0,
+        "cancel_requested": 0,
     }
     assert cancellation_entered.is_set()
 
@@ -585,6 +596,7 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
         "queued": 1,
         "queue_limit": 16,
         "waiting_for_approval": 0,
+        "cancel_requested": 0,
     }
     assert status["jobs"][0]["spoken_status"] == "I'm handling inspect deployment."
     assert "metadata" not in status["jobs"][0]
@@ -724,6 +736,7 @@ async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
         "queued": 1,
         "queue_limit": 16,
         "waiting_for_approval": 1,
+        "cancel_requested": 0,
     }
     waiting_event = next(event for event in events if event["type"] == "oracle.job.waiting_for_approval")
     assert waiting_event["state"] == "waiting_for_approval"

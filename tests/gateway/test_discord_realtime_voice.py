@@ -1165,6 +1165,7 @@ async def test_discord_adapter_live_voice_status_overrides_stale_oracle_snapshot
                     "max_concurrent": 4,
                     "queued": 0,
                     "waiting_for_approval": 0,
+                    "cancel_requested": 0,
                     "queue_limit": 16,
                 },
                 "jobs": [
@@ -1358,6 +1359,7 @@ def test_discord_realtime_event_tracks_oracle_job_status():
         "running": 0,
         "queued": 0,
         "waiting_for_approval": 1,
+        "cancel_requested": 0,
         "max_concurrent": 4,
         "queue_limit": 16,
     }
@@ -1442,7 +1444,13 @@ def test_voice_status_oracle_job_lines_are_compact():
     lines = _voice_status_oracle_job_lines(
         {
             "enabled": True,
-            "capacity": {"running": 1, "max_concurrent": 4, "queued": 2, "waiting_for_approval": 1},
+            "capacity": {
+                "running": 1,
+                "max_concurrent": 4,
+                "queued": 2,
+                "waiting_for_approval": 1,
+                "cancel_requested": 1,
+            },
             "jobs": [
                 {
                     "job_id": "voice-oracle-001",
@@ -1454,15 +1462,21 @@ def test_voice_status_oracle_job_lines_are_compact():
                     "job_id": "voice-oracle-002",
                     "state": "waiting_for_approval",
                     "spoken_status": "Waiting for Stripe spend approval.",
-                }
+                },
+                {
+                    "job_id": "voice-oracle-003",
+                    "state": "cancel_requested",
+                    "spoken_status": "Stopping the stale deployment check.",
+                },
             ],
         }
     )
 
     assert lines == [
-        "Oracle jobs: running=1/4, queued=2, waiting_for_approval=1",
+        "Oracle jobs: running=1/4, queued=2, waiting_for_approval=1, cancel_requested=1",
         "Oracle job: voice-oracle-001 running - Checking the deployment status. | update: include the staging region too.",
         "Oracle job: voice-oracle-002 waiting_for_approval - Waiting for Stripe spend approval.",
+        "Oracle job: voice-oracle-003 cancel_requested - Stopping the stale deployment check.",
     ]
 
 

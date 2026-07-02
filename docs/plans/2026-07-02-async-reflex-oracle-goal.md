@@ -409,7 +409,8 @@ automatically.
   does not hang on a non-cooperative oracle worker.
 - Status reports running/queued/max capacity.
 - Status reports active capacity separately from running jobs when approval
-  waits or cancellation waits consume slots.
+  waits or cancellation waits consume slots, and exposes explicit
+  `waiting_for_approval` and `cancel_requested` counts.
 - Tests cover `max_concurrent=1` and `max_concurrent=4`.
 - DGX Spark / Nemotron-3 Super target documents `max_concurrent=4` as the first
   intended high-end local deployment setting.

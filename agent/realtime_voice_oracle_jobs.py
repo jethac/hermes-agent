@@ -353,6 +353,9 @@ class OracleJobManager:
             waiting_for_approval = sum(
                 1 for job in self._jobs.values() if job.state == OracleJobState.WAITING_FOR_APPROVAL
             )
+            cancel_requested = sum(
+                1 for job in self._jobs.values() if job.state == OracleJobState.CANCEL_REQUESTED
+            )
         return {
             "capacity": {
                 "active": active,
@@ -361,6 +364,7 @@ class OracleJobManager:
                 "queued": queued,
                 "queue_limit": self.queue_limit,
                 "waiting_for_approval": waiting_for_approval,
+                "cancel_requested": cancel_requested,
             },
             "jobs": jobs,
         }
