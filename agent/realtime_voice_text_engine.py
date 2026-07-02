@@ -2561,6 +2561,16 @@ def _kame_oracle_job_status_requested(request: KameOracleRequest) -> bool:
     status_phrases = (
         "what are you working on",
         "what are you doing",
+        "what finished",
+        "what completed",
+        "what happened with the last job",
+        "what happened with my last job",
+        "what happened with that job",
+        "what happened with that task",
+        "what did you finish",
+        "what did you complete",
+        "last job",
+        "last task",
         "job status",
         "jobs status",
         "oracle jobs",
@@ -2587,6 +2597,9 @@ def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
         if str(job.get("state") or "") in {"running", "queued", "waiting_for_approval", "cancel_requested"}
     ]
     if not active_jobs:
+        recent_labels = _kame_oracle_job_recent_terminal_labels(jobs)
+        if recent_labels:
+            return "No oracle jobs are running or queued right now. Recent: " + " | ".join(recent_labels)
         if jobs:
             return "No oracle jobs are running or queued right now."
         return "I don't have any oracle jobs yet."
@@ -2605,6 +2618,33 @@ def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
     if labels:
         return headline + " " + " | ".join(labels)
     return headline
+
+
+def _kame_oracle_job_recent_terminal_labels(jobs: list[dict[str, Any]]) -> list[str]:
+    labels = []
+    for job in reversed(jobs):
+        state = str(job.get("state") or "").strip()
+        if state not in {"completed", "failed", "cancelled"}:
+            continue
+        label = _kame_oracle_job_terminal_label(job, state)
+        if label:
+            labels.append(label)
+        if len(labels) >= 3:
+            break
+    return labels
+
+
+def _kame_oracle_job_terminal_label(job: Mapping[str, Any], state: str) -> str:
+    if state == "completed":
+        text = str(job.get("result_summary") or job.get("spoken_status") or job.get("intent") or "").strip()
+    elif state == "failed":
+        text = str(job.get("error") or job.get("spoken_status") or job.get("intent") or "").strip()
+    else:
+        text = str(job.get("cancel_reason") or job.get("spoken_status") or job.get("intent") or "").strip()
+    text = " ".join(text.split())
+    if not text:
+        return state
+    return f"{state}: {text[:120]}"
 
 
 def _kame_oracle_job_control_operation(
