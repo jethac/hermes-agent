@@ -155,6 +155,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL:
             await self._handle_oracle_job_cancel_event(event)
             return
+        if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE:
+            await self._handle_oracle_job_update_event(event)
+            return
         if event.type != VoiceEventType.AUDIO_INPUT_CHUNK:
             return
 
@@ -616,6 +619,55 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             },
         )
 
+    async def _handle_oracle_job_update_event(self, event: VoiceEvent) -> None:
+        manager = self._oracle_job_manager
+        job_id = str(event.payload.get("job_id") or "").strip()
+        priority = str(event.payload.get("priority") or "").strip()
+        reason = str(event.payload.get("reason") or "user requested update").strip()
+        if manager is None:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "oracle_jobs_unavailable",
+                    "sidecar": self._sidecar is not None,
+                },
+            )
+            return
+        if not job_id or not priority:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "oracle_job_update_missing_fields",
+                    "job_id": job_id,
+                    "sidecar": self._sidecar is not None,
+                },
+            )
+            return
+        try:
+            job = await manager.update_priority(job_id, priority=priority)
+        except OracleJobNotFoundError:
+            await self._emit(
+                VoiceEventType.FRONTEND_STATE,
+                {
+                    "status": "degraded",
+                    "reason": "oracle_job_not_found",
+                    "job_id": job_id,
+                    "sidecar": self._sidecar is not None,
+                },
+            )
+            return
+        await self._emit_interface_event(
+            VoiceEventType.INTERFACE_ORACLE_UPDATE,
+            {
+                "job_id": job.job_id,
+                "priority": job.priority,
+                "state": job.state.value,
+                "reason": reason,
+            },
+        )
+
     async def _send_sidecar_event(self, event: VoiceEvent) -> bool:
         if self._sidecar is None:
             return False
@@ -858,7 +910,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             oracle_request,
         )
         try:
-            job = await manager.submit(oracle_request)
+            job = await manager.submit(oracle_request, priority=oracle_request.priority)
         except OracleJobQueueFullError:
             self._oracle_job_context_by_turn_id.pop(oracle_request.turn_id, None)
             await self._emit_oracle_error(

@@ -25,6 +25,7 @@ def _request(text: str, *, route: KameRoute = KameRoute.ORACLE_DIRECT) -> KameOr
 
 def test_oracle_job_protocol_surface_is_wire_serializable():
     assert VoiceEventType("oracle.job.accepted") == VoiceEventType.ORACLE_JOB_ACCEPTED
+    assert VoiceEventType("interface.oracle.update") == VoiceEventType.INTERFACE_ORACLE_UPDATE
 
     config = RealtimeVoiceSessionConfig(
         session_id="voice-session-1",
@@ -95,6 +96,60 @@ async def test_max_concurrent_one_queues_second_job():
 
     assert started == ["voice-oracle-001", "voice-oracle-002"]
     assert (await manager.get(second.job_id)).state == OracleJobState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_high_priority_queued_job_starts_before_low_priority_job():
+    started = []
+    release_first = asyncio.Event()
+
+    async def runner(job):
+        started.append(job.job_id)
+        if job.job_id == "voice-oracle-001":
+            await release_first.wait()
+        return f"finished {job.job_id}"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+
+    await manager.submit(_request("running"))
+    low = await manager.submit(_request("low"), priority="low")
+    high = await manager.submit(_request("high"), priority="high")
+    await asyncio.sleep(0)
+
+    assert (await manager.get(low.job_id)).priority == "low"
+    assert (await manager.get(high.job_id)).priority == "high"
+
+    release_first.set()
+    await manager.wait_for_idle()
+
+    assert started == ["voice-oracle-001", high.job_id, low.job_id]
+
+
+@pytest.mark.asyncio
+async def test_reprioritizing_queued_job_moves_it_ahead_before_capacity_frees():
+    started = []
+    release_first = asyncio.Event()
+
+    async def runner(job):
+        started.append(job.job_id)
+        if job.job_id == "voice-oracle-001":
+            await release_first.wait()
+        return f"finished {job.job_id}"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+
+    await manager.submit(_request("running"))
+    second = await manager.submit(_request("second"), priority="normal")
+    third = await manager.submit(_request("third"), priority="normal")
+    await asyncio.sleep(0)
+
+    updated = await manager.update_priority(third.job_id, priority="highest")
+    assert updated.priority == "high"
+
+    release_first.set()
+    await manager.wait_for_idle()
+
+    assert started == ["voice-oracle-001", third.job_id, second.job_id]
 
 
 @pytest.mark.asyncio

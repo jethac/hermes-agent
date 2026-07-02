@@ -73,6 +73,7 @@ class VoiceEventType(StrEnum):
     INTERFACE_REPLY_DEFER = "interface.reply.defer"
     INTERFACE_ORACLE_REQUEST = "interface.oracle.request"
     INTERFACE_ORACLE_CANCEL = "interface.oracle.cancel"
+    INTERFACE_ORACLE_UPDATE = "interface.oracle.update"
     INTERFACE_COMMIT = "interface.commit"
     ORACLE_JOB_ACCEPTED = "oracle.job.accepted"
     ORACLE_JOB_QUEUED = "oracle.job.queued"
@@ -109,6 +110,7 @@ CLIENT_EVENT_TYPES = frozenset(
         VoiceEventType.PLAYBACK_STOPPED,
         VoiceEventType.BARGE_IN,
         VoiceEventType.INTERFACE_ORACLE_CANCEL,
+        VoiceEventType.INTERFACE_ORACLE_UPDATE,
         VoiceEventType.SESSION_STOP,
         VoiceEventType.SESSION_CLOSED,
     }
@@ -134,6 +136,7 @@ SERVER_EVENT_TYPES = frozenset(
         VoiceEventType.INTERFACE_REPLY_DEFER,
         VoiceEventType.INTERFACE_ORACLE_REQUEST,
         VoiceEventType.INTERFACE_ORACLE_CANCEL,
+        VoiceEventType.INTERFACE_ORACLE_UPDATE,
         VoiceEventType.INTERFACE_COMMIT,
         VoiceEventType.ORACLE_JOB_ACCEPTED,
         VoiceEventType.ORACLE_JOB_QUEUED,

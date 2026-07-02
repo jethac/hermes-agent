@@ -362,6 +362,7 @@ class KameOracleRequest:
     urgency: str = "interactive"
     interface_already_said: str = ""
     conversation_summary: str = ""
+    priority: str = ""
     max_spoken_sentences: int = 2
     requested_response_style: Mapping[str, Any] = field(default_factory=dict)
     cancellation_token: str = ""
@@ -427,6 +428,8 @@ class KameOracleRequest:
             metadata["kame_interface_already_said"] = self.interface_already_said
         if self.conversation_summary:
             metadata["kame_conversation_summary"] = self.conversation_summary
+        if self.priority:
+            metadata["kame_priority"] = self.priority
         if self.cancellation_token:
             metadata["kame_cancellation_token"] = self.cancellation_token
         if self.reflex_validation_error:
@@ -521,6 +524,7 @@ class KameOracleRequest:
             urgency=_optional_text(payload.get("urgency")) or "interactive",
             interface_already_said=_optional_text(payload.get("interface_already_said")) or "",
             conversation_summary=_optional_text(payload.get("conversation_summary")) or "",
+            priority=_optional_text(payload.get("priority")) or "",
             max_spoken_sentences=_positive_int(
                 payload.get("max_spoken_sentences")
                 if payload.get("max_spoken_sentences") is not None

@@ -179,6 +179,7 @@ class OracleJobManager:
                 self._start_job_locked(job, runner)
             else:
                 self._queue.append(job.job_id)
+                self._sort_queue_locked()
                 await self._emit_locked(OracleJobEventType.QUEUED, job)
             return job
 
@@ -219,6 +220,19 @@ class OracleJobManager:
         for job_id in job_ids:
             cancelled.append(await self.cancel(job_id, reason=reason))
         return cancelled
+
+    async def update_priority(self, job_id: str, *, priority: str) -> OracleJob:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise OracleJobNotFoundError(job_id)
+            if job.state in TERMINAL_STATES:
+                return job
+            job.priority = _normalize_priority(priority, default=self.default_priority)
+            job.updated_at = self._clock()
+            if job.state == OracleJobState.QUEUED:
+                self._sort_queue_locked()
+            return job
 
     async def status_view(self) -> dict[str, Any]:
         async with self._lock:
@@ -277,7 +291,7 @@ class OracleJobManager:
             created_at=now,
             updated_at=now,
             state=OracleJobState.QUEUED,
-            priority=str(priority or self.default_priority),
+            priority=_normalize_priority(priority, default=self.default_priority),
             route=request.route.value,
             oracle_text=request.oracle_text,
             reflex_intent=request.intent,
@@ -381,6 +395,18 @@ class OracleJobManager:
     def _remove_queued_locked(self, job_id: str) -> None:
         self._queue = deque(existing for existing in self._queue if existing != job_id)
 
+    def _sort_queue_locked(self) -> None:
+        self._queue = deque(
+            sorted(
+                self._queue,
+                key=lambda job_id: (
+                    _priority_rank(self._jobs[job_id].priority),
+                    self._jobs[job_id].created_at,
+                    job_id,
+                ),
+            )
+        )
+
     async def _force_cancel_remaining(self, *, reason: str) -> None:
         async with self._lock:
             queued_job_ids = list(self._queue)
@@ -449,3 +475,23 @@ def _positive_float(value: object, *, default: float) -> float:
     if parsed <= 0:
         return default
     return parsed
+
+
+def _normalize_priority(value: object, *, default: str = "normal") -> str:
+    text = str(value or default or "normal").strip().lower()
+    aliases = {
+        "urgent": "high",
+        "highest": "high",
+        "important": "high",
+        "medium": "normal",
+        "default": "normal",
+        "background": "low",
+    }
+    text = aliases.get(text, text)
+    if text not in {"high", "normal", "low"}:
+        return _normalize_priority(default if value != default else "normal", default="normal")
+    return text
+
+
+def _priority_rank(priority: object) -> int:
+    return {"high": 0, "normal": 1, "low": 2}.get(_normalize_priority(priority), 1)
