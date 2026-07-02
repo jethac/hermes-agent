@@ -316,6 +316,11 @@ class DiscordRealtimeVoiceSession:
         if self._started:
             await self._stop_mixer_speech_for_shutdown()
             self._flush_playback_buffer()
+            if bool(self.oracle_jobs.get("enabled")):
+                try:
+                    await self.cancel_oracle_job("all", reason="voice session closing")
+                except Exception as exc:
+                    logger.debug("Discord realtime oracle cancel-all on close failed: %s", exc)
             try:
                 await self._send_event(
                     VoiceEventType.SESSION_CLOSED,

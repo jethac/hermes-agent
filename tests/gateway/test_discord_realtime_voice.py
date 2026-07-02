@@ -1523,6 +1523,38 @@ async def test_discord_realtime_session_sends_session_closed_before_sidecar_clos
 
 
 @pytest.mark.asyncio
+async def test_discord_realtime_session_close_cancels_oracle_jobs_before_session_closed():
+    from agent.realtime_voice import VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    sidecar = FakeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+        oracle_jobs={"enabled": True},
+    )
+
+    await session.start()
+    await session.close()
+
+    event_types = [event.type for event in sidecar.sent]
+    assert event_types[-2:] == [
+        VoiceEventType.INTERFACE_ORACLE_CANCEL,
+        VoiceEventType.SESSION_CLOSED,
+    ]
+    assert sidecar.sent[-2].payload == {
+        "job_id": "all",
+        "all": True,
+        "reason": "voice session closing",
+        "transport": "discord_voice",
+    }
+    assert sidecar.closed is True
+
+
+@pytest.mark.asyncio
 async def test_discord_realtime_session_close_stops_active_mixer_speech():
     from agent.realtime_voice import VoiceEventType
     from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
