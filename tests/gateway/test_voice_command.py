@@ -1192,6 +1192,67 @@ class TestVoiceChannelCommands:
         )
         assert result == "No active realtime voice session."
 
+    @pytest.mark.asyncio
+    async def test_voice_priority_delegates_to_discord_adapter(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.update_voice_oracle_job = AsyncMock(
+            return_value={
+                "ok": True,
+                "job_id": "voice-oracle-002",
+                "priority": "high",
+                "update_text": "",
+                "reason": "user requested /voice priority",
+            }
+        )
+        event = self._make_discord_event("/voice priority voice-oracle-002 high")
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_command(event)
+
+        mock_adapter.update_voice_oracle_job.assert_awaited_once_with(
+            111,
+            "voice-oracle-002",
+            priority="high",
+            reason="user requested /voice priority",
+        )
+        assert result == "Requested priority high for realtime oracle job voice-oracle-002."
+
+    @pytest.mark.asyncio
+    async def test_voice_update_delegates_to_discord_adapter(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.update_voice_oracle_job = AsyncMock(
+            return_value={
+                "ok": True,
+                "job_id": "voice-oracle-002",
+                "priority": "",
+                "update_text": "also check the Stripe receipt",
+                "reason": "user requested /voice update",
+            }
+        )
+        event = self._make_discord_event("/voice update voice-oracle-002 also check the Stripe receipt")
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_command(event)
+
+        mock_adapter.update_voice_oracle_job.assert_awaited_once_with(
+            111,
+            "voice-oracle-002",
+            update_text="also check the Stripe receipt",
+            reason="user requested /voice update",
+        )
+        assert result == "Attached update to realtime oracle job voice-oracle-002."
+
+    @pytest.mark.asyncio
+    async def test_voice_priority_and_update_validate_usage(self, runner):
+        event_priority = self._make_discord_event("/voice priority voice-oracle-002")
+        event_update = self._make_discord_event("/voice update voice-oracle-002")
+
+        priority_result = await runner._handle_voice_command(event_priority)
+        update_result = await runner._handle_voice_command(event_update)
+
+        assert priority_result == "Usage: /voice priority <job_id> <high|normal|low>"
+        assert update_result == "Usage: /voice update <job_id> <extra context>"
+
     # -- _handle_voice_channel_leave --
 
     @pytest.mark.asyncio

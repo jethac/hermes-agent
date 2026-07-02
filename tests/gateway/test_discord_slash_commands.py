@@ -344,6 +344,25 @@ async def test_slash_command_registration_stays_under_discord_limit(adapter):
     assert len(registered_plugins) < 200, "cap did not drop any overflow commands"
 
 
+def test_voice_slash_choices_include_oracle_job_update_controls(adapter, monkeypatch):
+    import discord
+
+    def record_choices(**kwargs):
+        def decorator(fn):
+            fn._test_choices = kwargs
+            return fn
+
+        return decorator
+
+    monkeypatch.setattr(discord.app_commands, "choices", record_choices)
+
+    adapter._register_slash_commands()
+
+    voice_cmd = adapter._client.tree.commands["voice"]
+    values = {choice.value for choice in voice_cmd._test_choices["mode"]}
+    assert {"jobs", "cancel", "priority", "update"}.issubset(values)
+
+
 # ------------------------------------------------------------------
 # _handle_thread_create_slash — success, session dispatch, failure
 # ------------------------------------------------------------------
@@ -1046,4 +1065,3 @@ def test_register_skill_command_autocomplete_filters_by_name_and_description(ada
     # (covered in other tests). The autocomplete filter itself is exercised
     # via direct function call in the real-discord integration path.
     assert skill_cmd.callback is not None
-

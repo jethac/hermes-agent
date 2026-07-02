@@ -2522,7 +2522,8 @@ class GatewaySlashCommandsMixin:
 
     async def _handle_voice_command(self, event: MessageEvent) -> str:
         """Handle /voice [on|off|tts|channel|leave|status] command."""
-        args = event.get_command_args().strip().lower()
+        raw_args = event.get_command_args().strip()
+        args = raw_args.lower()
         chat_id = event.source.chat_id
         platform = event.source.platform
         voice_key = self._voice_key(platform, chat_id)
@@ -2580,6 +2581,48 @@ class GatewaySlashCommandsMixin:
             if job_id.lower() == "all":
                 return "Requested cancellation for all realtime oracle jobs."
             return f"Requested cancellation for realtime oracle job {job_id}."
+        elif args.startswith("priority "):
+            guild_id = self._get_guild_id(event)
+            parts = args.split(maxsplit=2)
+            if len(parts) < 3:
+                return "Usage: /voice priority <job_id> <high|normal|low>"
+            job_id = parts[1].strip()
+            priority = parts[2].strip().lower()
+            if priority not in {"high", "normal", "low", "urgent", "highest", "important", "medium", "default", "background"}:
+                return "Usage: /voice priority <job_id> <high|normal|low>"
+            if not guild_id or not adapter or not hasattr(adapter, "update_voice_oracle_job"):
+                return "No active realtime voice session."
+            result = adapter.update_voice_oracle_job(
+                guild_id,
+                job_id,
+                priority=priority,
+                reason="user requested /voice priority",
+            )
+            if asyncio.iscoroutine(result):
+                result = await result
+            if not isinstance(result, dict) or not result.get("ok"):
+                return "No active realtime voice session."
+            return f"Requested priority {priority} for realtime oracle job {job_id}."
+        elif args.startswith("update "):
+            guild_id = self._get_guild_id(event)
+            parts = raw_args.split(maxsplit=2)
+            if len(parts) < 3 or not parts[1].strip() or not parts[2].strip():
+                return "Usage: /voice update <job_id> <extra context>"
+            job_id = parts[1].strip()
+            update_text = parts[2].strip()
+            if not guild_id or not adapter or not hasattr(adapter, "update_voice_oracle_job"):
+                return "No active realtime voice session."
+            result = adapter.update_voice_oracle_job(
+                guild_id,
+                job_id,
+                update_text=update_text,
+                reason="user requested /voice update",
+            )
+            if asyncio.iscoroutine(result):
+                result = await result
+            if not isinstance(result, dict) or not result.get("ok"):
+                return "No active realtime voice session."
+            return f"Attached update to realtime oracle job {job_id}."
         elif args == "status":
             mode = self._voice_mode.get(voice_key, "off")
             labels = {

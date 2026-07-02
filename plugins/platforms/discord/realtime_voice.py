@@ -446,6 +446,26 @@ class DiscordRealtimeVoiceSession:
             },
         )
 
+    async def update_oracle_job(
+        self,
+        job_id: str,
+        *,
+        priority: str = "",
+        update_text: str = "",
+        reason: str = "user requested update",
+    ) -> None:
+        target = str(job_id or "").strip()
+        payload: dict[str, Any] = {
+            "job_id": target,
+            "reason": str(reason or "user requested update"),
+            "transport": "discord_voice",
+        }
+        if priority:
+            payload["priority"] = str(priority).strip()
+        if update_text:
+            payload["update_text"] = str(update_text).strip()
+        await self._send_event(VoiceEventType.INTERFACE_ORACLE_UPDATE, payload)
+
     async def _send_event(self, event_type: VoiceEventType, payload: dict[str, Any]) -> None:
         self._sequence += 1
         await self.sidecar.send_event(

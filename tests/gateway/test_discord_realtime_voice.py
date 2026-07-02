@@ -1153,6 +1153,38 @@ async def test_discord_realtime_session_sends_oracle_job_cancel_all_event():
 
 
 @pytest.mark.asyncio
+async def test_discord_realtime_session_sends_oracle_job_update_event():
+    from agent.realtime_voice import VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    sidecar = FakeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+    )
+    await session.start()
+    await session.update_oracle_job(
+        "voice-oracle-002",
+        priority="high",
+        update_text="also check the Stripe receipt",
+        reason="user requested /voice update",
+    )
+    await session.close()
+
+    update = next(event for event in sidecar.sent if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE)
+    assert update.payload == {
+        "job_id": "voice-oracle-002",
+        "reason": "user requested /voice update",
+        "transport": "discord_voice",
+        "priority": "high",
+        "update_text": "also check the Stripe receipt",
+    }
+
+
+@pytest.mark.asyncio
 async def test_discord_adapter_cancel_voice_oracle_job_delegates_to_session():
     from plugins.platforms.discord.adapter import DiscordAdapter
 
@@ -1180,6 +1212,43 @@ async def test_discord_adapter_cancel_voice_oracle_job_delegates_to_session():
         "reason": "user requested /voice cancel",
     }
     assert session.cancelled == [("voice-oracle-001", "user requested /voice cancel")]
+    assert missing == {"ok": False, "reason": "no_active_realtime_voice_session"}
+
+
+@pytest.mark.asyncio
+async def test_discord_adapter_update_voice_oracle_job_delegates_to_session():
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    class Session:
+        def __init__(self):
+            self.updated = []
+
+        async def update_oracle_job(self, job_id, *, priority, update_text, reason):
+            self.updated.append((job_id, priority, update_text, reason))
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    session = Session()
+    adapter._realtime_voice_sessions = {111: session}
+
+    result = await adapter.update_voice_oracle_job(
+        111,
+        "voice-oracle-002",
+        priority="high",
+        update_text="also check the Stripe receipt",
+        reason="user requested /voice update",
+    )
+    missing = await adapter.update_voice_oracle_job(222, "voice-oracle-002", priority="high")
+
+    assert result == {
+        "ok": True,
+        "job_id": "voice-oracle-002",
+        "priority": "high",
+        "update_text": "also check the Stripe receipt",
+        "reason": "user requested /voice update",
+    }
+    assert session.updated == [
+        ("voice-oracle-002", "high", "also check the Stripe receipt", "user requested /voice update")
+    ]
     assert missing == {"ok": False, "reason": "no_active_realtime_voice_session"}
 
 
