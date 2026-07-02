@@ -111,7 +111,10 @@ def _async_oracle_smoke_payload() -> dict:
         "approval_secret_leaked": False,
         "approval_secret_canary_checked": True,
         "approval_completed": True,
-        "approval_status_text": "Oracle jobs: 0 running out of 4. waiting_for_approval: Preparing spend approval.",
+        "approval_status_text": (
+            "Oracle jobs: 0 running out of 4, 1 waiting for approval. "
+            "waiting_for_approval: Preparing spend approval."
+        ),
         "failed_job_reported": True,
         "failed_job_spoken": True,
         "durable_failed_record_present": True,
@@ -137,7 +140,8 @@ def _async_oracle_smoke_payload() -> dict:
             "Finished Run smoke task 2.",
             "Finished Run smoke task 4.",
             "Preparing spend approval.",
-            "Oracle jobs: 0 running out of 4. waiting_for_approval: Preparing spend approval.",
+            "Oracle jobs: 0 running out of 4, 1 waiting for approval. "
+            "waiting_for_approval: Preparing spend approval.",
             "Approval smoke cleared.",
             "Testing failure handling.",
             "I couldn't finish Fail smoke task: smoke oracle failure",

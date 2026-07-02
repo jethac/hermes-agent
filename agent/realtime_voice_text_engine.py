@@ -2654,6 +2654,7 @@ def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
     jobs = [dict(job) for job in status.get("jobs", []) if isinstance(job, Mapping)]
     running = int(capacity.get("running") or 0)
     queued = int(capacity.get("queued") or 0)
+    waiting_for_approval = int(capacity.get("waiting_for_approval") or 0)
     max_concurrent = capacity.get("max_concurrent") or "?"
     active_jobs = [
         job
@@ -2670,6 +2671,8 @@ def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
     fragments = [f"{running} running out of {max_concurrent}"]
     if queued:
         fragments.append(f"{queued} queued")
+    if waiting_for_approval:
+        fragments.append(f"{waiting_for_approval} waiting for approval")
     headline = "Oracle jobs: " + ", ".join(fragments) + "."
     labels = []
     for job in active_jobs[:3]:

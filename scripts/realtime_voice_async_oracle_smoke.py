@@ -472,6 +472,7 @@ async def run_smoke() -> dict[str, Any]:
     await recorder.wait_for(
         lambda events: any(
             event.type == VoiceEventType.ASSISTANT_COMMIT
+            and "1 waiting for approval" in str(event.payload.get("text") or "")
             and "waiting_for_approval: Preparing spend approval." in str(event.payload.get("text") or "")
             for event in events
         )
@@ -642,6 +643,7 @@ async def run_smoke() -> dict[str, Any]:
         event
         for event in recorder.events
         if event.type == VoiceEventType.ASSISTANT_COMMIT
+        and "1 waiting for approval" in str(event.payload.get("text") or "")
         and "waiting_for_approval: Preparing spend approval." in str(event.payload.get("text") or "")
     ]
     approval_completed = any(

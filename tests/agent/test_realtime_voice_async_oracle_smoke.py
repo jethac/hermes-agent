@@ -54,6 +54,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["approval_secret_leaked"] is False
     assert report["approval_secret_canary_checked"] is True
     assert report["approval_completed"] is True
+    assert "1 waiting for approval" in report["approval_status_text"]
     assert "waiting_for_approval: Preparing spend approval." in report["approval_status_text"]
     assert report["failed_job_reported"] is True
     assert report["failed_job_spoken"] is True

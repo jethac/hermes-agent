@@ -1065,6 +1065,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["approval_tool_progress_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["approval_payload_redacted"] is True
     assert voice_result["details"]["async_oracle_smoke"]["approval_completed"] is True
+    assert "1 waiting for approval" in voice_result["details"]["async_oracle_smoke"]["approval_status_text"]
     assert "waiting_for_approval: Preparing spend approval." in voice_result["details"]["async_oracle_smoke"][
         "approval_status_text"
     ]
