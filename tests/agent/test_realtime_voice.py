@@ -4252,6 +4252,118 @@ def test_kame_engine_status_recalls_recent_completed_async_oracle_job(monkeypatc
     asyncio.run(run())
 
 
+def test_kame_engine_speak_terminal_results_false_suppresses_result_speech_but_keeps_status(monkeypatch):
+    class CompletingOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "The deployment is healthy."
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = CompletingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                oracle_jobs={
+                    "enabled": True,
+                    "max_concurrent": 1,
+                    "queue_limit": 4,
+                    "speak_terminal_results": False,
+                },
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "check the deployment status",
+                    "intent": "Check the deployment status.",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "interface_already_said": "Checking that now.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
+                break
+
+        assert len(oracle.requests) == 1
+        completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
+        assert completed.payload["result_summary"] == "The deployment is healthy."
+        assert not any(
+            event.type == VoiceEventType.ASSISTANT_COMMIT
+            and event.payload.get("oracle_job_result")
+            for event in seen
+        )
+        assert not any(
+            event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL
+            and event.payload.get("oracle_job_result")
+            for event in seen
+        )
+        assert spoken == ["Checking that now."]
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "transcript": "what happened with the last job",
+                    "intent": "What happened with the last job?",
+                    "route": "local",
+                    "local_reply": "Let me check.",
+                    "intent_source": "reflex_audio",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+        async for event in engine.events():
+            seen.append(event)
+            if (
+                event.type == VoiceEventType.ASSISTANT_COMMIT
+                and str(event.payload.get("text") or "").startswith("No oracle jobs are running")
+            ):
+                break
+
+        await engine.close()
+        status_commit = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.ASSISTANT_COMMIT
+            and str(event.payload.get("text") or "").startswith("No oracle jobs are running")
+        )
+        assert status_commit.payload["local_reply"] is True
+        assert status_commit.payload["text"] == (
+            "No oracle jobs are running or queued right now. Recent: completed: The deployment is healthy."
+        )
+        assert spoken == [
+            "Checking that now.",
+            "No oracle jobs are running or queued right now. Recent: completed: The deployment is healthy.",
+        ]
+
+    asyncio.run(run())
+
+
 def test_async_oracle_job_enters_waiting_for_approval_on_tool_call(monkeypatch):
     class ApprovalOracle:
         def __init__(self):
