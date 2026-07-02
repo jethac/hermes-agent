@@ -265,6 +265,7 @@ def _write_post_approval_receipts(root: Path) -> Path:
                 "credential_location_ref": action["credential_location_ref"],
                 "rollback_ref": action["rollback_ref"],
                 "audit_event_id": f"audit-{action['action_id']}-001",
+                **dict(action.get("lineage") or {}),
             }
             for action in actions
         ],
@@ -277,6 +278,7 @@ def _write_post_approval_receipts(root: Path) -> Path:
                 "secret_name_or_path": f"credential-location-ref-{action['action_id']}",
                 "created_by_action_id": action["action_id"],
                 "rotation_due": "2026-09-29T00:00:00Z",
+                "lineage": dict(action.get("lineage") or {}),
             }
             for action in actions
             if action["credential_location_required"]
@@ -287,6 +289,7 @@ def _write_post_approval_receipts(root: Path) -> Path:
                 "status": "not_run",
                 "owner_ref": "operator-ref-demo",
                 "notes": "No rollback run.",
+                "lineage": dict(action.get("lineage") or {}),
             }
             for action in actions
         ],
@@ -299,6 +302,7 @@ def _write_post_approval_receipts(root: Path) -> Path:
                 "provider": action["provider"],
                 "artifact_ref": "post-approval-receipts.json",
                 "operator_next_step": "Review provider dashboard and rollback window.",
+                **dict(action.get("lineage") or {}),
             }
             for action in actions
         ],
@@ -1031,6 +1035,17 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(voice_result["artifacts"]["live_evidence_scaffold_manifest"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_template"]).exists()
     assert Path(voice_result["artifacts"]["live_probe_closure_json"]).exists()
+    assert voice_result["details"]["tool_disclosure"] == {
+        "config": {
+            "defer_core": "all",
+            "enabled": "on",
+        },
+        "deferred_count": 2,
+        "hidden_core_tool_names": ["read_file", "terminal"],
+        "ok": True,
+        "test_ref_count": 3,
+        "visible_tool_names": ["tool_call", "tool_describe", "tool_search"],
+    }
     assert voice_result["details"]["async_oracle_smoke"]["late_cancelled_output_attempted"] is True
     assert voice_result["details"]["async_oracle_smoke"]["max_worker_overlap"] == 4
     assert voice_result["details"]["async_oracle_smoke"]["worker_overlap_proved"] is True

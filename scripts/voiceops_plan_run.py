@@ -1582,6 +1582,18 @@ async def build_plan_run_async(
                         "verbose_spoken_result"
                     ],
                 },
+                "tool_disclosure": {
+                    "ok": voice_operator["proofs"]["tool_disclosure"]["ok"],
+                    "config": voice_operator["proofs"]["tool_disclosure"]["config"],
+                    "visible_tool_names": voice_operator["proofs"]["tool_disclosure"]["visible_tool_names"],
+                    "hidden_core_tool_names": voice_operator["proofs"]["tool_disclosure"][
+                        "hidden_core_tool_names"
+                    ],
+                    "deferred_count": voice_operator["proofs"]["tool_disclosure"]["deferred_count"],
+                    "test_ref_count": len(
+                        voice_operator["proofs"]["tool_disclosure"].get("external_test_refs") or []
+                    ),
+                },
                 "discord_session_cleanup_smoke": {
                     "ok": voice_operator["proofs"]["discord_session_cleanup"]["ok"],
                     "cancel_all_before_session_closed": voice_operator["proofs"]["discord_session_cleanup"][
