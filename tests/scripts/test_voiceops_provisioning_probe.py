@@ -364,6 +364,8 @@ def test_probe_passes_with_safe_local_tools_and_redacts_outputs(tmp_path):
     assert report["read_only_discovery"]["required_for_live_provisioning_approval"] is True
     assert report["read_only_discovery"]["auth_context"] == "isolated_home"
     assert report["read_only_discovery"]["proves_existing_local_auth"] is False
+    assert report["read_only_discovery"]["timeout_seconds"] == 3
+    assert report["read_only_discovery"]["timed_out_probe_ids"] == []
     assert all(any(arg in {"--version", "--help"} for arg in call[1:]) for call in calls)
     joined_calls = " ".join(" ".join(call) for call in calls)
     for forbidden in ["projects add", "spend-request create", "provision", "call create", "credential"]:
@@ -406,6 +408,8 @@ def test_readonly_discovery_runs_exact_allowlist_and_does_not_grant_readiness(tm
     assert report["read_only_discovery"]["run_requested"] is True
     assert report["read_only_discovery"]["does_not_grant_approval"] is True
     assert report["read_only_discovery"]["status"] == "pass"
+    assert report["read_only_discovery"]["timed_out_probe_ids"] == []
+    assert all(probe["timed_out"] is False for probe in report["read_only_discovery"]["probes"])
     assert report["ready"] is False
     assert "stripe_projects_account" in report["required_failures"]
     serialized = json.dumps(report)
@@ -413,6 +417,54 @@ def test_readonly_discovery_runs_exact_allowlist_and_does_not_grant_readiness(tm
     assert "+15551234567" not in serialized
     assert "token_123456789abcdef" not in serialized
     assert "<redacted" in serialized
+
+
+def test_readonly_discovery_reports_timeouts_without_granting_readiness(tmp_path):
+    calls: list[list[str]] = []
+
+    def fake_which(command: str) -> str | None:
+        return f"/usr/local/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None
+
+    def fake_readonly_runner(argv: Sequence[str], timeout_seconds: int) -> CommandResult:
+        calls.append(list(argv))
+        if list(argv) == ["stripe", "projects", "list", "--limit", "10"]:
+            return CommandResult(
+                exit_code=124,
+                stderr=f"probe timed out after {timeout_seconds}s",
+                timed_out=True,
+            )
+        return CommandResult(exit_code=0, stdout="ok", stderr="")
+
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
+        env_files=[],
+        which=fake_which,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=fake_readonly_runner,
+        run_readonly_discovery=True,
+        timeout_seconds=7,
+    )
+
+    discovery = report["read_only_discovery"]
+    assert calls == [
+        ["stripe", "projects", "list", "--limit", "10"],
+        ["link-cli", "auth", "status"],
+    ]
+    assert discovery["status"] == "fail"
+    assert discovery["timeout_seconds"] == 7
+    assert discovery["failed_probe_ids"] == ["stripe_projects_catalog_list"]
+    assert discovery["timed_out_probe_ids"] == ["stripe_projects_catalog_list"]
+    stripe_probe = next(
+        probe
+        for probe in discovery["probes"]
+        if probe["probe_id"] == "stripe_projects_catalog_list"
+    )
+    assert stripe_probe["timed_out"] is True
+    assert stripe_probe["timeout_seconds"] == 7
+    assert stripe_probe["exit_code"] == 124
+    assert "probe timed out" in stripe_probe["stderr_excerpt"]
+    assert "read_only_discovery_passed" in report["required_failures"]
+    assert report["ready"] is False
 
 
 def test_probe_reports_required_failures_without_running_missing_tools():
@@ -591,6 +643,8 @@ def test_write_probe_artifacts(tmp_path):
     assert payload["preflight_evidence"]["loaded"] is False
     assert discovery["schema_version"] == "voiceops.milestone2.read_only_discovery.v1"
     assert discovery["run_requested"] is False
+    assert discovery["timeout_seconds"] is None
+    assert discovery["timed_out_probe_ids"] == []
     assert discovery["does_not_grant_approval"] is True
     assert discovery["collector_attestation"]["collector_name"] == "scripts.voiceops_provisioning_probe"
     assert discovery["collector_attestation"]["redacted_artifact_sha256"] == _readonly_discovery_redacted_sha256(
@@ -598,6 +652,9 @@ def test_write_probe_artifacts(tmp_path):
     )
     assert discovery_manifest["schema_version"] == "voiceops.milestone2.read_only_discovery_manifest.v1"
     assert discovery_manifest["audit_ledger"] == "audit-ledger.read-only-discovery.jsonl"
+    assert discovery_manifest["timeout_seconds"] is None
+    assert discovery_manifest["timed_out_probe_ids"] == []
+    assert all(probe["timed_out"] is False for probe in discovery_manifest["probes"])
     assert discovery_manifest["report_sha256"] == hashlib.sha256(
         Path(paths["read_only_discovery_json"]).read_bytes()
     ).hexdigest()
@@ -606,6 +663,7 @@ def test_write_probe_artifacts(tmp_path):
     assert "read_only_discovery_commands" in manifest
     assert "version_help_commands" in manifest
     assert "VoiceOps Provisioning Readiness Probe" in markdown
+    assert "Timeout seconds" in Path(paths["read_only_discovery_markdown"]).read_text(encoding="utf-8")
     assert execution_plan["schema_version"] == "voiceops.milestone2.execution_plan.v1"
     assert "stripe_projects_account" in execution_plan["preflight"]["required_evidence"]
     assert "phone-context.json" in json.dumps(execution_plan)
@@ -2778,6 +2836,13 @@ def test_probe_cli_smoke_no_command_probes(tmp_path):
 
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
+    assert payload["ok_meaning"] == "probe completed; readiness is reported by ready/status/required_failures"
+    assert payload["ready"] is False
+    assert payload["status"] == "needs_setup"
+    assert "phone_target" in payload["required_failures"]
+    assert payload["area_status"]["stripe_skills"] == "pass"
+    assert payload["read_only_discovery_status"] == "not_requested"
+    assert payload["setup_closure_json"] == payload["artifacts"]["setup_closure_json"]
     assert Path(payload["artifacts"]["json"]).exists()
     assert Path(payload["artifacts"]["markdown"]).exists()
 

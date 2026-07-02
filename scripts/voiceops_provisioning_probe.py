@@ -1585,6 +1585,7 @@ def _run_probe(
             "executed": True,
             "exit_code": command_result.exit_code,
             "timed_out": command_result.timed_out,
+            "timeout_seconds": timeout_seconds,
             "stdout_excerpt": _excerpt(command_result.stdout),
             "stderr_excerpt": _excerpt(command_result.stderr),
             "status": "pass" if command_result.exit_code == 0 and not command_result.timed_out else "fail",
@@ -1626,6 +1627,7 @@ def _run_readonly_discovery_probe(
             "executed": True,
             "exit_code": command_result.exit_code,
             "timed_out": command_result.timed_out,
+            "timeout_seconds": timeout_seconds,
             "stdout_excerpt": _excerpt(command_result.stdout),
             "stderr_excerpt": _excerpt(command_result.stderr),
             "status": "pass" if command_result.exit_code == 0 and not command_result.timed_out else "fail",
@@ -1668,8 +1670,14 @@ def _build_readonly_discovery_report(
         "auth_context": "isolated_home",
         "proves_existing_local_auth": False,
         "network_io_possible": run_discovery,
+        "timeout_seconds": timeout_seconds if run_discovery else None,
         "status": status,
         "failed_probe_ids": failed,
+        "timed_out_probe_ids": [
+            probe["probe_id"]
+            for probe in executed
+            if probe.get("timed_out") is True
+        ],
         "missing_probe_ids": missing,
         "allowlisted_commands": [list(command) for command in sorted(READONLY_DISCOVERY_ARGV_TUPLES)],
         "blocked_capabilities": BLOCKED_CAPABILITIES,
@@ -3306,7 +3314,9 @@ def _read_only_discovery_markdown(discovery: dict[str, Any]) -> str:
         f"- Non-mutating: {'yes' if discovery['non_mutating'] else 'no'}",
         f"- Does not grant approval: {'yes' if discovery['does_not_grant_approval'] else 'no'}",
         f"- Redacted outputs only: {'yes' if discovery['redacted_outputs_only'] else 'no'}",
+        f"- Timeout seconds: {discovery.get('timeout_seconds') if discovery.get('timeout_seconds') is not None else 'not applicable'}",
         f"- Failed probes: {', '.join(discovery['failed_probe_ids']) if discovery['failed_probe_ids'] else 'none'}",
+        f"- Timed-out probes: {', '.join(discovery.get('timed_out_probe_ids', [])) if discovery.get('timed_out_probe_ids') else 'none'}",
         f"- Missing probes: {', '.join(discovery['missing_probe_ids']) if discovery['missing_probe_ids'] else 'none'}",
         "",
         "## Probes",
@@ -3322,6 +3332,7 @@ def _read_only_discovery_markdown(discovery: dict[str, Any]) -> str:
                 f"- Status: {probe['status']}",
                 f"- Command: `{' '.join(probe['argv'])}`",
                 f"- Execution: {executed}",
+                f"- Timed out: {'yes' if probe.get('timed_out') else 'no'}",
                 f"- Purpose: {_redact(probe['purpose'])}",
                 "",
             ]
@@ -3340,7 +3351,9 @@ def _read_only_discovery_manifest(discovery: dict[str, Any], *, report_sha256: s
         "run_requested": discovery["run_requested"],
         "status": discovery["status"],
         "failed_probe_ids": discovery["failed_probe_ids"],
+        "timed_out_probe_ids": discovery.get("timed_out_probe_ids", []),
         "missing_probe_ids": discovery["missing_probe_ids"],
+        "timeout_seconds": discovery.get("timeout_seconds"),
         "does_not_grant_approval": discovery["does_not_grant_approval"],
         "redacted_outputs_only": discovery["redacted_outputs_only"],
         "probes": [
@@ -3349,6 +3362,7 @@ def _read_only_discovery_manifest(discovery: dict[str, Any], *, report_sha256: s
                 "command": probe["argv"],
                 "status": probe["status"],
                 "executed": probe["executed"],
+                "timed_out": probe.get("timed_out", False),
             }
             for probe in discovery["probes"]
         ],
@@ -4051,7 +4065,18 @@ def main(argv: list[str] | None = None) -> int:
     paths = write_probe_artifacts(args.output_dir, report)
     print(
         json.dumps(
-            {"ok": True, "ready": report["ready"], "output_dir": str(args.output_dir), "artifacts": paths},
+            {
+                "ok": True,
+                "ok_meaning": "probe completed; readiness is reported by ready/status/required_failures",
+                "ready": report["ready"],
+                "status": report["status"],
+                "required_failures": report["required_failures"],
+                "area_status": report["area_status"],
+                "read_only_discovery_status": report["read_only_discovery"]["status"],
+                "output_dir": str(args.output_dir),
+                "setup_closure_json": paths["setup_closure_json"],
+                "artifacts": paths,
+            },
             indent=2,
             sort_keys=True,
         )
