@@ -66,7 +66,10 @@ def _async_oracle_smoke_payload() -> dict:
         "cancelled_jobs": 1,
         "local_turn_committed": True,
         "cancelled_job_id": "voice-oracle-003",
+        "late_cancelled_output_attempted": True,
         "cancelled_result_spoken": False,
+        "cancelled_result_committed": False,
+        "cancelled_result_progress_leaked": False,
         "spoken": [
             "Starting smoke task 1.",
             "Starting smoke task 2.",
@@ -251,6 +254,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["requirements"]["async_oracle_four_concurrent_jobs"] is True
     assert report["requirements"]["async_oracle_local_turn_while_running"] is True
     assert report["requirements"]["async_oracle_cancellation_isolated"] is True
+    assert report["requirements"]["async_oracle_late_cancelled_output_attempted"] is True
     assert report["requirements"]["async_oracle_late_cancelled_output_dropped"] is True
     assert report["requirements"]["live_discord_join"] is False
     assert report["requirements"]["live_evidence_supplied"] is False
@@ -263,7 +267,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["shutdown"]["close_timeout_bounded"] is True
     assert report["proofs"]["async_oracle_jobs"]["ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["max_running"] == 4
+    assert report["proofs"]["async_oracle_jobs"]["late_cancelled_output_attempted"] is True
     assert report["proofs"]["async_oracle_jobs"]["cancelled_result_spoken"] is False
+    assert report["proofs"]["async_oracle_jobs"]["cancelled_result_committed"] is False
+    assert report["proofs"]["async_oracle_jobs"]["cancelled_result_progress_leaked"] is False
     assert report["proofs"]["latency_metrics"]["oracle_metric_status"] == "needs_live_oracle_or_sidecar_probe"
     assert report["live_probe_required_for_completion"]["status"] == "needs_live_probe"
     assert report["live_probe_required_for_completion"]["missing_gates"] == [
@@ -300,6 +307,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:four_jobs_ran_concurrently" in issues
     assert "missing_async_oracle_coverage:local_turn_while_jobs_running" in issues
     assert "missing_async_oracle_coverage:one_job_cancelled_while_others_completed" in issues
+    assert "missing_async_oracle_coverage:late_cancelled_output_attempted" in issues
     assert "missing_async_oracle_coverage:late_cancelled_output_not_spoken" in issues
 
 

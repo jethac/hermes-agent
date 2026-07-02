@@ -24,6 +24,7 @@ class SmokeOracle:
         self.max_running = 0
         self.requests: list[Any] = []
         self.releases: dict[str, asyncio.Event] = {}
+        self.late_cancelled_output_attempted = False
 
     async def stream_answer_for_request(self, request: Any):
         self.requests.append(request)
@@ -32,7 +33,13 @@ class SmokeOracle:
         self.running += 1
         self.max_running = max(self.max_running, self.running)
         try:
-            await self.releases[key].wait()
+            try:
+                await self.releases[key].wait()
+            except asyncio.CancelledError:
+                if key != "Run smoke task 3":
+                    raise
+                await self.releases[key].wait()
+                self.late_cancelled_output_attempted = True
             yield f"Finished {key}."
         finally:
             self.running -= 1
@@ -161,6 +168,14 @@ async def run_smoke() -> dict[str, Any]:
     )
     await recorder.wait_for(
         lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED
+            and event.payload.get("job_id") == task_3_started.payload["job_id"]
+            for event in events
+        )
+    )
+    oracle.release("Run smoke task 3")
+    await recorder.wait_for(
+        lambda events: any(
             event.type == VoiceEventType.ORACLE_JOB_CANCELLED
             and event.payload.get("job_id") == task_3_started.payload["job_id"]
             for event in events
@@ -190,6 +205,20 @@ async def run_smoke() -> dict[str, Any]:
     ]
     cancelled_job_id = str(task_3_started.payload["job_id"])
     cancelled_result_spoken = any("Finished Run smoke task 3" in text for text in engine.spoken)
+    cancelled_result_committed = any(
+        event.type == VoiceEventType.ASSISTANT_COMMIT
+        and "Finished Run smoke task 3" in str(event.payload.get("text") or "")
+        for event in recorder.events
+    )
+    cancelled_result_progress_leaked = any(
+        event.type == VoiceEventType.ORACLE_JOB_PROGRESS
+        and event.payload.get("job_id") == cancelled_job_id
+        and (
+            "Finished Run smoke task 3" in str(event.payload.get("delta") or "")
+            or "Finished Run smoke task 3" in str(event.payload.get("text") or "")
+        )
+        for event in recorder.events
+    )
     report = {
         "ok": (
             len(started) == 4
@@ -197,7 +226,10 @@ async def run_smoke() -> dict[str, Any]:
             and len(local_commits) == 1
             and len(completed) == 3
             and len(cancelled) == 1
+            and oracle.late_cancelled_output_attempted
             and not cancelled_result_spoken
+            and not cancelled_result_committed
+            and not cancelled_result_progress_leaked
         ),
         "scenario": "async_kame_oracle_jobs_fake",
         "max_running": oracle.max_running,
@@ -206,7 +238,10 @@ async def run_smoke() -> dict[str, Any]:
         "cancelled_jobs": len(cancelled),
         "local_turn_committed": bool(local_commits),
         "cancelled_job_id": cancelled_job_id,
+        "late_cancelled_output_attempted": oracle.late_cancelled_output_attempted,
         "cancelled_result_spoken": cancelled_result_spoken,
+        "cancelled_result_committed": cancelled_result_committed,
+        "cancelled_result_progress_leaked": cancelled_result_progress_leaked,
         "spoken": list(engine.spoken),
         "event_counts": {
             event_type.value: sum(event.type == event_type for event in recorder.events)

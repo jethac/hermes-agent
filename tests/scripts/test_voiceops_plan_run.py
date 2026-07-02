@@ -959,11 +959,16 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(voice_result["artifacts"]["json"]).exists()
     assert Path(voice_result["artifacts"]["markdown"]).exists()
     assert Path(voice_result["artifacts"]["smoke_json"]).exists()
+    assert Path(voice_result["artifacts"]["async_oracle_smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["events_jsonl"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_example"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_scaffold_manifest"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_template"]).exists()
     assert Path(voice_result["artifacts"]["live_probe_closure_json"]).exists()
+    assert voice_result["details"]["async_oracle_smoke"]["late_cancelled_output_attempted"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["cancelled_result_spoken"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["cancelled_result_committed"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["cancelled_result_progress_leaked"] is False
 
     provisioning_result = next(
         result for result in summary["results"] if result["milestone"] == "milestone_2_real_spend_and_provisioning_preflight"

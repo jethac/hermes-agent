@@ -1382,7 +1382,16 @@ async def build_plan_run_async(
                     "completed_jobs": voice_operator["proofs"]["async_oracle_jobs"]["completed_jobs"],
                     "cancelled_jobs": voice_operator["proofs"]["async_oracle_jobs"]["cancelled_jobs"],
                     "local_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["local_turn_committed"],
+                    "late_cancelled_output_attempted": voice_operator["proofs"]["async_oracle_jobs"][
+                        "late_cancelled_output_attempted"
+                    ],
                     "cancelled_result_spoken": voice_operator["proofs"]["async_oracle_jobs"]["cancelled_result_spoken"],
+                    "cancelled_result_committed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "cancelled_result_committed"
+                    ],
+                    "cancelled_result_progress_leaked": voice_operator["proofs"]["async_oracle_jobs"][
+                        "cancelled_result_progress_leaked"
+                    ],
                 },
             },
         )

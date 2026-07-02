@@ -1160,7 +1160,11 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         "local_turn_while_jobs_running": bool(smoke.get("local_turn_committed")),
         "one_job_cancelled_while_others_completed": int(smoke.get("cancelled_jobs") or 0) >= 1
         and int(smoke.get("completed_jobs") or 0) >= 3,
-        "late_cancelled_output_not_spoken": smoke.get("cancelled_result_spoken") is False,
+        "late_cancelled_output_attempted": smoke.get("late_cancelled_output_attempted") is True,
+        "late_cancelled_output_not_spoken": smoke.get("late_cancelled_output_attempted") is True
+        and smoke.get("cancelled_result_spoken") is False
+        and smoke.get("cancelled_result_committed") is False
+        and smoke.get("cancelled_result_progress_leaked") is False,
     }
 
 
@@ -1280,7 +1284,10 @@ def build_voice_operator_report(
             "cancelled_jobs": async_oracle_smoke.get("cancelled_jobs"),
             "local_turn_committed": bool(async_oracle_smoke.get("local_turn_committed")),
             "cancelled_job_id": async_oracle_smoke.get("cancelled_job_id"),
+            "late_cancelled_output_attempted": bool(async_oracle_smoke.get("late_cancelled_output_attempted")),
             "cancelled_result_spoken": bool(async_oracle_smoke.get("cancelled_result_spoken")),
+            "cancelled_result_committed": bool(async_oracle_smoke.get("cancelled_result_committed")),
+            "cancelled_result_progress_leaked": bool(async_oracle_smoke.get("cancelled_result_progress_leaked")),
             "coverage": async_oracle_coverage,
         },
         "live_evidence": {
@@ -1322,6 +1329,9 @@ def build_voice_operator_report(
             "async_oracle_four_concurrent_jobs": async_oracle_coverage["four_jobs_ran_concurrently"],
             "async_oracle_local_turn_while_running": async_oracle_coverage["local_turn_while_jobs_running"],
             "async_oracle_cancellation_isolated": async_oracle_coverage["one_job_cancelled_while_others_completed"],
+            "async_oracle_late_cancelled_output_attempted": async_oracle_coverage[
+                "late_cancelled_output_attempted"
+            ],
             "async_oracle_late_cancelled_output_dropped": async_oracle_coverage["late_cancelled_output_not_spoken"],
         },
         "proofs": proofs,
@@ -1419,6 +1429,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "local_turn_while_jobs_running",
         "one_job_cancelled_while_others_completed",
         "late_cancelled_output_not_spoken",
+        "late_cancelled_output_attempted",
     ):
         if async_oracle_coverage.get(key) is not True:
             issues.append(f"missing_async_oracle_coverage:{key}")

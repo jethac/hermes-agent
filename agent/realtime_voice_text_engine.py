@@ -1139,6 +1139,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             oracle_request=request,
             timeout_seconds=_oracle_timeout_seconds(self.config),
         ):
+            if job.state in {OracleJobState.CANCEL_REQUESTED, OracleJobState.CANCELLED}:
+                raise asyncio.CancelledError
             if isinstance(item, Mapping):
                 oracle_tool_event_type = _oracle_tool_event_type(item)
                 if oracle_tool_event_type is not None:
