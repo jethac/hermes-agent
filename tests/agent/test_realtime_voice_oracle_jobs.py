@@ -913,6 +913,86 @@ async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
 
 
 @pytest.mark.asyncio
+async def test_cancelling_waiting_for_approval_keeps_capacity_until_worker_stops_and_drops_late_result(tmp_path):
+    ledger_path = tmp_path / "voiceops-oracle-jobs.jsonl"
+    started = []
+    cancellation_entered = asyncio.Event()
+    release_cancelled_worker = asyncio.Event()
+
+    async def runner(job):
+        started.append(job.job_id)
+        if job.oracle_text == "buy service credits":
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancellation_entered.set()
+                await release_cancelled_worker.wait()
+                return {
+                    "result_summary": "late result with raw-token",
+                    "result_text": "late result should not be recorded",
+                }
+        return f"done {job.job_id}"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        audit_ledger_path=ledger_path,
+    )
+    first = await manager.submit(_request("buy service credits"))
+    second = await manager.submit(_request("check logs"))
+    await asyncio.sleep(0)
+
+    await manager.mark_waiting_for_approval(
+        first.job_id,
+        reason="Stripe Link spend requires approval",
+        approval={"approval_id": "approval-123", "tool_name": "stripe_link_purchase"},
+    )
+    await manager.cancel(first.job_id, reason="approval denied")
+    await asyncio.wait_for(cancellation_entered.wait(), timeout=1)
+    await asyncio.sleep(0)
+
+    assert started == [first.job_id]
+    assert (await manager.get(first.job_id)).state == OracleJobState.CANCEL_REQUESTED
+    assert (await manager.get(second.job_id)).state == OracleJobState.QUEUED
+    assert (await manager.status_view())["capacity"] == {
+        "active": 1,
+        "running": 0,
+        "max_concurrent": 1,
+        "queued": 1,
+        "queue_limit": 16,
+        "waiting_for_approval": 0,
+        "cancel_requested": 1,
+    }
+
+    release_cancelled_worker.set()
+    await manager.wait_for_idle()
+
+    first_stored = await manager.get(first.job_id)
+    second_stored = await manager.get(second.job_id)
+    assert started == [first.job_id, second.job_id]
+    assert first_stored.state == OracleJobState.CANCELLED
+    assert first_stored.result_summary == ""
+    assert first_stored.result_text == ""
+    assert second_stored.state == OracleJobState.COMPLETED
+
+    rows = [
+        json.loads(line)
+        for line in ledger_path.read_text(encoding="utf-8").splitlines()
+    ]
+    first_events = [row["event_type"] for row in rows if row["job_id"] == first.job_id]
+    assert first_events == [
+        "oracle.job.accepted",
+        "oracle.job.started",
+        "oracle.job.waiting_for_approval",
+        "oracle.job.cancel_requested",
+        "oracle.job.cancelled",
+    ]
+    assert "oracle.job.completed" not in first_events
+    assert "late result" not in str(rows)
+    assert "raw-token" not in str(rows)
+
+
+@pytest.mark.asyncio
 async def test_audit_ledger_path_records_redacted_lifecycle_events(tmp_path):
     ledger_path = tmp_path / "voiceops-oracle-jobs.jsonl"
     release = asyncio.Event()

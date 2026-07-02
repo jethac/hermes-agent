@@ -113,6 +113,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
     "approval_wait": [
         "tests/agent/test_realtime_voice.py::test_async_oracle_job_enters_waiting_for_approval_on_tool_call",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_waiting_for_approval_holds_capacity_and_emits_redacted_event",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_cancelling_waiting_for_approval_keeps_capacity_until_worker_stops_and_drops_late_result",
         "tests/gateway/test_discord_realtime_voice.py::test_voice_status_oracle_job_lines_are_compact",
     ],
     "failure_handling": [

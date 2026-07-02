@@ -567,6 +567,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     )
     assert report["async_oracle_acceptance"]["shutdown_timeout_is_bounded"]["ok"] is True
     assert report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
+    assert (
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_cancelling_waiting_for_approval_keeps_capacity_until_worker_stops_and_drops_late_result"
+        in report["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["test_refs"]
+    )
     assert report["proofs"]["async_oracle_jobs"]["approval_secret_leaked"] is False
     assert report["proofs"]["async_oracle_jobs"]["approval_secret_canary_checked"] is True
     assert (
