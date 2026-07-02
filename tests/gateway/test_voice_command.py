@@ -1539,6 +1539,31 @@ class TestDiscordVoiceChannelMethods:
         mock_timeout = MagicMock()
         adapter._voice_timeout_tasks[111] = mock_timeout
 
+        adapter._update_voice_state(
+            111,
+            oracle_jobs={
+                "enabled": True,
+                "capacity": {"running": 1, "max_concurrent": 4, "queued": 1, "queue_limit": 16},
+                "jobs": [
+                    {
+                        "job_id": "voice-oracle-001",
+                        "state": "running",
+                        "spoken_status": "Checking deployment.",
+                    },
+                    {
+                        "job_id": "voice-oracle-002",
+                        "state": "queued",
+                        "spoken_status": "Checking Stripe.",
+                    },
+                    {
+                        "job_id": "voice-oracle-003",
+                        "state": "completed",
+                        "result_summary": "Already done.",
+                    },
+                ],
+            },
+        )
+
         await adapter.leave_voice_channel(111)
 
         mock_receiver.stop.assert_called_once()
@@ -1553,6 +1578,31 @@ class TestDiscordVoiceChannelMethods:
         assert status["session_state"] == "closed"
         assert status["sidecar_running"] is False
         assert status["receiver_running"] is False
+        assert status["oracle_jobs"]["capacity"] == {
+            "running": 0,
+            "max_concurrent": 4,
+            "queued": 0,
+            "queue_limit": 16,
+        }
+        assert status["oracle_jobs"]["jobs"] == [
+            {
+                "job_id": "voice-oracle-001",
+                "state": "cancelled",
+                "spoken_status": "Checking deployment.",
+                "cancel_reason": "voice session closed",
+            },
+            {
+                "job_id": "voice-oracle-002",
+                "state": "cancelled",
+                "spoken_status": "Checking Stripe.",
+                "cancel_reason": "voice session closed",
+            },
+            {
+                "job_id": "voice-oracle-003",
+                "state": "completed",
+                "result_summary": "Already done.",
+            },
+        ]
 
     @pytest.mark.asyncio
     async def test_leave_voice_channel_no_connection(self):
@@ -2289,6 +2339,27 @@ class TestDiscordVoiceChannelMethods:
             receiver_running=True,
             mixer_installed=True,
             sidecar_running=True,
+            oracle_jobs={
+                "enabled": True,
+                "capacity": {"running": 1, "max_concurrent": 4, "queued": 1, "queue_limit": 16},
+                "jobs": [
+                    {
+                        "job_id": "voice-oracle-001",
+                        "state": "running",
+                        "spoken_status": "Checking deployment.",
+                    },
+                    {
+                        "job_id": "voice-oracle-002",
+                        "state": "queued",
+                        "spoken_status": "Checking Stripe.",
+                    },
+                    {
+                        "job_id": "voice-oracle-003",
+                        "state": "completed",
+                        "result_summary": "Already done.",
+                    },
+                ],
+            },
         )
 
         adapter._handle_realtime_voice_degraded(
@@ -2309,6 +2380,31 @@ class TestDiscordVoiceChannelMethods:
         assert status["session_state"] == "degraded"
         assert status["sidecar_running"] is False
         assert status["fallback_reason"] == "sidecar_event_stream_failed: websocket closed"
+        assert status["oracle_jobs"]["capacity"] == {
+            "running": 0,
+            "max_concurrent": 4,
+            "queued": 0,
+            "queue_limit": 16,
+        }
+        assert status["oracle_jobs"]["jobs"] == [
+            {
+                "job_id": "voice-oracle-001",
+                "state": "failed",
+                "spoken_status": "Checking deployment.",
+                "error": "sidecar_event_stream_failed: websocket closed",
+            },
+            {
+                "job_id": "voice-oracle-002",
+                "state": "failed",
+                "spoken_status": "Checking Stripe.",
+                "error": "sidecar_event_stream_failed: websocket closed",
+            },
+            {
+                "job_id": "voice-oracle-003",
+                "state": "completed",
+                "result_summary": "Already done.",
+            },
+        ]
 
     @pytest.mark.asyncio
     async def test_runtime_sidecar_degradation_text_only_policy_disables_legacy_voice_input(self):

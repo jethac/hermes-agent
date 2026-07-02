@@ -57,6 +57,7 @@ DISCORD_REALTIME_ORACLE_JOB_EVENTS = frozenset(
         "oracle.job.cancelled",
     }
 )
+DISCORD_REALTIME_ORACLE_JOB_TERMINAL_STATES = frozenset({"completed", "failed", "cancelled"})
 
 
 @dataclass
@@ -257,6 +258,60 @@ def _discord_voice_oracle_jobs_update(
         }
     )
     return {"enabled": True, "capacity": capacity, "jobs": jobs}
+
+
+def _discord_voice_oracle_jobs_degraded(existing: Any, reason: str) -> Dict[str, Any]:
+    return _discord_voice_oracle_jobs_terminal(
+        existing,
+        terminal_state="failed",
+        reason_key="error",
+        reason=reason or "realtime voice sidecar failed",
+    )
+
+
+def _discord_voice_oracle_jobs_cancelled(existing: Any, reason: str) -> Dict[str, Any]:
+    return _discord_voice_oracle_jobs_terminal(
+        existing,
+        terminal_state="cancelled",
+        reason_key="cancel_reason",
+        reason=reason or "voice session closed",
+    )
+
+
+def _discord_voice_oracle_jobs_terminal(
+    existing: Any,
+    *,
+    terminal_state: str,
+    reason_key: str,
+    reason: str,
+) -> Dict[str, Any]:
+    current = existing if isinstance(existing, Mapping) else {}
+    if not current:
+        return {}
+    capacity = dict(current.get("capacity") or {})
+    jobs: list[dict[str, Any]] = []
+    for item in current.get("jobs", []):
+        if not isinstance(item, Mapping):
+            continue
+        job = dict(item)
+        state = str(job.get("state") or "").strip()
+        if state and state not in DISCORD_REALTIME_ORACLE_JOB_TERMINAL_STATES:
+            job["state"] = terminal_state
+            job[reason_key] = str(reason)[:180]
+        jobs.append(job)
+    capacity.update(
+        {
+            "running": sum(
+                1
+                for item in jobs
+                if item.get("state") in {"running", "cancel_requested", "waiting_for_approval"}
+            ),
+            "queued": sum(1 for item in jobs if item.get("state") == "queued"),
+            "max_concurrent": _discord_voice_nonnegative_int(capacity.get("max_concurrent")) or 1,
+            "queue_limit": _discord_voice_nonnegative_int(capacity.get("queue_limit")) or 16,
+        }
+    )
+    return {"enabled": bool(current.get("enabled")), "capacity": capacity, "jobs": jobs}
 
 
 def _discord_voice_provider_context(value: Any) -> str:
@@ -3843,6 +3898,10 @@ class DiscordAdapter(BasePlatformAdapter):
         sessions = getattr(self, "_realtime_voice_sessions", {})
         session = sessions.pop(guild_id, None)
         fallback_reason = f"{reason}: {error}" if error else reason
+        oracle_jobs = _discord_voice_oracle_jobs_degraded(
+            self._voice_state(guild_id).oracle_jobs,
+            fallback_reason,
+        )
         logger.warning(
             "Discord realtime voice degraded (guild=%d): %s",
             guild_id,
@@ -3857,6 +3916,7 @@ class DiscordAdapter(BasePlatformAdapter):
                 sidecar_running=False,
                 fallback_reason=fallback_reason,
                 fallback_policy=policy,
+                oracle_jobs=oracle_jobs,
             )
             try:
                 loop = asyncio.get_running_loop()
@@ -3880,6 +3940,7 @@ class DiscordAdapter(BasePlatformAdapter):
             sidecar_running=False,
             fallback_reason=fallback_reason,
             fallback_policy=policy,
+            oracle_jobs=oracle_jobs,
         )
         if session is None:
             return
@@ -4434,6 +4495,10 @@ class DiscordAdapter(BasePlatformAdapter):
             self._voice_text_channels.pop(guild_id, None)
             self._voice_sources.pop(guild_id, None)
             if getattr(self, "_voice_session_states", None) is not None:
+                oracle_jobs = _discord_voice_oracle_jobs_cancelled(
+                    self._voice_state(guild_id).oracle_jobs,
+                    "voice session closed",
+                )
                 self._update_voice_state(
                     guild_id,
                     mode=DISCORD_VOICE_MODE_FAILED,
@@ -4443,6 +4508,7 @@ class DiscordAdapter(BasePlatformAdapter):
                     mixer_installed=False,
                     receiver_running=False,
                     sidecar_running=False,
+                    oracle_jobs=oracle_jobs,
                 )
 
     # Maximum seconds to wait for voice playback before giving up
