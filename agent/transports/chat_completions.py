@@ -19,6 +19,39 @@ from agent.transports.base import ProviderTransport
 from agent.transports.types import NormalizedResponse, ToolCall, Usage
 
 
+def _coerce_positive_int(value: Any) -> int | None:
+    try:
+        if isinstance(value, bool):
+            return None
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _clamp_implicit_provider_max_tokens(
+    max_tokens: int | None,
+    context_length: Any,
+) -> int | None:
+    """Keep profile default output caps from consuming a whole context window.
+
+    User-specified max_tokens and ephemeral retry caps are honored verbatim
+    elsewhere. This only applies to implicit provider defaults such as the
+    custom/Ollama profile's generous fallback cap. If a local vLLM endpoint is
+    served with a 64K window, sending the default 65,536 output tokens leaves
+    no room for input and the provider rejects the request before compression
+    can help.
+    """
+    cap = _coerce_positive_int(max_tokens)
+    window = _coerce_positive_int(context_length)
+    if cap is None or window is None:
+        return cap
+    if cap < window:
+        return cap
+    reserved = max(1024, min(8192, window // 4))
+    return min(cap, max(1, reserved))
+
+
 def _build_gemini_thinking_config(model: str, reasoning_config: dict | None) -> dict | None:
     """Translate Hermes/OpenRouter-style reasoning config to Gemini thinkingConfig."""
     if reasoning_config is None or not isinstance(reasoning_config, dict):
@@ -510,7 +543,10 @@ class ChatCompletionsTransport(ProviderTransport):
         # Per-model default cap — profiles override get_max_tokens() when
         # they front several backends with different completion-token limits
         # (e.g. opencode-go: mimo-v2.5-pro = 131072).
-        profile_max = profile.get_max_tokens(model)
+        profile_max = _clamp_implicit_provider_max_tokens(
+            profile.get_max_tokens(model),
+            params.get("context_length"),
+        )
 
         if ephemeral is not None and max_tokens_fn:
             api_kwargs.update(max_tokens_fn(ephemeral))

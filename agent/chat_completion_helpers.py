@@ -803,6 +803,11 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
             session_id=getattr(agent, "session_id", None),
             provider_profile=_profile,
             ollama_num_ctx=agent._ollama_num_ctx,
+            context_length=getattr(
+                getattr(agent, "context_compressor", None),
+                "context_length",
+                None,
+            ),
             # Context forwarded to profile hooks:
             provider_preferences=_prefs or None,
             openrouter_min_coding_score=agent.openrouter_min_coding_score,
