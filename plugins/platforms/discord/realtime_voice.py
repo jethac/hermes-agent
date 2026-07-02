@@ -434,6 +434,18 @@ class DiscordRealtimeVoiceSession:
             return
         self._activity.clear()
 
+    async def cancel_oracle_job(self, job_id: str = "all", *, reason: str = "user requested cancellation") -> None:
+        target = str(job_id or "all").strip() or "all"
+        await self._send_event(
+            VoiceEventType.INTERFACE_ORACLE_CANCEL,
+            {
+                "job_id": target,
+                "all": target.lower() == "all",
+                "reason": str(reason or "user requested cancellation"),
+                "transport": "discord_voice",
+            },
+        )
+
     async def _send_event(self, event_type: VoiceEventType, payload: dict[str, Any]) -> None:
         self._sequence += 1
         await self.sidecar.send_event(

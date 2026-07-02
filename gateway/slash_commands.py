@@ -2551,6 +2551,35 @@ class GatewaySlashCommandsMixin:
             return await self._handle_voice_channel_join(event)
         elif args == "leave":
             return await self._handle_voice_channel_leave(event)
+        elif args == "jobs":
+            guild_id = self._get_guild_id(event)
+            if guild_id and adapter and hasattr(adapter, "get_voice_session_status"):
+                session = adapter.get_voice_session_status(guild_id)
+                if asyncio.iscoroutine(session):
+                    session = await session
+                if isinstance(session, dict):
+                    lines = _voice_status_oracle_job_lines(session.get("oracle_jobs"))
+                    if lines:
+                        return "\n".join(lines)
+            return "No active realtime oracle jobs."
+        elif args == "cancel" or args.startswith("cancel "):
+            guild_id = self._get_guild_id(event)
+            job_id = args.split(maxsplit=1)[1].strip() if " " in args else "all"
+            job_id = job_id or "all"
+            if not guild_id or not adapter or not hasattr(adapter, "cancel_voice_oracle_job"):
+                return "No active realtime voice session."
+            result = adapter.cancel_voice_oracle_job(
+                guild_id,
+                job_id,
+                reason="user requested /voice cancel",
+            )
+            if asyncio.iscoroutine(result):
+                result = await result
+            if not isinstance(result, dict) or not result.get("ok"):
+                return "No active realtime voice session."
+            if job_id.lower() == "all":
+                return "Requested cancellation for all realtime oracle jobs."
+            return f"Requested cancellation for realtime oracle job {job_id}."
         elif args == "status":
             mode = self._voice_mode.get(voice_key, "off")
             labels = {

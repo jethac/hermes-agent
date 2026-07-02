@@ -3714,6 +3714,23 @@ class DiscordAdapter(BasePlatformAdapter):
             **playback,
         }
 
+    async def cancel_voice_oracle_job(
+        self,
+        guild_id: int,
+        job_id: str = "all",
+        *,
+        reason: str = "user requested cancellation",
+    ) -> Dict[str, Any]:
+        session = getattr(self, "_realtime_voice_sessions", {}).get(guild_id)
+        if session is None or not hasattr(session, "cancel_oracle_job"):
+            return {"ok": False, "reason": "no_active_realtime_voice_session"}
+        await session.cancel_oracle_job(job_id, reason=reason)
+        return {
+            "ok": True,
+            "job_id": str(job_id or "all").strip() or "all",
+            "reason": reason,
+        }
+
     async def _start_realtime_voice_session(self, guild_id: int, voice_channel_id: int) -> None:
         """Start the Discord realtime sidecar bridge for a joined voice channel."""
         cfg = getattr(self, "_realtime_voice_cfg", {}) or {}
@@ -5664,7 +5681,7 @@ class DiscordAdapter(BasePlatformAdapter):
             await self._run_simple_slash(interaction, "/reload-skills")
 
         @tree.command(name="voice", description="Toggle voice reply mode")
-        @discord.app_commands.describe(mode="Voice mode: join, channel, leave, on, tts, off, or status")
+        @discord.app_commands.describe(mode="Voice mode: join, channel, leave, jobs, cancel, on, tts, off, or status")
         @discord.app_commands.choices(mode=[
             # `join` and `channel` both route to _handle_voice_channel_join in
             # gateway/run.py — expose both in the slash UI so autocomplete
@@ -5673,6 +5690,8 @@ class DiscordAdapter(BasePlatformAdapter):
             discord.app_commands.Choice(name="join — join your voice channel", value="join"),
             discord.app_commands.Choice(name="channel — join your voice channel (alias)", value="channel"),
             discord.app_commands.Choice(name="leave — leave voice channel", value="leave"),
+            discord.app_commands.Choice(name="jobs — show realtime oracle jobs", value="jobs"),
+            discord.app_commands.Choice(name="cancel — cancel all realtime oracle jobs", value="cancel"),
             discord.app_commands.Choice(name="on — voice reply to voice messages", value="on"),
             discord.app_commands.Choice(name="tts — voice reply to all messages", value="tts"),
             discord.app_commands.Choice(name="off — text only", value="off"),

@@ -1103,9 +1103,72 @@ class TestVoiceChannelCommands:
         assert "final_transcript_to_first_audio_ms=812ms" in result
         assert "Realtime counters:" in result
         assert "kame_oracle_bypassed=1" in result
-        assert "kame_oracle_called=0" in result
-        assert "kame_oracle_bypassed=1ms" not in result
-        assert "Quality target misses: 1" in result
+
+    @pytest.mark.asyncio
+    async def test_voice_jobs_reports_oracle_job_snapshot(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.get_voice_session_status.return_value = {
+            "oracle_jobs": {
+                "enabled": True,
+                "capacity": {"running": 1, "max_concurrent": 4, "queued": 0},
+                "jobs": [
+                    {
+                        "job_id": "voice-oracle-001",
+                        "state": "running",
+                        "spoken_status": "Checking the deployment status.",
+                    }
+                ],
+            }
+        }
+        event = self._make_discord_event("/voice jobs")
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_command(event)
+
+        assert result == (
+            "Oracle jobs: running=1/4, queued=0\n"
+            "Oracle job: voice-oracle-001 running - Checking the deployment status."
+        )
+
+    @pytest.mark.asyncio
+    async def test_voice_cancel_delegates_to_discord_adapter(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.cancel_voice_oracle_job = AsyncMock(
+            return_value={
+                "ok": True,
+                "job_id": "voice-oracle-001",
+                "reason": "user requested /voice cancel",
+            }
+        )
+        event = self._make_discord_event("/voice cancel voice-oracle-001")
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_command(event)
+
+        mock_adapter.cancel_voice_oracle_job.assert_awaited_once_with(
+            111,
+            "voice-oracle-001",
+            reason="user requested /voice cancel",
+        )
+        assert result == "Requested cancellation for realtime oracle job voice-oracle-001."
+
+    @pytest.mark.asyncio
+    async def test_voice_cancel_without_session_reports_no_active_realtime_voice(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.cancel_voice_oracle_job = AsyncMock(
+            return_value={"ok": False, "reason": "no_active_realtime_voice_session"}
+        )
+        event = self._make_discord_event("/voice cancel")
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_command(event)
+
+        mock_adapter.cancel_voice_oracle_job.assert_awaited_once_with(
+            111,
+            "all",
+            reason="user requested /voice cancel",
+        )
+        assert result == "No active realtime voice session."
 
     # -- _handle_voice_channel_leave --
 

@@ -1101,6 +1101,63 @@ def test_voice_status_oracle_job_lines_are_compact():
 
 
 @pytest.mark.asyncio
+async def test_discord_realtime_session_sends_oracle_job_cancel_event():
+    from agent.realtime_voice import VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    sidecar = FakeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+    )
+    await session.start()
+    await session.cancel_oracle_job("voice-oracle-001", reason="user requested /voice cancel")
+    await session.close()
+
+    cancel = next(event for event in sidecar.sent if event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL)
+    assert cancel.payload == {
+        "job_id": "voice-oracle-001",
+        "all": False,
+        "reason": "user requested /voice cancel",
+        "transport": "discord_voice",
+    }
+
+
+@pytest.mark.asyncio
+async def test_discord_adapter_cancel_voice_oracle_job_delegates_to_session():
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    class Session:
+        def __init__(self):
+            self.cancelled = []
+
+        async def cancel_oracle_job(self, job_id, *, reason):
+            self.cancelled.append((job_id, reason))
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    session = Session()
+    adapter._realtime_voice_sessions = {111: session}
+
+    result = await adapter.cancel_voice_oracle_job(
+        111,
+        "voice-oracle-001",
+        reason="user requested /voice cancel",
+    )
+    missing = await adapter.cancel_voice_oracle_job(222, "voice-oracle-002")
+
+    assert result == {
+        "ok": True,
+        "job_id": "voice-oracle-001",
+        "reason": "user requested /voice cancel",
+    }
+    assert session.cancelled == [("voice-oracle-001", "user requested /voice cancel")]
+    assert missing == {"ok": False, "reason": "no_active_realtime_voice_session"}
+
+
+@pytest.mark.asyncio
 async def test_discord_realtime_session_barge_in_stops_mixer_and_notifies_sidecar():
     from agent.realtime_voice import VoiceEventType
     from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
