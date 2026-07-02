@@ -641,10 +641,20 @@ def _build_next_actions(
             else first_command
         )
         diagnostic_command = None
+        local_audit_command = None
+        local_validation_command = None
+        validation_commands: dict[str, Any] = {}
         if gate_id == "live_discord_voice_operator":
             blocked_by = {
                 "missing_env_keys": blockers.get("discord_env", {}).get("missing_env_keys", []),
                 "needs_external_live_probe": True,
+            }
+            local_audit_command = gate.get("collection_commands", {}).get("audit_live_manifest_no_write")
+            local_validation_command = gate.get("collection_commands", {}).get("validate_live_manifest_offline")
+            validation_commands = {
+                key: gate.get("collection_commands", {}).get(key)
+                for key in ("audit_live_manifest_no_write", "validate_live_manifest_offline")
+                if gate.get("collection_commands", {}).get(key)
             }
             operator_step = (
                 "Start with the no-write live evidence audit if artifacts already exist, then run the one-shot realtime "
@@ -657,6 +667,22 @@ def _build_next_actions(
                 "needs_read_only_discovery": True,
                 "needs_redacted_setup_evidence": True,
             }
+            local_audit_command = gate.get("rerun_commands", {}).get("plan_index_dry_audit")
+            local_validation_command = gate.get("collection_commands", {}).get("ingest_preflight_manifest")
+            validation_commands = {
+                "plan_index_dry_audit": gate.get("rerun_commands", {}).get("plan_index_dry_audit"),
+                **{
+                    key: gate.get("collection_commands", {}).get(key)
+                    for key in (
+                        "validate_nemoclaw_action_packet",
+                        "refresh_preflight_source_hashes",
+                        "validate_post_approval_receipts",
+                        "ingest_preflight_manifest",
+                    )
+                    if gate.get("collection_commands", {}).get(key)
+                },
+            }
+            validation_commands = {key: value for key, value in validation_commands.items() if value}
             operator_step = (
                 "Start with the no-write dry audit, then collect local provisioning presence evidence, "
                 "read-only discovery, and redacted setup evidence."
@@ -666,6 +692,13 @@ def _build_next_actions(
                 "current_host_hint": blockers.get("spark_host", {}).get("current_host_hint", "unknown"),
                 "needs_measured_spark_evidence": True,
                 "required_hardware": blockers.get("spark_host", {}).get("required_hardware", "1x NVIDIA DGX Spark"),
+            }
+            local_audit_command = gate.get("collection_commands", {}).get("lint_evidence")
+            local_validation_command = gate.get("collection_commands", {}).get("with_evidence")
+            validation_commands = {
+                key: gate.get("collection_commands", {}).get(key)
+                for key in ("lint_evidence", "refresh_source_hashes", "matrix_only", "with_evidence")
+                if gate.get("collection_commands", {}).get(key)
             }
             operator_step = (
                 "Start with the no-write Spark evidence lint if artifacts already exist, then collect measured local DGX "
@@ -683,8 +716,20 @@ def _build_next_actions(
                 "status": gate.get("status"),
                 "can_run_here_now": bool(phase.get("can_run_here_now")) if isinstance(phase, dict) else False,
                 "blocked_by_current_environment": blocked_by,
+                "closure_plan": gate.get("closure_plan"),
+                "closure_artifact": gate.get("closure_artifact"),
+                "evidence_template": gate.get("evidence_template"),
+                "evidence_scaffold": gate.get("evidence_scaffold"),
+                "evidence_example": gate.get("evidence_example"),
+                "evidence_manifest_example": gate.get("evidence_manifest_example"),
+                "operator_runbook": gate.get("operator_runbook"),
+                "expected_artifacts": phase.get("expected_artifacts", []) if isinstance(phase, dict) else [],
                 "first_safe_command": first_command,
                 "first_evidence_command": first_evidence_command,
+                "local_audit_command": local_audit_command,
+                "local_validation_command": local_validation_command,
+                "validation_commands": validation_commands,
+                "rerun_command": gate.get("rerun_command"),
                 **({"diagnostic_command": diagnostic_command} if diagnostic_command else {}),
                 "success_check": phase.get("success_check") if isinstance(phase, dict) else gate.get("completion_signal"),
                 "operator_step": operator_step,
@@ -1841,11 +1886,31 @@ def _next_actions_markdown(actions: list[dict[str, Any]]) -> str:
                 f"- Can run here now: {action.get('can_run_here_now')}",
                 f"- First safe command: `{action.get('first_safe_command')}`",
                 f"- First evidence command: `{action.get('first_evidence_command')}`",
+                f"- Local audit command: `{action.get('local_audit_command')}`",
+                f"- Local validation command: `{action.get('local_validation_command')}`",
+                f"- Rerun command: `{action.get('rerun_command')}`",
+                f"- Closure plan: `{action.get('closure_plan')}`",
+                f"- Closure artifact: `{action.get('closure_artifact')}`",
+                f"- Evidence template: `{action.get('evidence_template')}`",
+                f"- Evidence scaffold: `{action.get('evidence_scaffold')}`",
+                f"- Evidence example: `{action.get('evidence_example')}`",
+                f"- Evidence manifest example: `{action.get('evidence_manifest_example')}`",
+                f"- Operator runbook: `{action.get('operator_runbook')}`",
                 f"- Success check: {action.get('success_check')}",
                 f"- Operator step: {action.get('operator_step')}",
                 f"- Secret policy: {action.get('secret_policy')}",
             ]
         )
+        validation_commands = action.get("validation_commands")
+        if isinstance(validation_commands, dict):
+            lines.append("- Validation commands:")
+            for key, value in sorted(validation_commands.items()):
+                lines.append(f"  - `{key}`: `{value}`")
+        expected_artifacts = action.get("expected_artifacts")
+        if isinstance(expected_artifacts, list):
+            lines.append("- Expected artifacts:")
+            for artifact in expected_artifacts:
+                lines.append(f"  - `{artifact}`")
         if action.get("diagnostic_command"):
             lines.append(f"- Diagnostic command: `{action.get('diagnostic_command')}`")
         blocked_by = action.get("blocked_by_current_environment")

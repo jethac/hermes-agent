@@ -605,6 +605,22 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "hermes_cli.realtime_voice_live_evidence" in next_actions[0]["first_evidence_command"]
     assert "--run-doctor-report" in next_actions[0]["first_evidence_command"]
     assert "--require-inbound" in next_actions[0]["first_evidence_command"]
+    assert next_actions[0]["closure_plan"].endswith("voiceops-voice-operator/current/live-probe-closure-plan.json")
+    assert next_actions[0]["closure_artifact"].endswith("voiceops-voice-operator/current/live-probe-closure-plan.md")
+    assert next_actions[0]["evidence_template"].endswith(
+        "voiceops-voice-operator/current/live-voice-evidence-template.json"
+    )
+    assert next_actions[0]["evidence_scaffold"].endswith(
+        "voiceops-voice-operator/current/live-voice-evidence-scaffold/manifest.json"
+    )
+    assert "--audit-only" in next_actions[0]["local_audit_command"]
+    assert "--validate-live-evidence" in next_actions[0]["local_validation_command"]
+    assert sorted(next_actions[0]["validation_commands"]) == [
+        "audit_live_manifest_no_write",
+        "validate_live_manifest_offline",
+    ]
+    assert "manifest.json" in next_actions[0]["rerun_command"]
+    assert "artifacts/realtime-voice-evidence/live-current/live-turn.json" in next_actions[0]["expected_artifacts"]
     assert next_actions[1]["blocked_by_current_environment"]["missing_cli"] == [
         "stripe",
         "link-cli",
@@ -615,10 +631,43 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--package-audit" in next_actions[1]["first_safe_command"]
     assert "voiceops_provisioning_probe.py" in next_actions[1]["first_evidence_command"]
     assert "--run-readonly-discovery" not in next_actions[1]["first_evidence_command"]
+    assert next_actions[1]["closure_plan"].endswith("voiceops-provisioning/current/setup-closure-plan.json")
+    assert next_actions[1]["evidence_scaffold"].endswith(
+        "voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
+    )
+    assert "--dry-audit" in next_actions[1]["local_audit_command"]
+    assert "--preflight-evidence" in next_actions[1]["local_validation_command"]
+    assert next_actions[1]["evidence_manifest_example"].endswith(
+        "voiceops-provisioning/current/provisioning-preflight-evidence.manifest.example.json"
+    )
+    assert "execute_approved_stripe_actions" not in next_actions[1]["validation_commands"]
+    assert "validate_nemoclaw_action_packet" in next_actions[1]["validation_commands"]
+    assert "validate_post_approval_receipts" in next_actions[1]["validation_commands"]
+    assert any(
+        artifact.endswith("post-approval-receipts.json")
+        for artifact in next_actions[1]["expected_artifacts"]
+    )
     assert next_actions[2]["blocked_by_current_environment"]["required_hardware"] == "1x NVIDIA DGX Spark"
     assert next_actions[2]["blocked_by_current_environment"]["needs_measured_spark_evidence"] is True
     assert "--lint-evidence" in next_actions[2]["first_safe_command"]
     assert next_actions[2]["first_evidence_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
+    assert next_actions[2]["closure_plan"].endswith("voiceops-spark-matrix/current/spark-matrix-closure-plan.json")
+    assert next_actions[2]["evidence_scaffold"].endswith(
+        "voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
+    )
+    assert "--lint-evidence" in next_actions[2]["local_audit_command"]
+    assert "--evidence" in next_actions[2]["local_validation_command"]
+    assert next_actions[2]["operator_runbook"].endswith("voiceops-spark-matrix/current/spark-operator-runbook.md")
+    assert sorted(next_actions[2]["validation_commands"]) == [
+        "lint_evidence",
+        "matrix_only",
+        "refresh_source_hashes",
+        "with_evidence",
+    ]
+    assert any(
+        artifact.endswith("spark-operator-runbook.md")
+        for artifact in next_actions[2]["expected_artifacts"]
+    )
     assert all("never include secret values" in action["secret_policy"] for action in next_actions)
     assert [phase["phase_id"] for phase in handoff["phases"]] == [
         "live_discord_voice",
@@ -1781,10 +1830,24 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
         "uv run python -m hermes_cli.realtime_voice_live_evidence"
     )
     assert "--run-doctor-report" in payload["next_actions"][0]["first_evidence_command"]
+    assert payload["next_actions"][0]["closure_plan"].endswith("live-probe-closure-plan.json")
+    assert payload["next_actions"][0]["evidence_scaffold"].endswith("live-voice-evidence-scaffold/manifest.json")
+    assert "--validate-live-evidence" in payload["next_actions"][0]["local_validation_command"]
+    assert "validate_live_manifest_offline" in payload["next_actions"][0]["validation_commands"]
+    assert payload["next_actions"][0]["expected_artifacts"]
     assert "--dry-audit" in payload["next_actions"][1]["first_safe_command"]
     assert "voiceops_provisioning_probe.py" in payload["next_actions"][1]["first_evidence_command"]
+    assert payload["next_actions"][1]["closure_plan"].endswith("setup-closure-plan.json")
+    assert payload["next_actions"][1]["evidence_template"].endswith("provisioning-preflight-evidence.template.json")
+    assert "--preflight-evidence" in payload["next_actions"][1]["local_validation_command"]
+    assert "execute_approved_stripe_actions" not in payload["next_actions"][1]["validation_commands"]
+    assert "validate_post_approval_receipts" in payload["next_actions"][1]["validation_commands"]
     assert "--lint-evidence" in payload["next_actions"][2]["first_safe_command"]
     assert payload["next_actions"][2]["first_evidence_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
+    assert payload["next_actions"][2]["closure_plan"].endswith("spark-matrix-closure-plan.json")
+    assert payload["next_actions"][2]["evidence_scaffold"].endswith("spark-benchmark-scaffold/spark-benchmark-evidence.json")
+    assert "--lint-evidence" in payload["next_actions"][2]["local_audit_command"]
+    assert "lint_evidence" in payload["next_actions"][2]["validation_commands"]
     assert not output_dir.exists()
     assert not artifact_root.exists()
 
