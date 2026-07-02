@@ -13917,6 +13917,51 @@ def _realtime_voice_oracle_jobs_payload(realtime: Mapping[str, Any]) -> Dict[str
     }
 
 
+def _realtime_voice_oracle_tool_router_payload(realtime: Mapping[str, Any]) -> Dict[str, Any]:
+    raw = realtime.get("oracle_tool_router") if isinstance(realtime, Mapping) else {}
+    if not isinstance(raw, Mapping):
+        raw = {}
+    mode = str(raw.get("mode") or "deterministic").strip().lower()
+    if mode not in {"deterministic"}:
+        mode = "deterministic"
+    return {
+        "enabled": _truthy_config(raw.get("enabled"), default=True),
+        "mode": mode,
+        "voiceops_toolsets": _sanitize_realtime_voice_toolset_list(
+            raw.get("voiceops_toolsets"),
+            default=["voiceops"],
+        ),
+        "default_toolsets": _sanitize_realtime_voice_toolset_list(
+            raw.get("default_toolsets"),
+            default=[],
+        ),
+    }
+
+
+def _sanitize_realtime_voice_toolset_list(value: Any, *, default: Sequence[str]) -> List[str]:
+    if isinstance(value, str):
+        candidates = re.split(r"[, ]+", value)
+    elif isinstance(value, (list, tuple, set)):
+        candidates = list(value)
+    else:
+        candidates = list(default)
+
+    sanitized: List[str] = []
+    seen = set()
+    for candidate in candidates:
+        token = str(candidate or "").strip()
+        if not token or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", token):
+            continue
+        key = token.lower()
+        if key in seen:
+            continue
+        sanitized.append(token)
+        seen.add(key)
+        if len(sanitized) >= 16:
+            break
+    return sanitized
+
+
 def _realtime_voice_output_events_payload(realtime: Mapping[str, Any]) -> Dict[str, Any]:
     raw = realtime.get("output_events") if isinstance(realtime, Mapping) else {}
     if not isinstance(raw, Mapping):
@@ -15954,6 +15999,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     metrics_policy = _realtime_voice_metrics_policy_payload(realtime)
     output_events_policy = _realtime_voice_output_events_payload(realtime)
     oracle_jobs_policy = _realtime_voice_oracle_jobs_payload(realtime)
+    oracle_tool_router_policy = _realtime_voice_oracle_tool_router_payload(realtime)
     turn_acknowledgement = _realtime_voice_turn_acknowledgement_payload(realtime)
     barge_in_policy = {
         "min_rms": _bounded_int_config(
@@ -16148,6 +16194,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
         output_events=output_events_policy,
         quality_targets_ms=quality_targets_ms,
         oracle_jobs=oracle_jobs_policy,
+        oracle_tool_router=oracle_tool_router_policy,
         barge_in_policy=barge_in_policy,
         metadata={
             "source": "desktop",
@@ -16208,6 +16255,7 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "routing": routing_policy,
             "metrics": metrics_policy,
             "oracle_jobs": oracle_jobs_policy,
+            "oracle_tool_router": oracle_tool_router_policy,
             "output_events": output_events_policy,
             "turn_acknowledgement": turn_acknowledgement,
             "conversation_quality": conversation_quality,

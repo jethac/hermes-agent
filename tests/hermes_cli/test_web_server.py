@@ -3423,6 +3423,70 @@ class TestBuildSchemaFromConfig:
         }
         assert config.metadata["oracle_jobs"] == config.oracle_jobs
 
+    def test_realtime_voice_ws_config_passes_oracle_tool_router_from_config(self, monkeypatch):
+        import hermes_cli.web_server as web_server
+
+        monkeypatch.setattr(web_server, "load_env", lambda: {})
+        monkeypatch.setattr(
+            web_server,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "kame_interface_oracle",
+                        "oracle_tool_router": {
+                            "enabled": True,
+                            "mode": "deterministic",
+                            "voiceops_toolsets": ["voiceops", "stripe", "bad toolset!"],
+                            "default_toolsets": "memory,search",
+                        },
+                    }
+                }
+            },
+        )
+
+        config = web_server._realtime_voice_config_from_request(
+            SimpleNamespace(query_params={"session_id": "voice-router-test"})
+        )
+
+        assert config.session_id == "voice-router-test"
+        assert config.oracle_tool_router == {
+            "enabled": True,
+            "mode": "deterministic",
+            "voiceops_toolsets": ["voiceops", "stripe"],
+            "default_toolsets": ["memory", "search"],
+        }
+        assert config.metadata["oracle_tool_router"] == config.oracle_tool_router
+
+    def test_realtime_voice_ws_config_defaults_oracle_tool_router(self, monkeypatch):
+        import hermes_cli.web_server as web_server
+
+        monkeypatch.setattr(web_server, "load_env", lambda: {})
+        monkeypatch.setattr(
+            web_server,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "kame_interface_oracle",
+                    }
+                }
+            },
+        )
+
+        config = web_server._realtime_voice_config_from_request(
+            SimpleNamespace(query_params={"session_id": "voice-router-default"})
+        )
+
+        assert config.oracle_tool_router == {
+            "enabled": True,
+            "mode": "deterministic",
+            "voiceops_toolsets": ["voiceops"],
+            "default_toolsets": [],
+        }
+
     def test_discord_realtime_voice_config_fields_are_exposed(self):
         from hermes_cli.web_server import CONFIG_SCHEMA
 

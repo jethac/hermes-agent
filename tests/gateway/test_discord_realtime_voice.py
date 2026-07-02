@@ -1209,6 +1209,56 @@ def test_discord_realtime_event_tracks_oracle_job_status():
     assert "oracle_text" not in status["oracle_jobs"]["jobs"][0]
 
 
+def test_discord_realtime_degraded_marks_active_oracle_jobs_failed():
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._voice_session_states = {}
+    adapter._realtime_voice_sessions = {111: object()}
+    adapter._realtime_voice_cfg = {"fallback_policy": "text_only"}
+
+    adapter._handle_realtime_voice_event(
+        111,
+        "session.started",
+        {"oracle_jobs": {"enabled": True, "max_concurrent": 4, "queue_limit": 16}},
+    )
+    adapter._handle_realtime_voice_event(
+        111,
+        "oracle.job.started",
+        {
+            "job_id": "voice-oracle-001",
+            "state": "running",
+            "priority": "normal",
+            "route": "defer",
+            "intent": "Check the deployment status.",
+            "spoken_status": "Checking the deployment status.",
+        },
+    )
+
+    adapter._handle_realtime_voice_degraded(
+        111,
+        "sidecar_event_stream_closed",
+        "sidecar event stream closed",
+    )
+    status = adapter.get_voice_session_status(111)
+
+    assert 111 not in adapter._realtime_voice_sessions
+    assert status["sidecar_running"] is False
+    assert status["fallback_reason"] == "sidecar_event_stream_closed: sidecar event stream closed"
+    assert status["oracle_jobs"]["capacity"]["running"] == 0
+    assert status["oracle_jobs"]["jobs"] == [
+        {
+            "job_id": "voice-oracle-001",
+            "state": "failed",
+            "priority": "normal",
+            "route": "defer",
+            "intent": "Check the deployment status.",
+            "spoken_status": "Checking the deployment status.",
+            "error": "sidecar_event_stream_closed: sidecar event stream closed",
+        }
+    ]
+
+
 def test_voice_status_oracle_job_lines_are_compact():
     from gateway.slash_commands import _voice_status_oracle_job_lines
 
@@ -1840,3 +1890,78 @@ async def test_discord_realtime_session_reports_sidecar_session_error_as_degrade
     await asyncio.wait_for(session.wait_until_idle(), timeout=1)
 
     assert degraded == [("sidecar_session_error", "sidecar unavailable")]
+
+
+@pytest.mark.asyncio
+async def test_discord_realtime_session_reports_unexpected_session_closed_as_degraded():
+    from agent.realtime_voice import VoiceEvent, VoiceEventType
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    degraded = []
+    observed = []
+    sidecar = FakeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+        degraded_callback=lambda reason, error: degraded.append((reason, error)),
+        event_callback=lambda event_type, payload: observed.append((event_type, payload)),
+    )
+
+    await session.start()
+    await sidecar.emit(VoiceEvent(
+        type=VoiceEventType.SESSION_CLOSED,
+        session_id="discord:111:222",
+        sequence=1,
+        payload={"reason": "provider closed"},
+    ))
+    await asyncio.wait_for(session.wait_until_idle(), timeout=1)
+
+    assert observed == [("session.closed", {"reason": "provider closed"})]
+    assert degraded == [("sidecar_session_closed", "sidecar closed the session")]
+
+
+@pytest.mark.asyncio
+async def test_discord_realtime_session_reports_unexpected_sidecar_eof_as_degraded():
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    degraded = []
+    sidecar = FakeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+        degraded_callback=lambda reason, error: degraded.append((reason, error)),
+    )
+
+    await session.start()
+    await sidecar._events.put(None)
+    await asyncio.wait_for(session.wait_until_idle(), timeout=1)
+
+    assert degraded == [("sidecar_event_stream_closed", "sidecar event stream closed")]
+
+
+@pytest.mark.asyncio
+async def test_discord_realtime_session_local_close_does_not_report_sidecar_eof_degraded():
+    from plugins.platforms.discord.realtime_voice import DiscordRealtimeVoiceSession
+
+    degraded = []
+    sidecar = FakeSidecar()
+    session = DiscordRealtimeVoiceSession(
+        guild_id=111,
+        voice_channel_id=222,
+        text_channel_id=333,
+        sidecar=sidecar,
+        sidecar_base_url="http://127.0.0.1:8766",
+        degraded_callback=lambda reason, error: degraded.append((reason, error)),
+    )
+
+    await session.start()
+    await session.close()
+    await asyncio.sleep(0)
+
+    assert degraded == []

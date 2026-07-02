@@ -217,6 +217,7 @@ class DiscordRealtimeVoiceSession:
         self._sequence = 0
         self._reader_task: Optional[asyncio.Task[None]] = None
         self._closed = False
+        self._local_close_requested = False
         self._started = False
         self._activity = asyncio.Event()
         self._playback_pcm48_stereo_buffer = bytearray()
@@ -317,6 +318,7 @@ class DiscordRealtimeVoiceSession:
     async def close(self) -> None:
         if self._closed:
             return
+        self._local_close_requested = True
         if self._started:
             await self._stop_mixer_speech_for_shutdown()
             self._flush_playback_buffer()
@@ -511,6 +513,11 @@ class DiscordRealtimeVoiceSession:
                     self._flush_playback_buffer()
                 elif event.type == VoiceEventType.SESSION_CLOSED:
                     self._flush_playback_buffer()
+                    await self._notify_event_observed(event)
+                    if not self._local_close_requested and not self._closed:
+                        await self._notify_degraded("sidecar_session_closed", "sidecar closed the session")
+                    self._activity.set()
+                    return
                 elif event.type == VoiceEventType.BARGE_IN:
                     self._advance_playback_generation(event)
                     event.payload.update(
@@ -544,6 +551,10 @@ class DiscordRealtimeVoiceSession:
                     if event.type == VoiceEventType.TRANSCRIPT_FINAL:
                         self._input_user_ids_since_result.clear()
                 await self._notify_event_observed(event)
+                self._activity.set()
+            if not self._local_close_requested and not self._closed:
+                logger.warning("Discord realtime voice sidecar event stream closed unexpectedly")
+                await self._notify_degraded("sidecar_event_stream_closed", "sidecar event stream closed")
                 self._activity.set()
         except asyncio.CancelledError:
             raise
