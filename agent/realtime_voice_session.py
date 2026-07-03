@@ -344,7 +344,7 @@ class RealtimeVoiceSession:
             self.transcript.committed_oracle_records.append(
                 {
                     "type": event.type.value,
-                    "payload": _redacted_durable_oracle_payload(event.payload),
+                    "payload": _redacted_durable_oracle_payload(event),
                 }
             )
         elif event.type == VoiceEventType.SESSION_ERROR:
@@ -548,16 +548,47 @@ def _durable_record_is_oracle_job_cancelled(record: Mapping[str, Any], job_id: s
     )
 
 
-def _redacted_durable_oracle_payload(payload: Mapping[str, Any]) -> dict:
+def _redacted_durable_oracle_payload(event: VoiceEvent) -> dict:
+    payload = _durable_oracle_payload(event)
+    return _redacted_durable_oracle_mapping(payload)
+
+
+def _redacted_durable_oracle_mapping(payload: Mapping[str, Any]) -> dict:
     return {
         str(key): _redacted_durable_oracle_value(value, key=str(key))
         for key, value in payload.items()
     }
 
 
+def _durable_oracle_payload(event: VoiceEvent) -> Mapping[str, Any]:
+    if event.type != VoiceEventType.INTERFACE_ORACLE_REQUEST:
+        return event.payload
+
+    payload = dict(event.payload)
+    for key in (
+        "transcript",
+        "transcript_confidence",
+        "asr_transcript",
+        "asr_transcript_confidence",
+        "reflex_transcript_hypothesis",
+        "reflex_transcript_confidence",
+        "auxiliary_transcript_hypotheses",
+    ):
+        payload.pop(key, None)
+
+    oracle_text_source = str(payload.get("oracle_text_source") or "").strip()
+    if oracle_text_source and not _durable_oracle_text_source_is_promoted(
+        oracle_text_source,
+        allow_asr=payload.get("interface_audio_input_fallback") is True,
+    ):
+        payload.pop("oracle_text", None)
+        payload.pop("text", None)
+    return payload
+
+
 def _redacted_durable_oracle_value(value: Any, *, key: str = "") -> Any:
     if isinstance(value, Mapping):
-        return _redacted_durable_oracle_payload(value)
+        return _redacted_durable_oracle_mapping(value)
     if isinstance(value, list):
         return [_redacted_durable_oracle_value(item, key=key) for item in value]
     if isinstance(value, tuple):
@@ -589,6 +620,24 @@ def _durable_oracle_key_is_sensitive(key: str) -> bool:
     return normalized.endswith("_token") or normalized.endswith("_secret")
 
 
+def _durable_oracle_text_source_is_promoted(source: str, *, allow_asr: bool = False) -> bool:
+    normalized = str(source or "").strip().lower()
+    if not normalized:
+        return False
+    if normalized in {"asr", "asr_fallback"}:
+        return allow_asr
+    return normalized in {
+        "gemma_interpreter",
+        "human_verified",
+        "interpreter",
+        "interpreter_audio",
+        "oracle",
+        "oracle_verified",
+        "user_verified",
+        "verified",
+    }
+
+
 def _durable_oracle_record_survives_stale_generation(event: VoiceEvent) -> bool:
     expected_state_by_type = {
         VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL: "waiting_for_approval",
@@ -618,6 +667,20 @@ def _durable_oracle_record_survives_stale_generation(event: VoiceEvent) -> bool:
 
 def _durable_user_text_from_final_user_event(payload: Mapping[str, Any]) -> str:
     if _payload_is_kame(payload):
+        oracle_text_source = str(
+            payload.get("kame_oracle_text_source")
+            or payload.get("oracle_text_source")
+            or ""
+        ).strip()
+        if _durable_oracle_text_source_is_promoted(
+            oracle_text_source,
+            allow_asr=payload.get("kame_interface_audio_input_fallback") is True
+            or payload.get("interface_audio_input_fallback") is True,
+        ):
+            for key in ("kame_oracle_text", "oracle_text", "text"):
+                text = str(payload.get(key) or "").strip()
+                if text:
+                    return text
         for key in ("kame_intent", "intent"):
             text = str(payload.get(key) or "").strip()
             if text:

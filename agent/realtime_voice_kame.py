@@ -402,11 +402,11 @@ class KameOracleRequest:
 
     @property
     def oracle_text(self) -> str:
-        """Return the best text to persist as the user's oracle-facing message."""
+        """Return promoted text for the user's oracle-facing message."""
 
         if self.interface_audio_input_fallback and self.asr_transcript:
             return self.asr_transcript.strip()
-        if self.transcript and not self.transcript_source.lower().startswith("asr"):
+        if self.transcript and _transcript_source_is_promoted(self.transcript_source):
             return self.transcript.strip()
         return self.intent.strip()
 
@@ -416,7 +416,7 @@ class KameOracleRequest:
 
         if self.interface_audio_input_fallback and self.asr_transcript:
             return self.asr_transcript_source or "asr"
-        if self.transcript and not self.transcript_source.lower().startswith("asr"):
+        if self.transcript and _transcript_source_is_promoted(self.transcript_source):
             return self.transcript_source or "reflex_audio"
         return self.intent_source or "reflex_audio"
 
@@ -714,6 +714,10 @@ def kame_external_brain_request_to_oracle_request(
 
 
 def _external_transcript_source_is_promoted(source: str) -> bool:
+    return _transcript_source_is_promoted(source)
+
+
+def _transcript_source_is_promoted(source: str) -> bool:
     text = _optional_text(source).lower()
     if not text:
         return False

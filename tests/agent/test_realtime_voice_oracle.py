@@ -151,33 +151,90 @@ def test_hermes_realtime_oracle_runs_concurrent_kame_requests_and_targets_interr
             if call["agent"].interrupts
         ]
         assert len(interrupted) == 1
-        assert interrupted[0]["persist_user_message"] == "task 2 exact evidence"
+        assert interrupted[0]["persist_user_message"] == "Run task 2."
         assert interrupted[0]["agent"].interrupts == ["cancel task 2 only"]
 
         release.set()
         results = await asyncio.gather(*tasks)
         assert results == [
-            "delta for task 1 exact evidence;",
-            "delta for task 2 exact evidence;",
-            "delta for task 3 exact evidence;",
-            "delta for task 4 exact evidence;",
+            "delta for Run task 1.;",
+            "delta for Run task 2.;",
+            "delta for Run task 3.;",
+            "delta for Run task 4.;",
         ]
 
         assert max_running == 4
         assert [call["session_id"] for call in calls] == ["voice-123"] * 4
         assert [call["platform"] for call in calls] == ["desktop_voice"] * 4
         assert [call["model"] for call in calls] == [""] * 4
-        assert [call["persist_user_message"] for call in calls] == [
-            "task 1 exact evidence",
-            "task 2 exact evidence",
-            "task 3 exact evidence",
-            "task 4 exact evidence",
+        assert sorted(call["persist_user_message"] for call in calls) == [
+            "Run task 1.",
+            "Run task 2.",
+            "Run task 3.",
+            "Run task 4.",
         ]
         assert all("live Discord voice channel" in call["prompt"] for call in calls)
         assert all("Hermes backend oracle" in call["prompt"] for call in calls)
         assert all("Verbatim ASR evidence" in call["prompt"] for call in calls)
 
     asyncio.run(run())
+
+
+def test_kame_oracle_persists_promoted_intent_not_reflex_transcript_hypothesis(monkeypatch):
+    calls = []
+
+    class FakeAIAgent:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def run_conversation(self, prompt, *, persist_user_message=None, stream_callback=None):
+            calls.append(
+                {
+                    "prompt": prompt,
+                    "persist_user_message": persist_user_message,
+                    "kwargs": self.kwargs,
+                }
+            )
+            if stream_callback is not None:
+                stream_callback("ok")
+            return {"final_response": "ok"}
+
+    async def run():
+        monkeypatch.setattr(run_agent, "AIAgent", FakeAIAgent)
+        oracle = HermesRealtimeOracle(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        request = KameOracleRequest(
+            session_id="voice-123",
+            turn_id="voice-123:1",
+            source="discord_voice",
+            user_id="jetha",
+            intent="Find the note.",
+            intent_source="reflex_audio",
+            route=KameRoute.ORACLE_DIRECT,
+            transcript="find the node",
+            transcript_source="reflex_audio",
+            asr_transcript="find the gnome",
+            asr_transcript_source="asr",
+            auxiliary_transcript_hypotheses=(
+                {"source": "moshi", "text": "find the node", "authority": "hypothesis"},
+            ),
+        )
+
+        chunks = []
+        async for delta in oracle.stream_answer_for_request(request):
+            chunks.append(delta)
+        assert chunks == ["ok"]
+
+    asyncio.run(run())
+    assert calls[0]["persist_user_message"] == "Find the note."
+    assert "Reflex transcript hypothesis (reflex_audio): find the node" in calls[0]["prompt"]
+    assert "Verbatim ASR evidence (asr): find the gnome" in calls[0]["prompt"]
+    assert "Auxiliary transcript hypothesis (moshi" in calls[0]["prompt"]
 
 
 def test_voice_oracle_preserves_default_toolset_selection_for_general_voice_turn(monkeypatch):

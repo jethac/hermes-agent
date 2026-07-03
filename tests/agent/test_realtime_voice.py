@@ -1393,7 +1393,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
                 "confidence": 0.68,
             },
         )
-        assert request.oracle_text == "find the note from yesterday's meeting"
+        assert request.oracle_text == "Find the note from yesterday's meeting."
         assert request.oracle_text_source == "reflex_audio"
         assert request.interface_input_source == "native_audio"
         assert request.reflex_provider == "vllm"
@@ -1446,7 +1446,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert oracle_request.payload["route_confidence"] == 0.81
         assert oracle_request.payload["mode"] == "voice"
         assert oracle_request.payload["urgency"] == "interactive"
-        assert oracle_request.payload["text"] == "find the note from yesterday's meeting"
+        assert oracle_request.payload["text"] == "Find the note from yesterday's meeting."
         assert oracle_request.payload["oracle_text_source"] == "reflex_audio"
         assert oracle_request.payload["transcript"] == "find the note from yesterday's meeting"
         assert oracle_request.payload["asr_transcript"] == "find the node from yesterday's meeting"
@@ -1604,7 +1604,7 @@ def test_kame_engine_drops_asr_evidence_when_asr_mode_disabled(monkeypatch):
         assert request.asr_transcript == ""
         assert request.asr_transcript_source == ""
         assert request.asr_transcript_confidence is None
-        assert request.oracle_text == "reflex wording"
+        assert request.oracle_text == "Reflex intent."
         assert request.oracle_text_source == "reflex_audio"
         final = next(event for event in seen if event.type == VoiceEventType.TRANSCRIPT_FINAL)
         intent = next(event for event in seen if event.type == VoiceEventType.INTERFACE_INTENT_FINAL)
@@ -1612,7 +1612,7 @@ def test_kame_engine_drops_asr_evidence_when_asr_mode_disabled(monkeypatch):
         assert "kame_asr_transcript" not in final.payload
         assert "asr_transcript" not in intent.payload
         assert "asr_transcript" not in oracle_request.payload
-        assert oracle_request.payload["text"] == "reflex wording"
+        assert oracle_request.payload["text"] == "Reflex intent."
         assert oracle_request.payload["oracle_text_source"] == "reflex_audio"
 
     asyncio.run(run())
@@ -3731,7 +3731,7 @@ def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(m
 
         updated_request, update_text, metadata = oracle.updates[0]
         assert updated_request.intent == "Run task one"
-        assert updated_request.oracle_text == "run task one"
+        assert updated_request.oracle_text == "Run task one"
         assert updated_request.oracle_text_source == "reflex_audio"
         assert any("intent=inspect deployment logs" in update for update in updated_request.job_updates)
         assert "transcript=check the current deployment logs" in update_text
@@ -5853,7 +5853,7 @@ def test_kame_engine_interface_cancel_stops_one_async_oracle_job(monkeypatch):
         assert oracle.interrupted_requests == [
             (
                 "voice-123:1",
-                "check the deployment status",
+                "Check the deployment status.",
                 "Realtime voice oracle job voice-oracle-001 cancelled: user requested cancellation",
             )
         ]
@@ -5959,7 +5959,7 @@ def test_kame_engine_cancel_one_of_two_running_oracle_jobs_leaves_other_running(
         assert oracle.interrupted_requests == [
             (
                 "voice-123:1",
-                "check deployment status",
+                "Check deployment status.",
                 "Realtime voice oracle job voice-oracle-001 cancelled: deployment check cancelled",
             )
         ]
@@ -6163,7 +6163,7 @@ def test_kame_engine_accepts_sidecar_interface_intent_final(monkeypatch):
         assert request.asr_transcript == "check deployment status"
         assert request.asr_transcript_source == "asr"
         assert request.asr_transcript_confidence == 0.91
-        assert request.oracle_text == "check the deployment status"
+        assert request.oracle_text == "Check the deployment status."
         assert request.interface_input_source == "native_audio"
         assert request.reflex_provider == "vllm"
 
@@ -6178,7 +6178,7 @@ def test_kame_engine_accepts_sidecar_interface_intent_final(monkeypatch):
         assert intent.payload["input_generation"] == 3
         assert intent.payload["metrics"]["kame_speech_end_to_interface_decision_ms"] == 42
         assert intent.payload["metrics"]["kame_final_transcript_to_interface_decision_ms"] >= 0
-        assert oracle_request.payload["text"] == "check the deployment status"
+        assert oracle_request.payload["text"] == "Check the deployment status."
         assert oracle_request.payload["oracle_text_source"] == "reflex_audio"
         assert commit.payload["text"] == "The deployment is healthy."
         assert spoken == ["The deployment is healthy."]
@@ -15148,6 +15148,53 @@ def test_kame_session_persists_reflex_intent_not_raw_transcript():
     assert session.durable_messages() == [{"role": "user", "content": "Find the note from yesterday."}]
 
 
+def test_kame_session_persists_promoted_text_only_when_source_is_promoted():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        ),
+        engine=KameInterfaceOracleEngine(oracle=FakeOracle()),
+    )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.TRANSCRIPT_FINAL,
+            session_id="voice-123",
+            sequence=1,
+            payload={
+                "text": "find the node",
+                "voice_architecture": "kame_frontend_oracle",
+                "kame_intent": "Find the note.",
+                "kame_transcript": "find the node",
+                "kame_transcript_source": "reflex_audio",
+                "kame_oracle_text_source": "reflex_audio",
+                "playback_generation": 1,
+            },
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.TRANSCRIPT_FINAL,
+            session_id="voice-123",
+            sequence=2,
+            payload={
+                "text": "what is three to the power of seventeen",
+                "voice_architecture": "kame_frontend_oracle",
+                "kame_intent": "answer a math question",
+                "kame_oracle_text": "what is three to the power of seventeen",
+                "kame_oracle_text_source": "gemma_interpreter",
+                "playback_generation": 2,
+            },
+        )
+    )
+
+    assert session.durable_messages() == [
+        {"role": "user", "content": "Find the note."},
+        {"role": "user", "content": "what is three to the power of seventeen"},
+    ]
+
+
 def test_session_persists_only_durable_oracle_records():
     session = RealtimeVoiceSession(
         RealtimeVoiceSessionConfig(session_id="voice-123"),
@@ -15244,8 +15291,6 @@ def test_session_persists_only_durable_oracle_records():
             "payload": {
                 "turn_id": "voice-123:1",
                 "intent": "Check deployment status.",
-                "transcript": "check the deployment status",
-                "asr_transcript": "check deployment status",
                 "playback_generation": 1,
             },
         },
@@ -15266,6 +15311,57 @@ def test_session_persists_only_durable_oracle_records():
             "type": VoiceEventType.ORACLE_ERROR.value,
             "payload": {"error": "timeout", "playback_generation": 1},
         },
+    ]
+
+
+def test_session_does_not_persist_kame_oracle_request_hypothesis_fields_as_durable_text():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-123"),
+        engine=KameInterfaceOracleEngine(oracle=FakeOracle()),
+    )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            session_id="voice-123",
+            sequence=1,
+            payload={
+                "voice_architecture": "kame_frontend_oracle",
+                "turn_id": "voice-123:1",
+                "route": "oracle_direct",
+                "intent": "Find the note.",
+                "intent_source": "reflex_audio",
+                "text": "find the node",
+                "oracle_text_source": "reflex_audio",
+                "transcript": "find the node",
+                "transcript_source": "reflex_audio",
+                "transcript_confidence": 0.71,
+                "asr_transcript": "find the gnome",
+                "asr_transcript_source": "asr",
+                "asr_transcript_confidence": 0.82,
+                "auxiliary_transcript_hypotheses": [
+                    {"source": "moshi", "text": "find the node", "authority": "hypothesis"}
+                ],
+                "playback_generation": 1,
+            },
+        )
+    )
+
+    assert session.durable_oracle_records() == [
+        {
+            "type": VoiceEventType.INTERFACE_ORACLE_REQUEST.value,
+            "payload": {
+                "voice_architecture": "kame_frontend_oracle",
+                "turn_id": "voice-123:1",
+                "route": "oracle_direct",
+                "intent": "Find the note.",
+                "intent_source": "reflex_audio",
+                "oracle_text_source": "reflex_audio",
+                "transcript_source": "reflex_audio",
+                "asr_transcript_source": "asr",
+                "playback_generation": 1,
+            },
+        }
     ]
 
 
