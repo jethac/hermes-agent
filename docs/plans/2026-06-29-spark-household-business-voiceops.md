@@ -100,6 +100,11 @@ Target KAME layout:
   Gemma's role is interpreter/evidence adjudicator, not a blocking ASR service.
   The reflex may queue/narrate work from provisional intent, while durable user
   wording and tool-critical fields require interpreter or oracle promotion.
+- Interpreter prompt rule: raw audio and timing metadata are the primary
+  interpreter input. Moshi/open-S2S and classic-ASR text must be passed in a
+  labeled hypotheses field with source, timing/confidence when available,
+  partial/final state, and `authority = "hypothesis"` so Gemma can accept,
+  correct, or reject it instead of silently treating it as the user message.
 - Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
 The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.

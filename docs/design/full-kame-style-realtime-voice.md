@@ -244,6 +244,15 @@ along with raw voice?" question: yes, that is exactly the desired packet shape.
 The raw voice clip and timing metadata are the primary interpreter evidence;
 Moshi/open-S2S text is a labeled clue that Gemma may accept, correct, or reject.
 
+The interpreter request should make that hierarchy visible in the wire format and
+prompt. Put the raw audio reference and timing fields in the primary input
+section, then put Moshi/open-S2S/classic-ASR text under a separate
+`transcript_hypotheses` or `auxiliary_transcript_hypotheses` field with
+`authority = "hypothesis"`. The prompt must explicitly tell the interpreter
+that transcript hypotheses can be wrong, clipped, hallucinated, stale, or from a
+different speaker, and that it should prefer raw-audio interpretation when the
+signals disagree.
+
 This also resolves the "fast reflex plus Gemma multilingual ASR" shape. Gemma is
 not merely a background ASR process and should not block acknowledgement. It is
 the interpreter that sees the clipped waveform and the evidence bundle after the
@@ -293,6 +302,13 @@ If a Moshi-style frontend provides both audio and transcript text, the audio
 reference should be preferred even when the transcript appears cleaner. The
 transcript is useful because it shows what the realtime model believed it heard;
 it is not proof that the user said those words.
+
+If the frontend can stream partial Moshi transcripts before the audio cut is
+finalized, Hermes should attach them to the same pending `turn_id` and mark them
+`partial = true`. A later final transcript from the same source replaces or
+supersedes the partial for interpreter context, but the audit ledger should keep
+the timing/provenance needed to debug clipped starts, duplicated words, and
+hallucinated commands.
 
 ## Responsibilities
 

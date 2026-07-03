@@ -118,6 +118,14 @@ ASR should create a second oracle turn, overwrite `oracle_text` directly, or
 block acknowledgement. Only interpreter evidence or later oracle judgment may
 promote a hypothesis into durable user text or tool-critical arguments.
 
+The implementation should reflect this in the request shape, not only in
+comments. Raw audio and timing metadata are primary interpreter inputs.
+Moshi/open-S2S and classic-ASR text must live under a labeled hypotheses field,
+with source, timing, confidence when available, partial/final state, and
+`authority = "hypothesis"`. The interpreter prompt must be allowed to reject a
+hypothesis that disagrees with the waveform, speaker identity, energy gate, or
+later context.
+
 For this goal, transcript evidence is a side-channel sensor, not a scheduler.
 It can arrive before, with, or after the interpreter result. The scheduler
 should preserve it with provenance, but should not wait for it when the reflex
