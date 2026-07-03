@@ -20,7 +20,8 @@ Full KAME-style means:
 3. A parallel interpreter lane, preferably Gemma 4 audio-multimodal, reviews
    clipped raw audio plus any reflex/Moshi transcript hypotheses to produce
    corrected multilingual evidence, entities, confidence, and oracle request
-   patches.
+   patches. The raw audio remains the primary input; transcript hypotheses are
+   supporting context.
 4. Hermes's oracle remains the brain: tools, memory, files, long reasoning,
    project context, and durable task execution.
 5. The reflex and interpreter broker compact requests to the oracle instead of
@@ -36,7 +37,9 @@ This design relies on the following external model and serving assumptions:
   control and rough transcript hypotheses, but should not be trusted as durable
   transcript truth or granted broad tools.
 - Moshi-class transcript output, when available, is auxiliary evidence for the
-  interpreter and oracle. It must not become a separate STT-first control path.
+  interpreter and oracle. It must not become a separate STT-first control path,
+  and Hermes must still function when that transcript is absent, late, or
+  contradicted by raw-audio interpretation.
 - Gemma 4 E2B/E4B/12B supports text, image, and audio input, and produces text output.
 - Gemma 4 E2B/E4B use a USM-style Conformer audio encoder.
 - Gemma 4 audio input is bounded; Google's model card currently lists a 30 second audio limit.
@@ -61,11 +64,13 @@ Discord voice / VoiceClaw / OpenClaw Talk / phone-SIP / desktop mic
        -> VAD / turn detector
        -> fast reflex / floor-control model
             -> immediate ack / local control / rough transcript hypothesis
+       -> interpreter lane
+            -> Gemma 4 audio model over raw clip
+            -> optional context: reflex/Moshi transcript hypothesis
+            -> optional fallback context: classic ASR hypothesis
+            -> corrected transcript / entities / oracle request patch
        -> auxiliary transcript evidence lane
             -> Moshi/S2S transcript hypothesis or classic ASR hypothesis
-       -> interpreter lane
-            -> Gemma 4 audio model over raw clip + reflex/Moshi/ASR hypotheses
-            -> corrected transcript / entities / oracle request patch
        -> speech planner
        -> TTS or native speech output
        -> oracle router
@@ -119,6 +124,20 @@ unquestioned transcript of record. Moshi/S2S transcript output belongs in this
 same class: helpful context, not authority. The interpreter and auxiliary
 transcript evidence lanes may correct it before the oracle executes tool calls
 or external actions.
+
+If the reflex is a Moshi-style S2S model that emits a transcript, Hermes should
+pass that transcript to the interpreter beside the raw audio segment. The
+interpreter prompt should label it explicitly as a hypothesis, not as ground
+truth:
+
+- `raw_audio`: the clipped utterance and timing metadata
+- `reflex_transcript_hypothesis`: what the live reflex thought it heard
+- `s2s_transcript_hypothesis`: Moshi/OpenClaw/VoiceClaw-style transcript output,
+  if distinct from the reflex hypothesis
+- `classic_asr_hypothesis`: optional fallback/evidence transcript, if enabled
+
+The interpreter may use all of those signals, but its output must identify
+disagreements instead of silently averaging them away.
 
 It owns:
 
@@ -224,6 +243,18 @@ It is a lower-level evidence path used when Hermes needs exact wording or when a
 fast S2S/reflex model already produced a useful but untrusted transcript
 hypothesis. Moshi-class transcript output and classic ASR output both enter
 through this lane.
+
+This lane is allowed to improve the interpreter and oracle requests; it is not a
+prerequisite for a voice turn. In full KAME mode the ordering is:
+
+1. VAD/endpointer cuts the user turn.
+2. Reflex responds or submits work from live audio.
+3. Interpreter receives raw audio plus any available transcript hypotheses.
+4. Classic ASR evidence may arrive only as optional fallback or comparison
+   context.
+
+The absence of ASR evidence must not block the reflex acknowledgement or prevent
+oracle job creation when the raw audio and reflex route are sufficient.
 
 Modes:
 
@@ -408,6 +439,14 @@ auxiliary transcript hypothesis when enabled. The oracle should prefer
 interpreter evidence for tool arguments, using Moshi/S2S or classic ASR
 transcripts as supporting literal evidence while preserving the reflex route and
 "interface already said" context.
+
+Queued interpreter evidence must be folded into the oracle request before the
+job starts. If the interpreter produces a corrected transcript or intent while a
+job is still queued, the scheduler should update `oracle_text`, `transcript`,
+`transcript_source`, `transcript_confidence`, `intent`, and relevant metadata
+before dispatch. Late evidence for a running job should be delivered as a
+bounded update and audited before irreversible tool, spend, provisioning, or
+call actions rely on the earlier request.
 
 ## Barge-In
 

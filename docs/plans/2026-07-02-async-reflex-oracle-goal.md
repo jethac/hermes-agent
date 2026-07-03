@@ -13,9 +13,10 @@ successor_design: docs/design/full-kame-style-realtime-voice.md
 
 The KAME voice branch has the right authority boundary: the human talks to a
 fast reflex/interface model, a parallel interpreter lane turns raw audio plus
-reflex transcript hypotheses into corrected multilingual evidence, and Hermes'
-active oracle model owns real work: tools, memory, files, approvals, planning,
-and durable outcomes.
+reflex/Moshi transcript hypotheses into corrected multilingual evidence, and
+Hermes' active oracle model owns real work: tools, memory, files, approvals,
+planning, and durable outcomes. Raw audio is the primary interpreter input;
+transcript hypotheses are optional context and fallback evidence.
 
 The next gap is runtime behavior. The reflex and oracle are not yet truly async.
 The user should be able to keep talking to the reflex while one or more oracle
@@ -61,6 +62,11 @@ The interpreter is the evidence lane. It owns:
   notes
 - bounded oracle request patches that can arrive after the reflex
   acknowledgement
+
+The interpreter does not require a separate ASR proof before it can help the
+oracle. A Moshi/S2S transcript, when available, is passed as hypothesis context
+beside the raw audio. Classic ASR is retained for fallback, diagnostics, or
+literal wording checks, not as the normal reflex driver.
 
 The oracle is the worker. It owns:
 
@@ -263,11 +269,14 @@ Scheduler: creates oracle job
 ```
 
 If Gemma interpreter evidence arrives before the job starts, the scheduler folds
-it into the job request. If it arrives after the job starts, the job manager
-attaches it as a bounded update for tool-critical checks and final audit. That
-evidence may include the raw-audio interpretation, Moshi/S2S transcript
-hypotheses, and optional ASR hypotheses, but the raw audio plus interpreter
-judgment remains the higher-authority evidence path.
+it into the job request before execution. That fold-in should update the
+oracle-facing transcript, transcript source, transcript confidence, normalized
+intent, entities, disagreement metadata, and `oracle_text` when the corrected
+evidence changes what Hermes is about to do. If it arrives after the job starts,
+the job manager attaches it as a bounded update for tool-critical checks and
+final audit. That evidence may include the raw-audio interpretation, Moshi/S2S
+transcript hypotheses, and optional ASR hypotheses, but the raw audio plus
+interpreter judgment remains the higher-authority evidence path.
 
 ### `oracle_direct`
 
@@ -338,7 +347,9 @@ oracle job lifecycle, progress/status fragments, playback cursor updates,
 barge-in/truncation events, and cross-channel handoff summaries. This is the
 lesson from hosted voice stacks and VoiceClaw-style transcript sync: provider
 conversation state is not the authoritative ledger, because it may include text
-the user never heard or omit transport buffers that were cleared after barge-in.
+the user did not hear, ASR hypotheses that were later contradicted, or Moshi
+transcripts that were useful only as interpreter context, while omitting
+transport buffers that were cleared after barge-in.
 
 ## Proposed Implementation Shape
 

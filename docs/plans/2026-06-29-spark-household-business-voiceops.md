@@ -54,11 +54,14 @@ Target KAME layout:
 - Interpreter/evidence: Gemma 4 E2B/E4B/12B-style audio-multimodal model,
   run in parallel after each speech cut to adjudicate raw audio plus
   reflex/Moshi transcript hypotheses into corrected transcript, multilingual
-  intent, entities, confidence, and oracle request patches.
+  intent, entities, confidence, and oracle request patches. Raw audio is the
+  primary signal; transcripts are labeled hypotheses and fallback evidence.
 - Oracle/brain: whatever Hermes `/model` selects, with Nemotron 3 Super as the first preferred local NVIDIA candidate to evaluate on DGX Spark.
 - Speech: local transcript evidence and TTS where practical, with Moshi/S2S or
   classic ASR transcripts used as auxiliary oracle/interpreter evidence rather
-  than reflex input in full KAME mode.
+  than reflex input in full KAME mode. The system must not require ASR evidence
+  before acknowledging or submitting work when the raw-audio/reflex path is
+  available.
 - Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
 The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.
@@ -150,6 +153,12 @@ The reflex transcript is a hypothesis, not durable truth. Moshi/S2S transcript
 output belongs in the same non-durable hypothesis class unless the Gemma
 interpreter or oracle-visible outcome promotes it.
 
+When the reflex stack provides a Moshi-style transcript, Hermes should attach it
+to the interpreter request beside the clipped raw audio. The transcript is
+useful because it captures the realtime model's hearing of the turn, including
+timing and code-switching context, but it must be labeled as a hypothesis so
+Gemma can contradict it when the waveform says otherwise.
+
 ### Interpreter
 
 The interpreter is the audio-understanding evidence lane. Gemma 4 is the
@@ -178,7 +187,12 @@ Target outputs:
 
 The interpreter may attach evidence to an oracle job before it starts, or submit
 a patch/update if the oracle job is already running. It must not stall the
-reflex acknowledgement, and it must not receive broad Hermes tools.
+reflex acknowledgement, and it must not receive broad Hermes tools. If evidence
+arrives while the job is still queued, the scheduler should fold corrected
+transcript, intent, entities, and confidence into the oracle request before
+execution; if it arrives late, it should be audited as a bounded update before
+any irreversible spend, provisioning, call, or credential action relies on
+earlier text.
 
 ### Oracle
 

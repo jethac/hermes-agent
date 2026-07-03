@@ -19,12 +19,13 @@ the KAME architecture intact:
   delegates reasoning/actions to Hermes.
 
 The preferred Spark-local large-model/oracle target is Nemotron 3 Super served
-locally on DGX Spark. Gemma 4 E2B remains the preferred reflex/interface
-candidate because it is the audio-native low-latency KAME frontend target.
-Gemma 4 26B-A4B remains a comparison candidate, not the primary local brain.
-The voice layer should be evaluated independently so a weak or experimental
-voice frontend cannot hide a strong local oracle, and a good voice frontend
-cannot hide a weak oracle.
+locally on DGX Spark. The preferred KAME split is now: a very fast
+Moshi/PersonaPlex-class or smaller model handles reflex/floor-control behavior,
+Gemma 4 E2B/E4B/12B handles raw-audio interpretation and multilingual evidence,
+and Hermes' active `/model` handles oracle work. Gemma 4 26B-A4B remains a
+comparison candidate, not the primary local brain. The voice layer should be
+evaluated independently so a weak or experimental voice frontend cannot hide a
+strong local oracle, and a good voice frontend cannot hide a weak oracle.
 
 ## Evidence Snapshot
 
@@ -36,14 +37,16 @@ Recent DGX Spark reports suggest this ranking for Hermes:
 | Oracle comparison | Gemma 4 26B-A4B via vLLM | Reported around 24-40 decode tok/s, with strong prefill and workable memory use on single Spark. | Comparison target, not the primary VoiceOps brain. |
 | Cloud voice baseline | Cartesia bridge | We already have a Hermes STT/TTS bridge. Good for proving the voice path while local speech work proceeds. | Cloud dependency; not a local-only answer. |
 | Local voice pipeline | Nemotron Speech or Riva-like ASR + Magpie/Riva TTS | Pipecat/Nemotron/Magpie is the only well-instrumented Spark voice pipeline found, around 1.2s server-side voice-to-voice in reported runs. | Need a Hermes-compatible bridge; full Riva setup reports include install pain. |
-| Full-duplex local S2S | Moshi/PersonaPlex | Spark reports mention choppy/unusable realtime audio. | Deprioritize until the pipeline baseline is solved. |
+| Reflex/floor-control S2S | Moshi/PersonaPlex-class models | Useful architecture fit for immediate acknowledgement and rough transcript hypotheses; Spark reports mention choppy/unusable full-duplex audio in some deployments. | Candidate for reflex only after stable audio/noise-gate validation; transcript output is evidence, not truth. |
 | Direct speech LLM | Ultravox | No confirmed DGX Spark deployment numbers found. | Watchlist only. |
 | TensorRT-LLM | Model support exists, but less practical user evidence than vLLM/SGLang/llama.cpp. | Revisit after vLLM baseline. |
 
 The practical conclusion is to prove Nemotron 3 Super as the Spark-local oracle
-first, then compare voice frontends against that stable brain. Gemma 4 E2B stays
-on the reflex/interface track, while Gemma 4 26B-A4B is kept as a measured
-comparison oracle.
+first, then compare voice frontends and interpreter variants against that stable
+brain. Moshi-class S2S stays on the reflex/interface track when audio quality is
+stable. Gemma 4 E2B/E4B/12B stays on the interpreter/evidence track, consuming
+raw audio plus any reflex/Moshi transcript hypotheses. Gemma 4 26B-A4B is kept
+as a measured comparison oracle.
 
 ## Headless Runner
 
@@ -96,10 +99,11 @@ Runner behavior:
 - Generates `compose.yaml`, `.env.example`, `launch-local-stack.sh`,
   `preflight-local-stack.sh`, `benchmark-matrix.json`, and benchmark evidence
   templates.
-- Uses Gemma 4 E2B as the default native-audio reflex and Nemotron 3 Super as
-  the preferred local oracle provider target unless environment variables
-  override the generated endpoint/preflight target. Hermes still selects the
-  active oracle through its normal `/model` path.
+- Uses a Moshi/PersonaPlex-class or smaller S2S/timing model as the default
+  reflex target, Gemma 4 E2B/E4B/12B as the interpreter/evidence target, and
+  Nemotron 3 Super as the preferred local oracle provider target unless
+  environment variables override the generated endpoint/preflight target. Hermes
+  still selects the active oracle through its normal `/model` path.
 - Runs endpoint preflight only when `DGX_SPARK_KAME_CHECK=1` is set, so artifact
   generation remains headless before services are online.
 - Validates filled benchmark evidence with the generated stack-pack validator
@@ -257,6 +261,8 @@ Expected external service:
   - Nemotron Speech streaming ASR + Magpie/Riva-like TTS.
   - Riva/NVIDIA speech stack if installation is stable enough.
   - Pipecat as a reference latency harness, not as the Hermes brain.
+  - Moshi/PersonaPlex-class S2S only if the audio path is stable enough to serve
+    as a reflex and rough transcript source.
 - Hermes profile preset: `nvidia_speech`, which points the local speech lane at
   the Nemotron Speech ASR proxy and Magpie TTS proxy by default.
 
@@ -327,9 +333,10 @@ while preserving reliability and local-only operation.
    continue local speech bridge development separately.
 4. If Track C passes within 25% of Track B latency, prefer Track C for local DGX
    operation.
-5. Do not invest in Moshi/PersonaPlex or Ultravox until Track C has a stable
-   pipeline baseline, because current Spark reports are either negative or
-   unproven.
+5. Do not make Moshi/PersonaPlex or Ultravox the durable transcript or tool
+   authority. If a Moshi-class model is evaluated, measure it as a reflex:
+   acknowledgement latency, barge-in, noise-gate behavior, and transcript
+   hypothesis usefulness beside raw audio.
 
 ## Follow-up Implementation Work
 
@@ -338,7 +345,9 @@ After the first headless run:
 1. If Track C is promising, add a managed local speech bridge launcher and tests
    equivalent to the Cartesia/ElevenLabs/Deepgram bridge tests.
 2. Keep Moshi/Ultravox as explicit watchlist items until a confirmed Spark
-   deployment shows stable realtime audio.
+   deployment shows stable realtime audio, but allow Moshi transcript output to
+   feed the Gemma interpreter as labeled hypothesis evidence in non-authoritative
+   tests.
 
 ## One-command Headless Run
 
