@@ -40,6 +40,14 @@ EXPECTED_HANDOFF_PHASES = (
 EXPECTED_REVIEW_PHASES = (
     (1, "multi_channel_policy_review"),
 )
+EXPECTED_PROVIDER_ROLE_AUTHORITIES = {
+    "reflex": "reflex_hypothesis",
+    "interpreter": "interpreter_promoted",
+    "oracle": "oracle_promoted",
+    "auxiliary_transcript_evidence": "auxiliary_hypothesis",
+    "outbound_tts": "playback_only",
+    "degraded_fallback": "fallback_text_or_diagnostic_only",
+}
 EXPECTED_SPARK_SCAFFOLD_LINT_ISSUES = {
     "collector_attestation_example_only_not_accepted",
     "collector_attestation_invalid:collector_version",
@@ -663,6 +671,66 @@ def _audit_spark_model_claims(
     missing_evidence = readiness.get("live_demo_missing_evidence") or []
     if matrix_ready is False and "local_spark_stack_matrix" not in missing_evidence:
         issues.append("spark_model_claim:missing_m4_live_evidence_gap")
+
+
+def _audit_provider_role_matrix(
+    *,
+    demo: Mapping[str, Any],
+    dashboard_html: str,
+    issues: list[str],
+) -> None:
+    matrix = demo.get("provider_role_matrix")
+    if not isinstance(matrix, list):
+        issues.append("provider_role_matrix:missing_or_not_list")
+        return
+    role_items = {str(item.get("role")): item for item in matrix if isinstance(item, Mapping)}
+    expected_roles = set(EXPECTED_PROVIDER_ROLE_AUTHORITIES)
+    if set(role_items) != expected_roles:
+        issues.append("provider_role_matrix:roles_mismatch")
+
+    spark_stack = demo.get("spark_stack") if isinstance(demo.get("spark_stack"), Mapping) else {}
+    reflex = spark_stack.get("reflex") if isinstance(spark_stack.get("reflex"), Mapping) else {}
+    interpreter = spark_stack.get("interpreter") if isinstance(spark_stack.get("interpreter"), Mapping) else {}
+    oracle = spark_stack.get("oracle") if isinstance(spark_stack.get("oracle"), Mapping) else {}
+    expected_selected = {
+        "reflex": reflex.get("model"),
+        "interpreter": interpreter.get("model"),
+        "oracle": oracle.get("model"),
+    }
+
+    for role, expected_authority in EXPECTED_PROVIDER_ROLE_AUTHORITIES.items():
+        item = role_items.get(role)
+        if not isinstance(item, Mapping):
+            issues.append(f"provider_role_matrix:{role}:missing")
+            continue
+        if item.get("authority") != expected_authority:
+            issues.append(f"provider_role_matrix:{role}:authority_mismatch")
+        if role in expected_selected and item.get("selected_label") != expected_selected[role]:
+            issues.append(f"provider_role_matrix:{role}:selected_label_mismatch")
+        for field in ("selected_label", "candidate_class", "primary_signal", "status"):
+            if not str(item.get(field) or "").strip():
+                issues.append(f"provider_role_matrix:{role}:{field}_missing")
+        for field in ("allowed_outputs", "must_not", "evidence_required"):
+            values = item.get(field)
+            if not isinstance(values, list) or not values:
+                issues.append(f"provider_role_matrix:{role}:{field}_missing")
+
+    oracle_must_not = role_items.get("oracle", {}).get("must_not") if isinstance(role_items.get("oracle"), Mapping) else []
+    if not any("oracle_model" in str(value) for value in oracle_must_not or []):
+        issues.append("provider_role_matrix:oracle:missing_oracle_model_boundary")
+    aux_must_not = (
+        role_items.get("auxiliary_transcript_evidence", {}).get("must_not")
+        if isinstance(role_items.get("auxiliary_transcript_evidence"), Mapping)
+        else []
+    )
+    if not any("schedule a second Hermes turn" in str(value) for value in aux_must_not or []):
+        issues.append("provider_role_matrix:auxiliary_transcript_evidence:missing_no_second_turn_boundary")
+    if not any("spend reason" in str(value) for value in aux_must_not or []):
+        issues.append("provider_role_matrix:auxiliary_transcript_evidence:missing_high_risk_boundary")
+
+    for token in ("Provider Roles", *EXPECTED_PROVIDER_ROLE_AUTHORITIES.keys(), *EXPECTED_PROVIDER_ROLE_AUTHORITIES.values()):
+        if token not in dashboard_html:
+            issues.append(f"dashboard:missing_provider_role_token:{token}")
 
 
 def _audit_action_consistency(
@@ -2268,6 +2336,11 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         demo=demo,
         readiness=readiness,
         operator_state=operator_state,
+        dashboard_html=dashboard_html,
+        issues=issues,
+    )
+    _audit_provider_role_matrix(
+        demo=demo,
         dashboard_html=dashboard_html,
         issues=issues,
     )

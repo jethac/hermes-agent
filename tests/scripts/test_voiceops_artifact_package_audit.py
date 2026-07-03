@@ -438,6 +438,36 @@ def test_package_audit_rejects_gemma_in_reflex_role(tmp_path):
     assert "spark_model_claim:gemma_model_in_reflex_role" in report["issues"]
 
 
+def test_package_audit_rejects_provider_role_matrix_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    demo_path = artifact_root / "hackathon-voiceops-demo" / "current" / "voiceops-demo.json"
+    demo = json.loads(demo_path.read_text(encoding="utf-8"))
+    roles = {item["role"]: item for item in demo["provider_role_matrix"]}
+    roles["reflex"]["selected_label"] = "wrong reflex model"
+    roles["auxiliary_transcript_evidence"]["authority"] = "interpreter_promoted"
+    roles["auxiliary_transcript_evidence"]["must_not"] = ["block acknowledgement"]
+    roles["oracle"]["must_not"] = ["act on hypothesis-only transcript text for high-risk actions"]
+    demo["provider_role_matrix"] = [item for item in roles.values() if item["role"] != "degraded_fallback"]
+    _write_json(demo_path, demo)
+
+    dashboard = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-dashboard.html"
+    dashboard.write_text(dashboard.read_text(encoding="utf-8").replace("Provider Roles", "Provider Matrix"), encoding="utf-8")
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "provider_role_matrix:roles_mismatch" in report["issues"]
+    assert "provider_role_matrix:reflex:selected_label_mismatch" in report["issues"]
+    assert "provider_role_matrix:auxiliary_transcript_evidence:authority_mismatch" in report["issues"]
+    assert (
+        "provider_role_matrix:auxiliary_transcript_evidence:missing_no_second_turn_boundary"
+        in report["issues"]
+    )
+    assert "provider_role_matrix:auxiliary_transcript_evidence:missing_high_risk_boundary" in report["issues"]
+    assert "provider_role_matrix:oracle:missing_oracle_model_boundary" in report["issues"]
+    assert "dashboard:missing_provider_role_token:Provider Roles" in report["issues"]
+
+
 def test_package_audit_rejects_hosted_fallback_public_copy_overclaim(tmp_path):
     artifact_root = _generate_package(tmp_path)
     demo_path = artifact_root / "hackathon-voiceops-demo" / "current" / "voiceops-demo.json"
