@@ -43,7 +43,7 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert report["readiness_claim"] is False
     assert report["readiness_scope"] == "static_package_consistency_only"
     assert "does not satisfy live Discord" in report["readiness_note"]
-    assert report["checked_artifact_count"] == 93
+    assert report["checked_artifact_count"] == 94
     assert str(artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json") in report[
         "checked_artifacts"
     ]
@@ -162,6 +162,19 @@ def test_package_audit_rejects_discord_session_cleanup_smoke_artifact_drift(tmp_
     assert "voice_operator_readiness:discord_session_cleanup_smoke_standalone_artifact_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_sidecar_fail_closed_smoke_artifact_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    smoke_path = artifact_root / "voiceops-voice-operator" / "current" / "sidecar-fail-closed-smoke.json"
+    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+    smoke["cancelled_observed"] = False
+    _write_json(smoke_path, smoke)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:sidecar_fail_closed_smoke_standalone_artifact_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_pcm_conversion_proof_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
@@ -252,6 +265,26 @@ def test_package_audit_rejects_discord_session_cleanup_proof_drift(tmp_path):
 
     assert report["ok"] is False
     assert "voice_operator_readiness:proofs.discord_session_cleanup.event_order_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_sidecar_fail_closed_proof_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["proofs"]["sidecar_fail_closed"]["event_order"] = []
+    readiness["proofs"]["sidecar_fail_closed"]["active_capacity_after_failure"] = 1
+    readiness["proofs"]["sidecar_fail_closed"]["error_redacted"] = False
+    _write_json(readiness_path, readiness)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:proofs.sidecar_fail_closed.event_order_mismatch" in report["issues"]
+    assert (
+        "voice_operator_readiness:proofs.sidecar_fail_closed.active_capacity_after_failure_mismatch"
+        in report["issues"]
+    )
+    assert "voice_operator_readiness:proofs.sidecar_fail_closed.error_redacted_mismatch" in report["issues"]
 
 
 def test_package_audit_rejects_missing_promised_runbook(tmp_path):
@@ -623,7 +656,7 @@ def test_package_audit_rejects_stale_embedded_package_audit_summary(tmp_path):
         "ok": True,
         "status": "pass",
         "issues": [],
-        "checked_artifact_count": 93,
+        "checked_artifact_count": 94,
     }
     _write_json(plan_run_path, plan_run)
     assert audit_package(artifact_root)["ok"] is True

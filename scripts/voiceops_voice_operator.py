@@ -172,6 +172,11 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_session_close_cancels_oracle_jobs_before_session_closed",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_session_close_waits_for_oracle_cancel_ack_before_session_closed",
     ],
+    "sidecar_fail_closed": [
+        "tests/agent/test_realtime_voice.py::test_text_engine_fail_closed_policy_emits_session_error_on_sidecar_session_error",
+        "tests/agent/test_realtime_voice.py::test_text_engine_fail_closed_policy_emits_session_error_on_sidecar_event_stream_failure",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_fail_closed_sidecar_send_failure_cancels_external_oracle_job",
+    ],
     "shutdown": [
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_shutdown_forces_cancelled_state_when_worker_ignores_cancel",
         "tests/agent/test_realtime_voice.py::test_kame_engine_close_bounds_noncooperative_async_oracle_shutdown",
@@ -426,6 +431,155 @@ async def run_discord_session_cleanup_smoke() -> dict[str, Any]:
         "degraded_job_state": failed_job.get("state"),
         "degraded_job_error": failed_job.get("error"),
         "event_order": [str(event_type.value) for event_type in event_types],
+    }
+
+
+async def run_sidecar_fail_closed_smoke() -> dict[str, Any]:
+    """Provider-free fail-closed sidecar send-failure smoke."""
+
+    from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceEventType
+    from agent.realtime_voice_text_engine import KameInterfaceOracleEngine
+
+    class FailingSendSidecar:
+        def __init__(self) -> None:
+            self.closed = False
+            self.close_calls = 0
+            self.started_with: Any = None
+            self._events: asyncio.Queue[Any] = asyncio.Queue()
+
+        async def start(self, config: Any) -> None:
+            self.started_with = config
+
+        async def send_event(self, event: Any) -> None:
+            raise RuntimeError("send failed at http://user:pass@voice.local/v1?token=abc")
+
+        async def close(self) -> None:
+            self.close_calls += 1
+            self.closed = True
+            await self._events.put(None)
+
+        async def events(self) -> Any:
+            while True:
+                event = await self._events.get()
+                if event is None:
+                    return
+                yield event
+
+    class BlockingOracle:
+        def __init__(self) -> None:
+            self.requests: list[Any] = []
+
+        async def stream_answer_for_request(self, request: Any) -> Any:
+            self.requests.append(request)
+            await asyncio.Event().wait()
+            yield "unreachable"
+
+    oracle = BlockingOracle()
+    sidecar = FailingSendSidecar()
+    engine = KameInterfaceOracleEngine(oracle=oracle, sidecar=sidecar)
+    response: dict[str, Any] = {}
+    seen: list[Any] = []
+    status: dict[str, Any] = {}
+    error_text = ""
+    try:
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-fail-closed-smoke",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                sidecar_base_url="http://voice.local:8080",
+                fallback_policy="fail_closed",
+                oracle_jobs={
+                    "enabled": True,
+                    "max_concurrent": 1,
+                    "queue_limit": 4,
+                    "shutdown_timeout_seconds": 0.05,
+                },
+            )
+        )
+        response = await engine.submit_external_brain_request(
+            {
+                "tool_name": "ask_brain",
+                "tool_call_id": "voiceclaw-call-fail-closed",
+                "arguments": {
+                    "query": "provision the phone bridge",
+                    "interface_already_said": "I am preparing the phone bridge.",
+                },
+            },
+            source="voiceclaw",
+        )
+        events = engine.events()
+        deadline = asyncio.get_running_loop().time() + 1.0
+        while asyncio.get_running_loop().time() < deadline:
+            try:
+                event = await asyncio.wait_for(anext(events), timeout=0.1)
+            except TimeoutError:
+                continue
+            seen.append(event)
+            if any(item.type == VoiceEventType.SESSION_ERROR for item in seen) and any(
+                item.type == VoiceEventType.ORACLE_JOB_CANCELLED for item in seen
+            ):
+                break
+        status = await engine.get_oracle_job_status()
+    except Exception as exc:  # pragma: no cover - failure path is represented in the smoke payload.
+        error_text = str(exc)
+    finally:
+        await engine.close()
+
+    cancelled_event = next((event for event in seen if event.type == VoiceEventType.ORACLE_JOB_CANCELLED), None)
+    session_error_event = next((event for event in seen if event.type == VoiceEventType.SESSION_ERROR), None)
+    if session_error_event is not None:
+        error_text = str(session_error_event.payload.get("error") or "")
+    jobs = status.get("jobs") if isinstance(status.get("jobs"), list) else []
+    job = jobs[0] if jobs and isinstance(jobs[0], Mapping) else {}
+    capacity = status.get("capacity") if isinstance(status.get("capacity"), Mapping) else {}
+    ok = (
+        response.get("accepted") is True
+        and response.get("job_id") == "voice-oracle-001"
+        and cancelled_event is not None
+        and cancelled_event.payload.get("job_id") == "voice-oracle-001"
+        and cancelled_event.payload.get("state") == "cancelled"
+        and cancelled_event.payload.get("cancel_reason") == "sidecar_send_failed"
+        and session_error_event is not None
+        and session_error_event.payload.get("reason") == "sidecar_send_failed"
+        and session_error_event.payload.get("sidecar") is False
+        and "fallback_policy=fail_closed" in error_text
+        and "send failed" in error_text
+        and "user:pass" not in error_text
+        and "token=abc" not in error_text
+        and job.get("state") == "cancelled"
+        and capacity.get("active") == 0
+        and engine._sidecar is None
+        and sidecar.closed is True
+    )
+    return {
+        "ok": bool(ok),
+        "scenario": "sidecar_send_fail_closed_after_acceptance",
+        "discord_network": False,
+        "provider_sidecar_network": False,
+        "fallback_policy": "fail_closed",
+        "request_accepted": response.get("accepted") is True,
+        "job_id": response.get("job_id"),
+        "cancelled_observed": cancelled_event is not None,
+        "cancel_reason": cancelled_event.payload.get("cancel_reason") if cancelled_event is not None else None,
+        "session_error_observed": session_error_event is not None,
+        "session_error_reason": (
+            session_error_event.payload.get("reason") if session_error_event is not None else None
+        ),
+        "session_error_sidecar": (
+            session_error_event.payload.get("sidecar") if session_error_event is not None else None
+        ),
+        "error_redacted": "user:pass" not in error_text and "token=abc" not in error_text,
+        "error_mentions_fail_closed": "fallback_policy=fail_closed" in error_text,
+        "error_mentions_send_failed": "send failed" in error_text,
+        "active_capacity_after_failure": capacity.get("active"),
+        "job_state_after_failure": job.get("state"),
+        "sidecar_removed": engine._sidecar is None,
+        "sidecar_closed": sidecar.closed,
+        "sidecar_close_calls": sidecar.close_calls,
+        "oracle_requests_seen": len(oracle.requests),
+        "event_order": [str(event.type.value) for event in seen],
+        "test_refs": ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["sidecar_fail_closed"],
     }
 
 
@@ -1597,6 +1751,24 @@ def _coverage_from_discord_session_cleanup_smoke(smoke: Mapping[str, Any]) -> di
     }
 
 
+def _coverage_from_sidecar_fail_closed_smoke(smoke: Mapping[str, Any]) -> dict[str, bool]:
+    return {
+        "sidecar_fail_closed_send_failure_cancels_active_job": smoke.get("ok") is True
+        and smoke.get("request_accepted") is True
+        and smoke.get("cancelled_observed") is True
+        and smoke.get("cancel_reason") == "sidecar_send_failed"
+        and smoke.get("session_error_observed") is True
+        and smoke.get("session_error_reason") == "sidecar_send_failed"
+        and smoke.get("session_error_sidecar") is False
+        and smoke.get("error_redacted") is True
+        and smoke.get("error_mentions_fail_closed") is True
+        and smoke.get("active_capacity_after_failure") == 0
+        and smoke.get("job_state_after_failure") == "cancelled"
+        and smoke.get("sidecar_removed") is True
+        and smoke.get("sidecar_closed") is True,
+    }
+
+
 def run_tool_disclosure_smoke() -> dict[str, Any]:
     """Local proof that realtime voice can collapse core tools behind tool_search."""
 
@@ -1770,6 +1942,13 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
+        "sidecar_fail_closed_send_failure_cancels_active_job": _async_oracle_acceptance_row(
+            ok=bool(async_oracle_coverage.get("sidecar_fail_closed_send_failure_cancels_active_job")),
+            evidence="sidecar_fail_closed_smoke_plus_focused_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["sidecar_fail_closed"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
         "shutdown_timeout_is_bounded": _async_oracle_acceptance_row(
             ok=smoke_ok and bool(async_oracle_coverage.get("shutdown_timeout_bounded")),
             evidence="async_oracle_smoke_plus_shutdown_tests",
@@ -1840,15 +2019,18 @@ def build_voice_operator_report(
     live_evidence: dict[str, Any] | None = None,
     async_oracle_smoke: dict[str, Any] | None = None,
     discord_session_cleanup_smoke: dict[str, Any] | None = None,
+    sidecar_fail_closed_smoke: dict[str, Any] | None = None,
     tool_disclosure_smoke: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     coverage = _coverage_from_smoke(smoke)
     async_oracle_smoke = async_oracle_smoke or {}
     discord_session_cleanup_smoke = discord_session_cleanup_smoke or {}
+    sidecar_fail_closed_smoke = sidecar_fail_closed_smoke or {}
     tool_disclosure_smoke = tool_disclosure_smoke or run_tool_disclosure_smoke()
     async_oracle_coverage = {
         **_coverage_from_async_oracle_smoke(async_oracle_smoke),
         **_coverage_from_discord_session_cleanup_smoke(discord_session_cleanup_smoke),
+        **_coverage_from_sidecar_fail_closed_smoke(sidecar_fail_closed_smoke),
     }
     async_oracle_acceptance = _async_oracle_acceptance_matrix(async_oracle_coverage)
     live_evidence = live_evidence or _load_live_evidence([])
@@ -2302,6 +2484,30 @@ def build_voice_operator_report(
             "degraded_job_error": discord_session_cleanup_smoke.get("degraded_job_error"),
             "event_order": discord_session_cleanup_smoke.get("event_order") or [],
         },
+        "sidecar_fail_closed": {
+            "ok": bool(_coverage_from_sidecar_fail_closed_smoke(sidecar_fail_closed_smoke).get(
+                "sidecar_fail_closed_send_failure_cancels_active_job"
+            )),
+            "scenario": sidecar_fail_closed_smoke.get("scenario"),
+            "fallback_policy": sidecar_fail_closed_smoke.get("fallback_policy"),
+            "request_accepted": bool(sidecar_fail_closed_smoke.get("request_accepted")),
+            "job_id": sidecar_fail_closed_smoke.get("job_id"),
+            "cancelled_observed": bool(sidecar_fail_closed_smoke.get("cancelled_observed")),
+            "cancel_reason": sidecar_fail_closed_smoke.get("cancel_reason"),
+            "session_error_observed": bool(sidecar_fail_closed_smoke.get("session_error_observed")),
+            "session_error_reason": sidecar_fail_closed_smoke.get("session_error_reason"),
+            "session_error_sidecar": sidecar_fail_closed_smoke.get("session_error_sidecar"),
+            "error_redacted": bool(sidecar_fail_closed_smoke.get("error_redacted")),
+            "error_mentions_fail_closed": bool(sidecar_fail_closed_smoke.get("error_mentions_fail_closed")),
+            "active_capacity_after_failure": sidecar_fail_closed_smoke.get("active_capacity_after_failure"),
+            "job_state_after_failure": sidecar_fail_closed_smoke.get("job_state_after_failure"),
+            "sidecar_removed": bool(sidecar_fail_closed_smoke.get("sidecar_removed")),
+            "sidecar_closed": bool(sidecar_fail_closed_smoke.get("sidecar_closed")),
+            "sidecar_close_calls": sidecar_fail_closed_smoke.get("sidecar_close_calls"),
+            "oracle_requests_seen": sidecar_fail_closed_smoke.get("oracle_requests_seen"),
+            "event_order": sidecar_fail_closed_smoke.get("event_order") or [],
+            "test_refs": sidecar_fail_closed_smoke.get("test_refs") or [],
+        },
         "tool_disclosure": {
             "ok": tool_disclosure_smoke.get("ok") is True,
             "scenario": tool_disclosure_smoke.get("scenario"),
@@ -2387,6 +2593,9 @@ def build_voice_operator_report(
             "async_oracle_late_cancelled_output_not_durable": async_oracle_coverage[
                 "late_cancelled_output_not_durable"
             ],
+            "async_oracle_sidecar_fail_closed_cancels_active_job": async_oracle_coverage[
+                "sidecar_fail_closed_send_failure_cancels_active_job"
+            ],
             "progressive_tool_disclosure": tool_disclosure_smoke.get("ok") is True,
         },
         "proofs": proofs,
@@ -2423,6 +2632,7 @@ def build_voice_operator_report(
         "smoke": smoke,
         "async_oracle_smoke": dict(async_oracle_smoke),
         "discord_session_cleanup_smoke": dict(discord_session_cleanup_smoke),
+        "sidecar_fail_closed_smoke": dict(sidecar_fail_closed_smoke),
         "tool_disclosure_smoke": dict(tool_disclosure_smoke),
         "live_probe_required_for_completion": {
             "status": live_probe_status,
@@ -2484,6 +2694,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
     recomputed_async_oracle_coverage = {
         **_coverage_from_async_oracle_smoke(report.get("async_oracle_smoke", {})),
         **_coverage_from_discord_session_cleanup_smoke(report.get("discord_session_cleanup_smoke", {})),
+        **_coverage_from_sidecar_fail_closed_smoke(report.get("sidecar_fail_closed_smoke", {})),
     }
     for key in (
         "async_oracle_smoke_ok",
@@ -2508,6 +2719,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "external_frontend_bridge_submits_oracle_job",
         "result_handling_bounded_and_durable",
         "discord_session_cleanup_preserves_oracle_state",
+        "sidecar_fail_closed_send_failure_cancels_active_job",
         "shutdown_timeout_bounded",
     ):
         if recomputed_async_oracle_coverage.get(key) is not True:
@@ -2825,6 +3037,7 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
         "smoke_json": output_dir / "discord-loopback-smoke.json",
         "async_oracle_smoke_json": output_dir / "async-oracle-smoke.json",
         "discord_session_cleanup_smoke_json": output_dir / "discord-session-cleanup-smoke.json",
+        "sidecar_fail_closed_smoke_json": output_dir / "sidecar-fail-closed-smoke.json",
         "events_jsonl": output_dir / "voice-operator-events.jsonl",
         "live_evidence_template": output_dir / "live-voice-evidence-template.json",
         "live_evidence_example": output_dir / "live-voice-evidence.example.json",
@@ -2836,6 +3049,7 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
     _write_json(paths["smoke_json"], report["smoke"])
     _write_json(paths["async_oracle_smoke_json"], report["async_oracle_smoke"])
     _write_json(paths["discord_session_cleanup_smoke_json"], report["discord_session_cleanup_smoke"])
+    _write_json(paths["sidecar_fail_closed_smoke_json"], report["sidecar_fail_closed_smoke"])
     _write_json(paths["live_evidence_template"], build_live_probe_evidence_template())
     _write_json(paths["live_evidence_example"], build_live_probe_evidence_example())
     paths.update(write_live_evidence_scaffold(output_dir))
@@ -2855,12 +3069,14 @@ async def build_voice_operator_report_from_smoke(live_evidence_paths: list[Path]
     smoke_result = await run_discord_realtime_voice_smoke()
     async_oracle_smoke = await run_async_oracle_smoke()
     discord_session_cleanup_smoke = await run_discord_session_cleanup_smoke()
+    sidecar_fail_closed_smoke = await run_sidecar_fail_closed_smoke()
     tool_disclosure_smoke = run_tool_disclosure_smoke()
     return build_voice_operator_report(
         asdict(smoke_result),
         live_evidence=_load_live_evidence(live_evidence_paths),
         async_oracle_smoke=async_oracle_smoke,
         discord_session_cleanup_smoke=discord_session_cleanup_smoke,
+        sidecar_fail_closed_smoke=sidecar_fail_closed_smoke,
         tool_disclosure_smoke=tool_disclosure_smoke,
     )
 

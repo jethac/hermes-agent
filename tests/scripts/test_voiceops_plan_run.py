@@ -1108,6 +1108,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(voice_result["artifacts"]["smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["async_oracle_smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["discord_session_cleanup_smoke_json"]).exists()
+    assert Path(voice_result["artifacts"]["sidecar_fail_closed_smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["events_jsonl"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_example"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_scaffold_manifest"]).exists()
@@ -1282,6 +1283,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["discord_session_cleanup_smoke"]["degraded_active_job_preserved_failed"] is True
     assert voice_result["details"]["discord_session_cleanup_smoke"]["degraded_session_removed"] is True
     assert voice_result["details"]["discord_session_cleanup_smoke"]["degraded_job_state"] == "failed"
+    assert voice_result["details"]["sidecar_fail_closed_smoke"]["ok"] is True
+    assert voice_result["details"]["sidecar_fail_closed_smoke"]["request_accepted"] is True
+    assert voice_result["details"]["sidecar_fail_closed_smoke"]["cancel_reason"] == "sidecar_send_failed"
+    assert voice_result["details"]["sidecar_fail_closed_smoke"]["active_capacity_after_failure"] == 0
+    assert voice_result["details"]["sidecar_fail_closed_smoke"]["job_state_after_failure"] == "cancelled"
     assert voice_result["details"]["async_oracle_acceptance"]["four_oracle_jobs_reflex_responsive"]["ok"] is True
     assert voice_result["details"]["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]["ok"] is True
     assert voice_result["details"]["async_oracle_acceptance"]["approval_wait_is_visible_and_redacted"]["ok"] is True
@@ -1316,6 +1322,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "verification_mode"
     ] == "loopback_smoke_plus_focused_tests"
     assert voice_result["details"]["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"][
+        "runtime_verified_by_this_report"
+    ] is True
+    assert voice_result["details"]["async_oracle_acceptance"]["sidecar_fail_closed_send_failure_cancels_active_job"][
+        "verification_mode"
+    ] == "loopback_smoke_plus_focused_tests"
+    assert voice_result["details"]["async_oracle_acceptance"]["sidecar_fail_closed_send_failure_cancels_active_job"][
         "runtime_verified_by_this_report"
     ] is True
     assert voice_result["details"]["async_oracle_acceptance"]["shutdown_timeout_is_bounded"][
@@ -2059,7 +2071,7 @@ def test_plan_run_cli_package_audit_writes_consistency_artifacts(tmp_path):
     assert payload["package_audit"]["ok"] is True
     assert payload["package_audit"]["status"] == "pass"
     assert payload["package_audit"]["issues"] == []
-    assert payload["package_audit"]["checked_artifact_count"] == 93
+    assert payload["package_audit"]["checked_artifact_count"] == 94
     assert Path(payload["package_audit"]["artifacts"]["json"]).exists()
     assert Path(payload["package_audit"]["artifacts"]["markdown"]).exists()
     assert str(artifact_root / "voiceops-package-audit" / "current") in payload["package_audit"]["artifacts"]["json"]
@@ -2217,7 +2229,7 @@ def test_plan_run_cli_dry_audit_can_run_package_audit_without_persistent_writes(
     assert payload["dry_audit"] is True
     assert payload["persistent_writes"] is False
     assert payload["package_audit"] == {
-            "checked_artifact_count": 93,
+            "checked_artifact_count": 94,
         "issues": [],
         "ok": True,
         "persistent_writes": False,

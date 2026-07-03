@@ -1849,6 +1849,39 @@ async def build_plan_run_async(
                     ],
                     "event_order": voice_operator["proofs"]["discord_session_cleanup"]["event_order"],
                 },
+                "sidecar_fail_closed_smoke": {
+                    "ok": voice_operator["proofs"]["sidecar_fail_closed"]["ok"],
+                    "scenario": voice_operator["proofs"]["sidecar_fail_closed"]["scenario"],
+                    "fallback_policy": voice_operator["proofs"]["sidecar_fail_closed"]["fallback_policy"],
+                    "request_accepted": voice_operator["proofs"]["sidecar_fail_closed"]["request_accepted"],
+                    "job_id": voice_operator["proofs"]["sidecar_fail_closed"]["job_id"],
+                    "cancelled_observed": voice_operator["proofs"]["sidecar_fail_closed"][
+                        "cancelled_observed"
+                    ],
+                    "cancel_reason": voice_operator["proofs"]["sidecar_fail_closed"]["cancel_reason"],
+                    "session_error_observed": voice_operator["proofs"]["sidecar_fail_closed"][
+                        "session_error_observed"
+                    ],
+                    "session_error_reason": voice_operator["proofs"]["sidecar_fail_closed"][
+                        "session_error_reason"
+                    ],
+                    "error_redacted": voice_operator["proofs"]["sidecar_fail_closed"]["error_redacted"],
+                    "active_capacity_after_failure": voice_operator["proofs"]["sidecar_fail_closed"][
+                        "active_capacity_after_failure"
+                    ],
+                    "job_state_after_failure": voice_operator["proofs"]["sidecar_fail_closed"][
+                        "job_state_after_failure"
+                    ],
+                    "sidecar_removed": voice_operator["proofs"]["sidecar_fail_closed"]["sidecar_removed"],
+                    "sidecar_closed": voice_operator["proofs"]["sidecar_fail_closed"]["sidecar_closed"],
+                    "sidecar_close_calls": voice_operator["proofs"]["sidecar_fail_closed"][
+                        "sidecar_close_calls"
+                    ],
+                    "oracle_requests_seen": voice_operator["proofs"]["sidecar_fail_closed"][
+                        "oracle_requests_seen"
+                    ],
+                    "event_order": voice_operator["proofs"]["sidecar_fail_closed"]["event_order"],
+                },
                 "async_oracle_acceptance": {
                     key: {
                         "ok": value.get("ok"),

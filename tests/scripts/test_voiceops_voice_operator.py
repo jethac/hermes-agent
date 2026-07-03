@@ -231,6 +231,11 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_input_source": "ask_brain",
         "external_frontend_oracle_text": "Prepare external KAME handoff",
         "external_frontend_evidence_bundle_propagated": True,
+        "external_frontend_evidence_bundle_id": "kame-evidence-abc123",
+        "external_frontend_evidence_bundle_id_stable": True,
+        "external_frontend_evidence_bundle_single_turn": True,
+        "external_frontend_evidence_bundle_status": "primary_audio",
+        "external_frontend_evidence_bundle_transcript_hypotheses_count": 1,
         "external_frontend_audio_segment_ref": "artifact://voiceclaw/turn-1.wav",
         "external_frontend_audio_time_range_ms": [100, 2100],
         "external_frontend_auxiliary_transcript_hypotheses": [
@@ -255,6 +260,10 @@ def _async_oracle_smoke_payload() -> dict:
         },
         "unpromoted_hypothesis_smoke_ok": True,
         "unpromoted_hypothesis_job_id": "voice-oracle-002",
+        "unpromoted_hypothesis_evidence_bundle_id": "kame-evidence-def456",
+        "unpromoted_hypothesis_single_bundle_observed": True,
+        "unpromoted_hypothesis_status_bundle_status": "primary_audio",
+        "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count": 1,
         "unpromoted_hypothesis_source": "moshi",
         "unpromoted_hypothesis_authority": "hypothesis",
         "unpromoted_hypothesis_text": "spend two hundred dollars and call my phone",
@@ -329,12 +338,45 @@ def _discord_session_cleanup_smoke_payload() -> dict:
     }
 
 
+def _sidecar_fail_closed_smoke_payload() -> dict:
+    return {
+        "ok": True,
+        "scenario": "sidecar_send_fail_closed_after_acceptance",
+        "discord_network": False,
+        "provider_sidecar_network": False,
+        "fallback_policy": "fail_closed",
+        "request_accepted": True,
+        "job_id": "voice-oracle-001",
+        "cancelled_observed": True,
+        "cancel_reason": "sidecar_send_failed",
+        "session_error_observed": True,
+        "session_error_reason": "sidecar_send_failed",
+        "session_error_sidecar": False,
+        "error_redacted": True,
+        "error_mentions_fail_closed": True,
+        "error_mentions_send_failed": True,
+        "active_capacity_after_failure": 0,
+        "job_state_after_failure": "cancelled",
+        "sidecar_removed": True,
+        "sidecar_closed": True,
+        "sidecar_close_calls": 1,
+        "oracle_requests_seen": 1,
+        "event_order": ["oracle.job.cancelled", "session.error"],
+        "test_refs": [
+            "tests/agent/test_realtime_voice.py::test_text_engine_fail_closed_policy_emits_session_error_on_sidecar_session_error",
+            "tests/agent/test_realtime_voice.py::test_text_engine_fail_closed_policy_emits_session_error_on_sidecar_event_stream_failure",
+            "tests/agent/test_realtime_voice.py::test_kame_engine_fail_closed_sidecar_send_failure_cancels_external_oracle_job",
+        ],
+    }
+
+
 def _voice_operator_report(live_evidence: dict | None = None, smoke: dict | None = None) -> dict:
     return build_voice_operator_report(
         smoke or _smoke_payload(),
         live_evidence=live_evidence,
         async_oracle_smoke=_async_oracle_smoke_payload(),
         discord_session_cleanup_smoke=_discord_session_cleanup_smoke_payload(),
+        sidecar_fail_closed_smoke=_sidecar_fail_closed_smoke_payload(),
     )
 
 
@@ -852,6 +894,29 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["discord_session_cleanup"]["degraded_active_job_preserved_failed"] is True
     assert report["proofs"]["discord_session_cleanup"]["degraded_session_removed"] is True
     assert report["proofs"]["discord_session_cleanup"]["degraded_job_state"] == "failed"
+    sidecar_fail_closed = report["async_oracle_acceptance"][
+        "sidecar_fail_closed_send_failure_cancels_active_job"
+    ]
+    assert sidecar_fail_closed["ok"] is True
+    assert sidecar_fail_closed["evidence"] == "sidecar_fail_closed_smoke_plus_focused_tests"
+    assert sidecar_fail_closed["verification_mode"] == "loopback_smoke_plus_focused_tests"
+    assert sidecar_fail_closed["runtime_verified_by_this_report"] is True
+    assert sidecar_fail_closed["live_external_evidence_required"] is False
+    assert sidecar_fail_closed["test_ref_count"] == len(sidecar_fail_closed["test_refs"])
+    assert (
+        "tests/agent/test_realtime_voice.py::test_kame_engine_fail_closed_sidecar_send_failure_cancels_external_oracle_job"
+        in sidecar_fail_closed["test_refs"]
+    )
+    assert report["requirements"]["async_oracle_sidecar_fail_closed_cancels_active_job"] is True
+    assert report["proofs"]["sidecar_fail_closed"]["ok"] is True
+    assert report["proofs"]["sidecar_fail_closed"]["request_accepted"] is True
+    assert report["proofs"]["sidecar_fail_closed"]["cancel_reason"] == "sidecar_send_failed"
+    assert report["proofs"]["sidecar_fail_closed"]["session_error_reason"] == "sidecar_send_failed"
+    assert report["proofs"]["sidecar_fail_closed"]["error_redacted"] is True
+    assert report["proofs"]["sidecar_fail_closed"]["active_capacity_after_failure"] == 0
+    assert report["proofs"]["sidecar_fail_closed"]["job_state_after_failure"] == "cancelled"
+    assert report["proofs"]["sidecar_fail_closed"]["sidecar_removed"] is True
+    assert report["proofs"]["sidecar_fail_closed"]["sidecar_closed"] is True
     assert "tests/agent/test_realtime_voice.py::test_kame_engine_local_status_question_uses_oracle_job_state" in (
         report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"]["test_refs"]
     )
@@ -911,6 +976,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:transcript_hypotheses_remain_unpromoted" in issues
     assert "missing_async_oracle_coverage:result_handling_bounded_and_durable" in issues
     assert "missing_async_oracle_coverage:discord_session_cleanup_preserves_oracle_state" in issues
+    assert "missing_async_oracle_coverage:sidecar_fail_closed_send_failure_cancels_active_job" in issues
     assert "missing_async_oracle_acceptance:four_oracle_jobs_reflex_responsive" in issues
     assert "missing_async_oracle_acceptance:fifth_job_obeys_overflow_policy" in issues
     assert "missing_async_oracle_acceptance:approval_wait_is_visible_and_redacted" in issues
@@ -918,6 +984,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_acceptance:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_acceptance:transcript_hypotheses_stay_non_authoritative" in issues
     assert "missing_async_oracle_acceptance:discord_session_cleanup_preserves_oracle_state" in issues
+    assert "missing_async_oracle_acceptance:sidecar_fail_closed_send_failure_cancels_active_job" in issues
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
     assert result_handling["ok"] is False
     assert result_handling["verification_mode"] == "loopback_smoke_plus_focused_tests"
@@ -1278,6 +1345,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
         "live_probe_closure_json",
         "live_probe_closure_markdown",
         "markdown",
+        "sidecar_fail_closed_smoke_json",
         "smoke_json",
     }
     assert required_paths <= set(paths)
@@ -1290,6 +1358,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     smoke = json.loads(Path(paths["smoke_json"]).read_text(encoding="utf-8"))
     async_oracle_smoke = json.loads(Path(paths["async_oracle_smoke_json"]).read_text(encoding="utf-8"))
     discord_cleanup_smoke = json.loads(Path(paths["discord_session_cleanup_smoke_json"]).read_text(encoding="utf-8"))
+    sidecar_fail_closed_smoke = json.loads(Path(paths["sidecar_fail_closed_smoke_json"]).read_text(encoding="utf-8"))
     live_template = json.loads(Path(paths["live_evidence_template"]).read_text(encoding="utf-8"))
     live_example = json.loads(Path(paths["live_evidence_example"]).read_text(encoding="utf-8"))
     live_scaffold_manifest_path = Path(paths["live_evidence_scaffold_manifest"])
@@ -1308,6 +1377,8 @@ def test_write_voice_operator_report_artifacts(tmp_path):
         "live_turn",
     ]
     assert smoke["ok"] is True
+    assert sidecar_fail_closed_smoke["ok"] is True
+    assert sidecar_fail_closed_smoke["scenario"] == "sidecar_send_fail_closed_after_acceptance"
     assert async_oracle_smoke["ok"] is True
     assert async_oracle_smoke["max_running"] == 4
     assert discord_cleanup_smoke["ok"] is True

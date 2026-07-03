@@ -154,6 +154,7 @@ EXPECTED_PACKAGE_ARTIFACTS = (
     "voiceops-voice-operator/current/discord-loopback-smoke.json",
     "voiceops-voice-operator/current/async-oracle-smoke.json",
     "voiceops-voice-operator/current/discord-session-cleanup-smoke.json",
+    "voiceops-voice-operator/current/sidecar-fail-closed-smoke.json",
     "voiceops-voice-operator/current/live-probe-closure-plan.json",
     "voiceops-voice-operator/current/live-probe-closure-plan.md",
     "voiceops-voice-operator/current/live-voice-evidence-scaffold/manifest.json",
@@ -1732,6 +1733,7 @@ def _audit_voice_operator_artifact_consistency(
     discord_loopback_smoke: Mapping[str, Any],
     async_oracle_smoke: Mapping[str, Any],
     discord_session_cleanup_smoke: Mapping[str, Any],
+    sidecar_fail_closed_smoke: Mapping[str, Any],
     issues: list[str],
 ) -> None:
     for issue in validate_voice_operator_report(dict(readiness)):
@@ -1740,6 +1742,7 @@ def _audit_voice_operator_artifact_consistency(
         "smoke": discord_loopback_smoke,
         "async_oracle_smoke": async_oracle_smoke,
         "discord_session_cleanup_smoke": discord_session_cleanup_smoke,
+        "sidecar_fail_closed_smoke": sidecar_fail_closed_smoke,
     }
     for field, standalone_payload in expected_payloads.items():
         if readiness.get(field) != standalone_payload:
@@ -1766,6 +1769,11 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
     cleanup_smoke = (
         readiness.get("discord_session_cleanup_smoke")
         if isinstance(readiness.get("discord_session_cleanup_smoke"), Mapping)
+        else {}
+    )
+    sidecar_fail_closed_smoke = (
+        readiness.get("sidecar_fail_closed_smoke")
+        if isinstance(readiness.get("sidecar_fail_closed_smoke"), Mapping)
         else {}
     )
     pcm_proof = proofs.get("pcm_conversion") if isinstance(proofs.get("pcm_conversion"), Mapping) else {}
@@ -2021,6 +2029,35 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "degraded_job_state": cleanup_smoke.get("degraded_job_state"),
             "degraded_job_error": cleanup_smoke.get("degraded_job_error"),
             "event_order": cleanup_smoke.get("event_order") or [],
+        },
+        issues=issues,
+    )
+    sidecar_fail_closed_proof = (
+        proofs.get("sidecar_fail_closed") if isinstance(proofs.get("sidecar_fail_closed"), Mapping) else {}
+    )
+    _compare_proof_fields(
+        label="sidecar_fail_closed",
+        proof=sidecar_fail_closed_proof,
+        expected={
+            "scenario": sidecar_fail_closed_smoke.get("scenario"),
+            "fallback_policy": sidecar_fail_closed_smoke.get("fallback_policy"),
+            "request_accepted": bool(sidecar_fail_closed_smoke.get("request_accepted")),
+            "job_id": sidecar_fail_closed_smoke.get("job_id"),
+            "cancelled_observed": bool(sidecar_fail_closed_smoke.get("cancelled_observed")),
+            "cancel_reason": sidecar_fail_closed_smoke.get("cancel_reason"),
+            "session_error_observed": bool(sidecar_fail_closed_smoke.get("session_error_observed")),
+            "session_error_reason": sidecar_fail_closed_smoke.get("session_error_reason"),
+            "session_error_sidecar": sidecar_fail_closed_smoke.get("session_error_sidecar"),
+            "error_redacted": bool(sidecar_fail_closed_smoke.get("error_redacted")),
+            "error_mentions_fail_closed": bool(sidecar_fail_closed_smoke.get("error_mentions_fail_closed")),
+            "active_capacity_after_failure": sidecar_fail_closed_smoke.get("active_capacity_after_failure"),
+            "job_state_after_failure": sidecar_fail_closed_smoke.get("job_state_after_failure"),
+            "sidecar_removed": bool(sidecar_fail_closed_smoke.get("sidecar_removed")),
+            "sidecar_closed": bool(sidecar_fail_closed_smoke.get("sidecar_closed")),
+            "sidecar_close_calls": sidecar_fail_closed_smoke.get("sidecar_close_calls"),
+            "oracle_requests_seen": sidecar_fail_closed_smoke.get("oracle_requests_seen"),
+            "event_order": sidecar_fail_closed_smoke.get("event_order") or [],
+            "test_refs": sidecar_fail_closed_smoke.get("test_refs") or [],
         },
         issues=issues,
     )
@@ -2306,6 +2343,11 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         issues,
         "discord_session_cleanup_smoke",
     )
+    sidecar_fail_closed_smoke = _read_json(
+        voice_dir / "sidecar-fail-closed-smoke.json",
+        issues,
+        "sidecar_fail_closed_smoke",
+    )
     live_scaffold_dir = voice_dir / "live-voice-evidence-scaffold"
     live_scaffold_manifest = _read_json(live_scaffold_dir / "manifest.json", issues, "live_evidence_scaffold_manifest")
     live_scaffold_sections = {
@@ -2427,6 +2469,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         discord_loopback_smoke=discord_loopback_smoke,
         async_oracle_smoke=async_oracle_smoke,
         discord_session_cleanup_smoke=discord_session_cleanup_smoke,
+        sidecar_fail_closed_smoke=sidecar_fail_closed_smoke,
         issues=issues,
     )
     _audit_live_evidence_scaffold(
