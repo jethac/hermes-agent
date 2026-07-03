@@ -1731,7 +1731,18 @@ async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
         "cancel_requested": 0,
     }
     assert status["jobs"][0]["approval_reason"] == "Stripe Link spend requires approval"
-    assert status["jobs"][0]["approval"] == {
+    approval = dict(status["jobs"][0]["approval"])
+    gate = approval.pop("kame_action_gate")
+    assert gate["schema_version"] == "voiceops.runtime_kame_action_gate.v1"
+    assert gate["ok"] is False
+    assert gate["requires_promoted_evidence"] is True
+    assert gate["accepted_authorities"] == ("interpreter_promoted", "oracle_promoted")
+    assert gate["issues"] == (
+        "missing_promoted_evidence",
+        "interpreter_evidence_not_consumed_before_irreversible_action",
+        "missing_tool_disclosure_ref",
+    )
+    assert approval == {
         "approval_id": "approval-123",
         "tool_name": "stripe_link_purchase",
         "latest_interpreter_evidence": (
@@ -1748,7 +1759,10 @@ async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
     waiting_event = next(event for event in events if event["type"] == "oracle.job.waiting_for_approval")
     assert waiting_event["state"] == "waiting_for_approval"
     assert waiting_event["payload"]["approval_reason"] == "Stripe Link spend requires approval"
-    assert waiting_event["payload"]["approval"] == {
+    event_approval = dict(waiting_event["payload"]["approval"])
+    event_gate = event_approval.pop("kame_action_gate")
+    assert event_gate == gate
+    assert event_approval == {
         "approval_id": "approval-123",
         "tool_name": "stripe_link_purchase",
         "latest_interpreter_evidence": (
@@ -1948,7 +1962,16 @@ async def test_audit_ledger_path_records_redacted_lifecycle_events(tmp_path):
     assert "include redacted receipt reference" in progress["payload"]["latest_update"]
     assert "Bearer ***" in progress["payload"]["latest_update"]
     assert "sk_tes" in progress["payload"]["latest_update"]
-    assert waiting["payload"]["approval"] == {
+    approval = dict(waiting["payload"]["approval"])
+    gate = approval.pop("kame_action_gate")
+    assert gate["schema_version"] == "voiceops.runtime_kame_action_gate.v1"
+    assert gate["ok"] is False
+    assert gate["issues"] == [
+        "missing_promoted_evidence",
+        "interpreter_evidence_not_consumed_before_irreversible_action",
+        "missing_tool_disclosure_ref",
+    ]
+    assert approval == {
         "approval_id": "approval-123",
         "tool_name": "stripe_link_purchase",
     }

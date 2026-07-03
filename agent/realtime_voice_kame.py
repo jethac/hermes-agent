@@ -441,6 +441,15 @@ class KameOracleRequest:
         return "degraded_no_raw_audio"
 
     @property
+    def degraded_reason(self) -> str:
+        """Return the explicit degraded-mode reason for non-primary evidence."""
+
+        status = self.evidence_bundle_status
+        if status == "primary_audio":
+            return ""
+        return status
+
+    @property
     def oracle_text(self) -> str:
         """Return promoted text for the user's oracle-facing message."""
 
@@ -586,6 +595,8 @@ class KameOracleRequest:
             "voice_response_policy": response_style.get("policy") or "sentence_cap",
             "kame_requested_response_style": response_style,
         }
+        if self.degraded_reason:
+            metadata["kame_degraded_reason"] = self.degraded_reason
         if self.route_confidence is not None:
             metadata["kame_route_confidence"] = self.route_confidence
         if self.user_id:

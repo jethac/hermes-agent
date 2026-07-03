@@ -393,6 +393,7 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     evidence_authority = _metadata_evidence_authority(metadata.get("kame_evidence_authority"))
     interface_input_source = _metadata_text(metadata.get("kame_interface_input_source"))
     interface_audio_input_fallback = metadata.get("kame_interface_audio_input_fallback") is True
+    degraded_reason = _metadata_text(metadata.get("kame_degraded_reason"))
     response_style = _metadata_response_style(metadata.get("kame_requested_response_style"))
     speaker = _metadata_speaker(metadata.get("kame_speaker"))
     channel = _metadata_channel(metadata.get("kame_channel"))
@@ -434,6 +435,11 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
         source_label = interface_input_source or "ASR fallback"
         parts.append(
             f"The audio-native reflex was unavailable; this turn used {source_label} as the interface fallback."
+        )
+    if degraded_reason:
+        parts.append(
+            f"KAME evidence bundle is degraded ({degraded_reason}): raw audio is not available as primary evidence. "
+            "Treat transcript or frontend witness text as compatibility input, not an authoritative user transcript."
         )
     if reflex_validation_error:
         parts.append(f"Reflex route override: {reflex_validation_error}.")

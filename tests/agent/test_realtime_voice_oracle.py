@@ -65,6 +65,32 @@ def test_voice_oracle_prompt_includes_kame_brief_summary_policy():
     assert "Requested response style: spoken=true; policy=brief_summary" in prompt
 
 
+def test_voice_oracle_prompt_marks_degraded_kame_witness_text_non_authoritative():
+    prompt = _voice_oracle_prompt(
+        "Prepare a phone handoff.",
+        {
+            "voice_architecture": "kame_frontend_oracle",
+            "kame_intent": "Prepare a phone handoff.",
+            "kame_intent_source": "reflex_audio",
+            "kame_evidence_bundle_status": "degraded_text_only",
+            "kame_degraded_reason": "degraded_text_only",
+            "kame_auxiliary_transcript_hypotheses": (
+                {
+                    "source": "moshi",
+                    "text": "prepare phone handoff",
+                    "authority": "hypothesis",
+                },
+            ),
+        },
+    )
+
+    assert "KAME evidence bundle is degraded (degraded_text_only)" in prompt
+    assert "raw audio is not available as primary evidence" in prompt
+    assert "frontend witness text as compatibility input" in prompt
+    assert "Auxiliary transcript hypothesis (moshi" in prompt
+    assert "do not treat it as durable truth" in prompt
+
+
 def test_hermes_realtime_oracle_runs_concurrent_kame_requests_and_targets_interrupt(monkeypatch):
     calls = []
     running = 0

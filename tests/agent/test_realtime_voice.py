@@ -13583,6 +13583,8 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
     assert metadata["kame_interface_tool_call_id"] == "call-voiceclaw-1"
     assert metadata["kame_raw_audio_available"] is False
     assert metadata["kame_evidence_bundle_status"] == "degraded_text_only"
+    assert request.degraded_reason == "degraded_text_only"
+    assert metadata["kame_degraded_reason"] == "degraded_text_only"
     assert metadata["kame_reflex_transcript_hypothesis"] == "use my Stripe budget to prepare a VoIP provisioning plan"
     assert metadata["kame_reflex_transcript_source"] == "reflex_audio"
     assert metadata["kame_transcript_hypotheses"] == (
@@ -13754,6 +13756,8 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
     assert metadata["kame_audio"] == request.audio_metadata
     assert metadata["kame_raw_audio_available"] is True
     assert metadata["kame_evidence_bundle_status"] == "primary_audio"
+    assert request.degraded_reason == ""
+    assert "kame_degraded_reason" not in metadata
     assert metadata["kame_speaker"] == request.speaker_metadata
     assert metadata["kame_channel"] == request.channel_metadata
     assert "must-not-copy" not in str(metadata)
@@ -13795,8 +13799,10 @@ def test_external_kame_audio_metadata_without_segment_ref_is_degraded():
     assert request.audio_time_range_ms == (120, 1840)
     assert request.raw_audio_available is False
     assert request.evidence_bundle_status == "degraded_audio_metadata_only"
+    assert request.degraded_reason == "degraded_audio_metadata_only"
     assert metadata["kame_raw_audio_available"] is False
     assert metadata["kame_evidence_bundle_status"] == "degraded_audio_metadata_only"
+    assert metadata["kame_degraded_reason"] == "degraded_audio_metadata_only"
     assert metadata["kame_audio"] == {
         "time_range_ms": (120, 1840),
         "codec": "pcm_s16le",
