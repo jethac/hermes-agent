@@ -700,7 +700,7 @@ Preferred interpreter track:
 
 Preferred speech track:
 
-- keep Cartesia or another cloud bridge as the baseline while local speech is being validated
+- use Cartesia or another cloud bridge only as a fallback or provider-comparison path while local speech is being validated
 - evaluate local transcript hypothesis sources and TTS separately before combining them
 - do not feed STT into the reflex in normal full KAME mode
 - use ASR as fallback or additional auxiliary transcript hypothesis evidence for escalated

@@ -116,7 +116,7 @@ else
 fi
 
 note "Track A: configured oracle probe, diagnostic only"
-ORACLE_PROBE_MODEL="${DGX_SPARK_ORACLE_MODEL:-${DGX_SPARK_KAME_ORACLE_MODEL:-nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4}}"
+ORACLE_PROBE_MODEL="${DGX_SPARK_ORACLE_PROVIDER_TARGET:-${DGX_SPARK_ORACLE_MODEL:-${DGX_SPARK_KAME_ORACLE_MODEL:-nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4}}}"
 if [[ -n "${DGX_SPARK_ORACLE_BASE_URL:-}" && -n "$ORACLE_PROBE_MODEL" ]]; then
   if run uv run python -m hermes_cli.realtime_voice_oracle_probe \
     --output "$ARTIFACT_DIR/oracle-probe.json" \
@@ -131,7 +131,7 @@ else
   record_skip "track A configured oracle probe, diagnostic only" "set DGX_SPARK_ORACLE_BASE_URL"
 fi
 
-note "Track B: Cartesia cloud voice bridge baseline"
+note "Track B: Cartesia cloud voice bridge fallback / provider comparison"
 TRACK_B_HOME="$ARTIFACT_DIR/hermes-home-cartesia"
 mkdir -p "$TRACK_B_HOME"
 if [[ -n "${CARTESIA_API_KEY:-}" && -n "${CARTESIA_VOICE_ID:-}" ]]; then

@@ -128,7 +128,7 @@ export DGX_SPARK_INTERPRETER_BASE_URL=http://spark.local:8000/v1
 export DGX_SPARK_INTERPRETER_MODEL=gemma-4-E2B-it
 export DGX_SPARK_INTERPRETER_MAX_AUDIO_SECONDS=30
 export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8001/v1
-export DGX_SPARK_ORACLE_MODEL=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target, not a Hermes /model override
+export DGX_SPARK_ORACLE_PROVIDER_TARGET=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target hint, not a Hermes /model override
 export DGX_SPARK_SIDECAR_BASE_URL=http://spark.local:8765
 export DGX_SPARK_LOCAL_VOICE_BRIDGE_URL=http://spark.local:8767
 export DGX_SPARK_LOCAL_TTS_BRIDGE_URL=http://spark.local:8768
@@ -166,7 +166,7 @@ Headless variables:
 
 ```bash
 export DGX_SPARK_ORACLE_BASE_URL=http://<spark-host>:8000
-export DGX_SPARK_ORACLE_MODEL=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target, not a Hermes /model override
+export DGX_SPARK_ORACLE_PROVIDER_TARGET=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target hint, not a Hermes /model override
 export DGX_SPARK_ORACLE_API_KEY=optional
 export DGX_SPARK_ORACLE_TIMEOUT_SECONDS=120
 export DGX_SPARK_ORACLE_MAX_TOKENS=220
@@ -175,6 +175,10 @@ export DGX_SPARK_ORACLE_MAX_TOKENS=220
 Runner behavior:
 
 - Runs `python -m hermes_cli.realtime_voice_oracle_probe`.
+- Uses `DGX_SPARK_ORACLE_PROVIDER_TARGET` only as the provider probe model id;
+  Hermes still uses the active `/model` selection for the oracle. The runner
+  still accepts `DGX_SPARK_ORACLE_MODEL` and `DGX_SPARK_KAME_ORACLE_MODEL` as
+  compatibility aliases.
 - Calls `/v1/chat/completions`, accepting either root or `/v1` base URLs.
 - Writes `oracle-probe.json`.
 - Records elapsed milliseconds, completion tokens, approximate tokens/sec, and
@@ -267,8 +271,9 @@ while keeping the same Hermes oracle contract and the three-tier split.
 Expected external service:
 
 - A Hermes-compatible local reflex/interpreter/TTS stack already running on the
-  DGX Spark, or reachable from this machine. A streaming STT/TTS bridge may be
-  present as optional transcript evidence or text-oracle fallback.
+  DGX Spark, or reachable from this machine. A separate ASR or transcript bridge
+  may be present only as optional transcript-hypothesis evidence, diagnostics,
+  captions, or text-oracle fallback.
 - First implementation candidates:
   - Moshi/PersonaPlex-class S2S or smaller timing/noise-gated model for reflex
     floor control and rough transcript hypotheses.
@@ -362,7 +367,7 @@ local-only operation.
 1. If Track A fails, do not evaluate local speech yet. Fix Nemotron 3 Super serving first.
 2. If Track A passes and Track B feels good, Nemotron 3 Super is a plausible
    Hermes brain and local speech becomes an optimization.
-3. If Track B passes but Track C fails, keep Cartesia as a labeled fallback and
+3. If Track B passes but Track C fails, use Cartesia only as a labeled fallback and
    provider-comparison bridge while continuing local KAME stack development.
 4. If Track C passes within 25% of Track B latency, prefer Track C for local DGX
    operation.
@@ -402,7 +407,7 @@ With Nemotron 3 Super and Cartesia:
 
 ```bash
 export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8000
-export DGX_SPARK_ORACLE_MODEL=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target, not a Hermes /model override
+export DGX_SPARK_ORACLE_PROVIDER_TARGET=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target hint, not a Hermes /model override
 export CARTESIA_API_KEY=...
 export CARTESIA_VOICE_ID=...
 scripts/dgx_spark_gemma4_voice_eval.sh
@@ -412,7 +417,7 @@ With Nemotron 3 Super, Cartesia, and local DGX speech:
 
 ```bash
 export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8000
-export DGX_SPARK_ORACLE_MODEL=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target, not a Hermes /model override
+export DGX_SPARK_ORACLE_PROVIDER_TARGET=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target hint, not a Hermes /model override
 export CARTESIA_API_KEY=...
 export CARTESIA_VOICE_ID=...
 export DGX_SPARK_LOCAL_VOICE_BRIDGE_URL=http://spark.local:8770
