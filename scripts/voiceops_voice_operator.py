@@ -114,7 +114,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_cancelled_oracle_late_output_is_not_mixed",
     ],
     "approval_wait": [
-        "tests/agent/test_realtime_voice.py::test_async_oracle_job_enters_waiting_for_approval_on_tool_call",
+        "tests/agent/test_realtime_voice.py::test_async_oracle_job_failed_kame_gate_suppresses_tool_result_completion",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_waiting_for_approval_holds_capacity_and_emits_redacted_event",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_cancelling_waiting_for_approval_keeps_capacity_until_worker_stops_and_drops_late_result",
         "tests/gateway/test_discord_realtime_voice.py::test_voice_status_oracle_job_lines_are_compact",
@@ -1651,7 +1651,9 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("approval_payload_redacted") is True
         and smoke.get("approval_secret_leaked") is False
         and smoke.get("approval_secret_canary_checked") is True
-        and smoke.get("approval_completed") is True,
+        and smoke.get("approval_completed") is False
+        and smoke.get("approval_gate_failed_closed") is True
+        and smoke.get("approval_result_suppressed") is True,
         "runtime_kame_action_gate_degraded_text_only_fails_closed": smoke.get(
             "runtime_kame_action_gate_degraded_text_only_ok"
         )
@@ -1691,7 +1693,9 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and "1 queued" in str(smoke.get("approval_capacity_status_text") or "")
         and "1 waiting for approval" in str(smoke.get("approval_capacity_status_text") or "")
         and smoke.get("approval_capacity_followup_started_after_approval") is True
-        and int(smoke.get("approval_capacity_completed_jobs") or 0) == 2,
+        and int(smoke.get("approval_capacity_completed_jobs") or 0) == 1
+        and smoke.get("approval_capacity_failed_gate_suppressed") is True
+        and int(smoke.get("approval_capacity_failed_jobs") or 0) == 1,
         "approval_cancel_holds_capacity": smoke.get("approval_cancel_capacity_smoke_ok") is True
         and smoke.get("approval_cancel_waiting_observed") is True
         and smoke.get("approval_cancel_followup_queued") is True
@@ -2220,6 +2224,10 @@ def build_voice_operator_report(
                 async_oracle_smoke.get("approval_capacity_followup_started_after_approval")
             ),
             "approval_capacity_completed_jobs": async_oracle_smoke.get("approval_capacity_completed_jobs"),
+            "approval_capacity_failed_gate_suppressed": bool(
+                async_oracle_smoke.get("approval_capacity_failed_gate_suppressed")
+            ),
+            "approval_capacity_failed_jobs": async_oracle_smoke.get("approval_capacity_failed_jobs"),
             "approval_capacity_max_concurrent": async_oracle_smoke.get("approval_capacity_max_concurrent"),
             "approval_cancel_capacity_smoke_ok": bool(
                 async_oracle_smoke.get("approval_cancel_capacity_smoke_ok")
@@ -2323,6 +2331,8 @@ def build_voice_operator_report(
             "approval_secret_leaked": bool(async_oracle_smoke.get("approval_secret_leaked")),
             "approval_secret_canary_checked": bool(async_oracle_smoke.get("approval_secret_canary_checked")),
             "approval_completed": bool(async_oracle_smoke.get("approval_completed")),
+            "approval_gate_failed_closed": bool(async_oracle_smoke.get("approval_gate_failed_closed")),
+            "approval_result_suppressed": bool(async_oracle_smoke.get("approval_result_suppressed")),
             "approval_status_text": async_oracle_smoke.get("approval_status_text"),
             "failed_job_reported": bool(async_oracle_smoke.get("failed_job_reported")),
             "failed_job_spoken": bool(async_oracle_smoke.get("failed_job_spoken")),

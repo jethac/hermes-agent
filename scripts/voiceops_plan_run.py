@@ -1527,6 +1527,12 @@ async def build_plan_run_async(
                     "approval_capacity_completed_jobs": voice_operator["proofs"]["async_oracle_jobs"][
                         "approval_capacity_completed_jobs"
                     ],
+                    "approval_capacity_failed_gate_suppressed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_capacity_failed_gate_suppressed"
+                    ],
+                    "approval_capacity_failed_jobs": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_capacity_failed_jobs"
+                    ],
                     "approval_capacity_max_concurrent": voice_operator["proofs"]["async_oracle_jobs"][
                         "approval_capacity_max_concurrent"
                     ],
@@ -1626,6 +1632,12 @@ async def build_plan_run_async(
                         "approval_secret_canary_checked"
                     ],
                     "approval_completed": voice_operator["proofs"]["async_oracle_jobs"]["approval_completed"],
+                    "approval_gate_failed_closed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_gate_failed_closed"
+                    ],
+                    "approval_result_suppressed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "approval_result_suppressed"
+                    ],
                     "approval_status_text": voice_operator["proofs"]["async_oracle_jobs"]["approval_status_text"],
                     "failed_job_reported": voice_operator["proofs"]["async_oracle_jobs"]["failed_job_reported"],
                     "failed_job_spoken": voice_operator["proofs"]["async_oracle_jobs"]["failed_job_spoken"],

@@ -6143,7 +6143,7 @@ def test_kame_engine_speak_terminal_results_false_suppresses_result_speech_but_k
     asyncio.run(run())
 
 
-def test_async_oracle_job_enters_waiting_for_approval_on_tool_call(monkeypatch):
+def test_async_oracle_job_failed_kame_gate_suppresses_tool_result_completion(monkeypatch):
     class ApprovalOracle:
         def __init__(self):
             self.release = asyncio.Event()
@@ -6270,14 +6270,19 @@ def test_async_oracle_job_enters_waiting_for_approval_on_tool_call(monkeypatch):
         oracle.release.set()
         async for event in engine.events():
             seen.append(event)
-            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
+            if event.type == VoiceEventType.ORACLE_JOB_FAILED:
                 break
 
         await engine.close()
-        completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
-        assert completed.payload["result_summary"] == "The spend approval cleared."
-        assert completed.payload["source_playback_generation"] == 1
-        assert completed.payload["playback_generation"] == 2
+        suppressed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED)
+        failed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_FAILED)
+        assert suppressed.payload["job_id"] == "voice-oracle-001"
+        assert suppressed.payload["suppression_reason"] == "kame_action_gate_failed"
+        assert failed.payload["job_id"] == "voice-oracle-001"
+        assert failed.payload["state"] == "failed"
+        assert "KAME action gate failed" in failed.payload["error"]
+        assert not any(event.type == VoiceEventType.ORACLE_TOOL_RESULT for event in seen)
+        assert not any(event.type == VoiceEventType.ORACLE_JOB_COMPLETED for event in seen)
         assert not any(event.payload.get("oracle_job_result") for event in seen)
         assert spoken[-1] == status_commit.payload["text"]
 

@@ -1133,7 +1133,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["worker_overlap_within_capacity"] is True
     assert voice_result["details"]["async_oracle_smoke"]["noncooperative_cancel_overlap_observed"] is False
     assert voice_result["details"]["async_oracle_smoke"]["queued_jobs"] == 1
-    assert voice_result["details"]["async_oracle_smoke"]["failed_jobs"] == 1
+    assert voice_result["details"]["async_oracle_smoke"]["failed_jobs"] == 2
     assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["queued_cancel_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["queued_cancelled_before_start"] is True
@@ -1151,7 +1151,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "1 queued" in voice_result["details"]["async_oracle_smoke"]["approval_capacity_status_text"]
     assert "1 waiting for approval" in voice_result["details"]["async_oracle_smoke"]["approval_capacity_status_text"]
     assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_followup_started_after_approval"] is True
-    assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_completed_jobs"] == 2
+    assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_completed_jobs"] == 1
+    assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_failed_gate_suppressed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_failed_jobs"] == 1
     assert voice_result["details"]["async_oracle_smoke"]["approval_capacity_max_concurrent"] == 1
     assert voice_result["details"]["async_oracle_smoke"]["cancel_drain_capacity_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["cancel_drain_requested_observed"] is True
@@ -1199,7 +1201,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["approval_status_committed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["approval_tool_progress_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["approval_payload_redacted"] is True
-    assert voice_result["details"]["async_oracle_smoke"]["approval_completed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_completed"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["approval_gate_failed_closed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_result_suppressed"] is True
     assert "1 waiting for approval" in voice_result["details"]["async_oracle_smoke"]["approval_status_text"]
     assert "waiting_for_approval: Preparing spend approval." in voice_result["details"]["async_oracle_smoke"][
         "approval_status_text"

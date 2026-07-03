@@ -1422,6 +1422,15 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         elif oracle_tool_event_type == VoiceEventType.ORACLE_TOOL_RESULT:
                             manager = self._oracle_job_manager
                             if manager is not None and job.state == OracleJobState.WAITING_FOR_APPROVAL:
+                                if _oracle_job_kame_action_gate_failed(job):
+                                    await self._emit_oracle_job_voice_event(
+                                        VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED,
+                                        _oracle_job_runtime_result_suppressed_payload(
+                                            job,
+                                            reason="kame_action_gate_failed",
+                                        ),
+                                    )
+                                    raise RuntimeError("KAME action gate failed; suppressed tool result")
                                 with contextlib.suppress(OracleJobNotFoundError):
                                     await manager.mark_running(job.job_id)
                         await self._emit_oracle_job_progress(
@@ -4932,6 +4941,14 @@ def _with_oracle_job_interpreter_evidence(payload: Mapping[str, Any], job: Oracl
     if isinstance(status.get("channel"), Mapping):
         enriched["channel"] = dict(status.get("channel") or {})
     return enriched
+
+
+def _oracle_job_kame_action_gate_failed(job: OracleJob) -> bool:
+    approval = job.approval if isinstance(job.approval, Mapping) else {}
+    gate = approval.get("kame_action_gate") if isinstance(approval.get("kame_action_gate"), Mapping) else {}
+    if not gate:
+        return False
+    return gate.get("ok") is not True
 
 
 def _oracle_update_delivery_status(result: object, *, delivered_default: bool) -> dict[str, Any]:

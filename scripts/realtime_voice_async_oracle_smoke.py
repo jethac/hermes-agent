@@ -442,7 +442,11 @@ async def _run_approval_capacity_smoke() -> dict[str, Any]:
     )
     oracle.release("Approval blocked followup")
     await recorder.wait_for(
-        lambda events: sum(event.type == VoiceEventType.ORACLE_JOB_COMPLETED for event in events) == 2
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_COMPLETED
+            and event.payload.get("intent") == "Approval blocked followup"
+            for event in events
+        )
     )
     await engine.close()
     collector.cancel()
@@ -457,6 +461,17 @@ async def _run_approval_capacity_smoke() -> dict[str, Any]:
         for event in recorder.events
     )
     completed = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_COMPLETED]
+    approval_failed = any(
+        event.type == VoiceEventType.ORACLE_JOB_FAILED
+        and event.payload.get("intent") == "Prepare approval spend"
+        for event in recorder.events
+    )
+    approval_result_suppressed = any(
+        event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED
+        and event.payload.get("intent") == "Prepare approval spend"
+        and event.payload.get("suppression_reason") == "kame_action_gate_failed"
+        for event in recorder.events
+    )
     status_text = str(status_commits[-1].payload.get("text") or "") if status_commits else ""
     return {
         "ok": bool(approval_waiting)
@@ -466,7 +481,9 @@ async def _run_approval_capacity_smoke() -> dict[str, Any]:
         and "1 queued" in status_text
         and "1 waiting for approval" in status_text
         and followup_started_after_approval
-        and len(completed) == 2,
+        and approval_failed
+        and approval_result_suppressed
+        and len(completed) == 1,
         "approval_capacity_waiting_observed": bool(approval_waiting),
         "approval_capacity_followup_queued": bool(queued_followup),
         "approval_capacity_active_visible": "1 active out of 1" in status_text,
@@ -474,6 +491,8 @@ async def _run_approval_capacity_smoke() -> dict[str, Any]:
         "approval_capacity_status_text": status_text,
         "approval_capacity_followup_started_after_approval": followup_started_after_approval,
         "approval_capacity_completed_jobs": len(completed),
+        "approval_capacity_failed_gate_suppressed": approval_result_suppressed,
+        "approval_capacity_failed_jobs": int(approval_failed),
         "approval_capacity_max_concurrent": 1,
     }
 
@@ -2447,7 +2466,7 @@ async def run_smoke() -> dict[str, Any]:
     oracle.release("Prepare approval spend")
     await recorder.wait_for(
         lambda events: any(
-            event.type == VoiceEventType.ORACLE_JOB_COMPLETED
+            event.type == VoiceEventType.ORACLE_JOB_FAILED
             and event.payload.get("intent") == "Prepare approval spend"
             for event in events
         )
@@ -2689,6 +2708,18 @@ async def run_smoke() -> dict[str, Any]:
         and event.payload.get("result_summary") == "Approval smoke cleared."
         for event in recorder.events
     )
+    approval_gate_failed_closed = any(
+        event.type == VoiceEventType.ORACLE_JOB_FAILED
+        and event.payload.get("intent") == "Prepare approval spend"
+        and "KAME action gate failed" in str(event.payload.get("error") or "")
+        for event in recorder.events
+    )
+    approval_result_suppressed = any(
+        event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED
+        and event.payload.get("intent") == "Prepare approval spend"
+        and event.payload.get("suppression_reason") == "kame_action_gate_failed"
+        for event in recorder.events
+    )
     approval_payload_redacted = bool(approval_waiting) and "secret test value" not in str(
         approval_waiting[-1].payload
     )
@@ -2906,7 +2937,7 @@ async def run_smoke() -> dict[str, Any]:
     report = {
         "kind": "async_oracle_smoke",
         "ok": (
-            len(started) == 10
+            len(started) == 9
             and len(queued) == 1
             and scheduler_max_running == 4
             and oracle.max_running == 4
@@ -2915,8 +2946,8 @@ async def run_smoke() -> dict[str, Any]:
             and playback_stop_did_not_cancel_jobs
             and bool(running_status_commits)
             and status_ordinal_labels_visible
-            and len(completed) == 6
-            and len(failed) == 1
+            and len(completed) == 5
+            and len(failed) == 2
             and len(cancelled) == 2
             and bool(fifth_job_id)
             and fifth_job_started_after_capacity_freed
@@ -2933,7 +2964,9 @@ async def run_smoke() -> dict[str, Any]:
             and bool(approval_status_commits)
             and approval_payload_redacted
             and not approval_secret_leaked
-            and approval_completed
+            and not approval_completed
+            and approval_gate_failed_closed
+            and approval_result_suppressed
             and bool(failure_commits)
             and failure_spoken
             and durable_failed_record_present
@@ -3006,6 +3039,10 @@ async def run_smoke() -> dict[str, Any]:
             "approval_capacity_followup_started_after_approval"
         ],
         "approval_capacity_completed_jobs": approval_capacity_smoke["approval_capacity_completed_jobs"],
+        "approval_capacity_failed_gate_suppressed": approval_capacity_smoke[
+            "approval_capacity_failed_gate_suppressed"
+        ],
+        "approval_capacity_failed_jobs": approval_capacity_smoke["approval_capacity_failed_jobs"],
         "approval_capacity_max_concurrent": approval_capacity_smoke["approval_capacity_max_concurrent"],
         "cancel_drain_capacity_smoke_ok": cancel_drain_capacity_smoke["ok"],
         "cancel_drain_requested_observed": cancel_drain_capacity_smoke["cancel_drain_requested_observed"],
@@ -3379,6 +3416,8 @@ async def run_smoke() -> dict[str, Any]:
         "approval_secret_leaked": approval_secret_leaked,
         "approval_secret_canary_checked": True,
         "approval_completed": approval_completed,
+        "approval_gate_failed_closed": approval_gate_failed_closed,
+        "approval_result_suppressed": approval_result_suppressed,
         "approval_status_text": str(approval_status_commits[-1].payload.get("text") or "")
         if approval_status_commits
         else "",

@@ -66,10 +66,10 @@ def _async_oracle_smoke_payload() -> dict:
         "worker_overlap_proved": True,
         "worker_overlap_within_capacity": True,
         "noncooperative_cancel_overlap_observed": False,
-        "started_jobs": 10,
+        "started_jobs": 9,
         "queued_jobs": 1,
-        "completed_jobs": 6,
-        "failed_jobs": 1,
+        "completed_jobs": 5,
+        "failed_jobs": 2,
         "cancelled_jobs": 2,
         "queued_cancel_smoke_ok": True,
         "queued_cancel_observed": True,
@@ -88,7 +88,9 @@ def _async_oracle_smoke_payload() -> dict:
             "waiting_for_approval: Preparing spend approval."
         ),
         "approval_capacity_followup_started_after_approval": True,
-        "approval_capacity_completed_jobs": 2,
+        "approval_capacity_completed_jobs": 1,
+        "approval_capacity_failed_gate_suppressed": True,
+        "approval_capacity_failed_jobs": 1,
         "approval_capacity_max_concurrent": 1,
         "approval_cancel_capacity_smoke_ok": True,
         "approval_cancel_waiting_observed": True,
@@ -164,14 +166,16 @@ def _async_oracle_smoke_payload() -> dict:
         "cancelled_result_durable_completed": False,
         "cancelled_result_durable_text": False,
         "durable_cancelled_record_present": True,
-        "durable_completed_jobs": 6,
+        "durable_completed_jobs": 5,
         "approval_wait_observed": True,
         "approval_status_committed": True,
         "approval_tool_progress_observed": True,
         "approval_payload_redacted": True,
         "approval_secret_leaked": False,
         "approval_secret_canary_checked": True,
-        "approval_completed": True,
+        "approval_completed": False,
+        "approval_gate_failed_closed": True,
+        "approval_result_suppressed": True,
         "approval_status_text": (
             "Oracle jobs: 1 active out of 4, 0 running, 1 waiting for approval. "
             "waiting_for_approval: Preparing spend approval."
@@ -621,7 +625,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["scenario"] == "async_kame_oracle_jobs_fake"
     assert report["proofs"]["async_oracle_jobs"]["max_running"] == 4
     assert report["proofs"]["async_oracle_jobs"]["queued_jobs"] == 1
-    assert report["proofs"]["async_oracle_jobs"]["failed_jobs"] == 1
+    assert report["proofs"]["async_oracle_jobs"]["failed_jobs"] == 2
     assert report["proofs"]["async_oracle_jobs"]["queued_cancel_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["queued_cancel_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["queued_cancelled_before_start"] is True
@@ -639,7 +643,9 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert "1 queued" in report["proofs"]["async_oracle_jobs"]["approval_capacity_status_text"]
     assert "1 waiting for approval" in report["proofs"]["async_oracle_jobs"]["approval_capacity_status_text"]
     assert report["proofs"]["async_oracle_jobs"]["approval_capacity_followup_started_after_approval"] is True
-    assert report["proofs"]["async_oracle_jobs"]["approval_capacity_completed_jobs"] == 2
+    assert report["proofs"]["async_oracle_jobs"]["approval_capacity_completed_jobs"] == 1
+    assert report["proofs"]["async_oracle_jobs"]["approval_capacity_failed_gate_suppressed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_capacity_failed_jobs"] == 1
     assert report["proofs"]["async_oracle_jobs"]["approval_capacity_max_concurrent"] == 1
     assert report["proofs"]["async_oracle_jobs"]["cancel_drain_capacity_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["cancel_drain_requested_observed"] is True
@@ -679,7 +685,9 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["approval_status_committed"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_tool_progress_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_payload_redacted"] is True
-    assert report["proofs"]["async_oracle_jobs"]["approval_completed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_completed"] is False
+    assert report["proofs"]["async_oracle_jobs"]["approval_gate_failed_closed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_result_suppressed"] is True
     assert "waiting_for_approval: Preparing spend approval." in report["proofs"]["async_oracle_jobs"][
         "approval_status_text"
     ]

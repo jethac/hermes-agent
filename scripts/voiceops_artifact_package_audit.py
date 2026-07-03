@@ -1862,6 +1862,10 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
                 async_smoke.get("approval_capacity_followup_started_after_approval")
             ),
             "approval_capacity_completed_jobs": async_smoke.get("approval_capacity_completed_jobs"),
+            "approval_capacity_failed_gate_suppressed": bool(
+                async_smoke.get("approval_capacity_failed_gate_suppressed")
+            ),
+            "approval_capacity_failed_jobs": async_smoke.get("approval_capacity_failed_jobs"),
             "approval_capacity_max_concurrent": async_smoke.get("approval_capacity_max_concurrent"),
             "approval_cancel_capacity_smoke_ok": bool(async_smoke.get("approval_cancel_capacity_smoke_ok")),
             "approval_cancel_waiting_observed": bool(async_smoke.get("approval_cancel_waiting_observed")),
@@ -1939,6 +1943,8 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "approval_secret_leaked": bool(async_smoke.get("approval_secret_leaked")),
             "approval_secret_canary_checked": bool(async_smoke.get("approval_secret_canary_checked")),
             "approval_completed": bool(async_smoke.get("approval_completed")),
+            "approval_gate_failed_closed": bool(async_smoke.get("approval_gate_failed_closed")),
+            "approval_result_suppressed": bool(async_smoke.get("approval_result_suppressed")),
             "approval_status_text": async_smoke.get("approval_status_text"),
             "failed_job_reported": bool(async_smoke.get("failed_job_reported")),
             "failed_job_spoken": bool(async_smoke.get("failed_job_spoken")),
