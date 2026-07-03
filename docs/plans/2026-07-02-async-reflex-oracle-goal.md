@@ -839,6 +839,10 @@ Add KAME frontend compatibility tests:
 - external frontend accepted/queued placeholders and safe status responses stay
   transport/session state only; durable history starts at the normalized oracle
   job request, approval/action records, cancellation/failure, or terminal result
+- normalized external frontend oracle requests preserve job id, turn id, source,
+  tool/correlation id, evidence status, and audio references, while durable
+  terminal job records strip raw Moshi/S2S/ASR/reflex hypothesis text unless
+  interpreter/oracle judgment promoted it
 - direct file, shell, memory, payment, and provisioning tools are not exposed to
   the frontend realtime model
 

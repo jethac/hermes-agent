@@ -565,9 +565,6 @@ def _redacted_durable_oracle_mapping(payload: Mapping[str, Any]) -> dict:
 
 
 def _durable_oracle_payload(event: VoiceEvent) -> Mapping[str, Any]:
-    if event.type != VoiceEventType.INTERFACE_ORACLE_REQUEST:
-        return event.payload
-
     payload = dict(event.payload)
     for key in (
         "transcript",
@@ -580,6 +577,9 @@ def _durable_oracle_payload(event: VoiceEvent) -> Mapping[str, Any]:
         "transcript_hypotheses",
     ):
         payload.pop(key, None)
+
+    if event.type != VoiceEventType.INTERFACE_ORACLE_REQUEST:
+        return payload
 
     oracle_text_source = str(payload.get("oracle_text_source") or "").strip()
     if oracle_text_source and not _durable_oracle_text_source_is_promoted(

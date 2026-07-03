@@ -241,6 +241,12 @@ system heard the user.
   timing, Hermes passes them to Gemma with transcript hypotheses attached. If it
   can provide only text, the path is useful compatibility evidence, but not proof
   of the full raw-audio KAME interpreter loop.
+- External frontend `ask_brain` bridges should still create a normalized
+  Hermes oracle-request boundary after acceptance. Placeholders and safe status
+  packets are transport state only. Durable session history may keep job ids,
+  authority labels, counts, and promoted interpreter/oracle fields, but raw
+  Moshi/S2S/ASR/reflex hypothesis strings must not survive as durable user
+  wording or action arguments unless promoted.
 - The sidecar and gateway must run from the same worktree/version to avoid realtime voice protocol mismatches.
 
 ## Immediate Build Priorities

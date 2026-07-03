@@ -288,6 +288,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         except OracleJobQueueFullError:
             self._oracle_job_context_by_turn_id.pop(request.turn_id, None)
             return {"accepted": False, "reason": "oracle_job_queue_full"}
+        interface_payload = _kame_interface_payload_with_metrics(
+            request,
+            playback_generation,
+            metadata,
+        )
+        interface_payload["job_id"] = job.job_id
+        await self._emit_interface_event(VoiceEventType.INTERFACE_ORACLE_REQUEST, interface_payload)
         status = await manager.status_view()
         reflex_status = status.get("reflex") if isinstance(status.get("reflex"), Mapping) else {}
         return {
@@ -3833,6 +3840,8 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         payload["reflex_validation_error"] = request.reflex_validation_error
     if request.interface_input_source:
         payload["interface_input_source"] = request.interface_input_source
+    if request.interface_tool_call_id:
+        payload["interface_tool_call_id"] = request.interface_tool_call_id
     if request.interface_audio_input_fallback:
         payload["interface_audio_input_fallback"] = True
     if request.reflex_provider:

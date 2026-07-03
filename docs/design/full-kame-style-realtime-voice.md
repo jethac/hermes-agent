@@ -567,6 +567,16 @@ evidence. It must not satisfy the full KAME raw-audio interpreter gate, and it
 must not promote the transcript into durable user text without interpreter or
 oracle judgment.
 
+External frontend history has a separate runtime contract. An accepted
+VoiceClaw/OpenClaw/Moshi `ask_brain` bridge request must emit a normalized
+`INTERFACE_ORACLE_REQUEST` event with the job id, turn id, source, correlation
+ids, evidence status, audio references when available, and authority labels.
+Accepted/queued placeholders, safe reflex status, and transcript sync packets
+remain transport/session state. Durable Hermes voice history may retain counts,
+authority labels, job ids, and promoted interpreter/oracle fields, but raw
+Moshi/S2S/ASR/reflex hypothesis strings must not appear in durable conversation
+records unless a trusted interpreter or the active Hermes oracle promotes them.
+
 If a Moshi-style frontend provides both audio and transcript text, the audio
 reference should be preferred even when the transcript appears cleaner. The
 transcript is useful because it shows what the realtime model believed it heard;

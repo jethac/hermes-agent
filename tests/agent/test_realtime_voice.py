@@ -14369,9 +14369,14 @@ def test_session_client_interface_oracle_request_submits_external_kame_job(monke
         )
 
         seen = []
+        expected_initial_events = {
+            VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            VoiceEventType.ORACLE_JOB_STARTED,
+            VoiceEventType.TOOL_RESULT,
+        }
         async for event in session.events():
             seen.append(event)
-            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+            if expected_initial_events.issubset({item.type for item in seen}):
                 break
         await asyncio.wait_for(oracle.started.wait(), timeout=1)
 
@@ -14460,9 +14465,14 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
         )
 
         seen = []
+        expected_initial_events = {
+            VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            VoiceEventType.ORACLE_JOB_STARTED,
+            VoiceEventType.TOOL_RESULT,
+        }
         async for event in session.events():
             seen.append(event)
-            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+            if expected_initial_events.issubset({item.type for item in seen}):
                 break
         await asyncio.wait_for(oracle.started.wait(), timeout=1)
 
@@ -14497,15 +14507,46 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
         assert "tool_name" not in metadata
         assert "arguments" not in metadata
 
+        oracle_request = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST
+            and event.payload.get("job_id") == "voice-oracle-001"
+        )
+        assert oracle_request.payload["job_id"] == "voice-oracle-001"
+        assert oracle_request.payload["source"] == "voiceclaw"
+        assert oracle_request.payload["turn_id"] == "voice-123:voiceclaw:7"
+        assert oracle_request.payload["interface_input_source"] == "ask_brain"
+        assert oracle_request.payload["interface_tool_call_id"] == "voiceclaw-call-1"
+        assert oracle_request.payload["raw_audio_available"] is True
+        assert oracle_request.payload["evidence_bundle_status"] == "primary_audio"
+        assert oracle_request.payload["audio_segment_ref"] == "artifact://voice/turn-7.wav"
+
         tool_result = next(event for event in seen if event.type == VoiceEventType.TOOL_RESULT)
         assert tool_result.payload["tool_call_id"] == "voiceclaw-call-1"
         assert tool_result.payload["accepted"] is True
 
         oracle.release.set()
         async for event in session.events():
+            seen.append(event)
             if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
                 break
         await session.close()
+        durable_records = session.durable_oracle_records()
+        serialized = json.dumps(durable_records, sort_keys=True)
+        assert any(
+            record["type"] == VoiceEventType.INTERFACE_ORACLE_REQUEST.value
+            and record["payload"]["job_id"] == "voice-oracle-001"
+            for record in durable_records
+        )
+        assert "Accepted job one" not in serialized
+        assert "repair the phone handoff" not in serialized
+        assert "prepare phone hand off" not in serialized
+        assert all(
+            "auxiliary_transcript_hypotheses" not in record["payload"]
+            for record in durable_records
+        )
+        assert all("transcript_hypotheses" not in record["payload"] for record in durable_records)
 
     asyncio.run(run())
 
