@@ -119,6 +119,19 @@ especially for clipped starts, names, numbers, and code-switched speech, but it
 is still compared against the waveform and speaker/timing metadata before it can
 become action-authoritative.
 
+For the hackathon narrative, describe this as three-tier sensor fan-in:
+
+- Reflex: fastest voice frontend, acknowledges immediately, controls barge-in,
+  and may emit a witness transcript.
+- Interpreter: Gemma reads raw voice plus witness transcripts in one bundle and
+  promotes only corrected evidence.
+- Oracle: Hermes' active `/model` performs the real business work, with
+  Nemotron 3 Super as the preferred Spark-local NVIDIA target when available.
+
+That wording matters. "Moshi STT drives Hermes" sounds like a voice-message
+bot. "Raw voice plus frontend witness evidence is promoted by Gemma before
+Hermes spends money or places calls" is the safety and architecture story.
+
 That means the demo should not present Moshi as "the ASR layer." It should
 present Moshi/open-S2S text as the reflex's hearing hypothesis. The stronger
 story is that Hermes can keep the voice loop fast, preserve what the realtime

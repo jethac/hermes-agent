@@ -21,6 +21,23 @@ before, during, or after the interpreter request. Raw audio is the primary
 interpreter input; transcript hypotheses are optional context and fallback
 evidence.
 
+Current decision: implement this as three-tier sensor fan-in. The reflex owns
+floor control and may emit a Moshi/open-S2S-style witness transcript. The Gemma
+interpreter receives the clipped waveform, VAD/energy timing, speaker/channel
+metadata, reflex route, acknowledgement already spoken, and every witness
+transcript hypothesis in one evidence bundle. Hermes' active `/model` is the
+oracle. There is no separate `oracle_model`, no second Hermes turn from Moshi
+text, and no ASR proof requirement before acknowledgement or job creation when
+raw audio is available.
+
+The Moshi transcript is useful context, not control. It should help Gemma detect
+clipped prefixes, names, numbers, code-switching, and hallucinated commands,
+but it must remain `reflex_hypothesis` or `auxiliary_hypothesis` until Gemma or
+the active oracle promotes it. Hypothesis-only text may support diagnostics,
+captions, or clarification. It must not become `oracle_text`, durable user
+history, a spend reason, call payload, memory/file content, or a tool argument
+by arriving first.
+
 The next gap is runtime behavior. The reflex and oracle are not yet truly async.
 The user should be able to keep talking to the reflex while one or more oracle
 jobs continue in the background. The reflex should stay conversational,
@@ -867,6 +884,13 @@ Add a local smoke report mode that proves:
   raw voice, but tests must prove it is not promoted to `oracle_text`, durable
   transcript, spend reason, call payload, or tool argument without interpreter or
   oracle judgment
+- three-tier sensor fan-in preserves exactly one evidence bundle per speech cut:
+  reflex route, raw audio, Moshi/open-S2S witness text, optional ASR fallback
+  text, interpreter promotion, and oracle action are distinct fields with
+  explicit authority labels
+- a Moshi/open-S2S transcript that arrives before the audio cut, with the audio
+  cut, or after interpreter start attaches to the same `turn_id` /
+  `audio_segment_ref` and never creates a second Hermes turn
 - queued oracle job updates are visible in the reflex/status event stream
 - one job can be cancelled while others complete
 - queued oracle jobs can be cancelled before worker execution

@@ -105,6 +105,31 @@ acknowledgement, and all witness transcript hypotheses in one bundle, then
 promotes or rejects wording for the active Hermes oracle. If the raw waveform is
 missing, the turn is degraded compatibility mode, not full KAME.
 
+2026-07-04 operator decision: the next implementation target is a three-tier
+sensor-fan-in contract, not a parallel STT pipeline. The fast reflex answers the
+floor, the Gemma interpreter judges the evidence bundle, and Hermes' active
+`/model` remains the only oracle. Moshi/open-S2S transcript text is valuable
+because it captures what the live frontend believed it heard, so it should be
+included in the interpreter request beside the raw voice. It is still witness
+context: it cannot schedule a separate Hermes turn, cannot become durable chat
+history, and cannot authorize tools, spend, calls, memory, files, or messages
+unless Gemma or the active oracle promotes it.
+
+| Tier | Primary input | Immediate output | Authority boundary |
+| --- | --- | --- | --- |
+| Reflex | live audio, VAD/energy, current session state | acknowledgement, barge-in, route, rough intent, optional witness transcript | floor control only; provisional `reflex_hypothesis` |
+| Interpreter | clipped raw audio plus reflex/Moshi/OpenClaw/VoiceClaw/classic-ASR hypotheses | corrected transcript candidate, entities, language notes, disagreement flags, oracle request patch | first promotion point: `interpreter_promoted` |
+| Oracle | promoted request plus labeled evidence bundle, using Hermes' active `/model` | tools, memory, files, spend/provisioning plans, calls, durable outcome | action authority: `oracle_promoted` after policy checks |
+
+The practical prompt shape for Gemma should be explicit: "Audio is primary.
+Witness transcripts describe what frontend sensors believed they heard. Use
+them as clues for clipped starts, names, numbers, code-switching, and noisy
+audio, but reject or downgrade them when they conflict with the waveform,
+speaker identity, VAD/energy timing, or conversation state." This instruction
+belongs in the interpreter prompt. The oracle prompt should receive promoted
+wording and labeled evidence, not raw witness text masquerading as verified
+user speech.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
