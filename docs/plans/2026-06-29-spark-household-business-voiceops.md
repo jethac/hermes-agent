@@ -117,6 +117,12 @@ Target KAME layout:
   Gemma's role is interpreter/evidence adjudicator, not a blocking ASR service.
   The reflex may queue/narrate work from provisional intent, while durable user
   wording and tool-critical fields require interpreter or oracle promotion.
+- No-ASR-gate rule: the normal KAME path must not require ASR evidence before
+  acknowledgement, job creation, or raw-audio interpretation. Dedicated ASR is
+  fallback, diagnostics, captions, or high-risk literal-evidence support. Moshi,
+  VoiceClaw/OpenClaw, and ASR transcript text all enter the same bundle as
+  hypotheses, and none of them can become the user message of record by arriving
+  first.
 - Moshi-context rule: if a frontend exposes "Moshi STT" or another
   transcript-looking field, store the vendor name as source metadata and store
   the text as a hypothesis attached to the same raw-audio bundle. Do not fork a
@@ -608,7 +614,7 @@ The command writes:
 - `live-probe-closure-plan.json`
 - `live-probe-closure-plan.md`
 
-The voice-operator artifact runs the in-memory Discord realtime voice loopback smoke. It verifies lifecycle, receiver callback wiring, PCM conversion, mixer playback, barge-in signaling, latency metrics, and sidecar shutdown without Discord network access, provider sidecar network access, credential reads, sends, or calls. It must still report that a live Discord `/voice join` probe is required before claiming production readiness.
+The voice-operator artifact runs the in-memory Discord realtime voice loopback smoke. It verifies lifecycle, receiver callback wiring, PCM conversion, mixer playback, barge-in signaling, latency metrics, transcript-hypothesis non-promotion, and sidecar shutdown without Discord network access, provider sidecar network access, credential reads, sends, or calls. It must still report that a live Discord `/voice join` probe is required before claiming production readiness.
 
 After Discord env/config and the production sidecar are ready, run the one-shot live-evidence closure command. It invokes `hermes doctor --realtime-voice-report`, derives sidecar/live-turn evidence from that report, writes a manifest, and strict-validates the bundle:
 

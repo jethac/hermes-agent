@@ -171,6 +171,13 @@ Those observations merge by `turn_id` and `audio_segment_ref` before oracle
 authority. The interpreter, not the first transcript to arrive, decides what
 wording can become durable or tool-critical.
 
+Current operating rule: collect ASR-like evidence opportunistically, but do not
+require it. A transcript-looking string from Moshi, OpenClaw, VoiceClaw, or a
+dedicated ASR provider is useful only as context for the direct-audio
+interpreter. It must attach to the same raw-audio turn and must never create a
+parallel user turn, delay the reflex acknowledgement, or patch queued oracle text
+unless a trusted interpreter source or later oracle judgment promotes it.
+
 The oracle is the worker. It owns:
 
 - tool execution
@@ -381,13 +388,12 @@ from "Hermes is blocked on spend/provisioning approval" without receiving raw
 approval payloads, credentials, or tool arguments.
 
 The interpreter gets a different compact view: the current turn id, clipped
-audio reference, speaker/channel metadata, reflex hypothesis, optional
-Moshi/S2S transcript hypothesis, optional ASR hypothesis, active job id, and
-the acknowledgement already spoken. Those fields should arrive as one evidence
-bundle for the speech cut, not as independent prompts racing each other. The
-interpreter can perform the durable multilingual transcript adjudication from
-this bundle, but it is not the streaming endpointer and does not need tool
-schemas or broad Hermes state.
+audio reference, speaker/channel metadata, reflex route and acknowledgement,
+optional reflex/Moshi/S2S transcript hypotheses, optional ASR hypothesis, and
+active job id. Those fields should arrive as one evidence bundle for the speech
+cut, not as independent prompts racing each other. The interpreter can perform
+the durable multilingual transcript adjudication from this bundle, but it is not
+the streaming endpointer and does not need tool schemas or broad Hermes state.
 
 The compact interpreter view should keep raw audio first, live interface context
 second, and hypotheses third. That ordering matters: it tells Gemma that Moshi,

@@ -58,6 +58,16 @@ direct-audio interpreter that compares those signals before any durable wording
 or tool-critical argument is promoted. When raw audio and Moshi text are both
 available, send both to the interpreter in one bundle.
 
+2026-07-03 implementation contract: do not build a second STT conversation beside
+KAME. The only normal merge point is the interpreter evidence bundle keyed by
+`turn_id` and `audio_segment_ref`. A Moshi/OpenClaw/VoiceClaw transcript-like
+string may be useful context because it tells Gemma what the realtime frontend
+believed it heard, but it is not a prerequisite, not a scheduler, not a user
+message, and not a durable transcript. Dedicated ASR is fallback, diagnostic,
+caption, or high-risk literal-evidence support only. When raw audio is available,
+the interpreter request should include the waveform first and every transcript
+string only as a provenance-labeled hypothesis.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
@@ -105,7 +115,9 @@ model pretending to own every job:
 
 This split is what makes the system KAME-style. A direct Gemma audio request can
 help the interpreter, and a cloud STT/TTS bridge can prove transport behavior,
-but neither is the full reflex/oracle architecture by itself.
+but neither is the full reflex/oracle architecture by itself. A transcript
+producer, even one embedded in the reflex S2S model, is a sensor feeding the
+bundle; it is not an extra tier with authority.
 
 The current design choice is deliberately not "Gemma as reflex" and not "ASR in
 front of the reflex." The reflex must be the fastest reliable live-audio loop we
@@ -115,13 +127,13 @@ transcript-like side channels, then decides what wording is safe to offer to the
 oracle. This keeps the voice loop immediate without pretending an early
 transcript is ground truth.
 
-The practical shape is therefore allowed to look "parallel" inside the evidence
-bundle without becoming STT-first. A Moshi/open-S2S frontend can speak quickly
-and emit a rough transcript. A classic ASR fallback can produce literal text for
-captions or diagnostics. Gemma can consume both, plus the raw audio, as context.
-Only the interpreter/oracle promotion result may become durable user text,
-Stripe/NemoClaw spend rationale, phone-call payload, memory, file content, or
-tool argument.
+The practical shape is therefore allowed to look "parallel" only inside one
+evidence bundle. A Moshi/open-S2S frontend can speak quickly and emit a rough
+transcript. A classic ASR fallback can produce literal text for captions,
+diagnostics, or high-risk literal checks. Gemma can consume both, plus the raw
+audio, as context. Only the interpreter/oracle promotion result may become
+durable user text, Stripe/NemoClaw spend rationale, phone-call payload, memory,
+file content, or tool argument.
 
 This is the important distinction for Moshi-style output: the transcript is not
 the thing Hermes acts on. It is a compact observation from the live interface,
@@ -722,8 +734,9 @@ Modes:
 
 - `disabled`: no separate transcript evidence is run; the oracle receives
   reflex intent and, optionally, the audio segment reference. This disables only
-  the auxiliary transcript lane; it does not disable raw-audio interpretation
-  when an interpreter is configured and an audio segment is available.
+  transcript side-channel collection; it does not disable raw-audio
+  interpretation when an interpreter is configured and an audio segment is
+  available.
 - `from_reflex`: only transcript hypotheses emitted by the reflex/S2S model are
   forwarded as evidence.
 - `on_escalation`: dedicated ASR runs only after the reflex chooses `defer` or
@@ -737,7 +750,8 @@ Modes:
 
 Default target mode: `from_reflex` when the reflex produces a transcript,
 otherwise `disabled`. Dedicated ASR should be enabled only for explicit
-fallback, diagnostics, or literal-evidence checks.
+fallback, diagnostics, captions, or literal-evidence checks, and its output must
+stay off the acknowledgement critical path.
 
 `speculative` can be enabled if measurements show that waiting until after the
 reflex decision delays oracle requests. Even then, transcript evidence remains

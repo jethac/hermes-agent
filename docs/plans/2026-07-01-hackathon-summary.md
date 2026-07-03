@@ -20,7 +20,8 @@ We are building a voice-first operations layer for Hermes Agent:
 - **KAME-style voice architecture** with a low-latency reflex, auxiliary
   transcript evidence, a Gemma interpreter/evidence lane, and Hermes' normal
   oracle model. Raw audio is the interpreter's primary evidence; Moshi/S2S or
-  ASR transcripts are labeled hypotheses, not the control path.
+  ASR transcripts are labeled hypotheses, not the control path, scheduler, or
+  user message of record.
 - **Local model serving on PGX/Spark-class hardware** using vLLM containers for reproducible iteration.
 - **Hermes-native oracle selection** where `/model` and the existing Hermes model configuration remain authoritative.
 - **Stripe-enabled spending and provisioning** so Hermes can pay for tools and services under explicit user-granted limits.
@@ -34,7 +35,7 @@ We are building a voice-first operations layer for Hermes Agent:
 
 The current local deployment has three layers.
 
-First, Discord handles live voice I/O. The Hermes gateway joins a voice channel, receives Discord audio frames, forwards them to the realtime voice sidecar, posts live transcript messages, and plays synthesized replies back into the channel.
+First, Discord handles live voice I/O. The Hermes gateway joins a voice channel, receives Discord audio frames, forwards them to the realtime voice sidecar, may post provenance-labeled rough caption or transcript-hypothesis status when enabled, and plays synthesized replies back into the channel.
 
 Second, the voice sidecar and streaming speech bridge handle speech conversion,
 playback, and bring-up fallbacks. Cartesia remains useful as a cloud STT/TTS
@@ -50,7 +51,9 @@ Third, the local model server runs reproducible model containers:
 - **Auxiliary transcript evidence:** Moshi/S2S transcript output or classic ASR
   output may be passed to Gemma and the oracle as supporting evidence, but does
   not drive the reflex turn, is not required for voice to work, and must be
-  labeled as hypothesis context when attached to raw audio.
+  labeled as hypothesis context when attached to raw audio. This evidence is
+  collected opportunistically; the demo should not wait for ASR before
+  acknowledging the user or creating a raw-audio interpreter request.
 - **Interpreter/evidence model:** Gemma 4 E2B/E4B/12B-style audio-multimodal
   model for raw-audio review, multilingual correction, entity extraction, and
   oracle request patches.
@@ -135,7 +138,9 @@ The final voice architecture should separate low-latency conversational reflexes
   intent, entities, confidence, and oracle request patches.
 - The **oracle** is Hermes' active model and handles tool use, memory, business logic, and longer reasoning.
 - **Heavy requests** go directly to Hermes' active oracle model. For the hackathon target, that is Nemotron 3 Super, not an MoA wrapper.
-- The reflex should produce real transcript-visible messages, not hidden filler audio.
+- The reflex should produce real user-visible acknowledgements and status, with
+  optional rough caption or transcript-hypothesis text labeled as non-durable
+  evidence, not hidden filler audio.
 - Voice output should be fragmented into sentence-level chunks so text and speech arrive incrementally instead of waiting for a large monolithic response.
 - Moshi/S2S or ASR transcript text is evidence attached to the interpreter
   bundle, not a parallel conversation. It must not become `oracle_text`, a spend
@@ -194,6 +199,10 @@ system heard the user.
   driver. Moshi transcript output is also a hypothesis, not durable truth, but
   it should be valuable context for Gemma when paired with the raw voice clip in
   the same evidence bundle.
+- The normal demo path should be described as raw-audio KAME with
+  transcript-hypothesis fan-in, not "Moshi STT" or "Gemma ASR." The visible proof
+  should show that transcript-looking text is preserved with provenance and then
+  either promoted, corrected, or rejected before spend/provisioning/call actions.
 - Gemma's role should be called interpreter or evidence adjudicator, not
   background ASR. A corrected transcript from Gemma can become durable only when
   it is promoted with provenance and confidence; otherwise it remains evidence

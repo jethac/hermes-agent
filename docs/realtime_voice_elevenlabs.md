@@ -7,8 +7,9 @@ ElevenLabs as a streaming speech provider fallback or comparison bridge:
 browser/desktop mic
   -> Hermes realtime websocket
   -> reference sidecar
-  -> ElevenLabs realtime STT bridge
-  -> Hermes oracle/backend/tool loop
+  -> raw audio turn plus optional ElevenLabs classic_asr_hypothesis
+  -> Gemma/interpreter evidence bundle in full KAME mode
+  -> Hermes active /model oracle
   -> ElevenLabs realtime TTS bridge
   -> browser/desktop playback
 ```
@@ -19,6 +20,10 @@ Gemma interprets clipped raw audio plus labeled transcript hypotheses, and
 Hermes' active `/model` remains the oracle. ElevenLabs STT output should enter
 that path only as optional transcript-hypothesis context unless Hermes is
 explicitly running a text-oracle fallback.
+
+Only explicit text-oracle fallback mode may route provider STT directly into
+Hermes text handling. Full KAME evidence should preserve the raw audio reference
+and treat ElevenLabs text as `classic_asr_hypothesis` context.
 
 ## Provider-Neutral Architecture
 
@@ -271,18 +276,19 @@ An ElevenLabs bridge evidence bundle should include live, not mocked, runs that
 prove:
 
 1. `/health` reports streaming STT and streaming TTS capability.
-2. Known English and Japanese audio fixtures produce final transcripts that
-   match the expected fixture text after provider-normalized transcript matching.
+2. Known English and Japanese audio fixtures produce provider transcript
+   hypothesis events that match the expected fixture text after
+   provider-normalized transcript matching.
 3. The full Hermes realtime session path produces:
-   - transcript final events,
-   - Hermes assistant text,
+   - provenance-labeled `classic_asr_hypothesis` events,
+   - Hermes assistant text only in explicit text-oracle fallback mode,
    - streaming TTS audio chunks.
 4. Barge-in sends an acknowledgement within the configured target and clears or
    resets queued TTS output.
 5. Latency metrics are present for:
-   - audio to partial or fast final transcript,
-   - final transcript to first assistant text,
-   - final transcript to first audio,
+   - audio to provider transcript hypothesis,
+   - raw-audio/interpreter or fallback-text input to first assistant text,
+   - assistant text to first audio,
    - barge-in acknowledgement.
 
 ElevenLabs can emit short Japanese utterances as a fast final transcript without
@@ -306,9 +312,11 @@ non-authoritative handling of ElevenLabs transcripts.
 - `en,ja` is the production preset. Other languages can be advertised with
   `HERMES_ELEVENLABS_OUTPUT_LANGUAGES`, but they should not be claimed as
   production-ready until smoke evidence exists for them.
-- Gemma/audio-frontends and native speech-to-speech providers should implement
-  the same sidecar bridge contract instead of bypassing Hermes' oracle/backend
-  loop.
+- Gemma/audio frontends and native speech-to-speech providers should implement
+  the same sidecar bridge contract while preserving raw audio references.
+  Moshi/OpenClaw/VoiceClaw transcript-like text should be attached as labeled
+  hypotheses beside raw audio and must not become durable user text,
+  `oracle_text`, or tool-critical arguments without interpreter/oracle promotion.
 - In full KAME mode, ElevenLabs STT output should be attached as optional
   `classic_asr_hypothesis` evidence beside the raw audio, not promoted directly
   to durable user text or tool-critical oracle arguments.
