@@ -314,12 +314,8 @@ class GeminiLiveFrontendSession:
                 query = str(args.get("query") or args.get("text") or "").strip()
                 if query:
                     await self._emit(
-                        VoiceEventType.ORACLE_HINT,
-                        {"provider": "gemini_live", "tool_call_id": call_id, "text": query},
-                    )
-                    await self._emit(
-                        VoiceEventType.TRANSCRIPT_FINAL,
-                        {"text": query, "source": "gemini_live_tool", "tool_call_id": call_id},
+                        VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                        {"provider": "gemini_live", "tool": name, "tool_call_id": call_id, "text": query},
                     )
                     response = {"result": "queued_to_hermes_oracle"}
                 else:
@@ -333,7 +329,19 @@ class GeminiLiveFrontendSession:
                     }
                 }
             elif name == "cancel_hermes_oracle":
-                await self._emit(VoiceEventType.BARGE_IN, {"reason": "gemini_live_tool", "tool_call_id": call_id})
+                job_id = str(args.get("job_id") or "").strip()
+                if job_id:
+                    await self._emit(
+                        VoiceEventType.INTERFACE_ORACLE_CANCEL,
+                        {
+                            "job_id": job_id,
+                            "reason": "gemini_live_tool",
+                            "tool_call_id": call_id,
+                            "provider": "gemini_live",
+                        },
+                    )
+                else:
+                    await self._emit(VoiceEventType.BARGE_IN, {"reason": "gemini_live_tool", "tool_call_id": call_id})
                 response = {"result": "cancel_requested"}
             else:
                 response = {"error": f"tool {name or '<missing>'} is not enabled for Gemini Live"}
@@ -481,8 +489,16 @@ def _gemini_kame_tool_declarations() -> list[dict[str, Any]]:
         },
         {
             "name": "cancel_hermes_oracle",
-            "description": "Request cancellation of the current Hermes backend oracle turn after user barge-in.",
-            "parameters": {"type": "object", "properties": {}},
+            "description": "Request cancellation of a Hermes backend oracle job after user barge-in or correction.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "description": "Optional Hermes oracle job id to cancel. Omit only for generic playback barge-in.",
+                    }
+                },
+            },
         },
         {
             "name": "get_voice_session_status",

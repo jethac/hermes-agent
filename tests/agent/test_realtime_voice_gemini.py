@@ -233,22 +233,63 @@ async def test_gemini_live_tool_call_routes_only_to_kame_oracle_bridge():
         }
     )
 
-    events = [await asyncio.wait_for(session.events().__anext__(), timeout=1) for _ in range(5)]
+    events = [await asyncio.wait_for(session.events().__anext__(), timeout=1) for _ in range(4)]
     assert [event.type for event in events] == [
         VoiceEventType.TOOL_PENDING,
-        VoiceEventType.ORACLE_HINT,
-        VoiceEventType.TRANSCRIPT_FINAL,
+        VoiceEventType.INTERFACE_ORACLE_REQUEST,
         VoiceEventType.TOOL_RESULT,
         VoiceEventType.TOOL_PENDING,
     ]
     assert events[1].payload["text"] == "use memory and tools"
-    assert events[2].payload["source"] == "gemini_live_tool"
+    assert events[1].payload["tool"] == "ask_hermes_oracle"
     result = await asyncio.wait_for(session.events().__anext__(), timeout=1)
     assert result.type == VoiceEventType.TOOL_RESULT
     assert "not enabled" in result.payload["error"]
     tool_response = fake_ws.sent[-1]["toolResponse"]["functionResponses"]
     assert tool_response[0]["response"] == {"result": "queued_to_hermes_oracle"}
     assert "not enabled" in tool_response[1]["response"]["error"]
+
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_gemini_live_cancel_oracle_can_target_job_id():
+    fake_ws = FakeGeminiWebSocket()
+
+    async def connector(_url, _timeout):
+        return fake_ws
+
+    session = GeminiLiveFrontendSession(
+        GeminiLiveFrontendConfig(api_key="gemini-secret"),
+        connector=connector,
+    )
+    await session.start(RealtimeVoiceSessionConfig(session_id="voice-1"))
+    _ready = await asyncio.wait_for(session.events().__anext__(), timeout=1)
+
+    await fake_ws.emit(
+        {
+            "toolCall": {
+                "functionCalls": [
+                    {
+                        "id": "call-cancel-1",
+                        "name": "cancel_hermes_oracle",
+                        "args": {"job_id": "voice-oracle-001"},
+                    }
+                ]
+            }
+        }
+    )
+
+    pending = await asyncio.wait_for(session.events().__anext__(), timeout=1)
+    cancel = await asyncio.wait_for(session.events().__anext__(), timeout=1)
+    result = await asyncio.wait_for(session.events().__anext__(), timeout=1)
+
+    assert pending.type == VoiceEventType.TOOL_PENDING
+    assert cancel.type == VoiceEventType.INTERFACE_ORACLE_CANCEL
+    assert cancel.payload["job_id"] == "voice-oracle-001"
+    assert cancel.payload["tool_call_id"] == "call-cancel-1"
+    assert result.type == VoiceEventType.TOOL_RESULT
+    assert result.payload["result"] == "cancel_requested"
 
     await session.close()
 

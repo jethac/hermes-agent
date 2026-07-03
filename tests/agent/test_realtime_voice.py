@@ -530,40 +530,46 @@ def test_event_validation_separates_client_and_server_events():
         sequence=5,
         payload={"intent": "Greeting.", "intent_source": "reflex_audio"},
     )
+    interface_oracle_request_event = VoiceEvent(
+        type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+        session_id="voice-123",
+        sequence=6,
+        payload={"text": "ask Hermes", "tool": "ask_brain"},
+    )
     oracle_event = VoiceEvent(
         type=VoiceEventType.ORACLE_RESPONSE_PARTIAL,
         session_id="voice-123",
-        sequence=6,
+        sequence=7,
         payload={"delta": "Hello", "playback_generation": 1},
     )
     metrics_event = VoiceEvent(
         type=VoiceEventType.SESSION_METRICS,
         session_id="voice-123",
-        sequence=7,
+        sequence=8,
         payload={"metrics": {"kame_oracle_called": 1}, "playback_generation": 1},
     )
     audio_alias_event = VoiceEvent(
         type=VoiceEventType.ASSISTANT_AUDIO_CHUNK,
         session_id="voice-123",
-        sequence=8,
+        sequence=9,
         payload={"audio_alias_for": VoiceEventType.AUDIO_OUTPUT_CHUNK.value, "playback_generation": 1},
     )
     playback_started_event = VoiceEvent(
         type=VoiceEventType.PLAYBACK_STARTED,
         session_id="voice-123",
-        sequence=9,
+        sequence=10,
         payload={"playback_generation": 1},
     )
     playback_stopped_event = VoiceEvent(
         type=VoiceEventType.PLAYBACK_STOPPED,
         session_id="voice-123",
-        sequence=10,
+        sequence=11,
         payload={"playback_generation": 1},
     )
     session_stop_event = VoiceEvent(
         type=VoiceEventType.SESSION_STOP,
         session_id="voice-123",
-        sequence=11,
+        sequence=12,
         payload={"reason": "client_leave"},
     )
 
@@ -572,9 +578,11 @@ def test_event_validation_separates_client_and_server_events():
     validate_client_event(speech_end_event)
     validate_client_event(playback_started_event)
     validate_client_event(playback_stopped_event)
+    validate_client_event(interface_oracle_request_event)
     validate_client_event(session_stop_event)
     validate_server_event(transcript_event)
     validate_server_event(interface_event)
+    validate_server_event(interface_oracle_request_event)
     validate_server_event(oracle_event)
     validate_server_event(metrics_event)
     validate_server_event(audio_alias_event)
@@ -12458,6 +12466,161 @@ def test_external_kame_frontend_can_cancel_matching_oracle_job(monkeypatch):
         assert jobs[first["job_id"]]["state"] == "cancelled"
         assert jobs[second["job_id"]]["state"] == "running"
         await engine.close()
+
+    asyncio.run(run())
+
+
+def test_sidecar_oracle_hint_bridge_submits_external_kame_job(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release.wait()
+            yield "I prepared the handoff plan."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        sidecar = FakeSidecar()
+        engine = KameInterfaceOracleEngine(oracle=oracle, sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+                frontend_provider="gemini_live",
+                metadata={"transport": "discord_voice"},
+            )
+        )
+
+        await sidecar._events.put(
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_HINT,
+                session_id="voice-123",
+                sequence=10,
+                payload={
+                    "provider": "gemini_live",
+                    "tool": "ask_hermes_oracle",
+                    "tool_call_id": "call-1",
+                    "text": "prepare the Discord to phone handoff plan",
+                    "interface_already_said": "I'm preparing the handoff plan.",
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.TOOL_RESULT:
+                break
+
+        tool_result = next(event for event in seen if event.type == VoiceEventType.TOOL_RESULT)
+        assert tool_result.payload["accepted"] is True
+        assert tool_result.payload["tool"] == "ask_hermes_oracle"
+        assert tool_result.payload["tool_call_id"] == "call-1"
+        assert tool_result.payload["job_id"] == "voice-oracle-001"
+        assert any(
+            event.type == VoiceEventType.TOOL_RESULT
+            and event.payload.get("job_id") == "voice-oracle-001"
+            for event in sidecar.received
+        )
+
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+        assert oracle.requests[0].source == "gemini_live"
+        assert oracle.requests[0].interface_input_source == "ask_hermes_oracle"
+        assert oracle.requests[0].oracle_text == "prepare the Discord to phone handoff plan"
+
+        oracle.release.set()
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
+                break
+        completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
+        assert completed.payload["result_summary"] == "I prepared the handoff plan."
+        await engine.close()
+
+    asyncio.run(run())
+
+
+def test_session_client_interface_oracle_request_submits_external_kame_job(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release.wait()
+            yield "I prepared the external frontend result."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+            ),
+            engine=engine,
+        )
+        await session.start()
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "tool": "ask_brain",
+                    "tool_call_id": "call-1",
+                    "text": "prepare an external frontend result",
+                    "source": "voiceclaw",
+                    "interface_already_said": "I'm preparing that result.",
+                },
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+        tool_result = next(event for event in seen if event.type == VoiceEventType.TOOL_RESULT)
+        assert tool_result.payload["accepted"] is True
+        assert tool_result.payload["job_id"] == "voice-oracle-001"
+        assert oracle.requests[0].source == "voiceclaw"
+        assert oracle.requests[0].interface_input_source == "ask_brain"
+
+        oracle.release.set()
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
+                break
+        completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
+        assert completed.payload["result_summary"] == "I prepared the external frontend result."
+        await session.close()
 
     asyncio.run(run())
 

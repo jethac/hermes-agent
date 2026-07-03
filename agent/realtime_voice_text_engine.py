@@ -161,6 +161,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
             await self._handle_interface_intent_final(event)
             return
+        if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST:
+            await self._handle_external_oracle_request_event(event)
+            return
         if event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL:
             await self._handle_oracle_job_cancel_event(event)
             return
@@ -468,12 +471,18 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 elif event.type == VoiceEventType.INTERFACE_INTENT_FINAL:
                     if await self._handle_interface_intent_final(event, from_sidecar=True):
                         continue
+                elif event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST:
+                    await self._handle_external_oracle_request_event(event)
+                    continue
                 elif event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL:
                     await self._handle_oracle_job_cancel_event(event)
                     continue
                 elif event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE:
                     await self._handle_oracle_job_update_event(event)
                     continue
+                elif event.type == VoiceEventType.ORACLE_HINT:
+                    if await self._handle_external_oracle_hint_event(event):
+                        continue
                 elif event.type == VoiceEventType.TRANSCRIPT_FINAL:
                     payload = dict(event.payload)
                     if self._is_stale_sidecar_input(payload):
@@ -693,6 +702,63 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 "reason": reason,
             },
         )
+
+    async def _handle_external_oracle_request_event(self, event: VoiceEvent) -> bool:
+        return await self._handle_external_oracle_bridge_event(event, default_tool="ask_brain")
+
+    async def _handle_external_oracle_hint_event(self, event: VoiceEvent) -> bool:
+        return await self._handle_external_oracle_bridge_event(event, default_tool="")
+
+    async def _handle_external_oracle_bridge_event(self, event: VoiceEvent, *, default_tool: str) -> bool:
+        payload = dict(event.payload)
+        tool = str(payload.get("tool") or payload.get("tool_name") or default_tool).strip()
+        source = str(payload.get("provider") or payload.get("source") or payload.get("transport") or "").strip()
+        if tool not in {"ask_brain", "ask_hermes_oracle", "agent_consult", "openclaw_agent_consult"}:
+            return False
+        response = await self.submit_external_brain_request(
+            {
+                "tool_name": tool,
+                "arguments": {
+                    "query": str(payload.get("text") or payload.get("query") or "").strip(),
+                    "intent": str(payload.get("intent") or payload.get("text") or payload.get("query") or "").strip(),
+                    "transcript": str(
+                        payload.get("transcript")
+                        or payload.get("reflex_transcript_hypothesis")
+                        or payload.get("s2s_transcript_hypothesis")
+                        or ""
+                    ).strip(),
+                    "interface_already_said": str(
+                        payload.get("interface_already_said")
+                        or payload.get("already_said")
+                        or payload.get("placeholder")
+                        or ""
+                    ).strip(),
+                    "conversation_summary": str(payload.get("conversation_summary") or "").strip(),
+                    "requested_response_style": payload.get("requested_response_style") or {},
+                },
+            },
+            turn_id=str(payload.get("turn_id") or ""),
+            source=source or "external_kame_frontend",
+            user_id=str(payload.get("user_id") or payload.get("speaker_id") or "").strip() or None,
+        )
+        tool_result_payload = {
+            "provider": source or "external_kame_frontend",
+            "tool": tool,
+            "tool_call_id": str(payload.get("tool_call_id") or ""),
+            **response,
+        }
+        await self._emit(VoiceEventType.TOOL_RESULT, tool_result_payload)
+        if self._sidecar is not None:
+            await self._send_sidecar_event(
+                VoiceEvent(
+                    type=VoiceEventType.TOOL_RESULT,
+                    session_id=event.session_id,
+                    sequence=event.sequence,
+                    timestamp_ms=event.timestamp_ms,
+                    payload=tool_result_payload,
+                )
+            )
+        return True
 
     async def _handle_oracle_job_update_event(self, event: VoiceEvent) -> None:
         manager = self._oracle_job_manager
