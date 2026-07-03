@@ -626,7 +626,6 @@ def kame_external_brain_request_to_oracle_request(
     transcript = (
         _optional_text(normalized.get("transcript"))
         or _optional_text(normalized.get("reflex_transcript_hypothesis"))
-        or _optional_text(normalized.get("s2s_transcript_hypothesis"))
     )
     if transcript:
         normalized["transcript"] = transcript

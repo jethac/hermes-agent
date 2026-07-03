@@ -12621,6 +12621,36 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
     assert "arguments" not in metadata
 
 
+def test_external_kame_s2s_hypothesis_does_not_overwrite_oracle_text():
+    request = kame_external_brain_request_to_oracle_request(
+        {
+            "tool_name": "ask_brain",
+            "arguments": {
+                "query": "prepare the handoff",
+                "s2s_transcript_hypothesis": "misheard handoff",
+                "s2s_transcript_hypothesis_confidence": 0.62,
+                "interface_already_said": "I'm preparing the handoff.",
+            },
+        },
+        session_id="external-kame-s2s",
+        turn_id="external-kame-s2s:1",
+        source="voiceclaw",
+        user_id="jetha",
+    )
+
+    assert request.oracle_text == "prepare the handoff"
+    assert request.oracle_text_source == "reflex_audio"
+    assert request.transcript == ""
+    assert request.auxiliary_transcript_hypotheses == (
+        {
+            "source": "s2s",
+            "text": "misheard handoff",
+            "authority": "hypothesis",
+            "confidence": 0.62,
+        },
+    )
+
+
 def test_external_kame_ask_brain_bridge_strips_nested_tool_authority():
     request = kame_external_brain_request_to_oracle_request(
         {

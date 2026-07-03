@@ -724,7 +724,6 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     "transcript": str(
                         payload.get("transcript")
                         or payload.get("reflex_transcript_hypothesis")
-                        or payload.get("s2s_transcript_hypothesis")
                         or ""
                     ).strip(),
                     "audio_segment_ref": str(
