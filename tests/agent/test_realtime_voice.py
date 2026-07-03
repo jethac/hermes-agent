@@ -12899,6 +12899,16 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
                 "intent": "Prepare the phone handoff.",
                 "interface_already_said": "I'm preparing the handoff.",
             },
+            "audio": {
+                "segment_ref": "artifact://voiceclaw/turn-42.wav",
+                "codec": "pcm_s16le",
+                "sample_rate_hz": 16000,
+                "channels": 1,
+                "time_range_ms": [120, 1840],
+                "vad": {"speech_start_ms": 120, "speech_end_ms": 1840},
+                "authority": "primary_audio",
+                "data": "must-not-copy",
+            },
             "transcript_hypotheses": [
                 {
                     "kind": "reflex_transcript_hypothesis",
@@ -12937,6 +12947,17 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
     assert request.reflex_transcript_hypothesis == "prepare the phone handoff"
     assert request.reflex_transcript_source == "moshi-reflex"
     assert request.reflex_transcript_confidence == 0.81
+    assert request.audio_segment_ref == "artifact://voiceclaw/turn-42.wav"
+    assert request.audio_time_range_ms == (120, 1840)
+    assert request.audio_metadata == {
+        "audio_segment_ref": "artifact://voiceclaw/turn-42.wav",
+        "time_range_ms": (120, 1840),
+        "codec": "pcm_s16le",
+        "authority": "primary_audio",
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "vad": {"speech_start_ms": 120, "speech_end_ms": 1840},
+    }
     assert request.auxiliary_transcript_hypotheses == (
         {
             "source": "moshi",
@@ -12978,13 +12999,19 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
             "confidence": 0.69,
         },
     )
+    assert metadata["kame_audio"] == request.audio_metadata
+    assert "must-not-copy" not in str(metadata)
 
 
-def test_external_kame_bridge_arguments_preserve_top_level_transcript_hypotheses():
+def test_external_kame_bridge_arguments_preserve_top_level_evidence_bundle_fields():
     arguments = _external_kame_bridge_arguments(
         {
             "tool_name": "ask_brain",
             "arguments": {"query": "prepare the phone handoff"},
+            "audio": {
+                "segment_ref": "artifact://voiceclaw/turn-42.wav",
+                "time_range_ms": [120, 1840],
+            },
             "transcript_hypotheses": [
                 {
                     "kind": "s2s_transcript_hypothesis",
@@ -12997,6 +13024,10 @@ def test_external_kame_bridge_arguments_preserve_top_level_transcript_hypotheses
     )
 
     assert arguments["query"] == "prepare the phone handoff"
+    assert arguments["audio"] == {
+        "segment_ref": "artifact://voiceclaw/turn-42.wav",
+        "time_range_ms": [120, 1840],
+    }
     assert arguments["transcript_hypotheses"] == [
         {
             "kind": "s2s_transcript_hypothesis",

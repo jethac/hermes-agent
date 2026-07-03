@@ -3571,6 +3571,7 @@ def _external_kame_bridge_arguments(payload: Mapping[str, Any]) -> dict[str, Any
         ("audio_segment_ref", "audio_ref", "clipped_audio_ref", "audio_artifact_ref"),
     )
     _overlay_first_value(arguments, payload, "audio_time_range_ms", ("audio_time_range_ms",))
+    _overlay_first_value(arguments, payload, "audio", ("audio",))
     _overlay_first_text(arguments, payload, "reflex_transcript_hypothesis", ("reflex_transcript_hypothesis",))
     _overlay_first_text(arguments, payload, "moshi_transcript_hypothesis", ("moshi_transcript_hypothesis",))
     _overlay_first_text(arguments, payload, "s2s_transcript_hypothesis", ("s2s_transcript_hypothesis",))

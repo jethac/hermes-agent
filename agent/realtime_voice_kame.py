@@ -384,6 +384,7 @@ class KameOracleRequest:
     reflex_transcript_confidence: Optional[float] = None
     audio_segment_ref: str = ""
     audio_time_range_ms: tuple[int, int] | tuple[()] = field(default_factory=tuple)
+    audio_metadata: Mapping[str, Any] = field(default_factory=dict)
     auxiliary_transcript_hypotheses: Sequence[Mapping[str, Any]] = field(default_factory=tuple)
     mode: str = "voice"
     urgency: str = "interactive"
@@ -567,6 +568,8 @@ class KameOracleRequest:
             metadata["kame_audio_segment_ref"] = self.audio_segment_ref
         if self.audio_time_range_ms:
             metadata["kame_audio_time_range_ms"] = tuple(self.audio_time_range_ms)
+        if self.audio_metadata:
+            metadata["kame_audio"] = dict(self.audio_metadata)
         if self.auxiliary_transcript_hypotheses:
             metadata["kame_auxiliary_transcript_hypotheses"] = tuple(
                 dict(item) for item in self.auxiliary_transcript_hypotheses
@@ -676,6 +679,19 @@ class KameOracleRequest:
                 default=default_max_spoken_sentences,
             ),
         )
+        canonical_audio = _canonical_audio_payload(payload)
+        audio_segment_ref = _optional_text(
+            payload.get("audio_segment_ref")
+            or payload.get("audio_ref")
+            or payload.get("clipped_audio_ref")
+            or payload.get("audio_artifact_ref")
+            or _canonical_audio_segment_ref(canonical_audio)
+        )
+        audio_time_range_ms = _audio_time_range_ms(
+            payload.get("audio_time_range_ms")
+            if payload.get("audio_time_range_ms") is not None
+            else _canonical_audio_time_range_ms(canonical_audio)
+        )
         return cls(
             session_id=session_id,
             turn_id=_optional_text(payload.get("turn_id")) or turn_id,
@@ -697,13 +713,13 @@ class KameOracleRequest:
             reflex_transcript_hypothesis=reflex_transcript_hypothesis.strip(),
             reflex_transcript_source=reflex_transcript_source,
             reflex_transcript_confidence=reflex_transcript_confidence,
-            audio_segment_ref=_optional_text(
-                payload.get("audio_segment_ref")
-                or payload.get("audio_ref")
-                or payload.get("clipped_audio_ref")
-                or payload.get("audio_artifact_ref")
+            audio_segment_ref=audio_segment_ref,
+            audio_time_range_ms=audio_time_range_ms,
+            audio_metadata=_canonical_audio_metadata(
+                canonical_audio,
+                audio_segment_ref=audio_segment_ref,
+                audio_time_range_ms=audio_time_range_ms,
             ),
-            audio_time_range_ms=_audio_time_range_ms(payload.get("audio_time_range_ms")),
             auxiliary_transcript_hypotheses=_auxiliary_transcript_hypotheses(payload),
             mode=_optional_text(payload.get("mode")) or "voice",
             urgency=_optional_text(payload.get("urgency")) or "interactive",
@@ -755,6 +771,8 @@ def kame_external_brain_request_to_oracle_request(
         (list, tuple),
     ):
         normalized["transcript_hypotheses"] = raw["transcript_hypotheses"]
+    if "audio" not in normalized and isinstance(raw.get("audio"), Mapping):
+        normalized["audio"] = raw["audio"]
     bridge_call_id = _frontend_bridge_call_id(raw)
     if bridge_call_id:
         normalized["interface_tool_call_id"] = bridge_call_id
@@ -971,6 +989,68 @@ def _canonical_reflex_transcript_hypothesis(
         if kind == "reflex_transcript_hypothesis" or authority == "reflex_hypothesis":
             return hypothesis
     return {}
+
+
+def _canonical_audio_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    audio = payload.get("audio")
+    return audio if isinstance(audio, Mapping) else {}
+
+
+def _canonical_audio_segment_ref(audio: Mapping[str, Any]) -> str:
+    return (
+        _optional_text(audio.get("audio_segment_ref"))
+        or _optional_text(audio.get("segment_ref"))
+        or _optional_text(audio.get("artifact_ref"))
+        or _optional_text(audio.get("ref"))
+        or _optional_text(audio.get("uri"))
+    )
+
+
+def _canonical_audio_time_range_ms(audio: Mapping[str, Any]) -> object:
+    if audio.get("time_range_ms") is not None:
+        return audio.get("time_range_ms")
+    if audio.get("audio_time_range_ms") is not None:
+        return audio.get("audio_time_range_ms")
+    vad = audio.get("vad")
+    if isinstance(vad, Mapping):
+        start = vad.get("speech_start_ms")
+        end = vad.get("speech_end_ms")
+        if start is not None and end is not None:
+            return (start, end)
+    return ()
+
+
+def _canonical_audio_metadata(
+    audio: Mapping[str, Any],
+    *,
+    audio_segment_ref: str,
+    audio_time_range_ms: tuple[int, int] | tuple[()],
+) -> dict[str, Any]:
+    if not audio:
+        return {}
+    metadata: dict[str, Any] = {}
+    if audio_segment_ref:
+        metadata["audio_segment_ref"] = audio_segment_ref
+    if audio_time_range_ms:
+        metadata["time_range_ms"] = tuple(audio_time_range_ms)
+    for key in ("codec", "authority"):
+        value = _optional_text(audio.get(key))
+        if value:
+            metadata[key] = value[:80]
+    for key in ("sample_rate_hz", "channels"):
+        value = _non_negative_int(audio.get(key))
+        if value is not None:
+            metadata[key] = value
+    vad = audio.get("vad")
+    if isinstance(vad, Mapping):
+        compact_vad: dict[str, int] = {}
+        for key in ("speech_start_ms", "speech_end_ms"):
+            value = _non_negative_int(vad.get(key))
+            if value is not None:
+                compact_vad[key] = value
+        if compact_vad:
+            metadata["vad"] = compact_vad
+    return metadata
 
 
 def _job_updates_from_payload(value: object) -> tuple[str, ...]:
