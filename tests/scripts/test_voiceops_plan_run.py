@@ -1279,6 +1279,37 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "missing_promoted_evidence" in voice_result["details"]["async_oracle_smoke"][
         "runtime_kame_action_gate_hypothesis_only_issues"
     ]
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_degraded_text_only_ok"]
+        is False
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "runtime_kame_action_gate_degraded_text_only_status"
+        ]
+        == "degraded_text_only"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "runtime_kame_action_gate_degraded_text_only_reason"
+        ]
+        == "degraded_text_only"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "runtime_kame_action_gate_degraded_text_only_raw_audio_available"
+        ]
+        is False
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis"
+        ]
+        is True
+    )
+    assert "missing_promoted_evidence" in voice_result["details"]["async_oracle_smoke"][
+        "runtime_kame_action_gate_degraded_text_only_issues"
+    ]
     assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_promoted_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_promoted_authorities"] == [
         "interpreter_promoted"

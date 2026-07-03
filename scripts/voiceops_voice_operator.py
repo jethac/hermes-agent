@@ -1652,6 +1652,20 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("approval_secret_leaked") is False
         and smoke.get("approval_secret_canary_checked") is True
         and smoke.get("approval_completed") is True,
+        "runtime_kame_action_gate_degraded_text_only_fails_closed": smoke.get(
+            "runtime_kame_action_gate_degraded_text_only_ok"
+        )
+        is False
+        and smoke.get("runtime_kame_action_gate_degraded_text_only_status") == "degraded_text_only"
+        and smoke.get("runtime_kame_action_gate_degraded_text_only_reason") == "degraded_text_only"
+        and smoke.get("runtime_kame_action_gate_degraded_text_only_raw_audio_available") is False
+        and smoke.get("runtime_kame_action_gate_degraded_text_only_preserves_hypothesis") is True
+        and "missing_promoted_evidence"
+        in (smoke.get("runtime_kame_action_gate_degraded_text_only_issues") or [])
+        and "interpreter_evidence_not_consumed_before_irreversible_action"
+        in (smoke.get("runtime_kame_action_gate_degraded_text_only_issues") or [])
+        and set(smoke.get("runtime_kame_action_gate_degraded_text_only_rejected_authorities") or [])
+        >= {"reflex_hypothesis", "auxiliary_hypothesis"},
         "runtime_kame_action_gate_enforced": smoke.get("runtime_kame_action_gate_smoke_ok") is True
         and smoke.get("runtime_kame_action_gate_hypothesis_only_ok") is False
         and "missing_promoted_evidence"
@@ -1660,6 +1674,10 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         in (smoke.get("runtime_kame_action_gate_hypothesis_only_issues") or [])
         and set(smoke.get("runtime_kame_action_gate_hypothesis_only_rejected_authorities") or [])
         >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+        and smoke.get("runtime_kame_action_gate_degraded_text_only_ok") is False
+        and smoke.get("runtime_kame_action_gate_degraded_text_only_status") == "degraded_text_only"
+        and smoke.get("runtime_kame_action_gate_degraded_text_only_raw_audio_available") is False
+        and smoke.get("runtime_kame_action_gate_degraded_text_only_preserves_hypothesis") is True
         and smoke.get("runtime_kame_action_gate_promoted_ok") is True
         and (smoke.get("runtime_kame_action_gate_promoted_issues") or []) == []
         and smoke.get("runtime_kame_action_gate_promoted_authorities") == ["interpreter_promoted"]
@@ -2554,6 +2572,28 @@ def build_voice_operator_report(
             ),
             "runtime_kame_action_gate_hypothesis_only_rejected_authorities": list(
                 async_oracle_smoke.get("runtime_kame_action_gate_hypothesis_only_rejected_authorities") or []
+            ),
+            "runtime_kame_action_gate_degraded_text_only_ok": async_oracle_smoke.get(
+                "runtime_kame_action_gate_degraded_text_only_ok"
+            ),
+            "runtime_kame_action_gate_degraded_text_only_issues": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_degraded_text_only_issues") or []
+            ),
+            "runtime_kame_action_gate_degraded_text_only_rejected_authorities": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_degraded_text_only_rejected_authorities")
+                or []
+            ),
+            "runtime_kame_action_gate_degraded_text_only_status": async_oracle_smoke.get(
+                "runtime_kame_action_gate_degraded_text_only_status"
+            ),
+            "runtime_kame_action_gate_degraded_text_only_reason": async_oracle_smoke.get(
+                "runtime_kame_action_gate_degraded_text_only_reason"
+            ),
+            "runtime_kame_action_gate_degraded_text_only_raw_audio_available": async_oracle_smoke.get(
+                "runtime_kame_action_gate_degraded_text_only_raw_audio_available"
+            ),
+            "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis": bool(
+                async_oracle_smoke.get("runtime_kame_action_gate_degraded_text_only_preserves_hypothesis")
             ),
             "runtime_kame_action_gate_promoted_ok": async_oracle_smoke.get(
                 "runtime_kame_action_gate_promoted_ok"

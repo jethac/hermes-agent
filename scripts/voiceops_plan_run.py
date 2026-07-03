@@ -1803,6 +1803,30 @@ async def build_plan_run_async(
                             "runtime_kame_action_gate_hypothesis_only_issues"
                         ]
                     ),
+                    "runtime_kame_action_gate_degraded_text_only_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["runtime_kame_action_gate_degraded_text_only_ok"],
+                    "runtime_kame_action_gate_degraded_text_only_issues": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "runtime_kame_action_gate_degraded_text_only_issues"
+                        ]
+                    ),
+                    "runtime_kame_action_gate_degraded_text_only_status": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["runtime_kame_action_gate_degraded_text_only_status"],
+                    "runtime_kame_action_gate_degraded_text_only_reason": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["runtime_kame_action_gate_degraded_text_only_reason"],
+                    "runtime_kame_action_gate_degraded_text_only_raw_audio_available": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"][
+                        "runtime_kame_action_gate_degraded_text_only_raw_audio_available"
+                    ],
+                    "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"][
+                        "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis"
+                    ],
                     "runtime_kame_action_gate_promoted_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "runtime_kame_action_gate_promoted_ok"
                     ],

@@ -1913,7 +1913,7 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
         return f"done {key}"
 
     manager = OracleJobManager(
-        max_concurrent=2,
+        max_concurrent=3,
         runner=runner,
         event_callback=lambda event: events.append(event.to_status()),
     )
@@ -1993,7 +1993,41 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
     )
     safe_gate = dict(safe_waiting.approval.get("kame_action_gate") or {})
 
-    for key in ("Spend hypothesis-only money.", "Buy phone credits."):
+    degraded_text_only = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-runtime-action-gate",
+            turn_id="runtime-action-gate:degraded-text-only",
+            source="voiceclaw",
+            user_id="42",
+            intent="Spend degraded text-only money.",
+            route=KameRoute.DEFER,
+            interface_input_source="ask_brain",
+            reflex_transcript_hypothesis="spend money from text-only voice bridge",
+            reflex_transcript_source="voiceclaw",
+            auxiliary_transcript_hypotheses=(
+                {
+                    "source": "moshi",
+                    "text": "spend money from text only bridge",
+                    "authority": "hypothesis",
+                },
+            ),
+        )
+    )
+    degraded_waiting = await manager.mark_waiting_for_approval(
+        degraded_text_only.job_id,
+        reason="Spend approval required",
+        approval={
+            "approval_id": "approval-degraded-text-only",
+            "tool_name": "stripe_link_purchase",
+            "tool_call_id": "call-degraded-text-only",
+            "tool_disclosure_ref": "tool_disclosure",
+        },
+    )
+    degraded_status = degraded_waiting.to_status()
+    degraded_gate = dict(degraded_waiting.approval.get("kame_action_gate") or {})
+    degraded_bundle = dict(degraded_status.get("evidence_bundle") or {})
+
+    for key in ("Spend hypothesis-only money.", "Buy phone credits.", "Spend degraded text-only money."):
         releases.setdefault(key, asyncio.Event()).set()
     await manager.shutdown(reason="runtime action gate smoke complete", timeout_seconds=0.2)
 
@@ -2002,7 +2036,9 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
     ]
     unsafe_issues = list(unsafe_gate.get("issues") or [])
     safe_issues = list(safe_gate.get("issues") or [])
+    degraded_issues = list(degraded_gate.get("issues") or [])
     unsafe_rejected = list(unsafe_gate.get("rejected_present_authorities") or [])
+    degraded_rejected = list(degraded_gate.get("rejected_present_authorities") or [])
     safe_present = list(safe_gate.get("present_authorities") or [])
     unsafe_ok = (
         unsafe_gate.get("schema_version") == "voiceops.runtime_kame_action_gate.v1"
@@ -2020,13 +2056,39 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
         and safe_gate.get("interpreter_evidence_consumed_before_irreversible_action") is True
         and safe_gate.get("tool_disclosure_ref") == "tool_disclosure"
     )
+    degraded_ok = (
+        degraded_gate.get("schema_version") == "voiceops.runtime_kame_action_gate.v1"
+        and degraded_gate.get("ok") is False
+        and degraded_status.get("raw_audio_available") is False
+        and degraded_status.get("evidence_bundle_status") == "degraded_text_only"
+        and degraded_status.get("degraded_reason") == "degraded_text_only"
+        and degraded_bundle.get("status") == "degraded_text_only"
+        and degraded_bundle.get("raw_audio_available") is False
+        and int(degraded_bundle.get("transcript_hypotheses_count") or 0) >= 1
+        and "missing_promoted_evidence" in degraded_issues
+        and "interpreter_evidence_not_consumed_before_irreversible_action" in degraded_issues
+        and set(degraded_rejected) >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+        and degraded_gate.get("tool_disclosure_ref") == "tool_disclosure"
+    )
     return {
-        "ok": unsafe_ok and safe_ok and len(waiting_events) == 2,
-        "runtime_kame_action_gate_smoke_ok": unsafe_ok and safe_ok and len(waiting_events) == 2,
+        "ok": unsafe_ok and safe_ok and degraded_ok and len(waiting_events) == 3,
+        "runtime_kame_action_gate_smoke_ok": unsafe_ok and safe_ok and degraded_ok and len(waiting_events) == 3,
         "runtime_kame_action_gate_waiting_events": len(waiting_events),
         "runtime_kame_action_gate_hypothesis_only_ok": unsafe_gate.get("ok"),
         "runtime_kame_action_gate_hypothesis_only_issues": unsafe_issues,
         "runtime_kame_action_gate_hypothesis_only_rejected_authorities": unsafe_rejected,
+        "runtime_kame_action_gate_degraded_text_only_ok": degraded_gate.get("ok"),
+        "runtime_kame_action_gate_degraded_text_only_issues": degraded_issues,
+        "runtime_kame_action_gate_degraded_text_only_rejected_authorities": degraded_rejected,
+        "runtime_kame_action_gate_degraded_text_only_status": degraded_status.get("evidence_bundle_status"),
+        "runtime_kame_action_gate_degraded_text_only_reason": degraded_status.get("degraded_reason"),
+        "runtime_kame_action_gate_degraded_text_only_raw_audio_available": degraded_status.get(
+            "raw_audio_available"
+        ),
+        "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis": int(
+            degraded_bundle.get("transcript_hypotheses_count") or 0
+        )
+        >= 1,
         "runtime_kame_action_gate_promoted_ok": safe_gate.get("ok"),
         "runtime_kame_action_gate_promoted_issues": safe_issues,
         "runtime_kame_action_gate_promoted_authorities": safe_present,
@@ -2036,9 +2098,11 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
         "runtime_kame_action_gate_tool_disclosure_ref_observed": (
             unsafe_gate.get("tool_disclosure_ref") == "tool_disclosure"
             and safe_gate.get("tool_disclosure_ref") == "tool_disclosure"
+            and degraded_gate.get("tool_disclosure_ref") == "tool_disclosure"
         ),
         "runtime_kame_action_gate_schema_versions": [
             unsafe_gate.get("schema_version"),
+            degraded_gate.get("schema_version"),
             safe_gate.get("schema_version"),
         ],
     }
@@ -3224,6 +3288,27 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "runtime_kame_action_gate_hypothesis_only_rejected_authorities": runtime_kame_action_gate_smoke[
             "runtime_kame_action_gate_hypothesis_only_rejected_authorities"
+        ],
+        "runtime_kame_action_gate_degraded_text_only_ok": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_degraded_text_only_ok"
+        ],
+        "runtime_kame_action_gate_degraded_text_only_issues": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_degraded_text_only_issues"
+        ],
+        "runtime_kame_action_gate_degraded_text_only_rejected_authorities": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_degraded_text_only_rejected_authorities"
+        ],
+        "runtime_kame_action_gate_degraded_text_only_status": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_degraded_text_only_status"
+        ],
+        "runtime_kame_action_gate_degraded_text_only_reason": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_degraded_text_only_reason"
+        ],
+        "runtime_kame_action_gate_degraded_text_only_raw_audio_available": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_degraded_text_only_raw_audio_available"
+        ],
+        "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis"
         ],
         "runtime_kame_action_gate_promoted_ok": runtime_kame_action_gate_smoke[
             "runtime_kame_action_gate_promoted_ok"

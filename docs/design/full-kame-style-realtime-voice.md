@@ -1491,6 +1491,14 @@ normal KAME mode, the interpreter receives both raw audio and any Moshi-style
 text the live voice layer produced, then decides whether that text should be
 accepted, corrected, rejected, or left as diagnostic-only evidence.
 
+If the same frontend can provide only text and no raw audio reference, it is a
+degraded compatibility input, not a full KAME turn. The system may preserve that
+text as witness context for audit or clarification, but high-risk approval
+paths must fail closed until promoted interpreter or oracle evidence exists.
+The generated headless artifacts should prove this with a degraded text-only
+action-gate case, separate from the primary-audio hypothesis-only and promoted
+evidence cases.
+
 Deliverables:
 
 - Gemma interpreter prompt and JSON evidence schema

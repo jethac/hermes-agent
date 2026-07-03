@@ -299,7 +299,7 @@ def _async_oracle_smoke_payload() -> dict:
         "witness_fusion_started_counts": {"early": 1, "with": 1, "late": 1},
         "witness_fusion_completed_counts": {"early": 1, "with": 1, "late": 1},
         "runtime_kame_action_gate_smoke_ok": True,
-        "runtime_kame_action_gate_waiting_events": 2,
+        "runtime_kame_action_gate_waiting_events": 3,
         "runtime_kame_action_gate_hypothesis_only_ok": False,
         "runtime_kame_action_gate_hypothesis_only_issues": [
             "missing_promoted_evidence",
@@ -309,12 +309,26 @@ def _async_oracle_smoke_payload() -> dict:
             "auxiliary_hypothesis",
             "reflex_hypothesis",
         ],
+        "runtime_kame_action_gate_degraded_text_only_ok": False,
+        "runtime_kame_action_gate_degraded_text_only_issues": [
+            "missing_promoted_evidence",
+            "interpreter_evidence_not_consumed_before_irreversible_action",
+        ],
+        "runtime_kame_action_gate_degraded_text_only_rejected_authorities": [
+            "auxiliary_hypothesis",
+            "reflex_hypothesis",
+        ],
+        "runtime_kame_action_gate_degraded_text_only_status": "degraded_text_only",
+        "runtime_kame_action_gate_degraded_text_only_reason": "degraded_text_only",
+        "runtime_kame_action_gate_degraded_text_only_raw_audio_available": False,
+        "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis": True,
         "runtime_kame_action_gate_promoted_ok": True,
         "runtime_kame_action_gate_promoted_issues": [],
         "runtime_kame_action_gate_promoted_authorities": ["interpreter_promoted"],
         "runtime_kame_action_gate_promoted_consumed_before_action": True,
         "runtime_kame_action_gate_tool_disclosure_ref_observed": True,
         "runtime_kame_action_gate_schema_versions": [
+            "voiceops.runtime_kame_action_gate.v1",
             "voiceops.runtime_kame_action_gate.v1",
             "voiceops.runtime_kame_action_gate.v1",
         ],
@@ -798,7 +812,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert witness_fusion["evidence"] == "async_oracle_smoke_plus_witness_fusion_tests"
     assert report["requirements"]["async_oracle_witness_fusion_single_bundle"] is True
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_smoke_ok"] is True
-    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_waiting_events"] == 2
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_waiting_events"] == 3
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_hypothesis_only_ok"] is False
     assert "missing_promoted_evidence" in report["proofs"]["async_oracle_jobs"][
         "runtime_kame_action_gate_hypothesis_only_issues"
@@ -808,6 +822,38 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     ]["runtime_kame_action_gate_hypothesis_only_issues"]
     assert set(
         report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_hypothesis_only_rejected_authorities"]
+    ) >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_degraded_text_only_ok"] is False
+    assert (
+        report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_degraded_text_only_status"]
+        == "degraded_text_only"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_degraded_text_only_reason"]
+        == "degraded_text_only"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"][
+            "runtime_kame_action_gate_degraded_text_only_raw_audio_available"
+        ]
+        is False
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"][
+            "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis"
+        ]
+        is True
+    )
+    assert "missing_promoted_evidence" in report["proofs"]["async_oracle_jobs"][
+        "runtime_kame_action_gate_degraded_text_only_issues"
+    ]
+    assert "interpreter_evidence_not_consumed_before_irreversible_action" in report["proofs"][
+        "async_oracle_jobs"
+    ]["runtime_kame_action_gate_degraded_text_only_issues"]
+    assert set(
+        report["proofs"]["async_oracle_jobs"][
+            "runtime_kame_action_gate_degraded_text_only_rejected_authorities"
+        ]
     ) >= {"reflex_hypothesis", "auxiliary_hypothesis"}
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_issues"] == []

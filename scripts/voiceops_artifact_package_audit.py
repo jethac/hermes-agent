@@ -2038,6 +2038,29 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
                 "runtime_kame_action_gate_hypothesis_only_rejected_authorities"
             )
             or [],
+            "runtime_kame_action_gate_degraded_text_only_ok": async_smoke.get(
+                "runtime_kame_action_gate_degraded_text_only_ok"
+            ),
+            "runtime_kame_action_gate_degraded_text_only_issues": async_smoke.get(
+                "runtime_kame_action_gate_degraded_text_only_issues"
+            )
+            or [],
+            "runtime_kame_action_gate_degraded_text_only_rejected_authorities": async_smoke.get(
+                "runtime_kame_action_gate_degraded_text_only_rejected_authorities"
+            )
+            or [],
+            "runtime_kame_action_gate_degraded_text_only_status": async_smoke.get(
+                "runtime_kame_action_gate_degraded_text_only_status"
+            ),
+            "runtime_kame_action_gate_degraded_text_only_reason": async_smoke.get(
+                "runtime_kame_action_gate_degraded_text_only_reason"
+            ),
+            "runtime_kame_action_gate_degraded_text_only_raw_audio_available": async_smoke.get(
+                "runtime_kame_action_gate_degraded_text_only_raw_audio_available"
+            ),
+            "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis": bool(
+                async_smoke.get("runtime_kame_action_gate_degraded_text_only_preserves_hypothesis")
+            ),
             "runtime_kame_action_gate_promoted_ok": async_smoke.get("runtime_kame_action_gate_promoted_ok"),
             "runtime_kame_action_gate_promoted_issues": async_smoke.get(
                 "runtime_kame_action_gate_promoted_issues"

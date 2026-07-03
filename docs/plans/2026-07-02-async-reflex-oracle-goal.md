@@ -246,6 +246,15 @@ Headless acceptance requires `runtime_kame_action_gate_enforced` to prove both
 paths: hypothesis-only approvals fail closed, and consumed promoted interpreter
 evidence plus `tool_disclosure_ref = "tool_disclosure"` passes.
 
+2026-07-04 amendment: the headless action-gate proof must also include a
+degraded text-only frontend path. A VoiceClaw/OpenClaw/Moshi bridge that can
+send only witness text remains useful for audit and clarification, but it must
+report `degraded_text_only`, preserve the witness hypothesis, carry
+`raw_audio_available = false`, and fail Stripe/NemoClaw/phone/file/memory
+approval gates until interpreter or oracle promotion exists. This is the
+enforcement counterpart to the Moshi-context rule: the text can help Gemma when
+the waveform exists; without the waveform, it is not full KAME evidence.
+
 The oracle is the worker. It owns:
 
 - tool execution
