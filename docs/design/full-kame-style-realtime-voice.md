@@ -68,6 +68,26 @@ caption, or high-risk literal-evidence support only. When raw audio is available
 the interpreter request should include the waveform first and every transcript
 string only as a provenance-labeled hypothesis.
 
+2026-07-03 witness-context amendment: Moshi/OpenClaw/VoiceClaw transcript text
+is best understood as witness testimony from the realtime frontend. It should
+be sent to Gemma beside the clipped waveform, not hidden and not promoted. The
+interpreter prompt should explicitly ask Gemma to compare the witness text
+against raw audio, VAD/energy timing, speaker identity, the reflex route, and
+the acknowledgement already spoken. If the witness text helps recover a clipped
+prefix, name, number, code-switch, or command, Gemma can promote corrected
+wording. If it conflicts with the waveform or appears hallucinated, Gemma must
+leave it as diagnostic evidence or reject it.
+
+2026-07-03 action-authority amendment: high-risk VoiceOps actions must not
+inherit authority from any transcript hypothesis. Stripe spend reasons,
+provider selections, NemoClaw action packets, phone-call payloads, memory writes,
+file writes, and external messages require `interpreter_promoted` or
+`oracle_promoted` evidence fields. The artifact should show the raw-audio
+bundle, any witness transcript hypotheses, the promotion source, and the policy
+decision that allowed the action. If only transcript hypotheses are available,
+Hermes may ask a clarification or prepare a draft, but it must not execute,
+approve, or claim readiness for irreversible work.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
@@ -158,6 +178,12 @@ speech cut
 If the Moshi text arrives first, it can help the reflex narrate what it thinks
 it is doing, but it still cannot bypass the interpreter merge point for durable
 history or tool-critical arguments.
+
+If the raw audio is unavailable, the session is no longer in full KAME mode for
+that turn. A text-only Moshi/OpenClaw/VoiceClaw bridge can still submit an
+`ask_brain` compatibility request, but the request must be marked degraded,
+must preserve the source as `hypothesis` or `fallback_text`, and must require
+explicit oracle responsibility before high-risk actions proceed.
 
 ## Signal Authority Rules
 

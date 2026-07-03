@@ -99,6 +99,12 @@ attach to that bundle with source and authority labels. A field called "Moshi
 STT" is still stored as a hypothesis: useful context for Gemma, not the user
 message of record.
 
+The right mental model is witness context. Moshi/OpenClaw/VoiceClaw text tells
+Gemma what the realtime frontend believed it heard. That is valuable evidence,
+especially for clipped starts, names, numbers, and code-switched speech, but it
+is still compared against the waveform and speaker/timing metadata before it can
+become action-authoritative.
+
 That means the demo should not present Moshi as "the ASR layer." It should
 present Moshi/open-S2S text as the reflex's hearing hypothesis. The stronger
 story is that Hermes can keep the voice loop fast, preserve what the realtime
@@ -111,6 +117,16 @@ can acknowledge quickly from the reflex, then show the judges a safer evidence
 trail before spending money or placing a call. If a transcript side channel
 mishears the user, the artifact should show it as a rejected or corrected
 hypothesis instead of silently baking it into the action packet.
+
+The demo artifacts should make the authority gate visible. Stripe spend,
+provider provisioning, NemoClaw action packets, outbound phone-call payloads,
+memory writes, and external messages should reference `interpreter_promoted` or
+`oracle_promoted` evidence before they are eligible to execute. Hypothesis-only
+text may explain what the frontend thought it heard, but it cannot become the
+spend reason, provider choice, phone script, durable transcript, or tool
+argument by itself. The artifact bundle should also show that broad Hermes tools
+were deferred behind `tool_search`/bridge tools until the active oracle needed
+them, reducing context pressure during the live voice session.
 
 ## Why This Fits The Hackathon
 

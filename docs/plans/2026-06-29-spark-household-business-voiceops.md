@@ -129,6 +129,13 @@ Target KAME layout:
   second Hermes turn, do not overwrite the raw-audio route, and do not let that
   text become a spend reason, phone-call payload, memory entry, file write, or
   durable chat message unless Gemma or the active Hermes oracle promotes it.
+- Witness-context rule: Moshi/OpenClaw/VoiceClaw transcript output is witness
+  testimony from the realtime frontend, not the verified user utterance. Gemma
+  should receive that witness text beside the clipped waveform, speaker/channel
+  metadata, VAD/energy timing, reflex route, and spoken acknowledgement. The
+  interpreter may use it to recover clipped prefixes, names, numbers,
+  code-switches, or commands, but must also be free to reject it as hallucinated
+  or wrong-speaker evidence.
 - Sensor-fan-in rule: the long-term stack should collect observations for one
   speech cut rather than run multiple user turns in parallel. The fast reflex
   owns live floor control, Moshi/open-S2S transcript text records what that
@@ -157,6 +164,17 @@ Target KAME layout:
   in `docs/design/full-kame-style-realtime-voice.md`; duplicated text from any
   transcript side channel must attach to that bundle, not spawn a new Hermes
   turn.
+- Action-authority rule: Stripe spend, provider provisioning, NemoClaw action
+  packets, phone-call payloads, memory writes, file writes, and external
+  messages require `interpreter_promoted` or `oracle_promoted` evidence for the
+  action text and rationale. Hypothesis-only evidence can prepare a draft,
+  request clarification, or populate an audit trail, but it cannot authorize
+  irreversible work.
+- Tool-pressure rule: high-risk action artifacts should also prove that broad
+  Hermes tools were not carried through the live voice context unnecessarily.
+  The VoiceOps package should record the `tool_search`/bridge-tool deferral
+  proof, especially that core tools are hidden behind discovery until the active
+  Hermes oracle actually needs them.
 - Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
 The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.

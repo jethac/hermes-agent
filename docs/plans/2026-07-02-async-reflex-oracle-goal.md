@@ -178,6 +178,21 @@ interpreter. It must attach to the same raw-audio turn and must never create a
 parallel user turn, delay the reflex acknowledgement, or patch queued oracle text
 unless a trusted interpreter source or later oracle judgment promotes it.
 
+Witness-context rule: treat Moshi/OpenClaw/VoiceClaw transcript text as what the
+realtime frontend believed it heard. It should be preserved because Gemma can
+use it to compare against the waveform, recover clipped starts, catch
+code-switched names or numbers, and explain disagreements. It is not the user
+message of record. The interpreter receives the witness text and raw audio in
+one bundle and decides whether to promote, correct, reject, or downgrade it to
+diagnostic-only evidence.
+
+Action-authority rule: any Stripe, NemoClaw, provider provisioning, phone-call,
+memory, file, or external-message action that depends on spoken content must use
+`interpreter_promoted` or `oracle_promoted` evidence for the action text and
+rationale. A reflex/Moshi/OpenClaw/VoiceClaw/classic-ASR hypothesis may support
+the explanation trail, but it cannot by itself become a spend reason, provider
+selection, phone payload, durable user transcript, or tool argument.
+
 The oracle is the worker. It owns:
 
 - tool execution
@@ -221,6 +236,11 @@ interpreter input is both signals together. The transcript tells Gemma what the
 realtime frontend believed it heard; the waveform and timing metadata remain
 the primary evidence. If the transcript arrives late, it is late evidence on
 the same oracle job, not a reason to create or replay another Hermes turn.
+
+When raw audio is missing, the request must be marked degraded. Text-only
+VoiceClaw/OpenClaw or Moshi compatibility paths are useful bring-up paths, but
+they do not prove full KAME behavior and must not lower the promoted-evidence
+bar for irreversible actions.
 
 ## User Experience Goal
 
