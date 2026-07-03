@@ -254,7 +254,26 @@ def _voice_status_oracle_job_evidence_label(job: dict[str, Any]) -> str:
     count = job.get("interpreter_evidence_count")
     if isinstance(count, int) and not isinstance(count, bool) and count > 0:
         parts.append(f"x{count}")
+    authority = _voice_status_evidence_authority_label(job.get("evidence_authority"))
+    if authority:
+        parts.append(f"authority={authority}")
     return ", ".join(parts)[:80]
+
+
+def _voice_status_evidence_authority_label(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    labels = set(str(label or "").strip() for label in value.values())
+    ordered = [
+        ("primary_audio", "audio"),
+        ("interpreter_promoted", "interpreter"),
+        ("oracle_promoted", "oracle"),
+        ("reflex_hypothesis", "reflex"),
+        ("auxiliary_hypothesis", "aux"),
+        ("diagnostic_only", "diagnostic"),
+    ]
+    parts = [short for label, short in ordered if label in labels]
+    return "/".join(parts[:5])
 
 
 class GatewaySlashCommandsMixin:

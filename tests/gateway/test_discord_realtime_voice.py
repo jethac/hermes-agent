@@ -1574,6 +1574,12 @@ def test_voice_status_oracle_job_lines_are_compact():
                     "interpreter_evidence_count": 1,
                     "interpreter_evidence_late": True,
                     "interpreter_evidence_delivery_status": "delivered",
+                    "evidence_authority": {
+                        "raw_audio": "primary_audio",
+                        "reflex_transcript_hypothesis": "reflex_hypothesis",
+                        "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+                        "interpreter_corrected_transcript": "interpreter_promoted",
+                    },
                 },
                 {
                     "job_id": "voice-oracle-003",
@@ -1587,7 +1593,7 @@ def test_voice_status_oracle_job_lines_are_compact():
     assert lines == [
         "Oracle jobs: active=3/4, running=1, queued=2, waiting_for_approval=1, cancel_requested=1",
         "Oracle job: voice-oracle-001 running - Checking the deployment status. | update: include the staging region too.",
-        "Oracle job: voice-oracle-002 waiting_for_approval - Waiting for Stripe spend approval. | evidence: delivered, late, x1",
+        "Oracle job: voice-oracle-002 waiting_for_approval - Waiting for Stripe spend approval. | evidence: delivered, late, x1, authority=audio/interpreter/reflex/aux",
         "Oracle job: voice-oracle-003 cancel_requested - Stopping the stale deployment check.",
     ]
 

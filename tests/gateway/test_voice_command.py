@@ -1081,6 +1081,14 @@ class TestVoiceChannelCommands:
                             "job_id": "voice-oracle-001",
                             "state": "running",
                             "spoken_status": "Checking the deployment status.",
+                            "interpreter_evidence_count": 1,
+                            "interpreter_evidence_delivery_status": "delivered",
+                            "evidence_authority": {
+                                "raw_audio": "primary_audio",
+                                "reflex_transcript_hypothesis": "reflex_hypothesis",
+                                "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+                                "interpreter_corrected_transcript": "interpreter_promoted",
+                            },
                         }
                     ],
                 },
@@ -1121,7 +1129,10 @@ class TestVoiceChannelCommands:
         assert "Realtime counters:" in result
         assert "kame_oracle_bypassed=1" in result
         assert "Oracle jobs: active=2/4, running=1, queued=2, waiting_for_approval=1" in result
-        assert "Oracle job: voice-oracle-001 running - Checking the deployment status." in result
+        assert (
+            "Oracle job: voice-oracle-001 running - Checking the deployment status. | evidence: delivered, x1, authority=audio/interpreter/reflex/aux"
+            in result
+        )
 
     @pytest.mark.asyncio
     async def test_voice_jobs_reports_oracle_job_snapshot(self, runner):
