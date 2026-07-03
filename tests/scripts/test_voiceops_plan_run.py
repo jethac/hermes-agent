@@ -1139,7 +1139,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "hidden_core_tool_names": sorted(_HERMES_CORE_TOOLS),
         "input_core_tool_count": len(_HERMES_CORE_TOOLS),
         "ok": True,
-        "test_ref_count": 3,
+        "test_ref_count": 4,
         "token_reduction_estimate": tool_details["token_reduction_estimate"],
         "visible_non_bridge_tool_names": [],
         "visible_tool_names": ["tool_call", "tool_describe", "tool_search"],

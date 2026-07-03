@@ -200,6 +200,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
 TOOL_DISCLOSURE_TEST_REFS = [
     "tests/tools/test_tool_search.py::TestAssembly::test_defer_core_all_hides_core_behind_bridge",
     "tests/agent/test_realtime_voice_oracle.py::test_voice_oracle_applies_scoped_tool_search_override",
+    "tests/agent/test_realtime_voice_oracle.py::test_voice_oracle_runtime_tool_surface_is_bridge_only",
     "tests/hermes_cli/test_web_server.py::TestBuildSchemaFromConfig::test_realtime_voice_ws_config_defaults_oracle_tool_router",
 ]
 

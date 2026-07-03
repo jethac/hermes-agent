@@ -79,10 +79,11 @@ Target KAME layout:
   submits oracle jobs to the active Hermes model; it does not configure a
   separate oracle model.
 - Speech: local transcript hypothesis evidence and TTS where practical, with
-  Moshi/S2S or classic ASR transcripts used as auxiliary interpreter/oracle
-  context rather than reflex input in full KAME mode. The system must not
-  require ASR evidence before acknowledging or submitting work when the
-  raw-audio/reflex path is available.
+  Moshi/S2S or classic ASR transcripts used as auxiliary witness context for
+  the interpreter rather than reflex input in full KAME mode. The oracle may see
+  promoted wording or labeled audit context, but raw transcript hypotheses do
+  not carry action authority. The system must not require ASR evidence before
+  acknowledging or submitting work when the raw-audio/reflex path is available.
 - Sensor fan-in: the normal voice turn is not "Moshi STT plus Hermes" and not a
   separate ASR conversation. It is one clipped raw-audio turn, one reflex route,
   and one interpreter bundle. Moshi/open-S2S, VoiceClaw/OpenClaw, reflex, and
@@ -197,6 +198,10 @@ Target KAME layout:
   arrives late, it is late evidence on the same bundle. If raw audio is missing,
   the turn is degraded and cannot close Stripe, NemoClaw, phone, memory, file,
   or external-message action gates on hypothesis text alone.
+  Partial witness text is active only until a final same-source/same-kind
+  witness arrives for the same speech cut. The final witness should become the
+  only active frontend hypothesis, while the partial survives only as
+  superseded-partial provenance for audit and debugging.
   Headless acceptance requires `witness_fusion_timing_preserves_single_bundle`
   to pass for early, inline, and late witness arrival, with the same bundle id
   surviving degraded-to-primary audio updates. It must also prove the positive

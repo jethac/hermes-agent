@@ -351,6 +351,52 @@ def test_voice_oracle_applies_scoped_tool_search_override(monkeypatch):
     ]
 
 
+def test_voice_oracle_runtime_tool_surface_is_bridge_only(monkeypatch):
+    from tools.tool_search import BRIDGE_TOOL_NAMES
+    from toolsets import _HERMES_CORE_TOOLS
+
+    observed_tool_names = []
+
+    def fake_run_conversation(self, prompt, *, persist_user_message=None, stream_callback=None):
+        observed_tool_names.append({tool["function"]["name"] for tool in self.tools})
+        if stream_callback is not None:
+            stream_callback("ok")
+        return {"final_response": "ok"}
+
+    async def run():
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+        monkeypatch.setattr(
+            run_agent.AIAgent,
+            "_create_openai_client",
+            lambda self, client_kwargs, **kwargs: object(),
+        )
+        monkeypatch.setattr(run_agent.AIAgent, "run_conversation", fake_run_conversation)
+        oracle = HermesRealtimeOracle(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-tool-surface",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_tool_router={
+                    "enabled": True,
+                    "mode": "deterministic",
+                    "voiceops_toolsets": ["voiceops"],
+                    "default_toolsets": [],
+                    "tool_search": {
+                        "enabled": "on",
+                        "defer_core": "all",
+                    },
+                },
+            )
+        )
+        chunks = []
+        async for delta in oracle.stream_answer("tell me a short joke"):
+            chunks.append(delta)
+        assert chunks == ["ok"]
+
+    asyncio.run(run())
+    assert observed_tool_names == [set(BRIDGE_TOOL_NAMES)]
+    assert not (observed_tool_names[0] & set(_HERMES_CORE_TOOLS))
+
+
 def test_voice_oracle_router_disabled_does_not_apply_tool_search_override(monkeypatch):
     observed = []
 
