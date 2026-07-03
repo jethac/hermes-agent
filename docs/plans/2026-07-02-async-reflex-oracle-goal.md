@@ -891,6 +891,12 @@ Add a local smoke report mode that proves:
 - a Moshi/open-S2S transcript that arrives before the audio cut, with the audio
   cut, or after interpreter start attaches to the same `turn_id` /
   `audio_segment_ref` and never creates a second Hermes turn
+- the raw-audio-plus-Moshi witness fixture exposes one stable
+  `evidence_bundle_id`, one interpreter merge path, and no duplicate oracle job
+  when the witness transcript arrives before, with, or after the raw audio
+- degraded text-only VoiceClaw/OpenClaw/Moshi fixtures preserve hypothesis text
+  for audit and clarification, but report `degraded_reason` and fail high-risk
+  action gates until interpreter/oracle promotion exists
 - queued oracle job updates are visible in the reflex/status event stream
 - one job can be cancelled while others complete
 - queued oracle jobs can be cancelled before worker execution

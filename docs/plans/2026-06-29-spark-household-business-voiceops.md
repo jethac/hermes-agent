@@ -180,6 +180,13 @@ Target KAME layout:
   in `docs/design/full-kame-style-realtime-voice.md`; duplicated text from any
   transcript side channel must attach to that bundle, not spawn a new Hermes
   turn.
+- Witness-fusion acceptance rule: when raw audio and Moshi/OpenClaw/VoiceClaw
+  witness text are both present, artifacts should prove a single stable
+  `evidence_bundle_id`, a single interpreter merge path, and no duplicate oracle
+  job. If witness text arrives early, it waits on the pending bundle; if it
+  arrives late, it is late evidence on the same bundle. If raw audio is missing,
+  the turn is degraded and cannot close Stripe, NemoClaw, phone, memory, file,
+  or external-message action gates on hypothesis text alone.
 - Action-authority rule: Stripe spend, provider provisioning, NemoClaw action
   packets, phone-call payloads, memory writes, file writes, and external
   messages require `interpreter_promoted` or `oracle_promoted` evidence for the

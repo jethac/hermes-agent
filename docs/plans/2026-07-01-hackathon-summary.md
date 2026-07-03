@@ -222,6 +222,9 @@ system heard the user.
   hypotheses, and ASR hypotheses remain separate in logs and durable records.
   Hypothesis-only text does not leak into persisted Hermes user messages or
   Stripe/NemoClaw/phone action payloads.
+- When a Moshi/OpenClaw/VoiceClaw witness transcript is present, the artifact
+  shows it sharing the raw-audio turn's `evidence_bundle_id` rather than
+  creating a second Hermes turn. Text-only witness turns are labeled degraded.
 - The active Hermes model routes to the local PGX Nemotron 3 Super endpoint.
 - Heavy planning/build/debug requests go directly through the active Hermes oracle, without the Gemma 12B + Nemotron Nano MoA path.
 - Stripe-linked provisioning is constrained by an explicit budget.

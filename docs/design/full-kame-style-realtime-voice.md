@@ -667,6 +667,31 @@ supersedes the partial for interpreter context, but the audit ledger should keep
 the timing/provenance needed to debug clipped starts, duplicated words, and
 hallucinated commands.
 
+Runtime merge algorithm:
+
+1. Allocate `turn_id` at speech start and `audio_segment_ref` when the session
+   has a replayable cut or buffer reference.
+2. Attach every frontend text observation to that pending turn as a hypothesis:
+   `reflex_transcript_hypothesis`, `s2s_transcript_hypothesis`,
+   `classic_asr_hypothesis`, or `frontend_witness_hypothesis`.
+3. Start the interpreter as soon as raw audio plus timing metadata are available;
+   do not wait for Moshi/OpenClaw/VoiceClaw/classic-ASR text.
+4. If witness text arrives before the interpreter starts, include it in the
+   initial Gemma request. If it arrives after start, attach it as late evidence
+   on the same bundle and allow only bounded queued-job patches or pre-action
+   corrections.
+5. If witness text arrives without raw audio, mark the turn degraded and keep
+   the text out of high-risk action authority until interpreter or oracle
+   promotion explicitly accepts it.
+
+Acceptance for this merge path is concrete: one speech cut must produce exactly
+one evidence bundle id, no more than one oracle job unless the reflex explicitly
+routes multiple tasks, and zero durable user-message writes sourced only from a
+Moshi/OpenClaw/VoiceClaw/classic-ASR hypothesis. The logs and readiness artifacts
+should make that visible by reporting the shared `turn_id`, `audio_segment_ref`,
+`evidence_bundle_id`, hypothesis count, promoted source, and degraded reason when
+raw audio is missing.
+
 ## Responsibilities
 
 ### Reflex / Interface Model
