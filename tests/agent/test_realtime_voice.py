@@ -15887,6 +15887,51 @@ def test_session_does_not_persist_kame_oracle_request_hypothesis_fields_as_durab
     ]
 
 
+def test_session_does_not_persist_external_frontend_placeholders():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-123"),
+        engine=KameInterfaceOracleEngine(oracle=FakeOracle()),
+    )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.TOOL_RESULT,
+            session_id="voice-123",
+            sequence=1,
+            payload={
+                "provider": "voiceclaw",
+                "tool": "ask_brain",
+                "tool_call_id": "call-1",
+                "accepted": True,
+                "job_id": "voice-oracle-001",
+                "state": "queued",
+                "placeholder": "Accepted job one queued: preparing the provisioning plan",
+                "reflex_status": {
+                    "capacity": {"active": 0, "running": 0, "max_concurrent": 1, "queued": 1},
+                    "jobs": [
+                        {
+                            "job_id": "voice-oracle-001",
+                            "state": "queued",
+                            "spoken_status": "preparing the provisioning plan",
+                        }
+                    ],
+                },
+                "transcript_hypotheses": [
+                    {
+                        "kind": "s2s_transcript_hypothesis",
+                        "source": "voiceclaw",
+                        "text": "prepare a voip provisioning plan",
+                        "authority": "auxiliary_hypothesis",
+                    }
+                ],
+            },
+        )
+    )
+
+    assert session.durable_messages() == []
+    assert session.durable_oracle_records() == []
+
+
 def test_session_persists_durable_async_oracle_job_records():
     session = RealtimeVoiceSession(
         RealtimeVoiceSessionConfig(session_id="voice-123"),

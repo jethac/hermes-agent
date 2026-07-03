@@ -739,6 +739,9 @@ Add KAME frontend compatibility tests:
 - cancellation from the frontend cancels the matching job only
 - frontend transcript sync does not write status polls or placeholders into
   durable Hermes chat history
+- external frontend accepted/queued placeholders and safe status responses stay
+  transport/session state only; durable history starts at the normalized oracle
+  job request, approval/action records, cancellation/failure, or terminal result
 - direct file, shell, memory, payment, and provisioning tools are not exposed to
   the frontend realtime model
 
