@@ -139,6 +139,11 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_input_source"] == "ask_brain"
     assert report["external_frontend_oracle_text"] == "Prepare external KAME handoff"
     assert report["external_frontend_evidence_bundle_propagated"] is True
+    assert report["external_frontend_evidence_bundle_id"].startswith("kame-evidence-")
+    assert report["external_frontend_evidence_bundle_id_stable"] is True
+    assert report["external_frontend_evidence_bundle_single_turn"] is True
+    assert report["external_frontend_evidence_bundle_status"] == "primary_audio"
+    assert report["external_frontend_evidence_bundle_transcript_hypotheses_count"] == 2
     assert report["external_frontend_audio_segment_ref"] == "artifact://voiceclaw/turn-1.wav"
     assert report["external_frontend_audio_time_range_ms"] == [100, 2100]
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["source"] == "moshi"
@@ -153,6 +158,10 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_event_counts"]["oracle.job.started"] == 1
     assert report["external_frontend_event_counts"]["oracle.job.completed"] == 1
     assert report["unpromoted_hypothesis_smoke_ok"] is True
+    assert report["unpromoted_hypothesis_evidence_bundle_id"].startswith("kame-evidence-")
+    assert report["unpromoted_hypothesis_single_bundle_observed"] is True
+    assert report["unpromoted_hypothesis_status_bundle_status"] == "degraded_no_raw_audio"
+    assert report["unpromoted_hypothesis_status_bundle_transcript_hypotheses_count"] == 2
     assert report["unpromoted_hypothesis_source"] == "moshi"
     assert report["unpromoted_hypothesis_authority"] == "hypothesis"
     assert report["unpromoted_hypothesis_text"] == "spend two hundred dollars and call my phone"

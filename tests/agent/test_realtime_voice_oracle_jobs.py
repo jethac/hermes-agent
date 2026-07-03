@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from agent.realtime_voice_kame import KameOracleRequest, KameRoute
+from agent.realtime_voice_kame import KameOracleRequest, KameRoute, kame_evidence_bundle_id
 from agent.realtime_voice import RealtimeVoiceSessionConfig, VoiceEventType
 from agent.realtime_voice_oracle_jobs import (
     OracleJobManager,
@@ -154,6 +154,26 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
     assert job_status["audio_time_range_ms"] == (120, 2480)
     assert job_status["raw_audio_available"] is True
     assert job_status["evidence_bundle_status"] == "primary_audio"
+    assert job_status["evidence_bundle_id"] == request.evidence_bundle_id
+    assert job_status["evidence_bundle"] == {
+        "bundle_id": request.evidence_bundle_id,
+        "status": "primary_audio",
+        "turn_id": "turn-voice-1",
+        "raw_audio_available": True,
+        "authority": {
+            "intent": "reflex_hypothesis",
+            "oracle_text": "reflex_hypothesis",
+            "raw_audio": "primary_audio",
+            "reflex_transcript_hypothesis": "reflex_hypothesis",
+            "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+            "interpreter_corrected_transcript": "interpreter_promoted",
+            "interpreter_normalized_intent": "interpreter_promoted",
+        },
+        "transcript_hypotheses_count": 3,
+        "interpreter_evidence_count": 1,
+        "audio_segment_ref": "segments/turn-voice-1.wav",
+        "promoted_transcript_source": "gemma_interpreter",
+    }
     assert "degraded_reason" not in job_status
     assert job_status["evidence_authority"] == {
         "intent": "reflex_hypothesis",
@@ -624,6 +644,12 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     )
     queued_status = next(job for job in status["jobs"] if job["job_id"] == queued.job_id)
     oracle_request = _oracle_request_for_job(updated, updated.request)
+    expected_bundle_id = kame_evidence_bundle_id(
+        session_id="voice-session-1",
+        turn_id="turn:power question",
+        audio_segment_ref="artifact://redacted/oracle-002.wav",
+        evidence_bundle_status="primary_audio",
+    )
 
     assert updated.interpreter_evidence[0]["corrected_transcript"] == "what is three to the power of seventeen"
     assert updated.interpreter_evidence[0]["audio_segment_ref"] == "artifact://redacted/oracle-002.wav"
@@ -659,6 +685,16 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert queued_status["interpreter_intent_source"] == "gemma_interpreter"
     assert queued_status["audio_segment_ref"] == "artifact://redacted/oracle-002.wav"
     assert queued_status["audio_time_range_ms"] == (120, 2120)
+    assert queued_status["evidence_bundle_id"] == expected_bundle_id
+    assert queued_status["evidence_bundle"]["bundle_id"] == expected_bundle_id
+    assert queued_status["evidence_bundle"]["turn_id"] == "turn:power question"
+    assert queued_status["evidence_bundle"]["raw_audio_available"] is True
+    assert queued_status["evidence_bundle"]["status"] == "primary_audio"
+    assert queued_status["evidence_bundle"]["transcript_hypotheses_count"] == 2
+    assert queued_status["evidence_bundle"]["interpreter_evidence_count"] == 1
+    assert queued_status["evidence_bundle"]["authority"]["raw_audio"] == "primary_audio"
+    assert queued_status["evidence_bundle"]["authority"]["auxiliary_transcript_hypotheses"] == "auxiliary_hypothesis"
+    assert queued_status["evidence_bundle"]["authority"]["interpreter_corrected_transcript"] == "interpreter_promoted"
     assert queued_status["speaker"] == {
         "platform": "discord",
         "channel_user_id": "42",
@@ -690,6 +726,8 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert oracle_request.oracle_text == "what is three to the power of seventeen"
     assert oracle_request.oracle_text_source == "gemma_interpreter"
     assert oracle_request.audio_segment_ref == "artifact://redacted/oracle-002.wav"
+    assert oracle_request.evidence_bundle_id == expected_bundle_id
+    assert oracle_request.to_metadata()["kame_evidence_bundle_id"] == expected_bundle_id
     assert oracle_request.audio_time_range_ms == (120, 2120)
     assert oracle_request.speaker_metadata == queued_status["speaker"]
     assert oracle_request.channel_metadata == queued_status["channel"]
@@ -960,6 +998,7 @@ async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text
     )
     status = await manager.status_view()
     running_status = next(job for job in status["jobs"] if job["job_id"] == running.job_id)
+    reflex_status = next(job for job in status["reflex"]["jobs"] if job["job_id"] == running.job_id)
     late = next(
         event
         for event in events
@@ -983,6 +1022,13 @@ async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text
     assert running_status["evidence_authority"]["auxiliary_transcript_hypotheses"] == "auxiliary_hypothesis"
     assert "interpreter_corrected_transcript" not in running_status["evidence_authority"]
     assert "interpreter_normalized_intent" not in running_status["evidence_authority"]
+    assert running_status["evidence_bundle"]["status"] == "primary_audio"
+    assert running_status["evidence_bundle"]["raw_audio_available"] is True
+    assert running_status["evidence_bundle"]["transcript_hypotheses_count"] == 2
+    assert running_status["evidence_bundle"]["interpreter_evidence_count"] == 1
+    assert reflex_status["evidence_bundle_id"] == running_status["evidence_bundle_id"]
+    assert "transcript_hypotheses" not in reflex_status
+    assert "evidence_bundle" not in reflex_status
     assert late["payload"]["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
     assert oracle_request.oracle_text == "prepare phone handoff"
     assert oracle_request.oracle_text_source == "reflex_audio"

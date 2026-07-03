@@ -6,6 +6,7 @@ import copy
 import contextlib
 from dataclasses import dataclass, field
 from enum import StrEnum
+import hashlib
 import json
 import re
 from typing import Any, Mapping, Optional, Sequence
@@ -450,6 +451,17 @@ class KameOracleRequest:
         return status
 
     @property
+    def evidence_bundle_id(self) -> str:
+        """Return a stable, non-secret merge id for one KAME speech cut."""
+
+        return kame_evidence_bundle_id(
+            session_id=self.session_id,
+            turn_id=self.turn_id,
+            audio_segment_ref=self.audio_segment_ref,
+            evidence_bundle_status=self.evidence_bundle_status,
+        )
+
+    @property
     def oracle_text(self) -> str:
         """Return promoted text for the user's oracle-facing message."""
 
@@ -590,6 +602,7 @@ class KameOracleRequest:
             "kame_oracle_text_source": self.oracle_text_source,
             "kame_raw_audio_available": self.raw_audio_available,
             "kame_evidence_bundle_status": self.evidence_bundle_status,
+            "kame_evidence_bundle_id": self.evidence_bundle_id,
             "kame_evidence_authority": dict(self.evidence_authority),
             "max_spoken_sentences": self.max_spoken_sentences,
             "voice_response_policy": response_style.get("policy") or "sentence_cap",
@@ -812,6 +825,29 @@ class KameOracleRequest:
             interface_audio_input_fallback=_bool(payload.get("interface_audio_input_fallback"), default=False),
             reflex_provider=_optional_text(payload.get("reflex_provider")) or "",
         )
+
+
+def kame_evidence_bundle_id(
+    *,
+    session_id: str,
+    turn_id: str,
+    audio_segment_ref: str = "",
+    evidence_bundle_status: str = "",
+) -> str:
+    """Build a compact id for joining raw audio and witness transcripts.
+
+    The id is intentionally hash-based so logs can prove that fields share one
+    bundle without replaying local artifact paths or transcript text.
+    """
+
+    parts = (
+        _optional_text(session_id),
+        _optional_text(turn_id),
+        _optional_text(audio_segment_ref),
+        _optional_text(evidence_bundle_status),
+    )
+    digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:20]
+    return f"kame-evidence-{digest}"
 
 
 def kame_external_brain_request_to_oracle_request(

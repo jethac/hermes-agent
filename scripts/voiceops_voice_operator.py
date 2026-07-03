@@ -1532,6 +1532,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("running_update_reached_oracle") is True
         and smoke.get("running_update_delivery_metadata_ok") is True,
         "transcript_hypotheses_remain_unpromoted": smoke.get("unpromoted_hypothesis_smoke_ok") is True
+        and smoke.get("unpromoted_hypothesis_single_bundle_observed") is True
         and smoke.get("unpromoted_hypothesis_source") == "moshi"
         and smoke.get("unpromoted_hypothesis_authority") == "hypothesis"
         and smoke.get("unpromoted_hypothesis_oracle_text_preserved") is True
@@ -1550,6 +1551,10 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("external_frontend_source_reached_oracle") is True
         and smoke.get("external_frontend_input_source") == "ask_brain"
         and smoke.get("external_frontend_evidence_bundle_propagated") is True
+        and smoke.get("external_frontend_evidence_bundle_id_stable") is True
+        and smoke.get("external_frontend_evidence_bundle_single_turn") is True
+        and smoke.get("external_frontend_evidence_bundle_status") == "primary_audio"
+        and int(smoke.get("external_frontend_evidence_bundle_transcript_hypotheses_count") or 0) >= 1
         and smoke.get("external_frontend_hypothesis_not_durable_oracle_text") is True
         and smoke.get("external_frontend_durable_user_messages_empty") is True
         and smoke.get("external_frontend_durable_oracle_text_absent") is True
@@ -2177,6 +2182,21 @@ def build_voice_operator_report(
             "external_frontend_evidence_bundle_propagated": bool(
                 async_oracle_smoke.get("external_frontend_evidence_bundle_propagated")
             ),
+            "external_frontend_evidence_bundle_id": async_oracle_smoke.get(
+                "external_frontend_evidence_bundle_id"
+            ),
+            "external_frontend_evidence_bundle_id_stable": bool(
+                async_oracle_smoke.get("external_frontend_evidence_bundle_id_stable")
+            ),
+            "external_frontend_evidence_bundle_single_turn": bool(
+                async_oracle_smoke.get("external_frontend_evidence_bundle_single_turn")
+            ),
+            "external_frontend_evidence_bundle_status": async_oracle_smoke.get(
+                "external_frontend_evidence_bundle_status"
+            ),
+            "external_frontend_evidence_bundle_transcript_hypotheses_count": async_oracle_smoke.get(
+                "external_frontend_evidence_bundle_transcript_hypotheses_count"
+            ),
             "external_frontend_audio_segment_ref": async_oracle_smoke.get(
                 "external_frontend_audio_segment_ref"
             ),
@@ -2208,6 +2228,18 @@ def build_voice_operator_report(
                 async_oracle_smoke.get("unpromoted_hypothesis_smoke_ok")
             ),
             "unpromoted_hypothesis_job_id": async_oracle_smoke.get("unpromoted_hypothesis_job_id"),
+            "unpromoted_hypothesis_evidence_bundle_id": async_oracle_smoke.get(
+                "unpromoted_hypothesis_evidence_bundle_id"
+            ),
+            "unpromoted_hypothesis_single_bundle_observed": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_single_bundle_observed")
+            ),
+            "unpromoted_hypothesis_status_bundle_status": async_oracle_smoke.get(
+                "unpromoted_hypothesis_status_bundle_status"
+            ),
+            "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count": async_oracle_smoke.get(
+                "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count"
+            ),
             "unpromoted_hypothesis_source": async_oracle_smoke.get("unpromoted_hypothesis_source"),
             "unpromoted_hypothesis_authority": async_oracle_smoke.get("unpromoted_hypothesis_authority"),
             "unpromoted_hypothesis_text": async_oracle_smoke.get("unpromoted_hypothesis_text"),

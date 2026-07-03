@@ -16,7 +16,7 @@ from typing import Any, Awaitable, Callable, Deque, Mapping, Optional, Sequence
 
 from agent.redact import redact_sensitive_text
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
-from agent.realtime_voice_kame import KameOracleRequest
+from agent.realtime_voice_kame import KameOracleRequest, kame_evidence_bundle_id
 from agent.think_scrubber import StreamingThinkScrubber, strip_leading_reasoning_trace
 
 
@@ -167,6 +167,10 @@ class OracleJob:
         evidence_authority = _job_evidence_authority(self)
         if evidence_authority:
             status["evidence_authority"] = evidence_authority
+        evidence_bundle = _job_evidence_bundle(self, evidence_authority=evidence_authority)
+        if evidence_bundle:
+            status["evidence_bundle"] = evidence_bundle
+            status["evidence_bundle_id"] = evidence_bundle["bundle_id"]
         if self.reflex_transcript_hypothesis:
             status["reflex_transcript_hypothesis"] = self.reflex_transcript_hypothesis
             status["reflex_transcript_source"] = self.reflex_transcript_source or "reflex_audio"
@@ -963,6 +967,9 @@ def _reflex_job_status(job: Mapping[str, Any], *, ordinal_index: int) -> dict[st
     evidence_status = _compact_evidence_text(job.get("evidence_bundle_status"), limit=80)
     if evidence_status:
         safe_job["evidence_bundle_status"] = evidence_status
+    bundle_id = _compact_evidence_text(job.get("evidence_bundle_id"), limit=80)
+    if bundle_id:
+        safe_job["evidence_bundle_id"] = bundle_id
     degraded_reason = _compact_evidence_text(job.get("degraded_reason"), limit=120)
     if degraded_reason:
         safe_job["degraded_reason"] = degraded_reason
@@ -1010,6 +1017,47 @@ def _job_evidence_authority(job: OracleJob) -> dict[str, str]:
     if job.result_summary or job.result_text:
         authority["oracle_result"] = "oracle_promoted"
     return authority
+
+
+def _job_evidence_bundle(
+    job: OracleJob,
+    *,
+    evidence_authority: Mapping[str, str],
+) -> dict[str, Any]:
+    turn_id = _compact_evidence_text(
+        job.request.turn_id if job.request is not None else "",
+        limit=160,
+    )
+    status = _job_evidence_bundle_status(job)
+    if not turn_id and not job.audio_segment_ref:
+        return {}
+    bundle = {
+        "bundle_id": kame_evidence_bundle_id(
+            session_id=job.session_id,
+            turn_id=turn_id,
+            audio_segment_ref=job.audio_segment_ref,
+            evidence_bundle_status=status,
+        ),
+        "status": status,
+        "turn_id": turn_id,
+        "raw_audio_available": bool(job.audio_segment_ref),
+        "authority": dict(evidence_authority),
+        "transcript_hypotheses_count": len(_job_transcript_hypotheses(job)),
+        "interpreter_evidence_count": len(job.interpreter_evidence),
+    }
+    if job.audio_segment_ref:
+        bundle["audio_segment_ref"] = job.audio_segment_ref
+    if job.interpreter_corrected_transcript:
+        bundle["promoted_transcript_source"] = job.interpreter_intent_source or "gemma_interpreter"
+    return bundle
+
+
+def _job_evidence_bundle_status(job: OracleJob) -> str:
+    if job.audio_segment_ref:
+        return "primary_audio"
+    if job.request is not None:
+        return job.request.evidence_bundle_status
+    return "degraded_no_raw_audio"
 
 
 def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:

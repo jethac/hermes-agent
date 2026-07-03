@@ -1968,8 +1968,35 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_evidence_bundle_propagated": bool(
                 async_smoke.get("external_frontend_evidence_bundle_propagated")
             ),
+            "external_frontend_evidence_bundle_id": async_smoke.get(
+                "external_frontend_evidence_bundle_id"
+            ),
+            "external_frontend_evidence_bundle_id_stable": bool(
+                async_smoke.get("external_frontend_evidence_bundle_id_stable")
+            ),
+            "external_frontend_evidence_bundle_single_turn": bool(
+                async_smoke.get("external_frontend_evidence_bundle_single_turn")
+            ),
+            "external_frontend_evidence_bundle_status": async_smoke.get(
+                "external_frontend_evidence_bundle_status"
+            ),
+            "external_frontend_evidence_bundle_transcript_hypotheses_count": async_smoke.get(
+                "external_frontend_evidence_bundle_transcript_hypotheses_count"
+            ),
             "external_frontend_direct_tool_authority_exposed": bool(
                 async_smoke.get("external_frontend_direct_tool_authority_exposed")
+            ),
+            "unpromoted_hypothesis_evidence_bundle_id": async_smoke.get(
+                "unpromoted_hypothesis_evidence_bundle_id"
+            ),
+            "unpromoted_hypothesis_single_bundle_observed": bool(
+                async_smoke.get("unpromoted_hypothesis_single_bundle_observed")
+            ),
+            "unpromoted_hypothesis_status_bundle_status": async_smoke.get(
+                "unpromoted_hypothesis_status_bundle_status"
+            ),
+            "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count": async_smoke.get(
+                "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count"
             ),
             "audit_scalar_smoke_ok": bool(async_smoke.get("audit_scalar_smoke_ok")),
             "audit_scalar_payload_redacted": bool(async_smoke.get("audit_scalar_payload_redacted")),

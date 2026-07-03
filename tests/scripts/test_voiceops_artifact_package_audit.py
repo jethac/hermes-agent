@@ -185,6 +185,9 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["audit_scalar_payload_redacted"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_terminal_correlation_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_completion_tool_call_id"] = "wrong-call"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_bundle_id_stable"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_bundle_single_turn"] = False
+    readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_single_bundle_observed"] = False
     _write_json(readiness_path, readiness)
 
     report = audit_package(artifact_root)
@@ -209,6 +212,18 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_completion_tool_call_id_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_evidence_bundle_id_stable_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_evidence_bundle_single_turn_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.unpromoted_hypothesis_single_bundle_observed_mismatch"
         in report["issues"]
     )
 

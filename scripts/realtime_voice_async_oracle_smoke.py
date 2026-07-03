@@ -1347,6 +1347,26 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("source") == "moshi"
         and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("authority") == "hypothesis"
     )
+    request_bundle_id = str(getattr(request, "evidence_bundle_id", "") or "") if request is not None else ""
+    metadata_bundle_id = str(metadata.get("kame_evidence_bundle_id") or "")
+    status_bundle = status_job.get("evidence_bundle") if isinstance(status_job.get("evidence_bundle"), dict) else {}
+    status_bundle_id = str(status_job.get("evidence_bundle_id") or "")
+    evidence_bundle_id_stable = (
+        bool(request_bundle_id)
+        and request_bundle_id == metadata_bundle_id
+        and request_bundle_id == status_bundle_id
+        and request_bundle_id == str(status_bundle.get("bundle_id") or "")
+    )
+    evidence_bundle_single_turn = (
+        evidence_bundle_id_stable
+        and status_bundle.get("status") == "primary_audio"
+        and status_bundle.get("turn_id") == "voice-smoke-external-frontend:voiceclaw:1"
+        and status_bundle.get("raw_audio_available") is True
+        and int(status_bundle.get("transcript_hypotheses_count") or 0) >= 1
+        and status_bundle.get("audio_segment_ref") == "artifact://voiceclaw/turn-1.wav"
+        and status_bundle.get("authority", {}).get("raw_audio") == "primary_audio"
+        and status_bundle.get("authority", {}).get("auxiliary_transcript_hypotheses") == "auxiliary_hypothesis"
+    )
     durable_session = RealtimeVoiceSession(
         RealtimeVoiceSessionConfig(session_id="voice-smoke-external-frontend"),
         engine=SmokeEngine(oracle=SmokeOracle()),
@@ -1382,6 +1402,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and getattr(request, "interface_input_source", "") == "ask_brain"
         and getattr(request, "oracle_text", "") == "Prepare external KAME handoff"
         and evidence_bundle_propagated
+        and evidence_bundle_single_turn
         and durable_hypothesis_not_promoted
         and terminal_correlation_observed
         and not direct_tool_authority_exposed
@@ -1407,6 +1428,13 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         else "",
         "external_frontend_oracle_text": getattr(request, "oracle_text", "") if request is not None else "",
         "external_frontend_evidence_bundle_propagated": evidence_bundle_propagated,
+        "external_frontend_evidence_bundle_id": request_bundle_id,
+        "external_frontend_evidence_bundle_id_stable": evidence_bundle_id_stable,
+        "external_frontend_evidence_bundle_single_turn": evidence_bundle_single_turn,
+        "external_frontend_evidence_bundle_status": str(status_bundle.get("status") or ""),
+        "external_frontend_evidence_bundle_transcript_hypotheses_count": int(
+            status_bundle.get("transcript_hypotheses_count") or 0
+        ),
         "external_frontend_audio_segment_ref": getattr(request, "audio_segment_ref", "") if request is not None else "",
         "external_frontend_audio_time_range_ms": list(getattr(request, "audio_time_range_ms", ()))
         if request is not None
@@ -1545,6 +1573,7 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
             for event in events
         )
     )
+    status = await engine.get_oracle_job_status()
     await engine.close()
     collector.cancel()
     try:
@@ -1593,6 +1622,21 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         and hypothesis.get("authority") == "hypothesis"
         and hypothesis.get("confidence") == 0.71
     )
+    status_jobs = status.get("jobs") if isinstance(status.get("jobs"), list) else []
+    status_job = next((job for job in status_jobs if job.get("job_id") == queued_job_id), {})
+    status_bundle = status_job.get("evidence_bundle") if isinstance(status_job.get("evidence_bundle"), dict) else {}
+    request_bundle_id = str(getattr(request, "evidence_bundle_id", "") or "") if request is not None else ""
+    status_bundle_id = str(status_job.get("evidence_bundle_id") or "")
+    single_bundle_observed = (
+        bool(request_bundle_id)
+        and request_bundle_id == status_bundle_id
+        and request_bundle_id == str(status_bundle.get("bundle_id") or "")
+        and status_bundle.get("turn_id") == "voice-smoke-unpromoted-hypothesis:2"
+        and status_bundle.get("transcript_hypotheses_count") == 2
+        and status_bundle.get("interpreter_evidence_count") == 1
+        and status_bundle.get("authority", {}).get("auxiliary_transcript_hypotheses") == "auxiliary_hypothesis"
+        and "interpreter_corrected_transcript" not in status_bundle.get("authority", {})
+    )
     promoted = (
         any(
             untrusted_text == str(getattr(request, field, "") or "")
@@ -1608,6 +1652,7 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         and transcript_preserved
         and intent_preserved
         and hypothesis_attached
+        and single_bundle_observed
         and not promoted,
         "unpromoted_hypothesis_smoke_ok": request is not None
         and update_event is not None
@@ -1615,8 +1660,15 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         and transcript_preserved
         and intent_preserved
         and hypothesis_attached
+        and single_bundle_observed
         and not promoted,
         "unpromoted_hypothesis_job_id": queued_job_id,
+        "unpromoted_hypothesis_evidence_bundle_id": request_bundle_id,
+        "unpromoted_hypothesis_single_bundle_observed": single_bundle_observed,
+        "unpromoted_hypothesis_status_bundle_status": str(status_bundle.get("status") or ""),
+        "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count": int(
+            status_bundle.get("transcript_hypotheses_count") or 0
+        ),
         "unpromoted_hypothesis_source": hypothesis.get("source", ""),
         "unpromoted_hypothesis_authority": hypothesis.get("authority", ""),
         "unpromoted_hypothesis_text": hypothesis.get("text", ""),
@@ -2667,6 +2719,21 @@ async def run_smoke() -> dict[str, Any]:
         "external_frontend_evidence_bundle_propagated": external_frontend_bridge_smoke[
             "external_frontend_evidence_bundle_propagated"
         ],
+        "external_frontend_evidence_bundle_id": external_frontend_bridge_smoke[
+            "external_frontend_evidence_bundle_id"
+        ],
+        "external_frontend_evidence_bundle_id_stable": external_frontend_bridge_smoke[
+            "external_frontend_evidence_bundle_id_stable"
+        ],
+        "external_frontend_evidence_bundle_single_turn": external_frontend_bridge_smoke[
+            "external_frontend_evidence_bundle_single_turn"
+        ],
+        "external_frontend_evidence_bundle_status": external_frontend_bridge_smoke[
+            "external_frontend_evidence_bundle_status"
+        ],
+        "external_frontend_evidence_bundle_transcript_hypotheses_count": external_frontend_bridge_smoke[
+            "external_frontend_evidence_bundle_transcript_hypotheses_count"
+        ],
         "external_frontend_audio_segment_ref": external_frontend_bridge_smoke[
             "external_frontend_audio_segment_ref"
         ],
@@ -2696,6 +2763,18 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "unpromoted_hypothesis_smoke_ok": unpromoted_hypothesis_smoke["ok"],
         "unpromoted_hypothesis_job_id": unpromoted_hypothesis_smoke["unpromoted_hypothesis_job_id"],
+        "unpromoted_hypothesis_evidence_bundle_id": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_evidence_bundle_id"
+        ],
+        "unpromoted_hypothesis_single_bundle_observed": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_single_bundle_observed"
+        ],
+        "unpromoted_hypothesis_status_bundle_status": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_status_bundle_status"
+        ],
+        "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count"
+        ],
         "unpromoted_hypothesis_source": unpromoted_hypothesis_smoke["unpromoted_hypothesis_source"],
         "unpromoted_hypothesis_authority": unpromoted_hypothesis_smoke["unpromoted_hypothesis_authority"],
         "unpromoted_hypothesis_text": unpromoted_hypothesis_smoke["unpromoted_hypothesis_text"],
