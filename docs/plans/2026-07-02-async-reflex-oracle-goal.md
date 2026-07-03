@@ -246,6 +246,15 @@ Headless acceptance requires `runtime_kame_action_gate_enforced` to prove both
 paths: hypothesis-only approvals fail closed, and consumed promoted interpreter
 evidence plus `tool_disclosure_ref = "tool_disclosure"` passes.
 
+Runtime packet rule: the async scheduler must treat raw audio plus
+Moshi/OpenClaw/VoiceClaw/classic-ASR text as one interpreter evidence packet,
+not competing work. The merge key is `turn_id + audio_segment_ref`; transcript
+entries are append-only hypotheses until a trusted interpreter or oracle source
+promotes them. If a hypothesis arrives before the audio cut, hold it on the
+pending packet. If it arrives after the interpreter request starts, attach it as
+late evidence on the same packet. It must never create a duplicate oracle job,
+durable transcript, or approval-capable action record by itself.
+
 2026-07-04 amendment: the headless action-gate proof must also include a
 degraded text-only frontend path. A VoiceClaw/OpenClaw/Moshi bridge that can
 send only witness text remains useful for audit and clarification, but it must

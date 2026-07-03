@@ -365,6 +365,14 @@ the same raw-audio interpreter bundle. None of those names permits transcript
 only scheduling, durable user text, spend reasons, phone payloads, or tool
 arguments without interpreter/oracle promotion.
 
+Confirmed packet rule for the hackathon build: the demo should show one spoken
+request producing one KAME evidence bundle. If Moshi/OpenClaw/VoiceClaw-style
+text exists, it is shown as frontend witness context beside the raw voice clip,
+not as the message Hermes acted on. The safe story for judges is: the reflex
+answers quickly, Gemma compares raw audio and witness text, then Hermes' active
+`/model` receives only promoted wording plus labeled evidence before Stripe,
+NemoClaw, phone, memory, file, or messaging actions can proceed.
+
 ### Interpreter
 
 The interpreter is the audio-understanding evidence lane. Gemma 4 is the

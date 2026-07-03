@@ -130,6 +130,26 @@ belongs in the interpreter prompt. The oracle prompt should receive promoted
 wording and labeled evidence, not raw witness text masquerading as verified
 user speech.
 
+2026-07-04 confirmed packet contract: when a Moshi/OpenClaw/VoiceClaw-style
+frontend can provide both waveform and transcript-looking text, Hermes should
+send both to the interpreter in one request. The transcript-looking text is
+`frontend_witness_hypothesis` unless the adapter can prove a narrower source
+label. The interpreter packet must carry:
+
+- one `turn_id`
+- one `audio_segment_ref` for the clipped waveform
+- VAD/energy timing and speaker/channel metadata
+- reflex route and acknowledgement already spoken
+- zero or more transcript hypotheses with source, timing, confidence when
+  available, partial/final state, and `authority = "hypothesis"`
+
+This packet is the only normal merge point. It is valid for the reflex to use a
+witness transcript for local narration, but invalid for that transcript to
+create a second Hermes user turn, patch `oracle_text`, or satisfy any action
+approval before interpreter/oracle promotion. When raw audio is missing, the
+same adapter may still submit a degraded compatibility request, but the request
+must be labeled text-only and cannot count as full KAME readiness.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
