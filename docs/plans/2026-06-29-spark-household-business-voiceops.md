@@ -325,6 +325,16 @@ hackathon demo because a misheard service name, dollar amount, phone number, or
 approval phrase must be shown as a rejected or corrected hypothesis before any
 Stripe/NemoClaw/phone action becomes eligible.
 
+Current naming rule: call ambiguous Moshi/open-S2S text a
+`frontend_witness_hypothesis`, not authoritative STT. If the adapter knows the
+text came from the live reflex model, use `reflex_transcript_hypothesis`; if it
+knows the text came from a separate caption/S2S side channel, use
+`s2s_transcript_hypothesis`. If it cannot tell, preserve the text as
+`frontend_witness_hypothesis` with `authority = "hypothesis"` and attach it to
+the same raw-audio interpreter bundle. None of those names permits transcript
+only scheduling, durable user text, spend reasons, phone payloads, or tool
+arguments without interpreter/oracle promotion.
+
 ### Interpreter
 
 The interpreter is the audio-understanding evidence lane. Gemma 4 is the
@@ -339,6 +349,8 @@ Target inputs:
 - speaker metadata and channel/transport metadata
 - reflex transcript hypothesis, if the reflex produced one
 - Moshi/S2S transcript hypothesis, if the reflex stack produced one
+- frontend witness transcript hypothesis, if the adapter has STT-like text but
+  cannot confidently identify whether it came from the reflex or a side channel
 - optional classic ASR transcript hypothesis
 - reflex route, acknowledgement, and "interface already said" text
 - current oracle job/status context

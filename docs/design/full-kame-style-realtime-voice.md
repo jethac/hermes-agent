@@ -88,6 +88,14 @@ decision that allowed the action. If only transcript hypotheses are available,
 Hermes may ask a clarification or prepare a draft, but it must not execute,
 approve, or claim readiness for irreversible work.
 
+2026-07-04 frontend-witness amendment: when a Moshi/open-S2S frontend exposes
+an "STT" string, Hermes should classify it as a frontend witness transcript, not
+as a dedicated ASR result. The preferred packet is raw audio plus witness text in
+one interpreter request. The witness text gives Gemma a compact view of what
+the realtime interface believed it heard, while the waveform remains the
+primary evidence. This does not add a fourth agent, does not require classic
+ASR, and does not allow transcript-only scheduling when raw audio is available.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
@@ -197,6 +205,7 @@ input must keep provenance until a later layer promotes it.
 | `reflex_intent` | live reflex | routing, immediate acknowledgement, oracle-job creation | provisional routing |
 | `reflex_transcript_hypothesis` | live reflex | early clue for Gemma/oracle, user-visible rough caption when desired | hypothesis only |
 | `s2s_transcript_hypothesis` | Moshi/VoiceClaw/OpenClaw-style frontend | what the realtime voice model thought it heard | hypothesis only |
+| `frontend_witness_hypothesis` | any S2S/reflex frontend exposing STT-like text | umbrella label for "what the frontend believed it heard" when the exact producer is ambiguous | hypothesis only |
 | `classic_asr_hypothesis` | dedicated ASR fallback/evidence lane | literal wording comparison, captions, diagnostics | optional hypothesis |
 | `interpreter_corrected_transcript` | Gemma-style interpreter | durable user request candidate and tool-critical wording | first promoted transcript |
 | `oracle_text` / final result | Hermes active `/model` | tool use, memory, files, spend, calls, durable outcome | action authority after policy checks |
@@ -325,6 +334,12 @@ still store it as `s2s_transcript_hypothesis` or
 reflex itself or a distinct transcript output. The name can appear in `source`;
 the authority stays `reflex_hypothesis` or `auxiliary_hypothesis`.
 
+If the adapter cannot confidently tell whether the string came from the reflex
+model itself or from a sibling caption output, it should use
+`frontend_witness_hypothesis`. That is still a hypothesis and still attaches to
+the raw-audio bundle. It is deliberately safer than guessing `classic_asr` or
+promoting the text to a user turn.
+
 The interpreter prompt should receive the bundle in three sections:
 
 1. Primary audio: `audio_segment_ref`, timing, VAD/energy metadata, speaker, and
@@ -448,8 +463,11 @@ should handle it as:
    channel from the same frontend.
 3. `classic_asr_hypothesis` only for a dedicated ASR provider used for fallback,
    diagnostics, captions, or literal wording checks.
+4. `frontend_witness_hypothesis` when an adapter has frontend text but cannot
+   distinguish whether it came from the reflex model or an adjacent S2S caption
+   component.
 
-All three fields are context for the interpreter. They are allowed to improve
+All four fields are context for the interpreter. They are allowed to improve
 Gemma's correction, entity extraction, language notes, and oracle request patch.
 They are not allowed to:
 

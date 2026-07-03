@@ -178,6 +178,15 @@ interpreter. It must attach to the same raw-audio turn and must never create a
 parallel user turn, delay the reflex acknowledgement, or patch queued oracle text
 unless a trusted interpreter source or later oracle judgment promotes it.
 
+2026-07-04 naming rule: ambiguous STT-like text from Moshi, OpenClaw,
+VoiceClaw, or another open-S2S frontend should be stored as
+`frontend_witness_hypothesis` when the adapter cannot prove whether it came from
+the reflex model itself or from a sibling caption/ASR side channel. That name is
+intentionally non-authoritative. It means "what the realtime frontend believed
+it heard," and it is valid only as interpreter context beside the raw audio.
+It must not create transcript-only oracle scheduling, durable user history, or
+tool/payment/phone arguments.
+
 Witness-context rule: treat Moshi/OpenClaw/VoiceClaw transcript text as what the
 realtime frontend believed it heard. It should be preserved because Gemma can
 use it to compare against the waveform, recover clipped starts, catch
