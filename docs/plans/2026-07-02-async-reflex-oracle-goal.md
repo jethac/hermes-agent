@@ -75,6 +75,14 @@ raw-audio interpretation. If it arrives late, the oracle job records it as late
 evidence and may use it only before irreversible tool, spend, memory, or file
 actions.
 
+2026-07-03 amendment: model this as evidence-bundle KAME. A Moshi/open-S2S
+transcript is allowed to accompany the raw audio, and should be preserved when
+available, but it is never the scheduler or durable user text by itself. Gemma
+is the non-blocking interpreter/evidence adjudicator, not a mandatory ASR gate.
+It consumes the clipped waveform, reflex route, spoken acknowledgement,
+speaker/timing metadata, and any transcript hypotheses, then promotes corrected
+wording only when confidence and provenance justify it.
+
 This means the architecture is three-tier, but not three independent
 conversations. The reflex owns live floor control, the Gemma-style interpreter
 adjudicates the cut waveform and may promote a corrected transcript candidate,
@@ -89,6 +97,12 @@ The evidence bundle must preserve provenance:
 - Moshi/S2S transcript: auxiliary hypothesis
 - classic ASR transcript: optional fallback or comparison hypothesis
 - interpreter correction: first durable transcript candidate
+
+Each field must also carry an explicit authority label in logs and durable job
+records. The minimum labels are `primary_audio`, `reflex_hypothesis`,
+`auxiliary_hypothesis`, `interpreter_promoted`, `oracle_promoted`, and
+`diagnostic_only`. A field can be useful before it is authoritative; it just
+cannot be replayed later as if the user verified it.
 
 The oracle may see all of those fields, but only after they are labeled. It must
 never receive a Moshi or ASR transcript as if it were the user's verified

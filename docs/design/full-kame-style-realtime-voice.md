@@ -18,6 +18,15 @@ may collect transcript text opportunistically, but the unit of work remains one
 speech cut with raw audio as primary evidence, plus whatever labeled hypotheses
 were available before or after the cut.
 
+2026-07-03 amendment: the design is now explicitly evidence-bundle KAME. The
+fast reflex may be Moshi/open-S2S-like and may produce an STT-looking text
+string, but that text is not "the transcript" for Hermes. It is a hypothesis
+attached to the same interpreter bundle as the clipped waveform, reflex route,
+spoken acknowledgement, timing metadata, speaker metadata, and optional classic
+ASR output. Gemma-style raw-audio interpretation is the promotion step for
+durable wording. Hermes' active `/model` remains the only oracle and action
+brain.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
@@ -74,6 +83,14 @@ Gemma is the interpreter after the cut: it receives the waveform and any
 transcript-like side channels, then decides what wording is safe to offer to the
 oracle. This keeps the voice loop immediate without pretending an early
 transcript is ground truth.
+
+The practical shape is therefore allowed to look "parallel" inside the evidence
+bundle without becoming STT-first. A Moshi/open-S2S frontend can speak quickly
+and emit a rough transcript. A classic ASR fallback can produce literal text for
+captions or diagnostics. Gemma can consume both, plus the raw audio, as context.
+Only the interpreter/oracle promotion result may become durable user text,
+Stripe/NemoClaw spend rationale, phone-call payload, memory, file content, or
+tool argument.
 
 ## Signal Authority Rules
 
@@ -227,6 +244,15 @@ along with raw voice?" question: yes, that is exactly the desired packet shape.
 The raw voice clip and timing metadata are the primary interpreter evidence;
 Moshi/open-S2S text is a labeled clue that Gemma may accept, correct, or reject.
 
+This also resolves the "fast reflex plus Gemma multilingual ASR" shape. Gemma is
+not merely a background ASR process and should not block acknowledgement. It is
+the interpreter that sees the clipped waveform and the evidence bundle after the
+reflex has already handled floor control. When Gemma emits a corrected
+transcript, language note, number/name correction, or tool-critical entity, that
+output can update a queued oracle job or become an audited late correction. The
+classic ASR lane remains optional because it is a comparison/fallback source,
+not a prerequisite for routing.
+
 Implementation-wise, this should be modeled as transcript evidence attaching to
 the current `turn_id` / `audio_segment_ref`, not as a parallel STT conversation.
 The adapter can emit transcript evidence before the raw clip is finalized, with
@@ -249,6 +275,13 @@ job envelope with explicit evidence fields:
   when available, and `authority = "hypothesis"`
 - `frontend_session_id`, `frontend_turn_id`, and `tool_call_id` for correlation,
   cancellation, and terminal result delivery
+
+Every evidence field should also carry an authority label. The minimum labels
+are `primary_audio`, `reflex_hypothesis`, `auxiliary_hypothesis`,
+`interpreter_promoted`, `oracle_promoted`, and `diagnostic_only`. The scheduler
+may use provisional reflex intent to queue or narrate work, but durable replay
+must make clear which fields were hypotheses and which field actually drove the
+oracle/tool action.
 
 If an external frontend can provide only text and no replayable audio reference,
 Hermes may still run it through the compatibility path, but that turn is degraded

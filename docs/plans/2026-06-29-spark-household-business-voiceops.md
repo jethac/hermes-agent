@@ -95,6 +95,11 @@ Target KAME layout:
   pretend that a Moshi/open-S2S transcript is equivalent to Gemma raw-audio
   interpretation. The interpreter bundle is where raw voice and transcript-like
   side channels are compared.
+- Evidence-bundle rule: a Moshi/open-S2S transcript can and should be provided
+  to Gemma alongside raw voice when available, but it is context, not control.
+  Gemma's role is interpreter/evidence adjudicator, not a blocking ASR service.
+  The reflex may queue/narrate work from provisional intent, while durable user
+  wording and tool-critical fields require interpreter or oracle promotion.
 - Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
 The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.
@@ -209,6 +214,13 @@ This is the core KAME rule for VoiceOps: the live voice model may speak and
 route, the interpreter may promote evidence, and Hermes' active oracle may act.
 No transcript hypothesis from Moshi, VoiceClaw/OpenClaw, or classic ASR should
 skip the interpreter merge point and become durable user text on its own.
+
+For implementation and demo language, avoid calling the Moshi output "the STT
+result" unless the authority label is visible. It is better described as "what
+the reflex believed it heard." That makes it safe and useful context for Gemma:
+Gemma can recover clipped prefixes, compare code-switched wording, or reject a
+hallucinated command while the user still gets the fast acknowledgement from the
+reflex.
 
 ### Interpreter
 

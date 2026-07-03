@@ -80,6 +80,15 @@ audio is primary interpreter evidence, Moshi/S2S and ASR text are labeled
 hypotheses, and only interpreter/oracle judgment can promote wording into a
 durable user request or tool-critical argument.
 
+The current implementation target should be described as evidence-bundle KAME,
+not "Moshi STT" and not "Gemma ASR." The user-facing reflex is allowed to be an
+open S2S model that responds quickly and emits transcript-looking text, but that
+text remains a reflex or auxiliary hypothesis. Gemma is the post-cut
+interpreter: it reads the clipped waveform, speaker/timing metadata, the reflex
+route, the acknowledgement already spoken, and any Moshi/open-S2S or classic ASR
+hypotheses. It promotes only the evidence that is safe to hand to Hermes'
+active `/model`.
+
 For the demo narrative, this is an advantage rather than a complication: Hermes
 can acknowledge quickly from the reflex, then show the judges a safer evidence
 trail before spending money or placing a call. If a transcript side channel
@@ -171,6 +180,10 @@ system heard the user.
   driver. Moshi transcript output is also a hypothesis, not durable truth, but
   it should be valuable context for Gemma when paired with the raw voice clip in
   the same evidence bundle.
+- Gemma's role should be called interpreter or evidence adjudicator, not
+  background ASR. A corrected transcript from Gemma can become durable only when
+  it is promoted with provenance and confidence; otherwise it remains evidence
+  attached to the voice-session audit trail.
 - The demo should not claim "ASR proved the command." The stronger claim is:
   raw audio, reflex hypothesis, optional Moshi/ASR hypotheses, and Gemma
   correction were preserved separately before any Stripe/NemoClaw/phone action
