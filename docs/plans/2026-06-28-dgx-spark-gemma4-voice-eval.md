@@ -54,6 +54,14 @@ the reflex believed it heard, but it must be measured as hypothesis evidence
 beside the clipped waveform. Classic ASR is the same class of optional evidence
 unless the system has fallen back to a text-only voice mode.
 
+The evaluation should explicitly test the "Moshi transcript as context" shape:
+for each candidate frontend that emits text, capture the raw audio segment,
+Moshi/open-S2S transcript hypothesis, reflex route, acknowledgement text, and
+Gemma interpreter output in one bundle. Score the run by whether Gemma can use
+the hypothesis without being captured by it. A frontend that only provides text
+can be useful compatibility evidence, but it should not pass the full KAME
+raw-audio interpreter gate.
+
 ## Headless Runner
 
 The repo-side unattended runner is:
@@ -298,6 +306,13 @@ ready to Gemma evidence, transcript-hypothesis arrival, and oracle job
 accepted/started/completed. A passing ASR latency number does not prove KAME
 readiness unless the raw-audio interpreter path and reflex acknowledgement path
 also pass.
+
+Track C should also record transcript-hypothesis usefulness, not just
+transcript speed. The report should mark whether Moshi/open-S2S text helped the
+Gemma interpreter recover a clipped prefix, name, number, code-switched phrase,
+or intent, and whether Gemma rejected any hallucinated or wrong-speaker text.
+That measurement is the point of carrying Moshi text beside raw voice instead
+of treating it as the canonical user request.
 
 Headless variables:
 

@@ -96,6 +96,13 @@ attach to that bundle with source and authority labels. A field called "Moshi
 STT" is still stored as a hypothesis: useful context for Gemma, not the user
 message of record.
 
+That means the demo should not present Moshi as "the ASR layer." It should
+present Moshi/open-S2S text as the reflex's hearing hypothesis. The stronger
+story is that Hermes can keep the voice loop fast, preserve what the realtime
+frontend thought it heard, and still require Gemma/interpreter or oracle
+promotion before money, credentials, outbound calls, files, memory, or durable
+chat history depend on that wording.
+
 For the demo narrative, this is an advantage rather than a complication: Hermes
 can acknowledge quickly from the reflex, then show the judges a safer evidence
 trail before spending money or placing a call. If a transcript side channel
@@ -215,5 +222,8 @@ system heard the user.
 7. Implement the external frontend/interpreter evidence adapter so raw audio,
    reflex intent, Moshi/S2S transcript hypotheses, classic ASR hypotheses, and
    correlation ids remain separate through oracle-job creation.
-8. Implement the phone call handoff with context transfer from the Discord session.
-9. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.
+8. Add measurement for whether Moshi/open-S2S hypotheses helped or hurt Gemma's
+   interpreter output, including clipped prefixes, names, numbers, and rejected
+   hallucinated commands.
+9. Implement the phone call handoff with context transfer from the Discord session.
+10. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.

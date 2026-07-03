@@ -39,6 +39,16 @@ the oracle. This keeps the fast reflex from waiting on STT while still giving
 Gemma useful hints about names, numbers, clipped prefixes, code-switching, and
 hallucinated commands.
 
+2026-07-03 Moshi-context amendment: a Moshi "STT" string is acceptable and
+useful only as context for the interpreter. Treat it as what the live
+frontend/reflex believed it heard, not as the user message. The normal packet is
+still raw voice first: clipped waveform, timing, speaker/channel metadata,
+reflex route, spoken acknowledgement, then transcript hypotheses including
+Moshi/open-S2S text when available. Gemma may use that text to improve
+multilingual interpretation or recover clipped prefixes, but it must be able to
+reject the text when the waveform, energy gate, speaker identity, or later
+context disagrees.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
@@ -153,6 +163,18 @@ If the reflex has enough signal to acknowledge or create a background oracle
 job, it should do so immediately. The interpreter can attach corrected evidence
 before the job starts, or as a bounded late update before irreversible spend,
 provisioning, message, memory, file, or call actions rely on the earlier text.
+
+The frontend transcript adapter should therefore be boring and strict:
+
+- attach Moshi/open-S2S text to the current interpreter bundle by `turn_id` and
+  `audio_segment_ref`
+- label it as `authority = "hypothesis"` with source, timing, confidence, and
+  partial/final state when available
+- never schedule an oracle job from that text alone when raw audio exists
+- never overwrite `oracle_text`, durable transcript, spend reason, call text,
+  memory text, or file content without interpreter or oracle promotion
+- keep the original raw-audio reference available for replay, disagreement
+  checks, and later audit
 
 Moshi/VoiceClaw/OpenClaw transcript output is especially valuable because it
 describes what the live interface model thought it heard at the moment it

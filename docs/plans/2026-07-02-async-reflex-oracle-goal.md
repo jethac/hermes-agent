@@ -154,6 +154,15 @@ the interpreter request, but neither should delay acknowledgement, create a
 second oracle request, or be treated as the user's durable message before
 interpreter/oracle promotion.
 
+Moshi-context corollary: if the live S2S/frontend emits a transcript-looking
+field, Hermes should preserve it because it is useful evidence about what the
+reflex believed it heard. That evidence must be attached to the same raw-audio
+interpreter bundle, not routed as a second user turn. The interpreter receives
+the waveform and the Moshi hypothesis together, then decides whether to accept,
+correct, reject, or downgrade the text to diagnostic-only evidence. This lets a
+fast reflex remain useful without turning Moshi into the durable transcript
+authority.
+
 The oracle is the worker. It owns:
 
 - tool execution

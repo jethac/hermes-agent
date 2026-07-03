@@ -117,6 +117,12 @@ Target KAME layout:
   Gemma's role is interpreter/evidence adjudicator, not a blocking ASR service.
   The reflex may queue/narrate work from provisional intent, while durable user
   wording and tool-critical fields require interpreter or oracle promotion.
+- Moshi-context rule: if a frontend exposes "Moshi STT" or another
+  transcript-looking field, store the vendor name as source metadata and store
+  the text as a hypothesis attached to the same raw-audio bundle. Do not fork a
+  second Hermes turn, do not overwrite the raw-audio route, and do not let that
+  text become a spend reason, phone-call payload, memory entry, file write, or
+  durable chat message unless Gemma or the active Hermes oracle promotes it.
 - Task-state rule: the reflex needs a compact job-status projection with safe
   capacity counts, job ids, states, priorities, and ordinal-friendly spoken
   labels. It must name at least the first four active oracle jobs and a queued
@@ -264,6 +270,13 @@ the reflex believed it heard." That makes it safe and useful context for Gemma:
 Gemma can recover clipped prefixes, compare code-switched wording, or reject a
 hallucinated command while the user still gets the fast acknowledgement from the
 reflex.
+
+The implementation target is therefore not "run Moshi STT, then ask Hermes."
+It is "keep raw voice as primary evidence, attach Moshi's transcript hypothesis,
+and ask the interpreter to adjudicate both." That distinction matters for the
+hackathon demo because a misheard service name, dollar amount, phone number, or
+approval phrase must be shown as a rejected or corrected hypothesis before any
+Stripe/NemoClaw/phone action becomes eligible.
 
 ### Interpreter
 
