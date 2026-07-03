@@ -9,16 +9,23 @@ description: "Product requirements for a KAME-inspired realtime voice subsystem 
 
 Hermes currently treats voice as a message convenience: record audio, transcribe a complete blob, submit the transcript as a normal user message, then synthesize the assistant's streamed text. That works for dictation and hands-free turns, but it is not a live conversation.
 
-This project adds a KAME-inspired realtime voice subsystem. The subsystem must support two engine families behind one session protocol:
+This project adds a KAME-inspired realtime voice subsystem behind one session
+protocol. The intended production architecture is three-tier:
 
-1. **Text oracle + streaming TTS**: a speech understanding frontend, a Hermes oracle backed by the configured Hermes model, and streaming text-to-speech output.
-2. **Native S2S + Hermes oracle**: a Moshi/KAME-style speech-to-speech frontend that receives asynchronous oracle hints from Hermes.
+1. **Reflex / floor-control tier**: a fast realtime voice frontend handles live
+   listening, barge-in, short acknowledgements, local clarification, and rough
+   transcript hypotheses.
+2. **Interpreter / evidence tier**: a Gemma 4 audio-multimodal model reviews
+   clipped raw audio plus labeled Moshi/S2S/STT transcript hypotheses and emits
+   corrected multilingual evidence, entities, confidence, and oracle request
+   patches.
+3. **Hermes oracle tier**: the active Hermes model selected through `/model`
+   owns tools, memory, MCP, files, approvals, durable transcript promotion, and
+   task execution.
 
-The production architecture has three deployment tiers behind the same desktop protocol:
-
-1. **Local/provider tier**: no special hardware; local or cloud-configured STT/TTS providers drive the text-oracle path.
-2. **Gemma/vLLM audio tier**: a LAN or local sidecar hosts Gemma 4 E4B-IT audio understanding for higher-quality speech frontend behavior.
-3. **Native S2S tier**: a speech-to-speech sidecar emits low-latency audio directly while receiving Hermes oracle/tool hints.
+Portable STT/TTS providers remain supported as fallback, diagnostics, and
+bring-up baselines. They must not be treated as the primary full-KAME control
+path when the reflex and interpreter are healthy.
 
 ## Production-Readiness Ladder
 
@@ -28,8 +35,8 @@ Realtime voice should ship in visible tiers instead of as a single "done" switch
 1. **Portable desktop path**: desktop streams microphone frames to Hermes, Hermes owns session state, barge-in, permissions, durable transcript boundaries, and fallback to one-shot voice. This tier must not require local audio-model hardware.
 2. **External text-oracle sidecar path**: a loopback, LAN, or provider-backed sidecar supplies STT/audio understanding plus TTS. If the sidecar reports `streaming_stt: true` and `tts: true`, Hermes can treat it as live-like for text-oracle conversation. If it only has utterance STT, it is useful but not Gemini Live-style yet.
 3. **Gemma/interpreter LLM path**: Gemma 4 E2B/E4B/12B, or a similar audio-capable frontend model, can run inside the sidecar as an interpreter over clipped raw audio plus provenance-labeled transcript hypotheses. Gemma is not the Hermes oracle; the backend oracle remains whatever Hermes is configured to use for memory, files, tools, MCP, approvals, and profile behavior.
-4. **Native S2S/reflex path**: a sidecar speaks directly in a speech-to-speech loop and submits asynchronous oracle jobs to Hermes through a narrow `ask_brain`/`interface.oracle.request` bridge. This is the best long-term path for prosody and interruption feel, but it is not required for a first English/Japanese private alpha if the streaming text-oracle path meets the evidence gates.
-5. **Gemini Live-style production quality**: requires `voice.realtime.production_evidence_report` to point at at least three verified EN/JA smoke report runs by default and `voice.realtime.production_review_report` to point at an evidence-backed launch-review JSON report. The combined gate covers repeatable latency evidence, full audio-session evidence from fixture audio through STT, Hermes oracle text, and TTS, interruption reliability, multilingual metadata preservation, desktop reconnect recovery, graceful fallback, security review, and enough real conversation testing to prove the experience remains coherent under noise, remote sidecar latency, TTS/provider failure, and tool-using Hermes answers.
+4. **Native S2S/reflex path**: a sidecar speaks directly in a speech-to-speech loop and submits asynchronous oracle jobs to Hermes through a narrow `ask_brain`/`interface.oracle.request` bridge. This is the best long-term path for prosody and interruption feel. The portable text-oracle path remains a fallback and compatibility tier, not the final KAME architecture.
+5. **Gemini Live-style production quality**: requires `voice.realtime.production_evidence_report` to point at at least three verified EN/JA smoke report runs by default and `voice.realtime.production_review_report` to point at an evidence-backed launch-review JSON report. The combined gate covers repeatable latency evidence, full audio-session evidence from fixture audio through reflex/interpreter evidence, Hermes oracle text, and TTS, interruption reliability, multilingual metadata preservation, desktop reconnect recovery, graceful fallback, security review, and enough real conversation testing to prove the experience remains coherent under noise, remote sidecar latency, TTS/provider failure, and tool-using Hermes answers. Fallback STT evidence may satisfy fallback coverage only when labeled as fallback.
 
 The ladder is intentionally hardware-neutral. A developer may use a large local inference workstation, a small desktop with cloud STT/TTS, a LAN model server, or a hosted provider, but the product contract is capabilities and evidence: preflight status, sidecar health, live-like `conversation_quality`, evidence-backed `production_readiness`, latency targets, English/Japanese fixture reports, launch-review checks, and safe fallback behavior.
 
@@ -78,36 +85,42 @@ Desktop mic stream
 
 The desktop talks only to Hermes' realtime websocket. Voice inference may run in-process, in a supervised loopback sidecar, on another LAN machine, or through a provider endpoint. The backend decides which engine/sidecar to use from profile config; the desktop protocol does not change.
 
-### Text Oracle + Streaming TTS
+### KAME Reflex + Interpreter + Hermes Oracle
 
 ```text
 mic audio
-  -> speech understanding frontend
-       Gemma audio input, streaming STT, Whisper, or provider STT
-  -> frontend state
-       partial transcript, final transcript, intent, confidence, barge-in
-  -> Hermes oracle
-       configured Hermes model
+  -> realtime reflex / floor-control frontend
+       VAD, barge-in, acknowledgement, local clarification
+       rough transcript hypothesis when available
+  -> Gemma interpreter evidence bundle
+       clipped raw audio
+       reflex/Moshi transcript hypothesis
+       optional STT hypothesis for fallback or literal-evidence checks
+       corrected transcript candidate, entities, confidence, disagreements
+  -> Hermes oracle job
+       active Hermes /model
        memory, files, MCP, tools, profile config, approvals
   -> speech planner
-       decides when text is stable enough to speak
+       sentence-level chunks, reasoning/tool trace suppression, commit policy
   -> streaming TTS
   -> audio output
 ```
 
-### Native S2S + Hermes Oracle
+### Portable STT/TTS Fallback
 
 ```text
 mic audio
-  -> native S2S frontend
-       starts speaking in acoustic-token space
-       receives oracle hints from Hermes
-  -> speech audio
-
-Hermes oracle
-  -> asynchronous guidance stream
-       facts, task intent, tool results, correction hints, stop/wait hints
+  -> streaming STT or provider speech understanding
+  -> Hermes oracle
+       active Hermes /model
+  -> streaming TTS
+  -> audio output
 ```
+
+This fallback exists so realtime voice can run on machines without local
+audio-model capacity and so providers can be benchmarked. In full KAME mode,
+STT output is hypothesis evidence for the interpreter/oracle, not the reflex
+driver.
 
 ## Product Requirements
 
@@ -139,7 +152,7 @@ Hermes oracle
 
 ### Language and Locale
 
-- English and Japanese are the initial production quality targets. Acceptance testing must cover English and Japanese speech input, one-session audio -> STT -> Hermes text -> TTS evidence, assistant captions, barge-in behavior, and spoken output before realtime voice is considered ready for general release.
+- English and Japanese are the initial production quality targets. Acceptance testing must cover English and Japanese speech input, one-session raw-audio -> reflex/interpreter evidence -> Hermes oracle -> TTS evidence, assistant captions, barge-in behavior, and spoken output before realtime voice is considered ready for general release. Fallback STT/TTS runs should be tested separately and labeled as fallback evidence.
 - Other languages are best-effort and provider-driven. Hermes must not reject clean language metadata, silently translate to English, or require EN/JA-only language tags just because the first rollout is optimized for English and Japanese.
 - Language selection is provider/config driven, not hardcoded in the realtime protocol.
 - The desktop UI language is not automatically the speech language. Use explicit voice/STT config, provider auto-detection, or per-session metadata.
@@ -212,11 +225,12 @@ Hermes oracle
 1. Add inert protocol types and docs.
 2. Add websocket session endpoint behind a config flag.
 3. Implement desktop audio frame streaming behind a feature flag.
-4. Implement text-oracle engine with streaming STT and streaming TTS.
-5. Add reference sidecar adapter for local/provider STT and TTS.
+4. Implement portable STT/TTS fallback with explicit degraded-state reporting.
+5. Add reference sidecar adapter for local/provider fallback STT and TTS.
 6. Add managed loopback sidecar lifecycle for local/Gemma/vLLM frontends.
-7. Add remote inference sidecar adapter for Gemma/vLLM audio frontend and TTS.
-8. Keep native S2S as a first-class engine path behind the same protocol.
+7. Add the KAME reflex path and typed asynchronous oracle jobs.
+8. Add Gemma interpreter evidence bundles over raw audio plus labeled transcript hypotheses.
+9. Keep native S2S/reflex as a first-class frontend path behind the same protocol.
 
 ## Open Questions
 

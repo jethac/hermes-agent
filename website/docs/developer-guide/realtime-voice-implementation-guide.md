@@ -486,7 +486,10 @@ The session owns persistence. Engines produce events; the session decides which 
 
 ## Hermes Oracle Adapter
 
-The oracle is not Gemma by definition. It is a Hermes adapter that calls the configured Hermes model unless the session explicitly overrides it.
+The oracle is not Gemma by definition. It is a Hermes adapter that calls the
+active Hermes model selected through normal `/model` and provider
+configuration. Realtime voice must not introduce a separate `oracle_model`
+selector.
 
 Responsibilities:
 
@@ -502,7 +505,7 @@ Partial transcript policy:
 - Read-only tools may be allowed after a stability threshold.
 - Write, shell, browser, messaging, and external side-effect tools require final transcript or confirmation.
 
-## Text Oracle + Streaming TTS Engine
+## Portable Text Oracle + Streaming TTS Fallback
 
 Pipeline:
 
@@ -516,6 +519,12 @@ receive audio chunk
 ```
 
 The text-oracle engine starts TTS at stable sentence or phrase boundaries instead of waiting for the full response. Prefer punctuation boundaries, including common non-ASCII sentence and phrase delimiters, and only use whitespace splits as a fallback. This lets the local/provider tier improve first-audio latency without assuming English text or a native S2S model.
+
+This engine remains important for bring-up, machines without audio-model
+capacity, provider comparison, and failover. It is not the full KAME path. In
+full KAME mode, live floor control belongs to the reflex, Gemma-style
+interpreter evidence receives raw audio plus labeled transcript hypotheses, and
+STT text is optional hypothesis evidence rather than the normal reflex driver.
 
 Do not make English the hidden default. The speech-understanding sidecar prompt must ask the model to preserve the speaker's language and script unless the user explicitly asks for translation. `transcript.partial`, `transcript.final`, `assistant.text.partial`, and `assistant.commit` payloads may carry optional `language`, `locale`, and `script` metadata, but downstream logic must not require it. The planner and chunker should work for languages without spaces between words and for punctuation such as `。`, `！？`, `؟`, `।`, `、`, `，`, `،`, and `；`.
 

@@ -69,14 +69,14 @@ The previous Gemma 12B + Nemotron Nano mixture-of-agents path is no longer the
 live demo strategy. It added too much orchestration latency to voice turns and
 made response timing harder to reason about. The demo path is now tiered:
 the reflex acknowledges immediately, Gemma interprets the raw audio plus the
-reflex/Moshi transcript hypotheses in parallel, and Hermes' active model
-handles oracle work through the normal Hermes model path. Moshi/S2S or ASR
-transcript output is supporting evidence for Gemma and the oracle, not a
+reflex/Moshi transcript hypotheses without blocking the voice loop, and Hermes'
+active model handles oracle work through the normal Hermes model path. Moshi/S2S
+or ASR transcript output is supporting evidence for Gemma and the oracle, not a
 replacement for raw-audio interpretation. If the Moshi-style frontend emits a
 transcript, it should be attached to the same interpreter request as the clipped
 audio segment so Gemma can compare what the live reflex thought it heard against
-the waveform. The demo must keep those fields separate in logs and prompts:
-raw audio is primary interpreter evidence, Moshi/S2S and ASR text are labeled
+the waveform. The demo must keep those fields separate in logs and prompts: raw
+audio is primary interpreter evidence, Moshi/S2S and ASR text are labeled
 hypotheses, and only interpreter/oracle judgment can promote wording into a
 durable user request or tool-critical argument.
 

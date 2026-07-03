@@ -53,7 +53,7 @@ Target KAME layout:
   immediate acknowledgement, and rough transcript hypotheses. This model owns
   live floor control, not tool execution or durable transcript truth.
 - Interpreter/evidence: Gemma 4 E2B/E4B/12B-style audio-multimodal model,
-  run in parallel after each speech cut to adjudicate raw audio plus
+  run non-blocking after each speech cut to adjudicate raw audio plus
   reflex/Moshi transcript hypotheses into corrected transcript, multilingual
   intent, entities, confidence, and oracle request patches. Raw audio is the
   primary signal; Moshi/S2S and classic ASR transcripts are labeled hypotheses

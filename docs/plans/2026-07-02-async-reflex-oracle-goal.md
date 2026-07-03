@@ -12,11 +12,11 @@ successor_design: docs/design/full-kame-style-realtime-voice.md
 ## Summary
 
 The KAME voice branch has the right authority boundary: the human talks to a
-fast reflex/interface model, a parallel interpreter lane turns raw audio plus
-reflex/Moshi transcript hypotheses into corrected multilingual evidence, and
-Hermes' active oracle model owns real work: tools, memory, files, approvals,
-planning, and durable outcomes. Raw audio is the primary interpreter input;
-transcript hypotheses are optional context and fallback evidence.
+fast reflex/interface model, a non-blocking interpreter stage turns raw audio
+plus reflex/Moshi transcript hypotheses into corrected multilingual evidence,
+and Hermes' active oracle model owns real work: tools, memory, files,
+approvals, planning, and durable outcomes. Raw audio is the primary interpreter
+input; transcript hypotheses are optional context and fallback evidence.
 
 The next gap is runtime behavior. The reflex and oracle are not yet truly async.
 The user should be able to keep talking to the reflex while one or more oracle
@@ -68,6 +68,13 @@ oracle. A Moshi/S2S transcript, when available, is passed as hypothesis context
 inside the same evidence bundle as the raw audio. Classic ASR is retained for
 fallback, diagnostics, or literal wording checks, not as the normal reflex
 driver.
+
+This means the architecture is three-tier, but not three independent
+conversations. The reflex owns live floor control, the Gemma-style interpreter
+adjudicates the cut waveform and may promote a corrected transcript candidate,
+and Hermes' active `/model` oracle owns action. Moshi/S2S and classic ASR text
+are evidence fields inside the interpreter bundle, not separate prompts racing
+the oracle and not a required precondition for acknowledging the user.
 
 The evidence bundle must preserve provenance:
 
@@ -157,8 +164,11 @@ Minimum fields:
 - `priority`
 - `route`
 - `oracle_text`
+- `audio_segment_ref`
+- `audio_time_range_ms`
 - `reflex_intent`
 - `reflex_transcript_hypothesis`
+- `auxiliary_transcript_hypotheses`
 - `interpreter_corrected_transcript`
 - `interpreter_confidence`
 - `interpreter_entities`
@@ -254,8 +264,9 @@ The interpreter gets a different compact view: the current turn id, clipped
 audio reference, reflex hypothesis, optional Moshi/S2S transcript hypothesis,
 optional ASR hypothesis, active job id, and the acknowledgement already spoken.
 Those fields should arrive as one evidence bundle for the speech cut, not as
-independent prompts racing each other. The interpreter does not need tool
-schemas or broad Hermes state.
+independent prompts racing each other. The interpreter can perform the durable
+multilingual transcript adjudication from this bundle, but it is not the
+streaming endpointer and does not need tool schemas or broad Hermes state.
 
 ## Routing Behavior
 
