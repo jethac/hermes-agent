@@ -492,7 +492,8 @@ The interpreter needs a narrow job-manager operation:
 
 - attach corrected transcript, entities, confidence, disagreement flags, and
   transcript-hypothesis provenance to a job
-- patch queued oracle text before worker execution starts
+- patch queued oracle request text only from promoted interpreter evidence or
+  later oracle judgment; raw Moshi/S2S/ASR hypotheses remain evidence
 - mark running jobs with late evidence and expose whether it was consumed
 - never execute external side effects
 

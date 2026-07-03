@@ -135,7 +135,8 @@ system heard the user.
 ## Success Criteria
 
 - Discord voice join succeeds without fallback.
-- Hermes hears a live utterance and posts a usable transcript.
+- Hermes handles a live utterance through the reflex path and may post
+  provenance-labeled transcript/interpreter evidence when available.
 - Hermes gives a low-latency acknowledgement shortly after speech end.
 - Hermes does not claim it lacks voice capability.
 - Hermes replies in sentence-sized voice/text chunks.

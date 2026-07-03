@@ -1092,6 +1092,10 @@ def test_voice_operator_validation_accepts_current_async_acceptance_test_refs():
         in report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]["test_refs"]
     )
     assert (
+        "tests/agent/test_realtime_voice.py::test_kame_engine_merges_sequential_queued_transcript_hypotheses_before_start"
+        in report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]["test_refs"]
+    )
+    assert (
         "tests/agent/test_realtime_voice.py::test_session_client_interface_oracle_request_submits_external_kame_job"
         in report["async_oracle_acceptance"]["external_frontend_bridge_submits_oracle_job"]["test_refs"]
     )

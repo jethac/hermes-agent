@@ -423,7 +423,8 @@ Still remaining before this goal can be marked complete:
 4. Hermes connects the realtime sidecar or provider bridge.
 5. Hermes reports voice mode as realtime, not generic TTS.
 6. User speech is streamed as audio frames to the realtime session.
-7. Partial/final transcripts come from the realtime path.
+7. Realtime path emits audio/reflex events first; transcript partial/final
+   events are optional auxiliary evidence when enabled.
 8. Hermes emits a fast acknowledgement for work that will take more than a
    short moment.
 9. TTS/audio output is played through the mixer.
@@ -637,7 +638,8 @@ TTS delay.
 
 - First spoken acknowledgement can be emitted independently of final response.
 - Chunked TTS starts before full oracle answer completion in realtime mode.
-- Logs include time to first transcript, first assistant text, and first audio.
+- Logs include time to reflex acknowledgement, first assistant text/audio, and
+  optional transcript-hypothesis latency when enabled.
 
 ### U7. Improve `/voice status` and user-visible diagnostics
 
@@ -690,7 +692,8 @@ TTS delay.
   - mixer start result
   - sidecar start result
   - first input frame timestamp
-  - transcript partial/final latency
+  - optional transcript-hypothesis partial/final latency, labeled as
+    non-authoritative evidence
   - first audio output latency
   - TTS provider and duration
   - barge-in ack latency

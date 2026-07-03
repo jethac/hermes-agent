@@ -112,6 +112,9 @@ def _write_live_voice_evidence(root: Path) -> Path:
         "live_turn",
         {
             "kind": "live_turn",
+            "audio_segment_ref_observed": True,
+            "interpreter_evidence_observed": True,
+            "transcript_hypotheses_labeled": True,
             "transcript_observed": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,
@@ -730,6 +733,14 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         artifact.endswith("spark-operator-runbook.md")
         for artifact in next_actions[2]["expected_artifacts"]
     )
+    assert not any(
+        artifact.endswith("asr-nemotron-speech-raw.json")
+        for artifact in next_actions[2]["expected_artifacts"]
+    )
+    assert any(
+        artifact.endswith("asr-nemotron-speech-raw.json")
+        for artifact in next_actions[2]["optional_artifacts"]
+    )
     assert all("never include secret values" in action["secret_policy"] for action in next_actions)
     assert [phase["phase_id"] for phase in handoff["phases"]] == [
         "live_discord_voice",
@@ -831,7 +842,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--lint-evidence" in handoff["phases"][2]["commands"][0]
     assert handoff["phases"][2]["commands"][1] == "scripts/dgx_spark_gemma4_voice_eval.sh"
     assert "--refresh-source-hashes" in handoff["phases"][2]["commands"][2]
-    assert "asr-nemotron-speech-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
+    assert "KAME/reflex/interpreter/oracle/TTS evidence" in next_actions[2]["operator_step"]
+    assert "ASR is optional auxiliary transcript-hypothesis evidence" in next_actions[2]["operator_step"]
+    assert "asr-nemotron-speech-raw.json" not in json.dumps(handoff["phases"][2]["expected_artifacts"])
+    assert "asr-nemotron-speech-raw.json" in json.dumps(handoff["phases"][2]["optional_artifacts"])
     assert "tts-magpie-local-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
     assert "all-local-stack-smoke-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
     assert "loopback_smoke_bridge protocol smoke checks" in json.dumps(handoff["phases"][2]["must_not"])
@@ -1010,6 +1024,14 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "schema_version" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
     assert "source_artifact_sha256" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
     assert "source_artifact_sha256" in gates["local_spark_stack_matrix"]["required_stack_smoke_fields"]
+    assert gates["local_spark_stack_matrix"]["gate_ids"] == [
+        "reflex",
+        "interpreter",
+        "oracle",
+        "tts",
+        "all_local_stack_smoke",
+    ]
+    assert "asr" not in gates["local_spark_stack_matrix"]["gate_ids"]
     assert (
         gates["local_spark_stack_matrix"]["evidence_contract"]["preferred_local_oracle_candidate_id"]
         == "oracle-nemotron3-super-local"

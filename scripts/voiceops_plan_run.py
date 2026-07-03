@@ -489,12 +489,14 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                 "expected_artifacts": [
                     "artifacts/dgx-spark-gemma4-voice-eval/current/kame-stack",
                     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json",
-                    "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/asr-nemotron-speech-raw.json",
                     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/tts-magpie-local-raw.json",
                     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/all-local-stack-smoke-raw.json",
                     "artifacts/voiceops-spark-matrix/current/spark-operator-runbook.md",
                     SPARK_BENCHMARK_SCAFFOLD_EVIDENCE,
                     "artifacts/voiceops-spark-matrix/current/spark-model-matrix.json",
+                ],
+                "optional_artifacts": [
+                    "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/asr-nemotron-speech-raw.json",
                 ],
                 "success_check": spark_gate["completion_signal"],
                 "must_not": spark_gate["operator_must_not"],
@@ -723,7 +725,8 @@ def _build_next_actions(
             }
             operator_step = (
                 "Start with the no-write Spark evidence lint if artifacts already exist, then collect measured local DGX "
-                "Spark KAME/reflex/oracle/ASR/TTS evidence and re-run the matrix with that evidence."
+                "Spark KAME/reflex/interpreter/oracle/TTS evidence and re-run the matrix with that evidence. "
+                "ASR is optional auxiliary transcript-hypothesis evidence, not a required Spark closure gate."
             )
         else:
             blocked_by = {"needs_external_evidence": True}
@@ -745,6 +748,7 @@ def _build_next_actions(
                 "evidence_manifest_example": gate.get("evidence_manifest_example"),
                 "operator_runbook": gate.get("operator_runbook"),
                 "expected_artifacts": phase.get("expected_artifacts", []) if isinstance(phase, dict) else [],
+                "optional_artifacts": phase.get("optional_artifacts", []) if isinstance(phase, dict) else [],
                 "first_safe_command": first_command,
                 "first_evidence_command": first_evidence_command,
                 "local_audit_command": local_audit_command,
@@ -1198,7 +1202,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "milestone": spark["milestone"],
             "status": spark["status"],
             "gate_id": "local_spark_stack_matrix",
-            "gate_ids": ["reflex", "oracle", "asr", "tts", "all_local_stack_smoke"],
+            "gate_ids": ["reflex", "interpreter", "oracle", "tts", "all_local_stack_smoke"],
             "missing": spark_missing,
             "evidence_template": spark["artifacts"].get("evidence_template"),
             "template_artifact": spark["artifacts"].get("evidence_template"),
@@ -2325,12 +2329,16 @@ def _operator_handoff_markdown(handoff: dict[str, Any]) -> str:
                 lines.append("- Blocked by current environment:")
                 for key, value in sorted(blocked_by.items()):
                     lines.append(f"  - `{key}`: `{value}`")
-            for label in ("required_inputs", "expected_artifacts", "commands", "must_not"):
+            for label in ("required_inputs", "expected_artifacts", "optional_artifacts", "commands", "must_not"):
                 items = phase.get(label)
                 if isinstance(items, list):
                     lines.append(f"- {label}:")
                     for item in items:
-                        lines.append(f"  - `{item}`" if label in {"commands", "expected_artifacts"} else f"  - {item}")
+                        lines.append(
+                            f"  - `{item}`"
+                            if label in {"commands", "expected_artifacts", "optional_artifacts"}
+                            else f"  - {item}"
+                        )
             command_safety = phase.get("command_safety")
             if isinstance(command_safety, dict):
                 lines.append("- command_safety:")

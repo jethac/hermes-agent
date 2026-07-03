@@ -545,7 +545,7 @@ The interface should submit a compact structured oracle job request:
   "user_id": "discord-user-id",
   "priority": "normal",
   "route": "defer",
-  "oracle_text": "backend Hermes request text",
+  "oracle_text": "action request text derived from reflex intent or promoted interpreter evidence",
   "reflex_intent": "compact live intent",
   "reflex_transcript_hypothesis": "three to the power of seventeen",
   "auxiliary_transcript_hypotheses": [
@@ -556,7 +556,7 @@ The interface should submit a compact structured oracle job request:
   "interpreter_disagreements": ["reflex transcript omitted request prefix"],
   "interpreter_entities": [{"type": "math_expression", "value": "3^17"}],
   "interpreter_language_notes": ["English utterance with math expression"],
-  "transcript": "clean final user utterance",
+  "transcript": "promoted interpreter/oracle transcript candidate, not raw S2S/ASR text",
   "transcript_source": "interpreter",
   "transcript_confidence": 0.92,
   "intent": "normalized user request",
@@ -846,7 +846,7 @@ Refactor the realtime sidecar around the event contract while preserving current
 Deliverables:
 
 - transport-neutral session object
-- explicit transcript finalization events
+- explicit transcript-hypothesis/provenance events when enabled
 - explicit playback lifecycle events
 - explicit cancellation tokens
 - latency span logging for every stage
@@ -966,8 +966,9 @@ Deliverables:
 - compatibility map from `ask_brain`/`openclaw_agent_consult` to Hermes oracle
   jobs
 - auth and scope rules for external realtime clients
-- transcript resume contract: recent turns verbatim, older turns summarized,
-  durable ledger remains authoritative
+- durable promoted user-turn resume contract: recent promoted turns verbatim,
+  older turns summarized, durable ledger remains authoritative, and hypothesis
+  fields remain evidence only
 - tests proving external clients cannot receive direct Hermes file, shell,
   memory, payment, or provisioning tools
 - replay fixture showing Discord and an external frontend preserve one audit id

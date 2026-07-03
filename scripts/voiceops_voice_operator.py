@@ -126,6 +126,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_can_reprioritize_queued_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_queued_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_merges_sequential_queued_transcript_hypotheses_before_start",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_running_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_add_update_redacts_secret_like_text_from_status_and_events",
