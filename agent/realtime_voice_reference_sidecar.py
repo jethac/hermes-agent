@@ -1380,12 +1380,10 @@ class ReferenceRealtimeVoiceSidecarSession:
         config = self.config
         if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
             return False
-        if config.asr_mode.value != "on_escalation":
-            return False
-        if not self.runtime.streaming_stt_base_url:
-            return False
-        route = str(payload.get("route") or "oracle_direct").strip().lower() or "oracle_direct"
-        return route in {"defer", "oracle_direct"}
+        # Full KAME keeps ASR out of the hot path. Transcript providers may
+        # attach hypothesis evidence through fallback/debug/speculative lanes,
+        # but final reflex intent must not wait for a one-shot ASR request.
+        return False
 
     async def _run_oracle_verbatim_asr_once(
         self,

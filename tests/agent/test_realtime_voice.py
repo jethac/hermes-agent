@@ -14338,7 +14338,7 @@ def test_reference_sidecar_tracks_and_forwards_transport_playback_lifecycle():
     assert active_playback_generations == set()
 
 
-def test_reference_sidecar_kame_on_escalation_attaches_one_shot_asr_evidence(monkeypatch):
+def test_reference_sidecar_kame_on_escalation_does_not_block_final_intent_on_asr(monkeypatch):
     calls = []
     sent_events = []
 
@@ -14438,19 +14438,17 @@ def test_reference_sidecar_kame_on_escalation_attaches_one_shot_asr_evidence(mon
     assert final.payload["route"] == "oracle_direct"
     assert "transcript" not in final.payload
     assert final.payload["transcript_source"] == "none"
-    assert final.payload["asr_transcript"] == "literal ASR note 123"
-    assert final.payload["asr_transcript_source"] == "asr"
-    assert final.payload["asr_transcript_confidence"] == 0.84
+    assert "asr_transcript" not in final.payload
+    assert "asr_transcript_source" not in final.payload
+    assert "asr_transcript_confidence" not in final.payload
     assert final.payload["metrics"]["kame_speech_end_to_interface_decision_ms"] >= 0
     assert final.payload["metrics"]["kame_first_audio_to_interface_decision_ms"] >= 0
     assert final.payload["metrics"]["kame_speech_boundary_to_final_intent_ms"] >= 0
-    assert final.payload["metrics"]["oracle_verbatim_asr_ms"] >= 0
-    assert sent_events[0].type == VoiceEventType.AUDIO_INPUT_CHUNK
-    assert sent_events[0].payload["end_of_utterance"] is True
-    assert sent_events[0].payload["input_generation"] == 7
+    assert "oracle_verbatim_asr_ms" not in final.payload["metrics"]
+    assert sent_events == []
     assert calls[0] == ("reflex", b"audio", "webm_opus")
-    assert ("start", "streaming_stt", "http://streaming-stt.local:9000") in calls
-    assert ("close",) in calls
+    assert ("start", "streaming_stt", "http://streaming-stt.local:9000") not in calls
+    assert ("close",) not in calls
 
 
 def test_reference_sidecar_emits_kame_partial_interface_intent():
