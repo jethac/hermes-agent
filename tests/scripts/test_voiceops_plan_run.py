@@ -1387,6 +1387,31 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_policy_visible"]
         is True
     )
+    assert voice_result["details"]["async_oracle_smoke"]["kame_ack_latency_metrics_smoke_ok"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["kame_defer_ack_first_audio_metrics_visible"]
+        is True
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["kame_local_first_audio_metrics_visible"]
+        is True
+    )
+    assert (
+        "kame_interface_decision_to_defer_first_audio_ms"
+        in voice_result["details"]["async_oracle_smoke"]["kame_defer_ack_metric_keys"]
+    )
+    assert (
+        "kame_interface_decision_to_local_first_audio_ms"
+        in voice_result["details"]["async_oracle_smoke"]["kame_local_first_audio_metric_keys"]
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["kame_defer_speech_end_to_first_audio_ms"]
+        >= 41
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["kame_local_speech_end_to_first_audio_ms"]
+        >= 37
+    )
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_late_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_no_duplicate_oracle_jobs"] is True
@@ -1398,7 +1423,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_rejection_reasons"] == {
         "early": [],
         "with": [],
-        "late": ["wrong_speaker", "stale_witness"],
+        "late": ["wrong_speaker", "wrong_channel", "stale_witness"],
     }
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_adjudication_outcomes_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_smoke_ok"] is True

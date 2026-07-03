@@ -1110,6 +1110,13 @@ Acceptance gates:
 - this prompt policy is a first-class field, currently
   `interpreter_prompt_policy.version = "raw_audio_compare_v1"`, and readiness
   artifacts must prove it is visible alongside the prompt input order
+- readiness artifacts must expose KAME speech-end-to-first-audio metrics for
+  defer acknowledgements and local reflex replies, so acknowledgement latency is
+  measured from the reflex decision path rather than inferred from generic mixer
+  timing
+- rejected frontend witnesses must preserve typed rejection reasons for
+  speaker, channel, and timing conflicts, including `wrong_speaker`,
+  `wrong_channel`, and `stale_witness` when those conflicts are present
 - text-only VoiceClaw/OpenClaw compatibility requests are marked degraded when
   no raw audio is available
 - oracle jobs must distinguish `reflex_transcript_hypothesis`,

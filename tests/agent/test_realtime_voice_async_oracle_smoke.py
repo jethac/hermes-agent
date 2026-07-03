@@ -255,6 +255,17 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     )
     assert report["witness_fusion_interpreter_prompt_policy_version"] == "raw_audio_compare_v1"
     assert report["witness_fusion_interpreter_prompt_policy_visible"] is True
+    assert report["kame_ack_latency_metrics_smoke_ok"] is True
+    assert report["kame_defer_ack_first_audio_metrics_visible"] is True
+    assert report["kame_local_first_audio_metrics_visible"] is True
+    assert "kame_interface_decision_to_defer_first_audio_ms" in report["kame_defer_ack_metric_keys"]
+    assert "kame_speech_end_to_defer_first_audio_ms" in report["kame_defer_ack_metric_keys"]
+    assert "kame_interface_decision_to_local_first_audio_ms" in report["kame_local_first_audio_metric_keys"]
+    assert "kame_speech_end_to_local_first_audio_ms" in report["kame_local_first_audio_metric_keys"]
+    assert report["kame_defer_speech_end_to_first_audio_ms"] >= 41
+    assert report["kame_local_speech_end_to_first_audio_ms"] >= 37
+    assert report["kame_defer_first_audio_bytes"] > 0
+    assert report["kame_local_first_audio_bytes"] > 0
     assert report["witness_fusion_early_reflex_transcript"] == "three to the power of seventeen"
     assert report["witness_fusion_early_witness_text"] == "what is three to the power of seventeen"
     assert report["witness_fusion_early_promoted_transcript"] == "what is three to the power of seventeen"
@@ -283,7 +294,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["witness_fusion_rejection_reasons"] == {
         "early": [],
         "with": [],
-        "late": ["wrong_speaker", "stale_witness"],
+        "late": ["wrong_speaker", "wrong_channel", "stale_witness"],
     }
     assert report["witness_fusion_adjudication_outcomes_observed"] is True
     assert report["witness_fusion_accepted_counts"] == {"early": 1, "with": 1, "late": 1}

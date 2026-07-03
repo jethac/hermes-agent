@@ -388,6 +388,37 @@ def _async_oracle_smoke_payload() -> dict:
         },
         "witness_fusion_interpreter_prompt_policy_version": "raw_audio_compare_v1",
         "witness_fusion_interpreter_prompt_policy_visible": True,
+        "kame_ack_latency_metrics_smoke_ok": True,
+        "kame_defer_ack_first_audio_metrics_visible": True,
+        "kame_local_first_audio_metrics_visible": True,
+        "kame_defer_ack_metric_keys": [
+            "kame_interface_decision_to_defer_first_audio_ms",
+            "kame_speech_end_to_defer_first_audio_ms",
+        ],
+        "kame_local_first_audio_metric_keys": [
+            "kame_interface_decision_to_local_first_audio_ms",
+            "kame_speech_end_to_local_first_audio_ms",
+        ],
+        "kame_defer_ack_audio_metrics": {
+            "kame_interface_decision_to_defer_first_audio_ms": 5,
+            "kame_speech_end_to_defer_first_audio_ms": 46,
+        },
+        "kame_defer_ack_session_metrics": {
+            "kame_interface_decision_to_defer_first_audio_ms": 5,
+            "kame_speech_end_to_defer_first_audio_ms": 46,
+        },
+        "kame_local_first_audio_metrics": {
+            "kame_interface_decision_to_local_first_audio_ms": 4,
+            "kame_speech_end_to_local_first_audio_ms": 41,
+        },
+        "kame_local_session_metrics": {
+            "kame_interface_decision_to_local_first_audio_ms": 4,
+            "kame_speech_end_to_local_first_audio_ms": 41,
+        },
+        "kame_defer_speech_end_to_first_audio_ms": 46,
+        "kame_local_speech_end_to_first_audio_ms": 41,
+        "kame_defer_first_audio_bytes": 15,
+        "kame_local_first_audio_bytes": 17,
         "witness_fusion_with_bundle_id": "kame-evidence-witness-with",
         "witness_fusion_with_single_bundle": True,
         "witness_fusion_late_initial_bundle_id": "kame-evidence-witness-late",
@@ -402,7 +433,7 @@ def _async_oracle_smoke_payload() -> dict:
         "witness_fusion_rejection_reasons": {
             "early": [],
             "with": [],
-            "late": ["wrong_speaker", "stale_witness"],
+            "late": ["wrong_speaker", "wrong_channel", "stale_witness"],
         },
         "witness_fusion_adjudication_outcomes_observed": True,
         "witness_fusion_accepted_counts": {"early": 1, "with": 1, "late": 1},
@@ -1013,7 +1044,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_rejection_reasons"] == {
         "early": [],
         "with": [],
-        "late": ["wrong_speaker", "stale_witness"],
+        "late": ["wrong_speaker", "wrong_channel", "stale_witness"],
     }
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_adjudication_outcomes_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_accepted_counts"] == {
@@ -1337,6 +1368,22 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["worker_overlap_proved"] is True
     assert report["proofs"]["async_oracle_jobs"]["worker_overlap_within_capacity"] is True
     assert report["proofs"]["async_oracle_jobs"]["noncooperative_cancel_overlap_observed"] is False
+    assert report["requirements"]["async_oracle_kame_ack_latency_metrics_visible"] is True
+    assert report["async_oracle_coverage"]["kame_ack_latency_metrics_visible"] is True
+    assert report["async_oracle_acceptance"]["kame_ack_latency_metrics_visible"]["ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["kame_ack_latency_metrics_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["kame_defer_ack_first_audio_metrics_visible"] is True
+    assert report["proofs"]["async_oracle_jobs"]["kame_local_first_audio_metrics_visible"] is True
+    assert (
+        "kame_interface_decision_to_defer_first_audio_ms"
+        in report["proofs"]["async_oracle_jobs"]["kame_defer_ack_metric_keys"]
+    )
+    assert (
+        "kame_interface_decision_to_local_first_audio_ms"
+        in report["proofs"]["async_oracle_jobs"]["kame_local_first_audio_metric_keys"]
+    )
+    assert report["proofs"]["async_oracle_jobs"]["kame_defer_speech_end_to_first_audio_ms"] >= 41
+    assert report["proofs"]["async_oracle_jobs"]["kame_local_speech_end_to_first_audio_ms"] >= 37
     assert report["proofs"]["latency_metrics"]["oracle_metric_status"] == "needs_live_oracle_or_sidecar_probe"
     assert report["live_probe_required_for_completion"]["status"] == "needs_live_probe"
     assert report["live_probe_required_for_completion"]["missing_gates"] == [

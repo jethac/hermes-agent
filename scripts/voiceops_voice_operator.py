@@ -1831,7 +1831,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         == {
             "early": [],
             "with": [],
-            "late": ["wrong_speaker", "stale_witness"],
+            "late": ["wrong_speaker", "wrong_channel", "stale_witness"],
         },
         "interpreter_prompt_input_order_visible": smoke.get(
             "witness_fusion_interpreter_prompt_input_order_visible"
@@ -1852,6 +1852,19 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         == "non_authoritative_context"
         and smoke["witness_fusion_interpreter_prompt_policy"].get("promotion_requirement")
         == "compare_transcript_hypotheses_against_raw_audio_before_promotion",
+        "kame_ack_latency_metrics_visible": smoke.get("kame_ack_latency_metrics_smoke_ok") is True
+        and smoke.get("kame_defer_ack_first_audio_metrics_visible") is True
+        and smoke.get("kame_local_first_audio_metrics_visible") is True
+        and "kame_interface_decision_to_defer_first_audio_ms"
+        in (smoke.get("kame_defer_ack_metric_keys") or [])
+        and "kame_speech_end_to_defer_first_audio_ms"
+        in (smoke.get("kame_defer_ack_metric_keys") or [])
+        and "kame_interface_decision_to_local_first_audio_ms"
+        in (smoke.get("kame_local_first_audio_metric_keys") or [])
+        and "kame_speech_end_to_local_first_audio_ms"
+        in (smoke.get("kame_local_first_audio_metric_keys") or [])
+        and _non_negative_number(smoke.get("kame_defer_speech_end_to_first_audio_ms")) is not None
+        and _non_negative_number(smoke.get("kame_local_speech_end_to_first_audio_ms")) is not None,
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
         and smoke.get("verbose_result_committed_bounded") is True
         and smoke.get("verbose_result_commit_marked_truncated") is True
@@ -2125,6 +2138,16 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             ok=smoke_ok and bool(async_oracle_coverage.get("interpreter_prompt_policy_visible")),
             evidence="async_oracle_smoke_plus_interpreter_prompt_policy_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["witness_fusion"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "kame_ack_latency_metrics_visible": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("kame_ack_latency_metrics_visible")),
+            evidence="async_oracle_smoke_plus_kame_latency_metrics_tests",
+            test_refs=[
+                "tests/agent/test_realtime_voice.py::test_kame_engine_defer_acknowledgement_reports_first_audio_metric",
+                "tests/agent/test_realtime_voice.py::test_kame_engine_local_route_reports_first_audio_metric",
+            ],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
@@ -2784,6 +2807,45 @@ def build_voice_operator_report(
             "witness_fusion_interpreter_prompt_policy_visible": bool(
                 async_oracle_smoke.get("witness_fusion_interpreter_prompt_policy_visible")
             ),
+            "kame_ack_latency_metrics_smoke_ok": bool(
+                async_oracle_smoke.get("kame_ack_latency_metrics_smoke_ok")
+            ),
+            "kame_defer_ack_first_audio_metrics_visible": bool(
+                async_oracle_smoke.get("kame_defer_ack_first_audio_metrics_visible")
+            ),
+            "kame_local_first_audio_metrics_visible": bool(
+                async_oracle_smoke.get("kame_local_first_audio_metrics_visible")
+            ),
+            "kame_defer_ack_metric_keys": list(
+                async_oracle_smoke.get("kame_defer_ack_metric_keys") or []
+            ),
+            "kame_local_first_audio_metric_keys": list(
+                async_oracle_smoke.get("kame_local_first_audio_metric_keys") or []
+            ),
+            "kame_defer_ack_audio_metrics": dict(
+                async_oracle_smoke.get("kame_defer_ack_audio_metrics") or {}
+            ),
+            "kame_defer_ack_session_metrics": dict(
+                async_oracle_smoke.get("kame_defer_ack_session_metrics") or {}
+            ),
+            "kame_local_first_audio_metrics": dict(
+                async_oracle_smoke.get("kame_local_first_audio_metrics") or {}
+            ),
+            "kame_local_session_metrics": dict(
+                async_oracle_smoke.get("kame_local_session_metrics") or {}
+            ),
+            "kame_defer_speech_end_to_first_audio_ms": async_oracle_smoke.get(
+                "kame_defer_speech_end_to_first_audio_ms"
+            ),
+            "kame_local_speech_end_to_first_audio_ms": async_oracle_smoke.get(
+                "kame_local_speech_end_to_first_audio_ms"
+            ),
+            "kame_defer_first_audio_bytes": async_oracle_smoke.get(
+                "kame_defer_first_audio_bytes"
+            ),
+            "kame_local_first_audio_bytes": async_oracle_smoke.get(
+                "kame_local_first_audio_bytes"
+            ),
             "witness_fusion_with_bundle_id": async_oracle_smoke.get(
                 "witness_fusion_with_bundle_id"
             ),
@@ -3058,6 +3120,9 @@ def build_voice_operator_report(
             "async_oracle_interpreter_prompt_policy_visible": async_oracle_coverage[
                 "interpreter_prompt_policy_visible"
             ],
+            "async_oracle_kame_ack_latency_metrics_visible": async_oracle_coverage[
+                "kame_ack_latency_metrics_visible"
+            ],
             "async_oracle_runtime_kame_action_gate": async_oracle_coverage[
                 "runtime_kame_action_gate_enforced"
             ],
@@ -3196,6 +3261,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "witness_fusion_adjudicates_frontend_text",
         "interpreter_prompt_input_order_visible",
         "interpreter_prompt_policy_visible",
+        "kame_ack_latency_metrics_visible",
         "runtime_kame_action_gate_enforced",
         "unflagged_high_risk_tool_event_fails_closed",
         "result_handling_bounded_and_durable",

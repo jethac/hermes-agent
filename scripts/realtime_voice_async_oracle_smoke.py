@@ -15,7 +15,13 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceEvent, VoiceEventType
+from agent.realtime_voice import (
+    AudioChunk,
+    RealtimeVoiceEngineKind,
+    RealtimeVoiceSessionConfig,
+    VoiceEvent,
+    VoiceEventType,
+)
 from agent.realtime_voice_kame import (
     INTERPRETER_PROMPT_POLICY,
     INTERPRETER_PROMPT_POLICY_VERSION,
@@ -1870,6 +1876,182 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
     }
 
 
+async def _run_kame_first_audio_latency_smoke() -> dict[str, Any]:
+    class NoopOracle:
+        async def stream_answer_for_request(self, _request: Any):
+            yield "Latency oracle result."
+
+    async def collect_first_audio(
+        *,
+        session_id: str,
+        payload: dict[str, Any],
+        audio_bytes: bytes,
+    ) -> dict[str, Any]:
+        engine = KameInterfaceOracleEngine(oracle=NoopOracle())
+        recorder = EventRecorder(engine)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audio_path = Path(tmpdir) / "latency.ogg"
+
+            def fake_tts_sync(_text: str) -> str:
+                audio_path.write_bytes(audio_bytes)
+                return str(audio_path)
+
+            engine._tts_sync = fake_tts_sync  # type: ignore[method-assign]
+            await engine.start(
+                RealtimeVoiceSessionConfig(
+                    session_id=session_id,
+                    engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                    frontend_provider="gemma4",
+                    frontend_model="gemma-4-E2B-it",
+                    interface_audio_input="native_audio",
+                    metadata={"transport": "smoke"},
+                )
+            )
+            collector = asyncio.create_task(recorder.run())
+            await engine.receive_event(
+                VoiceEvent(
+                    type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                    session_id=session_id,
+                    sequence=1,
+                    payload={**payload, "end_of_utterance": True},
+                )
+            )
+            route = str(payload.get("route") or "")
+            route_metric = (
+                "kame_interface_decision_to_defer_first_audio_ms"
+                if route == KameRoute.DEFER.value
+                else "kame_interface_decision_to_local_first_audio_ms"
+            )
+            await recorder.wait_for(
+                lambda events: any(event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK for event in events)
+                and any(
+                    event.type == VoiceEventType.SESSION_METRICS
+                    and isinstance(event.payload.get("metrics"), Mapping)
+                    and route_metric in event.payload["metrics"]
+                    for event in events
+                )
+            )
+            await engine.close()
+            collector.cancel()
+            try:
+                await collector
+            except asyncio.CancelledError:
+                pass
+
+        audio_events = [
+            event for event in recorder.events if event.type == VoiceEventType.AUDIO_OUTPUT_CHUNK
+        ]
+        session_metric_events = [
+            event for event in recorder.events if event.type == VoiceEventType.SESSION_METRICS
+        ]
+        first_audio = audio_events[0] if audio_events else None
+        session_metrics = next(
+            (
+                event
+                for event in session_metric_events
+                if isinstance(event.payload.get("metrics"), Mapping)
+                and any(str(key).startswith("kame_interface_decision_to_") for key in event.payload["metrics"])
+            ),
+            session_metric_events[0] if session_metric_events else None,
+        )
+        first_audio_payload = dict(first_audio.payload) if first_audio else {}
+        first_audio_metrics = (
+            dict(first_audio_payload.get("metrics"))
+            if isinstance(first_audio_payload.get("metrics"), Mapping)
+            else {}
+        )
+        session_metric_payload = dict(session_metrics.payload) if session_metrics else {}
+        session_metric_values = (
+            dict(session_metric_payload.get("metrics"))
+            if isinstance(session_metric_payload.get("metrics"), Mapping)
+            else {}
+        )
+        decoded_audio = (
+            AudioChunk.from_payload(first_audio_payload).data
+            if first_audio_payload
+            else b""
+        )
+        return {
+            "first_audio_observed": first_audio is not None,
+            "session_metrics_observed": session_metrics is not None,
+            "first_audio_metrics": first_audio_metrics,
+            "session_metrics": session_metric_values,
+            "first_audio_bytes": len(decoded_audio),
+        }
+
+    defer = await collect_first_audio(
+        session_id="voice-smoke-kame-latency-defer",
+        audio_bytes=b"defer-ack-audio",
+        payload={
+            "transcript": "check latency",
+            "intent": "Check latency.",
+            "intent_source": "reflex_audio",
+            "route": "defer",
+            "transcript_source": "reflex_audio",
+            "interface_already_said": "Checking latency.",
+            "metrics": {"kame_speech_end_to_interface_decision_ms": 41},
+        },
+    )
+    local = await collect_first_audio(
+        session_id="voice-smoke-kame-latency-local",
+        audio_bytes=b"local-reply-audio",
+        payload={
+            "transcript": "can you hear me",
+            "intent": "The user is checking whether Hermes can hear them.",
+            "intent_source": "reflex_audio",
+            "route": "local",
+            "transcript_source": "reflex_audio",
+            "local_reply": "Yes, I can hear you.",
+            "metrics": {"kame_speech_end_to_interface_decision_ms": 37},
+        },
+    )
+
+    defer_audio_metrics = defer["first_audio_metrics"]
+    defer_session_metrics = defer["session_metrics"]
+    local_audio_metrics = local["first_audio_metrics"]
+    local_session_metrics = local["session_metrics"]
+    defer_metric_keys = sorted(set(defer_audio_metrics) | set(defer_session_metrics))
+    local_metric_keys = sorted(set(local_audio_metrics) | set(local_session_metrics))
+    defer_visible = (
+        defer["first_audio_observed"]
+        and defer["session_metrics_observed"]
+        and "kame_interface_decision_to_defer_first_audio_ms" in defer_audio_metrics
+        and "kame_speech_end_to_defer_first_audio_ms" in defer_audio_metrics
+        and "kame_interface_decision_to_defer_first_audio_ms" in defer_session_metrics
+        and "kame_speech_end_to_defer_first_audio_ms" in defer_session_metrics
+        and int(defer_audio_metrics.get("kame_speech_end_to_defer_first_audio_ms") or -1) >= 41
+    )
+    local_visible = (
+        local["first_audio_observed"]
+        and local["session_metrics_observed"]
+        and "kame_interface_decision_to_local_first_audio_ms" in local_audio_metrics
+        and "kame_speech_end_to_local_first_audio_ms" in local_audio_metrics
+        and "kame_interface_decision_to_local_first_audio_ms" in local_session_metrics
+        and "kame_speech_end_to_local_first_audio_ms" in local_session_metrics
+        and int(local_audio_metrics.get("kame_speech_end_to_local_first_audio_ms") or -1) >= 37
+    )
+    return {
+        "ok": bool(defer_visible and local_visible),
+        "kame_ack_latency_metrics_smoke_ok": bool(defer_visible and local_visible),
+        "kame_defer_ack_first_audio_metrics_visible": bool(defer_visible),
+        "kame_local_first_audio_metrics_visible": bool(local_visible),
+        "kame_defer_ack_metric_keys": defer_metric_keys,
+        "kame_local_first_audio_metric_keys": local_metric_keys,
+        "kame_defer_ack_audio_metrics": defer_audio_metrics,
+        "kame_defer_ack_session_metrics": defer_session_metrics,
+        "kame_local_first_audio_metrics": local_audio_metrics,
+        "kame_local_session_metrics": local_session_metrics,
+        "kame_defer_speech_end_to_first_audio_ms": defer_audio_metrics.get(
+            "kame_speech_end_to_defer_first_audio_ms"
+        ),
+        "kame_local_speech_end_to_first_audio_ms": local_audio_metrics.get(
+            "kame_speech_end_to_local_first_audio_ms"
+        ),
+        "kame_defer_first_audio_bytes": defer["first_audio_bytes"],
+        "kame_local_first_audio_bytes": local["first_audio_bytes"],
+    }
+
+
 async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
     """Prove witness text joins one bundle whether it is early, with, or late."""
 
@@ -2042,7 +2224,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
                 "channel": {
                     "transport": "discord_voice",
                     "guild_id": "guild-1",
-                    "channel_id": "general",
+                    "channel_id": "other-room",
                 },
                 "audio_time_range_ms": (10, 100),
             },
@@ -2201,7 +2383,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "early": ["corrected_by_audio"],
         "with": ["accepted_as_supporting_evidence"],
         "late": ["rejected_or_diagnostic_only"],
-    } and rejection_reasons["late"] == ["wrong_speaker", "stale_witness"]
+    } and rejection_reasons["late"] == ["wrong_speaker", "wrong_channel", "stale_witness"]
     return {
         "ok": (
             early_single_bundle
@@ -3078,6 +3260,7 @@ async def run_smoke() -> dict[str, Any]:
     sidecar_control_smoke = await _run_sidecar_control_smoke()
     external_frontend_bridge_smoke = await _run_external_frontend_bridge_smoke()
     unpromoted_hypothesis_smoke = await _run_unpromoted_transcript_hypothesis_smoke()
+    kame_first_audio_latency_smoke = await _run_kame_first_audio_latency_smoke()
     witness_fusion_timing_smoke = await _run_witness_fusion_timing_smoke()
     runtime_kame_action_gate_smoke = await _run_runtime_kame_action_gate_smoke()
     audit_scalar_smoke = await _run_audit_scalar_redaction_smoke()
@@ -3497,6 +3680,7 @@ async def run_smoke() -> dict[str, Any]:
             and sidecar_control_smoke["ok"]
             and external_frontend_bridge_smoke["ok"]
             and unpromoted_hypothesis_smoke["ok"]
+            and kame_first_audio_latency_smoke["ok"]
             and witness_fusion_timing_smoke["ok"]
             and runtime_kame_action_gate_smoke["ok"]
             and audit_scalar_smoke["ok"]
@@ -3832,6 +4016,45 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "unpromoted_hypothesis_update_summary": unpromoted_hypothesis_smoke[
             "unpromoted_hypothesis_update_summary"
+        ],
+        "kame_ack_latency_metrics_smoke_ok": kame_first_audio_latency_smoke[
+            "kame_ack_latency_metrics_smoke_ok"
+        ],
+        "kame_defer_ack_first_audio_metrics_visible": kame_first_audio_latency_smoke[
+            "kame_defer_ack_first_audio_metrics_visible"
+        ],
+        "kame_local_first_audio_metrics_visible": kame_first_audio_latency_smoke[
+            "kame_local_first_audio_metrics_visible"
+        ],
+        "kame_defer_ack_metric_keys": kame_first_audio_latency_smoke[
+            "kame_defer_ack_metric_keys"
+        ],
+        "kame_local_first_audio_metric_keys": kame_first_audio_latency_smoke[
+            "kame_local_first_audio_metric_keys"
+        ],
+        "kame_defer_ack_audio_metrics": kame_first_audio_latency_smoke[
+            "kame_defer_ack_audio_metrics"
+        ],
+        "kame_defer_ack_session_metrics": kame_first_audio_latency_smoke[
+            "kame_defer_ack_session_metrics"
+        ],
+        "kame_local_first_audio_metrics": kame_first_audio_latency_smoke[
+            "kame_local_first_audio_metrics"
+        ],
+        "kame_local_session_metrics": kame_first_audio_latency_smoke[
+            "kame_local_session_metrics"
+        ],
+        "kame_defer_speech_end_to_first_audio_ms": kame_first_audio_latency_smoke[
+            "kame_defer_speech_end_to_first_audio_ms"
+        ],
+        "kame_local_speech_end_to_first_audio_ms": kame_first_audio_latency_smoke[
+            "kame_local_speech_end_to_first_audio_ms"
+        ],
+        "kame_defer_first_audio_bytes": kame_first_audio_latency_smoke[
+            "kame_defer_first_audio_bytes"
+        ],
+        "kame_local_first_audio_bytes": kame_first_audio_latency_smoke[
+            "kame_local_first_audio_bytes"
         ],
         "witness_fusion_timing_smoke_ok": witness_fusion_timing_smoke[
             "witness_fusion_timing_smoke_ok"

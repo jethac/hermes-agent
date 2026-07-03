@@ -1909,6 +1909,45 @@ async def build_plan_run_async(
                     "witness_fusion_interpreter_prompt_policy_visible": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["witness_fusion_interpreter_prompt_policy_visible"],
+                    "kame_ack_latency_metrics_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
+                        "kame_ack_latency_metrics_smoke_ok"
+                    ],
+                    "kame_defer_ack_first_audio_metrics_visible": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["kame_defer_ack_first_audio_metrics_visible"],
+                    "kame_local_first_audio_metrics_visible": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["kame_local_first_audio_metrics_visible"],
+                    "kame_defer_ack_metric_keys": list(
+                        voice_operator["proofs"]["async_oracle_jobs"]["kame_defer_ack_metric_keys"]
+                    ),
+                    "kame_local_first_audio_metric_keys": list(
+                        voice_operator["proofs"]["async_oracle_jobs"]["kame_local_first_audio_metric_keys"]
+                    ),
+                    "kame_defer_ack_audio_metrics": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"]["kame_defer_ack_audio_metrics"]
+                    ),
+                    "kame_defer_ack_session_metrics": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"]["kame_defer_ack_session_metrics"]
+                    ),
+                    "kame_local_first_audio_metrics": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"]["kame_local_first_audio_metrics"]
+                    ),
+                    "kame_local_session_metrics": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"]["kame_local_session_metrics"]
+                    ),
+                    "kame_defer_speech_end_to_first_audio_ms": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["kame_defer_speech_end_to_first_audio_ms"],
+                    "kame_local_speech_end_to_first_audio_ms": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["kame_local_speech_end_to_first_audio_ms"],
+                    "kame_defer_first_audio_bytes": voice_operator["proofs"]["async_oracle_jobs"][
+                        "kame_defer_first_audio_bytes"
+                    ],
+                    "kame_local_first_audio_bytes": voice_operator["proofs"]["async_oracle_jobs"][
+                        "kame_local_first_audio_bytes"
+                    ],
                     "witness_fusion_with_single_bundle": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_with_single_bundle"
                     ],

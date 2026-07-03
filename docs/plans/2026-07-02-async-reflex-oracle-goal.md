@@ -996,8 +996,15 @@ Add a local smoke report mode that proves:
   hypotheses are non-authoritative context, raw audio is primary evidence, and
   transcript-looking text cannot directly become `oracle_text`, durable
   transcript, spend reason, phone payload, or tool arguments
+- the smoke and VoiceOps artifacts expose KAME first-audio latency metrics for
+  both the defer acknowledgement path and local reflex path:
+  `kame_speech_end_to_defer_first_audio_ms` and
+  `kame_speech_end_to_local_first_audio_ms`
 - witness transcript adjudication is recorded as accepted, corrected, or
   rejected/diagnostic-only before any promoted action text is produced
+- rejected frontend witnesses preserve typed speaker, channel, and timing
+  rejection reasons such as `wrong_speaker`, `wrong_channel`, and
+  `stale_witness`
 - degraded text-only VoiceClaw/OpenClaw/Moshi fixtures preserve hypothesis text
   for audit and clarification, but report `degraded_reason` and fail high-risk
   action gates until interpreter/oracle promotion exists
