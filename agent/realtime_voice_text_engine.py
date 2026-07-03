@@ -4016,8 +4016,44 @@ def _oracle_request_auxiliary_hypotheses_from_evidence(
         confidence = item.get("confidence")
         if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
             hypothesis["confidence"] = max(0.0, min(1.0, float(confidence)))
+        kind = str(item.get("kind") or "").strip()[:80]
+        if kind:
+            hypothesis["kind"] = kind
+        _copy_witness_hypothesis_audit_fields(item, hypothesis)
         compact.append(hypothesis)
     return tuple(compact)
+
+
+def _copy_witness_hypothesis_audit_fields(
+    source: Mapping[str, Any],
+    target: dict[str, Any],
+) -> None:
+    for key in ("adjudication", "interpreter_adjudication", "outcome"):
+        value = str(source.get(key) or "").strip()[:80]
+        if value:
+            target["adjudication"] = value
+            break
+    for key in ("rejection_reasons", "rejection_reason", "adjudication_reasons", "adjudication_reason"):
+        value = source.get(key)
+        if isinstance(value, str):
+            reason = value.strip()[:80]
+            if reason:
+                target["rejection_reasons"] = (reason,)
+                break
+        if isinstance(value, list):
+            reasons = tuple(str(item).strip()[:80] for item in value if str(item).strip())
+            if reasons:
+                target["rejection_reasons"] = reasons
+                break
+    for key in ("speaker", "channel"):
+        value = source.get(key)
+        if isinstance(value, Mapping):
+            target[key] = dict(value)
+    for key in ("audio_time_range_ms", "time_range_ms", "utterance_time_range_ms", "witness_time_range_ms"):
+        value = source.get(key)
+        if isinstance(value, (list, tuple)) and len(value) >= 2:
+            target["audio_time_range_ms"] = tuple(value[:2])
+            break
 
 
 def _queued_interpreter_evidence_bundle(job: OracleJob) -> Mapping[str, Any]:
@@ -4312,6 +4348,7 @@ def _auxiliary_transcript_hypotheses_from_payload(payload: Mapping[str, Any]) ->
         confidence = _interpreter_confidence_from_payload(payload.get("confidence"))
         if confidence is not None:
             hypothesis["confidence"] = confidence
+        _copy_witness_hypothesis_audit_fields(payload, hypothesis)
         hypotheses.append(hypothesis)
     if isinstance(value, list):
         hypotheses.extend(item for item in value if isinstance(item, Mapping))

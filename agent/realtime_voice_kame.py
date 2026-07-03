@@ -949,19 +949,23 @@ def kame_external_brain_request_to_oracle_request(
         else:
             normalized.pop("transcript", None)
             normalized.pop("transcript_source", None)
-            _append_auxiliary_transcript_hypothesis(
-                normalized,
-                {
-                    "kind": "frontend_witness_hypothesis",
-                    "source": transcript_source
-                    or _optional_text(normalized.get("provider"))
-                    or source
-                    or "external_frontend",
-                    "text": transcript,
-                    "confidence": normalized.get("transcript_confidence"),
-                    "authority": "hypothesis",
-                },
-            )
+            witness_hypothesis: dict[str, Any] = {
+                "kind": "frontend_witness_hypothesis",
+                "source": transcript_source
+                or _optional_text(normalized.get("provider"))
+                or source
+                or "external_frontend",
+                "text": transcript,
+                "confidence": normalized.get("transcript_confidence"),
+                "authority": "hypothesis",
+            }
+            adjudication = _transcript_hypothesis_adjudication(normalized)
+            if adjudication:
+                witness_hypothesis["adjudication"] = adjudication
+            rejection_reasons = _transcript_hypothesis_rejection_reasons(normalized)
+            if rejection_reasons:
+                witness_hypothesis["rejection_reasons"] = rejection_reasons
+            _append_auxiliary_transcript_hypothesis(normalized, witness_hypothesis)
     if text:
         normalized["text"] = text
     if intent:
@@ -1109,6 +1113,9 @@ def _canonical_transcript_hypothesis(value: object) -> dict[str, Any]:
     adjudication = _transcript_hypothesis_adjudication(value)
     if adjudication:
         hypothesis["adjudication"] = adjudication
+    rejection_reasons = _transcript_hypothesis_rejection_reasons(value)
+    if rejection_reasons:
+        hypothesis["rejection_reasons"] = rejection_reasons
     return hypothesis
 
 
@@ -1376,6 +1383,9 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
     adjudication = _transcript_hypothesis_adjudication(value)
     if adjudication:
         hypothesis["adjudication"] = adjudication
+    rejection_reasons = _transcript_hypothesis_rejection_reasons(value)
+    if rejection_reasons:
+        hypothesis["rejection_reasons"] = rejection_reasons
     return hypothesis
 
 
@@ -1392,6 +1402,27 @@ def _transcript_hypothesis_adjudication(value: Mapping[str, Any]) -> str:
     }:
         return outcome
     return ""
+
+
+def _transcript_hypothesis_rejection_reasons(value: Mapping[str, Any]) -> tuple[str, ...]:
+    raw = (
+        value.get("rejection_reasons")
+        or value.get("rejection_reason")
+        or value.get("adjudication_reasons")
+        or value.get("adjudication_reason")
+    )
+    if isinstance(raw, str):
+        raw_values: Sequence[Any] = (raw,)
+    elif isinstance(raw, Sequence) and not isinstance(raw, (bytes, bytearray)):
+        raw_values = raw
+    else:
+        raw_values = ()
+    reasons: list[str] = []
+    for item in raw_values:
+        reason = _optional_text(item).lower().replace("-", "_").replace(" ", "_")
+        if reason in {"wrong_speaker", "wrong_channel", "stale_witness"}:
+            reasons.append(reason)
+    return tuple(dict.fromkeys(reasons))
 
 
 def _canonical_transcript_hypothesis_is_reflex(hypothesis: Mapping[str, Any]) -> bool:

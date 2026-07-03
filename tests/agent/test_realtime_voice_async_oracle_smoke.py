@@ -216,6 +216,11 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         "with": ["accepted_as_supporting_evidence"],
         "late": ["rejected_or_diagnostic_only"],
     }
+    assert report["witness_fusion_rejection_reasons"] == {
+        "early": [],
+        "with": [],
+        "late": ["wrong_speaker", "stale_witness"],
+    }
     assert report["witness_fusion_adjudication_outcomes_observed"] is True
     assert report["witness_fusion_accepted_counts"] == {"early": 1, "with": 1, "late": 1}
     assert report["witness_fusion_started_counts"] == {"early": 1, "with": 1, "late": 1}

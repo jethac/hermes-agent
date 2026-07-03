@@ -336,6 +336,11 @@ def _async_oracle_smoke_payload() -> dict:
             "with": ["accepted_as_supporting_evidence"],
             "late": ["rejected_or_diagnostic_only"],
         },
+        "witness_fusion_rejection_reasons": {
+            "early": [],
+            "with": [],
+            "late": ["wrong_speaker", "stale_witness"],
+        },
         "witness_fusion_adjudication_outcomes_observed": True,
         "witness_fusion_accepted_counts": {"early": 1, "with": 1, "late": 1},
         "witness_fusion_started_counts": {"early": 1, "with": 1, "late": 1},
@@ -886,6 +891,11 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "early": ["corrected_by_audio"],
         "with": ["accepted_as_supporting_evidence"],
         "late": ["rejected_or_diagnostic_only"],
+    }
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_rejection_reasons"] == {
+        "early": [],
+        "with": [],
+        "late": ["wrong_speaker", "stale_witness"],
     }
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_adjudication_outcomes_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_accepted_counts"] == {

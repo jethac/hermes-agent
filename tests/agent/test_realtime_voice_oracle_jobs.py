@@ -828,6 +828,121 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
 
 
 @pytest.mark.asyncio
+async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witnesses():
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+
+    running = await manager.submit(_request("running"))
+    queued = await manager.submit(_request("provision voip"))
+    await asyncio.sleep(0)
+
+    updated = await manager.add_interpreter_evidence(
+        queued.job_id,
+        audio_segment_ref="artifact://voice/canonical-turn.wav",
+        audio_time_range_ms=[1000, 2200],
+        auxiliary_transcript_hypotheses=[
+            {
+                "source": "moshi",
+                "kind": "frontend_witness_hypothesis",
+                "text": "provision the phone account",
+                "speaker": {"channel_user_id": "other-user", "display_name": "guest"},
+                "channel": {"guild_id": "guild-1", "channel_id": "general"},
+                "audio_time_range_ms": [1100, 1800],
+                "adjudication": "accepted_as_supporting_evidence",
+            },
+            {
+                "source": "moshi",
+                "kind": "frontend_witness_hypothesis",
+                "text": "reuse the stale caption",
+                "speaker": {"channel_user_id": "42", "display_name": "jetha"},
+                "channel": {"guild_id": "guild-1", "channel_id": "general"},
+                "audio_time_range_ms": [100, 600],
+            },
+            {
+                "source": "voiceclaw",
+                "kind": "frontend_witness_hypothesis",
+                "text": "wrong room command",
+                "speaker": {"channel_user_id": "42", "display_name": "jetha"},
+                "channel": {"guild_id": "guild-1", "channel_id": "other-room"},
+                "audio_time_range_ms": [1200, 1900],
+            },
+        ],
+        speaker_metadata={
+            "platform": "discord",
+            "channel_user_id": "42",
+            "display_name": "jetha",
+        },
+        channel_metadata={
+            "transport": "discord_voice",
+            "guild_id": "guild-1",
+            "channel_id": "general",
+        },
+        source="gemma_interpreter",
+    )
+    status = await manager.status_view()
+    queued_status = next(job for job in status["jobs"] if job["job_id"] == queued.job_id)
+    oracle_request = _oracle_request_for_job(updated, updated.request)
+
+    assert updated.interpreter_evidence[0]["auxiliary_transcript_hypotheses"] == (
+        {
+            "source": "moshi",
+            "text": "provision the phone account",
+            "authority": "hypothesis",
+            "kind": "frontend_witness_hypothesis",
+            "speaker": {"channel_user_id": "other-user", "display_name": "guest"},
+            "channel": {"guild_id": "guild-1", "channel_id": "general"},
+            "audio_time_range_ms": (1100, 1800),
+            "adjudication": "rejected_or_diagnostic_only",
+            "rejection_reasons": ("wrong_speaker",),
+        },
+        {
+            "source": "moshi",
+            "text": "reuse the stale caption",
+            "authority": "hypothesis",
+            "kind": "frontend_witness_hypothesis",
+            "speaker": {"channel_user_id": "42", "display_name": "jetha"},
+            "channel": {"guild_id": "guild-1", "channel_id": "general"},
+            "audio_time_range_ms": (100, 600),
+            "adjudication": "rejected_or_diagnostic_only",
+            "rejection_reasons": ("stale_witness",),
+        },
+        {
+            "source": "voiceclaw",
+            "text": "wrong room command",
+            "authority": "hypothesis",
+            "kind": "frontend_witness_hypothesis",
+            "speaker": {"channel_user_id": "42", "display_name": "jetha"},
+            "channel": {"guild_id": "guild-1", "channel_id": "other-room"},
+            "audio_time_range_ms": (1200, 1900),
+            "adjudication": "rejected_or_diagnostic_only",
+            "rejection_reasons": ("wrong_channel",),
+        },
+    )
+    assert queued_status["transcript_hypotheses_count"] == 3
+    assert [item["rejection_reasons"] for item in queued_status["transcript_hypotheses"]] == [
+        ("wrong_speaker",),
+        ("stale_witness",),
+        ("wrong_channel",),
+    ]
+    assert queued_status["evidence_bundle"]["status"] == "primary_audio"
+    assert "interpreter_corrected_transcript" not in queued_status["evidence_authority"]
+    assert oracle_request.oracle_text == "provision voip"
+    assert oracle_request.oracle_text_source == "reflex_audio"
+    assert "provision the phone account" not in oracle_request.oracle_text
+    assert "reuse the stale caption" not in oracle_request.oracle_text
+    assert "wrong room command" not in oracle_request.oracle_text
+
+    await manager.cancel(running.job_id)
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
 async def test_interpreter_evidence_delivery_status_emits_progress_event():
     events = []
     release = asyncio.Event()

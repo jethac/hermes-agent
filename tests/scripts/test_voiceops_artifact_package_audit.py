@@ -205,6 +205,7 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_single_bundle_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_early_single_bundle"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_evidence_merge_keys"] = {"early": "kame-merge-wrong"}
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_rejection_reasons"] = {"late": ["wrong_channel"]}
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_adjudication_outcomes_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_smoke_ok"] = False
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_degraded_text_only_status"] = (
@@ -265,6 +266,10 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_evidence_merge_keys_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_rejection_reasons_mismatch"
         in report["issues"]
     )
     assert (

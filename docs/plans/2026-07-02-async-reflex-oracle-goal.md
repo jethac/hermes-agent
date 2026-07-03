@@ -314,6 +314,12 @@ speaker/channel guess, and partial/final state when present. The waveform and
 witness text should share one `turn_id`, one stable `evidence_bundle_id`, and
 one audio-aware `evidence_merge_key`; they should not create separate Hermes
 messages or separate oracle jobs.
+When the interpreter rejects witness text because its speaker, channel, or
+timing metadata conflicts with the canonical speech cut, the evidence bundle
+should preserve typed `rejection_reasons` such as `wrong_speaker`,
+`wrong_channel`, or `stale_witness`. The VoiceOps proof should fail if a
+frontend witness is merely labeled rejected without the metadata-derived reason
+needed to audit the rejection.
 
 The oracle is the worker. It owns:
 

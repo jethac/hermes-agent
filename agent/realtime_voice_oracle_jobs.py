@@ -1106,6 +1106,9 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
         adjudication = _compact_transcript_hypothesis_adjudication(value)
         if adjudication:
             item["adjudication"] = adjudication
+        rejection_reasons = _compact_transcript_hypothesis_rejection_reasons(value)
+        if rejection_reasons:
+            item["rejection_reasons"] = rejection_reasons
         hypotheses.append(item)
         if len(hypotheses) >= 8:
             break
@@ -1275,11 +1278,14 @@ def _compact_interpreter_evidence(
     compact_audio_ref = _compact_evidence_text(audio_segment_ref, limit=240)
     compact_audio_range = _audio_time_range_ms(audio_time_range_ms)
     compact_reflex_hypothesis = _compact_reflex_transcript_hypothesis(reflex_transcript_hypothesis)
-    compact_auxiliary_hypotheses = _compact_auxiliary_transcript_hypotheses(
-        auxiliary_transcript_hypotheses or []
-    )
     compact_speaker = _compact_speaker_metadata(speaker_metadata or {})
     compact_channel = _compact_channel_metadata(channel_metadata or {})
+    compact_auxiliary_hypotheses = _compact_auxiliary_transcript_hypotheses(
+        auxiliary_transcript_hypotheses or [],
+        speaker_metadata=compact_speaker,
+        channel_metadata=compact_channel,
+        audio_time_range_ms=compact_audio_range,
+    )
     compact_entities = _compact_interpreter_entities(entities or [])
     compact_disagreements = tuple(
         text
@@ -1410,7 +1416,14 @@ def _audio_time_range_ms(value: object) -> tuple[int, int] | tuple[()]:
 
 def _compact_auxiliary_transcript_hypotheses(
     values: Sequence[Mapping[str, Any]],
+    *,
+    speaker_metadata: Optional[Mapping[str, Any]] = None,
+    channel_metadata: Optional[Mapping[str, Any]] = None,
+    audio_time_range_ms: object = (),
 ) -> tuple[dict[str, Any], ...]:
+    canonical_speaker = _compact_speaker_metadata(speaker_metadata or {})
+    canonical_channel = _compact_channel_metadata(channel_metadata or {})
+    canonical_audio_range = _audio_time_range_ms(audio_time_range_ms)
     compact: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for value in values[:5]:
@@ -1438,11 +1451,141 @@ def _compact_auxiliary_transcript_hypotheses(
         confidence = _compact_confidence(value.get("confidence"))  # type: ignore[arg-type]
         if confidence is not None:
             item["confidence"] = confidence
+        hypothesis_speaker = _compact_hypothesis_speaker_metadata(value)
+        if hypothesis_speaker:
+            item["speaker"] = hypothesis_speaker
+        hypothesis_channel = _compact_hypothesis_channel_metadata(value)
+        if hypothesis_channel:
+            item["channel"] = hypothesis_channel
+        hypothesis_audio_range = _compact_hypothesis_audio_time_range_ms(value)
+        if hypothesis_audio_range:
+            item["audio_time_range_ms"] = hypothesis_audio_range
         adjudication = _compact_transcript_hypothesis_adjudication(value)
-        if adjudication:
+        explicit_rejection_reasons = _compact_transcript_hypothesis_rejection_reasons(value)
+        rejection_reasons = _witness_hypothesis_rejection_reasons(
+            item,
+            speaker_metadata=canonical_speaker,
+            channel_metadata=canonical_channel,
+            audio_time_range_ms=canonical_audio_range,
+        )
+        if explicit_rejection_reasons or rejection_reasons:
+            combined_rejection_reasons = tuple(dict.fromkeys((*explicit_rejection_reasons, *rejection_reasons)))
+            item["adjudication"] = "rejected_or_diagnostic_only"
+            item["rejection_reasons"] = combined_rejection_reasons
+        elif adjudication:
             item["adjudication"] = adjudication
         compact.append(item)
     return tuple(compact)
+
+
+def _compact_hypothesis_speaker_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
+    raw = value.get("speaker")
+    if isinstance(raw, Mapping):
+        metadata = _compact_speaker_metadata(raw)
+    else:
+        metadata = {}
+    for key in (
+        "platform",
+        "channel_user_id",
+        "platform_user_id",
+        "user_id",
+        "speaker_id",
+        "display_name",
+        "channel_id",
+        "guild_id",
+    ):
+        if key in metadata:
+            continue
+        text = _compact_evidence_text(value.get(key), limit=160)
+        if text:
+            metadata[key] = text
+    return metadata
+
+
+def _compact_hypothesis_channel_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
+    raw = value.get("channel")
+    if isinstance(raw, Mapping):
+        metadata = _compact_channel_metadata(raw)
+    else:
+        metadata = {}
+    for key in ("transport", "guild_id", "channel_id", "surface", "name"):
+        if key in metadata:
+            continue
+        text = _compact_evidence_text(value.get(key), limit=160)
+        if text:
+            metadata[key] = text
+    return metadata
+
+
+def _compact_hypothesis_audio_time_range_ms(value: Mapping[str, Any]) -> tuple[int, int] | tuple[()]:
+    for key in ("audio_time_range_ms", "time_range_ms", "utterance_time_range_ms", "witness_time_range_ms"):
+        parsed = _audio_time_range_ms(value.get(key))
+        if parsed:
+            return parsed
+    return ()
+
+
+def _witness_hypothesis_rejection_reasons(
+    hypothesis: Mapping[str, Any],
+    *,
+    speaker_metadata: Mapping[str, Any],
+    channel_metadata: Mapping[str, Any],
+    audio_time_range_ms: tuple[int, int] | tuple[()],
+) -> tuple[str, ...]:
+    if not _is_frontend_witness_hypothesis(hypothesis):
+        return ()
+    reasons: list[str] = []
+    witness_speaker = hypothesis.get("speaker")
+    if isinstance(witness_speaker, Mapping) and _metadata_identity_conflicts(
+        speaker_metadata,
+        witness_speaker,
+        keys=("channel_user_id", "platform_user_id", "user_id", "speaker_id"),
+    ):
+        reasons.append("wrong_speaker")
+    witness_channel = hypothesis.get("channel")
+    if isinstance(witness_channel, Mapping) and _metadata_identity_conflicts(
+        channel_metadata,
+        witness_channel,
+        keys=("guild_id", "channel_id"),
+    ):
+        reasons.append("wrong_channel")
+    witness_time_range = _audio_time_range_ms(hypothesis.get("audio_time_range_ms"))
+    if audio_time_range_ms and witness_time_range and _time_ranges_are_disjoint(
+        audio_time_range_ms,
+        witness_time_range,
+    ):
+        reasons.append("stale_witness")
+    return tuple(reasons)
+
+
+def _is_frontend_witness_hypothesis(hypothesis: Mapping[str, Any]) -> bool:
+    source = _compact_evidence_text(hypothesis.get("source") or hypothesis.get("provider"), limit=40).lower()
+    kind = _compact_evidence_text(hypothesis.get("kind"), limit=80).lower()
+    return source in {"moshi", "voiceclaw", "openclaw", "openclaw_talk", "s2s", "frontend_witness"} or kind in {
+        "frontend_witness_hypothesis",
+        "s2s_transcript_hypothesis",
+    }
+
+
+def _metadata_identity_conflicts(
+    canonical: Mapping[str, Any],
+    witness: Mapping[str, Any],
+    *,
+    keys: Sequence[str],
+) -> bool:
+    for key in keys:
+        left = _compact_evidence_text(canonical.get(key), limit=160).lower()
+        right = _compact_evidence_text(witness.get(key), limit=160).lower()
+        if left and right and left != right:
+            return True
+    return False
+
+
+def _time_ranges_are_disjoint(
+    canonical: tuple[int, int],
+    witness: tuple[int, int],
+) -> bool:
+    return witness[1] <= canonical[0] or witness[0] >= canonical[1]
 
 
 def _compact_transcript_hypothesis_adjudication(value: Mapping[str, Any]) -> str:
@@ -1459,6 +1602,27 @@ def _compact_transcript_hypothesis_adjudication(value: Mapping[str, Any]) -> str
     }:
         return outcome
     return ""
+
+
+def _compact_transcript_hypothesis_rejection_reasons(value: Mapping[str, Any]) -> tuple[str, ...]:
+    raw = (
+        value.get("rejection_reasons")
+        or value.get("rejection_reason")
+        or value.get("adjudication_reasons")
+        or value.get("adjudication_reason")
+    )
+    if isinstance(raw, str):
+        raw_values: Sequence[Any] = (raw,)
+    elif isinstance(raw, Sequence) and not isinstance(raw, (bytes, bytearray)):
+        raw_values = raw
+    else:
+        raw_values = ()
+    reasons: list[str] = []
+    for value in raw_values:
+        reason = _compact_evidence_text(value, limit=80).lower().replace("-", "_").replace(" ", "_")
+        if reason in {"wrong_speaker", "wrong_channel", "stale_witness"}:
+            reasons.append(reason)
+    return tuple(dict.fromkeys(reasons))
 
 
 def _request_with_compact_auxiliary_hypotheses(request: KameOracleRequest) -> KameOracleRequest:

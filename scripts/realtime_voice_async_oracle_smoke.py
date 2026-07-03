@@ -1931,6 +1931,16 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         late.job_id,
         audio_segment_ref="artifact://voice/witness-late.wav",
         audio_time_range_ms=(300, 1600),
+        speaker_metadata={
+            "platform": "discord",
+            "channel_user_id": "42",
+            "display_name": "jetha",
+        },
+        channel_metadata={
+            "transport": "discord_voice",
+            "guild_id": "guild-1",
+            "channel_id": "general",
+        },
         auxiliary_transcript_hypotheses=(
             {
                 "source": "moshi",
@@ -1938,6 +1948,17 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
                 "authority": "hypothesis",
                 "arrival_phase": "after_interpreter_start",
                 "adjudication": "rejected_or_diagnostic_only",
+                "speaker": {
+                    "platform": "discord",
+                    "channel_user_id": "wrong-speaker",
+                    "display_name": "guest",
+                },
+                "channel": {
+                    "transport": "discord_voice",
+                    "guild_id": "guild-1",
+                    "channel_id": "general",
+                },
+                "audio_time_range_ms": (10, 100),
             },
         ),
         source="gemma_interpreter",
@@ -2048,11 +2069,16 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "with": _witness_adjudications_from_status_job(with_status_job),
         "late": _witness_adjudications_from_status_job(late_status_job),
     }
+    rejection_reasons = {
+        "early": _witness_rejection_reasons_from_status_job(early_status_job),
+        "with": _witness_rejection_reasons_from_status_job(with_status_job),
+        "late": _witness_rejection_reasons_from_status_job(late_status_job),
+    }
     adjudication_outcomes_observed = adjudications == {
         "early": ["corrected_by_audio"],
         "with": ["accepted_as_supporting_evidence"],
         "late": ["rejected_or_diagnostic_only"],
-    }
+    } and rejection_reasons["late"] == ["wrong_speaker", "stale_witness"]
     return {
         "ok": (
             early_single_bundle
@@ -2084,6 +2110,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "witness_fusion_late_single_bundle": late_single_bundle,
         "witness_fusion_no_duplicate_oracle_jobs": no_duplicate_oracle_jobs,
         "witness_fusion_adjudications": adjudications,
+        "witness_fusion_rejection_reasons": rejection_reasons,
         "witness_fusion_adjudication_outcomes_observed": adjudication_outcomes_observed,
         "witness_fusion_accepted_counts": accepted_counts,
         "witness_fusion_started_counts": started_counts,
@@ -2106,6 +2133,31 @@ def _witness_adjudications_from_status_job(status_job: Mapping[str, Any]) -> lis
         if outcome:
             outcomes.append(outcome)
     return outcomes
+
+
+def _witness_rejection_reasons_from_status_job(status_job: Mapping[str, Any]) -> list[str]:
+    hypotheses = status_job.get("transcript_hypotheses")
+    if not isinstance(hypotheses, Sequence) or isinstance(hypotheses, (str, bytes, bytearray)):
+        return []
+    reasons: list[str] = []
+    for hypothesis in hypotheses:
+        if not isinstance(hypothesis, Mapping):
+            continue
+        source = str(hypothesis.get("source") or "").strip().lower()
+        if source not in {"moshi", "voiceclaw", "openclaw", "s2s", "frontend_witness"}:
+            continue
+        raw_reasons = hypothesis.get("rejection_reasons")
+        if isinstance(raw_reasons, str):
+            raw_items: Sequence[Any] = (raw_reasons,)
+        elif isinstance(raw_reasons, Sequence) and not isinstance(raw_reasons, (str, bytes, bytearray)):
+            raw_items = raw_reasons
+        else:
+            raw_items = ()
+        for reason in raw_items:
+            text = str(reason or "").strip()
+            if text:
+                reasons.append(text)
+    return reasons
 
 
 async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
@@ -3650,6 +3702,9 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "witness_fusion_adjudications": witness_fusion_timing_smoke[
             "witness_fusion_adjudications"
+        ],
+        "witness_fusion_rejection_reasons": witness_fusion_timing_smoke[
+            "witness_fusion_rejection_reasons"
         ],
         "witness_fusion_adjudication_outcomes_observed": witness_fusion_timing_smoke[
             "witness_fusion_adjudication_outcomes_observed"

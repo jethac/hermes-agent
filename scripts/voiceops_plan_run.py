@@ -1855,6 +1855,9 @@ async def build_plan_run_async(
                     "witness_fusion_adjudications": dict(
                         voice_operator["proofs"]["async_oracle_jobs"]["witness_fusion_adjudications"]
                     ),
+                    "witness_fusion_rejection_reasons": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"]["witness_fusion_rejection_reasons"]
+                    ),
                     "witness_fusion_adjudication_outcomes_observed": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["witness_fusion_adjudication_outcomes_observed"],

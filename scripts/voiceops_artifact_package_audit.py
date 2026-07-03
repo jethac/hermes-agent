@@ -2092,6 +2092,7 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
                 async_smoke.get("witness_fusion_no_duplicate_oracle_jobs")
             ),
             "witness_fusion_adjudications": async_smoke.get("witness_fusion_adjudications") or {},
+            "witness_fusion_rejection_reasons": async_smoke.get("witness_fusion_rejection_reasons") or {},
             "witness_fusion_adjudication_outcomes_observed": bool(
                 async_smoke.get("witness_fusion_adjudication_outcomes_observed")
             ),

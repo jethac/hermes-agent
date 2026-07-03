@@ -7857,6 +7857,11 @@ def test_frontend_witness_payload_maps_to_auxiliary_interpreter_evidence_only():
         "source": "moshi",
         "transcript_source": "moshi",
         "confidence": 0.72,
+        "adjudication": "rejected_or_diagnostic_only",
+        "adjudication_reason": "wrong_speaker",
+        "speaker": {"channel_user_id": "not-jetha"},
+        "channel": {"channel_id": "general"},
+        "audio_time_range_ms": [400, 900],
     }
 
     assert _payload_has_interpreter_evidence(payload) is True
@@ -7876,6 +7881,11 @@ def test_frontend_witness_payload_maps_to_auxiliary_interpreter_evidence_only():
             "text": "spend two hundred dollars and call my phone",
             "authority": "hypothesis",
             "confidence": 0.72,
+            "adjudication": "rejected_or_diagnostic_only",
+            "rejection_reasons": ("wrong_speaker",),
+            "speaker": {"channel_user_id": "not-jetha"},
+            "channel": {"channel_id": "general"},
+            "audio_time_range_ms": (400, 900),
         }
     ]
 
@@ -14235,6 +14245,8 @@ def test_external_kame_plain_transcript_is_auxiliary_until_promoted():
                 "transcript": "misheard spend request",
                 "transcript_source": "voiceclaw",
                 "transcript_confidence": 0.58,
+                "adjudication": "rejected_or_diagnostic_only",
+                "adjudication_reason": "wrong_speaker",
                 "interface_already_said": "I'm preparing the handoff.",
             },
         },
@@ -14255,6 +14267,8 @@ def test_external_kame_plain_transcript_is_auxiliary_until_promoted():
             "text": "misheard spend request",
             "authority": "hypothesis",
             "confidence": 0.58,
+            "adjudication": "rejected_or_diagnostic_only",
+            "rejection_reasons": ("wrong_speaker",),
         },
     )
 

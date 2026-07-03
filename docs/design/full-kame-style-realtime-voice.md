@@ -210,6 +210,10 @@ and only after the interpreter emits the promoted fields. A rejected or
 diagnostic witness remains visible in the audit bundle but cannot become
 durable user text, a phone script, a spend reason, a provider choice, a memory
 write, a file write, or a tool argument.
+Rejected frontend witnesses should also carry typed `rejection_reasons` such as
+`wrong_speaker`, `wrong_channel`, or `stale_witness` when speaker/channel/timing
+metadata proves the conflict. These reasons are audit evidence, not prompts for
+the oracle to reinterpret the rejected text.
 
 ## Current Implementation Target
 

@@ -1330,6 +1330,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "with": ["accepted_as_supporting_evidence"],
         "late": ["rejected_or_diagnostic_only"],
     }
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_rejection_reasons"] == {
+        "early": [],
+        "with": [],
+        "late": ["wrong_speaker", "stale_witness"],
+    }
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_adjudication_outcomes_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_hypothesis_only_ok"] is False

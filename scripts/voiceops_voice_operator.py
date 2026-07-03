@@ -1817,6 +1817,12 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
             "early": ["corrected_by_audio"],
             "with": ["accepted_as_supporting_evidence"],
             "late": ["rejected_or_diagnostic_only"],
+        }
+        and smoke.get("witness_fusion_rejection_reasons")
+        == {
+            "early": [],
+            "with": [],
+            "late": ["wrong_speaker", "stale_witness"],
         },
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
         and smoke.get("verbose_result_committed_bounded") is True
@@ -2702,6 +2708,9 @@ def build_voice_operator_report(
             ),
             "witness_fusion_adjudications": dict(
                 async_oracle_smoke.get("witness_fusion_adjudications") or {}
+            ),
+            "witness_fusion_rejection_reasons": dict(
+                async_oracle_smoke.get("witness_fusion_rejection_reasons") or {}
             ),
             "witness_fusion_adjudication_outcomes_observed": bool(
                 async_oracle_smoke.get("witness_fusion_adjudication_outcomes_observed")
