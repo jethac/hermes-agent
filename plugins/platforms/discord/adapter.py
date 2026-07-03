@@ -58,6 +58,8 @@ DISCORD_REALTIME_ORACLE_JOB_EVENTS = frozenset(
         "oracle.job.failed",
         "oracle.job.cancel_requested",
         "oracle.job.cancelled",
+        "oracle.job.interpreter_evidence_attached",
+        "oracle.job.interpreter_evidence_late",
         "interface.oracle.update",
     }
 )
@@ -266,6 +268,7 @@ def _discord_voice_oracle_jobs_update(
                 job["latest_update"] = text[:240]
                 continue
             job[key] = text[:500 if key == "result_summary" else 240 if key == "latest_update" else 180]
+    _discord_voice_copy_oracle_job_evidence_status(payload, job)
     update_count = _discord_voice_nonnegative_int(payload.get("update_count"))
     if update_count is not None:
         job["update_count"] = update_count
@@ -343,6 +346,7 @@ def _discord_voice_oracle_jobs_from_live_status(
             update_count = _discord_voice_nonnegative_int(raw_job.get("update_count"))
             if update_count is not None:
                 job["update_count"] = update_count
+            _discord_voice_copy_oracle_job_evidence_status(raw_job, job)
             if job.get("job_id"):
                 jobs.append(job)
     capacity.update(
@@ -358,6 +362,31 @@ def _discord_voice_oracle_jobs_from_live_status(
     )
     enabled = bool(status.get("enabled") or current.get("enabled") or jobs or capacity)
     return {"enabled": enabled, "capacity": capacity, "jobs": jobs[-12:]}
+
+
+def _discord_voice_copy_oracle_job_evidence_status(
+    source: Mapping[str, Any],
+    target: Dict[str, Any],
+) -> None:
+    for key, limit in (
+        ("latest_interpreter_evidence", 240),
+        ("latest_interpreter_evidence_source", 40),
+        ("interpreter_evidence_delivery_status", 80),
+    ):
+        text = str(source.get(key) or "").strip()
+        if text:
+            target[key] = text[:limit]
+    count = _discord_voice_nonnegative_int(source.get("interpreter_evidence_count"))
+    if count is not None:
+        target["interpreter_evidence_count"] = count
+    for key in (
+        "interpreter_evidence_late",
+        "interpreter_evidence_delivered_to_oracle",
+        "interpreter_evidence_consumed_before_irreversible_action",
+    ):
+        raw = source.get(key)
+        if isinstance(raw, bool):
+            target[key] = raw
 
 
 def _discord_voice_oracle_jobs_degraded(existing: Any, reason: str) -> Dict[str, Any]:

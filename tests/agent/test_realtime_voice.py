@@ -4817,6 +4817,76 @@ def test_kame_engine_async_terminal_result_speech_is_capped_without_losing_full_
     asyncio.run(run())
 
 
+def test_kame_engine_async_terminal_result_speech_caps_single_long_sentence(monkeypatch):
+    long_result = " ".join(f"status{i}" for i in range(140))
+
+    class VerboseOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield long_result
+
+    async def run():
+        spoken = []
+
+        async def fake_speak(self, text, playback_generation):
+            spoken.append(text)
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = VerboseOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                max_spoken_sentences=1,
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "check the long deployment log",
+                    "intent": "Check the long deployment log.",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "interface_already_said": "Checking that now.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ASSISTANT_COMMIT and event.payload.get("oracle_job_result"):
+                break
+
+        await engine.close()
+        completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
+        result_commit = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.ASSISTANT_COMMIT and event.payload.get("oracle_job_result")
+        )
+        assert completed.payload["result_summary"] == long_result
+        assert result_commit.payload["text"] != long_result
+        assert len(result_commit.payload["text"]) <= 600
+        assert result_commit.payload["text"].endswith("...")
+        assert result_commit.payload["voice_response_truncated"] is True
+        assert spoken == ["Checking that now.", result_commit.payload["text"]]
+
+    asyncio.run(run())
+
+
 def test_kame_engine_async_oracle_job_failure_reports_in_voice(monkeypatch):
     class FailingOracle:
         def __init__(self):

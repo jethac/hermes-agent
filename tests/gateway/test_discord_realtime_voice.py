@@ -1351,6 +1351,22 @@ def test_discord_realtime_event_tracks_oracle_job_status():
             "spoken_status": "Preparing the Stripe spend request.",
         },
     )
+    adapter._handle_realtime_voice_event(
+        111,
+        "oracle.job.interpreter_evidence_late",
+        {
+            "job_id": "voice-oracle-002",
+            "state": "waiting_for_approval",
+            "latest_interpreter_evidence": "interpreter evidence: transcript=buy phone credits",
+            "latest_interpreter_evidence_source": "gemma_interpreter",
+            "interpreter_evidence_count": 1,
+            "interpreter_evidence_late": True,
+            "interpreter_evidence_delivered_to_oracle": True,
+            "interpreter_evidence_consumed_before_irreversible_action": False,
+            "interpreter_evidence_delivery_status": "delivered",
+            "corrected_transcript": "must not leak",
+        },
+    )
 
     status = adapter.get_voice_session_status(111)
 
@@ -1382,10 +1398,18 @@ def test_discord_realtime_event_tracks_oracle_job_status():
             "spoken_status": "Preparing the Stripe spend request.",
             "update_count": 1,
             "latest_update": "also check the Stripe receipt before answering",
+            "latest_interpreter_evidence": "interpreter evidence: transcript=buy phone credits",
+            "latest_interpreter_evidence_source": "gemma_interpreter",
+            "interpreter_evidence_count": 1,
+            "interpreter_evidence_late": True,
+            "interpreter_evidence_delivered_to_oracle": True,
+            "interpreter_evidence_consumed_before_irreversible_action": False,
+            "interpreter_evidence_delivery_status": "delivered",
         },
     ]
     assert "metadata" not in status["oracle_jobs"]["jobs"][0]
     assert "oracle_text" not in status["oracle_jobs"]["jobs"][0]
+    assert "corrected_transcript" not in status["oracle_jobs"]["jobs"][1]
 
 
 def test_discord_realtime_degraded_marks_active_oracle_jobs_failed():
@@ -1463,6 +1487,9 @@ def test_voice_status_oracle_job_lines_are_compact():
                     "job_id": "voice-oracle-002",
                     "state": "waiting_for_approval",
                     "spoken_status": "Waiting for Stripe spend approval.",
+                    "interpreter_evidence_count": 1,
+                    "interpreter_evidence_late": True,
+                    "interpreter_evidence_delivery_status": "delivered",
                 },
                 {
                     "job_id": "voice-oracle-003",
@@ -1476,7 +1503,7 @@ def test_voice_status_oracle_job_lines_are_compact():
     assert lines == [
         "Oracle jobs: active=3/4, running=1, queued=2, waiting_for_approval=1, cancel_requested=1",
         "Oracle job: voice-oracle-001 running - Checking the deployment status. | update: include the staging region too.",
-        "Oracle job: voice-oracle-002 waiting_for_approval - Waiting for Stripe spend approval.",
+        "Oracle job: voice-oracle-002 waiting_for_approval - Waiting for Stripe spend approval. | evidence: delivered, late, x1",
         "Oracle job: voice-oracle-003 cancel_requested - Stopping the stale deployment check.",
     ]
 

@@ -177,8 +177,9 @@ The reflex transcript is a hypothesis. It is useful because it arrives early and
 captures what the live model thought it heard, but it must not become the
 unquestioned transcript of record. Moshi/S2S transcript output belongs in this
 same class: helpful context, not authority. The interpreter and auxiliary
-transcript evidence lanes may correct it before the oracle executes tool calls
-or external actions.
+transcript evidence lanes are not equal authorities: the interpreter may correct
+the reflex hypothesis using auxiliary transcript hypotheses as labeled context
+before the oracle executes tool calls or external actions.
 
 If the reflex is a Moshi-style S2S model that emits a transcript or STT-like
 side channel, Hermes should pass that text to the interpreter beside the raw
@@ -417,13 +418,18 @@ Auxiliary transcript/fallback evidence events:
 - `transcript.partial`
 - `transcript.final`
 - `reflex.transcript.hypothesis`
+
+Interpreter evidence events:
+
 - `interpreter.evidence.started`
 - `interpreter.evidence.final`
 - `interpreter.evidence.patch`
 
 These transcript events are disabled unless transcript evidence mode is
 `from_reflex`, `on_escalation`, `speculative`, `debug`, or `fallback`. They must
-not make the normal KAME path STT-first. Reflex/Moshi transcript hypotheses and
+not make the normal KAME path STT-first. Interpreter evidence events are governed
+by the interpreter lane and may exist for raw-audio turns even when auxiliary
+transcript evidence is disabled. Reflex/Moshi transcript hypotheses and
 interpreter evidence are separate: transcript hypotheses are early and
 non-durable by default, while interpreter evidence is the corrected
 audio-understanding artifact offered to the oracle.
@@ -1074,7 +1080,6 @@ Already present:
   routing, barge-in, fallback, and local provider target settings
 - oracle job manager evidence for background execution, queueing, cancellation,
   and status reporting
-- DGX Spark / Nemotron 3 Super `max_concurrent=4` capacity evidence
 
 Remaining for full KAME production readiness:
 

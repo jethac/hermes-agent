@@ -209,6 +209,9 @@ def _voice_status_oracle_job_lines(value: Any) -> list[str]:
         job_id = str(job.get("job_id") or "").strip()
         state = str(job.get("state") or "").strip()
         label = _voice_status_oracle_job_label(job, state)
+        evidence = _voice_status_oracle_job_evidence_label(job)
+        if evidence:
+            label = f"{label[:80]} | evidence: {evidence}" if label else f"evidence: {evidence}"
         latest_update = str(job.get("latest_update") or "").strip()
         if latest_update:
             label = f"{label[:80]} | update: {latest_update[:80]}" if label else f"update: {latest_update[:100]}"
@@ -235,6 +238,23 @@ def _voice_status_oracle_job_label(job: dict[str, Any], state: str) -> str:
         if value:
             return value
     return ""
+
+
+def _voice_status_oracle_job_evidence_label(job: dict[str, Any]) -> str:
+    parts: list[str] = []
+    status = str(job.get("interpreter_evidence_delivery_status") or "").strip()
+    if status:
+        parts.append(status[:40])
+    elif job.get("interpreter_evidence_consumed_before_irreversible_action") is True:
+        parts.append("consumed")
+    elif job.get("interpreter_evidence_delivered_to_oracle") is True:
+        parts.append("delivered")
+    if job.get("interpreter_evidence_late") is True:
+        parts.append("late")
+    count = job.get("interpreter_evidence_count")
+    if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+        parts.append(f"x{count}")
+    return ", ".join(parts)[:80]
 
 
 class GatewaySlashCommandsMixin:

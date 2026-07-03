@@ -4446,10 +4446,13 @@ def _limit_spoken_text(
     *,
     max_sentences: int,
     already_spoken: str = "",
+    max_chars: int = 600,
 ) -> tuple[str, bool]:
     cleaned = " ".join((text or "").split()).strip()
-    if not cleaned or max_sentences <= 0:
+    if not cleaned:
         return cleaned, False
+    if max_sentences <= 0:
+        return _limit_spoken_text_chars(cleaned, max_chars=max_chars)
 
     remaining = max_sentences - _spoken_sentence_count(already_spoken)
     if remaining <= 0:
@@ -4466,11 +4469,26 @@ def _limit_spoken_text(
             break
 
     if truncate_at is None:
-        return cleaned, False
+        return _limit_spoken_text_chars(cleaned, max_chars=max_chars)
 
     limited = cleaned[:truncate_at].strip()
-    truncated = bool(cleaned[truncate_at:].strip())
-    return limited, truncated
+    sentence_truncated = bool(cleaned[truncate_at:].strip())
+    limited, char_truncated = _limit_spoken_text_chars(limited, max_chars=max_chars)
+    return limited, sentence_truncated or char_truncated
+
+
+def _limit_spoken_text_chars(text: str, *, max_chars: int) -> tuple[str, bool]:
+    cleaned = " ".join((text or "").split()).strip()
+    if not cleaned or max_chars <= 0 or len(cleaned) <= max_chars:
+        return cleaned, False
+    suffix = "..."
+    budget = max(1, max_chars - len(suffix))
+    limited = cleaned[:budget].rstrip()
+    if " " in limited:
+        limited = limited.rsplit(" ", 1)[0].rstrip()
+    if not limited:
+        limited = cleaned[:budget].rstrip()
+    return f"{limited}{suffix}", True
 
 
 def _spoken_sentence_count(text: str) -> int:
