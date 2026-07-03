@@ -7799,6 +7799,23 @@ class TestRealtimeVoiceWebSocket:
         assert status["kame"]["oracle_provider"] == "custom"
         assert status["kame"]["oracle_base_url"] == "http://spark.local:8001/v1"
         assert status["kame"]["voice_response_policy"] == "brief_summary"
+        assert status["kame_stack"] == status["kame"]["stack"]
+        assert status["kame_stack"]["reflex"] == {
+            "provider": "openai_compatible",
+            "model": "gemma-4-E2B-it",
+            "audio_input": "auto",
+            "base_url_configured": True,
+            "timeout_seconds": 0.7,
+            "max_audio_seconds": 18.0,
+            "role": "low_latency_floor_control",
+        }
+        assert status["kame_stack"]["transcript_evidence"]["authority"] == "hypothesis"
+        assert status["kame_stack"]["transcript_evidence"]["schedule_oracle_from_transcript"] is False
+        assert status["kame_stack"]["oracle"] == {
+            "mode": "hermes_active_model",
+            "preferred_local_model": "gemma-4-26B-A4B-it",
+            "timeout_seconds": 12.0,
+        }
         assert status["oracle_timeout_seconds"] == 12.0
         assert status["barge_in_min_rms"] == 410
         assert status["barge_in_min_speech_ms"] == 130
@@ -8402,6 +8419,47 @@ class TestRealtimeVoiceWebSocket:
             "kame_speech_end_to_first_audio_ms": 3000,
             "kame_speech_end_to_playback_start_ms": 3000,
         }
+        expected_kame_stack = {
+            "engine": "kame_interface_oracle",
+            "reflex": {
+                "provider": "gemma4",
+                "model": "gemma-4-E2B-it",
+                "audio_input": "native_audio",
+                "base_url_configured": False,
+                "timeout_seconds": 0.8,
+                "max_audio_seconds": 30.0,
+                "role": "low_latency_floor_control",
+            },
+            "interpreter": {
+                "provider": "",
+                "model": "",
+                "audio_input": "native_audio",
+                "base_url_configured": False,
+                "role": "raw_audio_evidence_adjudicator",
+            },
+            "transcript_evidence": {
+                "mode": "on_escalation",
+                "provider": "streaming_stt",
+                "model": "nemotron-speech",
+                "sources": [],
+                "base_url_configured": False,
+                "authority": "hypothesis",
+                "schedule_oracle_from_transcript": False,
+            },
+            "oracle": {
+                "mode": "hermes_active_model",
+                "preferred_local_model": "gemma-4-26B-A4B-it",
+                "timeout_seconds": 42.0,
+            },
+            "tts": {
+                "provider": "cartesia",
+                "model": "sonic-3.5",
+                "voice_configured": True,
+                "base_url_configured": False,
+            },
+            "fallback_policy": "legacy_voice",
+        }
+        assert body["kame_stack"] == expected_kame_stack
         assert body["kame"] == {
             "enabled": True,
             "sidecar_required": True,
@@ -8433,6 +8491,7 @@ class TestRealtimeVoiceWebSocket:
             "fallback_policy": "legacy_voice",
             "routing": body["routing"],
             "metrics": body["metrics"],
+            "stack": expected_kame_stack,
         }
         assert body["production_readiness"]["level"] == "live_like"
 

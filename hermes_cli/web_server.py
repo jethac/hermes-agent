@@ -13941,6 +13941,116 @@ def _realtime_voice_oracle_jobs_payload(realtime: Mapping[str, Any]) -> Dict[str
     }
 
 
+def _realtime_voice_kame_stack_payload(
+    *,
+    engine: str,
+    provider: str,
+    frontend_model: str,
+    interface_base_url: str,
+    interface_timeout_seconds: float,
+    interface_max_audio_seconds: float,
+    interface_audio_input: str,
+    realtime: Mapping[str, Any],
+    asr_mode: str,
+    asr_provider: str,
+    asr_model: str,
+    asr_base_url: str,
+    preferred_local_oracle_model: str,
+    oracle_timeout_seconds: float,
+    tts_provider: str,
+    tts_model: str,
+    tts_voice: str,
+    tts_base_url: str,
+    fallback_policy: str,
+) -> Dict[str, Any]:
+    interpreter = _mapping_config(realtime.get("interpreter") if isinstance(realtime, Mapping) else {})
+    transcript_evidence = _mapping_config(realtime.get("transcript_evidence") if isinstance(realtime, Mapping) else {})
+    interpreter_provider = str(
+        _first_realtime_voice_config_value(
+            realtime,
+            ("interpreter_provider",),
+            ("interpreter", "provider"),
+            default="",
+        )
+        or ""
+    )
+    interpreter_model = str(
+        _first_realtime_voice_config_value(
+            realtime,
+            ("interpreter_model",),
+            ("interpreter", "model"),
+            default="",
+        )
+        or ""
+    )
+    interpreter_audio_input = str(
+        _first_realtime_voice_config_value(
+            realtime,
+            ("interpreter_audio_input",),
+            ("interpreter", "audio_input"),
+            default="native_audio",
+        )
+        or "native_audio"
+    )
+    interpreter_base_url = str(
+        _first_realtime_voice_config_value(
+            realtime,
+            ("interpreter_base_url",),
+            ("interpreter", "base_url"),
+            default="",
+        )
+        or ""
+    )
+    transcript_mode = str(transcript_evidence.get("mode") or asr_mode or "")
+    transcript_sources = transcript_evidence.get("sources")
+    if not isinstance(transcript_sources, list):
+        transcript_sources = []
+
+    return {
+        "engine": engine,
+        "reflex": {
+            "provider": provider or "",
+            "model": frontend_model or "",
+            "audio_input": interface_audio_input or "auto",
+            "base_url_configured": bool(interface_base_url),
+            "timeout_seconds": interface_timeout_seconds,
+            "max_audio_seconds": interface_max_audio_seconds,
+            "role": "low_latency_floor_control",
+        },
+        "interpreter": {
+            "provider": interpreter_provider,
+            "model": interpreter_model,
+            "audio_input": interpreter_audio_input,
+            "base_url_configured": bool(interpreter_base_url),
+            "role": str(interpreter.get("role") or "raw_audio_evidence_adjudicator"),
+        },
+        "transcript_evidence": {
+            "mode": transcript_mode,
+            "provider": asr_provider or "",
+            "model": asr_model or "",
+            "sources": [str(source) for source in transcript_sources if str(source or "").strip()],
+            "base_url_configured": bool(asr_base_url),
+            "authority": str(transcript_evidence.get("authority") or "hypothesis"),
+            "schedule_oracle_from_transcript": _truthy_config(
+                transcript_evidence.get("schedule_oracle_from_transcript"),
+                default=False,
+            ),
+        },
+        "oracle": {
+            "mode": "hermes_active_model",
+            "preferred_local_model": preferred_local_oracle_model or "",
+            "timeout_seconds": oracle_timeout_seconds,
+        },
+        "tts": {
+            "provider": tts_provider or "",
+            "model": tts_model or "",
+            "voice_configured": bool(tts_voice),
+            "base_url_configured": bool(tts_base_url),
+        },
+        "fallback_policy": fallback_policy,
+    }
+
+
 def _realtime_voice_oracle_tool_router_payload(realtime: Mapping[str, Any]) -> Dict[str, Any]:
     raw = realtime.get("oracle_tool_router") if isinstance(realtime, Mapping) else {}
     if not isinstance(raw, Mapping):
@@ -15280,6 +15390,27 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         health_payload=health_payload,
         conversation_quality=conversation_quality,
     )
+    kame_stack = _realtime_voice_kame_stack_payload(
+        engine=engine,
+        provider=provider,
+        frontend_model=frontend_model,
+        interface_base_url=interface_base_url,
+        interface_timeout_seconds=interface_timeout_seconds,
+        interface_max_audio_seconds=interface_max_audio_seconds,
+        interface_audio_input=interface_audio_input,
+        realtime=realtime,
+        asr_mode=asr_mode,
+        asr_provider=asr_provider,
+        asr_model=asr_model,
+        asr_base_url=asr_base_url,
+        preferred_local_oracle_model=preferred_local_oracle_model,
+        oracle_timeout_seconds=oracle_timeout_seconds,
+        tts_provider=tts_provider,
+        tts_model=tts_model,
+        tts_voice=tts_voice,
+        tts_base_url=tts_base_url,
+        fallback_policy=fallback_policy,
+    )
     production_evidence = _realtime_voice_production_evidence_payload(
         realtime,
         current_manifest=current_evidence_manifest,
@@ -15408,6 +15539,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "output_events": output_events_policy,
         "conversation_quality": conversation_quality,
         "production_readiness": production_readiness,
+        "kame_stack": kame_stack,
         "require_live_like": require_live_like,
         "sidecar": {
             "mode": sidecar_mode,
@@ -15455,6 +15587,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
             "fallback_policy": fallback_policy,
             "routing": routing_policy,
             "metrics": metrics_policy,
+            "stack": kame_stack,
         },
     }
 
