@@ -420,6 +420,14 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert "transcript=what is three to the power of seventeen" in queued_status["latest_interpreter_evidence"]
     assert attached["payload"]["operation"] == "interpreter_evidence"
     assert attached["payload"]["interpreter_evidence_late"] is False
+    assert oracle_request.oracle_text == "what is three to the power of seventeen"
+    assert oracle_request.oracle_text_source == "gemma_interpreter"
+    assert oracle_request.transcript == "what is three to the power of seventeen"
+    assert oracle_request.transcript_source == "gemma_interpreter"
+    assert oracle_request.transcript_confidence == 0.94
+    assert oracle_request.intent == "answer a math question"
+    assert oracle_request.intent_source == "gemma_interpreter"
+    assert oracle_request.asr_transcript == ""
     assert any(
         "entities=math_expression=3^17" in update
         for update in oracle_request.job_updates
@@ -468,6 +476,9 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
     assert updated.interpreter_evidence[0]["late"] is True
     assert running_status["interpreter_evidence_late"] is True
     assert late["payload"]["interpreter_evidence_late"] is True
+    assert oracle_request.oracle_text == "running"
+    assert oracle_request.intent == "running"
+    assert oracle_request.intent_source == "reflex_audio"
     assert any("intent=inspect deployment logs" in update for update in oracle_request.job_updates)
 
     release.set()
@@ -522,6 +533,7 @@ async def test_interpreter_evidence_redacts_secret_like_text_from_status_events_
     queued_status = next(job for job in status["jobs"] if job["job_id"] == queued.job_id)
 
     assert "Bearer ***" in queued_status["latest_interpreter_evidence"]
+    assert "Bearer ***" in oracle_request.oracle_text
     assert "raw-token" not in combined
     assert "sk_test_abcdefghijklmnopqrstuvwxyz" not in combined
 

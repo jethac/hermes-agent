@@ -3266,12 +3266,13 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
 
 
 def _oracle_request_for_job(job: OracleJob, request: KameOracleRequest) -> KameOracleRequest:
+    folded_request = _oracle_request_with_queued_interpreter_evidence(job, request)
     updates = tuple(
         dict.fromkeys(
             (
                 *(
                     str(update or "").strip()
-                    for update in request.job_updates
+                    for update in folded_request.job_updates
                     if str(update or "").strip()
                 ),
                 *_oracle_job_update_texts(job),
@@ -3279,13 +3280,58 @@ def _oracle_request_for_job(job: OracleJob, request: KameOracleRequest) -> KameO
             )
         )
     )
-    if not updates and request.priority == job.priority:
+    if not updates and folded_request.priority == job.priority and folded_request is request:
         return request
     return replace(
-        request,
+        folded_request,
         priority=job.priority,
         job_updates=updates,
     )
+
+
+def _oracle_request_with_queued_interpreter_evidence(
+    job: OracleJob,
+    request: KameOracleRequest,
+) -> KameOracleRequest:
+    evidence = _latest_queued_interpreter_evidence(job)
+    if not evidence:
+        return request
+
+    corrected_transcript = str(evidence.get("corrected_transcript") or "").strip()
+    normalized_intent = str(evidence.get("normalized_intent") or "").strip()
+    if not corrected_transcript and not normalized_intent:
+        return request
+
+    source = str(evidence.get("source") or "").strip() or "interpreter"
+    confidence = evidence.get("confidence")
+    changes: dict[str, Any] = {}
+    if corrected_transcript:
+        changes.update(
+            {
+                "transcript": corrected_transcript,
+                "transcript_source": source,
+                "transcript_confidence": confidence if isinstance(confidence, (int, float)) else None,
+                "asr_transcript": "",
+                "asr_transcript_source": "",
+                "asr_transcript_confidence": None,
+            }
+        )
+    if normalized_intent:
+        changes["intent"] = normalized_intent
+        changes["intent_source"] = source
+    if not changes:
+        return request
+    return replace(request, **changes)
+
+
+def _latest_queued_interpreter_evidence(job: OracleJob) -> Mapping[str, Any]:
+    for evidence in reversed(job.interpreter_evidence):
+        if not isinstance(evidence, Mapping):
+            continue
+        if bool(evidence.get("late")):
+            continue
+        return evidence
+    return {}
 
 
 def _oracle_job_update_texts(job: OracleJob) -> tuple[str, ...]:

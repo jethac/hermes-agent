@@ -3246,7 +3246,13 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
         assert "transcript=what is three to the power of seventeen" in update.payload[
             "latest_interpreter_evidence"
         ]
-        assert oracle.requests[1].intent == "Run task 2"
+        assert oracle.requests[1].intent == "answer a math question"
+        assert oracle.requests[1].intent_source == "gemma_interpreter"
+        assert oracle.requests[1].oracle_text == "what is three to the power of seventeen"
+        assert oracle.requests[1].oracle_text_source == "gemma_interpreter"
+        assert oracle.requests[1].transcript == "what is three to the power of seventeen"
+        assert oracle.requests[1].transcript_source == "gemma_interpreter"
+        assert oracle.requests[1].transcript_confidence == 0.94
         assert any("entities=math_expression=3^17" in update for update in oracle.requests[1].job_updates)
 
     asyncio.run(run())
@@ -3456,6 +3462,8 @@ def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(m
 
         updated_request, update_text, metadata = oracle.updates[0]
         assert updated_request.intent == "Run task one"
+        assert updated_request.oracle_text == "run task one"
+        assert updated_request.oracle_text_source == "reflex_audio"
         assert any("intent=inspect deployment logs" in update for update in updated_request.job_updates)
         assert "transcript=check the current deployment logs" in update_text
         assert metadata["latest_interpreter_evidence"] == update_text
