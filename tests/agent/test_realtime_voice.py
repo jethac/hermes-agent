@@ -13280,6 +13280,54 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
     assert "must-not-copy" not in str(metadata)
 
 
+def test_external_kame_audio_metadata_without_segment_ref_is_degraded():
+    request = kame_external_brain_request_to_oracle_request(
+        {
+            "tool_name": "ask_brain",
+            "arguments": {
+                "query": "prepare the phone handoff",
+                "interface_already_said": "I'm preparing the handoff.",
+            },
+            "audio": {
+                "codec": "pcm_s16le",
+                "sample_rate_hz": 16000,
+                "channels": 1,
+                "time_range_ms": [120, 1840],
+                "vad": {"speech_start_ms": 120, "speech_end_ms": 1840},
+                "authority": "primary_audio",
+            },
+            "transcript_hypotheses": [
+                {
+                    "kind": "s2s_transcript_hypothesis",
+                    "source": "moshi",
+                    "text": "prepare phone handoff",
+                    "authority": "auxiliary_hypothesis",
+                }
+            ],
+        },
+        session_id="external-kame-audio-metadata-only",
+        turn_id="external-kame-audio-metadata-only:1",
+        source="voiceclaw",
+        user_id="jetha",
+    )
+
+    metadata = request.to_metadata()
+    assert request.audio_segment_ref == ""
+    assert request.audio_time_range_ms == (120, 1840)
+    assert request.raw_audio_available is False
+    assert request.evidence_bundle_status == "degraded_audio_metadata_only"
+    assert metadata["kame_raw_audio_available"] is False
+    assert metadata["kame_evidence_bundle_status"] == "degraded_audio_metadata_only"
+    assert metadata["kame_audio"] == {
+        "time_range_ms": (120, 1840),
+        "codec": "pcm_s16le",
+        "authority": "primary_audio",
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "vad": {"speech_start_ms": 120, "speech_end_ms": 1840},
+    }
+
+
 def test_external_kame_bridge_arguments_preserve_top_level_evidence_bundle_fields():
     arguments = _external_kame_bridge_arguments(
         {

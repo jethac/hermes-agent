@@ -422,7 +422,7 @@ class KameOracleRequest:
     def raw_audio_available(self) -> bool:
         """Return whether this request carries primary raw-audio evidence."""
 
-        return bool(self.audio_segment_ref or self.audio_metadata)
+        return bool(self.audio_segment_ref)
 
     @property
     def evidence_bundle_status(self) -> str:
@@ -430,6 +430,8 @@ class KameOracleRequest:
 
         if self.raw_audio_available:
             return "primary_audio"
+        if self.audio_metadata:
+            return "degraded_audio_metadata_only"
         if self.interface_audio_input_fallback:
             return "fallback_text_only"
         if _optional_text(self.interface_input_source) in KAME_FRONTEND_BRAIN_BRIDGE_NAMES:
