@@ -45,6 +45,7 @@ from agent.realtime_voice_reference_sidecar import (
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_gemini import GeminiLiveFrontendConfig, _setup_payload
 from agent.realtime_voice_oracle import _voice_oracle_prompt
+from agent.realtime_voice_oracle_jobs import OracleJobManager
 from agent.realtime_voice_session import RealtimeVoiceSession, RealtimeVoiceSessionState, create_realtime_voice_engine
 from agent.realtime_voice_s2s_engine import NativeS2SSidecarEngine
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, sidecar_ws_url, wants_realtime_sidecar
@@ -6189,6 +6190,8 @@ def test_async_oracle_job_enters_waiting_for_approval_on_tool_call(monkeypatch):
         assert waiting.payload["approval_reason"] == "Stripe Link spend requires approval"
         assert waiting.payload["approval"]["approval_id"] == "approval-123"
         assert waiting.payload["approval"]["tool_name"] == "stripe_link_purchase"
+        assert waiting.payload["approval"]["kame_action_gate"]["ok"] is False
+        assert "missing_promoted_evidence" in waiting.payload["approval"]["kame_action_gate"]["issues"]
         assert "secret" not in str(waiting.payload)
         assert tool_call_progress.payload["tool_event"]["approval_required"] is True
         assert "arguments" not in tool_call_progress.payload["tool_event"]
@@ -6241,6 +6244,111 @@ def test_async_oracle_job_enters_waiting_for_approval_on_tool_call(monkeypatch):
     asyncio.run(run())
 
 
+def test_oracle_job_approval_marks_hypothesis_only_action_gate_unsafe():
+    async def run():
+        release = asyncio.Event()
+
+        async def runner(_job):
+            await release.wait()
+            return "done"
+
+        manager = OracleJobManager(max_concurrent=1, runner=runner)
+        request = KameOracleRequest(
+            session_id="voice-123",
+            turn_id="voice-123:1",
+            source="discord_voice",
+            user_id="42",
+            intent="Spend money.",
+            audio_segment_ref="artifact://voice/turn-1.wav",
+            reflex_transcript_hypothesis="spend money",
+            auxiliary_transcript_hypotheses=[
+                {"source": "moshi", "text": "spend money", "authority": "hypothesis"},
+            ],
+        )
+        job = await manager.submit(request)
+
+        waiting = await manager.mark_waiting_for_approval(
+            job.job_id,
+            reason="Spend approval required",
+            approval={
+                "approval_id": "approval-123",
+                "tool_name": "stripe_link_purchase",
+                "tool_call_id": "call-1",
+                "tool_disclosure_ref": "tool_disclosure",
+            },
+        )
+        gate = waiting.approval["kame_action_gate"]
+
+        assert gate["ok"] is False
+        assert "missing_promoted_evidence" in gate["issues"]
+        assert "interpreter_evidence_not_consumed_before_irreversible_action" in gate["issues"]
+        assert gate["tool_disclosure_ref"] == "tool_disclosure"
+        assert gate["present_authorities"] == []
+        assert set(gate["rejected_present_authorities"]) >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+
+        release.set()
+        await manager.shutdown(reason="test complete")
+
+    asyncio.run(run())
+
+
+def test_oracle_job_approval_accepts_consumed_promoted_interpreter_evidence():
+    async def run():
+        release = asyncio.Event()
+
+        async def runner(_job):
+            await release.wait()
+            return "done"
+
+        manager = OracleJobManager(max_concurrent=1, runner=runner)
+        request = KameOracleRequest(
+            session_id="voice-123",
+            turn_id="voice-123:1",
+            source="discord_voice",
+            user_id="42",
+            intent="Buy phone credits.",
+            audio_segment_ref="artifact://voice/turn-1.wav",
+        )
+        job = await manager.submit(request)
+        await manager.add_interpreter_evidence(
+            job.job_id,
+            corrected_transcript="buy twenty dollars of phone credits",
+            normalized_intent="prepare a Stripe approval for phone credits",
+            audio_segment_ref="artifact://voice/turn-1.wav",
+            source="gemma_interpreter",
+        )
+        await manager.mark_latest_interpreter_evidence_delivery(
+            job.job_id,
+            delivered_to_oracle=True,
+            consumed_before_irreversible_action=True,
+            delivery_status="included_before_spend_approval",
+        )
+
+        waiting = await manager.mark_waiting_for_approval(
+            job.job_id,
+            reason="Spend approval required",
+            approval={
+                "approval_id": "approval-123",
+                "tool_name": "stripe_link_purchase",
+                "tool_call_id": "call-1",
+                "tool_disclosure_ref": "tool_disclosure",
+            },
+        )
+        gate = waiting.approval["kame_action_gate"]
+
+        assert gate["ok"] is True
+        assert gate["issues"] == []
+        assert gate["present_authorities"] == ["interpreter_promoted"]
+        assert "reflex_hypothesis" in gate["rejected_present_authorities"]
+        assert gate["interpreter_evidence_consumed_before_irreversible_action"] is True
+        assert gate["tool_disclosure_ref"] == "tool_disclosure"
+
+        release.set()
+        await manager.shutdown(reason="test complete")
+
+    asyncio.run(run())
+
+
 def test_async_oracle_tool_approval_carries_late_interpreter_evidence(monkeypatch):
     class ApprovalAfterEvidenceOracle:
         def __init__(self):
@@ -6262,6 +6370,7 @@ def test_async_oracle_tool_approval_carries_late_interpreter_evidence(monkeypatc
                 "approval_required": True,
                 "approval_id": "approval-123",
                 "approval_reason": "Stripe Link spend requires approval",
+                "tool_disclosure_ref": "tool_disclosure",
                 "arguments": {"amount": 20, "card": "secret-card"},
             }
             await self.release_result.wait()
@@ -6361,6 +6470,8 @@ def test_async_oracle_tool_approval_carries_late_interpreter_evidence(monkeypatc
             assert payload["interpreter_evidence_late"] is True
             assert payload["interpreter_evidence_delivered_to_oracle"] is True
             assert payload["interpreter_evidence_consumed_before_irreversible_action"] is True
+            assert payload["kame_action_gate"]["ok"] is True
+            assert not payload["kame_action_gate"]["issues"]
             assert payload["latest_interpreter_evidence_source"] == "gemma_interpreter"
             assert "transcript=buy twenty dollars of phone credits" in payload["latest_interpreter_evidence"]
             assert "intent=prepare a Stripe approval for phone credits" in payload["latest_interpreter_evidence"]

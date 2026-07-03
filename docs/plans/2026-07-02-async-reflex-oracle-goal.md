@@ -200,6 +200,15 @@ tool-disclosure reference. The UI may display Moshi/OpenClaw/VoiceClaw/reflex
 or classic-ASR hypotheses for auditability, but it must not let those
 hypotheses satisfy the approval contract.
 
+Runtime approval rule: async oracle jobs must attach a compact
+`voiceops.runtime_kame_action_gate.v1` result whenever a job enters
+`waiting_for_approval`. The gate must fail closed when promoted interpreter or
+oracle evidence is absent, when interpreter evidence was not consumed before the
+approval/action boundary, or when the approval lacks `tool_disclosure_ref =
+"tool_disclosure"`. Reflex, Moshi/OpenClaw/VoiceClaw, or classic-ASR hypotheses
+may remain visible in the gate as witness context, but their presence must not
+make the gate pass without promoted evidence.
+
 The oracle is the worker. It owns:
 
 - tool execution

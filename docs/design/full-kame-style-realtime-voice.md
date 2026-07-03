@@ -594,6 +594,15 @@ the approval contract is invalid if those hypotheses are the only evidence for
 the action text, spend reason, provider choice, phone payload, or durable user
 request.
 
+At runtime, the async oracle job manager should expose the same rule as a compact
+action gate on approval waits. `oracle.job.waiting_for_approval` payloads and
+approval-related tool progress events should include
+`voiceops.runtime_kame_action_gate.v1` with `ok=false` until promoted evidence
+has been consumed before the irreversible boundary and `tool_disclosure_ref =
+"tool_disclosure"` is present. The gate may list reflex/Moshi/OpenClaw/VoiceClaw
+or ASR hypotheses as present witness context, but those labels are not accepted
+authorities and cannot make the gate pass.
+
 It owns:
 
 - turn detection interpretation and speech boundary decisions

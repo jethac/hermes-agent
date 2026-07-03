@@ -4809,6 +4809,11 @@ def _with_oracle_job_interpreter_evidence(payload: Mapping[str, Any], job: Oracl
         enriched["interpreter_evidence_consumed_before_irreversible_action"] = status[
             "interpreter_evidence_consumed_before_irreversible_action"
         ]
+    approval = status.get("approval")
+    if isinstance(approval, Mapping):
+        gate = approval.get("kame_action_gate")
+        if isinstance(gate, Mapping):
+            enriched["kame_action_gate"] = dict(gate)
     delivery_status = str(status.get("interpreter_evidence_delivery_status") or "").strip()
     if delivery_status:
         enriched["interpreter_evidence_delivery_status"] = delivery_status

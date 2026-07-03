@@ -77,6 +77,11 @@ REFLEX_STATUS_ACTIVE_STATES = frozenset(
     }
 )
 
+KAME_ACTION_PROMOTED_AUTHORITIES = frozenset({"interpreter_promoted", "oracle_promoted"})
+KAME_ACTION_REJECTED_AUTHORITIES = frozenset(
+    {"reflex_hypothesis", "auxiliary_hypothesis", "diagnostic_only", "hypothesis"}
+)
+
 
 OracleJobRunner = Callable[["OracleJob"], Awaitable[Any]]
 OracleJobEventCallback = Callable[["OracleJobEvent"], Any]
@@ -545,7 +550,7 @@ class OracleJobManager:
                 return job
             job.state = OracleJobState.WAITING_FOR_APPROVAL
             job.approval_reason = _compact_evidence_text(reason or "waiting for approval", limit=240)
-            job.approval = _compact_approval_payload(approval) if approval else {}
+            job.approval = _compact_approval_payload(approval, job=job) if approval else {}
             job.updated_at = self._clock()
             payload = dict(job.to_status())
             await self._emit_locked(
@@ -1527,7 +1532,7 @@ def _interpreter_evidence_summary(evidence: Mapping[str, Any]) -> str:
     return "interpreter evidence: " + "; ".join(parts)[:500]
 
 
-def _compact_approval_payload(value: Mapping[str, Any]) -> dict[str, Any]:
+def _compact_approval_payload(value: Mapping[str, Any], *, job: Optional[OracleJob] = None) -> dict[str, Any]:
     allowed = {
         "approval_id",
         "approval_kind",
@@ -1545,18 +1550,121 @@ def _compact_approval_payload(value: Mapping[str, Any]) -> dict[str, Any]:
         "interpreter_evidence_delivered_to_oracle",
         "interpreter_evidence_consumed_before_irreversible_action",
         "interpreter_evidence_delivery_status",
+        "tool_disclosure_ref",
+        "kame_action_gate",
     }
     compact: dict[str, Any] = {}
     for key, raw in value.items():
         text_key = str(key)
         if text_key not in allowed:
             continue
-        if isinstance(raw, bool):
+        if text_key == "kame_action_gate" and isinstance(raw, Mapping):
+            compact[text_key] = _compact_kame_action_gate(raw)
+        elif isinstance(raw, bool):
             compact[text_key] = raw
         elif isinstance(raw, (int, float)):
             compact[text_key] = raw
         elif raw is not None:
             compact[text_key] = " ".join(redact_sensitive_text(str(raw), force=True).split())[:240]
+    if job is not None:
+        compact["kame_action_gate"] = _approval_kame_action_gate(compact, job)
+    return compact
+
+
+def _approval_kame_action_gate(approval: Mapping[str, Any], job: OracleJob) -> dict[str, Any]:
+    labels = _approval_evidence_labels(approval, job)
+    promoted = sorted(labels & KAME_ACTION_PROMOTED_AUTHORITIES)
+    rejected = sorted(labels & KAME_ACTION_REJECTED_AUTHORITIES)
+    consumed_before_action = bool(
+        approval.get("interpreter_evidence_consumed_before_irreversible_action")
+        or _latest_interpreter_evidence_consumed_before_action(job)
+    )
+    issues: list[str] = []
+    if not promoted:
+        issues.append("missing_promoted_evidence")
+    if not consumed_before_action:
+        issues.append("interpreter_evidence_not_consumed_before_irreversible_action")
+    if not _approval_has_tool_disclosure_ref(approval):
+        issues.append("missing_tool_disclosure_ref")
+    return {
+        "schema_version": "voiceops.runtime_kame_action_gate.v1",
+        "ok": not issues,
+        "requires_promoted_evidence": True,
+        "accepted_authorities": sorted(KAME_ACTION_PROMOTED_AUTHORITIES),
+        "rejected_authorities": sorted(KAME_ACTION_REJECTED_AUTHORITIES),
+        "present_authorities": promoted,
+        "rejected_present_authorities": rejected,
+        "interpreter_evidence_consumed_before_irreversible_action": consumed_before_action,
+        "tool_disclosure_ref": str(approval.get("tool_disclosure_ref") or ""),
+        "issues": issues,
+    }
+
+
+def _approval_evidence_labels(approval: Mapping[str, Any], job: OracleJob) -> set[str]:
+    labels: set[str] = set()
+    for value in _recursive_evidence_labels(approval):
+        if value:
+            labels.add(value)
+    labels.update(str(value) for value in _job_evidence_authority(job).values() if str(value).strip())
+    if job.interpreter_evidence:
+        latest = job.interpreter_evidence[-1]
+        authority = latest.get("evidence_authority")
+        if isinstance(authority, Mapping):
+            labels.update(str(value) for value in authority.values() if str(value).strip())
+    return labels
+
+
+def _recursive_evidence_labels(value: Any) -> tuple[str, ...]:
+    labels: list[str] = []
+    if isinstance(value, Mapping):
+        for key, nested in value.items():
+            if str(key) in {"evidence_label", "authority"}:
+                text = _compact_evidence_text(nested, limit=80)
+                if text:
+                    labels.append(text)
+            else:
+                labels.extend(_recursive_evidence_labels(nested))
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        for nested in value:
+            labels.extend(_recursive_evidence_labels(nested))
+    return tuple(labels)
+
+
+def _approval_has_tool_disclosure_ref(approval: Mapping[str, Any]) -> bool:
+    return str(approval.get("tool_disclosure_ref") or "").strip() == "tool_disclosure"
+
+
+def _latest_interpreter_evidence_consumed_before_action(job: OracleJob) -> bool:
+    if not job.interpreter_evidence:
+        return False
+    latest = job.interpreter_evidence[-1]
+    return bool(latest.get("consumed_before_irreversible_action"))
+
+
+def _compact_kame_action_gate(value: Mapping[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in (
+        "schema_version",
+        "ok",
+        "requires_promoted_evidence",
+        "interpreter_evidence_consumed_before_irreversible_action",
+        "tool_disclosure_ref",
+    ):
+        raw = value.get(key)
+        if isinstance(raw, bool):
+            compact[key] = raw
+        elif raw is not None:
+            text = _compact_evidence_text(raw, limit=160)
+            if text:
+                compact[key] = text
+    for key in ("accepted_authorities", "rejected_authorities", "present_authorities", "rejected_present_authorities", "issues"):
+        raw_list = value.get(key)
+        if isinstance(raw_list, Sequence) and not isinstance(raw_list, (str, bytes, bytearray)):
+            compact[key] = tuple(
+                text
+                for text in (_compact_evidence_text(item, limit=120) for item in raw_list[:12])
+                if text
+            )
     return compact
 
 

@@ -176,6 +176,11 @@ Target KAME layout:
   tool-disclosure proof so a dashboard or GUI cannot silently lose the context
   pressure guard. A dashboard or GUI approval row that drops this evidence is
   invalid even if the visible command, budget, and provider fields look correct.
+- Runtime approval-gate rule: live async oracle jobs should expose the same
+  boundary as `voiceops.runtime_kame_action_gate.v1` on approval waits and
+  approval-related tool progress, failing closed until promoted evidence was
+  consumed before the irreversible action boundary and `tool_disclosure_ref =
+  "tool_disclosure"` is present.
 - Tool-pressure rule: high-risk action artifacts should also prove that broad
   Hermes tools were not carried through the live voice context unnecessarily.
   The VoiceOps package should record the `tool_search`/bridge-tool deferral
