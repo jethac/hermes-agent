@@ -1077,6 +1077,9 @@ def _canonical_transcript_hypothesis(value: object) -> dict[str, Any]:
     partial = value.get("partial")
     if isinstance(partial, bool):
         hypothesis["partial"] = partial
+    adjudication = _transcript_hypothesis_adjudication(value)
+    if adjudication:
+        hypothesis["adjudication"] = adjudication
     return hypothesis
 
 
@@ -1341,7 +1344,25 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
     language = _optional_text(value.get("language"))
     if language:
         hypothesis["language"] = language
+    adjudication = _transcript_hypothesis_adjudication(value)
+    if adjudication:
+        hypothesis["adjudication"] = adjudication
     return hypothesis
+
+
+def _transcript_hypothesis_adjudication(value: Mapping[str, Any]) -> str:
+    outcome = (
+        _optional_text(value.get("adjudication"))
+        or _optional_text(value.get("interpreter_adjudication"))
+        or _optional_text(value.get("outcome"))
+    )
+    if outcome in {
+        "accepted_as_supporting_evidence",
+        "corrected_by_audio",
+        "rejected_or_diagnostic_only",
+    }:
+        return outcome
+    return ""
 
 
 def _canonical_transcript_hypothesis_is_reflex(hypothesis: Mapping[str, Any]) -> bool:

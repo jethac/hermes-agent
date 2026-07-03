@@ -1094,6 +1094,9 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
         latency_ms = _compact_nonnegative_int(value.get("latency_ms"))
         if latency_ms is not None:
             item["latency_ms"] = latency_ms
+        adjudication = _compact_transcript_hypothesis_adjudication(value)
+        if adjudication:
+            item["adjudication"] = adjudication
         hypotheses.append(item)
         if len(hypotheses) >= 8:
             break
@@ -1426,8 +1429,27 @@ def _compact_auxiliary_transcript_hypotheses(
         confidence = _compact_confidence(value.get("confidence"))  # type: ignore[arg-type]
         if confidence is not None:
             item["confidence"] = confidence
+        adjudication = _compact_transcript_hypothesis_adjudication(value)
+        if adjudication:
+            item["adjudication"] = adjudication
         compact.append(item)
     return tuple(compact)
+
+
+def _compact_transcript_hypothesis_adjudication(value: Mapping[str, Any]) -> str:
+    outcome = _compact_evidence_text(
+        value.get("adjudication")
+        or value.get("interpreter_adjudication")
+        or value.get("outcome"),
+        limit=80,
+    )
+    if outcome in {
+        "accepted_as_supporting_evidence",
+        "corrected_by_audio",
+        "rejected_or_diagnostic_only",
+    }:
+        return outcome
+    return ""
 
 
 def _request_with_compact_auxiliary_hypotheses(request: KameOracleRequest) -> KameOracleRequest:

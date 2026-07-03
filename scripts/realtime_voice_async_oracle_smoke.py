@@ -13,7 +13,7 @@ import json
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping, Sequence
 
 from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceEvent, VoiceEventType
 from agent.realtime_voice_kame import KameOracleRequest, KameRoute
@@ -1748,6 +1748,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
                 "text": "prepare early witness handoff",
                 "authority": "hypothesis",
                 "arrival_phase": "before_raw_audio",
+                "adjudication": "corrected_by_audio",
             },
         ),
     )
@@ -1763,6 +1764,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
                 "text": "prepare early witness handoff",
                 "authority": "hypothesis",
                 "arrival_phase": "before_raw_audio",
+                "adjudication": "corrected_by_audio",
             },
         ),
         source="gemma_interpreter",
@@ -1795,6 +1797,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
                     "text": "prepare with witness handoff",
                     "authority": "hypothesis",
                     "arrival_phase": "with_raw_audio",
+                    "adjudication": "accepted_as_supporting_evidence",
                 },
             ),
         )
@@ -1832,6 +1835,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
                 "text": "prepare late witness handoff",
                 "authority": "hypothesis",
                 "arrival_phase": "after_interpreter_start",
+                "adjudication": "rejected_or_diagnostic_only",
             },
         ),
         source="gemma_interpreter",
@@ -1915,6 +1919,16 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         accepted_counts[label] == 1 and started_counts[label] == 1 and completed_counts[label] == 1
         for label in case_jobs
     )
+    adjudications = {
+        "early": _witness_adjudications_from_status_job(early_status_job),
+        "with": _witness_adjudications_from_status_job(with_status_job),
+        "late": _witness_adjudications_from_status_job(late_status_job),
+    }
+    adjudication_outcomes_observed = adjudications == {
+        "early": ["corrected_by_audio"],
+        "with": ["accepted_as_supporting_evidence"],
+        "late": ["rejected_or_diagnostic_only"],
+    }
     return {
         "ok": (
             early_single_bundle
@@ -1922,12 +1936,14 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
             and late_single_bundle
             and no_duplicate_oracle_jobs
             and merge_key_observed
+            and adjudication_outcomes_observed
         ),
         "witness_fusion_timing_smoke_ok": early_single_bundle
         and with_single_bundle
         and late_single_bundle
         and no_duplicate_oracle_jobs
-        and merge_key_observed,
+        and merge_key_observed
+        and adjudication_outcomes_observed,
         "witness_fusion_arrival_phases": ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
         "witness_fusion_case_job_ids": case_jobs,
         "witness_fusion_turn_ids": turn_ids,
@@ -1942,10 +1958,29 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "witness_fusion_late_final_bundle_id": late_final_bundle_id,
         "witness_fusion_late_single_bundle": late_single_bundle,
         "witness_fusion_no_duplicate_oracle_jobs": no_duplicate_oracle_jobs,
+        "witness_fusion_adjudications": adjudications,
+        "witness_fusion_adjudication_outcomes_observed": adjudication_outcomes_observed,
         "witness_fusion_accepted_counts": accepted_counts,
         "witness_fusion_started_counts": started_counts,
         "witness_fusion_completed_counts": completed_counts,
     }
+
+
+def _witness_adjudications_from_status_job(status_job: Mapping[str, Any]) -> list[str]:
+    hypotheses = status_job.get("transcript_hypotheses")
+    if not isinstance(hypotheses, Sequence) or isinstance(hypotheses, (str, bytes, bytearray)):
+        return []
+    outcomes: list[str] = []
+    for hypothesis in hypotheses:
+        if not isinstance(hypothesis, Mapping):
+            continue
+        source = str(hypothesis.get("source") or "").strip().lower()
+        if source not in {"moshi", "voiceclaw", "openclaw", "s2s", "frontend_witness"}:
+            continue
+        outcome = str(hypothesis.get("adjudication") or "").strip()
+        if outcome:
+            outcomes.append(outcome)
+    return outcomes
 
 
 async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
@@ -3448,6 +3483,12 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "witness_fusion_no_duplicate_oracle_jobs": witness_fusion_timing_smoke[
             "witness_fusion_no_duplicate_oracle_jobs"
+        ],
+        "witness_fusion_adjudications": witness_fusion_timing_smoke[
+            "witness_fusion_adjudications"
+        ],
+        "witness_fusion_adjudication_outcomes_observed": witness_fusion_timing_smoke[
+            "witness_fusion_adjudication_outcomes_observed"
         ],
         "witness_fusion_accepted_counts": witness_fusion_timing_smoke[
             "witness_fusion_accepted_counts"

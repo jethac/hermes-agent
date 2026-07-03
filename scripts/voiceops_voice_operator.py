@@ -1797,6 +1797,16 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         }
         and smoke.get("witness_fusion_arrival_phases")
         == ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
+        "witness_fusion_adjudicates_frontend_text": smoke.get(
+            "witness_fusion_adjudication_outcomes_observed"
+        )
+        is True
+        and smoke.get("witness_fusion_adjudications")
+        == {
+            "early": ["corrected_by_audio"],
+            "with": ["accepted_as_supporting_evidence"],
+            "late": ["rejected_or_diagnostic_only"],
+        },
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
         and smoke.get("verbose_result_committed_bounded") is True
         and smoke.get("verbose_result_commit_marked_truncated") is True
@@ -2048,6 +2058,13 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
         "witness_fusion_timing_preserves_single_bundle": _async_oracle_acceptance_row(
             ok=smoke_ok and bool(async_oracle_coverage.get("witness_fusion_timing_preserves_single_bundle")),
             evidence="async_oracle_smoke_plus_witness_fusion_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["witness_fusion"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "witness_fusion_adjudicates_frontend_text": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("witness_fusion_adjudicates_frontend_text")),
+            evidence="async_oracle_smoke_plus_witness_adjudication_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["witness_fusion"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
@@ -2631,6 +2648,12 @@ def build_voice_operator_report(
             "witness_fusion_no_duplicate_oracle_jobs": bool(
                 async_oracle_smoke.get("witness_fusion_no_duplicate_oracle_jobs")
             ),
+            "witness_fusion_adjudications": dict(
+                async_oracle_smoke.get("witness_fusion_adjudications") or {}
+            ),
+            "witness_fusion_adjudication_outcomes_observed": bool(
+                async_oracle_smoke.get("witness_fusion_adjudication_outcomes_observed")
+            ),
             "witness_fusion_accepted_counts": dict(
                 async_oracle_smoke.get("witness_fusion_accepted_counts") or {}
             ),
@@ -2869,6 +2892,9 @@ def build_voice_operator_report(
             "async_oracle_witness_fusion_single_bundle": async_oracle_coverage[
                 "witness_fusion_timing_preserves_single_bundle"
             ],
+            "async_oracle_witness_fusion_adjudicates_frontend_text": async_oracle_coverage[
+                "witness_fusion_adjudicates_frontend_text"
+            ],
             "async_oracle_runtime_kame_action_gate": async_oracle_coverage[
                 "runtime_kame_action_gate_enforced"
             ],
@@ -3001,6 +3027,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "transcript_hypotheses_remain_unpromoted",
         "external_frontend_bridge_submits_oracle_job",
         "witness_fusion_timing_preserves_single_bundle",
+        "witness_fusion_adjudicates_frontend_text",
         "runtime_kame_action_gate_enforced",
         "result_handling_bounded_and_durable",
         "discord_session_cleanup_preserves_oracle_state",

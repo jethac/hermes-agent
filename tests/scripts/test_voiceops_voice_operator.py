@@ -311,11 +311,17 @@ def _async_oracle_smoke_payload() -> dict:
         "witness_fusion_late_final_bundle_id": "kame-evidence-witness-late",
         "witness_fusion_late_single_bundle": True,
         "witness_fusion_no_duplicate_oracle_jobs": True,
+        "witness_fusion_adjudications": {
+            "early": ["corrected_by_audio"],
+            "with": ["accepted_as_supporting_evidence"],
+            "late": ["rejected_or_diagnostic_only"],
+        },
+        "witness_fusion_adjudication_outcomes_observed": True,
         "witness_fusion_accepted_counts": {"early": 1, "with": 1, "late": 1},
         "witness_fusion_started_counts": {"early": 1, "with": 1, "late": 1},
         "witness_fusion_completed_counts": {"early": 1, "with": 1, "late": 1},
         "runtime_kame_action_gate_smoke_ok": True,
-        "runtime_kame_action_gate_waiting_events": 3,
+        "runtime_kame_action_gate_waiting_events": 5,
         "runtime_kame_action_gate_hypothesis_only_ok": False,
         "runtime_kame_action_gate_hypothesis_only_issues": [
             "missing_promoted_evidence",
@@ -832,6 +838,12 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     )
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_late_single_bundle"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_no_duplicate_oracle_jobs"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_adjudications"] == {
+        "early": ["corrected_by_audio"],
+        "with": ["accepted_as_supporting_evidence"],
+        "late": ["rejected_or_diagnostic_only"],
+    }
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_adjudication_outcomes_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_accepted_counts"] == {
         "early": 1,
         "with": 1,
@@ -851,8 +863,12 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert witness_fusion["ok"] is True
     assert witness_fusion["evidence"] == "async_oracle_smoke_plus_witness_fusion_tests"
     assert report["requirements"]["async_oracle_witness_fusion_single_bundle"] is True
+    witness_adjudication = report["async_oracle_acceptance"]["witness_fusion_adjudicates_frontend_text"]
+    assert witness_adjudication["ok"] is True
+    assert witness_adjudication["evidence"] == "async_oracle_smoke_plus_witness_adjudication_tests"
+    assert report["requirements"]["async_oracle_witness_fusion_adjudicates_frontend_text"] is True
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_smoke_ok"] is True
-    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_waiting_events"] == 3
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_waiting_events"] == 5
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_hypothesis_only_ok"] is False
     assert "missing_promoted_evidence" in report["proofs"]["async_oracle_jobs"][
         "runtime_kame_action_gate_hypothesis_only_issues"

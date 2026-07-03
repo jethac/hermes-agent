@@ -190,6 +190,12 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["witness_fusion_late_initial_bundle_id"] == report["witness_fusion_late_final_bundle_id"]
     assert report["witness_fusion_late_single_bundle"] is True
     assert report["witness_fusion_no_duplicate_oracle_jobs"] is True
+    assert report["witness_fusion_adjudications"] == {
+        "early": ["corrected_by_audio"],
+        "with": ["accepted_as_supporting_evidence"],
+        "late": ["rejected_or_diagnostic_only"],
+    }
+    assert report["witness_fusion_adjudication_outcomes_observed"] is True
     assert report["witness_fusion_accepted_counts"] == {"early": 1, "with": 1, "late": 1}
     assert report["witness_fusion_started_counts"] == {"early": 1, "with": 1, "late": 1}
     assert report["witness_fusion_completed_counts"] == {"early": 1, "with": 1, "late": 1}
