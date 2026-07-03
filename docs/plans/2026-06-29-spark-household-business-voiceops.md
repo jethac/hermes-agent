@@ -81,6 +81,11 @@ Target KAME layout:
   or a call/message payload without interpreter or oracle judgment. The
   transcript that arrives first is never automatically the transcript of
   record.
+- Three-tier rule: the long-term shape is reflex, interpreter, oracle. A
+  two-tier reflex/oracle bridge is acceptable as a bring-up step, but it must not
+  pretend that a Moshi/open-S2S transcript is equivalent to Gemma raw-audio
+  interpretation. The interpreter bundle is where raw voice and transcript-like
+  side channels are compared.
 - Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
 The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.
@@ -140,6 +145,9 @@ VoiceClaw/OpenClaw lessons to absorb:
   KAME adapter API instead of making every client embed Discord-specific logic
 - telephony is a first-class adapter with codec, jitter, playback, transfer,
   DTMF, authorization, and redaction concerns, not a thin webhook script
+- open S2S transcript output should be preserved as "what the live interface
+  believed it heard" and passed beside raw audio to the interpreter; it should
+  not become the authoritative user request just because it arrived quickly
 
 ### Money and Provisioning
 
@@ -224,6 +232,13 @@ model thought it heard. It should be passed to Gemma in the same interpreter
 request as the raw voice clip, never committed directly as durable user text,
 and never allowed to trigger spend, provisioning, credential, call, or messaging
 actions without interpreter/oracle confirmation.
+
+That makes the Moshi/open-S2S transcript a useful companion to raw voice, not a
+replacement for raw voice. In the normal path, Hermes can send Gemma the clipped
+audio, the reflex route, the acknowledgement already spoken, and the Moshi
+transcript hypothesis together. Gemma may use the transcript to recover words
+the reflex clipped, but it must also be able to reject transcript text that does
+not match the waveform or speaker context.
 
 The interpreter may attach evidence to an oracle job before it starts, or submit
 a patch/update if the oracle job is already running. It must not stall the

@@ -137,6 +137,12 @@ shape, but not its weaker durability model. In this goal, `ask_brain` becomes a
 typed oracle job with capacity, status, cancellation, relevance checks, audit
 records, and durable/non-durable transcript rules.
 
+Open S2S frontends may also produce transcript-like text. Hermes should preserve
+that output as a hypothesis from the live interface and pass it to the Gemma
+interpreter beside the raw audio segment. It must not become a separate oracle
+turn or the durable user transcript just because it arrived before interpreter
+evidence.
+
 ## User Experience Goal
 
 During a live Discord voice session:
@@ -658,6 +664,10 @@ Add a local smoke report mode that proves:
 - interpreter evidence provenance survives queued and late updates:
   raw-audio ref, time range, reflex hypothesis, auxiliary hypotheses, promoted
   transcript, confidence, entities, and disagreement flags remain distinct
+- Moshi/open-S2S transcript text can be included as auxiliary context alongside
+  raw voice, but tests must prove it is not promoted to `oracle_text`, durable
+  transcript, spend reason, call payload, or tool argument without interpreter or
+  oracle judgment
 - queued oracle job updates are visible in the reflex/status event stream
 - one job can be cancelled while others complete
 - queued oracle jobs can be cancelled before worker execution

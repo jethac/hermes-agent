@@ -7,6 +7,11 @@ Preferred local reflex: fastest stable floor-control model, such as Moshi/Person
 Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal
 Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to validate
 
+Current pivot: raw voice is the normal evidence path into the interpreter.
+Moshi/open-S2S or classic STT text may accompany that raw voice as labeled
+context, but it must not become the scheduler, the durable transcript, or a
+second prompt competing with the interpreter.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
@@ -86,6 +91,12 @@ the turn, including dropped prefixes or code-switched phrases. They must travel
 beside the raw audio into the Gemma interpreter, not replace the raw audio and
 not become a separate oracle prompt. Classic ASR follows the same rule and is
 kept primarily for fallback, diagnostics, and literal-evidence checks.
+
+The important distinction is not "Moshi instead of ASR" versus "classic ASR".
+Both are transcript-like side channels. They can be useful evidence, especially
+when the raw audio contains names, numbers, code-switched phrases, or clipped
+prefixes, but neither can certify what the user said. The interpreter owns that
+promotion step.
 
 If the reflex has enough signal to acknowledge or create a background oracle
 job, it should do so immediately. The interpreter can attach corrected evidence
@@ -175,6 +186,40 @@ that frontend shape, but strengthen the backend contract:
 
 This lets VoiceClaw/OpenClaw-style clients become front doors for Hermes KAME
 without weakening the reflex/oracle authority boundary.
+
+## Moshi / Open-S2S Transcript Context Contract
+
+Open speech-to-speech frontends are useful when they can stay warm, respond
+quickly, and keep the user-oriented voice loop separate from Hermes' heavier
+oracle loop. They are not useful if Hermes treats their transcript side channel
+as a replacement for the raw waveform or as an independent user message.
+
+When a Moshi, VoiceClaw, OpenClaw, or similar S2S frontend emits text, Hermes
+should handle it as:
+
+1. `reflex_transcript_hypothesis` when it is the live reflex model's own hearing
+   of the turn.
+2. `s2s_transcript_hypothesis` when it is a distinct transcript or caption side
+   channel from the same frontend.
+3. `classic_asr_hypothesis` only for a dedicated ASR provider used for fallback,
+   diagnostics, captions, or literal wording checks.
+
+All three fields are context for the interpreter. They are allowed to improve
+Gemma's correction, entity extraction, language notes, and oracle request patch.
+They are not allowed to:
+
+- create a second oracle turn
+- overwrite `oracle_text` directly
+- become a spend reason, call payload, memory write, or tool argument by
+  themselves
+- block acknowledgement while Hermes waits for them
+- hide disagreement with the raw audio, energy gate, speaker identity, or later
+  interpreter/oracle judgment
+
+This is the answer to the "can we provide the Moshi STT transcript as context
+along with raw voice?" question: yes, that is exactly the desired packet shape.
+The raw voice clip and timing metadata are the primary interpreter evidence;
+Moshi/open-S2S text is a labeled clue that Gemma may accept, correct, or reject.
 
 ## Responsibilities
 
