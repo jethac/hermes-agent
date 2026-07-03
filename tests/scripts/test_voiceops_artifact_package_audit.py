@@ -43,7 +43,7 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert report["readiness_claim"] is False
     assert report["readiness_scope"] == "static_package_consistency_only"
     assert "does not satisfy live Discord" in report["readiness_note"]
-    assert report["checked_artifact_count"] == 92
+    assert report["checked_artifact_count"] == 93
     assert str(artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json") in report[
         "checked_artifacts"
     ]
@@ -568,7 +568,7 @@ def test_package_audit_rejects_stale_embedded_package_audit_summary(tmp_path):
         "ok": True,
         "status": "pass",
         "issues": [],
-        "checked_artifact_count": 92,
+        "checked_artifact_count": 93,
     }
     _write_json(plan_run_path, plan_run)
     assert audit_package(artifact_root)["ok"] is True
@@ -750,9 +750,9 @@ def test_package_audit_rejects_spark_scaffold_source_hash_drift(tmp_path):
     report = audit_package(artifact_root)
 
     assert report["ok"] is False
-    assert "spark_evidence_scaffold:reflex-gemma4-e2b:source_artifact_sha256_mismatch" in report["issues"]
+    assert "spark_evidence_scaffold:reflex-moshi-s2s:source_artifact_sha256_mismatch" in report["issues"]
     assert (
-        "spark_evidence_scaffold:reflex-gemma4-e2b:collector_attestation_redacted_sha256_mismatch"
+        "spark_evidence_scaffold:reflex-moshi-s2s:collector_attestation_redacted_sha256_mismatch"
         in report["issues"]
     )
 

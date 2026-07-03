@@ -24,7 +24,8 @@ PREFERRED_LOCAL_ORACLE_MODEL = "Nemotron 3 Super"
 NON_COUNTING_FALLBACK_ORACLE_MODELS = ("Nemotron 3 Ultra",)
 EVIDENCE_SCHEMA_VERSION = "voiceops.spark_benchmark_evidence.v1"
 STACK_SMOKE_KIND = "voiceops_spark_stack_smoke"
-STACK_SMOKE_REQUIRED_COMPONENTS = ("reflex", "oracle", "asr", "tts", "sidecar")
+PRIMARY_LOCAL_ROLES = ("interpreter", "oracle", "reflex", "tts")
+STACK_SMOKE_REQUIRED_COMPONENTS = ("reflex", "interpreter", "oracle", "tts", "sidecar")
 STACK_SMOKE_REQUIRED_ORACLE_ROUTES = ("tools", "files", "memory", "project_context")
 SPARK_BENCHMARK_EVIDENCE_NOT_BEFORE = dt.datetime(2026, 6, 29, tzinfo=dt.timezone.utc)
 SPARK_BENCHMARK_SCAFFOLD_EVIDENCE = (
@@ -100,30 +101,44 @@ def _targets(*targets: tuple[str, str, float, str]) -> list[Target]:
 def default_candidates() -> list[Candidate]:
     return [
         Candidate(
-            candidate_id="reflex-gemma4-e2b",
+            candidate_id="reflex-moshi-s2s",
             role="reflex",
-            model="Gemma 4 E2B audio-native",
+            model="Moshi/PersonaPlex-class low-latency S2S",
+            engine="local S2S or timing/noise-gated reflex runtime",
+            locality="local_spark",
+            priority=1,
+            purpose="low-latency KAME interface for acknowledgements, barge-in, turn-taking, and rough transcript hypotheses",
+            required_targets=_targets(
+                ("ack_latency_ms", "<=", 350, "ms"),
+                ("barge_in_stop_ms", "<=", 150, "ms"),
+                ("steady_state_memory_gb", "<=", 24, "GB"),
+            ),
+        ),
+        Candidate(
+            candidate_id="interpreter-gemma4-e2b",
+            role="interpreter",
+            model="Gemma 4 E2B audio-native interpreter",
             engine="vLLM multimodal audio path or equivalent Spark container",
             locality="local_spark",
             priority=1,
-            purpose="low-latency KAME interface model for intent triage, turn-taking, and floor control",
+            purpose="raw-audio interpreter that adjudicates clipped audio plus labeled transcript hypotheses",
             required_targets=_targets(
-                ("first_token_ms", "<=", 800, "ms"),
-                ("intent_latency_ms", "<=", 1200, "ms"),
+                ("audio_interpretation_ms", "<=", 1200, "ms"),
+                ("evidence_patch_ms", "<=", 1500, "ms"),
                 ("steady_state_memory_gb", "<=", 32, "GB"),
             ),
         ),
         Candidate(
-            candidate_id="reflex-gemma4-e4b",
-            role="reflex",
-            model="Gemma 4 E4B audio-native",
+            candidate_id="interpreter-gemma4-e4b",
+            role="interpreter",
+            model="Gemma 4 E4B audio-native interpreter",
             engine="vLLM multimodal audio path or equivalent Spark container",
             locality="local_spark",
             priority=1,
-            purpose="larger KAME interface candidate for audio-native intent triage when E2B quality is insufficient",
+            purpose="larger raw-audio interpreter candidate when E2B quality is insufficient",
             required_targets=_targets(
-                ("first_token_ms", "<=", 1000, "ms"),
-                ("intent_latency_ms", "<=", 1400, "ms"),
+                ("audio_interpretation_ms", "<=", 1500, "ms"),
+                ("evidence_patch_ms", "<=", 1800, "ms"),
                 ("steady_state_memory_gb", "<=", 48, "GB"),
             ),
         ),
@@ -251,9 +266,11 @@ def _model_matches_candidate(candidate: Candidate, model: Any) -> bool:
     if not normalized:
         return False
     candidate_id = candidate.candidate_id
-    if candidate_id == "reflex-gemma4-e2b":
+    if candidate_id == "reflex-moshi-s2s":
+        return any(token in normalized for token in ("moshi", "personaplex", "s2s", "voiceclaw", "openclaw"))
+    if candidate_id == "interpreter-gemma4-e2b":
         return "gemma" in normalized and ("e2b" in normalized or "e-2b" in normalized)
-    if candidate_id == "reflex-gemma4-e4b":
+    if candidate_id == "interpreter-gemma4-e4b":
         return "gemma" in normalized and ("e4b" in normalized or "e-4b" in normalized)
     if candidate_id == "oracle-nemotron3-super-local":
         return "nemotron" in normalized and "super" in normalized
@@ -389,6 +406,8 @@ def _adapt_kame_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "oracle_authority_routes": _list_values(entry.get("oracle_authority_routes")),
                     "interface_input_sources": _list_values(entry.get("interface_input_sources")),
                     "reflex_providers": _list_values(entry.get("reflex_providers")),
+                    "interpreter_providers": _list_values(entry.get("interpreter_providers")),
+                    "auxiliary_transcript_sources": _list_values(entry.get("auxiliary_transcript_sources")),
                     "example_only": entry.get("example_only") is True,
                     "adapted_from": "kame_smoke_result",
                     "_evidence_path": entry.get("_evidence_path"),
@@ -401,17 +420,36 @@ def _adapt_kame_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         metrics = entry.get("metrics") if isinstance(entry.get("metrics"), dict) else {}
         category = str(entry.get("category") or "")
         normalized_model = str(entry.get("model") or "").lower().replace("-", "")
-        if category == "interface" and ("e2b" in normalized_model or "e4b" in normalized_model):
-            reflex_candidate_id = "reflex-gemma4-e4b" if "e4b" in normalized_model else "reflex-gemma4-e2b"
+        if category == "interface" and any(token in normalized_model for token in ("moshi", "personaplex", "s2s")):
             adapted.append(
                 _base_adapted_evidence(
                     entry,
-                    candidate_id=reflex_candidate_id,
+                    candidate_id="reflex-moshi-s2s",
+                    model=str(entry.get("model") or ""),
+                    engine=str(entry.get("engine") or "local S2S or timing/noise-gated reflex runtime"),
+                    metrics={
+                        "ack_latency_ms": metrics.get("ack_latency_ms")
+                        or metrics.get("speech_end_to_ack_ms")
+                        or metrics.get("speech_end_to_first_audio_ms"),
+                        "barge_in_stop_ms": metrics.get("barge_in_stop_ms"),
+                        "steady_state_memory_gb": metrics.get("steady_state_memory_gb")
+                        or metrics.get("memory_gb"),
+                    },
+                )
+            )
+        elif category in {"interface", "interpreter"} and ("e2b" in normalized_model or "e4b" in normalized_model):
+            interpreter_candidate_id = "interpreter-gemma4-e4b" if "e4b" in normalized_model else "interpreter-gemma4-e2b"
+            adapted.append(
+                _base_adapted_evidence(
+                    entry,
+                    candidate_id=interpreter_candidate_id,
                     model=str(entry.get("model") or ""),
                     engine=str(entry.get("engine") or "vLLM multimodal audio path"),
                     metrics={
-                        "first_token_ms": metrics.get("kame_interface_model_request_ms"),
-                        "intent_latency_ms": metrics.get("speech_end_to_interface_decision_p90_ms")
+                        "audio_interpretation_ms": metrics.get("audio_interpretation_ms")
+                        or metrics.get("kame_interface_model_request_ms"),
+                        "evidence_patch_ms": metrics.get("evidence_patch_ms")
+                        or metrics.get("speech_end_to_interface_decision_p90_ms")
                         or metrics.get("speech_end_to_interface_decision_ms"),
                         "steady_state_memory_gb": metrics.get("steady_state_memory_gb")
                         or metrics.get("memory_gb"),
@@ -514,11 +552,15 @@ def _adapt_kame_stack_components(entry: dict[str, Any]) -> dict[str, bool]:
     components = entry.get("components") if isinstance(entry.get("components"), dict) else {}
     if components:
         return {name: components.get(name) is True for name in STACK_SMOKE_REQUIRED_COMPONENTS}
+    reflex_providers = {value.lower() for value in _list_values(entry.get("reflex_providers"))}
+    interpreter_providers = {value.lower() for value in _list_values(entry.get("interpreter_providers"))}
+    input_sources = {value.lower() for value in _list_values(entry.get("interface_input_sources"))}
     return {
-        "reflex": "vllm" in set(_list_values(entry.get("reflex_providers"))),
+        "reflex": bool(reflex_providers.intersection({"moshi", "personaplex", "s2s", "voiceclaw", "openclaw", "timing", "noise_gate"})),
+        "interpreter": "native_audio" in input_sources
+        and bool(interpreter_providers.intersection({"vllm", "gemma", "gemma4"})),
         "oracle": str(entry.get("oracle_selected_by") or "") == "Hermes /model"
         and (_coerce_number(entry.get("oracle_bound_oracle_calls")) or 0) > 0,
-        "asr": "native_audio" in set(_list_values(entry.get("interface_input_sources"))),
         "tts": entry.get("tts") is True or entry.get("tts_participated") is True,
         "sidecar": entry.get("ok") is True,
     }
@@ -717,8 +759,13 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
             issues.append("missing_interface_input_source:native_audio")
 
         reflex_providers = set(_list_values(item.get("reflex_providers")))
-        if "vllm" not in reflex_providers:
-            issues.append("missing_reflex_provider:vllm")
+        normalized_reflex_providers = {value.lower() for value in reflex_providers}
+        if not normalized_reflex_providers.intersection({"moshi", "personaplex", "s2s", "voiceclaw", "openclaw", "timing", "noise_gate"}):
+            issues.append("missing_reflex_provider:s2s_or_timing")
+
+        interpreter_providers = {value.lower() for value in _list_values(item.get("interpreter_providers"))}
+        if not interpreter_providers.intersection({"vllm", "gemma", "gemma4"}):
+            issues.append("missing_interpreter_provider:gemma_audio")
 
     return {
         "status": "validated" if not issues else "fails_target",
@@ -1003,7 +1050,7 @@ def build_matrix(evidence_paths: Iterable[Path] = ()) -> dict[str, Any]:
     evaluations = [evaluate_candidate(candidate, evidence) for candidate in candidates]
     stack_smoke = evaluate_stack_smoke(evidence)
     role_status: dict[str, str] = {}
-    for role in sorted({candidate.role for candidate in candidates}):
+    for role in sorted(PRIMARY_LOCAL_ROLES):
         primary_candidate_ids = {
             candidate.candidate_id for candidate in candidates if candidate.role == role and candidate.priority == 1
         }
@@ -1138,7 +1185,9 @@ def _evidence_template(candidates: list[dict[str, Any]]) -> dict[str, Any]:
                 "oracle_selected_by": "Hermes /model",
                 "oracle_authority_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
                 "interface_input_sources": ["native_audio"],
-                "reflex_providers": ["vllm"],
+                "reflex_providers": ["moshi"],
+                "interpreter_providers": ["vllm", "gemma"],
+                "auxiliary_transcript_sources": ["moshi_hypothesis", "classic_asr_fallback_optional"],
                 "components": {name: None for name in STACK_SMOKE_REQUIRED_COMPONENTS},
                 "metrics": {
                     "speech_end_to_first_audio_ms": None,
@@ -1148,7 +1197,7 @@ def _evidence_template(candidates: list[dict[str, Any]]) -> dict[str, Any]:
                     "oracle_bound_turns": None,
                     "oracle_bound_oracle_calls": None,
                 },
-                "notes": "Set verified=true only after reflex, oracle, ASR, TTS, and sidecar run together locally on one DGX Spark.",
+                "notes": "Set verified=true only after reflex, interpreter, oracle, TTS, and sidecar run together locally on one DGX Spark. ASR/Moshi transcripts are auxiliary hypothesis evidence, not readiness-critical truth.",
             }
         ],
     }
@@ -1177,45 +1226,67 @@ def _evidence_example() -> dict[str, Any]:
         "evidence": [
             {
                 "schema_version": EVIDENCE_SCHEMA_VERSION,
-                "candidate_id": "reflex-gemma4-e2b",
+                "candidate_id": "reflex-moshi-s2s",
                 "hardware": SPARK_HARDWARE_TARGET,
                 "locality": "local_spark",
-                "model": "Gemma 4 E2B audio-native",
-                "engine": "vLLM multimodal audio path or equivalent Spark container",
+                "model": "Moshi/PersonaPlex-class low-latency S2S",
+                "engine": "local S2S or timing/noise-gated reflex runtime",
                 "verified": True,
                 "measured_at": "2026-06-29T00:00:00Z",
-                "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/reflex-raw.json",
+                "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/reflex-moshi-raw.json",
                 "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
                 "collector_attestation": example_attestation(
-                    "reflex-gemma4-e2b",
+                    "reflex-moshi-s2s",
                     "replace-with-sha256-of-redacted-raw-artifact",
                 ),
                 "metrics": {
-                    "first_token_ms": 700,
-                    "intent_latency_ms": 1100,
-                    "steady_state_memory_gb": 20,
+                    "ack_latency_ms": 250,
+                    "barge_in_stop_ms": 90,
+                    "steady_state_memory_gb": 16,
                 },
                 "example_only": True,
             },
             {
                 "schema_version": EVIDENCE_SCHEMA_VERSION,
-                "candidate_id": "reflex-gemma4-e4b",
+                "candidate_id": "interpreter-gemma4-e2b",
                 "hardware": SPARK_HARDWARE_TARGET,
                 "locality": "local_spark",
-                "model": "Gemma 4 E4B audio-native",
+                "model": "Gemma 4 E2B audio-native interpreter",
                 "engine": "vLLM multimodal audio path or equivalent Spark container",
                 "verified": True,
                 "measured_at": "2026-06-29T00:00:00Z",
-                "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/reflex-e4b-raw.json",
+                "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/interpreter-gemma4-e2b-raw.json",
                 "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
                 "collector_attestation": example_attestation(
-                    "reflex-gemma4-e4b",
+                    "interpreter-gemma4-e2b",
                     "replace-with-sha256-of-redacted-raw-artifact",
                 ),
                 "metrics": {
-                    "first_token_ms": 850,
-                    "intent_latency_ms": 1250,
-                    "steady_state_memory_gb": 32,
+                    "audio_interpretation_ms": 900,
+                    "evidence_patch_ms": 1200,
+                    "steady_state_memory_gb": 24,
+                },
+                "example_only": True,
+            },
+            {
+                "schema_version": EVIDENCE_SCHEMA_VERSION,
+                "candidate_id": "interpreter-gemma4-e4b",
+                "hardware": SPARK_HARDWARE_TARGET,
+                "locality": "local_spark",
+                "model": "Gemma 4 E4B audio-native interpreter",
+                "engine": "vLLM multimodal audio path or equivalent Spark container",
+                "verified": True,
+                "measured_at": "2026-06-29T00:00:00Z",
+                "source_artifact": "artifacts/dgx-spark-gemma4-voice-eval/current/interpreter-gemma4-e4b-raw.json",
+                "source_artifact_sha256": "replace-with-sha256-of-redacted-raw-artifact",
+                "collector_attestation": example_attestation(
+                    "interpreter-gemma4-e4b",
+                    "replace-with-sha256-of-redacted-raw-artifact",
+                ),
+                "metrics": {
+                    "audio_interpretation_ms": 1100,
+                    "evidence_patch_ms": 1500,
+                    "steady_state_memory_gb": 36,
                 },
                 "example_only": True,
             },
@@ -1301,7 +1372,9 @@ def _evidence_example() -> dict[str, Any]:
                 "oracle_selected_by": "Hermes /model",
                 "oracle_authority_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
                 "interface_input_sources": ["native_audio"],
-                "reflex_providers": ["vllm"],
+                "reflex_providers": ["moshi"],
+                "interpreter_providers": ["vllm", "gemma"],
+                "auxiliary_transcript_sources": ["moshi_hypothesis", "classic_asr_fallback_optional"],
                 "components": {name: True for name in STACK_SMOKE_REQUIRED_COMPONENTS},
                 "metrics": {
                     "speech_end_to_first_audio_ms": 900,
@@ -1324,8 +1397,9 @@ def write_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
 
     scaffold = _evidence_example()
     source_names = {
-        "reflex-gemma4-e2b": "reflex-gemma4-e2b-raw.json",
-        "reflex-gemma4-e4b": "reflex-gemma4-e4b-raw.json",
+        "reflex-moshi-s2s": "reflex-moshi-s2s-raw.json",
+        "interpreter-gemma4-e2b": "interpreter-gemma4-e2b-raw.json",
+        "interpreter-gemma4-e4b": "interpreter-gemma4-e4b-raw.json",
         "oracle-nemotron3-super-local": "oracle-nemotron3-super-raw.json",
         "asr-nemotron-speech": "asr-nemotron-speech-raw.json",
         "tts-magpie-local": "tts-magpie-local-raw.json",
@@ -1455,6 +1529,8 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "oracle_authority_routes",
             "interface_input_sources",
             "reflex_providers",
+            "interpreter_providers",
+            "auxiliary_transcript_sources",
             "metrics.speech_end_to_first_audio_ms",
             "metrics.barge_in_stop_ms",
             "metrics.local_turns",
@@ -1490,7 +1566,9 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "required_components": list(STACK_SMOKE_REQUIRED_COMPONENTS),
             "required_oracle_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
             "required_interface_input_source": "native_audio",
-            "required_reflex_provider": "vllm",
+            "required_reflex_provider": "s2s_or_timing",
+            "required_interpreter_provider": "gemma_audio",
+            "auxiliary_transcript_sources_optional": True,
             "target_metrics": {
                 "speech_end_to_first_audio_ms": {"operator": "<=", "value": 1500, "unit": "ms"},
                 "barge_in_stop_ms": {"operator": "<=", "value": 150, "unit": "ms"},
@@ -1526,7 +1604,9 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
                     "oracle_selected_by": "Hermes /model",
                     "oracle_authority_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
                     "interface_input_sources": ["native_audio"],
-                    "reflex_providers": ["vllm"],
+                    "reflex_providers": ["moshi"],
+                    "interpreter_providers": ["vllm", "gemma"],
+                    "auxiliary_transcript_sources": ["moshi_hypothesis", "classic_asr_fallback_optional"],
                     "components": {name: True for name in STACK_SMOKE_REQUIRED_COMPONENTS},
                     "metrics": {
                         "speech_end_to_first_audio_ms": 900,
@@ -1627,6 +1707,8 @@ def _closure_markdown(plan: dict[str, Any]) -> str:
     lines.append(f"- Oracle routes: {', '.join(smoke['required_oracle_routes'])}")
     lines.append(f"- Interface input source: {smoke['required_interface_input_source']}")
     lines.append(f"- Reflex provider: {smoke['required_reflex_provider']}")
+    lines.append(f"- Interpreter provider: {smoke['required_interpreter_provider']}")
+    lines.append(f"- Auxiliary transcript sources optional: {'yes' if smoke['auxiliary_transcript_sources_optional'] else 'no'}")
     lines.extend(["", "## Benchmark Evidence Shape", "", "```json"])
     lines.append(json.dumps(plan["benchmark_evidence_shape"], indent=2, sort_keys=True))
     lines.extend(["```"])
@@ -1659,9 +1741,9 @@ def _operator_runbook(plan: dict[str, Any]) -> str:
         "",
         "## Collection Sequence",
         "",
-        "1. Start the local KAME stack on the DGX Spark: reflex, Hermes oracle endpoint selected through `/model`, ASR, TTS, and realtime voice sidecar.",
-        "   If the generated KAME stack still points ASR/TTS at `loopback_smoke_bridge`, treat those services as protocol-only smoke checks.",
-        "   They cannot satisfy VoiceOps local ASR/TTS evidence; replace `HERMES_DGX_SPARK_ASR_MODULE`, `HERMES_DGX_SPARK_ASR_ADAPTER`, `HERMES_DGX_SPARK_TTS_MODULE`, `HERMES_DGX_SPARK_TTS_ADAPTER`, and the speech models with production local Nemotron Speech, Magpie, Riva-style, or equivalent Spark providers before collecting verified evidence.",
+        "1. Start the local KAME stack on the DGX Spark: reflex, Gemma raw-audio interpreter, Hermes oracle endpoint selected through `/model`, TTS, optional transcript evidence, and realtime voice sidecar.",
+        "   If the generated KAME stack still points transcript/TTS services at `loopback_smoke_bridge`, treat those services as protocol-only smoke checks.",
+        "   They cannot satisfy VoiceOps local transcript/TTS evidence; replace `HERMES_DGX_SPARK_ASR_MODULE`, `HERMES_DGX_SPARK_ASR_ADAPTER`, `HERMES_DGX_SPARK_TTS_MODULE`, `HERMES_DGX_SPARK_TTS_ADAPTER`, and the speech models with production local Moshi/Nemotron Speech, Magpie, Riva-style, or equivalent Spark providers before collecting verified evidence.",
         "2. Run the repo-side evaluator on the DGX Spark and preserve every raw output artifact it writes.",
         "",
         "```bash",
@@ -1698,7 +1780,7 @@ def _operator_runbook(plan: dict[str, Any]) -> str:
         "- `source_artifact_sha256` must match the referenced source artifact bytes.",
         "- `collector_attestation` must identify the collector, command argv, git commit, timestamp window, raw/redacted hashes, and parent manifest hash.",
         "- `example_only: true` evidence is rejected.",
-        "- `loopback_smoke_bridge` evidence is protocol-only and must remain unverified for local ASR/TTS roles.",
+        "- `loopback_smoke_bridge` evidence is protocol-only and must remain unverified for local transcript/TTS evidence.",
         "",
         "## Role Evidence",
         "",
@@ -1732,6 +1814,8 @@ def _operator_runbook(plan: dict[str, Any]) -> str:
             f"- Required oracle routes: {', '.join(smoke['required_oracle_routes'])}",
             f"- Required interface input source: `{smoke['required_interface_input_source']}`",
             f"- Required reflex provider: `{smoke['required_reflex_provider']}`",
+            f"- Required interpreter provider: `{smoke['required_interpreter_provider']}`",
+            f"- Auxiliary transcript sources optional: `{smoke['auxiliary_transcript_sources_optional']}`",
             "- Required metrics: `speech_end_to_first_audio_ms <= 1500`, `barge_in_stop_ms <= 150`, `local_turn_oracle_calls == 0`, and `oracle_bound_oracle_calls >= oracle_bound_turns`.",
             "",
             "## Do Not",

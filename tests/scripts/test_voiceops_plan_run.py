@@ -428,7 +428,8 @@ def _write_spark_evidence(root: Path) -> Path:
     sources = root / "sources"
     source_sha256: dict[str, str] = {}
     source_keys = {
-        "reflex": "reflex-gemma4-e2b",
+        "reflex": "reflex-moshi-s2s",
+        "interpreter": "interpreter-gemma4-e2b",
         "oracle": "oracle-nemotron3-super-local",
         "asr": "asr-nemotron-speech",
         "tts": "tts-magpie-local",
@@ -451,12 +452,21 @@ def _write_spark_evidence(root: Path) -> Path:
             "evidence": [
                 {
                     **_base_spark_evidence(
-                        "reflex-gemma4-e2b",
-                        model="Gemma 4 E2B audio-native",
+                        "reflex-moshi-s2s",
+                        model="Moshi/PersonaPlex-class low-latency S2S",
                         source_artifact="sources/reflex.json",
                         source_artifact_sha256=source_sha256["reflex"],
                     ),
-                    "metrics": {"first_token_ms": 700, "intent_latency_ms": 1100, "steady_state_memory_gb": 20},
+                    "metrics": {"ack_latency_ms": 250, "barge_in_stop_ms": 90, "steady_state_memory_gb": 16},
+                },
+                {
+                    **_base_spark_evidence(
+                        "interpreter-gemma4-e2b",
+                        model="Gemma 4 E2B audio-native interpreter",
+                        source_artifact="sources/interpreter.json",
+                        source_artifact_sha256=source_sha256["interpreter"],
+                    ),
+                    "metrics": {"audio_interpretation_ms": 900, "evidence_patch_ms": 1200, "steady_state_memory_gb": 24},
                 },
                 {
                     **_base_spark_evidence(
@@ -506,8 +516,10 @@ def _write_spark_evidence(root: Path) -> Path:
                     "oracle_selected_by": "Hermes /model",
                     "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
                     "interface_input_sources": ["native_audio"],
-                    "reflex_providers": ["vllm"],
-                    "components": {"reflex": True, "oracle": True, "asr": True, "tts": True, "sidecar": True},
+                    "reflex_providers": ["moshi"],
+                    "interpreter_providers": ["vllm", "gemma"],
+                    "auxiliary_transcript_sources": ["moshi_hypothesis", "classic_asr_fallback_optional"],
+                    "components": {"reflex": True, "interpreter": True, "oracle": True, "tts": True, "sidecar": True},
                     "metrics": {
                         "speech_end_to_first_audio_ms": 900,
                         "barge_in_stop_ms": 90,
@@ -1951,7 +1963,7 @@ def test_plan_run_cli_package_audit_writes_consistency_artifacts(tmp_path):
     assert payload["package_audit"]["ok"] is True
     assert payload["package_audit"]["status"] == "pass"
     assert payload["package_audit"]["issues"] == []
-    assert payload["package_audit"]["checked_artifact_count"] == 92
+    assert payload["package_audit"]["checked_artifact_count"] == 93
     assert Path(payload["package_audit"]["artifacts"]["json"]).exists()
     assert Path(payload["package_audit"]["artifacts"]["markdown"]).exists()
     assert str(artifact_root / "voiceops-package-audit" / "current") in payload["package_audit"]["artifacts"]["json"]
@@ -2109,7 +2121,7 @@ def test_plan_run_cli_dry_audit_can_run_package_audit_without_persistent_writes(
     assert payload["dry_audit"] is True
     assert payload["persistent_writes"] is False
     assert payload["package_audit"] == {
-            "checked_artifact_count": 92,
+            "checked_artifact_count": 93,
         "issues": [],
         "ok": True,
         "persistent_writes": False,

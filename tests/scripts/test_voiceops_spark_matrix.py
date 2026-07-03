@@ -12,7 +12,8 @@ from scripts.voiceops_spark_matrix import build_matrix, parse_args, refresh_spar
 
 SOURCE_KEYS_BY_ARTIFACT = {
     "artifacts/test/raw.json": [
-        "reflex-gemma4-e2b",
+        "reflex-moshi-s2s",
+        "interpreter-gemma4-e2b",
         "oracle-nemotron3-super-local",
         "asr-nemotron-speech",
         "tts-magpie-local",
@@ -21,8 +22,9 @@ SOURCE_KEYS_BY_ARTIFACT = {
     "artifacts/test/hosted.json": ["oracle-nemotron3-ultra-hosted"],
     "artifacts/test/cartesia.json": ["tts-cartesia-cloud-fallback"],
     "artifacts/kame/raw.json": [
-        "reflex-gemma4-e2b",
-        "reflex-gemma4-e4b",
+        "reflex-moshi-s2s",
+        "interpreter-gemma4-e2b",
+        "interpreter-gemma4-e4b",
         "oracle-nemotron3-super-local",
         "asr-nemotron-speech",
         "tts-magpie-local",
@@ -97,6 +99,20 @@ def _base_evidence(candidate_id: str, *, model: str, locality: str = "local_spar
     return evidence
 
 
+def _reflex_evidence() -> dict:
+    return {
+        **_base_evidence("reflex-moshi-s2s", model="Moshi/PersonaPlex-class low-latency S2S"),
+        "metrics": {"ack_latency_ms": 250, "barge_in_stop_ms": 90, "steady_state_memory_gb": 16},
+    }
+
+
+def _interpreter_e2b_evidence() -> dict:
+    return {
+        **_base_evidence("interpreter-gemma4-e2b", model="Gemma 4 E2B audio-native interpreter"),
+        "metrics": {"audio_interpretation_ms": 900, "evidence_patch_ms": 1200, "steady_state_memory_gb": 24},
+    }
+
+
 def _stack_smoke() -> dict:
     return {
         "schema_version": "voiceops.spark_benchmark_evidence.v1",
@@ -114,11 +130,13 @@ def _stack_smoke() -> dict:
         "oracle_selected_by": "Hermes /model",
         "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
         "interface_input_sources": ["native_audio"],
-        "reflex_providers": ["vllm"],
+        "reflex_providers": ["moshi"],
+        "interpreter_providers": ["vllm", "gemma"],
+        "auxiliary_transcript_sources": ["moshi_hypothesis", "classic_asr_fallback_optional"],
         "components": {
             "reflex": True,
+            "interpreter": True,
             "oracle": True,
-            "asr": True,
             "tts": True,
             "sidecar": True,
         },
@@ -141,14 +159,15 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert matrix["policy"]["oracle_selected_by"] == "Hermes /model"
     assert matrix["ready_for_one_spark_demo"] is False
     assert matrix["role_status"] == {
-        "asr": "needs_evidence",
+        "interpreter": "needs_evidence",
         "oracle": "needs_evidence",
         "reflex": "needs_evidence",
         "tts": "needs_evidence",
     }
     assert {candidate["candidate_id"] for candidate in matrix["candidates"]} >= {
-        "reflex-gemma4-e2b",
-        "reflex-gemma4-e4b",
+        "reflex-moshi-s2s",
+        "interpreter-gemma4-e2b",
+        "interpreter-gemma4-e4b",
         "oracle-nemotron3-super-local",
         "oracle-nemotron3-ultra-hosted",
         "asr-nemotron-speech",
@@ -156,9 +175,14 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
         "tts-cartesia-cloud-fallback",
     }
     reflex_candidates = {candidate["candidate_id"]: candidate for candidate in matrix["candidates"] if candidate["role"] == "reflex"}
-    assert reflex_candidates["reflex-gemma4-e2b"]["priority"] == 1
-    assert reflex_candidates["reflex-gemma4-e4b"]["priority"] == 1
-    assert reflex_candidates["reflex-gemma4-e4b"]["locality"] == "local_spark"
+    assert reflex_candidates["reflex-moshi-s2s"]["priority"] == 1
+    assert reflex_candidates["reflex-moshi-s2s"]["locality"] == "local_spark"
+    interpreter_candidates = {
+        candidate["candidate_id"]: candidate for candidate in matrix["candidates"] if candidate["role"] == "interpreter"
+    }
+    assert interpreter_candidates["interpreter-gemma4-e2b"]["priority"] == 1
+    assert interpreter_candidates["interpreter-gemma4-e4b"]["priority"] == 1
+    assert interpreter_candidates["interpreter-gemma4-e4b"]["locality"] == "local_spark"
     oracle_candidates = {candidate["candidate_id"]: candidate for candidate in matrix["candidates"] if candidate["role"] == "oracle"}
     assert oracle_candidates["oracle-nemotron3-super-local"]["priority"] == 1
     assert oracle_candidates["oracle-nemotron3-super-local"]["locality"] == "local_spark"
@@ -176,8 +200,9 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     }
     assert required_paths <= set(paths)
     assert {
-        "scaffold_source_reflex-gemma4-e2b",
-        "scaffold_source_reflex-gemma4-e4b",
+        "scaffold_source_reflex-moshi-s2s",
+        "scaffold_source_interpreter-gemma4-e2b",
+        "scaffold_source_interpreter-gemma4-e4b",
         "scaffold_source_oracle-nemotron3-super-local",
         "scaffold_source_asr-nemotron-speech",
         "scaffold_source_tts-magpie-local",
@@ -199,14 +224,14 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert closure["mode"]["spark_execution"] is False
     assert closure["mode"]["network_io"] is False
     assert closure["missing_gates"] == [
-        "asr:needs_evidence",
+        "interpreter:needs_evidence",
         "oracle:needs_evidence",
         "reflex:needs_evidence",
         "tts:needs_evidence",
         "all_local_stack_smoke",
     ]
     assert closure["missing_roles"] == [
-        "asr:needs_evidence",
+        "interpreter:needs_evidence",
         "oracle:needs_evidence",
         "reflex:needs_evidence",
         "tts:needs_evidence",
@@ -217,12 +242,17 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
         "oracle_authority_routes",
         "interface_input_sources",
         "reflex_providers",
+        "interpreter_providers",
+        "auxiliary_transcript_sources",
         "metrics.local_turns",
         "metrics.local_turn_oracle_calls",
         "metrics.oracle_bound_turns",
         "metrics.oracle_bound_oracle_calls",
     } <= set(closure["required_stack_smoke_fields"])
-    assert closure["all_local_stack_smoke"]["required_components"] == ["reflex", "oracle", "asr", "tts", "sidecar"]
+    assert closure["all_local_stack_smoke"]["required_components"] == ["reflex", "interpreter", "oracle", "tts", "sidecar"]
+    assert closure["all_local_stack_smoke"]["required_reflex_provider"] == "s2s_or_timing"
+    assert closure["all_local_stack_smoke"]["required_interpreter_provider"] == "gemma_audio"
+    assert closure["all_local_stack_smoke"]["auxiliary_transcript_sources_optional"] is True
     assert closure["evidence_contract"]["preferred_local_oracle_candidate_id"] == "oracle-nemotron3-super-local"
     assert closure["evidence_contract"]["preferred_local_oracle_model"] == "Nemotron 3 Super"
     assert closure["evidence_contract"]["non_counting_fallback_oracle_models"] == ["Nemotron 3 Ultra"]
@@ -273,7 +303,7 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "protocol-only smoke checks" in operator_runbook
     assert "HERMES_DGX_SPARK_ASR_MODULE" in operator_runbook
     assert "HERMES_DGX_SPARK_TTS_ADAPTER" in operator_runbook
-    assert "must remain unverified for local ASR/TTS roles" in operator_runbook
+    assert "must remain unverified for local transcript/TTS evidence" in operator_runbook
     assert "`speech_end_to_first_audio_ms <= 1500`" in operator_runbook
     assert "`barge_in_stop_ms <= 150`" in operator_runbook
     assert "`local_turn_oracle_calls == 0`" in operator_runbook
@@ -281,19 +311,20 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert example["example_only"] is True
     assert all(item["example_only"] is True for item in example["evidence"])
     assert scaffold["example_only"] is True
-    assert scaffold["evidence"][0]["source_artifact"] == "sources/reflex-gemma4-e2b-raw.json"
+    assert scaffold["evidence"][0]["source_artifact"] == "sources/reflex-moshi-s2s-raw.json"
     scaffold_matrix = build_matrix([scaffold_path])
     scaffold_evaluations = {
         evaluation["candidate_id"]: evaluation
         for evaluation in scaffold_matrix["evaluations"]
     }
     assert scaffold_matrix["ready_for_one_spark_demo"] is False
-    assert "example_only_evidence_not_accepted" in scaffold_evaluations["reflex-gemma4-e2b"]["issues"]
-    assert "example_only_evidence_not_accepted" in scaffold_evaluations["reflex-gemma4-e4b"]["issues"]
-    assert "source_artifact_not_found" not in scaffold_evaluations["reflex-gemma4-e2b"]["issues"]
-    assert "source_artifact_not_found" not in scaffold_evaluations["reflex-gemma4-e4b"]["issues"]
+    assert "example_only_evidence_not_accepted" in scaffold_evaluations["reflex-moshi-s2s"]["issues"]
+    assert "example_only_evidence_not_accepted" in scaffold_evaluations["interpreter-gemma4-e2b"]["issues"]
+    assert "example_only_evidence_not_accepted" in scaffold_evaluations["interpreter-gemma4-e4b"]["issues"]
+    assert "source_artifact_not_found" not in scaffold_evaluations["interpreter-gemma4-e2b"]["issues"]
+    assert "source_artifact_not_found" not in scaffold_evaluations["interpreter-gemma4-e4b"]["issues"]
     assert "source_artifact_not_found" not in scaffold_matrix["stack_smoke"]["issues"]
-    scaffold_source = json.loads(Path(paths["scaffold_source_reflex-gemma4-e2b"]).read_text(encoding="utf-8"))
+    scaffold_source = json.loads(Path(paths["scaffold_source_interpreter-gemma4-e2b"]).read_text(encoding="utf-8"))
     assert scaffold_source["redacted"] is True
     assert template["evidence"][0]["verified"] is False
     assert template["evidence"][0]["schema_version"] == "voiceops.spark_benchmark_evidence.v1"
@@ -310,10 +341,8 @@ def test_spark_matrix_validates_matching_evidence(tmp_path):
         json.dumps(
             {
                 "evidence": [
-                    {
-                        **_base_evidence("reflex-gemma4-e2b", model="Gemma 4 E2B audio-native"),
-                        "metrics": {"first_token_ms": 700, "intent_latency_ms": 1100, "steady_state_memory_gb": 20},
-                    },
+                    _reflex_evidence(),
+                    _interpreter_e2b_evidence(),
                     {
                         **_base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super"),
                         "metrics": {
@@ -342,7 +371,8 @@ def test_spark_matrix_validates_matching_evidence(tmp_path):
     evaluations = {evaluation["candidate_id"]: evaluation for evaluation in matrix["evaluations"]}
 
     assert matrix["ready_for_one_spark_demo"] is True
-    assert evaluations["reflex-gemma4-e2b"]["status"] == "validated"
+    assert evaluations["reflex-moshi-s2s"]["status"] == "validated"
+    assert evaluations["interpreter-gemma4-e2b"]["status"] == "validated"
     assert evaluations["oracle-nemotron3-super-local"]["status"] == "validated"
     assert evaluations["asr-nemotron-speech"]["status"] == "validated"
     assert evaluations["tts-magpie-local"]["status"] == "validated"
@@ -406,7 +436,8 @@ def test_spark_matrix_example_is_not_accepted_as_proof(tmp_path):
     evaluations = {evaluation["candidate_id"]: evaluation for evaluation in matrix["evaluations"]}
 
     assert matrix["ready_for_one_spark_demo"] is False
-    assert evaluations["reflex-gemma4-e2b"]["status"] == "fails_target"
+    assert evaluations["reflex-moshi-s2s"]["status"] == "fails_target"
+    assert evaluations["interpreter-gemma4-e2b"]["status"] == "fails_target"
     assert evaluations["oracle-nemotron3-super-local"]["status"] == "fails_target"
     assert evaluations["asr-nemotron-speech"]["status"] == "fails_target"
     assert evaluations["tts-magpie-local"]["status"] == "fails_target"
@@ -414,7 +445,7 @@ def test_spark_matrix_example_is_not_accepted_as_proof(tmp_path):
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "example_only_evidence_not_accepted" in matrix["stack_smoke"]["issues"]
     assert matrix["role_status"] == {
-        "asr": "needs_evidence",
+        "interpreter": "needs_evidence",
         "oracle": "needs_evidence",
         "reflex": "needs_evidence",
         "tts": "needs_evidence",
@@ -428,14 +459,8 @@ def test_spark_matrix_wrapper_example_is_not_accepted_as_proof(tmp_path):
             {
                 "example_only": True,
                 "evidence": [
-                    {
-                        **_base_evidence("reflex-gemma4-e2b", model="Gemma 4 E2B"),
-                        "metrics": {
-                            "first_token_ms": 200,
-                            "intent_latency_ms": 600,
-                            "steady_state_memory_gb": 18,
-                        },
-                    },
+                    _reflex_evidence(),
+                    _interpreter_e2b_evidence(),
                     {
                         **_base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super"),
                         "metrics": {
@@ -464,7 +489,7 @@ def test_spark_matrix_wrapper_example_is_not_accepted_as_proof(tmp_path):
     evaluations = {evaluation["candidate_id"]: evaluation for evaluation in matrix["evaluations"]}
 
     assert matrix["ready_for_one_spark_demo"] is False
-    assert "example_only_evidence_not_accepted" in evaluations["reflex-gemma4-e2b"]["issues"]
+    assert "example_only_evidence_not_accepted" in evaluations["interpreter-gemma4-e2b"]["issues"]
     assert "example_only_evidence_not_accepted" in evaluations["oracle-nemotron3-super-local"]["issues"]
     assert "example_only_evidence_not_accepted" in matrix["stack_smoke"]["issues"]
 
@@ -576,7 +601,7 @@ def test_spark_matrix_rejects_candidate_with_mismatched_source_artifact_identity
     source_path = tmp_path / "artifacts/test/wrong-identity.json"
     source_path.parent.mkdir(parents=True, exist_ok=True)
     source_path.write_text(
-        json.dumps({"redacted": True, "source": "wrong raw output", "source_key": "reflex-gemma4-e2b"}),
+        json.dumps({"redacted": True, "source": "wrong raw output", "source_key": "interpreter-gemma4-e2b"}),
         encoding="utf-8",
     )
     evidence_path = tmp_path / "evidence.json"
@@ -1027,9 +1052,10 @@ def test_spark_matrix_rejects_ultra_model_for_super_local_oracle_gate(tmp_path):
         json.dumps(
             {
                 "evidence": [
+                    _reflex_evidence(),
                     {
-                        **_base_evidence("reflex-gemma4-e2b", model="Gemma 4 E2B audio-native"),
-                        "metrics": {"first_token_ms": 700, "intent_latency_ms": 1100, "steady_state_memory_gb": 20},
+                        **_base_evidence("interpreter-gemma4-e2b", model="Gemma 4 E2B audio-native interpreter"),
+                        "metrics": {"audio_interpretation_ms": 900, "evidence_patch_ms": 1200, "steady_state_memory_gb": 24},
                     },
                     {
                         **_base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Ultra"),
@@ -1062,8 +1088,8 @@ def test_spark_matrix_rejects_ultra_model_for_super_local_oracle_gate(tmp_path):
     assert oracle_evaluation["status"] == "fails_target"
     assert "model_mismatch" in oracle_evaluation["issues"]
     assert matrix["role_status"]["reflex"] == "validated"
+    assert matrix["role_status"]["interpreter"] == "validated"
     assert matrix["role_status"]["oracle"] == "needs_evidence"
-    assert matrix["role_status"]["asr"] == "validated"
     assert matrix["role_status"]["tts"] == "validated"
     assert matrix["stack_smoke"]["status"] == "validated"
     assert matrix["ready_for_one_spark_demo"] is False
@@ -1139,9 +1165,10 @@ def test_spark_matrix_cartesia_fallback_does_not_make_stack_ready_without_local_
         json.dumps(
             {
                 "evidence": [
+                    _reflex_evidence(),
                     {
-                        **_base_evidence("reflex-gemma4-e2b", model="Gemma 4 E2B audio-native"),
-                        "metrics": {"first_token_ms": 700, "intent_latency_ms": 1100, "steady_state_memory_gb": 20},
+                        **_base_evidence("interpreter-gemma4-e2b", model="Gemma 4 E2B audio-native interpreter"),
+                        "metrics": {"audio_interpretation_ms": 900, "evidence_patch_ms": 1200, "steady_state_memory_gb": 24},
                     },
                     {
                         **_base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super"),
@@ -1173,7 +1200,7 @@ def test_spark_matrix_cartesia_fallback_does_not_make_stack_ready_without_local_
     assert evaluations["tts-cartesia-cloud-fallback"]["status"] == "validated"
     assert evaluations["tts-magpie-local"]["status"] == "needs_evidence"
     assert matrix["role_status"] == {
-        "asr": "validated",
+        "interpreter": "validated",
         "oracle": "validated",
         "reflex": "validated",
         "tts": "needs_evidence",
@@ -1429,7 +1456,7 @@ def test_spark_matrix_rejects_native_stack_smoke_without_kame_routing_proof(tmp_
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "missing_oracle_authority_routes:files,memory,project_context,tools" in matrix["stack_smoke"]["issues"]
     assert "missing_interface_input_source:native_audio" in matrix["stack_smoke"]["issues"]
-    assert "missing_reflex_provider:vllm" in matrix["stack_smoke"]["issues"]
+    assert "missing_reflex_provider:s2s_or_timing" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
 
 
@@ -1503,6 +1530,17 @@ def test_spark_matrix_adapts_kame_benchmark_evidence_with_provenance(tmp_path):
                     **common,
                     "kind": "kame_benchmark_result",
                     "category": "interface",
+                    "model": "Moshi S2S",
+                    "metrics": {
+                        "ack_latency_ms": 240,
+                        "barge_in_stop_ms": 80,
+                        "steady_state_memory_gb": 16,
+                    },
+                },
+                {
+                    **common,
+                    "kind": "kame_benchmark_result",
+                    "category": "interface",
                     "model": "gemma-4-E2B-it",
                     "metrics": {
                         "kame_interface_model_request_ms": 220,
@@ -1557,13 +1595,14 @@ def test_spark_matrix_adapts_kame_benchmark_evidence_with_provenance(tmp_path):
                     "components": {
                         "reflex": True,
                         "oracle": True,
-                        "asr": True,
+                        "interpreter": True,
                         "tts": True,
                         "sidecar": True,
                     },
                     "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
                     "interface_input_sources": ["native_audio"],
-                    "reflex_providers": ["vllm"],
+                    "reflex_providers": ["moshi"],
+                    "interpreter_providers": ["vllm", "gemma"],
                     "metrics": {
                         "speech_end_to_first_audio_ms": 900,
                         "barge_in_stop_ms": 90,
@@ -1577,7 +1616,7 @@ def test_spark_matrix_adapts_kame_benchmark_evidence_with_provenance(tmp_path):
     matrix = build_matrix([evidence_path])
     evaluations = {evaluation["candidate_id"]: evaluation for evaluation in matrix["evaluations"]}
 
-    assert evaluations["reflex-gemma4-e2b"]["status"] == "validated"
+    assert evaluations["interpreter-gemma4-e2b"]["status"] == "validated"
     assert evaluations["oracle-nemotron3-super-local"]["status"] == "validated"
     assert evaluations["asr-nemotron-speech"]["status"] == "validated"
     assert evaluations["tts-magpie-local"]["status"] == "validated"
@@ -1618,9 +1657,10 @@ def test_spark_matrix_adapts_kame_e4b_interface_evidence(tmp_path):
     matrix = build_matrix([evidence_path])
     evaluations = {evaluation["candidate_id"]: evaluation for evaluation in matrix["evaluations"]}
 
-    assert evaluations["reflex-gemma4-e2b"]["status"] == "needs_evidence"
-    assert evaluations["reflex-gemma4-e4b"]["status"] == "validated"
-    assert matrix["role_status"]["reflex"] == "validated"
+    assert evaluations["interpreter-gemma4-e2b"]["status"] == "needs_evidence"
+    assert evaluations["interpreter-gemma4-e4b"]["status"] == "validated"
+    assert matrix["role_status"]["interpreter"] == "validated"
+    assert matrix["role_status"]["reflex"] == "needs_evidence"
     assert matrix["ready_for_one_spark_demo"] is False
 
 
@@ -1674,7 +1714,7 @@ def test_spark_matrix_rejects_protocol_only_kame_speech_evidence(tmp_path):
     assert "protocol_smoke_only_not_accepted" in evaluations["asr-nemotron-speech"]["issues"]
     assert "loopback_speech_evidence_not_accepted" in evaluations["asr-nemotron-speech"]["issues"]
     assert evaluations["tts-magpie-local"]["status"] == "fails_target"
-    assert matrix["role_status"]["asr"] == "needs_evidence"
+    assert "asr" not in matrix["role_status"]
     assert matrix["role_status"]["tts"] == "needs_evidence"
 
 
@@ -1747,7 +1787,8 @@ def test_spark_matrix_rejects_kame_evidence_without_explicit_spark_locality_and_
                     "oracle_bound_oracle_calls": 4,
                     "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
                     "interface_input_sources": ["native_audio"],
-                    "reflex_providers": ["vllm"],
+                    "reflex_providers": ["moshi"],
+                    "interpreter_providers": ["vllm", "gemma"],
                     "metrics": {
                         "speech_end_to_first_audio_ms": 900,
                         "barge_in_stop_ms": 90,
@@ -1905,7 +1946,8 @@ def test_spark_matrix_rejects_kame_smoke_without_reflex_bypass_and_oracle_author
     assert "target_failed:local_turn_oracle_calls" in matrix["stack_smoke"]["issues"]
     assert "missing_oracle_authority_routes:files,memory,project_context" in matrix["stack_smoke"]["issues"]
     assert "missing_interface_input_source:native_audio" in matrix["stack_smoke"]["issues"]
-    assert "missing_reflex_provider:vllm" in matrix["stack_smoke"]["issues"]
+    assert "missing_reflex_provider:s2s_or_timing" in matrix["stack_smoke"]["issues"]
+    assert "missing_interpreter_provider:gemma_audio" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
 
 
@@ -1957,9 +1999,10 @@ def test_spark_matrix_lint_evidence_is_no_write_for_valid_evidence(tmp_path):
         json.dumps(
             {
                 "evidence": [
+                    _reflex_evidence(),
                     {
-                        **_base_evidence("reflex-gemma4-e2b", model="Gemma 4 E2B audio-native"),
-                        "metrics": {"first_token_ms": 700, "intent_latency_ms": 1100, "steady_state_memory_gb": 20},
+                        **_base_evidence("interpreter-gemma4-e2b", model="Gemma 4 E2B audio-native interpreter"),
+                        "metrics": {"audio_interpretation_ms": 900, "evidence_patch_ms": 1200, "steady_state_memory_gb": 24},
                     },
                     {
                         **_base_evidence("oracle-nemotron3-super-local", model="Nemotron 3 Super"),
@@ -2006,7 +2049,7 @@ def test_spark_matrix_lint_evidence_is_no_write_for_valid_evidence(tmp_path):
     assert payload["artifact_writes"] is False
     assert payload["ready_for_one_spark_demo"] is True
     assert payload["role_status"] == {
-        "asr": "validated",
+        "interpreter": "validated",
         "oracle": "validated",
         "reflex": "validated",
         "tts": "validated",
