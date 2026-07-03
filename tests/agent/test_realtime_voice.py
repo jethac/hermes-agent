@@ -1393,8 +1393,8 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
                 "confidence": 0.68,
             },
         )
-        assert request.oracle_text == "find the node from yesterday's meeting"
-        assert request.oracle_text_source == "asr"
+        assert request.oracle_text == "find the note from yesterday's meeting"
+        assert request.oracle_text_source == "reflex_audio"
         assert request.interface_input_source == "native_audio"
         assert request.reflex_provider == "vllm"
         assert request.priority == "high"
@@ -1428,7 +1428,7 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert final.payload["kame_audio_time_range_ms"] == (12840, 15320)
         assert final.payload["kame_auxiliary_transcript_hypotheses"][0]["source"] == "moshi"
         assert final.payload["kame_auxiliary_transcript_hypotheses"][0]["authority"] == "hypothesis"
-        assert final.payload["kame_oracle_text_source"] == "asr"
+        assert final.payload["kame_oracle_text_source"] == "reflex_audio"
         assert final.payload["kame_interface_input_source"] == "native_audio"
         assert final.payload["kame_reflex_provider"] == "vllm"
         assert final.payload["kame_cancellation_token"] == "voice-123:1:cancel"
@@ -1446,8 +1446,8 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert oracle_request.payload["route_confidence"] == 0.81
         assert oracle_request.payload["mode"] == "voice"
         assert oracle_request.payload["urgency"] == "interactive"
-        assert oracle_request.payload["text"] == "find the node from yesterday's meeting"
-        assert oracle_request.payload["oracle_text_source"] == "asr"
+        assert oracle_request.payload["text"] == "find the note from yesterday's meeting"
+        assert oracle_request.payload["oracle_text_source"] == "reflex_audio"
         assert oracle_request.payload["transcript"] == "find the note from yesterday's meeting"
         assert oracle_request.payload["asr_transcript"] == "find the node from yesterday's meeting"
         assert oracle_request.payload["audio_segment_ref"] == "artifact://voice/voice-123-turn-1.wav"
@@ -1737,14 +1737,14 @@ def test_kame_engine_defer_acknowledgement_is_reflex_context(monkeypatch):
         assert defer.payload["interface_already_said"] == "Checking that now."
         assert defer.payload["text"] == "Checking that now."
         assert defer.payload["reflex_narration_text"] == "Checking that now."
-        assert defer.payload["oracle_text"] == "check the deployment status"
-        assert defer.payload["oracle_text_source"] == "asr"
+        assert defer.payload["oracle_text"] == "Check the deployment status."
+        assert defer.payload["oracle_text_source"] == "reflex_audio"
         assert oracle_request.payload["route"] == "defer"
         assert oracle_request.payload["turn_id"] == "voice-123:1"
         assert oracle_request.payload["interface_already_said"] == "Checking that now."
         assert oracle_request.payload["intent"] == "Check the deployment status."
-        assert oracle_request.payload["text"] == "check the deployment status"
-        assert oracle_request.payload["oracle_text_source"] == "asr"
+        assert oracle_request.payload["text"] == "Check the deployment status."
+        assert oracle_request.payload["oracle_text_source"] == "reflex_audio"
         assert "reflex_narration_text" not in oracle_request.payload
         assert narration.payload["text"] == "Checking that now."
         assert narration.payload["kame_interface_already_said"] == "Checking that now."
@@ -3337,6 +3337,7 @@ def test_kame_engine_attaches_update_to_running_async_oracle_job(monkeypatch):
         async def update_request(self, request, update_text, metadata):
             self.updates.append((request, update_text, metadata))
             self.update_seen.set()
+            return {"delivered_to_oracle": True, "consumed_before_irreversible_action": False}
 
     async def run():
         spoken = []
@@ -3444,6 +3445,7 @@ def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(m
         async def update_request(self, request, update_text, metadata):
             self.updates.append((request, update_text, metadata))
             self.update_seen.set()
+            return {"delivered_to_oracle": True, "consumed_before_irreversible_action": False}
 
     async def run():
         async def fake_speak(self, text, playback_generation):
@@ -3520,6 +3522,8 @@ def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(m
         assert evidence.payload["interpreter_evidence_late"] is True
         assert update.payload["state"] == "running"
         assert update.payload["interpreter_evidence_late"] is True
+        assert update.payload["interpreter_evidence_delivered_to_oracle"] is True
+        assert update.payload["interpreter_evidence_consumed_before_irreversible_action"] is False
 
         updated_request, update_text, metadata = oracle.updates[0]
         assert updated_request.intent == "Run task one"
@@ -5281,6 +5285,7 @@ def test_async_oracle_tool_approval_carries_late_interpreter_evidence(monkeypatc
         async def update_request(self, request, update_text, metadata):
             self.updates.append((request, update_text, metadata))
             self.update_seen.set()
+            return {"delivered_to_oracle": True, "consumed_before_irreversible_action": True}
 
     async def run():
         async def fake_speak(self, text, playback_generation):
@@ -5369,6 +5374,8 @@ def test_async_oracle_tool_approval_carries_late_interpreter_evidence(monkeypatc
         for payload in (approval, tool_event):
             assert payload["interpreter_evidence_count"] == 1
             assert payload["interpreter_evidence_late"] is True
+            assert payload["interpreter_evidence_delivered_to_oracle"] is True
+            assert payload["interpreter_evidence_consumed_before_irreversible_action"] is True
             assert payload["latest_interpreter_evidence_source"] == "gemma_interpreter"
             assert "transcript=buy twenty dollars of phone credits" in payload["latest_interpreter_evidence"]
             assert "intent=prepare a Stripe approval for phone credits" in payload["latest_interpreter_evidence"]
@@ -5772,7 +5779,7 @@ def test_kame_engine_accepts_sidecar_interface_intent_final(monkeypatch):
         assert request.asr_transcript == "check deployment status"
         assert request.asr_transcript_source == "asr"
         assert request.asr_transcript_confidence == 0.91
-        assert request.oracle_text == "check deployment status"
+        assert request.oracle_text == "check the deployment status"
         assert request.interface_input_source == "native_audio"
         assert request.reflex_provider == "vllm"
 
@@ -5787,8 +5794,8 @@ def test_kame_engine_accepts_sidecar_interface_intent_final(monkeypatch):
         assert intent.payload["input_generation"] == 3
         assert intent.payload["metrics"]["kame_speech_end_to_interface_decision_ms"] == 42
         assert intent.payload["metrics"]["kame_final_transcript_to_interface_decision_ms"] >= 0
-        assert oracle_request.payload["text"] == "check deployment status"
-        assert oracle_request.payload["oracle_text_source"] == "asr"
+        assert oracle_request.payload["text"] == "check the deployment status"
+        assert oracle_request.payload["oracle_text_source"] == "reflex_audio"
         assert commit.payload["text"] == "The deployment is healthy."
         assert spoken == ["The deployment is healthy."]
 
@@ -6168,8 +6175,8 @@ def test_kame_engine_barge_in_carries_cancelled_turn_token(monkeypatch):
         assert cancel.payload["playback_generation"] == 2
         assert cancel.payload["cancelled_playback_generation"] == 1
         assert cancel.payload["cancellation_token"] == "voice-123:1:cancel"
-        assert cancel.payload["text"] == "look this up exactly"
-        assert cancel.payload["oracle_text_source"] == "asr"
+        assert cancel.payload["text"] == "look this up"
+        assert cancel.payload["oracle_text_source"] == "reflex_audio"
         assert cancel.payload["asr_transcript"] == "look this up exactly"
         assert cancel.payload["asr_transcript_source"] == "asr"
         assert cancel.payload["interface_input_source"] == "native_audio"

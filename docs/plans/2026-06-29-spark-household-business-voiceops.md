@@ -247,7 +247,8 @@ Target:
   hypotheses for multilingual correction and oracle evidence
 - dedicated classic ASR is an optional auxiliary transcript evidence lane and
   fallback, not the reflex driver
-- local Nemotron Speech or equivalent streaming ASR for durable transcript evidence
+- local Nemotron Speech or equivalent streaming ASR only as optional fallback,
+  diagnostic, caption, or literal-evidence hypothesis input
 - local Magpie/Riva-style TTS when available
 - Cartesia or similar cloud TTS remains an acceptable bring-up fallback
 
@@ -691,9 +692,11 @@ Move as much of the stack as possible onto one DGX Spark:
 - local Gemma interpreter launch evidence
 - local Hermes oracle endpoint registered through normal `/model` selection
 - Nemotron 3 Super evaluated as the preferred local NVIDIA brain
-- local auxiliary transcript/TTS bridge evidence
-- all-local smoke with oracle, reflex, interpreter, auxiliary transcript
-  evidence, TTS, and sidecar together
+- local TTS bridge evidence
+- optional auxiliary transcript evidence only for fallback, diagnostics,
+  captions, or comparison runs
+- all-local smoke with oracle, reflex, raw-audio interpreter, TTS, and sidecar
+  together
 - benchmark evidence accepted by the generated DGX Spark matrix validator
 
 Headless command:

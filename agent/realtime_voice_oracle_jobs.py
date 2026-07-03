@@ -139,6 +139,15 @@ class OracleJob:
             status["latest_interpreter_evidence"] = str(latest_evidence.get("summary") or "")[:240]
             status["latest_interpreter_evidence_source"] = str(latest_evidence.get("source") or "")[:40]
             status["interpreter_evidence_late"] = bool(latest_evidence.get("late"))
+            if "delivered_to_oracle" in latest_evidence:
+                status["interpreter_evidence_delivered_to_oracle"] = bool(latest_evidence.get("delivered_to_oracle"))
+            if "consumed_before_irreversible_action" in latest_evidence:
+                status["interpreter_evidence_consumed_before_irreversible_action"] = bool(
+                    latest_evidence.get("consumed_before_irreversible_action")
+                )
+            delivery_status = str(latest_evidence.get("delivery_status") or "").strip()
+            if delivery_status:
+                status["interpreter_evidence_delivery_status"] = delivery_status[:80]
         if self.request is not None:
             status["turn_id"] = self.request.turn_id
         return status
@@ -408,6 +417,29 @@ class OracleJobManager:
                     "interpreter_evidence_late": bool(evidence.get("late")),
                 },
             )
+            return job
+
+    async def mark_latest_interpreter_evidence_delivery(
+        self,
+        job_id: str,
+        *,
+        delivered_to_oracle: bool,
+        consumed_before_irreversible_action: bool = False,
+        delivery_status: str = "",
+    ) -> OracleJob:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise OracleJobNotFoundError(job_id)
+            if not job.interpreter_evidence:
+                return job
+            latest = job.interpreter_evidence[-1]
+            latest["delivered_to_oracle"] = bool(delivered_to_oracle)
+            latest["consumed_before_irreversible_action"] = bool(consumed_before_irreversible_action)
+            status = _compact_evidence_text(delivery_status, limit=80)
+            if status:
+                latest["delivery_status"] = status
+            job.updated_at = self._clock()
             return job
 
     async def mark_waiting_for_approval(
@@ -1020,6 +1052,9 @@ def _compact_approval_payload(value: Mapping[str, Any]) -> dict[str, Any]:
         "latest_interpreter_evidence_source",
         "interpreter_evidence_count",
         "interpreter_evidence_late",
+        "interpreter_evidence_delivered_to_oracle",
+        "interpreter_evidence_consumed_before_irreversible_action",
+        "interpreter_evidence_delivery_status",
     }
     compact: dict[str, Any] = {}
     for key, raw in value.items():

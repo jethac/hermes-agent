@@ -821,6 +821,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 summary = str(job.to_status().get("latest_interpreter_evidence") or "").strip()
                 if summary:
                     await self._notify_running_oracle_job_update(job, update_text=summary, reason=reason)
+                    job = await manager.get(job_id)
             elif update_text:
                 job = await manager.add_update(
                     job_id,
@@ -829,6 +830,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     update_type=str(event.payload.get("update_type") or "clarification"),
                 )
                 await self._notify_running_oracle_job_update(job, update_text=update_text, reason=reason)
+                job = await manager.get(job_id)
         except OracleJobNotFoundError:
             await self._emit(
                 VoiceEventType.FRONTEND_STATE,
@@ -1470,8 +1472,24 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         try:
             result = updater(updated_request, update_text, metadata)
             if hasattr(result, "__await__"):
-                await result
+                result = await result
+            if latest_evidence and self._oracle_job_manager is not None:
+                delivery = _oracle_update_delivery_status(result, delivered_default=True)
+                await self._oracle_job_manager.mark_latest_interpreter_evidence_delivery(
+                    job.job_id,
+                    delivered_to_oracle=delivery["delivered_to_oracle"],
+                    consumed_before_irreversible_action=delivery["consumed_before_irreversible_action"],
+                    delivery_status=delivery["delivery_status"],
+                )
         except Exception as exc:
+            if latest_evidence and self._oracle_job_manager is not None:
+                with contextlib.suppress(OracleJobNotFoundError):
+                    await self._oracle_job_manager.mark_latest_interpreter_evidence_delivery(
+                        job.job_id,
+                        delivered_to_oracle=False,
+                        consumed_before_irreversible_action=False,
+                        delivery_status="update_request_failed",
+                    )
             await self._emit(
                 VoiceEventType.FRONTEND_STATE,
                 {
@@ -3491,6 +3509,17 @@ def _oracle_job_update_event_payload(job: OracleJob, *, reason: str) -> dict[str
         payload["latest_interpreter_evidence"] = latest_evidence
         payload["interpreter_evidence_count"] = status.get("interpreter_evidence_count", 0)
         payload["interpreter_evidence_late"] = status.get("interpreter_evidence_late", False)
+        if "interpreter_evidence_delivered_to_oracle" in status:
+            payload["interpreter_evidence_delivered_to_oracle"] = status[
+                "interpreter_evidence_delivered_to_oracle"
+            ]
+        if "interpreter_evidence_consumed_before_irreversible_action" in status:
+            payload["interpreter_evidence_consumed_before_irreversible_action"] = status[
+                "interpreter_evidence_consumed_before_irreversible_action"
+            ]
+        delivery_status = str(status.get("interpreter_evidence_delivery_status") or "").strip()
+        if delivery_status:
+            payload["interpreter_evidence_delivery_status"] = delivery_status
     return payload
 
 
@@ -3756,10 +3785,15 @@ def _kame_defer_reply_payload_with_metrics(
 def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
     oracle_text_source = str(metadata.get("kame_oracle_text_source") or "").strip()
     transcript = str(metadata.get("kame_transcript") or "")
+    transcript_source = str(metadata.get("kame_transcript_source") or "").strip()
     intent = str(metadata.get("kame_intent") or "")
     asr_transcript = str(metadata.get("kame_asr_transcript") or "")
-    text = transcript or intent
-    if oracle_text_source.lower().startswith("asr") and asr_transcript:
+    text = transcript if transcript and not transcript_source.lower().startswith("asr") else intent
+    if (
+        metadata.get("kame_interface_audio_input_fallback") is True
+        and oracle_text_source.lower().startswith("asr")
+        and asr_transcript
+    ):
         text = asr_transcript
     payload: dict[str, Any] = {
         "session_id": str(metadata.get("kame_session_id") or ""),
@@ -3771,7 +3805,7 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
         "source": str(metadata.get("kame_source") or ""),
         "mode": str(metadata.get("kame_mode") or ""),
         "urgency": str(metadata.get("kame_urgency") or ""),
-        "transcript_source": str(metadata.get("kame_transcript_source") or ""),
+        "transcript_source": transcript_source,
     }
     if oracle_text_source:
         payload["oracle_text_source"] = oracle_text_source
@@ -4291,7 +4325,43 @@ def _with_oracle_job_interpreter_evidence(payload: Mapping[str, Any], job: Oracl
         enriched["latest_interpreter_evidence_source"] = source
     enriched["interpreter_evidence_count"] = status.get("interpreter_evidence_count", 0)
     enriched["interpreter_evidence_late"] = status.get("interpreter_evidence_late", False)
+    if "interpreter_evidence_delivered_to_oracle" in status:
+        enriched["interpreter_evidence_delivered_to_oracle"] = status[
+            "interpreter_evidence_delivered_to_oracle"
+        ]
+    if "interpreter_evidence_consumed_before_irreversible_action" in status:
+        enriched["interpreter_evidence_consumed_before_irreversible_action"] = status[
+            "interpreter_evidence_consumed_before_irreversible_action"
+        ]
+    delivery_status = str(status.get("interpreter_evidence_delivery_status") or "").strip()
+    if delivery_status:
+        enriched["interpreter_evidence_delivery_status"] = delivery_status
     return enriched
+
+
+def _oracle_update_delivery_status(result: object, *, delivered_default: bool) -> dict[str, Any]:
+    delivered = delivered_default
+    consumed = False
+    status = "delivered" if delivered_default else "not_delivered"
+    if isinstance(result, Mapping):
+        if "delivered_to_oracle" in result:
+            delivered = _metadata_bool(result.get("delivered_to_oracle"), default=delivered_default)
+        if "consumed_before_irreversible_action" in result:
+            consumed = _metadata_bool(result.get("consumed_before_irreversible_action"), default=False)
+        elif "consumed" in result:
+            consumed = _metadata_bool(result.get("consumed"), default=False)
+        elif "accepted" in result:
+            consumed = _metadata_bool(result.get("accepted"), default=False)
+        status = str(
+            result.get("delivery_status")
+            or result.get("status")
+            or ("consumed" if consumed else ("delivered" if delivered else "not_delivered"))
+        ).strip()[:80]
+    return {
+        "delivered_to_oracle": bool(delivered),
+        "consumed_before_irreversible_action": bool(consumed),
+        "delivery_status": status or ("delivered" if delivered else "not_delivered"),
+    }
 
 
 def _realtime_json_safe(value: Any) -> Any:

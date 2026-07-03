@@ -444,7 +444,8 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
         source_label = asr_transcript_source or "asr"
         parts.append(
             f"Verbatim ASR evidence ({source_label}): {asr_transcript}. "
-            "Use it for names, numbers, code identifiers, and tool arguments, but treat it as evidence rather than ground truth."
+            "Compare it against the reflex intent, transcript hypotheses, and interpreter evidence for names, numbers, "
+            "code identifiers, and possible tool arguments; treat it as evidence rather than ground truth."
         )
     if oracle_text_source:
         if oracle_text_source.lower().startswith("asr"):

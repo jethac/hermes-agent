@@ -119,18 +119,18 @@ Discord voice / VoiceClaw / OpenClaw Talk / phone-SIP / desktop mic
        -> VAD / turn detector
        -> fast reflex / floor-control model
             -> immediate ack / local control / rough transcript hypothesis
+       -> optional auxiliary transcript hypothesis sources
+            -> Moshi/S2S transcript hypothesis or classic ASR hypothesis
        -> interpreter lane
             -> Gemma 4 audio model over raw clip
             -> optional context: reflex/Moshi transcript hypothesis
             -> optional fallback context: classic ASR hypothesis
             -> corrected transcript / entities / oracle request patch
-       -> auxiliary transcript evidence lane
-            -> Moshi/S2S transcript hypothesis or classic ASR hypothesis
        -> speech planner
        -> TTS or native speech output
        -> oracle router
             -> interpreter evidence
-            -> auxiliary transcript evidence
+            -> provenance-labeled transcript hypotheses only after interpreter merge
             -> Hermes gateway / oracle session
             -> tools, MCP, memory, files, project context
        <- oracle hints, tool results, final answer
@@ -1014,9 +1014,10 @@ voice production review is not enough for this branch. Required KAME gates are:
 - hosted Nemotron 3 Ultra excluded from one-Spark readiness claims unless local
   evidence proves otherwise
 - oracle outcome comparison with reflex-only, Gemma interpreter, and
-  Gemma-plus-auxiliary-transcript evidence
-- all-local DGX Spark smoke with oracle, reflex, interpreter, transcript
-  evidence, TTS, and sidecar together
+  Gemma-plus-optional-auxiliary-transcript evidence
+- all-local DGX Spark smoke with oracle, reflex, raw-audio interpreter, TTS,
+  and sidecar together; auxiliary transcript evidence is optional comparison or
+  fallback evidence when enabled
 - live Discord smoke for the full KAME path under production credentials
 
 The `kame_dgx_benchmark_evidence` production-review check must reference a
@@ -1082,9 +1083,10 @@ Remaining for full KAME production readiness:
 - Gemma 4 interpreter launch evidence from the actual DGX Spark runtime
 - DGX Spark / Nemotron 3 Super `max_concurrent=4` capacity evidence
 - benchmark evidence comparing reflex-only, Gemma interpreter, and
-  Gemma-plus-auxiliary-transcript oracle outcomes
+  Gemma-plus-optional-auxiliary-transcript oracle outcomes
 - benchmark evidence comparing interpreter correction against reflex transcript
   hypotheses for multilingual/code-switched turns
-- all-local DGX Spark smoke evidence with the oracle, reflex, interpreter,
-  auxiliary transcript, and TTS services running together
+- all-local DGX Spark smoke evidence with the oracle, reflex, raw-audio
+  interpreter, and TTS services running together; auxiliary transcript evidence
+  remains optional comparison or fallback evidence
 - live Discord smoke evidence for the full KAME path under production credentials

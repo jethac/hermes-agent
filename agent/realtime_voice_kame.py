@@ -388,15 +388,19 @@ class KameOracleRequest:
     def oracle_text(self) -> str:
         """Return the best text to persist as the user's oracle-facing message."""
 
-        return (self.asr_transcript or self.transcript or self.intent).strip()
+        if self.interface_audio_input_fallback and self.asr_transcript:
+            return self.asr_transcript.strip()
+        if self.transcript and not self.transcript_source.lower().startswith("asr"):
+            return self.transcript.strip()
+        return self.intent.strip()
 
     @property
     def oracle_text_source(self) -> str:
         """Return the source label for ``oracle_text`` so ASR evidence is explicit."""
 
-        if self.asr_transcript:
+        if self.interface_audio_input_fallback and self.asr_transcript:
             return self.asr_transcript_source or "asr"
-        if self.transcript:
+        if self.transcript and not self.transcript_source.lower().startswith("asr"):
             return self.transcript_source or "reflex_audio"
         return self.intent_source or "reflex_audio"
 
