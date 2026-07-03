@@ -49,6 +49,15 @@ multilingual interpretation or recover clipped prefixes, but it must be able to
 reject the text when the waveform, energy gate, speaker identity, or later
 context disagrees.
 
+2026-07-03 sensor-fan-in amendment: the intended shape is not "keep STT in
+parallel" as an old control path. It is one raw-audio turn with multiple
+sensors attached. The reflex is the realtime sensor and floor controller;
+Moshi/open-S2S text is a hypothesis about what that live sensor believed it
+heard; classic ASR is optional diagnostic or fallback evidence; and Gemma is the
+direct-audio interpreter that compares those signals before any durable wording
+or tool-critical argument is promoted. When raw audio and Moshi text are both
+available, send both to the interpreter in one bundle.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
@@ -113,6 +122,14 @@ captions or diagnostics. Gemma can consume both, plus the raw audio, as context.
 Only the interpreter/oracle promotion result may become durable user text,
 Stripe/NemoClaw spend rationale, phone-call payload, memory, file content, or
 tool argument.
+
+This is the important distinction for Moshi-style output: the transcript is not
+the thing Hermes acts on. It is a compact observation from the live interface,
+useful precisely because it tells Gemma what the realtime voice model thought it
+heard at the moment it chose an acknowledgement or route. That observation may
+help recover clipped starts, names, numbers, or code-switched phrases, but it
+can also be wrong or hallucinated. The interpreter must see it beside the raw
+audio, not instead of the raw audio.
 
 In implementation terms, the packet should look like one raw-audio turn with
 multiple evidence attachments, not multiple turns competing for authority:
@@ -410,6 +427,14 @@ This is the answer to the "can we provide the Moshi STT transcript as context
 along with raw voice?" question: yes, that is exactly the desired packet shape.
 The raw voice clip and timing metadata are the primary interpreter evidence;
 Moshi/open-S2S text is a labeled clue that Gemma may accept, correct, or reject.
+
+Do not implement this as two conversations where one lane asks Hermes from raw
+audio and another lane asks Hermes from Moshi text. The frontend may emit
+multiple sensor events, but the KAME session must join them by `turn_id` and
+`audio_segment_ref` before oracle authority. If the Moshi hypothesis arrives
+before the raw clip is finalized, attach it to the pending bundle. If it arrives
+after the interpreter has started, attach it as late evidence. In neither case
+does it become a new user turn.
 
 The interpreter request should make that hierarchy visible in the wire format and
 prompt. Put the raw audio reference and timing fields in the primary input

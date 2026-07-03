@@ -123,6 +123,12 @@ Target KAME layout:
   second Hermes turn, do not overwrite the raw-audio route, and do not let that
   text become a spend reason, phone-call payload, memory entry, file write, or
   durable chat message unless Gemma or the active Hermes oracle promotes it.
+- Sensor-fan-in rule: the long-term stack should collect observations for one
+  speech cut rather than run multiple user turns in parallel. The fast reflex
+  owns live floor control, Moshi/open-S2S transcript text records what that
+  frontend believed it heard, optional classic ASR is fallback or diagnostic
+  evidence, and Gemma receives those hypotheses beside the clipped waveform.
+  The first transcript to arrive is not the transcript of record.
 - Task-state rule: the reflex needs a compact job-status projection with safe
   capacity counts, job ids, states, priorities, and ordinal-friendly spoken
   labels. It must name at least the first four active oracle jobs and a queued
@@ -258,6 +264,12 @@ This is why the Moshi transcript belongs beside the waveform rather than in
 front of the system. It can tell Gemma what the reflex believed it heard, but it
 must not force the oracle down a false path when the waveform, energy gate,
 speaker metadata, or later interpreter correction disagrees.
+
+For implementation, treat Moshi text as a sensor event attached to the current
+`turn_id`, not as a user message. If it arrives before the audio cut is ready,
+hold it on the pending bundle. If it arrives after Gemma has started, attach it
+as late evidence. It should never cause a second Hermes turn, duplicate oracle
+job, or independent spend/provisioning/call request.
 
 This is the core KAME rule for VoiceOps: the live voice model may speak and
 route, the interpreter may promote evidence, and Hermes' active oracle may act.

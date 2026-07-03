@@ -163,6 +163,14 @@ correct, reject, or downgrade the text to diagnostic-only evidence. This lets a
 fast reflex remain useful without turning Moshi into the durable transcript
 authority.
 
+Sensor-fan-in corollary: this is not the old STT-first pipeline and not a
+separate parallel ASR conversation. The runtime may collect several observations
+for one speech cut: live reflex route, Moshi/open-S2S transcript hypothesis,
+optional classic ASR hypothesis, VAD/energy timing, and the clipped waveform.
+Those observations merge by `turn_id` and `audio_segment_ref` before oracle
+authority. The interpreter, not the first transcript to arrive, decides what
+wording can become durable or tool-critical.
+
 The oracle is the worker. It owns:
 
 - tool execution
@@ -200,6 +208,12 @@ that output as a hypothesis from the live interface and pass it to the Gemma
 interpreter beside the raw audio segment. It must not become a separate oracle
 turn or the durable user transcript just because it arrived before interpreter
 evidence.
+
+When raw audio and a Moshi/open-S2S transcript are both available, the preferred
+interpreter input is both signals together. The transcript tells Gemma what the
+realtime frontend believed it heard; the waveform and timing metadata remain
+the primary evidence. If the transcript arrives late, it is late evidence on
+the same oracle job, not a reason to create or replay another Hermes turn.
 
 ## User Experience Goal
 
