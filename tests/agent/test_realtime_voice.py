@@ -51,6 +51,7 @@ from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, sidecar_ws_
 from agent.realtime_voice_text_engine import (
     KameInterfaceOracleEngine,
     TextOracleTTSEngine,
+    _external_kame_bridge_arguments,
     _kame_oracle_job_control_operation,
     _take_speakable_chunk,
 )
@@ -12886,6 +12887,124 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
     }
     assert "tool_name" not in metadata
     assert "arguments" not in metadata
+
+
+def test_external_kame_canonical_transcript_hypotheses_are_ingested():
+    request = kame_external_brain_request_to_oracle_request(
+        {
+            "tool_name": "ask_brain",
+            "tool_call_id": "call-voiceclaw-2",
+            "arguments": {
+                "query": "prepare the phone handoff",
+                "intent": "Prepare the phone handoff.",
+                "interface_already_said": "I'm preparing the handoff.",
+            },
+            "transcript_hypotheses": [
+                {
+                    "kind": "reflex_transcript_hypothesis",
+                    "source": "moshi-reflex",
+                    "text": "prepare the phone handoff",
+                    "authority": "reflex_hypothesis",
+                    "confidence": 0.81,
+                    "partial": False,
+                },
+                {
+                    "kind": "s2s_transcript_hypothesis",
+                    "source": "moshi",
+                    "text": "prepare phone handoff",
+                    "authority": "auxiliary_hypothesis",
+                    "confidence": 0.74,
+                    "latency_ms": 132,
+                },
+                {
+                    "kind": "classic_asr_hypothesis",
+                    "source": "asr",
+                    "text": "prepare the phone hand off",
+                    "authority": "auxiliary_hypothesis",
+                    "confidence": 0.69,
+                },
+            ],
+        },
+        session_id="external-kame-canonical",
+        turn_id="external-kame-canonical:1",
+        source="voiceclaw",
+        user_id="jetha",
+    )
+
+    metadata = request.to_metadata()
+    assert request.oracle_text == "Prepare the phone handoff."
+    assert request.oracle_text_source == "reflex_audio"
+    assert request.reflex_transcript_hypothesis == "prepare the phone handoff"
+    assert request.reflex_transcript_source == "moshi-reflex"
+    assert request.reflex_transcript_confidence == 0.81
+    assert request.auxiliary_transcript_hypotheses == (
+        {
+            "source": "moshi",
+            "text": "prepare phone handoff",
+            "authority": "hypothesis",
+            "kind": "s2s_transcript_hypothesis",
+            "confidence": 0.74,
+            "latency_ms": 132,
+        },
+        {
+            "source": "asr",
+            "text": "prepare the phone hand off",
+            "authority": "hypothesis",
+            "kind": "classic_asr_hypothesis",
+            "confidence": 0.69,
+        },
+    )
+    assert metadata["kame_transcript_hypotheses"] == (
+        {
+            "kind": "reflex_transcript_hypothesis",
+            "source": "moshi-reflex",
+            "text": "prepare the phone handoff",
+            "authority": "reflex_hypothesis",
+            "confidence": 0.81,
+        },
+        {
+            "kind": "s2s_transcript_hypothesis",
+            "source": "moshi",
+            "text": "prepare phone handoff",
+            "authority": "auxiliary_hypothesis",
+            "confidence": 0.74,
+            "latency_ms": 132,
+        },
+        {
+            "kind": "classic_asr_hypothesis",
+            "source": "asr",
+            "text": "prepare the phone hand off",
+            "authority": "auxiliary_hypothesis",
+            "confidence": 0.69,
+        },
+    )
+
+
+def test_external_kame_bridge_arguments_preserve_top_level_transcript_hypotheses():
+    arguments = _external_kame_bridge_arguments(
+        {
+            "tool_name": "ask_brain",
+            "arguments": {"query": "prepare the phone handoff"},
+            "transcript_hypotheses": [
+                {
+                    "kind": "s2s_transcript_hypothesis",
+                    "source": "moshi",
+                    "text": "prepare phone handoff",
+                    "authority": "auxiliary_hypothesis",
+                }
+            ],
+        }
+    )
+
+    assert arguments["query"] == "prepare the phone handoff"
+    assert arguments["transcript_hypotheses"] == [
+        {
+            "kind": "s2s_transcript_hypothesis",
+            "source": "moshi",
+            "text": "prepare phone handoff",
+            "authority": "auxiliary_hypothesis",
+        }
+    ]
 
 
 def test_external_kame_s2s_hypothesis_does_not_overwrite_oracle_text():

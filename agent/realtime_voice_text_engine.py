@@ -3580,6 +3580,7 @@ def _external_kame_bridge_arguments(payload: Mapping[str, Any]) -> dict[str, Any
         "auxiliary_transcript_hypotheses",
         ("auxiliary_transcript_hypotheses",),
     )
+    _overlay_first_value(arguments, payload, "transcript_hypotheses", ("transcript_hypotheses",))
     _overlay_first_text(
         arguments,
         payload,

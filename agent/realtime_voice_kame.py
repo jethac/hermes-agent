@@ -488,7 +488,8 @@ class KameOracleRequest:
                 continue
             source = _optional_text(hypothesis.get("source")) or _optional_text(hypothesis.get("provider")) or "unknown"
             item = {
-                "kind": _transcript_hypothesis_kind(source, default="s2s_transcript_hypothesis"),
+                "kind": _optional_text(hypothesis.get("kind"))
+                or _transcript_hypothesis_kind(source, default="s2s_transcript_hypothesis"),
                 "source": source,
                 "text": text,
                 "authority": "auxiliary_hypothesis",
@@ -632,20 +633,28 @@ class KameOracleRequest:
             asr_transcript = transcript
             asr_transcript_source = transcript_source
             asr_transcript_confidence = _confidence(payload.get("transcript_confidence"))
+        canonical_hypotheses = _canonical_transcript_hypotheses(payload)
+        canonical_reflex_hypothesis = _canonical_reflex_transcript_hypothesis(canonical_hypotheses)
         reflex_transcript_hypothesis = (
             _optional_text(payload.get("reflex_transcript_hypothesis"))
             or _optional_text(payload.get("reflex_transcript"))
             or _optional_text(payload.get("reflex_hypothesis"))
+            or _optional_text(canonical_reflex_hypothesis.get("text"))
             or (transcript if transcript and transcript_source == "reflex_audio" else "")
         )
         reflex_transcript_source = (
             _optional_text(payload.get("reflex_transcript_source"))
+            or _optional_text(canonical_reflex_hypothesis.get("source"))
             or ("reflex_audio" if reflex_transcript_hypothesis else "")
         )
         reflex_transcript_confidence = _confidence(
             payload.get("reflex_transcript_confidence")
             if payload.get("reflex_transcript_confidence") is not None
-            else payload.get("reflex_hypothesis_confidence")
+            else (
+                payload.get("reflex_hypothesis_confidence")
+                if payload.get("reflex_hypothesis_confidence") is not None
+                else canonical_reflex_hypothesis.get("confidence")
+            )
         )
         local_reply = (
             _optional_text(payload.get("local_reply"))
@@ -741,6 +750,11 @@ def kame_external_brain_request_to_oracle_request(
     bridge_name = _frontend_bridge_name(raw)
     bridge_arguments = _frontend_bridge_arguments(raw) if bridge_name in KAME_FRONTEND_BRAIN_BRIDGE_NAMES else raw
     normalized = dict(bridge_arguments)
+    if "transcript_hypotheses" not in normalized and isinstance(
+        raw.get("transcript_hypotheses"),
+        (list, tuple),
+    ):
+        normalized["transcript_hypotheses"] = raw["transcript_hypotheses"]
     bridge_call_id = _frontend_bridge_call_id(raw)
     if bridge_call_id:
         normalized["interface_tool_call_id"] = bridge_call_id
@@ -868,6 +882,97 @@ def _append_auxiliary_transcript_hypothesis(payload: dict[str, Any], hypothesis:
     payload["auxiliary_transcript_hypotheses"] = items
 
 
+def _canonical_transcript_hypotheses(payload: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+    raw = payload.get("transcript_hypotheses")
+    if isinstance(raw, Mapping):
+        raw_items: list[Any] = [raw]
+    elif isinstance(raw, Sequence) and not isinstance(raw, (bytes, bytearray, str)):
+        raw_items = list(raw)
+    else:
+        raw_items = []
+
+    hypotheses: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in raw_items:
+        hypothesis = _canonical_transcript_hypothesis(item)
+        if not hypothesis:
+            continue
+        key = (
+            str(hypothesis.get("kind") or ""),
+            str(hypothesis.get("source") or ""),
+            str(hypothesis.get("text") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        hypotheses.append(hypothesis)
+        if len(hypotheses) >= 8:
+            break
+    return tuple(hypotheses)
+
+
+def _canonical_transcript_hypothesis(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    text = (
+        _optional_text(value.get("text"))
+        or _optional_text(value.get("transcript"))
+        or _optional_text(value.get("hypothesis"))
+    )
+    if not text:
+        return {}
+    source = _optional_text(value.get("source")) or _optional_text(value.get("provider")) or "unknown"
+    kind = _optional_text(value.get("kind")) or _transcript_hypothesis_kind(
+        source,
+        default="s2s_transcript_hypothesis",
+    )
+    authority = _canonical_transcript_hypothesis_authority(value, kind=kind, source=source)
+    hypothesis: dict[str, Any] = {
+        "kind": kind,
+        "source": source,
+        "text": text,
+        "authority": authority,
+    }
+    confidence = _confidence(value.get("confidence"))
+    if confidence is not None:
+        hypothesis["confidence"] = confidence
+    latency_ms = _non_negative_int(value.get("latency_ms"))
+    if latency_ms is not None:
+        hypothesis["latency_ms"] = latency_ms
+    language = _optional_text(value.get("language"))
+    if language:
+        hypothesis["language"] = language
+    partial = value.get("partial")
+    if isinstance(partial, bool):
+        hypothesis["partial"] = partial
+    return hypothesis
+
+
+def _canonical_transcript_hypothesis_authority(
+    value: Mapping[str, Any],
+    *,
+    kind: str,
+    source: str,
+) -> str:
+    authority = _optional_text(value.get("authority"))
+    if authority in {"reflex_hypothesis", "auxiliary_hypothesis"}:
+        return authority
+    if _optional_text(kind) == "reflex_transcript_hypothesis" or "reflex" in _optional_text(source).lower():
+        return "reflex_hypothesis"
+    return "auxiliary_hypothesis"
+
+
+def _canonical_reflex_transcript_hypothesis(
+    hypotheses: Sequence[Mapping[str, Any]],
+) -> Mapping[str, Any]:
+    for hypothesis in hypotheses:
+        kind = _optional_text(hypothesis.get("kind"))
+        authority = _optional_text(hypothesis.get("authority"))
+        if kind == "reflex_transcript_hypothesis" or authority == "reflex_hypothesis":
+            return hypothesis
+    return {}
+
+
 def _job_updates_from_payload(value: object) -> tuple[str, ...]:
     if isinstance(value, str):
         text = _optional_text(value)
@@ -913,6 +1018,11 @@ def _auxiliary_transcript_hypotheses(payload: Mapping[str, Any]) -> tuple[Mappin
         raw_items.extend(raw)
     elif isinstance(raw, Mapping):
         raw_items.append(raw)
+
+    for hypothesis in _canonical_transcript_hypotheses(payload):
+        if _canonical_transcript_hypothesis_is_reflex(hypothesis):
+            continue
+        raw_items.append(hypothesis)
 
     for source, key in (
         ("moshi", "moshi_transcript_hypothesis"),
@@ -965,6 +1075,9 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
         "text": text,
         "authority": "hypothesis",
     }
+    kind = _optional_text(value.get("kind"))
+    if kind:
+        hypothesis["kind"] = kind
     confidence = _confidence(value.get("confidence"))
     if confidence is not None:
         hypothesis["confidence"] = confidence
@@ -975,6 +1088,12 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
     if language:
         hypothesis["language"] = language
     return hypothesis
+
+
+def _canonical_transcript_hypothesis_is_reflex(hypothesis: Mapping[str, Any]) -> bool:
+    kind = _optional_text(hypothesis.get("kind"))
+    authority = _optional_text(hypothesis.get("authority"))
+    return kind == "reflex_transcript_hypothesis" or authority == "reflex_hypothesis"
 
 
 def apply_kame_routing_policy(

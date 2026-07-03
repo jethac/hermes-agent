@@ -850,7 +850,7 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
             continue
         source = _compact_evidence_text(value.get("source") or value.get("provider"), limit=40) or "unknown"
         item = {
-            "kind": _job_transcript_hypothesis_kind(source),
+            "kind": _compact_evidence_text(value.get("kind"), limit=80) or _job_transcript_hypothesis_kind(source),
             "source": source,
             "text": text,
             "authority": "auxiliary_hypothesis",
@@ -1175,6 +1175,9 @@ def _compact_auxiliary_transcript_hypotheses(
             "text": text,
             "authority": "hypothesis",
         }
+        kind = _compact_evidence_text(value.get("kind"), limit=80)
+        if kind:
+            item["kind"] = kind
         confidence = _compact_confidence(value.get("confidence"))  # type: ignore[arg-type]
         if confidence is not None:
             item["confidence"] = confidence
