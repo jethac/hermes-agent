@@ -1792,6 +1792,31 @@ async def build_plan_run_async(
                     "witness_fusion_no_duplicate_oracle_jobs": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_no_duplicate_oracle_jobs"
                     ],
+                    "runtime_kame_action_gate_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
+                        "runtime_kame_action_gate_smoke_ok"
+                    ],
+                    "runtime_kame_action_gate_hypothesis_only_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["runtime_kame_action_gate_hypothesis_only_ok"],
+                    "runtime_kame_action_gate_hypothesis_only_issues": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "runtime_kame_action_gate_hypothesis_only_issues"
+                        ]
+                    ),
+                    "runtime_kame_action_gate_promoted_ok": voice_operator["proofs"]["async_oracle_jobs"][
+                        "runtime_kame_action_gate_promoted_ok"
+                    ],
+                    "runtime_kame_action_gate_promoted_authorities": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "runtime_kame_action_gate_promoted_authorities"
+                        ]
+                    ),
+                    "runtime_kame_action_gate_promoted_consumed_before_action": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["runtime_kame_action_gate_promoted_consumed_before_action"],
+                    "runtime_kame_action_gate_tool_disclosure_ref_observed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["runtime_kame_action_gate_tool_disclosure_ref_observed"],
                     "audit_scalar_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "audit_scalar_smoke_ok"
                     ],

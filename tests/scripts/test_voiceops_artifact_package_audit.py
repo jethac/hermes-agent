@@ -202,6 +202,7 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_bundle_single_turn"] = False
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_single_bundle_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_early_single_bundle"] = False
+    readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_ok"] = False
     _write_json(readiness_path, readiness)
 
     report = audit_package(artifact_root)
@@ -242,6 +243,10 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_early_single_bundle_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.runtime_kame_action_gate_promoted_ok_mismatch"
         in report["issues"]
     )
 

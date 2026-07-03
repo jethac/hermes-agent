@@ -763,6 +763,12 @@ has been consumed before the irreversible boundary and `tool_disclosure_ref =
 or ASR hypotheses as present witness context, but those labels are not accepted
 authorities and cannot make the gate pass.
 
+Headless acceptance for this runtime gate is explicit: the async oracle smoke
+must report `runtime_kame_action_gate_*` fields proving that hypothesis-only
+approval waits fail closed with `missing_promoted_evidence`, while approval
+waits backed by consumed `interpreter_promoted` evidence and
+`tool_disclosure_ref = "tool_disclosure"` pass.
+
 It owns:
 
 - turn detection interpretation and speech boundary decisions

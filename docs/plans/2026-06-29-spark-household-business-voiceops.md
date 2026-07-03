@@ -207,6 +207,9 @@ Target KAME layout:
   approval-related tool progress, failing closed until promoted evidence was
   consumed before the irreversible action boundary and `tool_disclosure_ref =
   "tool_disclosure"` is present.
+  Headless acceptance requires `runtime_kame_action_gate_enforced` to prove
+  hypothesis-only approvals fail closed and consumed promoted interpreter
+  evidence passes.
 - Tool-pressure rule: high-risk action artifacts should also prove that broad
   Hermes tools were not carried through the live voice context unnecessarily.
   The VoiceOps package should record the `tool_search`/bridge-tool deferral

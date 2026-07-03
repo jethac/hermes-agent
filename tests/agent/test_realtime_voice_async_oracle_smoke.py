@@ -191,6 +191,26 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["witness_fusion_accepted_counts"] == {"early": 1, "with": 1, "late": 1}
     assert report["witness_fusion_started_counts"] == {"early": 1, "with": 1, "late": 1}
     assert report["witness_fusion_completed_counts"] == {"early": 1, "with": 1, "late": 1}
+    assert report["runtime_kame_action_gate_smoke_ok"] is True
+    assert report["runtime_kame_action_gate_waiting_events"] == 2
+    assert report["runtime_kame_action_gate_hypothesis_only_ok"] is False
+    assert "missing_promoted_evidence" in report["runtime_kame_action_gate_hypothesis_only_issues"]
+    assert "interpreter_evidence_not_consumed_before_irreversible_action" in (
+        report["runtime_kame_action_gate_hypothesis_only_issues"]
+    )
+    assert set(report["runtime_kame_action_gate_hypothesis_only_rejected_authorities"]) >= {
+        "reflex_hypothesis",
+        "auxiliary_hypothesis",
+    }
+    assert report["runtime_kame_action_gate_promoted_ok"] is True
+    assert report["runtime_kame_action_gate_promoted_issues"] == []
+    assert report["runtime_kame_action_gate_promoted_authorities"] == ["interpreter_promoted"]
+    assert report["runtime_kame_action_gate_promoted_consumed_before_action"] is True
+    assert report["runtime_kame_action_gate_tool_disclosure_ref_observed"] is True
+    assert report["runtime_kame_action_gate_schema_versions"] == [
+        "voiceops.runtime_kame_action_gate.v1",
+        "voiceops.runtime_kame_action_gate.v1",
+    ]
     assert report["event_counts"]["interface.oracle.update"] >= 2
     assert report["event_counts"]["oracle.job.progress"] >= 1
     assert report["event_counts"]["oracle.job.result_suppressed"] >= 1

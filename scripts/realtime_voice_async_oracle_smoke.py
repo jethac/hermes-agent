@@ -1900,6 +1900,150 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
     }
 
 
+async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
+    """Prove approval gates fail closed until promoted evidence is consumed."""
+
+    releases: dict[str, asyncio.Event] = {}
+    events: list[dict[str, Any]] = []
+
+    async def runner(job: Any) -> str:
+        key = str(getattr(job, "reflex_intent", "") or getattr(job, "intent", "") or job.oracle_text)
+        releases.setdefault(key, asyncio.Event())
+        await releases[key].wait()
+        return f"done {key}"
+
+    manager = OracleJobManager(
+        max_concurrent=2,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+
+    hypothesis_only = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-runtime-action-gate",
+            turn_id="runtime-action-gate:hypothesis",
+            source="discord_voice",
+            user_id="42",
+            intent="Spend hypothesis-only money.",
+            route=KameRoute.DEFER,
+            audio_segment_ref="artifact://voice/action-gate-hypothesis.wav",
+            reflex_transcript_hypothesis="spend money",
+            auxiliary_transcript_hypotheses=(
+                {
+                    "source": "moshi",
+                    "text": "spend money",
+                    "authority": "hypothesis",
+                },
+            ),
+        )
+    )
+    unsafe_waiting = await manager.mark_waiting_for_approval(
+        hypothesis_only.job_id,
+        reason="Spend approval required",
+        approval={
+            "approval_id": "approval-hypothesis-only",
+            "tool_name": "stripe_link_purchase",
+            "tool_call_id": "call-hypothesis-only",
+            "tool_disclosure_ref": "tool_disclosure",
+        },
+    )
+    unsafe_gate = dict(unsafe_waiting.approval.get("kame_action_gate") or {})
+
+    promoted = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-runtime-action-gate",
+            turn_id="runtime-action-gate:promoted",
+            source="discord_voice",
+            user_id="42",
+            intent="Buy phone credits.",
+            route=KameRoute.DEFER,
+            audio_segment_ref="artifact://voice/action-gate-promoted.wav",
+            reflex_transcript_hypothesis="buy phone credits",
+            auxiliary_transcript_hypotheses=(
+                {
+                    "source": "moshi",
+                    "text": "buy phone credits",
+                    "authority": "hypothesis",
+                },
+            ),
+        )
+    )
+    await manager.add_interpreter_evidence(
+        promoted.job_id,
+        corrected_transcript="buy twenty dollars of phone credits",
+        normalized_intent="prepare Stripe approval for phone credits",
+        audio_segment_ref="artifact://voice/action-gate-promoted.wav",
+        source="gemma_interpreter",
+    )
+    await manager.mark_latest_interpreter_evidence_delivery(
+        promoted.job_id,
+        delivered_to_oracle=True,
+        consumed_before_irreversible_action=True,
+        delivery_status="included_before_spend_approval",
+    )
+    safe_waiting = await manager.mark_waiting_for_approval(
+        promoted.job_id,
+        reason="Spend approval required",
+        approval={
+            "approval_id": "approval-promoted",
+            "tool_name": "stripe_link_purchase",
+            "tool_call_id": "call-promoted",
+            "tool_disclosure_ref": "tool_disclosure",
+        },
+    )
+    safe_gate = dict(safe_waiting.approval.get("kame_action_gate") or {})
+
+    for key in ("Spend hypothesis-only money.", "Buy phone credits."):
+        releases.setdefault(key, asyncio.Event()).set()
+    await manager.shutdown(reason="runtime action gate smoke complete", timeout_seconds=0.2)
+
+    waiting_events = [
+        event for event in events if event.get("type") == VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL.value
+    ]
+    unsafe_issues = list(unsafe_gate.get("issues") or [])
+    safe_issues = list(safe_gate.get("issues") or [])
+    unsafe_rejected = list(unsafe_gate.get("rejected_present_authorities") or [])
+    safe_present = list(safe_gate.get("present_authorities") or [])
+    unsafe_ok = (
+        unsafe_gate.get("schema_version") == "voiceops.runtime_kame_action_gate.v1"
+        and unsafe_gate.get("ok") is False
+        and "missing_promoted_evidence" in unsafe_issues
+        and "interpreter_evidence_not_consumed_before_irreversible_action" in unsafe_issues
+        and set(unsafe_rejected) >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+        and unsafe_gate.get("tool_disclosure_ref") == "tool_disclosure"
+    )
+    safe_ok = (
+        safe_gate.get("schema_version") == "voiceops.runtime_kame_action_gate.v1"
+        and safe_gate.get("ok") is True
+        and safe_issues == []
+        and safe_present == ["interpreter_promoted"]
+        and safe_gate.get("interpreter_evidence_consumed_before_irreversible_action") is True
+        and safe_gate.get("tool_disclosure_ref") == "tool_disclosure"
+    )
+    return {
+        "ok": unsafe_ok and safe_ok and len(waiting_events) == 2,
+        "runtime_kame_action_gate_smoke_ok": unsafe_ok and safe_ok and len(waiting_events) == 2,
+        "runtime_kame_action_gate_waiting_events": len(waiting_events),
+        "runtime_kame_action_gate_hypothesis_only_ok": unsafe_gate.get("ok"),
+        "runtime_kame_action_gate_hypothesis_only_issues": unsafe_issues,
+        "runtime_kame_action_gate_hypothesis_only_rejected_authorities": unsafe_rejected,
+        "runtime_kame_action_gate_promoted_ok": safe_gate.get("ok"),
+        "runtime_kame_action_gate_promoted_issues": safe_issues,
+        "runtime_kame_action_gate_promoted_authorities": safe_present,
+        "runtime_kame_action_gate_promoted_consumed_before_action": bool(
+            safe_gate.get("interpreter_evidence_consumed_before_irreversible_action")
+        ),
+        "runtime_kame_action_gate_tool_disclosure_ref_observed": (
+            unsafe_gate.get("tool_disclosure_ref") == "tool_disclosure"
+            and safe_gate.get("tool_disclosure_ref") == "tool_disclosure"
+        ),
+        "runtime_kame_action_gate_schema_versions": [
+            unsafe_gate.get("schema_version"),
+            safe_gate.get("schema_version"),
+        ],
+    }
+
+
 async def _run_audit_scalar_redaction_smoke() -> dict[str, Any]:
     """Prove oracle job JSONL audit rows redact scalar payload fields."""
     release = asyncio.Event()
@@ -2353,6 +2497,7 @@ async def run_smoke() -> dict[str, Any]:
     external_frontend_bridge_smoke = await _run_external_frontend_bridge_smoke()
     unpromoted_hypothesis_smoke = await _run_unpromoted_transcript_hypothesis_smoke()
     witness_fusion_timing_smoke = await _run_witness_fusion_timing_smoke()
+    runtime_kame_action_gate_smoke = await _run_runtime_kame_action_gate_smoke()
     audit_scalar_smoke = await _run_audit_scalar_redaction_smoke()
 
     started = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_STARTED]
@@ -2756,6 +2901,7 @@ async def run_smoke() -> dict[str, Any]:
             and external_frontend_bridge_smoke["ok"]
             and unpromoted_hypothesis_smoke["ok"]
             and witness_fusion_timing_smoke["ok"]
+            and runtime_kame_action_gate_smoke["ok"]
             and audit_scalar_smoke["ok"]
         ),
         "scenario": "async_kame_oracle_jobs_fake",
@@ -3063,6 +3209,39 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "witness_fusion_completed_counts": witness_fusion_timing_smoke[
             "witness_fusion_completed_counts"
+        ],
+        "runtime_kame_action_gate_smoke_ok": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_smoke_ok"
+        ],
+        "runtime_kame_action_gate_waiting_events": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_waiting_events"
+        ],
+        "runtime_kame_action_gate_hypothesis_only_ok": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_hypothesis_only_ok"
+        ],
+        "runtime_kame_action_gate_hypothesis_only_issues": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_hypothesis_only_issues"
+        ],
+        "runtime_kame_action_gate_hypothesis_only_rejected_authorities": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_hypothesis_only_rejected_authorities"
+        ],
+        "runtime_kame_action_gate_promoted_ok": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_promoted_ok"
+        ],
+        "runtime_kame_action_gate_promoted_issues": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_promoted_issues"
+        ],
+        "runtime_kame_action_gate_promoted_authorities": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_promoted_authorities"
+        ],
+        "runtime_kame_action_gate_promoted_consumed_before_action": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_promoted_consumed_before_action"
+        ],
+        "runtime_kame_action_gate_tool_disclosure_ref_observed": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_tool_disclosure_ref_observed"
+        ],
+        "runtime_kame_action_gate_schema_versions": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_schema_versions"
         ],
         "audit_scalar_smoke_ok": audit_scalar_smoke["ok"],
         "audit_scalar_payload_redacted": audit_scalar_smoke["audit_scalar_payload_redacted"],

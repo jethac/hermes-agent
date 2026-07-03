@@ -153,6 +153,12 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_interpreter_evidence_late_for_running_job_is_status_visible",
         "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
     ],
+    "runtime_action_gate": [
+        "tests/agent/test_realtime_voice.py::test_oracle_job_approval_marks_hypothesis_only_action_gate_unsafe",
+        "tests/agent/test_realtime_voice.py::test_oracle_job_approval_accepts_consumed_promoted_interpreter_evidence",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_waiting_for_approval_holds_capacity_and_emits_redacted_event",
+        "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
+    ],
     "result_handling": [
         "tests/agent/test_realtime_voice.py::test_completed_async_oracle_job_after_intervening_local_turn_is_lifecycle_only",
         "tests/agent/test_realtime_voice.py::test_kame_engine_status_recalls_recent_completed_async_oracle_job",
@@ -1646,6 +1652,19 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("approval_secret_leaked") is False
         and smoke.get("approval_secret_canary_checked") is True
         and smoke.get("approval_completed") is True,
+        "runtime_kame_action_gate_enforced": smoke.get("runtime_kame_action_gate_smoke_ok") is True
+        and smoke.get("runtime_kame_action_gate_hypothesis_only_ok") is False
+        and "missing_promoted_evidence"
+        in (smoke.get("runtime_kame_action_gate_hypothesis_only_issues") or [])
+        and "interpreter_evidence_not_consumed_before_irreversible_action"
+        in (smoke.get("runtime_kame_action_gate_hypothesis_only_issues") or [])
+        and set(smoke.get("runtime_kame_action_gate_hypothesis_only_rejected_authorities") or [])
+        >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+        and smoke.get("runtime_kame_action_gate_promoted_ok") is True
+        and (smoke.get("runtime_kame_action_gate_promoted_issues") or []) == []
+        and smoke.get("runtime_kame_action_gate_promoted_authorities") == ["interpreter_promoted"]
+        and smoke.get("runtime_kame_action_gate_promoted_consumed_before_action") is True
+        and smoke.get("runtime_kame_action_gate_tool_disclosure_ref_observed") is True,
         "approval_wait_holds_capacity": smoke.get("approval_capacity_smoke_ok") is True
         and smoke.get("approval_capacity_waiting_observed") is True
         and smoke.get("approval_capacity_followup_queued") is True
@@ -1945,6 +1964,13 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             ok=smoke_ok and bool(async_oracle_coverage.get("witness_fusion_timing_preserves_single_bundle")),
             evidence="async_oracle_smoke_plus_witness_fusion_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["witness_fusion"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "runtime_kame_action_gate_enforces_promoted_evidence": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("runtime_kame_action_gate_enforced")),
+            evidence="async_oracle_smoke_plus_runtime_action_gate_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["runtime_action_gate"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
@@ -2514,6 +2540,39 @@ def build_voice_operator_report(
             "witness_fusion_completed_counts": dict(
                 async_oracle_smoke.get("witness_fusion_completed_counts") or {}
             ),
+            "runtime_kame_action_gate_smoke_ok": bool(
+                async_oracle_smoke.get("runtime_kame_action_gate_smoke_ok")
+            ),
+            "runtime_kame_action_gate_waiting_events": async_oracle_smoke.get(
+                "runtime_kame_action_gate_waiting_events"
+            ),
+            "runtime_kame_action_gate_hypothesis_only_ok": async_oracle_smoke.get(
+                "runtime_kame_action_gate_hypothesis_only_ok"
+            ),
+            "runtime_kame_action_gate_hypothesis_only_issues": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_hypothesis_only_issues") or []
+            ),
+            "runtime_kame_action_gate_hypothesis_only_rejected_authorities": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_hypothesis_only_rejected_authorities") or []
+            ),
+            "runtime_kame_action_gate_promoted_ok": async_oracle_smoke.get(
+                "runtime_kame_action_gate_promoted_ok"
+            ),
+            "runtime_kame_action_gate_promoted_issues": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_promoted_issues") or []
+            ),
+            "runtime_kame_action_gate_promoted_authorities": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_promoted_authorities") or []
+            ),
+            "runtime_kame_action_gate_promoted_consumed_before_action": bool(
+                async_oracle_smoke.get("runtime_kame_action_gate_promoted_consumed_before_action")
+            ),
+            "runtime_kame_action_gate_tool_disclosure_ref_observed": bool(
+                async_oracle_smoke.get("runtime_kame_action_gate_tool_disclosure_ref_observed")
+            ),
+            "runtime_kame_action_gate_schema_versions": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_schema_versions") or []
+            ),
             "audit_scalar_smoke_ok": bool(async_oracle_smoke.get("audit_scalar_smoke_ok")),
             "audit_scalar_payload_redacted": bool(async_oracle_smoke.get("audit_scalar_payload_redacted")),
             "audit_scalar_secret_canary_checked": bool(
@@ -2657,6 +2716,9 @@ def build_voice_operator_report(
             "async_oracle_witness_fusion_single_bundle": async_oracle_coverage[
                 "witness_fusion_timing_preserves_single_bundle"
             ],
+            "async_oracle_runtime_kame_action_gate": async_oracle_coverage[
+                "runtime_kame_action_gate_enforced"
+            ],
             "async_oracle_late_cancelled_output_dropped": async_oracle_coverage["late_cancelled_output_not_spoken"],
             "async_oracle_late_cancelled_output_not_durable": async_oracle_coverage[
                 "late_cancelled_output_not_durable"
@@ -2786,6 +2848,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "transcript_hypotheses_remain_unpromoted",
         "external_frontend_bridge_submits_oracle_job",
         "witness_fusion_timing_preserves_single_bundle",
+        "runtime_kame_action_gate_enforced",
         "result_handling_bounded_and_durable",
         "discord_session_cleanup_preserves_oracle_state",
         "sidecar_fail_closed_send_failure_cancels_active_job",

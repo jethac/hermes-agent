@@ -1274,6 +1274,20 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_late_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_no_duplicate_oracle_jobs"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_hypothesis_only_ok"] is False
+    assert "missing_promoted_evidence" in voice_result["details"]["async_oracle_smoke"][
+        "runtime_kame_action_gate_hypothesis_only_issues"
+    ]
+    assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_promoted_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_promoted_authorities"] == [
+        "interpreter_promoted"
+    ]
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_promoted_consumed_before_action"]
+        is True
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_tool_disclosure_ref_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_payload_redacted"] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_secret_canary_checked"] is True

@@ -298,6 +298,26 @@ def _async_oracle_smoke_payload() -> dict:
         "witness_fusion_accepted_counts": {"early": 1, "with": 1, "late": 1},
         "witness_fusion_started_counts": {"early": 1, "with": 1, "late": 1},
         "witness_fusion_completed_counts": {"early": 1, "with": 1, "late": 1},
+        "runtime_kame_action_gate_smoke_ok": True,
+        "runtime_kame_action_gate_waiting_events": 2,
+        "runtime_kame_action_gate_hypothesis_only_ok": False,
+        "runtime_kame_action_gate_hypothesis_only_issues": [
+            "missing_promoted_evidence",
+            "interpreter_evidence_not_consumed_before_irreversible_action",
+        ],
+        "runtime_kame_action_gate_hypothesis_only_rejected_authorities": [
+            "auxiliary_hypothesis",
+            "reflex_hypothesis",
+        ],
+        "runtime_kame_action_gate_promoted_ok": True,
+        "runtime_kame_action_gate_promoted_issues": [],
+        "runtime_kame_action_gate_promoted_authorities": ["interpreter_promoted"],
+        "runtime_kame_action_gate_promoted_consumed_before_action": True,
+        "runtime_kame_action_gate_tool_disclosure_ref_observed": True,
+        "runtime_kame_action_gate_schema_versions": [
+            "voiceops.runtime_kame_action_gate.v1",
+            "voiceops.runtime_kame_action_gate.v1",
+        ],
         "audit_scalar_smoke_ok": True,
         "audit_scalar_payload_redacted": True,
         "audit_scalar_secret_canary_checked": True,
@@ -777,6 +797,34 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert witness_fusion["ok"] is True
     assert witness_fusion["evidence"] == "async_oracle_smoke_plus_witness_fusion_tests"
     assert report["requirements"]["async_oracle_witness_fusion_single_bundle"] is True
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_waiting_events"] == 2
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_hypothesis_only_ok"] is False
+    assert "missing_promoted_evidence" in report["proofs"]["async_oracle_jobs"][
+        "runtime_kame_action_gate_hypothesis_only_issues"
+    ]
+    assert "interpreter_evidence_not_consumed_before_irreversible_action" in report["proofs"][
+        "async_oracle_jobs"
+    ]["runtime_kame_action_gate_hypothesis_only_issues"]
+    assert set(
+        report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_hypothesis_only_rejected_authorities"]
+    ) >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_issues"] == []
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_authorities"] == [
+        "interpreter_promoted"
+    ]
+    assert (
+        report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_consumed_before_action"]
+        is True
+    )
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_tool_disclosure_ref_observed"] is True
+    runtime_action_gate = report["async_oracle_acceptance"][
+        "runtime_kame_action_gate_enforces_promoted_evidence"
+    ]
+    assert runtime_action_gate["ok"] is True
+    assert runtime_action_gate["evidence"] == "async_oracle_smoke_plus_runtime_action_gate_tests"
+    assert report["requirements"]["async_oracle_runtime_kame_action_gate"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_payload_redacted"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_secret_canary_checked"] is True
@@ -1033,6 +1081,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_coverage:transcript_hypotheses_remain_unpromoted" in issues
     assert "missing_async_oracle_coverage:witness_fusion_timing_preserves_single_bundle" in issues
+    assert "missing_async_oracle_coverage:runtime_kame_action_gate_enforced" in issues
     assert "missing_async_oracle_coverage:result_handling_bounded_and_durable" in issues
     assert "missing_async_oracle_coverage:discord_session_cleanup_preserves_oracle_state" in issues
     assert "missing_async_oracle_coverage:sidecar_fail_closed_send_failure_cancels_active_job" in issues
@@ -1043,6 +1092,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_acceptance:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_acceptance:transcript_hypotheses_stay_non_authoritative" in issues
     assert "missing_async_oracle_acceptance:witness_fusion_timing_preserves_single_bundle" in issues
+    assert "missing_async_oracle_acceptance:runtime_kame_action_gate_enforces_promoted_evidence" in issues
     assert "missing_async_oracle_acceptance:discord_session_cleanup_preserves_oracle_state" in issues
     assert "missing_async_oracle_acceptance:sidecar_fail_closed_send_failure_cancels_active_job" in issues
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]

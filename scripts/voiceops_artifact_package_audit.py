@@ -2025,6 +2025,38 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "witness_fusion_accepted_counts": async_smoke.get("witness_fusion_accepted_counts") or {},
             "witness_fusion_started_counts": async_smoke.get("witness_fusion_started_counts") or {},
             "witness_fusion_completed_counts": async_smoke.get("witness_fusion_completed_counts") or {},
+            "runtime_kame_action_gate_smoke_ok": bool(async_smoke.get("runtime_kame_action_gate_smoke_ok")),
+            "runtime_kame_action_gate_waiting_events": async_smoke.get("runtime_kame_action_gate_waiting_events"),
+            "runtime_kame_action_gate_hypothesis_only_ok": async_smoke.get(
+                "runtime_kame_action_gate_hypothesis_only_ok"
+            ),
+            "runtime_kame_action_gate_hypothesis_only_issues": async_smoke.get(
+                "runtime_kame_action_gate_hypothesis_only_issues"
+            )
+            or [],
+            "runtime_kame_action_gate_hypothesis_only_rejected_authorities": async_smoke.get(
+                "runtime_kame_action_gate_hypothesis_only_rejected_authorities"
+            )
+            or [],
+            "runtime_kame_action_gate_promoted_ok": async_smoke.get("runtime_kame_action_gate_promoted_ok"),
+            "runtime_kame_action_gate_promoted_issues": async_smoke.get(
+                "runtime_kame_action_gate_promoted_issues"
+            )
+            or [],
+            "runtime_kame_action_gate_promoted_authorities": async_smoke.get(
+                "runtime_kame_action_gate_promoted_authorities"
+            )
+            or [],
+            "runtime_kame_action_gate_promoted_consumed_before_action": bool(
+                async_smoke.get("runtime_kame_action_gate_promoted_consumed_before_action")
+            ),
+            "runtime_kame_action_gate_tool_disclosure_ref_observed": bool(
+                async_smoke.get("runtime_kame_action_gate_tool_disclosure_ref_observed")
+            ),
+            "runtime_kame_action_gate_schema_versions": async_smoke.get(
+                "runtime_kame_action_gate_schema_versions"
+            )
+            or [],
             "audit_scalar_smoke_ok": bool(async_smoke.get("audit_scalar_smoke_ok")),
             "audit_scalar_payload_redacted": bool(async_smoke.get("audit_scalar_payload_redacted")),
             "audit_scalar_secret_canary_checked": bool(async_smoke.get("audit_scalar_secret_canary_checked")),

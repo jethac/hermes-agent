@@ -242,6 +242,9 @@ approval/action boundary, or when the approval lacks `tool_disclosure_ref =
 "tool_disclosure"`. Reflex, Moshi/OpenClaw/VoiceClaw, or classic-ASR hypotheses
 may remain visible in the gate as witness context, but their presence must not
 make the gate pass without promoted evidence.
+Headless acceptance requires `runtime_kame_action_gate_enforced` to prove both
+paths: hypothesis-only approvals fail closed, and consumed promoted interpreter
+evidence plus `tool_disclosure_ref = "tool_disclosure"` passes.
 
 The oracle is the worker. It owns:
 
