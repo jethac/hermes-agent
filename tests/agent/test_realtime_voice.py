@@ -3748,6 +3748,110 @@ def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(m
     asyncio.run(run())
 
 
+def test_kame_engine_marks_late_interpreter_evidence_undelivered_without_update_hook(monkeypatch):
+    class NoUpdateHookOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release.wait()
+            yield f"Finished {request.intent}."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = NoUpdateHookOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "run task one",
+                    "intent": "Run task one",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "interface_already_said": "Starting task one.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "job_id": "voice-oracle-001",
+                    "update_type": "interpreter_evidence",
+                    "corrected_transcript": "check the current deployment logs",
+                    "normalized_intent": "inspect deployment logs",
+                    "audio_segment_ref": "artifact://redacted/running-undelivered.wav",
+                    "audio_time_range_ms": [200, 2600],
+                    "confidence": 0.81,
+                    "reason": "attach late interpreter evidence",
+                    "source": "gemma_interpreter",
+                },
+            )
+        )
+        saw_delivery_progress = False
+        saw_interface_update = False
+        async for event in engine.events():
+            seen.append(event)
+            if (
+                event.type == VoiceEventType.ORACLE_JOB_PROGRESS
+                and event.payload.get("operation") == "interpreter_evidence_delivery"
+            ):
+                saw_delivery_progress = True
+            if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE:
+                saw_interface_update = True
+            if saw_delivery_progress and saw_interface_update:
+                break
+
+        status = await engine.get_oracle_job_status()
+        job = status["jobs"][0]
+        assert job["interpreter_evidence_late"] is True
+        assert job["interpreter_evidence_delivered_to_oracle"] is False
+        assert job["interpreter_evidence_consumed_before_irreversible_action"] is False
+        assert job["interpreter_evidence_delivery_status"] == "update_request_unavailable"
+
+        update = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE)
+        assert update.payload["interpreter_evidence_late"] is True
+        assert update.payload["interpreter_evidence_delivered_to_oracle"] is False
+        assert update.payload["interpreter_evidence_consumed_before_irreversible_action"] is False
+        assert update.payload["interpreter_evidence_delivery_status"] == "update_request_unavailable"
+
+        oracle.release.set()
+        await engine.close()
+
+    asyncio.run(run())
+
+
 def test_kame_engine_spoken_stop_everything_cancels_all_async_oracle_jobs(monkeypatch):
     class BlockingOracle:
         def __init__(self):

@@ -533,6 +533,9 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
         },
     )
     assert updated.interpreter_evidence[0]["late"] is False
+    assert queued_status["intent"] == "power question"
+    assert queued_status["interpreter_normalized_intent"] == "answer a math question"
+    assert queued_status["interpreter_intent_source"] == "gemma_interpreter"
     assert queued_status["audio_segment_ref"] == "artifact://redacted/oracle-002.wav"
     assert queued_status["audio_time_range_ms"] == (120, 2120)
     assert queued_status["reflex_transcript_hypothesis"] == "three to the power of seventeen"

@@ -79,6 +79,8 @@ class OracleJob:
     reflex_transcript_confidence: Optional[float] = None
     auxiliary_transcript_hypotheses: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     interpreter_corrected_transcript: str = ""
+    interpreter_normalized_intent: str = ""
+    interpreter_intent_source: str = ""
     interpreter_confidence: Optional[float] = None
     interpreter_entities: tuple[dict[str, str], ...] = field(default_factory=tuple)
     interpreter_disagreements: tuple[str, ...] = field(default_factory=tuple)
@@ -127,6 +129,9 @@ class OracleJob:
             status["auxiliary_transcript_hypotheses"] = tuple(self.auxiliary_transcript_hypotheses)
         if self.interpreter_corrected_transcript:
             status["interpreter_corrected_transcript"] = self.interpreter_corrected_transcript
+        if self.interpreter_normalized_intent:
+            status["interpreter_normalized_intent"] = self.interpreter_normalized_intent
+            status["interpreter_intent_source"] = self.interpreter_intent_source or "gemma_interpreter"
         if self.interpreter_confidence is not None:
             status["interpreter_confidence"] = self.interpreter_confidence
         if self.interpreter_entities:
@@ -1093,6 +1098,10 @@ def _promote_interpreter_evidence(job: OracleJob, evidence: Mapping[str, Any]) -
     transcript = _compact_evidence_text(evidence.get("corrected_transcript"), limit=500)
     if transcript:
         job.interpreter_corrected_transcript = transcript
+    normalized_intent = _compact_evidence_text(evidence.get("normalized_intent"), limit=300)
+    if normalized_intent:
+        job.interpreter_normalized_intent = normalized_intent
+        job.interpreter_intent_source = _compact_evidence_text(evidence.get("source"), limit=40) or "gemma_interpreter"
     confidence = _compact_confidence(evidence.get("confidence"))  # type: ignore[arg-type]
     if confidence is not None:
         job.interpreter_confidence = confidence

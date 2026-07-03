@@ -1418,9 +1418,6 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             return
         updated_request = _oracle_request_for_job(job, request)
         self._running_oracle_request_by_job_id[job.job_id] = updated_request
-        updater = getattr(self._oracle, "update_request", None)
-        if not callable(updater):
-            return
         metadata = {
             "job_id": job.job_id,
             "state": job.state.value,
@@ -1447,6 +1444,17 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             ):
                 if key in status:
                     metadata[key] = status[key]
+        updater = getattr(self._oracle, "update_request", None)
+        if not callable(updater):
+            if latest_evidence and self._oracle_job_manager is not None:
+                with contextlib.suppress(OracleJobNotFoundError):
+                    await self._oracle_job_manager.mark_latest_interpreter_evidence_delivery(
+                        job.job_id,
+                        delivered_to_oracle=False,
+                        consumed_before_irreversible_action=False,
+                        delivery_status="update_request_unavailable",
+                    )
+            return
         try:
             result = updater(updated_request, update_text, metadata)
             if hasattr(result, "__await__"):
