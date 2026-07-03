@@ -343,6 +343,9 @@ and reflex use commands like "cancel the fourth one" or "make job five high
 priority" without exposing raw transcript hypotheses, speaker metadata,
 interpreter evidence strings, hidden reasoning, or full oracle result text.
 Additional jobs can be summarized behind a bounded "+N more" suffix.
+Spoken control commands should resolve against this same reflex-safe projection
+so "the fourth one" means the fourth job the user could hear or see, not a
+hidden raw scheduler ordering.
 
 The interpreter gets a different compact view: the current turn id, clipped
 audio reference, speaker/channel metadata, reflex hypothesis, optional

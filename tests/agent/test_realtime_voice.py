@@ -4511,6 +4511,71 @@ def test_kame_oracle_job_control_uses_latest_job_for_pronoun_cancel_and_priority
     }
 
 
+def test_kame_oracle_job_control_uses_reflex_safe_ordinal_status():
+    raw_jobs = [
+        {
+            "job_id": "voice-oracle-005",
+            "state": "queued",
+            "spoken_status": "Queued fifth job.",
+            "metadata": {"hidden": "raw evidence"},
+        },
+        {
+            "job_id": "voice-oracle-004",
+            "state": "running",
+            "spoken_status": "Running fourth job.",
+            "metadata": {"hidden": "raw evidence"},
+        },
+    ]
+    reflex_jobs = [
+        {
+            "job_id": f"voice-oracle-{index:03d}",
+            "state": "queued" if index == 5 else "running",
+            "spoken_status": f"Visible job {index}.",
+        }
+        for index in range(1, 6)
+    ]
+    status = {
+        "jobs": raw_jobs,
+        "reflex": {
+            "capacity": {"active": 4, "running": 4, "max_concurrent": 4, "queued": 1},
+            "jobs": reflex_jobs,
+        },
+    }
+    cancel_fourth_request = KameOracleRequest(
+        session_id="voice-123",
+        turn_id="voice-123:6",
+        source="discord_voice",
+        user_id="42",
+        intent="Cancel the fourth one.",
+        route=KameRoute.LOCAL,
+        local_reply="Cancelling job four.",
+    )
+    priority_fifth_request = KameOracleRequest(
+        session_id="voice-123",
+        turn_id="voice-123:7",
+        source="discord_voice",
+        user_id="42",
+        intent="Make job five high priority.",
+        route=KameRoute.LOCAL,
+        local_reply="Making job five high priority.",
+    )
+
+    cancel = _kame_oracle_job_control_operation(cancel_fourth_request, status)
+    priority = _kame_oracle_job_control_operation(priority_fifth_request, status)
+
+    assert cancel == {
+        "kind": "cancel",
+        "job_id": "voice-oracle-004",
+        "reason": "spoken request to cancel oracle job",
+    }
+    assert priority == {
+        "kind": "priority",
+        "job_id": "voice-oracle-005",
+        "priority": "high",
+        "reason": "spoken request to set high priority",
+    }
+
+
 def test_kame_engine_reports_async_oracle_reject_policy_without_sync_fallback(monkeypatch):
     class BlockingOracle:
         def __init__(self):

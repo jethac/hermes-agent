@@ -3130,7 +3130,11 @@ def _oracle_job_control_text(request: KameOracleRequest) -> str:
 
 
 def _oracle_job_control_active_jobs(status: Mapping[str, Any]) -> list[dict[str, Any]]:
-    jobs = status.get("jobs") if isinstance(status.get("jobs"), list) else []
+    reflex_status = status.get("reflex") if isinstance(status.get("reflex"), Mapping) else {}
+    if reflex_status and isinstance(reflex_status.get("jobs"), list):
+        jobs = reflex_status["jobs"]
+    else:
+        jobs = status.get("jobs") if isinstance(status.get("jobs"), list) else []
     active_states = {"running", "queued", "waiting_for_approval", "cancel_requested"}
     return [
         dict(job)
