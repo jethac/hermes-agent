@@ -907,6 +907,10 @@ def _compact_approval_payload(value: Mapping[str, Any]) -> dict[str, Any]:
         "summary",
         "message",
         "reason",
+        "latest_interpreter_evidence",
+        "latest_interpreter_evidence_source",
+        "interpreter_evidence_count",
+        "interpreter_evidence_late",
     }
     compact: dict[str, Any] = {}
     for key, raw in value.items():

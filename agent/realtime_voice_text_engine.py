@@ -1242,7 +1242,10 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                                     await manager.mark_waiting_for_approval(
                                         job.job_id,
                                         reason=_oracle_tool_approval_reason(item),
-                                        approval=_oracle_tool_event_payload(item),
+                                        approval=_with_oracle_job_interpreter_evidence(
+                                            _oracle_tool_event_payload(item),
+                                            job,
+                                        ),
                                     )
                         elif oracle_tool_event_type == VoiceEventType.ORACLE_TOOL_RESULT:
                             manager = self._oracle_job_manager
@@ -1254,9 +1257,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                             phase="tool",
                             delta="",
                             text=answer,
-                            tool_event=_oracle_tool_event_payload(
-                                item,
-                                redact_sensitive=_oracle_tool_event_waits_for_approval(item),
+                            tool_event=_with_oracle_job_interpreter_evidence(
+                                _oracle_tool_event_payload(
+                                    item,
+                                    redact_sensitive=_oracle_tool_event_waits_for_approval(item),
+                                ),
+                                job,
                             ),
                         )
                         continue
@@ -4099,6 +4105,21 @@ def _oracle_tool_event_payload(
         if item.get(call_id_key) is not None and not payload.get("tool_call_id"):
             payload["tool_call_id"] = str(item.get(call_id_key))
     return payload
+
+
+def _with_oracle_job_interpreter_evidence(payload: Mapping[str, Any], job: OracleJob) -> dict[str, Any]:
+    enriched = dict(payload)
+    status = job.to_status()
+    latest_evidence = str(status.get("latest_interpreter_evidence") or "").strip()
+    if not latest_evidence:
+        return enriched
+    enriched["latest_interpreter_evidence"] = latest_evidence
+    source = str(status.get("latest_interpreter_evidence_source") or "").strip()
+    if source:
+        enriched["latest_interpreter_evidence_source"] = source
+    enriched["interpreter_evidence_count"] = status.get("interpreter_evidence_count", 0)
+    enriched["interpreter_evidence_late"] = status.get("interpreter_evidence_late", False)
+    return enriched
 
 
 def _realtime_json_safe(value: Any) -> Any:

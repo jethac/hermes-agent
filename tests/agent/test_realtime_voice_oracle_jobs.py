@@ -1113,6 +1113,13 @@ async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
             "tool_name": "stripe_link_purchase",
             "secret": "do not expose",
             "arguments": {"card": "do not expose"},
+            "latest_interpreter_evidence": (
+                "interpreter evidence: transcript=buy twenty dollars of phone credits; "
+                "intent=prepare Stripe approval"
+            ),
+            "latest_interpreter_evidence_source": "gemma_interpreter",
+            "interpreter_evidence_count": 1,
+            "interpreter_evidence_late": True,
         },
     )
     status = await manager.status_view()
@@ -1134,6 +1141,13 @@ async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
     assert waiting_event["payload"]["approval"] == {
         "approval_id": "approval-123",
         "tool_name": "stripe_link_purchase",
+        "latest_interpreter_evidence": (
+            "interpreter evidence: transcript=buy twenty dollars of phone credits; "
+            "intent=prepare Stripe approval"
+        ),
+        "latest_interpreter_evidence_source": "gemma_interpreter",
+        "interpreter_evidence_count": 1,
+        "interpreter_evidence_late": True,
     }
     assert "do not expose" not in str(waiting_event)
 

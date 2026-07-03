@@ -5191,6 +5191,136 @@ def test_async_oracle_job_enters_waiting_for_approval_on_tool_call(monkeypatch):
     asyncio.run(run())
 
 
+def test_async_oracle_tool_approval_carries_late_interpreter_evidence(monkeypatch):
+    class ApprovalAfterEvidenceOracle:
+        def __init__(self):
+            self.requests = []
+            self.updates = []
+            self.started = asyncio.Event()
+            self.update_seen = asyncio.Event()
+            self.release_tool_call = asyncio.Event()
+            self.release_result = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release_tool_call.wait()
+            yield {
+                "event": "tool_call",
+                "tool_name": "stripe_link_purchase",
+                "tool_call_id": "call-approve-1",
+                "approval_required": True,
+                "approval_id": "approval-123",
+                "approval_reason": "Stripe Link spend requires approval",
+                "arguments": {"amount": 20, "card": "secret-card"},
+            }
+            await self.release_result.wait()
+            yield "The spend approval cleared."
+
+        async def update_request(self, request, update_text, metadata):
+            self.updates.append((request, update_text, metadata))
+            self.update_seen.set()
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = ApprovalAfterEvidenceOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "buy phone credits",
+                    "intent": "Buy phone credits.",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "interface_already_said": "Preparing the spend request.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "job_id": "voice-oracle-001",
+                    "update_type": "interpreter_evidence",
+                    "corrected_transcript": "buy twenty dollars of phone credits",
+                    "normalized_intent": "prepare a Stripe approval for phone credits",
+                    "confidence": 0.86,
+                    "reason": "attach late interpreter evidence before spend approval",
+                    "source": "gemma_interpreter",
+                    "disagreements": ["reflex transcript omitted budget amount"],
+                },
+            )
+        )
+        await asyncio.wait_for(oracle.update_seen.wait(), timeout=1)
+
+        oracle.release_tool_call.set()
+        async for event in engine.events():
+            seen.append(event)
+            if (
+                any(seen_event.type == VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL for seen_event in seen)
+                and any(
+                    seen_event.type == VoiceEventType.ORACLE_JOB_PROGRESS
+                    and seen_event.payload.get("phase") == "tool"
+                    and seen_event.payload.get("tool_event", {}).get("approval_required") is True
+                    for seen_event in seen
+                )
+            ):
+                break
+
+        waiting = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL)
+        tool_call_progress = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.ORACLE_JOB_PROGRESS
+            and event.payload.get("phase") == "tool"
+            and event.payload.get("tool_event", {}).get("approval_required") is True
+        )
+
+        approval = waiting.payload["approval"]
+        tool_event = tool_call_progress.payload["tool_event"]
+        for payload in (approval, tool_event):
+            assert payload["interpreter_evidence_count"] == 1
+            assert payload["interpreter_evidence_late"] is True
+            assert payload["latest_interpreter_evidence_source"] == "gemma_interpreter"
+            assert "transcript=buy twenty dollars of phone credits" in payload["latest_interpreter_evidence"]
+            assert "intent=prepare a Stripe approval for phone credits" in payload["latest_interpreter_evidence"]
+        assert "arguments" not in tool_event
+        assert "secret-card" not in str(waiting.payload)
+        assert "secret-card" not in str(tool_call_progress.payload)
+
+        oracle.release_result.set()
+        await engine.close()
+
+    asyncio.run(run())
+
+
 def test_kame_engine_interface_cancel_stops_one_async_oracle_job(monkeypatch):
     class InterruptibleBlockingOracle:
         def __init__(self):
