@@ -56,6 +56,34 @@ This split is what makes the system KAME-style. A direct Gemma audio request can
 help the interpreter, and a cloud STT/TTS bridge can prove transport behavior,
 but neither is the full reflex/oracle architecture by itself.
 
+## Signal Authority Rules
+
+The realtime stack may produce several text-like artifacts for one spoken turn.
+They are not equivalent. The interpreter request is the merge point, and every
+input must keep provenance until a later layer promotes it.
+
+| Signal | Producer | Used For | Authority |
+| --- | --- | --- | --- |
+| `raw_audio` | transport/session cut | interpreter evidence, replay/debug, disagreement checks | primary interpreter input |
+| `reflex_intent` | live reflex | routing, immediate acknowledgement, oracle-job creation | provisional routing |
+| `reflex_transcript_hypothesis` | live reflex | early clue for Gemma/oracle, user-visible rough caption when desired | hypothesis only |
+| `s2s_transcript_hypothesis` | Moshi/VoiceClaw/OpenClaw-style frontend | what the realtime voice model thought it heard | hypothesis only |
+| `classic_asr_hypothesis` | dedicated ASR fallback/evidence lane | literal wording comparison, captions, diagnostics | optional hypothesis |
+| `interpreter_corrected_transcript` | Gemma-style interpreter | durable user request candidate and tool-critical wording | first promoted transcript |
+| `oracle_text` / final result | Hermes active `/model` | tool use, memory, files, spend, calls, durable outcome | action authority after policy checks |
+
+This allows a three-tier design without making STT the control path. Moshi/S2S
+transcripts are valuable because they summarize the live reflex's hearing of
+the turn, including dropped prefixes or code-switched phrases. They must travel
+beside the raw audio into the Gemma interpreter, not replace the raw audio and
+not become a separate oracle prompt. Classic ASR follows the same rule and is
+kept primarily for fallback, diagnostics, and literal-evidence checks.
+
+If the reflex has enough signal to acknowledge or create a background oracle
+job, it should do so immediately. The interpreter can attach corrected evidence
+before the job starts, or as a bounded late update before irreversible spend,
+provisioning, message, memory, file, or call actions rely on the earlier text.
+
 ## Model Assumptions To Validate
 
 This design relies on the following external model and serving assumptions:

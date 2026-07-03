@@ -11,7 +11,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Deque, Mapping, Optional
+from typing import Any, Awaitable, Callable, Deque, Mapping, Optional, Sequence
 
 from agent.redact import redact_sensitive_text
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
@@ -72,6 +72,16 @@ class OracleJob:
     route: str
     oracle_text: str
     reflex_intent: str
+    audio_segment_ref: str = ""
+    audio_time_range_ms: tuple[int, int] | tuple[()] = field(default_factory=tuple)
+    reflex_transcript_hypothesis: str = ""
+    reflex_transcript_source: str = ""
+    reflex_transcript_confidence: Optional[float] = None
+    auxiliary_transcript_hypotheses: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    interpreter_corrected_transcript: str = ""
+    interpreter_confidence: Optional[float] = None
+    interpreter_entities: tuple[dict[str, str], ...] = field(default_factory=tuple)
+    interpreter_disagreements: tuple[str, ...] = field(default_factory=tuple)
     interface_already_said: str = ""
     requested_response_style: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
@@ -100,6 +110,26 @@ class OracleJob:
             status["error"] = self.error
         if self.cancel_reason:
             status["cancel_reason"] = self.cancel_reason
+        if self.audio_segment_ref:
+            status["audio_segment_ref"] = self.audio_segment_ref
+        if self.audio_time_range_ms:
+            status["audio_time_range_ms"] = tuple(self.audio_time_range_ms)
+        if self.reflex_transcript_hypothesis:
+            status["reflex_transcript_hypothesis"] = self.reflex_transcript_hypothesis
+            status["reflex_transcript_source"] = self.reflex_transcript_source or "reflex_audio"
+        if self.reflex_transcript_confidence is not None:
+            status["reflex_transcript_confidence"] = self.reflex_transcript_confidence
+        if self.auxiliary_transcript_hypotheses:
+            status["auxiliary_transcript_hypotheses_count"] = len(self.auxiliary_transcript_hypotheses)
+            status["auxiliary_transcript_hypotheses"] = tuple(self.auxiliary_transcript_hypotheses)
+        if self.interpreter_corrected_transcript:
+            status["interpreter_corrected_transcript"] = self.interpreter_corrected_transcript
+        if self.interpreter_confidence is not None:
+            status["interpreter_confidence"] = self.interpreter_confidence
+        if self.interpreter_entities:
+            status["interpreter_entities"] = self.interpreter_entities
+        if self.interpreter_disagreements:
+            status["interpreter_disagreements"] = self.interpreter_disagreements
         if self.updates:
             status["update_count"] = len(self.updates)
             status["latest_update"] = str(self.updates[-1].get("text") or "")[:240]
@@ -360,6 +390,7 @@ class OracleJobManager:
                 return job
 
             job.interpreter_evidence.append(evidence)
+            _promote_interpreter_evidence(job, evidence)
             job.updated_at = self._clock()
             event_type = (
                 OracleJobEventType.INTERPRETER_EVIDENCE_LATE
@@ -490,6 +521,14 @@ class OracleJobManager:
             oracle_text=request.oracle_text,
             reflex_intent=request.intent,
             interface_already_said=request.interface_already_said,
+            audio_segment_ref=_compact_evidence_text(request.audio_segment_ref, limit=240),
+            audio_time_range_ms=_audio_time_range_ms(request.audio_time_range_ms),
+            reflex_transcript_hypothesis=_compact_evidence_text(request.transcript, limit=500),
+            reflex_transcript_source=_compact_evidence_text(request.transcript_source, limit=40),
+            reflex_transcript_confidence=_compact_confidence(request.transcript_confidence),
+            auxiliary_transcript_hypotheses=_compact_auxiliary_transcript_hypotheses(
+                request.auxiliary_transcript_hypotheses
+            ),
             requested_response_style=dict(request.requested_response_style or {}),
             metadata=request.to_metadata(),
             request=request,
@@ -850,6 +889,52 @@ def _compact_confidence(value: Optional[float]) -> Optional[float]:
     return round(parsed, 4)
 
 
+def _audio_time_range_ms(value: object) -> tuple[int, int] | tuple[()]:
+    if not isinstance(value, Sequence) or isinstance(value, (bytes, bytearray, str)):
+        return ()
+    if len(value) != 2:
+        return ()
+    try:
+        start = int(value[0])
+        end = int(value[1])
+    except (TypeError, ValueError):
+        return ()
+    if start < 0 or end < start:
+        return ()
+    return (start, end)
+
+
+def _compact_auxiliary_transcript_hypotheses(
+    values: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    compact: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for value in values[:5]:
+        if not isinstance(value, Mapping):
+            continue
+        source = _compact_evidence_text(value.get("source") or value.get("provider"), limit=40) or "unknown"
+        text = _compact_evidence_text(
+            value.get("text") or value.get("transcript") or value.get("hypothesis"),
+            limit=500,
+        )
+        if not text:
+            continue
+        dedupe_key = (source, text)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        item: dict[str, Any] = {
+            "source": source,
+            "text": text,
+            "authority": "hypothesis",
+        }
+        confidence = _compact_confidence(value.get("confidence"))  # type: ignore[arg-type]
+        if confidence is not None:
+            item["confidence"] = confidence
+        compact.append(item)
+    return tuple(compact)
+
+
 def _compact_interpreter_entities(values: list[Mapping[str, Any]]) -> tuple[dict[str, str], ...]:
     allowed = ("type", "value", "name", "role", "source")
     compact: list[dict[str, str]] = []
@@ -864,6 +949,30 @@ def _compact_interpreter_entities(values: list[Mapping[str, Any]]) -> tuple[dict
         if item:
             compact.append(item)
     return tuple(compact)
+
+
+def _promote_interpreter_evidence(job: OracleJob, evidence: Mapping[str, Any]) -> None:
+    transcript = _compact_evidence_text(evidence.get("corrected_transcript"), limit=500)
+    if transcript:
+        job.interpreter_corrected_transcript = transcript
+    confidence = _compact_confidence(evidence.get("confidence"))  # type: ignore[arg-type]
+    if confidence is not None:
+        job.interpreter_confidence = confidence
+    entities = evidence.get("entities")
+    if isinstance(entities, tuple):
+        job.interpreter_entities = _compact_interpreter_entities(
+            [entity for entity in entities if isinstance(entity, Mapping)]
+        )
+    disagreements = evidence.get("disagreements")
+    if isinstance(disagreements, tuple):
+        job.interpreter_disagreements = tuple(
+            text
+            for text in (
+                _compact_evidence_text(disagreement, limit=180)
+                for disagreement in disagreements
+            )
+            if text
+        )[:6]
 
 
 def _interpreter_evidence_summary(evidence: Mapping[str, Any]) -> str:

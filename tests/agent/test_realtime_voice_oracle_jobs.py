@@ -86,6 +86,89 @@ async def test_submit_starts_job_with_stable_id_and_events():
 
 
 @pytest.mark.asyncio
+async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    request = KameOracleRequest(
+        session_id="voice-session-1",
+        turn_id="turn-voice-1",
+        source="discord_voice",
+        user_id="42",
+        intent="calculate a power",
+        route=KameRoute.ORACLE_DIRECT,
+        transcript="three to the power of seventeen with sk_test_abcdefghijklmnopqrstuvwxyz",
+        transcript_source="reflex_audio",
+        transcript_confidence=0.71,
+        audio_segment_ref="segments/turn-voice-1.wav",
+        audio_time_range_ms=(120, 2480),
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "moshi",
+                "text": "three to the power of seventeen",
+                "confidence": 0.78,
+            },
+            {
+                "source": "asr",
+                "text": "what is three to the power of seventeen",
+                "confidence": 0.92,
+            },
+        ),
+    )
+
+    job = await manager.submit(request)
+    await manager.add_interpreter_evidence(
+        job.job_id,
+        corrected_transcript="what is three to the power of seventeen",
+        normalized_intent="answer a math question",
+        entities=[{"type": "math_expression", "value": "3^17"}],
+        confidence=0.94,
+        disagreements=["reflex transcript omitted request prefix"],
+    )
+    status = await manager.status_view()
+    job_status = next(item for item in status["jobs"] if item["job_id"] == job.job_id)
+    combined = json.dumps(job_status, sort_keys=True)
+
+    assert job.audio_segment_ref == "segments/turn-voice-1.wav"
+    assert job.audio_time_range_ms == (120, 2480)
+    assert job.reflex_transcript_source == "reflex_audio"
+    assert job.auxiliary_transcript_hypotheses == (
+        {"source": "moshi", "text": "three to the power of seventeen", "authority": "hypothesis", "confidence": 0.78},
+        {
+            "source": "asr",
+            "text": "what is three to the power of seventeen",
+            "authority": "hypothesis",
+            "confidence": 0.92,
+        },
+    )
+    assert job.interpreter_corrected_transcript == "what is three to the power of seventeen"
+    assert job.interpreter_confidence == 0.94
+    assert job.interpreter_entities == ({"type": "math_expression", "value": "3^17"},)
+    assert job.interpreter_disagreements == ("reflex transcript omitted request prefix",)
+    assert job_status["audio_segment_ref"] == "segments/turn-voice-1.wav"
+    assert job_status["audio_time_range_ms"] == (120, 2480)
+    assert "Bearer" not in combined
+    assert "sk_test" not in combined
+    assert job_status["reflex_transcript_source"] == "reflex_audio"
+    assert job_status["reflex_transcript_confidence"] == 0.71
+    assert job_status["auxiliary_transcript_hypotheses_count"] == 2
+    assert job_status["interpreter_corrected_transcript"] == "what is three to the power of seventeen"
+    assert job_status["interpreter_confidence"] == 0.94
+    assert job_status["interpreter_entities"] == ({"type": "math_expression", "value": "3^17"},)
+    assert job_status["interpreter_disagreements"] == ("reflex transcript omitted request prefix",)
+    assert "metadata" not in job_status
+    assert "oracle_text" not in job_status
+
+    await manager.cancel(job.job_id)
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
 async def test_max_concurrent_one_queues_second_job():
     started = []
     release_first = asyncio.Event()

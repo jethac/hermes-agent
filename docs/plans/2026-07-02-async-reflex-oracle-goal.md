@@ -94,6 +94,16 @@ The oracle may see all of those fields, but only after they are labeled. It must
 never receive a Moshi or ASR transcript as if it were the user's verified
 utterance.
 
+Operationally, the interpreter request is the only place those signals merge.
+The reflex may acknowledge or create an oracle job from live audio and a compact
+intent before transcript evidence exists. A Moshi/S2S transcript, if the
+frontend emits one, is attached to that same interpreter bundle beside the raw
+audio so Gemma can compare "what the live voice model thought it heard" against
+the waveform. Classic ASR follows the same path when enabled. Neither Moshi nor
+ASR should create a second oracle turn, overwrite `oracle_text` directly, or
+block acknowledgement. Only interpreter evidence or later oracle judgment may
+promote a hypothesis into durable user text or tool-critical arguments.
+
 The oracle is the worker. It owns:
 
 - tool execution

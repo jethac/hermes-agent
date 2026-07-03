@@ -70,6 +70,11 @@ Target KAME layout:
   distinct provenance-labeled fields. Only interpreter/oracle judgment can
   promote a transcript hypothesis into durable user text or tool-critical
   arguments.
+- Merge point: the Gemma interpreter request is the normal merge point for raw
+  audio plus transcript hypotheses. Moshi/S2S transcript output should be
+  supplied as context beside the waveform, not as a replacement for the waveform
+  and not as a second oracle prompt. Classic ASR uses the same path only when
+  enabled for fallback, diagnostics, or literal-evidence checks.
 - Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
 The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.
@@ -171,6 +176,11 @@ The reflex path must remain usable without a transcript. If a Moshi-style model
 emits only audio or produces a hallucinated transcript, the system should still
 make floor-control decisions from live audio/VAD and let the interpreter decide
 what evidence is safe to pass to the oracle.
+
+This is the core KAME rule for VoiceOps: the live voice model may speak and
+route, the interpreter may promote evidence, and Hermes' active oracle may act.
+No transcript hypothesis from Moshi, VoiceClaw/OpenClaw, or classic ASR should
+skip the interpreter merge point and become durable user text on its own.
 
 ### Interpreter
 
