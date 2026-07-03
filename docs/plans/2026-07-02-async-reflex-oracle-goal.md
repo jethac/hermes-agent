@@ -12,11 +12,14 @@ successor_design: docs/design/full-kame-style-realtime-voice.md
 ## Summary
 
 The KAME voice branch has the right authority boundary: the human talks to a
-fast reflex/interface model, a non-blocking interpreter stage turns raw audio
-plus reflex/Moshi transcript hypotheses into corrected multilingual evidence,
-and Hermes' active oracle model owns real work: tools, memory, files,
-approvals, planning, and durable outcomes. Raw audio is the primary interpreter
-input; transcript hypotheses are optional context and fallback evidence.
+fast reflex/interface model, a non-blocking direct-audio interpreter stage turns
+raw audio plus optional transcript hypotheses into corrected multilingual
+evidence, and Hermes' active model owns oracle work: tools, memory, files,
+approvals, planning, and durable outcomes. This is allowed to be
+three-tier-ish in implementation, because transcript side channels can arrive
+before, during, or after the interpreter request. Raw audio is the primary
+interpreter input; transcript hypotheses are optional context and fallback
+evidence.
 
 The next gap is runtime behavior. The reflex and oracle are not yet truly async.
 The user should be able to keep talking to the reflex while one or more oracle
@@ -34,9 +37,10 @@ user keeps speaking -> reflex keeps listening/responding
                   \-> oracle task 4 runs in background
 ```
 
-The practical first capacity target is four concurrent oracle jobs for a DGX
-Spark running Nemotron-3 Super. That limit should be configurable, visible in
-status, and enforced by the scheduler.
+The practical first high-end capacity target is four concurrent oracle jobs for
+a DGX Spark running Nemotron-3 Super. That limit should be configurable,
+visible in status, and enforced by the scheduler, but this plan does not claim
+the DGX Spark deployment has been validated.
 
 ## Thesis
 
@@ -80,19 +84,22 @@ transcript is allowed to accompany the raw audio, and should be preserved when
 available, but it is never the scheduler or durable user text by itself. Gemma
 is the non-blocking interpreter/evidence adjudicator, not a mandatory ASR gate.
 It consumes the clipped waveform, reflex route, spoken acknowledgement,
-speaker/timing metadata, and any transcript hypotheses, then promotes corrected
-wording only when confidence and provenance justify it.
+speaker/channel/timing metadata, and any transcript hypotheses, then promotes
+corrected wording only when confidence and provenance justify it.
 
-This means the architecture is three-tier, but not three independent
+This means the architecture is three-tier-ish, but not three independent
 conversations. The reflex owns live floor control, the Gemma-style interpreter
 adjudicates the cut waveform and may promote a corrected transcript candidate,
-and Hermes' active `/model` oracle owns action. Moshi/S2S and classic ASR text
-are evidence fields inside the interpreter bundle, not separate prompts racing
-the oracle and not a required precondition for acknowledging the user.
+and the active Hermes model selected through existing `/model` and config flows
+owns oracle action. Voice config must not add a separate `oracle_model` setting.
+Moshi/S2S and classic ASR text are evidence fields inside the interpreter
+bundle, not separate prompts racing the oracle and not a required precondition
+for acknowledging the user.
 
 The evidence bundle must preserve provenance:
 
 - raw audio reference: primary evidence
+- speaker and channel metadata: canonical turn context
 - reflex transcript: low-latency hypothesis
 - Moshi/S2S transcript: auxiliary hypothesis
 - classic ASR transcript: optional fallback or comparison hypothesis
@@ -149,6 +156,12 @@ The oracle is the worker. It owns:
 - project context
 - approvals and external side effects
 - final evidence-backed task outcomes
+
+The oracle is not a voice-specific model selector. It is whatever Hermes's
+active model/config currently selects, including local or hosted providers. A
+Spark-local Nemotron endpoint is registered through the normal Hermes model
+provider path and selected with `/model`; KAME voice only submits structured
+oracle jobs to that active Hermes oracle.
 
 Async scheduling is what makes that boundary real. Without it, the architecture
 can still degrade into:
@@ -225,6 +238,8 @@ Minimum fields:
 - `oracle_text`
 - `audio_segment_ref`
 - `audio_time_range_ms`
+- `speaker_metadata`
+- `channel_metadata`
 - `reflex_intent`
 - `reflex_transcript_hypothesis`
 - `auxiliary_transcript_hypotheses`
@@ -268,14 +283,15 @@ voice:
       shutdown_timeout_seconds: 2
 ```
 
-The first deployment target is:
+The first intended high-end capacity target is:
 
 ```text
 DGX Spark / Nemotron-3 Super: max_concurrent=4
 ```
 
 Other hardware and cloud providers can use lower values. A local laptop may
-default to one running oracle job.
+default to one running oracle job. This is a target configuration, not evidence
+that the Spark/Nemotron deployment has already passed capacity validation.
 
 Approval-blocked jobs count against `max_concurrent` until the approval wait
 resolves, fails, or is cancelled. This is intentional: a job waiting at an
@@ -320,12 +336,13 @@ The reflex can use this to answer status questions and decide whether to accept
 new work, ask for prioritization, or suggest cancellation.
 
 The interpreter gets a different compact view: the current turn id, clipped
-audio reference, reflex hypothesis, optional Moshi/S2S transcript hypothesis,
-optional ASR hypothesis, active job id, and the acknowledgement already spoken.
-Those fields should arrive as one evidence bundle for the speech cut, not as
-independent prompts racing each other. The interpreter can perform the durable
-multilingual transcript adjudication from this bundle, but it is not the
-streaming endpointer and does not need tool schemas or broad Hermes state.
+audio reference, speaker/channel metadata, reflex hypothesis, optional
+Moshi/S2S transcript hypothesis, optional ASR hypothesis, active job id, and
+the acknowledgement already spoken. Those fields should arrive as one evidence
+bundle for the speech cut, not as independent prompts racing each other. The
+interpreter can perform the durable multilingual transcript adjudication from
+this bundle, but it is not the streaming endpointer and does not need tool
+schemas or broad Hermes state.
 
 The compact interpreter view should keep raw audio first, live interface context
 second, and hypotheses third. That ordering matters: it tells Gemma that Moshi,
@@ -628,7 +645,7 @@ instead of adding a second hidden agent path.
   `waiting_for_approval` and `cancel_requested` counts.
 - Tests cover `max_concurrent=1` and `max_concurrent=4`.
 - DGX Spark / Nemotron-3 Super target documents `max_concurrent=4` as the first
-  intended high-end local deployment setting.
+  intended high-end local deployment setting, pending measured validation.
 
 ### Invariants
 
@@ -728,7 +745,8 @@ Add a local smoke report mode that proves:
   acknowledgement, observe job status, and receive the final result without
   direct tool authority
 
-For real DGX Spark evidence:
+For real DGX Spark evidence, which is required before any validated deployment
+claim:
 
 - run `max_concurrent=4` against the Nemotron-3 Super oracle endpoint
 - capture latency and memory metrics
@@ -794,7 +812,7 @@ mistaken for free capacity.
 7. Add local fake-oracle smoke evidence.
 8. Add external KAME frontend compatibility tests for VoiceClaw/OpenClaw-style
    brain requests.
-9. Validate `max_concurrent=4` on DGX Spark / Nemotron-3 Super.
+9. Collect measured `max_concurrent=4` evidence on DGX Spark / Nemotron-3 Super.
 10. Tune defaults and update the full KAME design with measured capacity.
 
 ## Definition Of Done

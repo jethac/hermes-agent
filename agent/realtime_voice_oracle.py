@@ -394,11 +394,35 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     interface_input_source = _metadata_text(metadata.get("kame_interface_input_source"))
     interface_audio_input_fallback = metadata.get("kame_interface_audio_input_fallback") is True
     response_style = _metadata_response_style(metadata.get("kame_requested_response_style"))
+    speaker = _metadata_speaker(metadata.get("kame_speaker"))
+    channel = _metadata_channel(metadata.get("kame_channel"))
 
     parts = [
         "KAME request: the realtime reflex has already handled live turn-taking "
         "and is escalating this turn to the Hermes oracle.",
     ]
+    if speaker:
+        speaker_parts = []
+        if speaker.get("platform"):
+            speaker_parts.append(str(speaker["platform"]))
+        if speaker.get("channel_user_id") or speaker.get("user_id") or speaker.get("speaker_id"):
+            speaker_parts.append(
+                f"user={speaker.get('channel_user_id') or speaker.get('user_id') or speaker.get('speaker_id')}"
+            )
+        if speaker.get("display_name"):
+            speaker_parts.append(f"display={speaker['display_name']}")
+        if speaker_parts:
+            parts.append(f"Speaker context: {' '.join(speaker_parts)}.")
+    if channel:
+        channel_parts = []
+        if channel.get("transport"):
+            channel_parts.append(str(channel["transport"]))
+        if channel.get("channel_id"):
+            channel_parts.append(f"channel={channel['channel_id']}")
+        if channel.get("guild_id"):
+            channel_parts.append(f"guild={channel['guild_id']}")
+        if channel_parts:
+            parts.append(f"Channel context: {' '.join(channel_parts)}.")
     if intent:
         parts.append(f"Reflex interpreted intent ({intent_source or 'reflex'}): {intent}")
     if route:
@@ -523,6 +547,30 @@ def _metadata_text_sequence(value: object) -> list[str]:
         if text:
             items.append(text)
     return items[:5]
+
+
+def _metadata_speaker(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        return {}
+    speaker: dict[str, object] = {}
+    for key in ("platform", "channel_user_id", "user_id", "speaker_id", "display_name", "channel_id", "guild_id"):
+        text = _metadata_text(value.get(key))[:160]
+        if text:
+            speaker[key] = text
+    if isinstance(value.get("is_bot"), bool):
+        speaker["is_bot"] = value["is_bot"]
+    return speaker
+
+
+def _metadata_channel(value: object) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    channel: dict[str, str] = {}
+    for key in ("transport", "guild_id", "channel_id", "surface", "name"):
+        text = _metadata_text(value.get(key))[:160]
+        if text:
+            channel[key] = text
+    return channel
 
 
 def _metadata_time_range(value: object) -> tuple[int, int] | tuple[()]:

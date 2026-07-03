@@ -385,6 +385,8 @@ class KameOracleRequest:
     audio_segment_ref: str = ""
     audio_time_range_ms: tuple[int, int] | tuple[()] = field(default_factory=tuple)
     audio_metadata: Mapping[str, Any] = field(default_factory=dict)
+    speaker_metadata: Mapping[str, Any] = field(default_factory=dict)
+    channel_metadata: Mapping[str, Any] = field(default_factory=dict)
     auxiliary_transcript_hypotheses: Sequence[Mapping[str, Any]] = field(default_factory=tuple)
     mode: str = "voice"
     urgency: str = "interactive"
@@ -549,6 +551,10 @@ class KameOracleRequest:
             metadata["kame_route_confidence"] = self.route_confidence
         if self.user_id:
             metadata["kame_user_id"] = self.user_id
+        if self.speaker_metadata:
+            metadata["kame_speaker"] = dict(self.speaker_metadata)
+        if self.channel_metadata:
+            metadata["kame_channel"] = dict(self.channel_metadata)
         if self.transcript_confidence is not None:
             metadata["kame_transcript_confidence"] = self.transcript_confidence
         if self.asr_transcript:
@@ -680,6 +686,14 @@ class KameOracleRequest:
             ),
         )
         canonical_audio = _canonical_audio_payload(payload)
+        canonical_speaker = _canonical_speaker_payload(payload)
+        canonical_channel = _canonical_channel_payload(payload)
+        resolved_user_id = (
+            _optional_text(payload.get("user_id"))
+            or _optional_text(payload.get("speaker_id"))
+            or _canonical_speaker_user_id(canonical_speaker)
+            or user_id
+        )
         audio_segment_ref = _optional_text(
             payload.get("audio_segment_ref")
             or payload.get("audio_ref")
@@ -696,7 +710,7 @@ class KameOracleRequest:
             session_id=session_id,
             turn_id=_optional_text(payload.get("turn_id")) or turn_id,
             source=_optional_text(payload.get("source")) or _optional_text(payload.get("transport")) or source,
-            user_id=_optional_text(payload.get("user_id")) or _optional_text(payload.get("speaker_id")) or user_id,
+            user_id=resolved_user_id,
             intent=intent.strip(),
             intent_source=_optional_text(payload.get("intent_source")) or "reflex_audio",
             route=_route(payload.get("route")),
@@ -720,6 +734,11 @@ class KameOracleRequest:
                 audio_segment_ref=audio_segment_ref,
                 audio_time_range_ms=audio_time_range_ms,
             ),
+            speaker_metadata=_canonical_speaker_metadata(
+                canonical_speaker,
+                user_id=resolved_user_id,
+            ),
+            channel_metadata=_canonical_channel_metadata(canonical_channel),
             auxiliary_transcript_hypotheses=_auxiliary_transcript_hypotheses(payload),
             mode=_optional_text(payload.get("mode")) or "voice",
             urgency=_optional_text(payload.get("urgency")) or "interactive",
@@ -773,6 +792,10 @@ def kame_external_brain_request_to_oracle_request(
         normalized["transcript_hypotheses"] = raw["transcript_hypotheses"]
     if "audio" not in normalized and isinstance(raw.get("audio"), Mapping):
         normalized["audio"] = raw["audio"]
+    if "speaker" not in normalized and isinstance(raw.get("speaker"), Mapping):
+        normalized["speaker"] = raw["speaker"]
+    if "channel" not in normalized and isinstance(raw.get("channel"), Mapping):
+        normalized["channel"] = raw["channel"]
     bridge_call_id = _frontend_bridge_call_id(raw)
     if bridge_call_id:
         normalized["interface_tool_call_id"] = bridge_call_id
@@ -829,7 +852,10 @@ def kame_external_brain_request_to_oracle_request(
         normalized["intent"] = intent
     normalized["route"] = _external_brain_route(normalized.get("route")).value
     normalized.setdefault("source", source)
-    normalized.setdefault("user_id", user_id or "")
+    normalized.setdefault(
+        "user_id",
+        _canonical_speaker_user_id(_canonical_speaker_payload(normalized)) or user_id or "",
+    )
     normalized.setdefault("interface_already_said", _frontend_already_said(normalized))
     normalized.setdefault("requested_response_style", {"spoken": True, "max_sentences": default_max_spoken_sentences})
     if not _optional_text(normalized.get("priority")):
@@ -1050,6 +1076,66 @@ def _canonical_audio_metadata(
                 compact_vad[key] = value
         if compact_vad:
             metadata["vad"] = compact_vad
+    return metadata
+
+
+def _canonical_speaker_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    speaker = payload.get("speaker")
+    return speaker if isinstance(speaker, Mapping) else {}
+
+
+def _canonical_speaker_user_id(speaker: Mapping[str, Any]) -> str:
+    return (
+        _optional_text(speaker.get("channel_user_id"))
+        or _optional_text(speaker.get("platform_user_id"))
+        or _optional_text(speaker.get("user_id"))
+        or _optional_text(speaker.get("speaker_id"))
+        or _optional_text(speaker.get("id"))
+    )
+
+
+def _canonical_speaker_metadata(
+    speaker: Mapping[str, Any],
+    *,
+    user_id: Optional[str],
+) -> dict[str, Any]:
+    if not speaker:
+        return {}
+    metadata: dict[str, Any] = {}
+    for key in (
+        "platform",
+        "channel_user_id",
+        "platform_user_id",
+        "user_id",
+        "speaker_id",
+        "display_name",
+        "channel_id",
+        "guild_id",
+    ):
+        value = _optional_text(speaker.get(key))
+        if value:
+            metadata[key] = " ".join(value.split())[:160]
+    is_bot = speaker.get("is_bot")
+    if isinstance(is_bot, bool):
+        metadata["is_bot"] = is_bot
+    if user_id and "user_id" not in metadata:
+        metadata["user_id"] = " ".join(str(user_id).split())[:160]
+    return metadata
+
+
+def _canonical_channel_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    channel = payload.get("channel")
+    return channel if isinstance(channel, Mapping) else {}
+
+
+def _canonical_channel_metadata(channel: Mapping[str, Any]) -> dict[str, Any]:
+    if not channel:
+        return {}
+    metadata: dict[str, Any] = {}
+    for key in ("transport", "guild_id", "channel_id", "surface", "name"):
+        value = _optional_text(channel.get(key))
+        if value:
+            metadata[key] = " ".join(value.split())[:160]
     return metadata
 
 

@@ -1282,6 +1282,16 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
         asr_transcript_confidence=0.68,
         audio_segment_ref="artifact://voice/turn-1.wav",
         audio_time_range_ms=(12840, 15320),
+        speaker_metadata={
+            "platform": "discord",
+            "channel_user_id": "42",
+            "display_name": "jetha",
+        },
+        channel_metadata={
+            "transport": "discord_voice",
+            "guild_id": "guild-1",
+            "channel_id": "general",
+        },
         auxiliary_transcript_hypotheses=(
             {
                 "source": "moshi",
@@ -1303,6 +1313,8 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     prompt = _voice_oracle_prompt(request.oracle_text, metadata)
 
     assert "KAME request" in prompt
+    assert "Speaker context: discord user=42 display=jetha." in prompt
+    assert "Channel context: discord_voice channel=general guild=guild-1." in prompt
     assert "Reflex interpreted intent (reflex_audio): Find the note" in prompt
     assert "Reflex route: oracle_direct (confidence 0.81)." in prompt
     assert "The audio-native reflex was unavailable; this turn used local_stt as the interface fallback." in prompt
@@ -12909,6 +12921,21 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
                 "authority": "primary_audio",
                 "data": "must-not-copy",
             },
+            "speaker": {
+                "platform": "discord",
+                "channel_user_id": "42",
+                "display_name": "jetha",
+                "is_bot": False,
+                "guild_id": "guild-1",
+                "profile": {"token": "must-not-copy"},
+            },
+            "channel": {
+                "transport": "discord_voice",
+                "guild_id": "guild-1",
+                "channel_id": "general",
+                "surface": "desk_voice",
+                "webhook": {"token": "must-not-copy"},
+            },
             "transcript_hypotheses": [
                 {
                     "kind": "reflex_transcript_hypothesis",
@@ -12947,6 +12974,21 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
     assert request.reflex_transcript_hypothesis == "prepare the phone handoff"
     assert request.reflex_transcript_source == "moshi-reflex"
     assert request.reflex_transcript_confidence == 0.81
+    assert request.user_id == "42"
+    assert request.speaker_metadata == {
+        "platform": "discord",
+        "channel_user_id": "42",
+        "display_name": "jetha",
+        "is_bot": False,
+        "guild_id": "guild-1",
+        "user_id": "42",
+    }
+    assert request.channel_metadata == {
+        "transport": "discord_voice",
+        "guild_id": "guild-1",
+        "channel_id": "general",
+        "surface": "desk_voice",
+    }
     assert request.audio_segment_ref == "artifact://voiceclaw/turn-42.wav"
     assert request.audio_time_range_ms == (120, 1840)
     assert request.audio_metadata == {
@@ -13000,6 +13042,8 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
         },
     )
     assert metadata["kame_audio"] == request.audio_metadata
+    assert metadata["kame_speaker"] == request.speaker_metadata
+    assert metadata["kame_channel"] == request.channel_metadata
     assert "must-not-copy" not in str(metadata)
 
 
@@ -13011,6 +13055,16 @@ def test_external_kame_bridge_arguments_preserve_top_level_evidence_bundle_field
             "audio": {
                 "segment_ref": "artifact://voiceclaw/turn-42.wav",
                 "time_range_ms": [120, 1840],
+            },
+            "speaker": {
+                "platform": "discord",
+                "channel_user_id": "42",
+                "display_name": "jetha",
+            },
+            "channel": {
+                "transport": "discord_voice",
+                "guild_id": "guild-1",
+                "channel_id": "general",
             },
             "transcript_hypotheses": [
                 {
@@ -13027,6 +13081,16 @@ def test_external_kame_bridge_arguments_preserve_top_level_evidence_bundle_field
     assert arguments["audio"] == {
         "segment_ref": "artifact://voiceclaw/turn-42.wav",
         "time_range_ms": [120, 1840],
+    }
+    assert arguments["speaker"] == {
+        "platform": "discord",
+        "channel_user_id": "42",
+        "display_name": "jetha",
+    }
+    assert arguments["channel"] == {
+        "transport": "discord_voice",
+        "guild_id": "guild-1",
+        "channel_id": "general",
     }
     assert arguments["transcript_hypotheses"] == [
         {

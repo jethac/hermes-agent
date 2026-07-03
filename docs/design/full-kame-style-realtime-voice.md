@@ -2,15 +2,18 @@
 
 Status: design draft
 Target branch: `wip/full-kame-reflex-voice`
-Target deployment: one DGX Spark, with cloud providers allowed only as bring-up fallbacks
+Target deployment: one DGX Spark as the intended local appliance path; cloud providers remain allowed only as clearly labeled bring-up fallbacks
 Preferred local reflex: fastest stable floor-control model, such as Moshi/PersonaPlex-class S2S or a smaller timing/noise-gated model
 Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal
-Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to validate
+Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to measure before readiness claims
 
 Current pivot: raw voice is the normal evidence path into the interpreter.
 Moshi/open-S2S or classic STT text may accompany that raw voice as labeled
 context, but it must not become the scheduler, the durable transcript, or a
-second prompt competing with the interpreter.
+second prompt competing with the interpreter. The runtime may look
+three-tier-ish rather than perfectly staged: fast reflex, direct-audio
+interpreter, optional/fallback transcript hypotheses as evidence, and Hermes's
+active model as oracle.
 
 Current clarification: Moshi/STT transcript capture is not a fourth agent lane.
 It is an attachment producer for the interpreter evidence bundle. The session
@@ -156,7 +159,18 @@ Canonical shape:
     "vad": {"speech_start_ms": 12840, "speech_end_ms": 15320},
     "authority": "primary_audio"
   },
-  "speaker": {"platform": "discord", "channel_user_id": "discord-user-id"},
+  "speaker": {
+    "platform": "discord",
+    "channel_user_id": "discord-user-id",
+    "display_name": "jetha",
+    "is_bot": false
+  },
+  "channel": {
+    "transport": "discord_voice",
+    "guild_id": "discord-guild-id",
+    "channel_id": "discord-channel-id",
+    "surface": "desk_voice"
+  },
   "reflex": {
     "route": "defer",
     "intent": "calculate a power",
@@ -519,6 +533,7 @@ durable user text.
 The interpreter receives:
 
 - clipped raw audio
+- speaker and channel metadata for the canonical turn context
 - reflex transcript hypothesis
 - optional Moshi/S2S transcript hypothesis if it differs from the reflex
 - optional classic ASR transcript hypothesis
@@ -547,6 +562,17 @@ The interpreter input bundle is the durable boundary between "live hearing" and
   "turn_id": "voice-turn-id",
   "audio_segment_ref": "artifact-or-buffer-ref",
   "audio_time_range_ms": [12840, 15320],
+  "speaker_metadata": {
+    "platform": "discord",
+    "channel_user_id": "discord-user-id",
+    "display_name": "jetha",
+    "is_bot": false
+  },
+  "channel_metadata": {
+    "transport": "discord_voice",
+    "guild_id": "discord-guild-id",
+    "channel_id": "discord-channel-id"
+  },
   "reflex_route": "defer",
   "reflex_intent": "calculate a power",
   "reflex_transcript_hypothesis": "three to the power of seventeen",
@@ -559,8 +585,7 @@ The interpreter input bundle is the durable boundary between "live hearing" and
       "authority": "hypothesis"
     }
   ],
-  "interface_already_said": "I'm checking that.",
-  "speaker": {"channel_user_id": "discord-user-id", "display_name": "jetha"}
+  "interface_already_said": "I'm checking that."
 }
 ```
 
@@ -577,8 +602,9 @@ through Hermes. For the DGX Spark path, the first preferred local NVIDIA oracle
 target is Nemotron 3 Super, selected through Hermes's normal `/model` flow after
 registering the local OpenAI-compatible endpoint. Gemma 4 26B-A4B remains a
 comparison candidate, not the VoiceOps-specific oracle selector. Nemotron 3
-Ultra is only a hosted or future multi-Spark fallback unless local evidence
-proves a one-Spark path.
+Ultra is only a hosted or future multi-Spark fallback unless measured local
+evidence proves a one-Spark path. This design must not be read as a claim that
+the Spark-local oracle deployment has already been validated.
 
 It owns:
 
@@ -907,7 +933,9 @@ These are product targets, not assumptions. The system must log actual p50/p90 v
 
 ## DGX Spark Deployment Target
 
-The end state is one DGX Spark running the complete stack:
+The intended end state is one DGX Spark running the complete stack. This section
+is a target architecture and launch-plan shape, not a validated deployment
+claim:
 
 ```text
 Hermes gateway
@@ -924,8 +952,8 @@ The oracle should stay warm. Model swapping during an interactive voice session 
 
 Preferred first local oracle track:
 
-- vLLM serving Nemotron 3 Super with the best validated one-Spark settings, or
-  the best validated Hermes oracle candidate selected through `/model`
+- vLLM serving Nemotron 3 Super with measured one-Spark settings once evidence
+  exists, or the best measured Hermes oracle candidate selected through `/model`
 - Gemma 4 26B-A4B benchmarked as a comparison candidate, not as a separate
   realtime voice oracle setting
 - OpenAI-compatible endpoint consumed by Hermes's existing model provider path
@@ -1017,6 +1045,7 @@ max_spoken_sentences = 2
 
 # The local DGX Spark oracle endpoint is registered in Hermes's normal model
 # provider config and selected with `/model`, not through realtime voice.
+# Do not add an `oracle_model` setting here.
 
 [voice.realtime.oracle_jobs]
 enabled = true
@@ -1080,7 +1109,8 @@ The GUI environment page should expose provider/model/base URL settings for:
   debug, or fallback
 - transcript evidence authority: hypotheses only; promotion requires
   interpreter or oracle judgment
-- local oracle provider target and base URL, when registering a local endpoint for the active Hermes `/model` selection
+- local oracle provider registration hints and base URL for Hermes model config,
+  while the active oracle still comes from Hermes `/model`
 - auxiliary transcript provider/model
 - TTS provider/model/voice
 - oracle job capacity, queue policy, active/running/waiting/queued counts, and
@@ -1162,7 +1192,8 @@ Deliverables:
 
 ### Phase 5: DGX Spark Local Oracle
 
-Run Hermes's oracle through a local OpenAI-compatible server on the Spark.
+Prepare Hermes's oracle to run through a local OpenAI-compatible server on the
+Spark, with readiness withheld until measured evidence exists.
 
 Deliverables:
 
@@ -1297,7 +1328,7 @@ voice production review is not enough for this branch. Required KAME gates are:
   hypotheses from raw audio before tool-critical oracle work
 - Nemotron 3 Super evaluated as the preferred Spark-local oracle target selected
   through Hermes `/model`
-- `max_concurrent=4` validated against the Nemotron 3 Super endpoint, or
+- `max_concurrent=4` measured against the Nemotron 3 Super endpoint, or
   explicitly marked as needing evidence
 - hosted Nemotron 3 Ultra excluded from one-Spark readiness claims unless local
   evidence proves otherwise
@@ -1332,7 +1363,8 @@ The full implementation is acceptable when:
 - all reflex, interpreter, auxiliary transcript hypothesis, TTS, routing, fallback, and
   local-provider target choices are configurable from config and GUI
 - Hermes oracle model selection remains the existing `/model` mechanism, not a separate realtime voice setting
-- the full stack has a documented one-DGX-Spark launch path
+- the full stack has a documented one-DGX-Spark launch path, with readiness
+  claims gated on measured evidence rather than the existence of the docs
 
 ## Current Gap Summary
 

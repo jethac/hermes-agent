@@ -3417,6 +3417,10 @@ def _oracle_job_payload(job: OracleJob) -> dict[str, Any]:
         )
         if request.user_id:
             payload["user_id"] = request.user_id
+        if request.speaker_metadata:
+            payload["speaker"] = dict(request.speaker_metadata)
+        if request.channel_metadata:
+            payload["channel"] = dict(request.channel_metadata)
         if request.interface_tool_call_id:
             payload["interface_tool_call_id"] = request.interface_tool_call_id
         if request.cancellation_token:
@@ -3572,6 +3576,8 @@ def _external_kame_bridge_arguments(payload: Mapping[str, Any]) -> dict[str, Any
     )
     _overlay_first_value(arguments, payload, "audio_time_range_ms", ("audio_time_range_ms",))
     _overlay_first_value(arguments, payload, "audio", ("audio",))
+    _overlay_first_value(arguments, payload, "speaker", ("speaker",))
+    _overlay_first_value(arguments, payload, "channel", ("channel",))
     _overlay_first_text(arguments, payload, "reflex_transcript_hypothesis", ("reflex_transcript_hypothesis",))
     _overlay_first_text(arguments, payload, "moshi_transcript_hypothesis", ("moshi_transcript_hypothesis",))
     _overlay_first_text(arguments, payload, "s2s_transcript_hypothesis", ("s2s_transcript_hypothesis",))
@@ -3643,6 +3649,10 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         payload["route_confidence"] = request.route_confidence
     if request.user_id:
         payload["user_id"] = request.user_id
+    if request.speaker_metadata:
+        payload["speaker"] = dict(request.speaker_metadata)
+    if request.channel_metadata:
+        payload["channel"] = dict(request.channel_metadata)
     if request.local_reply:
         payload["local_reply"] = request.local_reply
     if request.transcript:
@@ -4108,6 +4118,10 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
         payload["oracle_text_source"] = oracle_text_source
     if metadata.get("kame_user_id"):
         payload["user_id"] = str(metadata.get("kame_user_id"))
+    if isinstance(metadata.get("kame_speaker"), Mapping):
+        payload["speaker"] = dict(metadata.get("kame_speaker") or {})
+    if isinstance(metadata.get("kame_channel"), Mapping):
+        payload["channel"] = dict(metadata.get("kame_channel") or {})
     if metadata.get("kame_route_confidence") is not None:
         payload["route_confidence"] = metadata.get("kame_route_confidence")
     if metadata.get("kame_local_reply"):
