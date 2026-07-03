@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from scripts.voiceops_spark_matrix import build_matrix, parse_args, refresh_spark_source_hashes, write_matrix
+from scripts.voiceops_spark_matrix import (
+    build_matrix,
+    parse_args,
+    refresh_spark_source_hashes,
+    write_evidence_scaffold,
+    write_matrix,
+)
 
 
 SOURCE_KEYS_BY_ARTIFACT = {
@@ -382,6 +388,25 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert "collector_attestation" in template["evidence"][0]
     assert template["evidence"][-1]["kind"] == "voiceops_spark_stack_smoke"
     assert "replace null metrics" in template["evidence"][0]["notes"]
+
+
+def test_spark_scaffold_removes_stale_example_sources_but_keeps_measured_sources(tmp_path):
+    sources_dir = tmp_path / "spark-benchmark-scaffold" / "sources"
+    sources_dir.mkdir(parents=True)
+    stale_example = sources_dir / "reflex-gemma4-e2b-raw.json"
+    stale_example.write_text(json.dumps({"example_only": True, "redacted": True}), encoding="utf-8")
+    measured_extra = sources_dir / "operator-measured-extra.json"
+    measured_extra.write_text(json.dumps({"example_only": False, "redacted": True}), encoding="utf-8")
+
+    paths = write_evidence_scaffold(tmp_path)
+
+    assert not stale_example.exists()
+    assert measured_extra.exists()
+    assert Path(paths["scaffold_source_reflex-moshi-s2s"]).exists()
+    scaffold = json.loads(Path(paths["evidence_scaffold"]).read_text(encoding="utf-8"))
+    source_refs = {item["source_artifact"] for item in scaffold["evidence"]}
+    assert "sources/reflex-gemma4-e2b-raw.json" not in source_refs
+    assert "sources/reflex-moshi-s2s-raw.json" in source_refs
 
 
 def test_spark_matrix_validates_matching_evidence(tmp_path):

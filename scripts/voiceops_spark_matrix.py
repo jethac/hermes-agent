@@ -1205,6 +1205,14 @@ def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _is_example_scaffold_source(path: Path) -> bool:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and payload.get("example_only") is True
+
+
 def _markdown(matrix: dict[str, Any]) -> str:
     lines = [
         "# VoiceOps DGX Spark Model Matrix",
@@ -1524,6 +1532,12 @@ def write_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
         "tts-magpie-local": "tts-magpie-local-raw.json",
         STACK_SMOKE_KIND: "all-local-stack-smoke-raw.json",
     }
+    expected_source_names = set(source_names.values())
+    for stale_source in sources_dir.glob("*.json"):
+        if stale_source.name in expected_source_names:
+            continue
+        if _is_example_scaffold_source(stale_source):
+            stale_source.unlink()
     paths: dict[str, Path] = {}
     for item in scaffold["evidence"]:
         source_key = str(item.get("candidate_id") or item.get("kind") or "unknown")
