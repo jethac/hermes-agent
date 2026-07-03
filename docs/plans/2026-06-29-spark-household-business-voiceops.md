@@ -48,9 +48,16 @@ For the long-term household/business appliance, treat Nemotron 3 Super as the fi
 
 Target KAME layout:
 
-- Reflex/interface: Gemma 4 E2B or E4B-style audio-native model, always warm, optimized for turn-taking and routing.
+- Reflex/interface: a very fast always-warm voice model or classifier path,
+  such as Moshi/PersonaPlex-class S2S, optimized for turn-taking, barge-in,
+  immediate acknowledgement, and rough transcript hypotheses.
+- Interpreter/evidence: Gemma 4 E2B/E4B/12B-style audio-multimodal model,
+  run in parallel after each speech cut to adjudicate raw audio plus the reflex
+  transcript hypothesis into corrected transcript, multilingual intent,
+  entities, confidence, and oracle request patches.
 - Oracle/brain: whatever Hermes `/model` selects, with Nemotron 3 Super as the first preferred local NVIDIA candidate to evaluate on DGX Spark.
-- Speech: local ASR/TTS where practical, with ASR used as oracle evidence rather than reflex input in full KAME mode.
+- Speech: local ASR/TTS where practical, with classic ASR used as fallback or
+  additional oracle evidence rather than reflex input in full KAME mode.
 - Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
 The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.
@@ -91,6 +98,26 @@ The same operator should be reachable through multiple surfaces:
 - WhatsApp for mobile commands and low-friction follow-up
 - phone/SMS for urgent escalation and non-Discord stakeholders
 
+Discord is the first live surface, not the product boundary. The product
+boundary is a KAME session protocol that can be driven by Discord, VoiceClaw,
+OpenClaw Talk, phone/SIP, WhatsApp voice notes, desktop mic/speaker, or future
+clients. Transport adapters should normalize channel-specific audio, text,
+playback, interruption, authorization, and handoff events into the same internal
+session contract before any reflex or oracle policy runs.
+
+VoiceClaw/OpenClaw lessons to absorb:
+
+- a realtime voice frontend can act as a true reflex if it has only a narrow
+  `ask_brain`-style bridge to the capable agent
+- that bridge must become typed Hermes oracle jobs rather than an unstructured
+  chat completion if we want cancellation, status, audit, and spend safety
+- the live frontend should keep recent turns compact, summarize older turns,
+  and avoid carrying the whole Hermes context into the voice loop
+- mobile/watch/desktop/phone surfaces matter; Hermes should expose a stable
+  KAME adapter API instead of making every client embed Discord-specific logic
+- telephony is a first-class adapter with codec, jitter, playback, transfer,
+  DTMF, authorization, and redaction concerns, not a thin webhook script
+
 ### Money and Provisioning
 
 The agent should eventually operate against real economic rails:
@@ -105,16 +132,48 @@ The agent should eventually operate against real economic rails:
 
 ### Reflex
 
-The reflex is the lightweight KAME interface model. It is optimized for low-latency voice behavior, not deep reasoning.
+The reflex is the lightweight KAME interface model. It is optimized for
+low-latency voice behavior, not deep reasoning or verbatim transcription.
 
 Target:
 
-- Gemma 4 E2B or E4B-style audio-native model on DGX Spark
+- Moshi/PersonaPlex-class S2S, a small local realtime model, or an even simpler
+  tuned timing/classifier path on DGX Spark or the local gateway host
 - owns turn-taking, floor control, barge-in, short acknowledgements, intent triage, and local conversational glue
+- emits a rough transcript hypothesis when available
 - may answer locally only for low-risk interface turns
 - sends structured requests to the oracle for real work
 
 The reflex is not the brain and should not gain broad tool authority early.
+The reflex transcript is a hypothesis, not durable truth.
+
+### Interpreter
+
+The interpreter is the audio-understanding evidence lane. Gemma 4 is the
+preferred candidate here because its audio-multimodal path can reason over a
+bounded utterance, compare that raw audio against the reflex transcript
+hypothesis, and produce higher-quality multilingual evidence for the oracle
+without blocking the user's immediate acknowledgement.
+
+Target inputs:
+
+- clipped raw audio segment and timing metadata
+- reflex transcript hypothesis, if the reflex produced one
+- optional classic ASR transcript hypothesis
+- reflex route, acknowledgement, and "interface already said" text
+- current oracle job/status context
+
+Target outputs:
+
+- corrected transcript or transcript alternatives
+- normalized intent and route confidence
+- entities, numbers, names, URLs, code terms, and language notes
+- disagreement flags between audio, reflex transcript, and classic ASR
+- oracle request patch or clarification recommendation
+
+The interpreter may attach evidence to an oracle job before it starts, or submit
+a patch/update if the oracle job is already running. It must not stall the
+reflex acknowledgement, and it must not receive broad Hermes tools.
 
 ### Oracle
 
@@ -135,11 +194,21 @@ The speech layer should support the KAME design without turning back into a simp
 Target:
 
 - VAD/endpointer drives turn cuts
-- audio-native reflex consumes user audio in full KAME mode
-- dedicated ASR is an oracle-verbatim evidence lane, not the reflex driver
+- the fast reflex consumes live audio for floor control and immediate response
+- Gemma interpreter consumes clipped audio plus reflex transcript hypothesis for
+  multilingual correction and oracle evidence
+- dedicated classic ASR is an optional oracle-verbatim evidence lane and
+  fallback, not the reflex driver
 - local Nemotron Speech or equivalent streaming ASR for durable transcript evidence
 - local Magpie/Riva-style TTS when available
 - Cartesia or similar cloud TTS remains an acceptable bring-up fallback
+
+The voice runtime must distinguish transport state from agent state. VAD,
+semantic endpointing, playback buffers, provider response ids, and carrier
+playout cursors are session-layer facts. The reflex/oracle policy consumes
+normalized events and must not depend on Discord packet timing, Twilio media
+frames, provider conversation state, or a particular hosted realtime API as the
+source of truth.
 
 ### Skills and Tools
 
@@ -155,6 +224,22 @@ Voice turns must not carry the full Hermes tool surface by default. The normal D
 - actual tool invocation still happens in the real Hermes oracle session, so approvals, guardrails, NemoClaw checks, audit logging, and session state remain authoritative
 
 The first implementation target is a conservative feature flag: `tools.tool_search.defer_core: all`, used with `tools.tool_search.enabled: 'on'`. This collapses core Hermes tools behind the same bridge used for MCP/plugin progressive disclosure. A later VoiceOps milestone should add the separate ephemeral router so the main oracle sees only the selected small tool surface for that turn, instead of needing to call `tool_search` itself.
+
+For realtime voice, tool exposure should also carry voice UX metadata:
+
+- `latency_class`: fast, medium, slow, streaming, or background
+- `requires_confirmation`: whether the user must approve before execution
+- `interruptible`: whether barge-in can safely stop the operation or only stop
+  speech playback
+- `side_effect`: none, local_write, network, spend, provisioning, message, or
+  call
+- `redaction_policy`: what may be spoken, shown in Discord text, or stored in
+  audit logs
+- `fallback_speech`: concise language the reflex can say while the oracle,
+  NemoClaw, or a skill works
+
+This copies the useful part of VoiceClaw/OpenClaw's `ask_brain` split without
+letting the realtime model directly inherit the whole Hermes tool surface.
 
 Initial important skills:
 
@@ -299,9 +384,11 @@ Make `/voice join` usable as the daily control surface:
 
 - stable Discord receive/playback lifecycle
 - real barge-in based on speech energy, not silent packet arrival
-- KAME fallback state visible when audio-native reflex is unavailable
+- KAME fallback state visible when reflex, interpreter, ASR, or TTS paths are
+  unavailable
 - voice replies short by default
-- latency metrics from user speech end to reflex response, oracle response, and TTS playback
+- latency metrics from user speech end to reflex response, interpreter evidence,
+  oracle response, and TTS playback
 - voice capability prompt context so Hermes does not claim it cannot hear or speak
 
 Headless command:
@@ -526,6 +613,9 @@ Make the same operator reachable beyond Discord:
 - generate and review the multi-channel policy artifact before enabling new egress surfaces
 - WhatsApp Cloud setup path validated for command and approval messages
 - phone/SMS path designed around Twilio or equivalent provisioning
+- VoiceClaw/OpenClaw-compatible KAME bridge shape documented so external
+  realtime clients can submit user turns, receive reflex speech/status, and
+  track oracle jobs without bypassing Hermes authority
 - channel-specific authorization rules
 - escalation policy for urgent household/business events
 - consistent audit IDs across Discord, WhatsApp, and phone/SMS
@@ -550,10 +640,12 @@ The policy artifacts are static and headless. They read no secrets, perform no n
 Move as much of the stack as possible onto one DGX Spark:
 
 - local reflex model launch evidence
+- local Gemma interpreter launch evidence
 - local Hermes oracle endpoint registered through normal `/model` selection
 - Nemotron 3 Super evaluated as the preferred local NVIDIA brain
 - local ASR/TTS bridge evidence
-- all-local smoke with oracle, interface, ASR, TTS, and sidecar together
+- all-local smoke with oracle, reflex, interpreter, ASR, TTS, and sidecar
+  together
 - benchmark evidence accepted by the generated DGX Spark matrix validator
 
 Headless command:
@@ -749,11 +841,14 @@ Long term:
 
 - the system can run daily household and business operations from one DGX Spark with minimal cloud dependence
 - Hermes remains model-flexible through `/model`
+- VoiceClaw/OpenClaw-style realtime frontends can use Hermes as the durable
+  KAME backend without gaining direct spend, shell, file, or memory authority
 - the user can trust the system because every action is scoped, approved, reversible where possible, and audited
 
 ## Non-Goals
 
 - building a generic voice assistant detached from real operations
+- making Discord or any one sidecar the permanent VoiceOps architecture boundary
 - creating a separate VoiceOps oracle model setting
 - allowing the reflex broad tool or spend authority
 - blocking the hackathon proof on fully local Gemma audio serving

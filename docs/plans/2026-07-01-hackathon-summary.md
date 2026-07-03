@@ -17,7 +17,8 @@ Once provisioned, Hermes calls the user's phone and continues with the same cont
 We are building a voice-first operations layer for Hermes Agent:
 
 - **Realtime Discord voice interface** for speaking to Hermes in a live channel.
-- **KAME-style voice architecture** with a low-latency reflex/interface model in front of Hermes' normal oracle model.
+- **KAME-style voice architecture** with a low-latency reflex, a Gemma
+  interpreter/evidence lane, and Hermes' normal oracle model.
 - **Local model serving on PGX/Spark-class hardware** using vLLM containers for reproducible iteration.
 - **Hermes-native oracle selection** where `/model` and the existing Hermes model configuration remain authoritative.
 - **Stripe-enabled spending and provisioning** so Hermes can pay for tools and services under explicit user-granted limits.
@@ -35,16 +36,31 @@ First, Discord handles live voice I/O. The Hermes gateway joins a voice channel,
 
 Second, the voice sidecar and streaming speech bridge handle speech conversion and playback. Today this path uses the local realtime voice sidecar plus the Cartesia bridge for streaming STT/TTS.
 
-Third, the PGX model server runs vLLM containers:
+Third, the local model server runs reproducible model containers:
 
-- **Reflex/interface model:** `gemma-4-e2b-reflex` at `http://100.113.98.11:8001/v1`
-- **Primary oracle model:** `nemotron-3-super-oracle` at `http://100.113.98.11:8004/v1`
-- **Optional fallback model:** `gemma-4-12b-oracle` at `http://100.113.98.11:8002/v1` if Super is unavailable or too slow for the demo window.
-- **Optional lightweight NVIDIA model:** `nemotron-3-nano-oracle` at `http://100.113.98.11:8003/v1` for later experiments, not the current live demo path.
+- **Fast reflex model:** Moshi/PersonaPlex-class S2S or smaller floor-control
+  model for barge-in, immediate acknowledgement, and rough transcript
+  hypotheses.
+- **Interpreter/evidence model:** Gemma 4 E2B/E4B/12B-style audio-multimodal
+  model for raw-audio review, multilingual correction, entity extraction, and
+  oracle request patches.
+- **Primary oracle model:** Nemotron 3 Super or the current Hermes active model
+  selected through the normal `/model` path.
+- **Optional fallback model:** a hosted or smaller local model if Super is
+  unavailable or too slow for the demo window.
 
-Hermes itself remains the source of truth for the oracle. There is no separate `oracle_model` setting in the intended design; the oracle is whatever Hermes' active model is. For the hackathon setup, Hermes' active model is pointed at the PGX-hosted Nemotron 3 Super endpoint for the sponsor-aligned serious planning path.
+Hermes itself remains the source of truth for the oracle. There is no separate
+`oracle_model` setting in the intended design; the oracle is whatever Hermes'
+active model is. For the hackathon setup, Hermes' active model should point at
+Nemotron 3 Super when that endpoint is available, or a clearly labeled fallback
+through the same normal model path.
 
-The previous Gemma 12B + Nemotron Nano mixture-of-agents path is no longer the live demo strategy. It added too much orchestration latency to voice turns and made response timing harder to reason about. The demo path is now direct: Gemma E2B handles the low-latency reflex/interface loop, and Hermes' active model, currently Nemotron 3 Super, handles oracle work through the normal Hermes model path.
+The previous Gemma 12B + Nemotron Nano mixture-of-agents path is no longer the
+live demo strategy. It added too much orchestration latency to voice turns and
+made response timing harder to reason about. The demo path is now tiered:
+the reflex acknowledges immediately, Gemma interprets the raw audio plus the
+reflex transcript hypothesis in parallel, and Hermes' active model handles
+oracle work through the normal Hermes model path.
 
 ## Why This Fits The Hackathon
 
@@ -64,13 +80,21 @@ It also aligns with the sponsor stack:
 
 The final voice architecture should separate low-latency conversational reflexes from slower full-agent reasoning:
 
-- The **reflex** model handles immediate acknowledgement, intent shaping, and concise narration of what it is asking the oracle to do.
+- The **reflex** model handles immediate acknowledgement, floor control,
+  rough transcript hypotheses, and concise narration of what it is asking the
+  oracle to do.
+- The **interpreter** model, preferably Gemma 4, reviews raw audio plus the
+  reflex hypothesis and produces corrected transcript, multilingual intent,
+  entities, confidence, and oracle request patches.
 - The **oracle** is Hermes' active model and handles tool use, memory, business logic, and longer reasoning.
 - **Heavy requests** go directly to Hermes' active oracle model. For the hackathon target, that is Nemotron 3 Super, not an MoA wrapper.
 - The reflex should produce real transcript-visible messages, not hidden filler audio.
 - Voice output should be fragmented into sentence-level chunks so text and speech arrive incrementally instead of waiting for a large monolithic response.
 
-The immediate hackathon build should use Gemma E2B's native-audio reflex path where it is stable. ASR is a fallback and evidence lane, not the normal reflex input path.
+The immediate hackathon build should favor the fastest stable reflex path for
+acknowledgement and turn-taking. Gemma should be used as an interpreter/evidence
+lane when available. External STT is fallback or additional evidence, not the
+normal reflex driver.
 
 ## Demo Script
 
@@ -99,18 +123,23 @@ The immediate hackathon build should use Gemma E2B's native-audio reflex path wh
 ## Known Constraints
 
 - Nemotron Super is memory-heavy on the PGX/GB10 and has a long cold-start path, but it is the preferred sponsor-aligned oracle for this demo shape.
-- Running Gemma E2B and Nemotron Super concurrently is the current target. Gemma 12B and Nemotron Nano should stay stopped unless they are being used for fallback or measurement.
+- Running a fast reflex, Gemma interpreter, and Nemotron Super concurrently is
+  the current target when hardware allows. Extra oracle candidates should stay
+  stopped unless they are being used for fallback or measurement.
 - vLLM reports model context according to the configured serving cap, not necessarily the model's architectural maximum.
 - Long context and concurrency trade off directly. For a single-user demo, lower concurrency is the right choice.
 - The current Nemotron Super vLLM path may leak reasoning-style text or
   `</think>` markers into assistant content. The demo path must filter this
   before Discord text or TTS output.
-- Native-audio Gemma E2B reflex is the target input path. External STT should be retained only as fallback/evidence, not as the normal reflex driver.
+- Gemma is the target interpreter/evidence path. External STT should be
+  retained only as fallback or additional evidence, not as the normal reflex
+  driver.
 - The sidecar and gateway must run from the same worktree/version to avoid realtime voice protocol mismatches.
 
 ## Immediate Build Priorities
 
-1. Stabilize the PGX vLLM stack at `64K` context for Gemma E2B plus Nemotron 3 Super with single-user concurrency.
+1. Stabilize the local model stack for fast reflex, Gemma interpreter, and
+   Nemotron 3 Super with single-user concurrency.
 2. Keep the Hermes model interface normal: `/model` and `model.*` config select the oracle.
 3. Keep MoA disabled in the live voice path unless a measured future variant proves it improves quality without damaging latency.
 4. Make reflex acknowledgements real, visible, sentence-fragmented messages.

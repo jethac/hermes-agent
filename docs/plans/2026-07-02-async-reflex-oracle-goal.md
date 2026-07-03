@@ -12,8 +12,10 @@ successor_design: docs/design/full-kame-style-realtime-voice.md
 ## Summary
 
 The KAME voice branch has the right authority boundary: the human talks to a
-fast reflex/interface model, while Hermes' active oracle model owns real work:
-tools, memory, files, approvals, planning, and durable outcomes.
+fast reflex/interface model, a parallel interpreter lane turns raw audio plus
+reflex transcript hypotheses into corrected multilingual evidence, and Hermes'
+active oracle model owns real work: tools, memory, files, approvals, planning,
+and durable outcomes.
 
 The next gap is runtime behavior. The reflex and oracle are not yet truly async.
 The user should be able to keep talking to the reflex while one or more oracle
@@ -49,6 +51,17 @@ The reflex is the live interface. It owns:
 - task status narration
 - priority/cancel/update requests from the user
 
+The interpreter is the evidence lane. It owns:
+
+- raw clipped audio review after each speech cut
+- comparison against the reflex transcript hypothesis
+- optional comparison against classic ASR hypotheses
+- corrected transcript alternatives
+- multilingual intent, entities, numbers, names, URLs, code terms, and language
+  notes
+- bounded oracle request patches that can arrive after the reflex
+  acknowledgement
+
 The oracle is the worker. It owns:
 
 - tool execution
@@ -67,6 +80,13 @@ user speaks -> reflex routes -> oracle runs -> live voice waits
 
 That is better isolated than direct realtime-provider tool use, but it is not
 yet the full KAME experience.
+
+VoiceClaw and OpenClaw show a useful adjacent pattern: the realtime voice
+frontend can call an `ask_brain` or `agent_consult` tool, return a quick
+placeholder, and inject the real answer later. Hermes should borrow that UX
+shape, but not its weaker durability model. In this goal, `ask_brain` becomes a
+typed oracle job with capacity, status, cancellation, relevance checks, audit
+records, and durable/non-durable transcript rules.
 
 ## User Experience Goal
 
@@ -101,6 +121,13 @@ An oracle job is a structured unit of backend Hermes work created by a reflex
 route. It is not the same thing as a spoken turn. One spoken conversation can
 create many oracle jobs.
 
+For external realtime clients, an oracle job is also the compatibility target
+for VoiceClaw/OpenClaw-style brain calls. A client may submit an
+`ask_brain`-shaped request, but Hermes must translate it into the same
+`OracleJob` shape used by Discord KAME sessions before it reaches the oracle.
+No external frontend should receive direct Hermes tools as a shortcut around
+the job manager.
+
 Minimum fields:
 
 - `job_id`
@@ -112,6 +139,11 @@ Minimum fields:
 - `route`
 - `oracle_text`
 - `reflex_intent`
+- `reflex_transcript_hypothesis`
+- `interpreter_corrected_transcript`
+- `interpreter_confidence`
+- `interpreter_entities`
+- `interpreter_disagreements`
 - `interface_already_said`
 - `requested_response_style`
 - `metadata`
@@ -199,6 +231,11 @@ Example:
 The reflex can use this to answer status questions and decide whether to accept
 new work, ask for prioritization, or suggest cancellation.
 
+The interpreter gets a different compact view: the current turn id, clipped
+audio reference, reflex hypothesis, optional ASR hypothesis, active job id, and
+the acknowledgement already spoken. It does not need tool schemas or broad
+Hermes state.
+
 ## Routing Behavior
 
 ### `local`
@@ -224,6 +261,10 @@ User: "Check the Stripe provisioning logs and tell me if the VoIP account is rea
 Reflex: "I'm checking the provisioning logs."
 Scheduler: creates oracle job
 ```
+
+If Gemma interpreter evidence arrives before the job starts, the scheduler folds
+it into the job request. If it arrives after the job starts, the job manager
+attaches it as a bounded update for tool-critical checks and final audit.
 
 ### `oracle_direct`
 
@@ -276,6 +317,8 @@ Durable Hermes history should record:
 - user-visible cancellations
 - approvals and executed tool calls
 - final spoken summaries when they materially differ from raw oracle output
+- interpreter corrections only when they materially affect the durable user
+  request, a tool argument, an approval, or a final outcome
 
 Durable Hermes history should not record:
 
@@ -284,6 +327,15 @@ Durable Hermes history should not record:
 - cancelled drafts
 - stale late oracle output
 - every status poll
+- reflex transcript hypotheses unless promoted by interpreter/oracle evidence
+
+The voice-session task log should still retain enough event detail to reconstruct
+what happened without bloating the oracle context: normalized frontend events,
+oracle job lifecycle, progress/status fragments, playback cursor updates,
+barge-in/truncation events, and cross-channel handoff summaries. This is the
+lesson from hosted voice stacks and VoiceClaw-style transcript sync: provider
+conversation state is not the authoritative ledger, because it may include text
+the user never heard or omit transport buffers that were cleared after barge-in.
 
 ## Proposed Implementation Shape
 
@@ -323,6 +375,12 @@ reflex payload -> KameOracleRequest -> OracleJobManager.submit(...)
 The reflex response path should return immediately after acknowledgement and
 job creation.
 
+Interpreter evidence must be late-bindable. The job manager should accept
+`InterpreterEvidence` for queued jobs and fold it into the oracle request before
+execution starts. For running jobs, it should attach the evidence as a bounded
+update and record whether the oracle consumed it before any irreversible tool or
+spend action.
+
 ### 3. Stream Oracle Job Events Back To The Reflex Session
 
 Initial events:
@@ -330,15 +388,20 @@ Initial events:
 - `oracle.job.accepted`
 - `oracle.job.queued`
 - `oracle.job.started`
+- `oracle.job.interpreter_evidence_attached`
+- `oracle.job.interpreter_evidence_late`
 - `oracle.job.progress`
 - `oracle.job.waiting_for_approval`
 - `oracle.job.completed`
 - `oracle.job.failed`
 - `oracle.job.cancel_requested`
 - `oracle.job.cancelled`
+- `oracle.job.result_suppressed`
 
 These events should be visible to `/voice status`, smoke reports, and the
-reflex status view.
+reflex status view. The same event stream should be available to future
+VoiceClaw/OpenClaw-compatible clients so they can show progress and receive
+terminal results without scraping Discord text.
 
 ### 4. Add Reflex Commands Over Task State
 
@@ -352,6 +415,18 @@ The reflex needs safe internal operations, not general tools:
 
 These operations modify the oracle job manager only. They do not execute
 external side effects.
+
+### 4a. Add Interpreter Evidence Updates
+
+The interpreter needs a narrow job-manager operation:
+
+- attach corrected transcript, entities, confidence, and disagreement flags to a
+  job
+- patch queued oracle text before worker execution starts
+- mark running jobs with late evidence and expose whether it was consumed
+- never execute external side effects
+
+This operation is internal to the KAME session and does not expose Hermes tools.
 
 ### 5. Gate Speech From Completed Jobs
 
@@ -371,6 +446,24 @@ is still relevant. Operators can disable unsolicited terminal summaries with
 `oracle_jobs.speak_terminal_results: false`; in that mode completed results stay
 durable and visible through reflex status questions, but they are not spoken
 automatically.
+
+### 6. Normalize Frontend Brain Calls Into Oracle Jobs
+
+Add a compatibility adapter for realtime frontends that already expose an
+`ask_brain` or `agent_consult` concept.
+
+Responsibilities:
+
+- accept compact user intent, optional transcript evidence, frontend session id,
+  and the text already spoken by the reflex
+- create a normal oracle job with a Hermes session id and audit id
+- return an immediate accepted/queued/status placeholder to the frontend
+- stream job progress, failure, cancellation, and terminal result events back
+  through the same KAME event stream
+- reject or ignore requests for direct Hermes tool schemas from the frontend
+
+This keeps VoiceClaw/OpenClaw interoperability aligned with Hermes authority
+instead of adding a second hidden agent path.
 
 ## Acceptance Criteria
 
@@ -442,12 +535,20 @@ Add tests for the oracle job manager:
 Extend realtime voice tests:
 
 - `defer` route submits background job and returns acknowledgement promptly
+- interpreter evidence arriving after acknowledgement attaches to the same job
 - `oracle_direct` submits job without blocking next reflex turn
 - local turn during running oracle job is handled locally
 - status question during running jobs uses job manager state
 - completed job emits a speakable summary event
 - barge-in during job-result speech stops playback but does not cancel job
 - explicit cancellation during job run cancels only the requested job
+- playback cursor/truncation state prevents unheard generated text from being
+  committed as durable assistant history
+- reflex transcript hypotheses are not durable unless promoted by interpreter
+  or oracle-visible outcome
+- interpreter correction can update a queued job before execution starts
+- late interpreter correction is recorded for a running job without creating a
+  duplicate oracle job
 
 ### Discord Tests
 
@@ -458,17 +559,37 @@ Extend Discord realtime tests:
 - leaving the voice channel requests cancellation/drain for active jobs
 - sidecar crash marks active jobs failed/cancelled without hanging gateway
 
+### External Frontend Tests
+
+Add KAME frontend compatibility tests:
+
+- VoiceClaw-style `ask_brain` request creates an oracle job, not a direct tool
+  call
+- accepted/queued placeholder returns before the oracle completes
+- completed result streams back as a terminal job event and can be summarized
+  for speech
+- cancellation from the frontend cancels the matching job only
+- frontend transcript sync does not write status polls or placeholders into
+  durable Hermes chat history
+- direct file, shell, memory, payment, and provisioning tools are not exposed to
+  the frontend realtime model
+
 ### Evidence
 
 Add a local smoke report mode that proves:
 
 - four fake oracle jobs can run concurrently
 - reflex still accepts a local "can you hear me?" turn while jobs run
+- Gemma interpreter evidence can arrive after the reflex acknowledgement and
+  before/after oracle job start without blocking the voice loop
 - queued oracle job updates are visible in the reflex/status event stream
 - one job can be cancelled while others complete
 - queued oracle jobs can be cancelled before worker execution
 - late cancelled output is not played
 - completed oracle results are visible in a later reflex status query
+- an external KAME frontend fixture can submit a brain request, receive an
+  acknowledgement, observe job status, and receive the final result without
+  direct tool authority
 
 For real DGX Spark evidence:
 
@@ -531,10 +652,13 @@ mistaken for free capacity.
 2. Wire KAME `defer` / `oracle_direct` routes to job submission.
 3. Add status and cancellation events.
 4. Add speech gating for completed/cancelled jobs.
-5. Add Discord `/voice status` job visibility.
-6. Add local fake-oracle smoke evidence.
-7. Validate `max_concurrent=4` on DGX Spark / Nemotron-3 Super.
-8. Tune defaults and update the full KAME design with measured capacity.
+5. Add interpreter evidence attachment and late-update semantics.
+6. Add Discord `/voice status` job visibility.
+7. Add local fake-oracle smoke evidence.
+8. Add external KAME frontend compatibility tests for VoiceClaw/OpenClaw-style
+   brain requests.
+9. Validate `max_concurrent=4` on DGX Spark / Nemotron-3 Super.
+10. Tune defaults and update the full KAME design with measured capacity.
 
 ## Definition Of Done
 

@@ -3,7 +3,8 @@
 Status: design draft
 Target branch: `wip/full-kame-reflex-voice`
 Target deployment: one DGX Spark, with cloud providers allowed only as bring-up fallbacks
-Preferred local reflex: Gemma 4 E2B
+Preferred local reflex: Moshi/PersonaPlex-class fast S2S or smaller timing model
+Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal
 Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to validate
 
 ## Purpose
@@ -13,9 +14,16 @@ Hermes currently has KAME-compatible realtime voice plumbing: Discord voice tran
 Full KAME-style means:
 
 1. The human speaks to a fast interface model, also called the reflex.
-2. The reflex owns the realtime conversation loop: listening, interruption, acknowledgements, short local replies, turn shaping, and escalation decisions.
-3. Hermes's oracle remains the brain: tools, memory, files, long reasoning, project context, and durable task execution.
-4. The reflex summarizes and brokers requests to the oracle instead of forcing every spoken fragment through the full Hermes context.
+2. The reflex owns the realtime conversation loop: listening, interruption,
+   acknowledgements, short local replies, floor control, and rough transcript
+   hypotheses.
+3. A parallel interpreter lane, preferably Gemma 4 audio-multimodal, reviews
+   clipped raw audio plus the reflex transcript hypothesis to produce corrected
+   multilingual evidence, entities, confidence, and oracle request patches.
+4. Hermes's oracle remains the brain: tools, memory, files, long reasoning,
+   project context, and durable task execution.
+5. The reflex and interpreter broker compact requests to the oracle instead of
+   forcing every spoken fragment through the full Hermes context.
 
 The goal is a voice system that feels immediate while preserving Hermes's existing agent capabilities.
 
@@ -23,7 +31,10 @@ The goal is a voice system that feels immediate while preserving Hermes's existi
 
 This design relies on the following external model and serving assumptions:
 
-- Gemma 4 E2B supports text, image, and audio input, and produces text output.
+- Moshi/PersonaPlex-class S2S models can provide very low-latency floor
+  control and rough transcript hypotheses, but should not be trusted as durable
+  transcript truth or granted broad tools.
+- Gemma 4 E2B/E4B/12B supports text, image, and audio input, and produces text output.
 - Gemma 4 E2B/E4B use a USM-style Conformer audio encoder.
 - Gemma 4 audio input is bounded; Google's model card currently lists a 30 second audio limit.
 - vLLM exposes Gemma 4 multimodal serving controls through `--limit-mm-per-prompt`, including audio prompt limits and audio memory allocation controls.
@@ -40,45 +51,67 @@ These assumptions must be checked against the exact model checkpoint and runtime
 ## System Shape
 
 ```text
-Discord voice / desktop mic
+Discord voice / VoiceClaw / OpenClaw Talk / phone-SIP / desktop mic
   -> transport adapter
   -> KAME interface session
        -> streaming audio input
        -> VAD / turn detector
-       -> native audio encoder
-       -> reflex / interface LLM
+       -> fast reflex / floor-control model
+            -> immediate ack / local control / rough transcript hypothesis
+       -> interpreter lane
+            -> Gemma 4 audio model over raw clip + reflex transcript hypothesis
+            -> corrected transcript / entities / oracle request patch
        -> speech planner
        -> TTS or native speech output
        -> oracle router
-            -> optional oracle-verbatim ASR evidence
+            -> interpreter evidence
+            -> optional classic ASR evidence
             -> Hermes gateway / oracle session
             -> tools, MCP, memory, files, project context
        <- oracle hints, tool results, final answer
   -> mixer / playback / captions
 ```
 
-The existing Discord realtime sidecar can become the first KAME interface session host. The sidecar should remain transport-neutral enough that the same session engine can later serve desktop mic/speaker, web, or another realtime transport.
+The existing Discord realtime sidecar can become the first KAME interface
+session host. It must not become the architecture boundary. The durable boundary
+is a transport-neutral KAME session protocol that can be driven by Discord,
+VoiceClaw, OpenClaw Talk, telephony bridges, desktop mic/speaker, web, or future
+mobile clients.
+
+VoiceClaw and OpenClaw are useful reference points because their public
+architecture already resembles a prompt-mediated KAME split: a realtime voice
+frontend speaks to the user, then calls an `ask_brain` or
+`openclaw_agent_consult` style bridge for real agent work. Hermes should support
+that frontend shape, but strengthen the backend contract:
+
+- `ask_brain` maps to typed Hermes oracle jobs, not raw hidden chat turns
+- placeholder tool results map to explicit acknowledgement and job status events
+- injected brain results map to `oracle.job.completed` or `oracle.job.failed`
+  events with relevance checks before speech
+- frontend transcript sync maps to the Hermes voice-session ledger, not directly
+  to durable chat history
+- external realtime clients never gain direct file, shell, memory, payment, or
+  provisioning authority
+
+This lets VoiceClaw/OpenClaw-style clients become front doors for Hermes KAME
+without weakening the reflex/oracle authority boundary.
 
 ## Responsibilities
 
 ### Reflex / Interface Model
 
-The reflex is optimized for latency, turn-taking, and conversational control. It should be small enough to stay warm beside the oracle on the DGX Spark. The preferred local reflex candidate is Gemma 4 E2B because it is small, multimodal, supports native audio input on the small-model track, and has native function-calling support.
+The reflex is optimized for latency, turn-taking, and conversational control. It
+should be small enough to stay warm beside the oracle and interpreter on the DGX
+Spark, or cheap enough to run on the gateway host. The preferred reflex class is
+Moshi/PersonaPlex-style S2S or an even smaller timing/classifier path that can
+produce immediate acknowledgements and rough transcript hypotheses. Reflex
+quality is judged by floor control and response latency, not by long-form
+reasoning.
 
-Gemma 4 E2B should be treated as an audio-understanding and routing model, not as the whole speech stack. The public Gemma 4 model descriptions describe multimodal input with text output, so E2B can let the reflex consume audio directly and produce structured intent, but TTS is still needed for spoken output.
-
-Gemma 4 E2B's audio path should be treated as a buffered segment encoder, not as a streaming endpointer. It can ingest a cut audio segment and reason over it, but the realtime sensor remains VAD/endpointer logic. The hot path is:
-
-1. VAD detects speech start, speech energy, and speech end.
-2. The session cuts a bounded audio segment.
-3. Gemma 4 E2B encodes the segment and emits intent/routing output.
-4. The reflex either answers locally or escalates to the oracle.
-
-Mid-speech backchannels require rolling windows and should be deferred until the cut-segment path is stable.
-
-STT should not feed the reflex in normal full KAME mode. A second interpretation stream in front of the reflex creates disagreement risk between "what the reflex heard" and "what STT transcribed." The reflex's audio interpretation is the primary truth for turn routing and floor control.
-
-Dedicated ASR still has a role below the reflex: oracle-verbatim evidence. When a turn escalates to the oracle, Hermes may need the literal words, names, numbers, code identifiers, tool arguments, or JA/EN code-switched technical speech. For those cases, a dedicated multilingual ASR result can accompany the reflex's intent as evidence for the oracle. It must not override the reflex's routing decision, and it must be labeled as a transcript hypothesis rather than treated as ground truth.
+The reflex transcript is a hypothesis. It is useful because it arrives early and
+captures what the live model thought it heard, but it must not become the
+unquestioned transcript of record. The interpreter and optional ASR lanes may
+correct it before the oracle executes tool calls or external actions.
 
 It owns:
 
@@ -87,13 +120,14 @@ It owns:
 - immediate acknowledgements such as "one second", "got it", and "checking"
 - local handling for greetings, repeats, clarification questions, and low-risk conversational glue
 - short spoken style, normally one or two sentences unless the user asks for more
-- compression of spoken user intent into an oracle request
-- deciding whether the oracle is needed
+- first-pass spoken user intent and rough transcript hypothesis
+- deciding whether the oracle is likely needed
 - summarizing long oracle output into voice-appropriate responses
 - ephemeral conversational state for the live voice session
 
 It must not own:
 
+- durable transcript truth
 - durable memory writes
 - filesystem or project changes
 - MCP/tool execution authority
@@ -101,6 +135,56 @@ It must not own:
 - claims about capabilities that differ from Hermes's actual runtime state
 
 Initially the interface should have no direct tool access. If direct tools are added later, they should be narrow, explicitly scoped, and auditable.
+
+### Interpreter / Audio Evidence Model
+
+The interpreter is optimized for audio understanding, multilingual robustness,
+and oracle evidence quality. The preferred interpreter candidate is Gemma 4
+E2B/E4B/12B because it can process bounded raw audio with text context and
+produce structured text, while staying separate from the low-latency reflex and
+the durable Hermes oracle.
+
+Gemma 4 should be treated as an audio-understanding and routing/evidence model,
+not as the whole speech stack. The public Gemma 4 model descriptions describe
+multimodal input with text output, so Gemma can consume a clipped utterance plus
+the reflex's transcript hypothesis and produce corrected evidence, but TTS is
+still needed for spoken output.
+
+Gemma 4 E2B's audio path should be treated as a buffered segment encoder, not as a streaming endpointer. It can ingest a cut audio segment and reason over it, but the realtime sensor remains VAD/endpointer logic. The hot path is:
+
+1. VAD detects speech start, speech energy, and speech end.
+2. The session cuts a bounded audio segment.
+3. The reflex immediately acknowledges or controls the floor from live audio.
+4. The interpreter encodes the segment plus the reflex transcript hypothesis.
+5. The interpreter emits corrected transcript, intent, entities, disagreement
+   flags, and an oracle request patch.
+6. The oracle job uses the best available request and may accept late
+   interpreter evidence before irreversible tool execution.
+
+Mid-speech backchannels require rolling windows and should be deferred until the cut-segment path is stable.
+
+STT should not feed the reflex in normal full KAME mode. A second interpretation stream in front of the reflex creates disagreement risk between "what the reflex heard" and "what STT transcribed." The reflex's live audio path is the primary truth for floor control, but not for durable transcript or tool arguments.
+
+The interpreter receives:
+
+- clipped raw audio
+- reflex transcript hypothesis
+- optional classic ASR transcript hypothesis
+- language and speaker metadata
+- reflex route, acknowledgement, and "interface already said" text
+- current oracle job/status context
+
+The interpreter emits:
+
+- corrected transcript or transcript alternatives
+- normalized intent and route confidence
+- entities, numbers, names, URLs, code terms, and language notes
+- disagreement flags between raw audio, reflex transcript, and ASR
+- oracle request patch or clarification recommendation
+
+The interpreter may attach evidence to a queued oracle job before it starts or
+send a bounded update to a running oracle job. It must not stall the reflex
+acknowledgement and must not receive broad Hermes tools.
 
 ### Oracle
 
@@ -133,7 +217,7 @@ Modes:
 - `on_escalation`: ASR runs only after the reflex chooses `defer` or `oracle_direct`.
 - `speculative`: ASR may start at speech end in parallel with the reflex, but its output is discarded for local turns and never drives the reflex.
 - `debug`: ASR runs for comparison, captions, and diagnostics.
-- `fallback`: ASR feeds the reflex only when audio-native reflex serving is unavailable.
+- `fallback`: ASR feeds the reflex only when the realtime reflex audio path is unavailable.
 
 Default target mode: `on_escalation`.
 
@@ -153,16 +237,24 @@ Core input events:
 - `barge_in.detected`
 - `playback.started`
 - `playback.stopped`
+- `playback.cursor`
+- `transport.buffer.cleared`
 - `session.stop`
 
 Optional ASR/fallback evidence events:
 
 - `transcript.partial`
 - `transcript.final`
+- `reflex.transcript.hypothesis`
+- `interpreter.evidence.started`
+- `interpreter.evidence.final`
+- `interpreter.evidence.patch`
 
 These transcript events are disabled unless ASR mode is `on_escalation`,
 `speculative`, `debug`, or `fallback`. They must not make the normal KAME path
-STT-first.
+STT-first. Reflex transcript hypotheses and interpreter evidence are separate:
+the reflex hypothesis is early and non-durable by default, while interpreter
+evidence is the corrected audio-understanding artifact offered to the oracle.
 
 Interface events:
 
@@ -186,6 +278,7 @@ Oracle events:
 - `oracle.job.failed`
 - `oracle.job.cancel_requested`
 - `oracle.job.cancelled`
+- `oracle.job.result_suppressed`
 
 Output events:
 
@@ -194,6 +287,19 @@ Output events:
 - `assistant.audio.chunk`
 - `assistant.audio.end`
 - `session.metrics`
+
+Transport adapters may expose provider-specific ids, but those ids must be
+normalized at the session boundary. The internal ledger should be able to
+correlate:
+
+- audio chunk ids and timestamps
+- speech-start, speech-end, and semantic endpoint decisions
+- provider response ids or model item ids
+- playback cursor and actual heard/unheard text spans
+- barge-in, truncation, and downstream buffer-clear events
+- tool calls, NemoClaw checks, approvals, oracle job ids, and result events
+- handoff summaries between Discord, VoiceClaw, phone, WhatsApp, or other
+  clients
 
 Only final user intents, committed assistant responses, user-visible oracle job
 results, cancellations, approvals, and external-action outcomes should enter
@@ -242,11 +348,17 @@ The interface should submit a compact structured oracle job request:
   "route": "defer",
   "oracle_text": "backend Hermes request text",
   "reflex_intent": "compact live intent",
+  "reflex_transcript_hypothesis": "three to the power of seventeen",
+  "interpreter_corrected_transcript": "what is three to the power of seventeen",
+  "interpreter_confidence": 0.94,
+  "interpreter_disagreements": ["reflex transcript omitted request prefix"],
+  "interpreter_entities": [{"type": "math_expression", "value": "3^17"}],
+  "interpreter_language_notes": ["English utterance with math expression"],
   "transcript": "clean final user utterance",
-  "transcript_source": "asr_or_reflex",
+  "transcript_source": "interpreter",
   "transcript_confidence": 0.92,
   "intent": "normalized user request",
-  "intent_source": "reflex_audio",
+  "intent_source": "interpreter_audio",
   "mode": "voice",
   "urgency": "interactive",
   "interface_already_said": "One second, checking that now.",
@@ -261,7 +373,12 @@ The interface should submit a compact structured oracle job request:
 }
 ```
 
-This gives the oracle enough state to answer without receiving every partial audio event or every backchannel. When ASR is enabled, the request should carry both the reflex's interpreted intent and the ASR transcript hypothesis so the oracle can prefer literal wording for tool arguments while still preserving reflex routing context.
+This gives the oracle enough state to answer without receiving every partial
+audio event or every backchannel. The request should carry the reflex's
+early hypothesis, the interpreter's corrected evidence when available, and any
+classic ASR transcript hypothesis when enabled. The oracle should prefer
+interpreter/classic-ASR literal evidence for tool arguments while preserving the
+reflex route and "interface already said" context.
 
 ## Barge-In
 
@@ -279,10 +396,14 @@ On barge-in:
 
 1. stop mixer playback within the configured deadline
 2. cancel in-flight TTS generation for the interrupted response
-3. request oracle job cancellation only when the user explicitly cancels backend
+3. clear downstream transport/carrier playback buffers when the adapter has
+   queued audio beyond Hermes's mixer
+4. record the playback cursor so durable transcript can distinguish what was
+   spoken from what was only generated
+5. request oracle job cancellation only when the user explicitly cancels backend
    work or the job result is no longer useful
-4. keep already spoken text as ephemeral history
-5. do not commit interrupted assistant text as a full assistant response
+6. keep already spoken text as ephemeral history
+7. do not commit interrupted assistant text as a full assistant response
 
 Target: playback stop within 150 ms of confirmed speech.
 
@@ -290,8 +411,11 @@ Target: playback stop within 150 ms of confirmed speech.
 
 The design should measure every turn with monotonic timestamps. Minimum required spans:
 
+- transport receive time to normalized session event
 - speech boundary to bounded audio segment ready
 - audio segment ready to reflex decision
+- audio segment ready to interpreter evidence started/final
+- reflex hypothesis to interpreter correction
 - ASR transcript spans when ASR mode is enabled
 - oracle job accepted, queued, started, waiting, completed, failed, and cancelled
   lifecycle spans
@@ -302,6 +426,9 @@ The design should measure every turn with monotonic timestamps. Minimum required
 - first TTS audio to Discord playback start
 - speech boundary to first audible assistant audio
 - barge-in speech confirmed to playback stopped
+- playback stopped to downstream transport buffer cleared
+- user speech end to reflex acknowledgement
+- user speech end to oracle job accepted
 
 Targets for the DGX Spark implementation:
 
@@ -321,7 +448,8 @@ The end state is one DGX Spark running the complete stack:
 ```text
 Hermes gateway
 Realtime voice sidecar / KAME session manager
-Interface LLM server
+Fast reflex server
+Gemma interpreter server
 Oracle LLM server
 Streaming ASR server
 Streaming TTS server
@@ -339,29 +467,45 @@ Preferred first local oracle track:
 - OpenAI-compatible endpoint consumed by Hermes's existing model provider path
 - fixed context and KV settings chosen for interactive work, not maximum benchmark context
 
-Preferred interface model track:
+Preferred reflex track:
 
-- Gemma 4 E2B as the first reflex candidate
-- direct audio input to the reflex when the serving runtime supports it
-- text-only fallback through streaming STT when audio-native serving is unavailable or too slow
-- other small local models only if E2B fails latency, routing, or capability-honesty tests
-- the model must be good at routing, concise voice responses, and following the Hermes capability contract
+- Moshi/PersonaPlex-class S2S or a smaller timing/classifier model as the first
+  floor-control candidate
+- rough transcript hypothesis captured as early, non-durable context
+- text-only fallback through streaming STT only when the realtime reflex is
+  unavailable or too unstable
+- the model must be good at barge-in, immediate acknowledgements, concise voice
+  responses, and following the Hermes capability contract
+
+Preferred interpreter track:
+
+- Gemma 4 E2B/E4B/12B as the first audio-understanding evidence candidate
+- raw audio plus reflex transcript hypothesis as normal input
+- optional classic ASR transcript hypothesis as an additional comparison input
+- outputs corrected transcript, entities, language notes, confidence, and
+  oracle request patches
+- must be late-bindable so it can update queued/running oracle jobs without
+  blocking the reflex acknowledgement
 
 Preferred speech track:
 
 - keep Cartesia or another cloud bridge as the baseline while local speech is being validated
 - evaluate local streaming ASR and TTS separately before combining them
 - do not feed STT into the reflex in normal full KAME mode
-- use ASR as oracle-verbatim evidence for escalated turns, not as the realtime interface
+- use ASR as fallback or additional oracle-verbatim evidence for escalated
+  turns, not as the realtime interface
 - use STT as reflex input only for text-only fallback, explicit debug/audit sessions, or provider comparisons
-- do not adopt a native speech-to-speech model as the primary path until it beats the text-oracle KAME path on latency, controllability, and interruption behavior
+- do not treat native S2S as the entire agent unless it beats the three-lane
+  KAME path on latency, controllability, interpreter evidence quality, and
+  interruption behavior
 
 Resource policy:
 
 - reserve memory for the oracle first
-- interface model second
-- speech models third
-- prefer quantized interface/speech components over evicting the oracle
+- fast reflex second
+- Gemma interpreter third
+- speech models fourth
+- prefer quantized reflex/interpreter/speech components over evicting the oracle
 - keep provider processes separately restartable
 - fail closed to legacy voice or text when the KAME session cannot start
 
@@ -377,12 +521,24 @@ transport = "discord"
 [voice.realtime.interface]
 provider = "openai_compatible"
 base_url = "http://127.0.0.1:PORT/v1"
-model = "gemma-4-E2B-it"
+model = "moshi-or-personaplex-reflex"
 temperature = 0.2
 max_output_tokens = 160
 timeout_ms = 800
 audio_input = "auto"
-asr_mode = "on_escalation"
+
+[voice.realtime.interpreter]
+provider = "openai_compatible"
+base_url = "http://127.0.0.1:PORT/v1"
+model = "gemma-4-E2B-it"
+audio_input = "required"
+include_reflex_transcript_hypothesis = true
+include_asr_hypothesis = "when_available"
+timeout_ms = 2000
+late_bind_to_oracle_jobs = true
+
+[voice.realtime.asr]
+mode = "on_escalation"
 
 [voice.realtime.oracle]
 mode = "hermes_active_oracle"
@@ -427,10 +583,29 @@ log_turn_spans = true
 log_provider_spans = true
 ```
 
+External frontend compatibility should be configured separately from provider
+secrets:
+
+```toml
+[voice.realtime.frontend_api]
+enabled = false
+protocol = "kame_session_v1"
+allow_voiceclaw_style_bridge = true
+require_auth = true
+allow_direct_tools = false
+```
+
+When enabled, this API accepts normalized session events and emits the same
+reflex/oracle/job stream used by Discord. It is not a second agent loop and it
+does not expose Hermes tools directly.
+
 The GUI environment page should expose provider/model/base URL settings for:
 
-- interface model
-- interface audio input mode
+- reflex model
+- reflex audio input mode
+- interpreter model
+- interpreter audio input mode
+- interpreter late-binding policy
 - ASR mode: disabled, on_escalation, speculative, debug, or fallback
 - local oracle provider target and base URL, when registering a local endpoint for the active Hermes `/model` selection
 - ASR provider/model
@@ -459,25 +634,45 @@ Deliverables:
 - latency span logging for every stage
 - no regression in Discord join, leave, playback, STT, TTS, or fallback behavior
 
-### Phase 2: Interface LLM MVP
+### Phase 2: Fast Reflex MVP
 
-Insert the reflex between user turns and Hermes oracle calls. The preferred implementation is Gemma 4 E2B consuming cut audio segments directly. A text-only STT-fed path is acceptable only as a fallback while audio-native serving is unavailable or being validated.
+Insert a fast reflex between user turns and Hermes oracle calls. The preferred
+implementation is a Moshi/PersonaPlex-class S2S or smaller realtime model that
+can acknowledge, control floor state, classify local/defer/oracle_direct/clarify
+routes, and emit a rough transcript hypothesis. A text-only STT-fed path is
+acceptable only as a fallback while the realtime reflex is unavailable or being
+validated.
 
 Deliverables:
 
-- interface prompt and JSON routing schema
+- reflex prompt and JSON routing schema
 - local/defer/oracle_direct/clarify routing
 - short local replies through existing TTS path
 - structured oracle requests to Hermes
-- oracle-verbatim ASR lane for escalated turns
-- tests with fake interface and fake oracle
+- rough transcript hypothesis surfaced as non-durable evidence
+- tests with fake reflex and fake oracle
 - metrics showing which turns avoided the oracle
-- evidence comparing E2B direct-audio routing against STT-fed fallback routing
-- evidence comparing oracle outcomes with and without ASR transcript hypotheses
 
 This phase is the first point where the system can honestly be called KAME-style.
 
-### Phase 3: Streaming Interface Behavior
+### Phase 3: Gemma Interpreter Evidence Lane
+
+Add Gemma 4 as a parallel interpreter over the clipped raw audio plus the reflex
+transcript hypothesis. It should produce corrected transcript, entities,
+language notes, confidence, disagreement flags, and oracle request patches.
+
+Deliverables:
+
+- Gemma interpreter prompt and JSON evidence schema
+- raw audio plus reflex transcript hypothesis input path
+- optional classic ASR hypothesis comparison input
+- corrected transcript/entity output attached to oracle jobs
+- late-binding update path for queued/running oracle jobs
+- tests proving the interpreter does not block reflex acknowledgement
+- evidence comparing oracle outcomes with reflex-only, interpreter, and
+  interpreter-plus-ASR evidence
+
+### Phase 4: Streaming Interface Behavior
 
 Let the interface observe VAD state, audio segment lifecycle, and playback state without committing partials. Partial transcripts are available only in debug or fallback modes.
 
@@ -489,7 +684,7 @@ Deliverables:
 - spoken summary of long oracle output
 - configurable voice response length policy
 
-### Phase 4: DGX Spark Local Oracle
+### Phase 5: DGX Spark Local Oracle
 
 Run Hermes's oracle through a local OpenAI-compatible server on the Spark.
 
@@ -506,25 +701,29 @@ Deliverables:
 - proof that hosted Nemotron 3 Ultra or other hosted fallbacks are labeled as
   `/model` fallbacks and not counted as one-Spark readiness evidence
 
-### Phase 5: DGX Spark Local Interface And Speech
+### Phase 6: DGX Spark Local Reflex, Interpreter, And Speech
 
-Move the interface model, then ASR/TTS, onto the Spark.
+Move the reflex, interpreter, then ASR/TTS onto the Spark as resources allow.
 
 Deliverables:
 
-- Gemma 4 E2B reflex launch profile
-- local interface model benchmark matrix, with E2B as the default candidate
+- Moshi/PersonaPlex-class reflex launch profile
+- Gemma 4 interpreter launch profile
+- local reflex benchmark matrix
+- local interpreter benchmark matrix, with Gemma 4 as the default candidate
 - local ASR benchmark matrix
 - local TTS benchmark matrix
-- direct-audio reflex versus STT-fed fallback latency comparison
+- reflex acknowledgement latency comparison
+- interpreter correction latency and quality comparison
 - oracle-verbatim ASR latency and literal-accuracy comparison
 - all-local smoke test
 - cloud fallback retained behind config
 - one-command launch profile for the full local stack
 
-### Phase 6: Native Realtime Provider Watch
+### Phase 7: Native Realtime Provider Watch
 
-Evaluate native speech-to-speech or live multimodal providers only as alternatives to the interface session, not as replacements for Hermes's oracle contract.
+Evaluate native speech-to-speech or live multimodal providers as reflex or
+interpreter candidates, not as replacements for Hermes's oracle contract.
 
 Deliverables:
 
@@ -532,16 +731,40 @@ Deliverables:
 - tool/oracle integration proof
 - interruption test
 - capability honesty test
-- measured latency comparison
+- measured latency and evidence-quality comparison
+
+### Phase 8: External Realtime Frontend Bridge
+
+Make VoiceClaw/OpenClaw-style clients first-class frontends for Hermes KAME
+without bypassing Hermes authority.
+
+Deliverables:
+
+- KAME session API specification for audio/text input, playback control,
+  reflex replies, oracle job submission, status, cancellation, and terminal
+  results
+- compatibility map from `ask_brain`/`openclaw_agent_consult` to Hermes oracle
+  jobs
+- auth and scope rules for external realtime clients
+- transcript resume contract: recent turns verbatim, older turns summarized,
+  durable ledger remains authoritative
+- tests proving external clients cannot receive direct Hermes file, shell,
+  memory, payment, or provisioning tools
+- replay fixture showing Discord and an external frontend preserve one audit id
+  across the same VoiceOps task
 
 ## Test Plan
 
 Unit tests:
 
 - routing matrix for local/defer/oracle_direct/clarify
-- reflex direct-audio routing parity against transcript-fed routing
-- oracle request contains distinct reflex intent and ASR transcript fields
-- interface JSON schema validation
+- reflex rough transcript hypothesis is non-durable by default
+- interpreter evidence schema validation
+- interpreter compares raw audio, reflex transcript hypothesis, and ASR
+  hypothesis without treating any one as automatic truth
+- oracle request contains distinct reflex intent, interpreter evidence, and ASR
+  transcript fields
+- reflex JSON schema validation
 - oracle request construction
 - interrupted response commit behavior
 - barge-in RMS and duration gates
@@ -551,7 +774,11 @@ Unit tests:
 Integration tests:
 
 - fake Discord audio input to bounded audio segment to local reply
-- fake Discord audio input to oracle job request to spoken response
+- fake Discord audio input to reflex acknowledgement to interpreter evidence to
+  oracle job request
+- fake external KAME frontend input to oracle job request to spoken/status events
+- external frontend `ask_brain` compatibility path creates a Hermes oracle job
+  and never exposes direct tools
 - `defer` submits a background oracle job and returns acknowledgement promptly
 - `oracle_direct` submits a background oracle job without blocking the next
   reflex turn
@@ -561,8 +788,11 @@ Integration tests:
 - late output from cancelled jobs is not spoken or committed
 - sidecar unavailable fallback
 - TTS unavailable fallback
-- audio-native reflex unavailable fallback to STT-fed routing
-- escalated turn includes oracle-verbatim ASR evidence when configured
+- realtime reflex unavailable fallback to STT-fed routing
+- escalated turn includes interpreter evidence and optional oracle-verbatim ASR
+  evidence when configured
+- interpreter evidence can patch a queued/running oracle job without blocking
+  the immediate reflex acknowledgement
 - oracle timeout with spoken status
 - cancellation during oracle stream
 - cancellation during TTS playback
@@ -570,7 +800,7 @@ Integration tests:
 Manual smoke tests:
 
 - `/voice join` starts KAME mode when all dependencies are healthy
-- `/voice status` reports interface, oracle, ASR, TTS, and fallback state
+- `/voice status` reports reflex, interpreter, oracle, ASR, TTS, and fallback state
 - greeting is answered locally
 - project/tool question escalates to Hermes oracle
 - user speech during bot playback stops audio quickly
@@ -581,15 +811,21 @@ Production review must also include KAME-specific evidence checks. A generic
 voice production review is not enough for this branch. Required KAME gates are:
 
 - DGX Spark benchmark evidence accepted by the generated KAME matrix validator
-- Gemma 4 E2B direct-audio reflex launch evidence from the target DGX Spark runtime
+- Moshi/PersonaPlex-class reflex or equivalent fast floor-control launch
+  evidence from the target runtime
+- Gemma 4 interpreter launch evidence from the target DGX Spark runtime
+- evidence that Gemma interpreter corrects or confirms reflex transcript
+  hypotheses from raw audio before tool-critical oracle work
 - Nemotron 3 Super evaluated as the preferred Spark-local oracle target selected
   through Hermes `/model`
 - `max_concurrent=4` validated against the Nemotron 3 Super endpoint, or
   explicitly marked as needing evidence
 - hosted Nemotron 3 Ultra excluded from one-Spark readiness claims unless local
   evidence proves otherwise
-- oracle outcome comparison with and without oracle-verbatim ASR transcript hypotheses
-- all-local DGX Spark smoke with oracle, interface, ASR, TTS, and sidecar together
+- oracle outcome comparison with reflex-only, Gemma interpreter, and
+  Gemma-plus-ASR evidence
+- all-local DGX Spark smoke with oracle, reflex, interpreter, ASR, TTS, and
+  sidecar together
 - live Discord smoke for the full KAME path under production credentials
 
 The `kame_dgx_benchmark_evidence` production-review check must reference a
@@ -601,6 +837,8 @@ passing coverage for the required KAME matrix rows.
 The full implementation is acceptable when:
 
 - a lightweight interface model is actually in the live path
+- a Gemma interpreter/evidence lane can process raw audio plus reflex transcript
+  hypotheses without blocking immediate acknowledgements
 - the oracle is not called for simple local turns
 - all tool, file, memory, and project questions still go through Hermes oracle authority
 - the system never tells the user it lacks voice when voice is active
@@ -611,7 +849,8 @@ The full implementation is acceptable when:
   work separately
 - sidecar shutdown leaves no orphan sessions or playback
 - Discord fallback is explicit and understandable
-- all interface, ASR, TTS, routing, fallback, and local-provider target choices are configurable from config and GUI
+- all reflex, interpreter, ASR, TTS, routing, fallback, and local-provider
+  target choices are configurable from config and GUI
 - Hermes oracle model selection remains the existing `/model` mechanism, not a separate realtime voice setting
 - the full stack has a documented one-DGX-Spark launch path
 
@@ -634,20 +873,27 @@ Already present:
 - oracle-verbatim ASR lane for escalated turns
 - ephemeral versus durable transcript policy at the session boundary
 - oracle hint streaming back to live interface providers
-- explicit KAME provenance for native-audio and STT-fed fallback interface turns
-- visible frontend fallback state when KAME uses local STT as the interface fallback
-- DGX Spark launch/profile generation for interface, oracle, ASR, and TTS targets
-- benchmark matrix templates for local interface and speech candidates
-- GUI coverage for KAME interface, ASR, TTS, routing, barge-in, fallback, and local provider target settings
+- explicit KAME provenance for realtime-reflex, interpreter, and STT-fed fallback turns
+- visible frontend fallback state when KAME uses local STT as the reflex fallback
+- DGX Spark launch/profile generation for reflex, interpreter, oracle, ASR, and
+  TTS targets
+- benchmark matrix templates for local reflex, interpreter, and speech candidates
+- GUI coverage for KAME reflex, interpreter, ASR, TTS, routing, barge-in,
+  fallback, and local provider target settings
 - oracle job manager evidence for background execution, queueing, cancellation,
   and status reporting
 - DGX Spark / Nemotron 3 Super `max_concurrent=4` capacity evidence
 
 Remaining for full KAME production readiness:
 
-- Gemma 4 E2B local reflex launch evidence from the actual DGX Spark runtime
+- Moshi/PersonaPlex-class or equivalent local reflex launch evidence from the
+  actual target runtime
+- Gemma 4 interpreter launch evidence from the actual DGX Spark runtime
 - DGX Spark / Nemotron 3 Super `max_concurrent=4` capacity evidence
-- benchmark evidence comparing E2B direct-audio routing against STT-fed fallback routing
-- benchmark evidence comparing oracle outcomes with and without ASR transcript hypotheses
-- all-local DGX Spark smoke evidence with the oracle, interface, ASR, and TTS services running together
+- benchmark evidence comparing reflex-only, Gemma interpreter, and
+  Gemma-plus-ASR oracle outcomes
+- benchmark evidence comparing interpreter correction against reflex transcript
+  hypotheses for multilingual/code-switched turns
+- all-local DGX Spark smoke evidence with the oracle, reflex, interpreter, ASR,
+  and TTS services running together
 - live Discord smoke evidence for the full KAME path under production credentials
