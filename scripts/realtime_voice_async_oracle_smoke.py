@@ -1347,6 +1347,30 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("source") == "moshi"
         and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("authority") == "hypothesis"
     )
+    durable_session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-smoke-external-frontend"),
+        engine=SmokeEngine(oracle=SmokeOracle()),
+    )
+    for event in recorder.events:
+        durable_session._apply_server_event(event)
+    durable_messages = durable_session.durable_messages()
+    durable_records = durable_session.durable_oracle_records()
+    durable_record_payloads = [
+        record.get("payload") for record in durable_records if isinstance(record.get("payload"), dict)
+    ]
+    durable_oracle_text_absent = all("oracle_text" not in payload for payload in durable_record_payloads)
+    durable_user_messages_empty = all(message.get("role") != "user" for message in durable_messages)
+    durable_hypothesis_not_promoted = (
+        durable_user_messages_empty
+        and durable_oracle_text_absent
+        and any(
+            record.get("type") == VoiceEventType.ORACLE_JOB_COMPLETED.value
+            and isinstance(record.get("payload"), dict)
+            and record["payload"].get("evidence_authority", {}).get("oracle_text") == "reflex_hypothesis"
+            and "result_summary" in record["payload"]
+            for record in durable_records
+        )
+    )
     return {
         "ok": bool(job_id)
         and tool_result.payload.get("accepted") is True
@@ -1358,6 +1382,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and getattr(request, "interface_input_source", "") == "ask_brain"
         and getattr(request, "oracle_text", "") == "Prepare external KAME handoff"
         and evidence_bundle_propagated
+        and durable_hypothesis_not_promoted
         and terminal_correlation_observed
         and not direct_tool_authority_exposed
         and status_job.get("state") == "completed",
@@ -1391,6 +1416,10 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         ]
         if request is not None
         else [],
+        "external_frontend_hypothesis_not_durable_oracle_text": durable_hypothesis_not_promoted,
+        "external_frontend_durable_user_messages_empty": durable_user_messages_empty,
+        "external_frontend_durable_oracle_text_absent": durable_oracle_text_absent,
+        "external_frontend_durable_record_count": len(durable_records),
         "external_frontend_direct_tool_authority_exposed": direct_tool_authority_exposed,
         "external_frontend_metadata_keys": sorted(str(key) for key in metadata),
         "external_frontend_event_counts": {
@@ -2445,6 +2474,18 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_auxiliary_transcript_hypotheses": external_frontend_bridge_smoke[
             "external_frontend_auxiliary_transcript_hypotheses"
+        ],
+        "external_frontend_hypothesis_not_durable_oracle_text": external_frontend_bridge_smoke[
+            "external_frontend_hypothesis_not_durable_oracle_text"
+        ],
+        "external_frontend_durable_user_messages_empty": external_frontend_bridge_smoke[
+            "external_frontend_durable_user_messages_empty"
+        ],
+        "external_frontend_durable_oracle_text_absent": external_frontend_bridge_smoke[
+            "external_frontend_durable_oracle_text_absent"
+        ],
+        "external_frontend_durable_record_count": external_frontend_bridge_smoke[
+            "external_frontend_durable_record_count"
         ],
         "external_frontend_direct_tool_authority_exposed": external_frontend_bridge_smoke[
             "external_frontend_direct_tool_authority_exposed"

@@ -242,6 +242,10 @@ def _async_oracle_smoke_payload() -> dict:
                 "latency_ms": 140,
             }
         ],
+        "external_frontend_hypothesis_not_durable_oracle_text": True,
+        "external_frontend_durable_user_messages_empty": True,
+        "external_frontend_durable_oracle_text_absent": True,
+        "external_frontend_durable_record_count": 1,
         "external_frontend_direct_tool_authority_exposed": False,
         "external_frontend_event_counts": {
             "tool.result": 1,
@@ -640,6 +644,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         ]
         == "hypothesis"
     )
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_hypothesis_not_durable_oracle_text"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_user_messages_empty"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_oracle_text_absent"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_record_count"] == 1
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_authority_exposed"] is False
     assert report["requirements"]["async_oracle_external_frontend_bridge"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_smoke_ok"] is True

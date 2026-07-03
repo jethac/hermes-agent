@@ -143,6 +143,10 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_audio_time_range_ms"] == [100, 2100]
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["source"] == "moshi"
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["authority"] == "hypothesis"
+    assert report["external_frontend_hypothesis_not_durable_oracle_text"] is True
+    assert report["external_frontend_durable_user_messages_empty"] is True
+    assert report["external_frontend_durable_oracle_text_absent"] is True
+    assert report["external_frontend_durable_record_count"] >= 1
     assert report["external_frontend_direct_tool_authority_exposed"] is False
     assert report["external_frontend_event_counts"]["tool.result"] == 1
     assert report["external_frontend_event_counts"]["oracle.job.accepted"] == 1

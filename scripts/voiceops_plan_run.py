@@ -1756,6 +1756,18 @@ async def build_plan_run_async(
                     "external_frontend_evidence_bundle_propagated": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_evidence_bundle_propagated"],
+                    "external_frontend_hypothesis_not_durable_oracle_text": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_hypothesis_not_durable_oracle_text"],
+                    "external_frontend_durable_user_messages_empty": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_durable_user_messages_empty"
+                    ],
+                    "external_frontend_durable_oracle_text_absent": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_durable_oracle_text_absent"],
+                    "external_frontend_durable_record_count": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_durable_record_count"
+                    ],
                     "external_frontend_direct_tool_authority_exposed": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_direct_tool_authority_exposed"],

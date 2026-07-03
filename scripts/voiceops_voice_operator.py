@@ -1540,6 +1540,9 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("external_frontend_source_reached_oracle") is True
         and smoke.get("external_frontend_input_source") == "ask_brain"
         and smoke.get("external_frontend_evidence_bundle_propagated") is True
+        and smoke.get("external_frontend_hypothesis_not_durable_oracle_text") is True
+        and smoke.get("external_frontend_durable_user_messages_empty") is True
+        and smoke.get("external_frontend_durable_oracle_text_absent") is True
         and smoke.get("external_frontend_terminal_correlation_observed") is True
         and smoke.get("external_frontend_direct_tool_authority_exposed") is False,
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
@@ -2165,6 +2168,18 @@ def build_voice_operator_report(
             ),
             "external_frontend_auxiliary_transcript_hypotheses": list(
                 async_oracle_smoke.get("external_frontend_auxiliary_transcript_hypotheses") or []
+            ),
+            "external_frontend_hypothesis_not_durable_oracle_text": bool(
+                async_oracle_smoke.get("external_frontend_hypothesis_not_durable_oracle_text")
+            ),
+            "external_frontend_durable_user_messages_empty": bool(
+                async_oracle_smoke.get("external_frontend_durable_user_messages_empty")
+            ),
+            "external_frontend_durable_oracle_text_absent": bool(
+                async_oracle_smoke.get("external_frontend_durable_oracle_text_absent")
+            ),
+            "external_frontend_durable_record_count": async_oracle_smoke.get(
+                "external_frontend_durable_record_count"
             ),
             "external_frontend_direct_tool_authority_exposed": bool(
                 async_oracle_smoke.get("external_frontend_direct_tool_authority_exposed")
