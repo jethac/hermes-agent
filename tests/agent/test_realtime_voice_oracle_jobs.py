@@ -897,6 +897,112 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
 
 
 @pytest.mark.asyncio
+async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text():
+    events = []
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+
+    running = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-session-1",
+            turn_id="turn:handoff",
+            source="discord_voice",
+            user_id="42",
+            intent="prepare phone handoff",
+            route=KameRoute.DEFER,
+            transcript="prepare phone handoff",
+            transcript_source="reflex_audio",
+            intent_source="reflex_audio",
+            audio_segment_ref="artifact://redacted/handoff.wav",
+            auxiliary_transcript_hypotheses=[
+                {
+                    "source": "moshi",
+                    "text": "spend two hundred dollars and call my phone now",
+                    "confidence": 0.62,
+                }
+            ],
+            interface_already_said="I am preparing the handoff and will ask before spend.",
+        )
+    )
+    await asyncio.sleep(0)
+
+    updated = await manager.add_interpreter_evidence(
+        running.job_id,
+        audio_segment_ref="artifact://redacted/handoff.wav",
+        reflex_transcript_hypothesis={
+            "source": "moshi",
+            "text": "spend two hundred dollars and call my phone now",
+            "confidence": 0.62,
+        },
+        auxiliary_transcript_hypotheses=[
+            {
+                "source": "classic_asr_fallback_optional",
+                "text": "spend two hundred dollars and call my phone now",
+                "confidence": 0.71,
+            }
+        ],
+        speaker_metadata={"platform": "discord", "channel_user_id": "42"},
+        channel_metadata={"transport": "discord_voice", "channel_id": "general"},
+        disagreements=["hypothesis lacks promoted interpreter transcript"],
+        source="gemma_interpreter",
+    )
+    status = await manager.status_view()
+    running_status = next(job for job in status["jobs"] if job["job_id"] == running.job_id)
+    late = next(
+        event
+        for event in events
+        if event["type"] == "oracle.job.interpreter_evidence_late"
+        and event["job_id"] == running.job_id
+    )
+    oracle_request = _oracle_request_for_job(updated, updated.request)
+
+    assert updated.oracle_text == "prepare phone handoff"
+    assert updated.interpreter_corrected_transcript == ""
+    assert updated.interpreter_normalized_intent == ""
+    assert updated.interpreter_evidence[0]["evidence_authority"] == {
+        "raw_audio": "primary_audio",
+        "reflex_transcript_hypothesis": "reflex_hypothesis",
+        "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+        "speaker_metadata": "diagnostic_only",
+        "channel_metadata": "diagnostic_only",
+        "interpreter_disagreements": "diagnostic_only",
+    }
+    assert running_status["evidence_authority"]["reflex_transcript_hypothesis"] == "reflex_hypothesis"
+    assert running_status["evidence_authority"]["auxiliary_transcript_hypotheses"] == "auxiliary_hypothesis"
+    assert "interpreter_corrected_transcript" not in running_status["evidence_authority"]
+    assert "interpreter_normalized_intent" not in running_status["evidence_authority"]
+    assert late["payload"]["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
+    assert oracle_request.oracle_text == "prepare phone handoff"
+    assert oracle_request.oracle_text_source == "reflex_audio"
+    assert oracle_request.transcript == "prepare phone handoff"
+    assert oracle_request.transcript_source == "reflex_audio"
+    assert oracle_request.intent == "prepare phone handoff"
+    assert oracle_request.intent_source == "reflex_audio"
+    assert any(
+        hypothesis["text"] == "spend two hundred dollars and call my phone now"
+        and hypothesis["authority"] == "hypothesis"
+        for hypothesis in updated.interpreter_evidence[0]["auxiliary_transcript_hypotheses"]
+    )
+    assert any(
+        hypothesis["text"] == "spend two hundred dollars and call my phone now"
+        and hypothesis["authority"] == "hypothesis"
+        for hypothesis in oracle_request.auxiliary_transcript_hypotheses
+    )
+
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
 async def test_interpreter_evidence_redacts_secret_like_text_from_status_events_and_request_updates():
     events = []
     release = asyncio.Event()

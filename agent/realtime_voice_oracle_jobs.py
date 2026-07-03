@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import inspect
 import json
 import logging
@@ -685,7 +686,7 @@ class OracleJobManager:
             channel_metadata=_compact_channel_metadata(request.channel_metadata),
             requested_response_style=dict(request.requested_response_style or {}),
             metadata=request.to_metadata(),
-            request=request,
+            request=_request_with_compact_auxiliary_hypotheses(request),
         )
 
     def _start_job_locked(self, job: OracleJob, runner: OracleJobRunner) -> None:
@@ -1365,6 +1366,13 @@ def _compact_auxiliary_transcript_hypotheses(
             item["confidence"] = confidence
         compact.append(item)
     return tuple(compact)
+
+
+def _request_with_compact_auxiliary_hypotheses(request: KameOracleRequest) -> KameOracleRequest:
+    compact = _compact_auxiliary_transcript_hypotheses(request.auxiliary_transcript_hypotheses)
+    if tuple(request.auxiliary_transcript_hypotheses or ()) == compact:
+        return request
+    return dataclasses.replace(request, auxiliary_transcript_hypotheses=compact)
 
 
 def _compact_speaker_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
