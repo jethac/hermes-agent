@@ -1843,6 +1843,19 @@ async def build_plan_run_async(
                     "witness_fusion_early_single_bundle": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_early_single_bundle"
                     ],
+                    "witness_fusion_interpreter_prompt_input_order": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_fusion_interpreter_prompt_input_order"
+                        ]
+                    ),
+                    "witness_fusion_interpreter_prompt_input_order_expected": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_fusion_interpreter_prompt_input_order_expected"
+                        ]
+                    ),
+                    "witness_fusion_interpreter_prompt_input_order_visible": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_interpreter_prompt_input_order_visible"],
                     "witness_fusion_with_single_bundle": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_with_single_bundle"
                     ],

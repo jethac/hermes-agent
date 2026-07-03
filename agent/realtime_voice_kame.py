@@ -588,6 +588,56 @@ class KameOracleRequest:
                 break
         return tuple(compact)
 
+    def to_interpreter_prompt_packet(self) -> dict[str, Any]:
+        """Return the ordered evidence packet intended for the audio interpreter."""
+
+        sections: list[dict[str, Any]] = []
+        if self.audio_segment_ref:
+            raw_audio: dict[str, Any] = {
+                "audio_segment_ref": self.audio_segment_ref,
+                "authority": "primary_audio",
+            }
+            sections.append({"name": "raw_audio", "payload": raw_audio})
+
+        metadata: dict[str, Any] = {
+            "evidence_bundle_id": self.evidence_bundle_id,
+            "evidence_merge_key": self.evidence_merge_key,
+            "evidence_bundle_status": self.evidence_bundle_status,
+        }
+        if self.audio_time_range_ms:
+            metadata["audio_time_range_ms"] = tuple(self.audio_time_range_ms)
+        if self.audio_metadata:
+            metadata["audio"] = dict(self.audio_metadata)
+        if self.speaker_metadata:
+            metadata["speaker"] = dict(self.speaker_metadata)
+        if self.channel_metadata:
+            metadata["channel"] = dict(self.channel_metadata)
+        if metadata:
+            sections.append({"name": "metadata", "payload": metadata})
+
+        reflex = {
+            "route": self.route.value,
+            "intent": self.intent,
+            "intent_source": self.intent_source,
+            "interface_already_said": self.interface_already_said,
+            "authority": "reflex_hypothesis",
+        }
+        sections.append({"name": "reflex", "payload": reflex})
+
+        transcript_hypotheses = self.transcript_hypotheses
+        if transcript_hypotheses:
+            sections.append(
+                {
+                    "name": "transcript_hypotheses",
+                    "payload": tuple(dict(item) for item in transcript_hypotheses),
+                }
+            )
+
+        return {
+            "prompt_input_order": [section["name"] for section in sections],
+            "sections": tuple(sections),
+        }
+
     def to_metadata(self) -> dict[str, Any]:
         response_style = _response_style(
             self.requested_response_style,
@@ -674,6 +724,10 @@ class KameOracleRequest:
             metadata["kame_interface_audio_input_fallback"] = True
         if self.reflex_provider:
             metadata["kame_reflex_provider"] = self.reflex_provider
+        prompt_packet = self.to_interpreter_prompt_packet()
+        prompt_input_order = prompt_packet.get("prompt_input_order")
+        if isinstance(prompt_input_order, list) and prompt_input_order:
+            metadata["kame_interpreter_prompt_input_order"] = tuple(prompt_input_order)
         return metadata
 
     @classmethod

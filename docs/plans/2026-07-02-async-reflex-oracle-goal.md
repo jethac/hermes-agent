@@ -985,6 +985,9 @@ Add a local smoke report mode that proves:
   when the witness transcript arrives before, with, or after the raw audio
 - interpreter prompt input ordering is visible in the smoke artifact: raw audio
   first, metadata second, reflex state third, witness hypotheses last
+- the smoke and VoiceOps artifacts expose `interpreter_prompt_input_order` as
+  `["raw_audio", "metadata", "reflex", "transcript_hypotheses"]` for a complete
+  raw-audio plus witness bundle
 - witness transcript adjudication is recorded as accepted, corrected, or
   rejected/diagnostic-only before any promoted action text is produced
 - degraded text-only VoiceClaw/OpenClaw/Moshi fixtures preserve hypothesis text

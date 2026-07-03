@@ -67,6 +67,7 @@ TERMINAL_STATES = frozenset(
         OracleJobState.CANCELLED,
     }
 )
+INTERPRETER_PROMPT_INPUT_ORDER = ("raw_audio", "metadata", "reflex", "transcript_hypotheses")
 
 REFLEX_STATUS_ACTIVE_STATES = frozenset(
     {
@@ -210,6 +211,9 @@ class OracleJob:
                     for key, value in latest_authority.items()
                     if str(key).strip() and str(value).strip()
                 }
+            latest_prompt_order = latest_evidence.get("interpreter_prompt_input_order")
+            if isinstance(latest_prompt_order, tuple) and latest_prompt_order:
+                status["latest_interpreter_prompt_input_order"] = latest_prompt_order
             status["interpreter_evidence_late"] = bool(latest_evidence.get("late"))
             if "delivered_to_oracle" in latest_evidence:
                 status["interpreter_evidence_delivered_to_oracle"] = bool(latest_evidence.get("delivered_to_oracle"))
@@ -1319,6 +1323,9 @@ def _compact_interpreter_evidence(
         evidence["confidence"] = parsed_confidence
     if compact_disagreements:
         evidence["disagreements"] = compact_disagreements
+    prompt_input_order = _interpreter_prompt_input_order(evidence)
+    if prompt_input_order:
+        evidence["interpreter_prompt_input_order"] = prompt_input_order
 
     evidence_authority = _interpreter_evidence_authority(evidence)
     if evidence_authority:
@@ -1355,6 +1362,24 @@ def _interpreter_evidence_authority(evidence: Mapping[str, Any]) -> dict[str, st
     if isinstance(disagreements, tuple) and disagreements:
         authority["interpreter_disagreements"] = "diagnostic_only"
     return authority
+
+
+def _interpreter_prompt_input_order(evidence: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return the interpreter prompt section order for the evidence fields present."""
+
+    order: list[str] = []
+    if evidence.get("audio_segment_ref"):
+        order.append("raw_audio")
+    if evidence.get("audio_time_range_ms") or evidence.get("speaker") or evidence.get("channel"):
+        order.append("metadata")
+    if evidence.get("reflex_transcript_hypothesis"):
+        order.append("reflex")
+    auxiliary = evidence.get("auxiliary_transcript_hypotheses")
+    if isinstance(auxiliary, tuple) and auxiliary:
+        order.append("transcript_hypotheses")
+    if tuple(order) == INTERPRETER_PROMPT_INPUT_ORDER:
+        return INTERPRETER_PROMPT_INPUT_ORDER
+    return tuple(order)
 
 
 def _compact_reflex_transcript_hypothesis(value: object) -> dict[str, Any]:

@@ -1513,6 +1513,7 @@ def _validate_async_oracle_smoke_entry(
         "sidecar_control_cancelled",
         "sidecar_control_feedback_update_sent",
         "sidecar_control_feedback_cancel_sent",
+        "witness_fusion_interpreter_prompt_input_order_visible",
     )
     for field in required_true_fields:
         if entry.get(field) is not True:

@@ -729,6 +729,12 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
         "interpreter_entities": "interpreter_promoted",
         "interpreter_disagreements": "diagnostic_only",
     }
+    assert updated.interpreter_evidence[0]["interpreter_prompt_input_order"] == (
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    )
     assert updated.interpreter_evidence[0]["late"] is False
     assert queued_status["intent"] == "power question"
     assert queued_status["interpreter_normalized_intent"] == "answer a math question"
@@ -766,6 +772,12 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert queued_status["auxiliary_transcript_hypotheses_count"] == 1
     assert queued_status["interpreter_evidence_count"] == 1
     assert queued_status["interpreter_evidence_late"] is False
+    assert queued_status["latest_interpreter_prompt_input_order"] == (
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    )
     assert queued_status["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
     assert queued_status["evidence_authority"]["interpreter_corrected_transcript"] == "interpreter_promoted"
     assert queued_status["evidence_authority"]["interpreter_normalized_intent"] == "interpreter_promoted"
@@ -1063,6 +1075,12 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
         "interpreter_corrected_transcript": "interpreter_promoted",
         "interpreter_normalized_intent": "interpreter_promoted",
     }
+    assert updated.interpreter_evidence[0]["interpreter_prompt_input_order"] == (
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    )
     assert running_status["audio_segment_ref"] == "artifact://redacted/running.wav"
     assert running_status["audio_time_range_ms"] == (200, 2400)
     assert running_status["speaker"] == {
@@ -1079,6 +1097,12 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
     assert running_status["reflex_transcript_source"] == "moshi"
     assert running_status["auxiliary_transcript_hypotheses_count"] == 1
     assert running_status["interpreter_evidence_late"] is True
+    assert running_status["latest_interpreter_prompt_input_order"] == (
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    )
     assert running_status["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
     assert late["payload"]["interpreter_evidence_late"] is True
     assert late["payload"]["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]

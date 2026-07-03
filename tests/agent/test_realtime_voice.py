@@ -1344,8 +1344,36 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     )
 
     metadata = request.to_metadata()
+    packet = request.to_interpreter_prompt_packet()
     prompt = _voice_oracle_prompt(request.oracle_text, metadata)
 
+    assert packet["prompt_input_order"] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]
+    assert [section["name"] for section in packet["sections"]] == packet["prompt_input_order"]
+    assert packet["sections"][0]["payload"] == {
+        "audio_segment_ref": "artifact://voice/turn-1.wav",
+        "authority": "primary_audio",
+    }
+    assert packet["sections"][1]["payload"]["speaker"] == {
+        "platform": "discord",
+        "channel_user_id": "42",
+        "display_name": "jetha",
+    }
+    assert packet["sections"][2]["payload"]["route"] == "oracle_direct"
+    assert packet["sections"][2]["payload"]["interface_already_said"] == "One moment."
+    assert packet["sections"][3]["payload"][0]["kind"] == "reflex_transcript_hypothesis"
+    assert packet["sections"][3]["payload"][1]["kind"] == "classic_asr_hypothesis"
+    assert packet["sections"][3]["payload"][2]["source"] == "moshi"
+    assert metadata["kame_interpreter_prompt_input_order"] == (
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    )
     assert "KAME request" in prompt
     assert "Speaker context: discord user=42 display=jetha." in prompt
     assert "Channel context: discord_voice channel=general guild=guild-1." in prompt

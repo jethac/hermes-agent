@@ -325,6 +325,19 @@ def _async_oracle_smoke_payload() -> dict:
         "witness_fusion_early_initial_bundle_id": "kame-evidence-witness-early",
         "witness_fusion_early_final_bundle_id": "kame-evidence-witness-early",
         "witness_fusion_early_single_bundle": True,
+        "witness_fusion_interpreter_prompt_input_order": [
+            "raw_audio",
+            "metadata",
+            "reflex",
+            "transcript_hypotheses",
+        ],
+        "witness_fusion_interpreter_prompt_input_order_expected": [
+            "raw_audio",
+            "metadata",
+            "reflex",
+            "transcript_hypotheses",
+        ],
+        "witness_fusion_interpreter_prompt_input_order_visible": True,
         "witness_fusion_with_bundle_id": "kame-evidence-witness-with",
         "witness_fusion_with_single_bundle": True,
         "witness_fusion_late_initial_bundle_id": "kame-evidence-witness-late",
@@ -881,6 +894,19 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         report["proofs"]["async_oracle_jobs"]["witness_fusion_early_final_bundle_id"]
     )
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_early_single_bundle"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_interpreter_prompt_input_order"] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_interpreter_prompt_input_order_expected"] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_interpreter_prompt_input_order_visible"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_with_single_bundle"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_late_initial_bundle_id"] == (
         report["proofs"]["async_oracle_jobs"]["witness_fusion_late_final_bundle_id"]
@@ -921,6 +947,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert witness_adjudication["ok"] is True
     assert witness_adjudication["evidence"] == "async_oracle_smoke_plus_witness_adjudication_tests"
     assert report["requirements"]["async_oracle_witness_fusion_adjudicates_frontend_text"] is True
+    prompt_order = report["async_oracle_acceptance"]["interpreter_prompt_input_order_visible"]
+    assert prompt_order["ok"] is True
+    assert prompt_order["evidence"] == "async_oracle_smoke_plus_interpreter_prompt_packet_tests"
+    assert report["requirements"]["async_oracle_interpreter_prompt_input_order_visible"] is True
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_waiting_events"] == 5
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_hypothesis_only_ok"] is False

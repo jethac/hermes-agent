@@ -1322,6 +1322,22 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert len(set(voice_result["details"]["async_oracle_smoke"]["witness_fusion_evidence_merge_keys"].values())) == 3
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_merge_key_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_early_single_bundle"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_input_order"] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_input_order_expected"] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_input_order_visible"]
+        is True
+    )
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_late_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_no_duplicate_oracle_jobs"] is True

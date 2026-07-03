@@ -304,6 +304,7 @@ def _valid_async_oracle_smoke_entry():
         "sidecar_control_completed_after_cancel": False,
         "sidecar_control_feedback_update_sent": True,
         "sidecar_control_feedback_cancel_sent": True,
+        "witness_fusion_interpreter_prompt_input_order_visible": True,
     }
 
 

@@ -1861,6 +1861,21 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         early.job_id,
         audio_segment_ref="artifact://voice/witness-early.wav",
         audio_time_range_ms=(100, 1400),
+        speaker_metadata={
+            "platform": "discord",
+            "channel_user_id": "42",
+            "display_name": "jetha",
+        },
+        channel_metadata={
+            "transport": "discord_voice",
+            "guild_id": "guild-1",
+            "channel_id": "general",
+        },
+        reflex_transcript_hypothesis={
+            "source": "reflex_audio",
+            "text": "three to the power of seventeen",
+            "confidence": 0.69,
+        },
         corrected_transcript="what is three to the power of seventeen",
         normalized_intent="answer a math question",
         entities=({"type": "math_expression", "value": "3^17"},),
@@ -2072,6 +2087,9 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
             if isinstance(entity, Mapping)
         )
     )
+    expected_prompt_input_order = ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
+    early_prompt_order = list(early_status_job.get("latest_interpreter_prompt_input_order") or [])
+    early_prompt_order_visible = early_prompt_order == expected_prompt_input_order
     with_single_bundle = (
         with_raw.request.evidence_bundle_id == str(with_status_job.get("evidence_bundle_id") or "")
         and with_status_job.get("evidence_bundle", {}).get("status") == "primary_audio"
@@ -2108,6 +2126,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "ok": (
             early_single_bundle
             and early_positive_recovery
+            and early_prompt_order_visible
             and with_single_bundle
             and late_single_bundle
             and no_duplicate_oracle_jobs
@@ -2116,6 +2135,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         ),
         "witness_fusion_timing_smoke_ok": early_single_bundle
         and early_positive_recovery
+        and early_prompt_order_visible
         and with_single_bundle
         and late_single_bundle
         and no_duplicate_oracle_jobs
@@ -2131,6 +2151,9 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "witness_fusion_early_final_bundle_id": early_final_bundle_id,
         "witness_fusion_early_single_bundle": early_single_bundle,
         "witness_fusion_early_positive_recovery": early_positive_recovery,
+        "witness_fusion_interpreter_prompt_input_order": early_prompt_order,
+        "witness_fusion_interpreter_prompt_input_order_expected": expected_prompt_input_order,
+        "witness_fusion_interpreter_prompt_input_order_visible": early_prompt_order_visible,
         "witness_fusion_early_reflex_transcript": early_request.transcript,
         "witness_fusion_early_witness_text": "what is three to the power of seventeen",
         "witness_fusion_early_promoted_transcript": early_status_job.get("interpreter_corrected_transcript", ""),
@@ -3721,6 +3744,15 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "witness_fusion_early_positive_recovery": witness_fusion_timing_smoke[
             "witness_fusion_early_positive_recovery"
+        ],
+        "witness_fusion_interpreter_prompt_input_order": witness_fusion_timing_smoke[
+            "witness_fusion_interpreter_prompt_input_order"
+        ],
+        "witness_fusion_interpreter_prompt_input_order_expected": witness_fusion_timing_smoke[
+            "witness_fusion_interpreter_prompt_input_order_expected"
+        ],
+        "witness_fusion_interpreter_prompt_input_order_visible": witness_fusion_timing_smoke[
+            "witness_fusion_interpreter_prompt_input_order_visible"
         ],
         "witness_fusion_early_reflex_transcript": witness_fusion_timing_smoke[
             "witness_fusion_early_reflex_transcript"
