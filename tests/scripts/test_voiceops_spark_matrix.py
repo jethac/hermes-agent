@@ -35,7 +35,56 @@ SOURCE_KEYS_BY_ARTIFACT = {
 
 def _source_artifact_payload(relative: str) -> dict:
     source_keys = SOURCE_KEYS_BY_ARTIFACT.get(relative, [relative])
-    return {"redacted": True, "source": relative, "source_keys": source_keys}
+    payload = {"redacted": True, "source": relative, "source_keys": source_keys}
+    if "voiceops_spark_stack_smoke" in source_keys:
+        payload["kame_turns"] = _stack_smoke_source_turns()
+    return payload
+
+
+def _stack_smoke_source_turns() -> list[dict]:
+    return [
+        {
+            "turn_id": "local-001",
+            "route": "local",
+            "oracle_called": False,
+            "audio_segment_ref": "artifact://redacted/local-001.wav",
+            "audio_time_range_ms": [100, 900],
+            "reflex_transcript_hypothesis": {
+                "authority": "hypothesis",
+                "source": "moshi",
+                "text": "[redacted local greeting hypothesis]",
+            },
+            "auxiliary_transcript_hypotheses": [],
+        },
+        {
+            "turn_id": "oracle-001",
+            "route": "defer",
+            "oracle_called": True,
+            "oracle_calls": 1,
+            "audio_segment_ref": "artifact://redacted/oracle-001.wav",
+            "audio_time_range_ms": [1200, 3300],
+            "reflex_transcript_hypothesis": {
+                "authority": "hypothesis",
+                "source": "moshi",
+                "text": "[redacted reflex hypothesis]",
+            },
+            "auxiliary_transcript_hypotheses": [
+                {
+                    "authority": "hypothesis",
+                    "source": "classic_asr_fallback_optional",
+                    "text": "[redacted auxiliary hypothesis]",
+                }
+            ],
+            "interpreter_evidence": {
+                "source": "gemma_interpreter",
+                "corrected_transcript": "[redacted interpreter correction]",
+                "confidence": 0.91,
+                "disagreements": ["reflex hypothesis corrected by raw audio"],
+            },
+            "interpreter_corrected_transcript": "[redacted interpreter correction]",
+            "tool_critical_text_source": "gemma_interpreter",
+        },
+    ]
 
 
 def _source_artifact_sha256(relative: str) -> str:
@@ -1285,6 +1334,68 @@ def test_spark_matrix_rejects_stack_smoke_with_mismatched_source_artifact_identi
 
     assert matrix["stack_smoke"]["status"] == "fails_target"
     assert "source_artifact_identity_mismatch" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_rejects_stack_smoke_source_without_kame_turn_contract(tmp_path):
+    source_path = tmp_path / "artifacts/test/stack-smoke-no-turns.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(
+        json.dumps(
+            {
+                "redacted": True,
+                "source_key": "voiceops_spark_stack_smoke",
+                "summary": "component-only stack smoke, no turn evidence",
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    evidence_path = tmp_path / "evidence.json"
+    incomplete = _stack_smoke()
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    incomplete["source_artifact"] = "artifacts/test/stack-smoke-no-turns.json"
+    incomplete["source_artifact_sha256"] = source_sha256
+    incomplete["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
+    evidence_path.write_text(json.dumps({"evidence": [incomplete]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "source_artifact_missing_kame_turns" in matrix["stack_smoke"]["issues"]
+    assert matrix["ready_for_one_spark_demo"] is False
+
+
+def test_spark_matrix_rejects_stack_smoke_source_with_unlabeled_transcript_and_missing_interpreter(tmp_path):
+    source_path = tmp_path / "artifacts/test/stack-smoke-weak-turns.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_payload = _source_artifact_payload("artifacts/test/stack-smoke.json")
+    source_payload["source_key"] = "voiceops_spark_stack_smoke"
+    source_payload["source_keys"] = ["voiceops_spark_stack_smoke"]
+    source_payload["kame_turns"][0]["reflex_transcript_hypothesis"] = "hello"
+    source_payload["kame_turns"][1].pop("interpreter_evidence")
+    source_payload["kame_turns"][1].pop("interpreter_corrected_transcript")
+    source_payload["kame_turns"][1]["auxiliary_transcript_hypotheses"] = [
+        {"source": "classic_asr_fallback_optional", "text": "[redacted auxiliary hypothesis]"}
+    ]
+    source_payload["kame_turns"][1]["tool_critical_text_source"] = "asr"
+    source_path.write_text(json.dumps(source_payload, sort_keys=True), encoding="utf-8")
+    evidence_path = tmp_path / "evidence.json"
+    incomplete = _stack_smoke()
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    incomplete["source_artifact"] = "artifacts/test/stack-smoke-weak-turns.json"
+    incomplete["source_artifact_sha256"] = source_sha256
+    incomplete["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
+    evidence_path.write_text(json.dumps({"evidence": [incomplete]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "fails_target"
+    assert "source_artifact_reflex_transcript_not_hypothesis" in matrix["stack_smoke"]["issues"]
+    assert "source_artifact_auxiliary_transcript_not_hypothesis" in matrix["stack_smoke"]["issues"]
+    assert "source_artifact_missing_interpreter_corrected_transcript" in matrix["stack_smoke"]["issues"]
+    assert "source_artifact_missing_gemma_interpreter_evidence" in matrix["stack_smoke"]["issues"]
+    assert "source_artifact_tool_critical_text_not_interpreter_or_oracle_judgment" in matrix["stack_smoke"]["issues"]
     assert matrix["ready_for_one_spark_demo"] is False
 
 

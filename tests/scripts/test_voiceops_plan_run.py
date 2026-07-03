@@ -436,14 +436,58 @@ def _write_spark_evidence(root: Path) -> Path:
         "stack-smoke": "voiceops_spark_stack_smoke",
     }
     for name, source_key in source_keys.items():
+        payload = {
+            "redacted": True,
+            "source": name,
+            "source_key": source_key,
+            "summary": "local DGX Spark rehearsal source",
+        }
+        if name == "stack-smoke":
+            payload["kame_turns"] = [
+                {
+                    "turn_id": "local-001",
+                    "route": "local",
+                    "oracle_called": False,
+                    "audio_segment_ref": "artifact://redacted/local-001.wav",
+                    "audio_time_range_ms": [100, 900],
+                    "reflex_transcript_hypothesis": {
+                        "authority": "hypothesis",
+                        "source": "moshi",
+                        "text": "[redacted local hypothesis]",
+                    },
+                    "auxiliary_transcript_hypotheses": [],
+                },
+                {
+                    "turn_id": "oracle-001",
+                    "route": "defer",
+                    "oracle_called": True,
+                    "oracle_calls": 1,
+                    "audio_segment_ref": "artifact://redacted/oracle-001.wav",
+                    "audio_time_range_ms": [1200, 3300],
+                    "reflex_transcript_hypothesis": {
+                        "authority": "hypothesis",
+                        "source": "moshi",
+                        "text": "[redacted reflex hypothesis]",
+                    },
+                    "auxiliary_transcript_hypotheses": [
+                        {
+                            "authority": "hypothesis",
+                            "source": "classic_asr_fallback_optional",
+                            "text": "[redacted auxiliary hypothesis]",
+                        }
+                    ],
+                    "interpreter_evidence": {
+                        "source": "gemma_interpreter",
+                        "corrected_transcript": "[redacted interpreter correction]",
+                        "confidence": 0.91,
+                    },
+                    "interpreter_corrected_transcript": "[redacted interpreter correction]",
+                    "tool_critical_text_source": "gemma_interpreter",
+                },
+            ]
         source_path = _write_json(
             sources / f"{name}.json",
-            {
-                "redacted": True,
-                "source": name,
-                "source_key": source_key,
-                "summary": "local DGX Spark rehearsal source",
-            },
+            payload,
         )
         source_sha256[name] = hashlib.sha256(source_path.read_bytes()).hexdigest()
     return _write_json(

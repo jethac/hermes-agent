@@ -127,6 +127,18 @@ def _passing_benchmark_evidence() -> list[dict]:
                 },
             ]
         )
+    reflex_entries = [
+        {
+            "kind": "kame_benchmark_result",
+            "category": "reflex",
+            "model": "Moshi S2S",
+            "metrics": {
+                "ack_latency_ms": 240,
+                "barge_in_stop_ms": 80,
+                "steady_state_memory_gb": 16,
+            },
+        }
+    ]
     assumption_entries = [
         {
             "kind": "kame_model_assumption_result",
@@ -168,6 +180,7 @@ def _passing_benchmark_evidence() -> list[dict]:
         },
     ]
     entries = [
+        *reflex_entries,
         *interface_entries,
         *assumption_entries,
         {
@@ -276,13 +289,16 @@ def _passing_benchmark_evidence() -> list[dict]:
             "components": {
                 "reflex": True,
                 "oracle": True,
+                "interpreter": True,
                 "asr": True,
                 "tts": True,
                 "sidecar": True,
             },
             "oracle_authority_routes": ["tools", "files", "memory", "project_context"],
             "interface_input_sources": ["native_audio"],
-            "reflex_providers": ["vllm"],
+            "reflex_providers": ["vllm", "moshi"],
+            "interpreter_providers": ["vllm", "gemma"],
+            "auxiliary_transcript_sources": ["moshi_hypothesis", "classic_asr_fallback_optional"],
             "metrics": {
                 "speech_end_to_first_audio_ms": 900,
                 "barge_in_stop_ms": 90,
@@ -341,12 +357,55 @@ def _passing_benchmark_evidence_with_source(tmp_path: Path) -> list[dict]:
                     "cloud_fallback_smoke",
                     "capability_honesty_smoke",
                     "barge_in_interruption_smoke",
-                    "reflex-gemma4-e2b",
-                    "reflex-gemma4-e4b",
+                    "reflex-moshi-s2s",
+                    "interpreter-gemma4-e2b",
+                    "interpreter-gemma4-e4b",
                     "oracle-nemotron3-super-local",
                     "asr-nemotron-speech",
                     "tts-magpie-local",
                     "voiceops_spark_stack_smoke",
+                ],
+                "kame_turns": [
+                    {
+                        "turn_id": "local-001",
+                        "route": "local",
+                        "oracle_called": False,
+                        "audio_segment_ref": "artifact://redacted/local-001.wav",
+                        "audio_time_range_ms": [100, 900],
+                        "reflex_transcript_hypothesis": {
+                            "authority": "hypothesis",
+                            "source": "moshi",
+                            "text": "[redacted local hypothesis]",
+                        },
+                        "auxiliary_transcript_hypotheses": [],
+                    },
+                    {
+                        "turn_id": "oracle-001",
+                        "route": "defer",
+                        "oracle_called": True,
+                        "oracle_calls": 1,
+                        "audio_segment_ref": "artifact://redacted/oracle-001.wav",
+                        "audio_time_range_ms": [1200, 3300],
+                        "reflex_transcript_hypothesis": {
+                            "authority": "hypothesis",
+                            "source": "moshi",
+                            "text": "[redacted reflex hypothesis]",
+                        },
+                        "auxiliary_transcript_hypotheses": [
+                            {
+                                "authority": "hypothesis",
+                                "source": "classic_asr_fallback_optional",
+                                "text": "[redacted auxiliary hypothesis]",
+                            }
+                        ],
+                        "interpreter_evidence": {
+                            "source": "gemma_interpreter",
+                            "corrected_transcript": "[redacted interpreter correction]",
+                            "confidence": 0.91,
+                        },
+                        "interpreter_corrected_transcript": "[redacted interpreter correction]",
+                        "tool_critical_text_source": "gemma_interpreter",
+                    },
                 ],
             }
         ),
@@ -1248,7 +1307,7 @@ def test_benchmark_evidence_validator_accepts_voiceops_closing_kame_evidence(tmp
     voiceops_matrix = build_matrix([evidence_path])
     evaluations = {evaluation["candidate_id"]: evaluation for evaluation in voiceops_matrix["evaluations"]}
 
-    assert evaluations["reflex-gemma4-e2b"]["status"] == "validated"
+    assert evaluations["interpreter-gemma4-e2b"]["status"] == "validated"
     assert evaluations["oracle-nemotron3-super-local"]["status"] == "validated"
     assert evaluations["asr-nemotron-speech"]["status"] == "validated"
     assert evaluations["tts-magpie-local"]["status"] == "validated"

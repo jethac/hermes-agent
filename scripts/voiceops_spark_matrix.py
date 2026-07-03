@@ -420,7 +420,7 @@ def _adapt_kame_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         metrics = entry.get("metrics") if isinstance(entry.get("metrics"), dict) else {}
         category = str(entry.get("category") or "")
         normalized_model = str(entry.get("model") or "").lower().replace("-", "")
-        if category == "interface" and any(token in normalized_model for token in ("moshi", "personaplex", "s2s")):
+        if category in {"interface", "reflex"} and any(token in normalized_model for token in ("moshi", "personaplex", "s2s")):
             adapted.append(
                 _base_adapted_evidence(
                     entry,
@@ -708,6 +708,7 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
             issues.append("missing_source_artifact")
         else:
             issues.extend(_source_artifact_issues(item))
+            issues.extend(_stack_smoke_source_artifact_contract_issues(item))
         issues.extend(_collector_attestation_issues(item))
         if not str(item.get("measured_at") or "").strip():
             issues.append("missing_measured_at")
@@ -772,6 +773,124 @@ def evaluate_stack_smoke(evidence: list[dict[str, Any]]) -> dict[str, Any]:
         "issues": sorted(set(issues)),
         "evidence_count": len(matching),
     }
+
+
+def _stack_smoke_source_artifact_contract_issues(item: dict[str, Any]) -> list[str]:
+    source_payload = _read_source_artifact_payload(item)
+    if not isinstance(source_payload, dict):
+        return []
+    turns = source_payload.get("kame_turns")
+    if not isinstance(turns, list):
+        turns = source_payload.get("turns")
+    if not isinstance(turns, list) or not turns:
+        return ["source_artifact_missing_kame_turns"]
+
+    issues: set[str] = set()
+    local_turn_seen = False
+    oracle_bound_turn_seen = False
+    for raw_turn in turns:
+        if not isinstance(raw_turn, dict):
+            issues.add("source_artifact_kame_turn_not_object")
+            continue
+        if not str(raw_turn.get("audio_segment_ref") or "").strip():
+            issues.add("source_artifact_kame_turn_missing_audio_segment_ref")
+        if not _valid_audio_time_range_ms(raw_turn.get("audio_time_range_ms")):
+            issues.add("source_artifact_kame_turn_missing_audio_time_range_ms")
+        if not _transcript_hypothesis_is_labeled(raw_turn.get("reflex_transcript_hypothesis")):
+            issues.add("source_artifact_reflex_transcript_not_hypothesis")
+        if not _auxiliary_transcript_hypotheses_are_labeled(raw_turn.get("auxiliary_transcript_hypotheses")):
+            issues.add("source_artifact_auxiliary_transcript_not_hypothesis")
+
+        route = str(raw_turn.get("route") or raw_turn.get("path") or "").strip().lower()
+        oracle_called = _turn_oracle_called(raw_turn)
+        if route == "local" and oracle_called is False:
+            local_turn_seen = True
+        if route in {"defer", "oracle_direct", "oracle_bound"} or oracle_called is True:
+            oracle_bound_turn_seen = True
+            if not _interpreter_corrected_transcript(raw_turn):
+                issues.add("source_artifact_missing_interpreter_corrected_transcript")
+            if not _gemma_interpreter_evidence_present(raw_turn):
+                issues.add("source_artifact_missing_gemma_interpreter_evidence")
+            if not _tool_critical_text_source_is_authoritative(raw_turn):
+                issues.add("source_artifact_tool_critical_text_not_interpreter_or_oracle_judgment")
+    if not local_turn_seen:
+        issues.add("source_artifact_missing_local_kame_turn")
+    if not oracle_bound_turn_seen:
+        issues.add("source_artifact_missing_oracle_bound_kame_turn")
+    return sorted(issues)
+
+
+def _read_source_artifact_payload(item: dict[str, Any]) -> Any:
+    source_text = str(item.get("source_artifact") or "").strip()
+    evidence_path_text = str(item.get("_evidence_path") or "").strip()
+    if not source_text or not evidence_path_text:
+        return None
+    source_path = Path(source_text).expanduser()
+    if not source_path.is_absolute():
+        source_path = Path(evidence_path_text).expanduser().parent / source_text
+    try:
+        return json.loads(source_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+
+def _valid_audio_time_range_ms(value: Any) -> bool:
+    if not isinstance(value, list) or len(value) != 2:
+        return False
+    start = _coerce_number(value[0])
+    end = _coerce_number(value[1])
+    return start is not None and end is not None and 0 <= start < end
+
+
+def _transcript_hypothesis_is_labeled(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return str(value.get("authority") or "").strip().lower() == "hypothesis" and bool(
+        str(value.get("text") or value.get("summary") or "").strip()
+    )
+
+
+def _auxiliary_transcript_hypotheses_are_labeled(value: Any) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, list):
+        return False
+    return all(_transcript_hypothesis_is_labeled(item) for item in value)
+
+
+def _turn_oracle_called(turn: dict[str, Any]) -> bool | None:
+    value = turn.get("oracle_called")
+    if isinstance(value, bool):
+        return value
+    calls = _coerce_number(turn.get("oracle_calls"))
+    if calls is not None:
+        return calls > 0
+    return None
+
+
+def _interpreter_corrected_transcript(turn: dict[str, Any]) -> str:
+    direct = str(turn.get("interpreter_corrected_transcript") or "").strip()
+    if direct:
+        return direct
+    evidence = turn.get("interpreter_evidence")
+    if isinstance(evidence, dict):
+        return str(evidence.get("corrected_transcript") or evidence.get("transcript") or "").strip()
+    return ""
+
+
+def _gemma_interpreter_evidence_present(turn: dict[str, Any]) -> bool:
+    evidence = turn.get("interpreter_evidence")
+    if not isinstance(evidence, dict):
+        return False
+    source = str(evidence.get("source") or evidence.get("provider") or "").strip().lower()
+    if "gemma" not in source:
+        return False
+    return bool(_interpreter_corrected_transcript(turn))
+
+
+def _tool_critical_text_source_is_authoritative(turn: dict[str, Any]) -> bool:
+    source = str(turn.get("tool_critical_text_source") or turn.get("oracle_text_source") or "").strip().lower()
+    return source in {"interpreter", "interpreter_corrected_transcript", "gemma_interpreter", "oracle", "oracle_judgment"}
 
 
 def _source_artifact_issues(item: dict[str, Any]) -> list[str]:
@@ -1420,6 +1539,8 @@ def write_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
             "redaction_policy": "example only; replace with redacted raw benchmark output, no secrets or private transcripts",
             "summary": f"Replace this with measured DGX Spark raw output for {source_key}.",
         }
+        if source_key == STACK_SMOKE_KIND:
+            source_payload["kame_turns"] = _stack_smoke_source_artifact_shape()
         _write_json(source_path, source_payload)
         item["source_artifact"] = f"sources/{source_name}"
         source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
@@ -1432,6 +1553,52 @@ def write_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
     _write_json(scaffold_path, scaffold)
     paths["evidence_scaffold"] = scaffold_path
     return paths
+
+
+def _stack_smoke_source_artifact_shape() -> list[dict[str, Any]]:
+    return [
+        {
+            "turn_id": "replace-with-redacted-local-turn-id",
+            "route": "local",
+            "oracle_called": False,
+            "audio_segment_ref": "artifact://replace-with-redacted-local-audio-ref",
+            "audio_time_range_ms": [0, 800],
+            "reflex_transcript_hypothesis": {
+                "authority": "hypothesis",
+                "source": "moshi_or_reflex",
+                "text": "[redacted local transcript hypothesis]",
+            },
+            "auxiliary_transcript_hypotheses": [],
+        },
+        {
+            "turn_id": "replace-with-redacted-oracle-bound-turn-id",
+            "route": "defer",
+            "oracle_called": True,
+            "oracle_calls": 1,
+            "audio_segment_ref": "artifact://replace-with-redacted-oracle-bound-audio-ref",
+            "audio_time_range_ms": [1000, 3200],
+            "reflex_transcript_hypothesis": {
+                "authority": "hypothesis",
+                "source": "moshi_or_reflex",
+                "text": "[redacted reflex transcript hypothesis]",
+            },
+            "auxiliary_transcript_hypotheses": [
+                {
+                    "authority": "hypothesis",
+                    "source": "classic_asr_fallback_optional",
+                    "text": "[redacted optional auxiliary transcript hypothesis]",
+                }
+            ],
+            "interpreter_evidence": {
+                "source": "gemma_interpreter",
+                "corrected_transcript": "[redacted interpreter correction]",
+                "confidence": 0.9,
+                "disagreements": ["redacted disagreement or confirmation note"],
+            },
+            "interpreter_corrected_transcript": "[redacted interpreter correction]",
+            "tool_critical_text_source": "gemma_interpreter",
+        },
+    ]
 
 
 def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
@@ -1500,6 +1667,7 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "source_artifact_identity_must_match": True,
             "source_artifact_candidate_rows_require_candidate_identity": True,
             "source_artifact_kind_identity_only_for_kind_only_rows": True,
+            "stack_smoke_source_artifact_must_include_kame_turn_contract": True,
             "benchmark_evidence_not_before": SPARK_BENCHMARK_EVIDENCE_NOT_BEFORE.isoformat(),
             "measured_at_must_be_in_evidence_window": True,
             "collector_attestation_timestamps_must_be_in_evidence_window": True,
@@ -1541,6 +1709,13 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "source_artifact_sha256",
             "collector_attestation",
             "verified",
+            "source_artifact.kame_turns[].audio_segment_ref",
+            "source_artifact.kame_turns[].audio_time_range_ms",
+            "source_artifact.kame_turns[].reflex_transcript_hypothesis.authority=hypothesis",
+            "source_artifact.kame_turns[].auxiliary_transcript_hypotheses[].authority=hypothesis",
+            "source_artifact.kame_turns[].interpreter_evidence.source=gemma_interpreter",
+            "source_artifact.kame_turns[].interpreter_corrected_transcript",
+            "source_artifact.kame_turns[].tool_critical_text_source=gemma_interpreter|oracle_judgment",
         ],
         "candidate_closure": [
             {
@@ -1569,6 +1744,15 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "required_reflex_provider": "s2s_or_timing",
             "required_interpreter_provider": "gemma_audio",
             "auxiliary_transcript_sources_optional": True,
+            "required_source_artifact_contract": {
+                "turns_field": "kame_turns",
+                "requires_local_turn_without_oracle_call": True,
+                "requires_oracle_bound_turn_with_oracle_call": True,
+                "requires_raw_audio_reference": True,
+                "requires_transcript_hypotheses_labeled_authority_hypothesis": True,
+                "requires_gemma_interpreter_correction": True,
+                "requires_tool_critical_text_source": "gemma_interpreter_or_oracle_judgment",
+            },
             "target_metrics": {
                 "speech_end_to_first_audio_ms": {"operator": "<=", "value": 1500, "unit": "ms"},
                 "barge_in_stop_ms": {"operator": "<=", "value": 150, "unit": "ms"},
