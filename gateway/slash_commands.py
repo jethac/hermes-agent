@@ -208,7 +208,7 @@ def _voice_status_oracle_job_lines(value: Any) -> list[str]:
             continue
         job_id = str(job.get("job_id") or "").strip()
         state = str(job.get("state") or "").strip()
-        label = str(job.get("spoken_status") or job.get("intent") or job.get("result_summary") or "").strip()
+        label = _voice_status_oracle_job_label(job, state)
         latest_update = str(job.get("latest_update") or "").strip()
         if latest_update:
             label = f"{label[:80]} | update: {latest_update[:80]}" if label else f"update: {latest_update[:100]}"
@@ -218,6 +218,23 @@ def _voice_status_oracle_job_lines(value: Any) -> list[str]:
         prefix = " ".join(parts)
         lines.append(f"Oracle job: {prefix}" + (f" - {label[:120]}" if label else ""))
     return lines
+
+
+def _voice_status_oracle_job_label(job: dict[str, Any], state: str) -> str:
+    normalized_state = state.strip().lower()
+    if normalized_state == "completed":
+        candidates = ("result_summary", "spoken_status", "intent")
+    elif normalized_state == "failed":
+        candidates = ("error", "result_summary", "spoken_status", "intent")
+    elif normalized_state == "cancelled":
+        candidates = ("cancel_reason", "result_summary", "spoken_status", "intent")
+    else:
+        candidates = ("spoken_status", "intent", "result_summary")
+    for key in candidates:
+        value = str(job.get(key) or "").strip()
+        if value:
+            return value
+    return ""
 
 
 class GatewaySlashCommandsMixin:

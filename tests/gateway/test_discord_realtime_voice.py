@@ -1481,6 +1481,48 @@ def test_voice_status_oracle_job_lines_are_compact():
     ]
 
 
+def test_voice_status_oracle_job_lines_prefer_terminal_outcomes():
+    from gateway.slash_commands import _voice_status_oracle_job_lines
+
+    lines = _voice_status_oracle_job_lines(
+        {
+            "enabled": True,
+            "capacity": {
+                "running": 0,
+                "max_concurrent": 4,
+                "queued": 0,
+            },
+            "jobs": [
+                {
+                    "job_id": "voice-oracle-completed",
+                    "state": "completed",
+                    "spoken_status": "Checking the deployment status.",
+                    "result_summary": "The deployment is healthy.",
+                },
+                {
+                    "job_id": "voice-oracle-failed",
+                    "state": "failed",
+                    "spoken_status": "Checking Stripe.",
+                    "error": "Stripe preflight failed.",
+                },
+                {
+                    "job_id": "voice-oracle-cancelled",
+                    "state": "cancelled",
+                    "spoken_status": "Checking logs.",
+                    "cancel_reason": "User cancelled the log check.",
+                },
+            ],
+        }
+    )
+
+    assert lines == [
+        "Oracle jobs: running=0/4, queued=0",
+        "Oracle job: voice-oracle-completed completed - The deployment is healthy.",
+        "Oracle job: voice-oracle-failed failed - Stripe preflight failed.",
+        "Oracle job: voice-oracle-cancelled cancelled - User cancelled the log check.",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_discord_realtime_session_sends_oracle_job_cancel_event():
     from agent.realtime_voice import VoiceEventType
