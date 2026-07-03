@@ -958,6 +958,31 @@ async def _run_terminal_result_policy_smoke() -> dict[str, Any]:
             for event in events
         )
     )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED
+            and event.payload.get("intent") == "Suppress terminal result"
+            for event in events
+        )
+    )
+    suppressed_result_events = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED
+        and event.payload.get("intent") == "Suppress terminal result"
+    ]
+    suppressed_result_payloads = [dict(event.payload) for event in suppressed_result_events]
+    suppressed_result_payload_clean = bool(suppressed_result_payloads) and all(
+        "result_summary" not in payload
+        and "result_text" not in payload
+        and "Finished Suppress terminal result" not in json.dumps(payload, sort_keys=True)
+        for payload in suppressed_result_payloads
+    )
+    suppressed_result_reason = (
+        str(suppressed_result_payloads[-1].get("suppression_reason") or "")
+        if suppressed_result_payloads
+        else ""
+    )
     unsolicited_result_events = [
         event
         for event in recorder.events
@@ -1005,12 +1030,18 @@ async def _run_terminal_result_policy_smoke() -> dict[str, Any]:
         and default_result_spoken
         and not unsolicited_result_events
         and not unsolicited_result_spoken
+        and bool(suppressed_result_events)
+        and suppressed_result_payload_clean
         and terminal_result_status_available,
         "terminal_result_auto_summarize_default": bool(default_result_events),
         "terminal_result_default_event_count": len(default_result_events),
         "terminal_result_default_spoken": default_result_spoken,
         "terminal_result_suppression_config": "oracle_jobs.speak_terminal_results=false",
         "terminal_result_suppressed": not unsolicited_result_events and not unsolicited_result_spoken,
+        "terminal_result_suppressed_event_observed": bool(suppressed_result_events),
+        "terminal_result_suppressed_event_count": len(suppressed_result_events),
+        "terminal_result_suppressed_reason": suppressed_result_reason,
+        "terminal_result_suppressed_payload_clean": suppressed_result_payload_clean,
         "terminal_result_unsolicited_event_count": len(unsolicited_result_events),
         "terminal_result_unsolicited_spoken": unsolicited_result_spoken,
         "terminal_result_status_available": terminal_result_status_available,
@@ -2113,6 +2144,16 @@ async def run_smoke() -> dict[str, Any]:
         "terminal_result_default_spoken": terminal_result_policy_smoke["terminal_result_default_spoken"],
         "terminal_result_suppression_config": terminal_result_policy_smoke["terminal_result_suppression_config"],
         "terminal_result_suppressed": terminal_result_policy_smoke["terminal_result_suppressed"],
+        "terminal_result_suppressed_event_observed": terminal_result_policy_smoke[
+            "terminal_result_suppressed_event_observed"
+        ],
+        "terminal_result_suppressed_event_count": terminal_result_policy_smoke[
+            "terminal_result_suppressed_event_count"
+        ],
+        "terminal_result_suppressed_reason": terminal_result_policy_smoke["terminal_result_suppressed_reason"],
+        "terminal_result_suppressed_payload_clean": terminal_result_policy_smoke[
+            "terminal_result_suppressed_payload_clean"
+        ],
         "terminal_result_unsolicited_event_count": terminal_result_policy_smoke[
             "terminal_result_unsolicited_event_count"
         ],
@@ -2228,6 +2269,7 @@ async def run_smoke() -> dict[str, Any]:
                 VoiceEventType.ORACLE_JOB_FAILED,
                 VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED,
                 VoiceEventType.ORACLE_JOB_CANCELLED,
+                VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED,
                 VoiceEventType.INTERFACE_ORACLE_UPDATE,
                 VoiceEventType.ASSISTANT_COMMIT,
             }

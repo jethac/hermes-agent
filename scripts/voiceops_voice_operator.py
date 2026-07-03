@@ -1507,6 +1507,9 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("terminal_result_policy_smoke_ok") is True
         and smoke.get("terminal_result_auto_summarize_default") is True
         and smoke.get("terminal_result_suppressed") is True
+        and smoke.get("terminal_result_suppressed_event_observed") is True
+        and smoke.get("terminal_result_suppressed_payload_clean") is True
+        and smoke.get("terminal_result_suppressed_reason") == "terminal_speech_disabled"
         and smoke.get("terminal_result_status_available") is True
         and int(smoke.get("terminal_result_unsolicited_event_count") or 0) == 0
         and smoke.get("terminal_result_unsolicited_spoken") is False
@@ -2038,6 +2041,16 @@ def build_voice_operator_report(
             "terminal_result_default_spoken": bool(async_oracle_smoke.get("terminal_result_default_spoken")),
             "terminal_result_suppression_config": async_oracle_smoke.get("terminal_result_suppression_config"),
             "terminal_result_suppressed": bool(async_oracle_smoke.get("terminal_result_suppressed")),
+            "terminal_result_suppressed_event_observed": bool(
+                async_oracle_smoke.get("terminal_result_suppressed_event_observed")
+            ),
+            "terminal_result_suppressed_event_count": async_oracle_smoke.get(
+                "terminal_result_suppressed_event_count"
+            ),
+            "terminal_result_suppressed_reason": async_oracle_smoke.get("terminal_result_suppressed_reason"),
+            "terminal_result_suppressed_payload_clean": bool(
+                async_oracle_smoke.get("terminal_result_suppressed_payload_clean")
+            ),
             "terminal_result_unsolicited_event_count": async_oracle_smoke.get(
                 "terminal_result_unsolicited_event_count"
             ),

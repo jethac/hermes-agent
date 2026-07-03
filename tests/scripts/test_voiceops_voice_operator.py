@@ -193,6 +193,10 @@ def _async_oracle_smoke_payload() -> dict:
         "terminal_result_default_spoken": True,
         "terminal_result_suppression_config": "oracle_jobs.speak_terminal_results=false",
         "terminal_result_suppressed": True,
+        "terminal_result_suppressed_event_observed": True,
+        "terminal_result_suppressed_event_count": 1,
+        "terminal_result_suppressed_reason": "terminal_speech_disabled",
+        "terminal_result_suppressed_payload_clean": True,
         "terminal_result_unsolicited_event_count": 0,
         "terminal_result_unsolicited_spoken": False,
         "terminal_result_status_available": True,
@@ -542,6 +546,13 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         == "oracle_jobs.speak_terminal_results=false"
     )
     assert report["proofs"]["async_oracle_jobs"]["terminal_result_suppressed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["terminal_result_suppressed_event_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["terminal_result_suppressed_event_count"] == 1
+    assert (
+        report["proofs"]["async_oracle_jobs"]["terminal_result_suppressed_reason"]
+        == "terminal_speech_disabled"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["terminal_result_suppressed_payload_clean"] is True
     assert report["proofs"]["async_oracle_jobs"]["terminal_result_unsolicited_event_count"] == 0
     assert report["proofs"]["async_oracle_jobs"]["terminal_result_unsolicited_spoken"] is False
     assert report["proofs"]["async_oracle_jobs"]["terminal_result_status_available"] is True

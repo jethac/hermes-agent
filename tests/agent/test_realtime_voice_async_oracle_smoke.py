@@ -104,6 +104,10 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["terminal_result_default_spoken"] is True
     assert report["terminal_result_suppression_config"] == "oracle_jobs.speak_terminal_results=false"
     assert report["terminal_result_suppressed"] is True
+    assert report["terminal_result_suppressed_event_observed"] is True
+    assert report["terminal_result_suppressed_event_count"] >= 1
+    assert report["terminal_result_suppressed_reason"] == "terminal_speech_disabled"
+    assert report["terminal_result_suppressed_payload_clean"] is True
     assert report["terminal_result_unsolicited_event_count"] == 0
     assert report["terminal_result_unsolicited_spoken"] is False
     assert report["terminal_result_status_available"] is True
@@ -119,3 +123,4 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["sidecar_control_feedback_cancel_sent"] is True
     assert report["event_counts"]["interface.oracle.update"] >= 2
     assert report["event_counts"]["oracle.job.progress"] >= 1
+    assert report["event_counts"]["oracle.job.result_suppressed"] >= 1
