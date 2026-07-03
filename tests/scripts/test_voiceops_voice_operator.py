@@ -137,7 +137,16 @@ def _async_oracle_smoke_payload() -> dict:
         "status_turn_no_oracle_request": True,
         "status_turn_oracle_request_count_before": 4,
         "status_turn_oracle_request_count_after": 4,
-        "status_text": "Oracle jobs: 4 running out of 4, 1 queued. running: Starting smoke task 1.",
+        "status_ordinal_labels_visible": True,
+        "status_ordinal_labels": ("job one", "job two", "job three", "job four", "job five"),
+        "status_text": (
+            "Oracle jobs: 4 running out of 4, 1 queued. "
+            "job one running: Starting smoke task 1. "
+            "job two running: Starting smoke task 2. "
+            "job three running: Starting smoke task 3. "
+            "job four running: Starting smoke task 4. "
+            "job five queued: Starting smoke task 5."
+        ),
         "terminal_status_committed": True,
         "completed_result_status_visible": True,
         "terminal_status_text": (
@@ -472,6 +481,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["requirements"]["async_oracle_four_concurrent_jobs"] is True
     assert report["requirements"]["async_oracle_local_turn_while_running"] is True
     assert report["requirements"]["async_oracle_status_turn_while_running"] is True
+    assert report["requirements"]["async_oracle_status_ordinal_labels_visible"] is True
     assert report["requirements"]["async_oracle_fifth_job_queued_and_started"] is True
     assert report["requirements"]["async_oracle_cancellation_isolated"] is True
     assert report["requirements"]["async_oracle_playback_stop_preserves_jobs"] is True
@@ -647,6 +657,14 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["local_turn_during_running_jobs_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["local_turn_active_job_count"] == 4
     assert report["proofs"]["async_oracle_jobs"]["status_turn_queued_visible"] is True
+    assert report["proofs"]["async_oracle_jobs"]["status_ordinal_labels_visible"] is True
+    assert report["proofs"]["async_oracle_jobs"]["status_ordinal_labels"] == (
+        "job one",
+        "job two",
+        "job three",
+        "job four",
+        "job five",
+    )
     assert report["proofs"]["async_oracle_jobs"]["status_turn_no_oracle_request"] is True
     assert report["proofs"]["async_oracle_jobs"]["status_turn_oracle_request_count_before"] == 4
     assert report["proofs"]["async_oracle_jobs"]["status_turn_oracle_request_count_after"] == 4
@@ -834,6 +852,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:four_jobs_ran_concurrently" in issues
     assert "missing_async_oracle_coverage:local_turn_while_jobs_running" in issues
     assert "missing_async_oracle_coverage:status_turn_while_jobs_running" in issues
+    assert "missing_async_oracle_coverage:status_turn_ordinal_labels_visible" in issues
     assert "missing_async_oracle_coverage:fifth_job_queued_and_started_after_capacity_freed" in issues
     assert "missing_async_oracle_coverage:one_job_cancelled_while_others_completed" in issues
     assert "missing_async_oracle_coverage:queued_job_cancelled_before_start" in issues
@@ -886,6 +905,8 @@ def test_voice_operator_validation_rejects_local_turn_without_running_job_overla
 def test_voice_operator_validation_rejects_status_turn_without_queued_or_no_oracle_call_proof():
     report = _voice_operator_report()
     report["async_oracle_smoke"]["status_turn_queued_visible"] = False
+    report["async_oracle_smoke"]["status_ordinal_labels_visible"] = False
+    report["async_oracle_smoke"]["status_ordinal_labels"] = ("job one",)
     report["async_oracle_smoke"]["status_turn_no_oracle_request"] = False
     report["async_oracle_smoke"]["status_turn_oracle_request_count_after"] = 5
     report["async_oracle_smoke"]["status_text"] = "Oracle jobs: 4 running out of 4."
@@ -894,6 +915,8 @@ def test_voice_operator_validation_rejects_status_turn_without_queued_or_no_orac
 
     assert "missing_async_oracle_coverage:status_turn_while_jobs_running" in issues
     assert "stale_async_oracle_coverage:status_turn_while_jobs_running" in issues
+    assert "missing_async_oracle_coverage:status_turn_ordinal_labels_visible" in issues
+    assert "stale_async_oracle_coverage:status_turn_ordinal_labels_visible" in issues
     assert "missing_async_oracle_acceptance:status_reports_running_and_queued_without_oracle_call" in issues
 
 

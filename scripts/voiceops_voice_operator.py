@@ -30,6 +30,7 @@ from scripts.realtime_voice_async_oracle_smoke import run_smoke as run_async_ora
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-voice-operator/current")
 DISCORD_FRAME_BYTES = 3840
 SIDECAR_FRAME_BYTES = 640
+ASYNC_ORACLE_STATUS_ORDINAL_LABELS = ("job one", "job two", "job three", "job four", "job five")
 LIVE_EVIDENCE_SCHEMA_VERSION = "voiceops.milestone1.live_voice_evidence.v1"
 LIVE_EVIDENCE_MANIFEST_SCHEMA_VERSION = "voiceops.realtime_voice_live_evidence_manifest.v1"
 LIVE_EVIDENCE_REQUIRED_GATES = (
@@ -1432,6 +1433,10 @@ def _coverage_from_smoke(smoke: dict[str, Any]) -> dict[str, bool]:
 
 
 def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, bool]:
+    status_ordinal_labels = set(smoke.get("status_ordinal_labels") or ())
+    status_ordinal_labels_visible = smoke.get("status_ordinal_labels_visible") is True and status_ordinal_labels >= set(
+        ASYNC_ORACLE_STATUS_ORDINAL_LABELS
+    )
     return {
         "async_oracle_smoke_ok": bool(smoke.get("ok")),
         "four_jobs_ran_concurrently": bool(smoke.get("worker_overlap_proved"))
@@ -1447,6 +1452,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and "1 queued" in str(smoke.get("status_text") or "")
         and smoke.get("status_turn_queued_visible") is True
         and smoke.get("status_turn_no_oracle_request") is True,
+        "status_turn_ordinal_labels_visible": status_ordinal_labels_visible,
         "fifth_job_queued_and_started_after_capacity_freed": int(smoke.get("queued_jobs") or 0) >= 1
         and smoke.get("fifth_job_queued") is True
         and smoke.get("fifth_job_started_after_capacity_freed") is True,
@@ -2018,6 +2024,8 @@ def build_voice_operator_report(
                 "status_turn_oracle_request_count_after"
             ),
             "status_text": async_oracle_smoke.get("status_text"),
+            "status_ordinal_labels_visible": bool(async_oracle_smoke.get("status_ordinal_labels_visible")),
+            "status_ordinal_labels": tuple(async_oracle_smoke.get("status_ordinal_labels") or ()),
             "terminal_status_committed": bool(async_oracle_smoke.get("terminal_status_committed")),
             "completed_result_status_visible": bool(async_oracle_smoke.get("completed_result_status_visible")),
             "terminal_status_text": async_oracle_smoke.get("terminal_status_text"),
@@ -2250,6 +2258,9 @@ def build_voice_operator_report(
             "async_oracle_four_concurrent_jobs": async_oracle_coverage["four_jobs_ran_concurrently"],
             "async_oracle_local_turn_while_running": async_oracle_coverage["local_turn_while_jobs_running"],
             "async_oracle_status_turn_while_running": async_oracle_coverage["status_turn_while_jobs_running"],
+            "async_oracle_status_ordinal_labels_visible": async_oracle_coverage[
+                "status_turn_ordinal_labels_visible"
+            ],
             "async_oracle_fifth_job_queued_and_started": async_oracle_coverage[
                 "fifth_job_queued_and_started_after_capacity_freed"
             ],
@@ -2381,6 +2392,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "four_jobs_ran_concurrently",
         "local_turn_while_jobs_running",
         "status_turn_while_jobs_running",
+        "status_turn_ordinal_labels_visible",
         "fifth_job_queued_and_started_after_capacity_freed",
         "one_job_cancelled_while_others_completed",
         "queued_job_cancelled_before_start",

@@ -1572,6 +1572,12 @@ async def build_plan_run_async(
                     ],
                     "status_turn_committed": voice_operator["proofs"]["async_oracle_jobs"]["status_turn_committed"],
                     "status_text": voice_operator["proofs"]["async_oracle_jobs"]["status_text"],
+                    "status_ordinal_labels_visible": voice_operator["proofs"]["async_oracle_jobs"][
+                        "status_ordinal_labels_visible"
+                    ],
+                    "status_ordinal_labels": list(
+                        voice_operator["proofs"]["async_oracle_jobs"]["status_ordinal_labels"]
+                    ),
                     "terminal_status_committed": voice_operator["proofs"]["async_oracle_jobs"][
                         "terminal_status_committed"
                     ],

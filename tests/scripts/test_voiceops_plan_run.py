@@ -1169,6 +1169,14 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["playback_stop_cancelled_jobs"] is False
     assert voice_result["details"]["async_oracle_smoke"]["playback_stop_does_not_cancel_jobs"] is True
     assert voice_result["details"]["async_oracle_smoke"]["status_turn_committed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["status_ordinal_labels_visible"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["status_ordinal_labels"] == [
+        "job one",
+        "job two",
+        "job three",
+        "job four",
+        "job five",
+    ]
     assert voice_result["details"]["async_oracle_smoke"]["terminal_status_committed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["completed_result_status_visible"] is True
     assert "completed: First sentence. Second sentence. Third sentence." in voice_result["details"][

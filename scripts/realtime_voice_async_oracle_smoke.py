@@ -23,6 +23,7 @@ from agent.realtime_voice_text_engine import KameInterfaceOracleEngine
 
 
 APPROVAL_SECRET_CANARY = "secret test value must not leak"
+STATUS_ORDINAL_LABELS = ("job one", "job two", "job three", "job four", "job five")
 
 
 class SmokeOracle:
@@ -2181,6 +2182,9 @@ async def run_smoke() -> dict[str, Any]:
         for record in durable_records
     )
     terminal_status_text = str(terminal_status_commits[-1].payload.get("text") or "") if terminal_status_commits else ""
+    status_text = str(running_status_commits[-1].payload.get("text") or "") if running_status_commits else ""
+    status_ordinal_labels = tuple(label for label in STATUS_ORDINAL_LABELS if label in status_text)
+    status_ordinal_labels_visible = len(status_ordinal_labels) == len(STATUS_ORDINAL_LABELS)
     completed_result_status_visible = (
         "completed: First sentence. Second sentence. Third sentence." in terminal_status_text
     )
@@ -2204,6 +2208,7 @@ async def run_smoke() -> dict[str, Any]:
             and local_turn_active_job_count >= 1
             and playback_stop_did_not_cancel_jobs
             and bool(running_status_commits)
+            and status_ordinal_labels_visible
             and len(completed) == 6
             and len(failed) == 1
             and len(cancelled) == 2
@@ -2464,6 +2469,8 @@ async def run_smoke() -> dict[str, Any]:
         "playback_stop_cancelled_jobs": playback_stop_cancelled_jobs,
         "playback_stop_does_not_cancel_jobs": playback_stop_did_not_cancel_jobs,
         "status_turn_committed": bool(running_status_commits),
+        "status_ordinal_labels_visible": status_ordinal_labels_visible,
+        "status_ordinal_labels": status_ordinal_labels,
         "status_turn_queued_visible": (
             bool(running_status_commits)
             and "1 queued" in str(running_status_commits[-1].payload.get("text") or "")
@@ -2473,7 +2480,7 @@ async def run_smoke() -> dict[str, Any]:
         ),
         "status_turn_oracle_request_count_before": status_turn_oracle_request_count_before,
         "status_turn_oracle_request_count_after": status_turn_oracle_request_count_after,
-        "status_text": str(running_status_commits[-1].payload.get("text") or "") if running_status_commits else "",
+        "status_text": status_text,
         "terminal_status_committed": bool(terminal_status_commits),
         "completed_result_status_visible": completed_result_status_visible,
         "terminal_status_text": terminal_status_text,
