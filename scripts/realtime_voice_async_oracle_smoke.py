@@ -16,7 +16,13 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceEvent, VoiceEventType
-from agent.realtime_voice_kame import KameOracleRequest, KameRoute, kame_evidence_merge_key
+from agent.realtime_voice_kame import (
+    INTERPRETER_PROMPT_POLICY,
+    INTERPRETER_PROMPT_POLICY_VERSION,
+    KameOracleRequest,
+    KameRoute,
+    kame_evidence_merge_key,
+)
 from agent.realtime_voice_oracle_jobs import OracleJobManager
 from agent.realtime_voice_session import RealtimeVoiceSession
 from agent.realtime_voice_text_engine import KameInterfaceOracleEngine
@@ -2090,6 +2096,22 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
     expected_prompt_input_order = ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
     early_prompt_order = list(early_status_job.get("latest_interpreter_prompt_input_order") or [])
     early_prompt_order_visible = early_prompt_order == expected_prompt_input_order
+    expected_prompt_policy = dict(INTERPRETER_PROMPT_POLICY)
+    early_prompt_policy = (
+        dict(early_status_job.get("latest_interpreter_prompt_policy"))
+        if isinstance(early_status_job.get("latest_interpreter_prompt_policy"), Mapping)
+        else {}
+    )
+    early_prompt_policy_visible = (
+        early_status_job.get("latest_interpreter_prompt_policy_version") == INTERPRETER_PROMPT_POLICY_VERSION
+        and early_prompt_policy.get("primary_evidence") == "raw_audio"
+        and early_prompt_policy.get("transcript_hypotheses_authority") == "non_authoritative_context"
+        and early_prompt_policy.get("promotion_requirement")
+        == "compare_transcript_hypotheses_against_raw_audio_before_promotion"
+        and set(expected_prompt_policy["forbidden_direct_uses"]).issubset(
+            set(early_prompt_policy.get("forbidden_direct_uses") or ())
+        )
+    )
     with_single_bundle = (
         with_raw.request.evidence_bundle_id == str(with_status_job.get("evidence_bundle_id") or "")
         and with_status_job.get("evidence_bundle", {}).get("status") == "primary_audio"
@@ -2127,6 +2149,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
             early_single_bundle
             and early_positive_recovery
             and early_prompt_order_visible
+            and early_prompt_policy_visible
             and with_single_bundle
             and late_single_bundle
             and no_duplicate_oracle_jobs
@@ -2136,6 +2159,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "witness_fusion_timing_smoke_ok": early_single_bundle
         and early_positive_recovery
         and early_prompt_order_visible
+        and early_prompt_policy_visible
         and with_single_bundle
         and late_single_bundle
         and no_duplicate_oracle_jobs
@@ -2154,6 +2178,10 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "witness_fusion_interpreter_prompt_input_order": early_prompt_order,
         "witness_fusion_interpreter_prompt_input_order_expected": expected_prompt_input_order,
         "witness_fusion_interpreter_prompt_input_order_visible": early_prompt_order_visible,
+        "witness_fusion_interpreter_prompt_policy": early_prompt_policy,
+        "witness_fusion_interpreter_prompt_policy_expected": expected_prompt_policy,
+        "witness_fusion_interpreter_prompt_policy_version": INTERPRETER_PROMPT_POLICY_VERSION,
+        "witness_fusion_interpreter_prompt_policy_visible": early_prompt_policy_visible,
         "witness_fusion_early_reflex_transcript": early_request.transcript,
         "witness_fusion_early_witness_text": "what is three to the power of seventeen",
         "witness_fusion_early_promoted_transcript": early_status_job.get("interpreter_corrected_transcript", ""),
@@ -3753,6 +3781,18 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "witness_fusion_interpreter_prompt_input_order_visible": witness_fusion_timing_smoke[
             "witness_fusion_interpreter_prompt_input_order_visible"
+        ],
+        "witness_fusion_interpreter_prompt_policy": witness_fusion_timing_smoke[
+            "witness_fusion_interpreter_prompt_policy"
+        ],
+        "witness_fusion_interpreter_prompt_policy_expected": witness_fusion_timing_smoke[
+            "witness_fusion_interpreter_prompt_policy_expected"
+        ],
+        "witness_fusion_interpreter_prompt_policy_version": witness_fusion_timing_smoke[
+            "witness_fusion_interpreter_prompt_policy_version"
+        ],
+        "witness_fusion_interpreter_prompt_policy_visible": witness_fusion_timing_smoke[
+            "witness_fusion_interpreter_prompt_policy_visible"
         ],
         "witness_fusion_early_reflex_transcript": witness_fusion_timing_smoke[
             "witness_fusion_early_reflex_transcript"

@@ -27,6 +27,7 @@ from agent.realtime_voice import (
     validate_server_event,
 )
 from agent.realtime_voice_kame import (
+    INTERPRETER_PROMPT_POLICY_VERSION,
     KameOracleRequest,
     KameReflexDecision,
     KameRoute,
@@ -1353,6 +1354,19 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
         "reflex",
         "transcript_hypotheses",
     ]
+    assert packet["interpreter_prompt_policy"]["version"] == INTERPRETER_PROMPT_POLICY_VERSION
+    assert packet["interpreter_prompt_policy"]["primary_evidence"] == "raw_audio"
+    assert (
+        packet["interpreter_prompt_policy"]["transcript_hypotheses_authority"]
+        == "non_authoritative_context"
+    )
+    assert (
+        packet["interpreter_prompt_policy"]["promotion_requirement"]
+        == "compare_transcript_hypotheses_against_raw_audio_before_promotion"
+    )
+    assert "spend_reason" in packet["interpreter_prompt_policy"]["forbidden_direct_uses"]
+    assert "phone_call_payload" in packet["interpreter_prompt_policy"]["forbidden_direct_uses"]
+    assert "tool_arguments" in packet["interpreter_prompt_policy"]["forbidden_direct_uses"]
     assert [section["name"] for section in packet["sections"]] == packet["prompt_input_order"]
     assert packet["sections"][0]["payload"] == {
         "audio_segment_ref": "artifact://voice/turn-1.wav",
@@ -1374,6 +1388,11 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
         "reflex",
         "transcript_hypotheses",
     )
+    assert metadata["kame_interpreter_prompt_policy_version"] == INTERPRETER_PROMPT_POLICY_VERSION
+    assert (
+        metadata["kame_interpreter_prompt_policy"]["promotion_requirement"]
+        == "compare_transcript_hypotheses_against_raw_audio_before_promotion"
+    )
     assert "KAME request" in prompt
     assert "Speaker context: discord user=42 display=jetha." in prompt
     assert "Channel context: discord_voice channel=general guild=guild-1." in prompt
@@ -1384,6 +1403,9 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     assert "Reflex transcript hypothesis (reflex_audio): find the note" in prompt
     assert "Raw audio evidence ref: artifact://voice/turn-1.wav (12840-15320 ms)." in prompt
     assert "higher authority than transcript hypotheses" in prompt
+    assert f"Interpreter prompt policy {INTERPRETER_PROMPT_POLICY_VERSION}" in prompt
+    assert "transcript hypotheses are non-authoritative context" in prompt
+    assert "compared against raw audio before promotion" in prompt
     assert "Auxiliary transcript hypothesis (moshi, confidence 0.74, latency 140 ms): find the note" in prompt
     assert "Use it only as labeled evidence" in prompt
     assert "Verbatim ASR evidence (asr): find the node" in prompt

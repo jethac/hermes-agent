@@ -4,6 +4,7 @@ import json
 import pytest
 
 from agent.realtime_voice_kame import (
+    INTERPRETER_PROMPT_POLICY_VERSION,
     KameOracleRequest,
     KameRoute,
     kame_evidence_bundle_id,
@@ -735,6 +736,16 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
         "reflex",
         "transcript_hypotheses",
     )
+    assert updated.interpreter_evidence[0]["interpreter_prompt_policy"]["version"] == (
+        INTERPRETER_PROMPT_POLICY_VERSION
+    )
+    assert (
+        updated.interpreter_evidence[0]["interpreter_prompt_policy"]["promotion_requirement"]
+        == "compare_transcript_hypotheses_against_raw_audio_before_promotion"
+    )
+    assert "tool_arguments" in updated.interpreter_evidence[0]["interpreter_prompt_policy"][
+        "forbidden_direct_uses"
+    ]
     assert updated.interpreter_evidence[0]["late"] is False
     assert queued_status["intent"] == "power question"
     assert queued_status["interpreter_normalized_intent"] == "answer a math question"
@@ -777,6 +788,11 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
         "metadata",
         "reflex",
         "transcript_hypotheses",
+    )
+    assert queued_status["latest_interpreter_prompt_policy_version"] == INTERPRETER_PROMPT_POLICY_VERSION
+    assert (
+        queued_status["latest_interpreter_prompt_policy"]["promotion_requirement"]
+        == "compare_transcript_hypotheses_against_raw_audio_before_promotion"
     )
     assert queued_status["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
     assert queued_status["evidence_authority"]["interpreter_corrected_transcript"] == "interpreter_promoted"

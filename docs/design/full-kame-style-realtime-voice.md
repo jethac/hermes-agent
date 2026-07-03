@@ -1107,6 +1107,9 @@ Acceptance gates:
   available, even when Moshi or ASR produced a complete-looking transcript
 - interpreter prompts explicitly identify witness transcripts as non-authority
   and ask the model to compare them against raw audio before promotion
+- this prompt policy is a first-class field, currently
+  `interpreter_prompt_policy.version = "raw_audio_compare_v1"`, and readiness
+  artifacts must prove it is visible alongside the prompt input order
 - text-only VoiceClaw/OpenClaw compatibility requests are marked degraded when
   no raw audio is available
 - oracle jobs must distinguish `reflex_transcript_hypothesis`,

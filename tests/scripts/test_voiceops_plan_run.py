@@ -1338,6 +1338,31 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_input_order_visible"]
         is True
     )
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_policy"] == {
+        "version": "raw_audio_compare_v1",
+        "primary_evidence": "raw_audio",
+        "transcript_hypotheses_authority": "non_authoritative_context",
+        "promotion_requirement": "compare_transcript_hypotheses_against_raw_audio_before_promotion",
+        "forbidden_direct_uses": (
+            "oracle_text",
+            "durable_transcript",
+            "spend_reason",
+            "phone_call_payload",
+            "tool_arguments",
+        ),
+    }
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_policy_expected"]
+        == voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_policy"]
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_policy_version"]
+        == "raw_audio_compare_v1"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_policy_visible"]
+        is True
+    )
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_late_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_no_duplicate_oracle_jobs"] is True

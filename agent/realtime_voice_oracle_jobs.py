@@ -16,7 +16,13 @@ from typing import Any, Awaitable, Callable, Deque, Mapping, Optional, Sequence
 
 from agent.redact import redact_sensitive_text
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
-from agent.realtime_voice_kame import KameOracleRequest, kame_evidence_bundle_id, kame_evidence_merge_key
+from agent.realtime_voice_kame import (
+    INTERPRETER_PROMPT_INPUT_ORDER,
+    INTERPRETER_PROMPT_POLICY,
+    KameOracleRequest,
+    kame_evidence_bundle_id,
+    kame_evidence_merge_key,
+)
 from agent.think_scrubber import StreamingThinkScrubber, strip_leading_reasoning_trace
 
 
@@ -67,8 +73,6 @@ TERMINAL_STATES = frozenset(
         OracleJobState.CANCELLED,
     }
 )
-INTERPRETER_PROMPT_INPUT_ORDER = ("raw_audio", "metadata", "reflex", "transcript_hypotheses")
-
 REFLEX_STATUS_ACTIVE_STATES = frozenset(
     {
         OracleJobState.RUNNING.value,
@@ -214,6 +218,16 @@ class OracleJob:
             latest_prompt_order = latest_evidence.get("interpreter_prompt_input_order")
             if isinstance(latest_prompt_order, tuple) and latest_prompt_order:
                 status["latest_interpreter_prompt_input_order"] = latest_prompt_order
+            latest_prompt_policy = latest_evidence.get("interpreter_prompt_policy")
+            if isinstance(latest_prompt_policy, Mapping) and latest_prompt_policy:
+                status["latest_interpreter_prompt_policy"] = {
+                    str(key): value
+                    for key, value in latest_prompt_policy.items()
+                    if str(key).strip()
+                }
+                policy_version = latest_prompt_policy.get("version")
+                if isinstance(policy_version, str) and policy_version.strip():
+                    status["latest_interpreter_prompt_policy_version"] = policy_version.strip()[:80]
             status["interpreter_evidence_late"] = bool(latest_evidence.get("late"))
             if "delivered_to_oracle" in latest_evidence:
                 status["interpreter_evidence_delivered_to_oracle"] = bool(latest_evidence.get("delivered_to_oracle"))
@@ -1326,6 +1340,9 @@ def _compact_interpreter_evidence(
     prompt_input_order = _interpreter_prompt_input_order(evidence)
     if prompt_input_order:
         evidence["interpreter_prompt_input_order"] = prompt_input_order
+    prompt_policy = _interpreter_prompt_policy(evidence)
+    if prompt_policy:
+        evidence["interpreter_prompt_policy"] = prompt_policy
 
     evidence_authority = _interpreter_evidence_authority(evidence)
     if evidence_authority:
@@ -1380,6 +1397,17 @@ def _interpreter_prompt_input_order(evidence: Mapping[str, Any]) -> tuple[str, .
     if tuple(order) == INTERPRETER_PROMPT_INPUT_ORDER:
         return INTERPRETER_PROMPT_INPUT_ORDER
     return tuple(order)
+
+
+def _interpreter_prompt_policy(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the interpreter prompt policy when raw audio and hypotheses merge."""
+
+    prompt_input_order = evidence.get("interpreter_prompt_input_order")
+    if not isinstance(prompt_input_order, tuple):
+        return {}
+    if not {"raw_audio", "transcript_hypotheses"}.issubset(set(prompt_input_order)):
+        return {}
+    return dict(INTERPRETER_PROMPT_POLICY)
 
 
 def _compact_reflex_transcript_hypothesis(value: object) -> dict[str, Any]:

@@ -397,6 +397,9 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     response_style = _metadata_response_style(metadata.get("kame_requested_response_style"))
     speaker = _metadata_speaker(metadata.get("kame_speaker"))
     channel = _metadata_channel(metadata.get("kame_channel"))
+    interpreter_prompt_policy_version = _metadata_text(
+        metadata.get("kame_interpreter_prompt_policy_version")
+    )
 
     parts = [
         "KAME request: the realtime reflex has already handled live turn-taking "
@@ -467,6 +470,10 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
         parts.append(
             f"Auxiliary transcript hypothesis ({source}{confidence_text}{latency_text}): {text}. "
             "Use it only as labeled evidence; do not treat it as durable truth unless it agrees with interpreter/oracle judgment."
+        )
+    if interpreter_prompt_policy_version:
+        parts.append(
+            f"Interpreter prompt policy {interpreter_prompt_policy_version}: transcript hypotheses are non-authoritative context and must be compared against raw audio before promotion."
         )
     if not asr_transcript and transcript and transcript_source_is_asr:
         asr_transcript = transcript

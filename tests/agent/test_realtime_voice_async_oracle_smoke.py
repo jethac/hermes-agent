@@ -214,6 +214,25 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         "transcript_hypotheses",
     ]
     assert report["witness_fusion_interpreter_prompt_input_order_visible"] is True
+    assert report["witness_fusion_interpreter_prompt_policy"]["version"] == "raw_audio_compare_v1"
+    assert report["witness_fusion_interpreter_prompt_policy"]["primary_evidence"] == "raw_audio"
+    assert (
+        report["witness_fusion_interpreter_prompt_policy"]["transcript_hypotheses_authority"]
+        == "non_authoritative_context"
+    )
+    assert (
+        report["witness_fusion_interpreter_prompt_policy"]["promotion_requirement"]
+        == "compare_transcript_hypotheses_against_raw_audio_before_promotion"
+    )
+    assert "spend_reason" in report["witness_fusion_interpreter_prompt_policy"]["forbidden_direct_uses"]
+    assert "phone_call_payload" in report["witness_fusion_interpreter_prompt_policy"]["forbidden_direct_uses"]
+    assert "tool_arguments" in report["witness_fusion_interpreter_prompt_policy"]["forbidden_direct_uses"]
+    assert (
+        report["witness_fusion_interpreter_prompt_policy_expected"]
+        == report["witness_fusion_interpreter_prompt_policy"]
+    )
+    assert report["witness_fusion_interpreter_prompt_policy_version"] == "raw_audio_compare_v1"
+    assert report["witness_fusion_interpreter_prompt_policy_visible"] is True
     assert report["witness_fusion_early_reflex_transcript"] == "three to the power of seventeen"
     assert report["witness_fusion_early_witness_text"] == "what is three to the power of seventeen"
     assert report["witness_fusion_early_promoted_transcript"] == "what is three to the power of seventeen"

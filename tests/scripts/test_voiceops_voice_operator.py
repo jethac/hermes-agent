@@ -338,6 +338,34 @@ def _async_oracle_smoke_payload() -> dict:
             "transcript_hypotheses",
         ],
         "witness_fusion_interpreter_prompt_input_order_visible": True,
+        "witness_fusion_interpreter_prompt_policy": {
+            "version": "raw_audio_compare_v1",
+            "primary_evidence": "raw_audio",
+            "transcript_hypotheses_authority": "non_authoritative_context",
+            "promotion_requirement": "compare_transcript_hypotheses_against_raw_audio_before_promotion",
+            "forbidden_direct_uses": (
+                "oracle_text",
+                "durable_transcript",
+                "spend_reason",
+                "phone_call_payload",
+                "tool_arguments",
+            ),
+        },
+        "witness_fusion_interpreter_prompt_policy_expected": {
+            "version": "raw_audio_compare_v1",
+            "primary_evidence": "raw_audio",
+            "transcript_hypotheses_authority": "non_authoritative_context",
+            "promotion_requirement": "compare_transcript_hypotheses_against_raw_audio_before_promotion",
+            "forbidden_direct_uses": (
+                "oracle_text",
+                "durable_transcript",
+                "spend_reason",
+                "phone_call_payload",
+                "tool_arguments",
+            ),
+        },
+        "witness_fusion_interpreter_prompt_policy_version": "raw_audio_compare_v1",
+        "witness_fusion_interpreter_prompt_policy_visible": True,
         "witness_fusion_with_bundle_id": "kame-evidence-witness-with",
         "witness_fusion_with_single_bundle": True,
         "witness_fusion_late_initial_bundle_id": "kame-evidence-witness-late",
@@ -907,6 +935,26 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "transcript_hypotheses",
     ]
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_interpreter_prompt_input_order_visible"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_interpreter_prompt_policy"] == {
+        "version": "raw_audio_compare_v1",
+        "primary_evidence": "raw_audio",
+        "transcript_hypotheses_authority": "non_authoritative_context",
+        "promotion_requirement": "compare_transcript_hypotheses_against_raw_audio_before_promotion",
+        "forbidden_direct_uses": (
+            "oracle_text",
+            "durable_transcript",
+            "spend_reason",
+            "phone_call_payload",
+            "tool_arguments",
+        ),
+    }
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_interpreter_prompt_policy_expected"] == (
+        report["proofs"]["async_oracle_jobs"]["witness_fusion_interpreter_prompt_policy"]
+    )
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_interpreter_prompt_policy_version"] == (
+        "raw_audio_compare_v1"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_interpreter_prompt_policy_visible"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_with_single_bundle"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_late_initial_bundle_id"] == (
         report["proofs"]["async_oracle_jobs"]["witness_fusion_late_final_bundle_id"]
@@ -951,6 +999,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert prompt_order["ok"] is True
     assert prompt_order["evidence"] == "async_oracle_smoke_plus_interpreter_prompt_packet_tests"
     assert report["requirements"]["async_oracle_interpreter_prompt_input_order_visible"] is True
+    prompt_policy = report["async_oracle_acceptance"]["interpreter_prompt_policy_visible"]
+    assert prompt_policy["ok"] is True
+    assert prompt_policy["evidence"] == "async_oracle_smoke_plus_interpreter_prompt_policy_tests"
+    assert report["requirements"]["async_oracle_interpreter_prompt_policy_visible"] is True
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_waiting_events"] == 5
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_hypothesis_only_ok"] is False

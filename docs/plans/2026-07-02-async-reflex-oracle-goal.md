@@ -988,6 +988,11 @@ Add a local smoke report mode that proves:
 - the smoke and VoiceOps artifacts expose `interpreter_prompt_input_order` as
   `["raw_audio", "metadata", "reflex", "transcript_hypotheses"]` for a complete
   raw-audio plus witness bundle
+- the smoke and VoiceOps artifacts also expose
+  `interpreter_prompt_policy = "raw_audio_compare_v1"` proving witness
+  hypotheses are non-authoritative context, raw audio is primary evidence, and
+  transcript-looking text cannot directly become `oracle_text`, durable
+  transcript, spend reason, phone payload, or tool arguments
 - witness transcript adjudication is recorded as accepted, corrected, or
   rejected/diagnostic-only before any promoted action text is produced
 - degraded text-only VoiceClaw/OpenClaw/Moshi fixtures preserve hypothesis text

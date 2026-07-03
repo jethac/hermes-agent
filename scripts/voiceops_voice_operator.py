@@ -1832,6 +1832,17 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         == ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
         and smoke.get("witness_fusion_interpreter_prompt_input_order_expected")
         == ["raw_audio", "metadata", "reflex", "transcript_hypotheses"],
+        "interpreter_prompt_policy_visible": smoke.get(
+            "witness_fusion_interpreter_prompt_policy_visible"
+        )
+        is True
+        and smoke.get("witness_fusion_interpreter_prompt_policy_version") == "raw_audio_compare_v1"
+        and isinstance(smoke.get("witness_fusion_interpreter_prompt_policy"), Mapping)
+        and smoke["witness_fusion_interpreter_prompt_policy"].get("primary_evidence") == "raw_audio"
+        and smoke["witness_fusion_interpreter_prompt_policy"].get("transcript_hypotheses_authority")
+        == "non_authoritative_context"
+        and smoke["witness_fusion_interpreter_prompt_policy"].get("promotion_requirement")
+        == "compare_transcript_hypotheses_against_raw_audio_before_promotion",
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
         and smoke.get("verbose_result_committed_bounded") is True
         and smoke.get("verbose_result_commit_marked_truncated") is True
@@ -2097,6 +2108,13 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
         "interpreter_prompt_input_order_visible": _async_oracle_acceptance_row(
             ok=smoke_ok and bool(async_oracle_coverage.get("interpreter_prompt_input_order_visible")),
             evidence="async_oracle_smoke_plus_interpreter_prompt_packet_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["witness_fusion"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "interpreter_prompt_policy_visible": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("interpreter_prompt_policy_visible")),
+            evidence="async_oracle_smoke_plus_interpreter_prompt_policy_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["witness_fusion"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
@@ -2712,6 +2730,18 @@ def build_voice_operator_report(
             "witness_fusion_interpreter_prompt_input_order_visible": bool(
                 async_oracle_smoke.get("witness_fusion_interpreter_prompt_input_order_visible")
             ),
+            "witness_fusion_interpreter_prompt_policy": dict(
+                async_oracle_smoke.get("witness_fusion_interpreter_prompt_policy") or {}
+            ),
+            "witness_fusion_interpreter_prompt_policy_expected": dict(
+                async_oracle_smoke.get("witness_fusion_interpreter_prompt_policy_expected") or {}
+            ),
+            "witness_fusion_interpreter_prompt_policy_version": async_oracle_smoke.get(
+                "witness_fusion_interpreter_prompt_policy_version"
+            ),
+            "witness_fusion_interpreter_prompt_policy_visible": bool(
+                async_oracle_smoke.get("witness_fusion_interpreter_prompt_policy_visible")
+            ),
             "witness_fusion_with_bundle_id": async_oracle_smoke.get(
                 "witness_fusion_with_bundle_id"
             ),
@@ -2983,6 +3013,9 @@ def build_voice_operator_report(
             "async_oracle_interpreter_prompt_input_order_visible": async_oracle_coverage[
                 "interpreter_prompt_input_order_visible"
             ],
+            "async_oracle_interpreter_prompt_policy_visible": async_oracle_coverage[
+                "interpreter_prompt_policy_visible"
+            ],
             "async_oracle_runtime_kame_action_gate": async_oracle_coverage[
                 "runtime_kame_action_gate_enforced"
             ],
@@ -3120,6 +3153,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "witness_fusion_timing_preserves_single_bundle",
         "witness_fusion_adjudicates_frontend_text",
         "interpreter_prompt_input_order_visible",
+        "interpreter_prompt_policy_visible",
         "runtime_kame_action_gate_enforced",
         "unflagged_high_risk_tool_event_fails_closed",
         "result_handling_bounded_and_durable",

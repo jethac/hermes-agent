@@ -1856,6 +1856,22 @@ async def build_plan_run_async(
                     "witness_fusion_interpreter_prompt_input_order_visible": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["witness_fusion_interpreter_prompt_input_order_visible"],
+                    "witness_fusion_interpreter_prompt_policy": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_fusion_interpreter_prompt_policy"
+                        ]
+                    ),
+                    "witness_fusion_interpreter_prompt_policy_expected": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_fusion_interpreter_prompt_policy_expected"
+                        ]
+                    ),
+                    "witness_fusion_interpreter_prompt_policy_version": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_interpreter_prompt_policy_version"],
+                    "witness_fusion_interpreter_prompt_policy_visible": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_interpreter_prompt_policy_visible"],
                     "witness_fusion_with_single_bundle": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_with_single_bundle"
                     ],

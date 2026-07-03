@@ -107,6 +107,21 @@ KAME_PROMOTED_TRANSCRIPT_SOURCES = frozenset(
         "verified",
     }
 )
+INTERPRETER_PROMPT_INPUT_ORDER = ("raw_audio", "metadata", "reflex", "transcript_hypotheses")
+INTERPRETER_PROMPT_POLICY_VERSION = "raw_audio_compare_v1"
+INTERPRETER_PROMPT_POLICY = {
+    "version": INTERPRETER_PROMPT_POLICY_VERSION,
+    "primary_evidence": "raw_audio",
+    "transcript_hypotheses_authority": "non_authoritative_context",
+    "promotion_requirement": "compare_transcript_hypotheses_against_raw_audio_before_promotion",
+    "forbidden_direct_uses": (
+        "oracle_text",
+        "durable_transcript",
+        "spend_reason",
+        "phone_call_payload",
+        "tool_arguments",
+    ),
+}
 
 KAME_REFLEX_DECISION_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -635,6 +650,7 @@ class KameOracleRequest:
 
         return {
             "prompt_input_order": [section["name"] for section in sections],
+            "interpreter_prompt_policy": dict(INTERPRETER_PROMPT_POLICY),
             "sections": tuple(sections),
         }
 
@@ -728,6 +744,12 @@ class KameOracleRequest:
         prompt_input_order = prompt_packet.get("prompt_input_order")
         if isinstance(prompt_input_order, list) and prompt_input_order:
             metadata["kame_interpreter_prompt_input_order"] = tuple(prompt_input_order)
+        prompt_policy = prompt_packet.get("interpreter_prompt_policy")
+        if isinstance(prompt_policy, Mapping) and prompt_policy:
+            metadata["kame_interpreter_prompt_policy"] = dict(prompt_policy)
+            version = _optional_text(prompt_policy.get("version"))
+            if version:
+                metadata["kame_interpreter_prompt_policy_version"] = version
         return metadata
 
     @classmethod
