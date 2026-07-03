@@ -28,7 +28,12 @@ from agent.realtime_voice import (
     transcript_metadata_from_payload,
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
-from agent.realtime_voice_kame import KameOracleRequest, KameRoute, kame_local_reply_denies_voice_capability
+from agent.realtime_voice_kame import (
+    KameOracleRequest,
+    KameRoute,
+    kame_external_brain_request_to_oracle_request,
+    kame_local_reply_denies_voice_capability,
+)
 from agent.realtime_voice_oracle import HermesRealtimeOracle, NullRealtimeOracle
 from agent.realtime_voice_oracle_jobs import (
     OracleJob,
@@ -229,6 +234,59 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             return {}
         status = await manager.status_view()
         return {"enabled": True, **status}
+
+    async def submit_external_brain_request(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        turn_id: str = "",
+        source: str = "external_kame_frontend",
+        user_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Submit a VoiceClaw/OpenClaw-style brain call as a normal oracle job."""
+
+        if self.config is None or self.config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+            return {"accepted": False, "reason": "kame_oracle_unavailable"}
+        manager = self._oracle_job_manager
+        if manager is None:
+            return {"accepted": False, "reason": "oracle_jobs_unavailable"}
+        request = kame_external_brain_request_to_oracle_request(
+            payload,
+            session_id=self.config.session_id,
+            turn_id=turn_id or _external_kame_turn_id(self.config.session_id),
+            source=source,
+            user_id=user_id,
+            default_max_spoken_sentences=_effective_max_spoken_sentences(self.config),
+        )
+        playback_generation = self._next_external_kame_playback_generation()
+        metadata = request.to_metadata()
+        self._oracle_job_context_by_turn_id[request.turn_id] = (
+            playback_generation,
+            dict(metadata),
+            request,
+        )
+        try:
+            job = await manager.submit(request, priority=request.priority)
+        except OracleJobReprioritizationRequiredError:
+            self._oracle_job_context_by_turn_id.pop(request.turn_id, None)
+            return {"accepted": False, "reason": "oracle_job_reprioritization_required"}
+        except OracleJobQueueFullError:
+            self._oracle_job_context_by_turn_id.pop(request.turn_id, None)
+            return {"accepted": False, "reason": "oracle_job_queue_full"}
+        status = await manager.status_view()
+        return {
+            "accepted": True,
+            "job_id": job.job_id,
+            "state": job.state.value,
+            "turn_id": request.turn_id,
+            "source": request.source,
+            "capacity": status.get("capacity", {}),
+            "reflex_validation_error": request.reflex_validation_error,
+        }
+
+    def _next_external_kame_playback_generation(self) -> int:
+        self._playback_generation += 1
+        return self._playback_generation
 
     async def close(self) -> None:
         await self._close()
@@ -3349,6 +3407,10 @@ def _playback_generation_from_turn_id(turn_id: str) -> int:
         return int(str(turn_id).rsplit(":", 1)[-1])
     except (TypeError, ValueError):
         return 0
+
+
+def _external_kame_turn_id(session_id: str) -> str:
+    return f"{session_id}:external:{time.time_ns()}"
 
 
 def _kame_interface_payload(request: KameOracleRequest, playback_generation: int) -> dict[str, Any]:

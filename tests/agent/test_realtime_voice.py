@@ -29,6 +29,7 @@ from agent.realtime_voice_kame import (
     KameOracleRequest,
     KameReflexDecision,
     KameRoute,
+    kame_external_brain_request_to_oracle_request,
     kame_reflex_decision_json_schema,
     kame_reflex_schema_issues,
 )
@@ -12234,6 +12235,231 @@ def test_kame_oracle_request_strips_direct_tool_authority_fields():
     assert metadata["kame_reflex_validation_error"] == "direct_tool_authority_not_allowed"
     assert "tool_name" not in metadata
     assert "arguments" not in metadata
+
+
+def test_external_kame_ask_brain_bridge_becomes_oracle_request():
+    request = kame_external_brain_request_to_oracle_request(
+        {
+            "tool_name": "ask_brain",
+            "arguments": {
+                "query": "use my Stripe budget to prepare a VoIP provisioning plan",
+                "intent": "Prepare VoIP provisioning with a Stripe budget.",
+                "reflex_transcript_hypothesis": "use my Stripe budget to prepare a VoIP provisioning plan",
+                "s2s_transcript_hypothesis": "use my stripe budget to prepare a voip provisioning plan",
+                "interface_already_said": "I'm preparing the provisioning plan.",
+                "conversation_summary": "The user is testing Discord voice to phone handoff.",
+                "frontend_provider": "voiceclaw",
+                "requested_response_style": {"spoken": True, "max_sentences": 1},
+            },
+        },
+        session_id="external-kame-1",
+        turn_id="external-kame-1:7",
+        source="voiceclaw",
+        user_id="jetha",
+    )
+
+    metadata = request.to_metadata()
+    assert request.route == KameRoute.ORACLE_DIRECT
+    assert request.source == "voiceclaw"
+    assert request.user_id == "jetha"
+    assert request.oracle_text == "use my Stripe budget to prepare a VoIP provisioning plan"
+    assert request.transcript == "use my Stripe budget to prepare a VoIP provisioning plan"
+    assert request.transcript_source == "external_frontend"
+    assert request.interface_already_said == "I'm preparing the provisioning plan."
+    assert request.conversation_summary == "The user is testing Discord voice to phone handoff."
+    assert request.interface_input_source == "ask_brain"
+    assert metadata["voice_architecture"] == "kame_frontend_oracle"
+    assert metadata["kame_interface_input_source"] == "ask_brain"
+    assert "tool_name" not in metadata
+    assert "arguments" not in metadata
+
+
+def test_external_kame_ask_brain_bridge_strips_nested_tool_authority():
+    request = kame_external_brain_request_to_oracle_request(
+        {
+            "function": {
+                "name": "openclaw_agent_consult",
+                "arguments": json.dumps(
+                    {
+                        "query": "buy service credits",
+                        "intent": "Buy service credits.",
+                        "tool_name": "stripe_link_purchase",
+                        "arguments": {"amount": 200, "card": "secret-card"},
+                        "interface_already_said": "I'm preparing the spend request.",
+                    }
+                ),
+            },
+        },
+        session_id="external-kame-2",
+        turn_id="external-kame-2:1",
+        source="openclaw_talk",
+        user_id="jetha",
+    )
+
+    metadata = request.to_metadata()
+    assert request.route == KameRoute.ORACLE_DIRECT
+    assert request.interface_input_source == "openclaw_agent_consult"
+    assert request.reflex_validation_error == "direct_tool_authority_not_allowed"
+    assert metadata["kame_reflex_validation_error"] == "direct_tool_authority_not_allowed"
+    assert request.oracle_text == "Buy service credits."
+    assert "stripe_link_purchase" not in str(metadata)
+    assert "secret-card" not in str(metadata)
+
+
+def test_external_kame_brain_request_submits_oracle_job_without_waiting(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release.wait()
+            yield "Provisioning plan prepared."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="external-kame-session",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+                metadata={"transport": "voiceclaw"},
+            )
+        )
+
+        response = await engine.submit_external_brain_request(
+            {
+                "tool_name": "ask_brain",
+                "arguments": {
+                    "query": "prepare a VoIP provisioning plan",
+                    "transcript": "prepare a voip provisioning plan",
+                    "interface_already_said": "I'm preparing the provisioning plan.",
+                },
+            },
+            turn_id="external-kame-session:voiceclaw:1",
+            source="voiceclaw",
+            user_id="jetha",
+        )
+
+        assert response["accepted"] is True
+        assert response["job_id"] == "voice-oracle-001"
+        assert response["state"] in {"queued", "running"}
+        assert response["capacity"]["active"] == 1
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+        assert not any(event.type == VoiceEventType.ORACLE_JOB_COMPLETED for event in seen)
+        assert oracle.requests[0].source == "voiceclaw"
+        assert oracle.requests[0].interface_input_source == "ask_brain"
+        assert oracle.requests[0].oracle_text == "prepare a voip provisioning plan"
+
+        oracle.release.set()
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
+                break
+
+        completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
+        assert completed.payload["result_summary"] == "Provisioning plan prepared."
+        await engine.close()
+
+    asyncio.run(run())
+
+
+def test_external_kame_frontend_can_cancel_matching_oracle_job(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.started_turns = []
+            self.started = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.started_turns.append(request.turn_id)
+            if len(self.started_turns) == 2:
+                self.started.set()
+            await asyncio.Event().wait()
+            yield "late result"
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="external-kame-session",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_jobs={"enabled": True, "max_concurrent": 2, "queue_limit": 4},
+                metadata={"transport": "openclaw_talk"},
+            )
+        )
+        first = await engine.submit_external_brain_request(
+            {"tool_name": "ask_brain", "arguments": {"query": "check invoices"}},
+            turn_id="external-kame-session:openclaw:1",
+            source="openclaw_talk",
+            user_id="jetha",
+        )
+        second = await engine.submit_external_brain_request(
+            {"tool_name": "ask_brain", "arguments": {"query": "check deployment"}},
+            turn_id="external-kame-session:openclaw:2",
+            source="openclaw_talk",
+            user_id="jetha",
+        )
+        assert first["job_id"] == "voice-oracle-001"
+        assert second["job_id"] == "voice-oracle-002"
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if len([item for item in seen if item.type == VoiceEventType.ORACLE_JOB_STARTED]) == 2:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_CANCEL,
+                session_id="external-kame-session",
+                sequence=99,
+                payload={
+                    "job_id": first["job_id"],
+                    "reason": "external frontend cancellation",
+                    "source": "openclaw_talk",
+                },
+            )
+        )
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_CANCELLED and event.payload.get("job_id") == first["job_id"]:
+                break
+
+        cancel_event = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.INTERFACE_ORACLE_CANCEL and event.payload.get("job_id") == first["job_id"]
+        )
+        assert cancel_event.payload["reason"] == "external frontend cancellation"
+        status = await engine.get_oracle_job_status()
+        jobs = {job["job_id"]: job for job in status["jobs"]}
+        assert jobs[first["job_id"]]["state"] == "cancelled"
+        assert jobs[second["job_id"]]["state"] == "running"
+        await engine.close()
+
+    asyncio.run(run())
 
 
 def test_reference_sidecar_kame_reflex_never_speaks_voice_denial_locally():

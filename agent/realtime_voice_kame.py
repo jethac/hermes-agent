@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import contextlib
 from dataclasses import dataclass, field
 from enum import StrEnum
 import json
@@ -161,6 +162,14 @@ KAME_DIRECT_TOOL_AUTHORITY_KEYS = frozenset(
         "write_memory",
         "memory_write",
         "memory_update",
+    }
+)
+KAME_FRONTEND_BRAIN_BRIDGE_NAMES = frozenset(
+    {
+        "agent_consult",
+        "ask_brain",
+        "ask_hermes_oracle",
+        "openclaw_agent_consult",
     }
 )
 
@@ -544,6 +553,83 @@ class KameOracleRequest:
         )
 
 
+def kame_external_brain_request_to_oracle_request(
+    payload: Mapping[str, Any],
+    *,
+    session_id: str,
+    turn_id: str,
+    source: str = "external_kame_frontend",
+    user_id: Optional[str] = None,
+    default_max_spoken_sentences: int = 2,
+) -> KameOracleRequest:
+    """Normalize VoiceClaw/OpenClaw-style brain calls into Hermes oracle jobs.
+
+    External realtime frontends may expose an ``ask_brain``-style bridge tool.
+    That bridge is allowed only as a request-normalization surface: it unwraps
+    into a normal ``KameOracleRequest`` and never grants the frontend direct
+    Hermes tool, file, memory, payment, or provisioning authority.
+    """
+
+    raw = dict(payload)
+    bridge_name = _frontend_bridge_name(raw)
+    bridge_arguments = _frontend_bridge_arguments(raw) if bridge_name in KAME_FRONTEND_BRAIN_BRIDGE_NAMES else raw
+    normalized = dict(bridge_arguments)
+    if bridge_name:
+        normalized["interface_input_source"] = bridge_name
+    else:
+        normalized.setdefault("interface_input_source", "external_kame_frontend")
+
+    if kame_payload_requests_direct_tool_authority(normalized):
+        normalized = _without_direct_tool_authority_fields(normalized)
+        normalized["reflex_validation_error"] = ",".join(
+            part
+            for part in (
+                _optional_text(normalized.get("reflex_validation_error")),
+                "direct_tool_authority_not_allowed",
+            )
+            if part
+        )
+
+    text = (
+        _optional_text(normalized.get("text"))
+        or _optional_text(normalized.get("query"))
+        or _optional_text(normalized.get("question"))
+        or _optional_text(normalized.get("prompt"))
+        or _optional_text(normalized.get("message"))
+        or _optional_text(normalized.get("request"))
+        or _optional_text(normalized.get("intent"))
+    )
+    intent = _optional_text(normalized.get("intent")) or text
+    transcript = (
+        _optional_text(normalized.get("transcript"))
+        or _optional_text(normalized.get("reflex_transcript_hypothesis"))
+        or _optional_text(normalized.get("s2s_transcript_hypothesis"))
+    )
+    if transcript:
+        normalized["transcript"] = transcript
+        normalized.setdefault("transcript_source", _optional_text(normalized.get("transcript_source")) or "external_frontend")
+    if text:
+        normalized["text"] = text
+    if intent:
+        normalized["intent"] = intent
+    normalized["route"] = _external_brain_route(normalized.get("route")).value
+    normalized.setdefault("source", source)
+    normalized.setdefault("user_id", user_id or "")
+    normalized.setdefault("interface_already_said", _frontend_already_said(normalized))
+    normalized.setdefault("requested_response_style", {"spoken": True, "max_sentences": default_max_spoken_sentences})
+    if not _optional_text(normalized.get("priority")):
+        normalized["priority"] = "normal"
+    return KameOracleRequest.from_turn(
+        session_id=session_id,
+        turn_id=turn_id,
+        source=source,
+        user_id=user_id,
+        payload=normalized,
+        fallback_text=text or intent,
+        default_max_spoken_sentences=default_max_spoken_sentences,
+    )
+
+
 def _job_updates_from_payload(value: object) -> tuple[str, ...]:
     if isinstance(value, str):
         text = _optional_text(value)
@@ -716,6 +802,57 @@ def _route(value: Any) -> KameRoute:
         return KameRoute(text)
     except ValueError:
         return KameRoute.ORACLE_DIRECT
+
+
+def _external_brain_route(value: Any) -> KameRoute:
+    route = _route(value)
+    if route in {KameRoute.DEFER, KameRoute.ORACLE_DIRECT}:
+        return route
+    return KameRoute.ORACLE_DIRECT
+
+
+def _frontend_bridge_name(payload: Mapping[str, Any]) -> str:
+    for key in ("tool_name", "name", "function_name"):
+        text = _optional_text(payload.get(key)).lower()
+        if text:
+            return text
+    function = payload.get("function")
+    if isinstance(function, Mapping):
+        return _optional_text(function.get("name")).lower()
+    return ""
+
+
+def _frontend_bridge_arguments(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    for key in ("arguments", "args", "input", "parameters"):
+        value = payload.get(key)
+        if isinstance(value, Mapping):
+            return value
+        if isinstance(value, str):
+            with contextlib.suppress(json.JSONDecodeError):
+                decoded = json.loads(value)
+                if isinstance(decoded, Mapping):
+                    return decoded
+    function = payload.get("function")
+    if isinstance(function, Mapping):
+        value = function.get("arguments")
+        if isinstance(value, Mapping):
+            return value
+        if isinstance(value, str):
+            with contextlib.suppress(json.JSONDecodeError):
+                decoded = json.loads(value)
+                if isinstance(decoded, Mapping):
+                    return decoded
+    return {}
+
+
+def _frontend_already_said(payload: Mapping[str, Any]) -> str:
+    return (
+        _optional_text(payload.get("interface_already_said"))
+        or _optional_text(payload.get("already_said"))
+        or _optional_text(payload.get("spoken_ack"))
+        or _optional_text(payload.get("ack_text"))
+        or _optional_text(payload.get("placeholder"))
+    )
 
 
 def kame_local_reply_denies_voice_capability(text: str) -> bool:
