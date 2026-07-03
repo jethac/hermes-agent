@@ -92,6 +92,14 @@ route, the acknowledgement already spoken, and any Moshi/open-S2S or classic ASR
 hypotheses. It promotes only the evidence that is safe to hand to Hermes'
 active `/model`.
 
+The open-model strategy is role-based. Moshi/PersonaPlex-class models are reflex
+candidates. Gemma 4 audio-multimodal is the interpreter candidate.
+Nemotron/Riva-style ASR is auxiliary evidence or fallback. Magpie/Riva,
+Piper-class, Cartesia, or another TTS provider only affects outbound speech.
+Ultravox/Qwen Omni-style models remain watchlist candidates until local latency
+and Discord-audio robustness are measured. None of these providers replaces the
+Hermes oracle; the oracle remains the active `/model`.
+
 The concrete implementation packet is one evidence bundle per speech cut. Raw
 audio and timing are primary. The reflex route, the acknowledgement already
 spoken, and transcript-like text from Moshi, VoiceClaw/OpenClaw, or classic ASR
@@ -241,6 +249,10 @@ system heard the user.
   timing, Hermes passes them to Gemma with transcript hypotheses attached. If it
   can provide only text, the path is useful compatibility evidence, but not proof
   of the full raw-audio KAME interpreter loop.
+- Open S2S and STT/TTS alternatives must be described by role in the demo plan:
+  reflex, interpreter, auxiliary transcript evidence, outbound TTS, or degraded
+  fallback. A fast transcript is not enough to authorize spending, provisioning,
+  phone calls, memory writes, files, or durable user history.
 - External frontend `ask_brain` bridges should still create a normalized
   Hermes oracle-request boundary after acceptance. Placeholders and safe status
   packets are transport state only. Durable session history may keep job ids,
@@ -265,5 +277,8 @@ system heard the user.
 8. Add measurement for whether Moshi/open-S2S hypotheses helped or hurt Gemma's
    interpreter output, including clipped prefixes, names, numbers, and rejected
    hallucinated commands.
-9. Implement the phone call handoff with context transfer from the Discord session.
-10. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.
+9. Add role-based provider comparison output so the artifact can say which
+   component was used for reflex, interpreter, auxiliary transcript evidence,
+   outbound TTS, and degraded fallback in the recorded run.
+10. Implement the phone call handoff with context transfer from the Discord session.
+11. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.

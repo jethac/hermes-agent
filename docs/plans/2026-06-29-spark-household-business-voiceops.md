@@ -83,6 +83,10 @@ Target KAME layout:
   context rather than reflex input in full KAME mode. The system must not
   require ASR evidence before acknowledging or submitting work when the
   raw-audio/reflex path is available.
+- Sensor fan-in: the normal voice turn is not "Moshi STT plus Hermes" and not a
+  separate ASR conversation. It is one clipped raw-audio turn, one reflex route,
+  and one interpreter bundle. Moshi/open-S2S, VoiceClaw/OpenClaw, reflex, and
+  classic ASR text all enter as witness hypotheses when available.
 - Evidence: a speech cut should preserve raw audio, reflex hypothesis,
   Moshi/S2S hypothesis, optional ASR hypothesis, and interpreter correction as
   distinct provenance-labeled fields. Only interpreter/oracle judgment can
@@ -142,6 +146,12 @@ Target KAME layout:
   interpreter may use it to recover clipped prefixes, names, numbers,
   code-switches, or commands, but must also be free to reject it as hallucinated
   or wrong-speaker evidence.
+- Alternative-provider rule: Gemini Live-style hosted realtime APIs, Moshi,
+  Ultravox, Qwen Omni, Nemotron/Riva ASR, Magpie/Riva TTS, Piper, Cartesia, and
+  similar systems are provider candidates, not authority models. Each candidate
+  must be assigned to one role: reflex, interpreter, auxiliary transcript
+  evidence, outbound TTS, or degraded fallback. None may bypass the
+  promoted-evidence rule.
 - Sensor-fan-in rule: the long-term stack should collect observations for one
   speech cut rather than run multiple user turns in parallel. The fast reflex
   owns live floor control, Moshi/open-S2S transcript text records what that
@@ -450,6 +460,16 @@ second oracle turn, overwrite `oracle_text`, or become spend/call/tool arguments
 until Gemma or the Hermes oracle promotes them. This lets the demo keep the
 acknowledgement path fast while still using transcript-like output as useful
 context for multilingual correction and business-critical actions.
+
+Provider selection must be role-based:
+
+| Role | Preferred Direction | Notes |
+| --- | --- | --- |
+| Reflex / floor control | Moshi/PersonaPlex-class S2S or smaller local timing model | Judge on acknowledgement latency, barge-in behavior, noise rejection, and whether its transcript-like text helps Gemma without becoming authority. |
+| Interpreter / evidence | Gemma 4 E2B/E4B/12B audio-multimodal | Receives raw audio first, witness transcripts second; can promote, correct, reject, or downgrade transcript text. |
+| Auxiliary transcript evidence | Nemotron/Riva ASR, Moshi/open-S2S text, or classic ASR | Optional support for captions, diagnostics, literal checks, and fallback. Not a control path in full KAME mode. |
+| Outbound TTS | Magpie/Riva-style local TTS, Piper-class local TTS, or hosted fallback | Pick by first-audio latency, quality, and operational stability. TTS provider changes require no authority-model change. |
+| Degraded fallback | Cartesia or text-only VoiceClaw/OpenClaw/Moshi bridge | Useful for demos/bring-up, but must be labeled degraded when raw audio is missing. |
 
 The voice runtime must distinguish transport state from agent state. VAD,
 semantic endpointing, playback buffers, provider response ids, and carrier

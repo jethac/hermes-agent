@@ -39,6 +39,8 @@ Recent DGX Spark reports suggest this ranking for Hermes:
 | Local voice pipeline | Nemotron Speech or Riva-like ASR + Magpie/Riva TTS | Pipecat/Nemotron/Magpie is the only well-instrumented Spark voice pipeline found, around 1.2s server-side voice-to-voice in reported runs. | Need a Hermes-compatible bridge; full Riva setup reports include install pain. |
 | Reflex/floor-control S2S | Moshi/PersonaPlex-class models | Useful architecture fit for immediate acknowledgement and rough transcript hypotheses; Spark reports mention choppy/unusable full-duplex audio in some deployments. | Candidate for reflex only after stable audio/noise-gate validation; transcript output is evidence, not truth. |
 | Direct speech LLM | Ultravox | No confirmed DGX Spark deployment numbers found. | Watchlist only. |
+| Any-to-any multimodal S2S | Qwen Omni-class models | Potentially useful for combined speech input/output and multimodal perception. | Watchlist until serving complexity, latency, and authority-boundary behavior are measured locally. |
+| Cheap local TTS | Piper-class or similar small local TTS | Could replace hosted TTS for short reflex acknowledgements if first-audio latency and quality are acceptable. | Evaluate as outbound speech only; TTS choice does not affect transcript authority. |
 | TensorRT-LLM | Model support exists, but less practical user evidence than vLLM/SGLang/llama.cpp. | Revisit after vLLM baseline. |
 
 The practical conclusion is to prove Nemotron 3 Super as the Spark-local oracle
@@ -61,6 +63,21 @@ Gemma interpreter output in one bundle. Score the run by whether Gemma can use
 the hypothesis without being captured by it. A frontend that only provides text
 can be useful compatibility evidence, but it should not pass the full KAME
 raw-audio interpreter gate.
+
+Provider comparison must be role-based. A candidate can win one role without
+winning the system:
+
+| Role | Scored By | Failing Condition |
+| --- | --- | --- |
+| Reflex | speech-end to acknowledgement, barge-in stop time, noise-gate behavior, duplicate/hallucinated command rate | Requires a full transcript before acknowledging, or schedules oracle work from transcript text alone |
+| Interpreter | raw-audio evidence quality, multilingual/name/number recovery, disagreement reporting, late-evidence behavior | Treats Moshi/S2S/ASR text as verified user wording without checking raw audio |
+| Auxiliary transcript evidence | useful corrections, timing/confidence metadata, speaker/channel attribution | Blocks acknowledgement or creates a second Hermes turn |
+| Outbound TTS | first-audio latency, audio quality, interruption behavior, local operability | Forces a cloud dependency in a claimed local-only run |
+| Degraded fallback | clear labeling, graceful failure, no high-risk action authority | Counts text-only operation as full KAME readiness |
+
+This keeps open S2S models, classic ASR, and TTS providers in their correct
+lanes. The metric is not "fastest transcript"; it is whether the component
+improves the KAME voice loop without weakening promoted-evidence authority.
 
 ## Headless Runner
 

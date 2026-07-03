@@ -127,6 +127,32 @@ Full KAME-style means:
 
 The goal is a voice system that feels immediate while preserving Hermes's existing agent capabilities.
 
+## Current Architecture Decision
+
+The current target is a three-tier system with sensor fan-in:
+
+1. **Reflex:** a very fast live-audio interface that owns floor control,
+   immediate acknowledgement, barge-in, and short narration of what it is asking
+   Hermes to do.
+2. **Interpreter:** a Gemma-style audio-multimodal evidence adjudicator that
+   receives the clipped raw voice plus any transcript-like witness text from the
+   reflex, Moshi/open-S2S, VoiceClaw/OpenClaw, or classic ASR.
+3. **Oracle:** Hermes' active `/model`, unchanged by voice config, which owns
+   tools, memory, spend, provisioning, calls, files, and durable outcomes.
+
+This is not a parallel STT conversation. Moshi/open-S2S transcript output can be
+extremely useful, but it is witness context: "what the realtime frontend believed
+it heard." It should travel beside the raw waveform in the same interpreter
+bundle. It should not create a second Hermes turn, block the acknowledgement,
+drive the scheduler, or become durable user wording before Gemma/interpreter or
+Hermes/oracle promotion.
+
+Classic ASR has the same authority class in full KAME mode. It remains useful for
+fallback, captions, diagnostics, and high-risk literal-evidence checks, but it is
+not required before the reflex acknowledges or before a raw-audio interpreter
+request starts. If the system lacks raw audio and has only text, the turn is
+degraded compatibility mode.
+
 ## Three-Tier Voice Contract
 
 The intended runtime is three-tier, not STT-first and not a single direct-audio
@@ -407,6 +433,33 @@ This design relies on the following external model and serving assumptions:
   one-Spark evidence proves otherwise.
 
 These assumptions must be checked against the exact model checkpoint and runtime before implementation is considered complete.
+
+## Open S2S And Speech Alternative Matrix
+
+These candidates are alternatives to a hosted Gemini Live-style frontend. They
+must be evaluated by their fit to the KAME authority model, not just by whether
+they can produce text quickly.
+
+| Candidate | Best KAME Role | Why It Matters | Current Decision |
+| --- | --- | --- | --- |
+| Moshi / PersonaPlex-class S2S | Reflex / floor-control candidate | Open speech-text dialogue stack; can potentially speak quickly and expose what the live voice model believed it heard. | Evaluate as reflex only. Treat any STT-like output as `reflex_transcript_hypothesis`, `s2s_transcript_hypothesis`, or `frontend_witness_hypothesis`, never durable user text. |
+| Ultravox-class speech LLM | Interpreter or reflex watchlist | Direct speech understanding can reduce dependence on a separate ASR stage. | Watchlist until local latency, noise-gate behavior, and Discord audio robustness are measured. Do not grant tool authority. |
+| Qwen Omni-class any-to-any model | S2S / interpreter watchlist | Can combine multimodal perception and speech output in one model family. | Watchlist for local serving complexity and latency. It may become a reflex/interpreter candidate, but Hermes still keeps the oracle boundary. |
+| Gemma 4 E2B/E4B/12B audio-multimodal | Interpreter / evidence adjudicator | Strong fit for raw-audio plus text-context interpretation after a VAD cut. | Preferred interpreter lane. It receives raw audio first and transcript hypotheses second. |
+| Nemotron Speech / Riva ASR | Auxiliary transcript evidence or fallback | Purpose-built streaming ASR can provide literal text, timestamps, and diagnostics. | Use as fallback/evidence/caption lane, not the normal KAME scheduler. |
+| Magpie / Riva-style TTS | Outbound speech | Local or NVIDIA-aligned TTS helps remove cloud TTS from the final appliance path. | Evaluate for first-audio latency and voice quality. TTS does not change transcript authority. |
+| Piper / other small local TTS | Cheap local outbound speech | May run on the gateway host or Spark with low operational complexity. | Candidate fallback if quality and first-audio latency beat hosted TTS for short reflex acknowledgements. |
+| Cartesia or other hosted STT/TTS | Bring-up and provider comparison | Useful baseline when local speech stack is unstable. | Allowed as labeled fallback/comparison only; not the target KAME control path. |
+
+The evaluation question for every candidate is:
+
+```text
+Can it improve floor control, raw-audio interpretation, or speech output without
+turning a hypothesis into action authority?
+```
+
+If the answer is no, the component may still be useful as a degraded bridge or
+diagnostic source, but it should not be part of the normal full-KAME path.
 
 ## System Shape
 
