@@ -761,6 +761,65 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "options": ["auto", "native_audio", "text_fallback"],
         "category": "voice",
     },
+    "voice.realtime.interpreter.provider": {
+        "type": "select",
+        "description": "Audio-multimodal interpreter provider for raw-audio evidence adjudication",
+        "options": ["", "gemma4", "openai_compatible", "vllm", "reference"],
+        "category": "voice",
+    },
+    "voice.realtime.interpreter.model": {
+        "type": "string",
+        "description": "Interpreter model that reviews raw audio plus transcript hypotheses",
+        "category": "voice",
+    },
+    "voice.realtime.interpreter.base_url": {
+        "type": "string",
+        "description": "OpenAI-compatible base URL for the KAME interpreter model",
+        "category": "voice",
+    },
+    "voice.realtime.interpreter.audio_input": {
+        "type": "select",
+        "description": "How the interpreter receives clipped user utterances",
+        "options": ["auto", "native_audio", "text_fallback"],
+        "category": "voice",
+    },
+    "voice.realtime.interpreter.role": {
+        "type": "string",
+        "description": "Interpreter role label shown in KAME stack status",
+        "category": "voice",
+    },
+    "voice.realtime.transcript_evidence.mode": {
+        "type": "select",
+        "description": "When transcript hypotheses are attached to the raw-audio interpreter bundle",
+        "options": ["disabled", "from_reflex", "on_escalation", "speculative", "debug", "fallback"],
+        "category": "voice",
+    },
+    "voice.realtime.transcript_evidence.sources": {
+        "type": "list",
+        "description": "Transcript-hypothesis sources to preserve as evidence, such as reflex, moshi, or classic_asr",
+        "category": "voice",
+    },
+    "voice.realtime.transcript_evidence.authority": {
+        "type": "select",
+        "description": "Authority label for transcript evidence before interpreter or oracle promotion",
+        "options": ["hypothesis", "diagnostic_only"],
+        "category": "voice",
+    },
+    "voice.realtime.transcript_evidence.attach_to_interpreter_bundle": {
+        "type": "boolean",
+        "description": "Attach transcript hypotheses to the same raw-audio interpreter bundle",
+        "category": "voice",
+    },
+    "voice.realtime.transcript_evidence.schedule_oracle_from_transcript": {
+        "type": "boolean",
+        "description": "Allow transcript hypotheses to create oracle jobs without reflex/interpreter routing; should stay false for KAME",
+        "category": "voice",
+    },
+    "voice.realtime.transcript_evidence.promote_without_interpreter": {
+        "type": "boolean",
+        "description": "Allow transcript hypotheses to become durable user text without interpreter or oracle promotion; should stay false for KAME",
+        "category": "voice",
+    },
     "voice.realtime.asr_mode": {
         "type": "select",
         "description": "ASR role in KAME realtime voice",
@@ -1287,6 +1346,65 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "type": "select",
         "description": "How the Discord KAME reflex receives user input",
         "options": ["auto", "native_audio", "text_fallback"],
+        "category": "discord",
+    },
+    "discord.realtime_voice.interpreter.provider": {
+        "type": "select",
+        "description": "Discord audio-multimodal interpreter provider for raw-audio evidence adjudication",
+        "options": ["", "gemma4", "openai_compatible", "vllm", "reference"],
+        "category": "discord",
+    },
+    "discord.realtime_voice.interpreter.model": {
+        "type": "string",
+        "description": "Discord interpreter model that reviews raw audio plus transcript hypotheses",
+        "category": "discord",
+    },
+    "discord.realtime_voice.interpreter.base_url": {
+        "type": "string",
+        "description": "OpenAI-compatible base URL for the Discord KAME interpreter model",
+        "category": "discord",
+    },
+    "discord.realtime_voice.interpreter.audio_input": {
+        "type": "select",
+        "description": "How the Discord interpreter receives clipped user utterances",
+        "options": ["auto", "native_audio", "text_fallback"],
+        "category": "discord",
+    },
+    "discord.realtime_voice.interpreter.role": {
+        "type": "string",
+        "description": "Discord interpreter role label shown in KAME stack status",
+        "category": "discord",
+    },
+    "discord.realtime_voice.transcript_evidence.mode": {
+        "type": "select",
+        "description": "When Discord transcript hypotheses are attached to the raw-audio interpreter bundle",
+        "options": ["disabled", "from_reflex", "on_escalation", "speculative", "debug", "fallback"],
+        "category": "discord",
+    },
+    "discord.realtime_voice.transcript_evidence.sources": {
+        "type": "list",
+        "description": "Discord transcript-hypothesis sources to preserve as evidence",
+        "category": "discord",
+    },
+    "discord.realtime_voice.transcript_evidence.authority": {
+        "type": "select",
+        "description": "Authority label for Discord transcript evidence before interpreter or oracle promotion",
+        "options": ["hypothesis", "diagnostic_only"],
+        "category": "discord",
+    },
+    "discord.realtime_voice.transcript_evidence.attach_to_interpreter_bundle": {
+        "type": "boolean",
+        "description": "Attach Discord transcript hypotheses to the same raw-audio interpreter bundle",
+        "category": "discord",
+    },
+    "discord.realtime_voice.transcript_evidence.schedule_oracle_from_transcript": {
+        "type": "boolean",
+        "description": "Allow Discord transcript hypotheses to create oracle jobs without reflex/interpreter routing; should stay false for KAME",
+        "category": "discord",
+    },
+    "discord.realtime_voice.transcript_evidence.promote_without_interpreter": {
+        "type": "boolean",
+        "description": "Allow Discord transcript hypotheses to become durable user text without interpreter or oracle promotion; should stay false for KAME",
         "category": "discord",
     },
     "discord.realtime_voice.asr_mode": {
@@ -14031,8 +14149,16 @@ def _realtime_voice_kame_stack_payload(
             "sources": [str(source) for source in transcript_sources if str(source or "").strip()],
             "base_url_configured": bool(asr_base_url),
             "authority": str(transcript_evidence.get("authority") or "hypothesis"),
+            "attach_to_interpreter_bundle": _truthy_config(
+                transcript_evidence.get("attach_to_interpreter_bundle"),
+                default=True,
+            ),
             "schedule_oracle_from_transcript": _truthy_config(
                 transcript_evidence.get("schedule_oracle_from_transcript"),
+                default=False,
+            ),
+            "promote_without_interpreter": _truthy_config(
+                transcript_evidence.get("promote_without_interpreter"),
                 default=False,
             ),
         },
@@ -16116,6 +16242,10 @@ def _apply_realtime_voice_profile_body(body: RealtimeVoiceProfileApply, profile:
                 "tts_model": realtime.get("tts_model") or "",
                 "tts_voice": realtime.get("tts_voice") or "",
                 "fallback_policy": realtime.get("fallback_policy") or "legacy_voice",
+                "interpreter": dict(realtime.get("interpreter") if isinstance(realtime.get("interpreter"), dict) else {}),
+                "transcript_evidence": dict(
+                    realtime.get("transcript_evidence") if isinstance(realtime.get("transcript_evidence"), dict) else {}
+                ),
                 "routing": dict(realtime.get("routing") if isinstance(realtime.get("routing"), dict) else {}),
                 "metrics": dict(realtime.get("metrics") if isinstance(realtime.get("metrics"), dict) else {}),
             }
@@ -16208,6 +16338,12 @@ def _realtime_voice_config_from_request(ws: WebSocket):
     tts_voice = str(realtime.get("tts_voice") or realtime.get("streaming_tts_voice") or "")
     tts_base_url = str(realtime.get("tts_base_url") or realtime.get("streaming_tts_base_url") or "")
     fallback_policy = str(realtime.get("fallback_policy") or "legacy_voice")
+    interpreter_config = _mapping_config(realtime.get("interpreter"))
+    transcript_evidence_config = _mapping_config(realtime.get("transcript_evidence"))
+    interpreter_metadata = dict(interpreter_config)
+    interpreter_base_url = str(interpreter_metadata.get("base_url") or "")
+    if interpreter_base_url:
+        interpreter_metadata["base_url"] = _redact_realtime_voice_url(interpreter_base_url)
     require_live_like = _truthy_config(realtime.get("require_live_like"), default=False)
     evidence_configured = bool(
         str(
@@ -16423,6 +16559,8 @@ def _realtime_voice_config_from_request(ws: WebSocket):
             "tts_voice": tts_voice or None,
             "tts_base_url": _redact_realtime_voice_url(tts_base_url) if tts_base_url else None,
             "fallback_policy": fallback_policy,
+            "interpreter": interpreter_metadata,
+            "transcript_evidence": transcript_evidence_config,
             "language_support": language_support,
             "quality_targets_ms": quality_targets_ms,
             "routing": routing_policy,

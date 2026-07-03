@@ -3219,6 +3219,40 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["voice.realtime.interface_max_output_tokens"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.interface_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["voice.realtime.interface_max_audio_seconds"]["type"] == "number"
+        assert CONFIG_SCHEMA["voice.realtime.interpreter.provider"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.interpreter.provider"]["options"] == [
+            "",
+            "gemma4",
+            "openai_compatible",
+            "vllm",
+            "reference",
+        ]
+        assert "raw-audio evidence" in CONFIG_SCHEMA["voice.realtime.interpreter.provider"]["description"]
+        assert CONFIG_SCHEMA["voice.realtime.interpreter.model"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.interpreter.base_url"]["type"] == "string"
+        assert CONFIG_SCHEMA["voice.realtime.interpreter.audio_input"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.interpreter.audio_input"]["options"] == [
+            "auto",
+            "native_audio",
+            "text_fallback",
+        ]
+        assert CONFIG_SCHEMA["voice.realtime.transcript_evidence.mode"]["type"] == "select"
+        assert CONFIG_SCHEMA["voice.realtime.transcript_evidence.mode"]["options"] == [
+            "disabled",
+            "from_reflex",
+            "on_escalation",
+            "speculative",
+            "debug",
+            "fallback",
+        ]
+        assert CONFIG_SCHEMA["voice.realtime.transcript_evidence.sources"]["type"] == "list"
+        assert CONFIG_SCHEMA["voice.realtime.transcript_evidence.authority"]["options"] == [
+            "hypothesis",
+            "diagnostic_only",
+        ]
+        assert CONFIG_SCHEMA["voice.realtime.transcript_evidence.attach_to_interpreter_bundle"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.transcript_evidence.schedule_oracle_from_transcript"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["voice.realtime.transcript_evidence.promote_without_interpreter"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.frontend_model"]["type"] == "string"
         assert "interface model" in CONFIG_SCHEMA["voice.realtime.frontend_model"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.vllm_base_url"]["type"] == "string"
@@ -3328,6 +3362,14 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.shutdown_timeout_seconds"]["type"] == "number"
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.speak_terminal_results"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_jobs.audit_ledger_path"]["type"] == "text"
+        assert CONFIG_SCHEMA["discord.realtime_voice.interpreter.provider"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.interpreter.model"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.interpreter.base_url"]["type"] == "string"
+        assert CONFIG_SCHEMA["discord.realtime_voice.transcript_evidence.mode"]["type"] == "select"
+        assert CONFIG_SCHEMA["discord.realtime_voice.transcript_evidence.sources"]["type"] == "list"
+        assert CONFIG_SCHEMA["discord.realtime_voice.transcript_evidence.attach_to_interpreter_bundle"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.transcript_evidence.schedule_oracle_from_transcript"]["type"] == "boolean"
+        assert CONFIG_SCHEMA["discord.realtime_voice.transcript_evidence.promote_without_interpreter"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.output_events.caption_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.output_events.audio_aliases"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.quality_targets_ms.audio_to_partial_transcript_ms"]["type"] == "number"
@@ -7686,6 +7728,20 @@ class TestRealtimeVoiceWebSocket:
                             "audio_input": "auto",
                             "asr_mode": "on_escalation",
                         },
+                        "interpreter": {
+                            "provider": "gemma4",
+                            "model": "gemma-4-E4B-it",
+                            "base_url": "http://spark.local:8002/v1",
+                            "audio_input": "native_audio",
+                        },
+                        "transcript_evidence": {
+                            "mode": "from_reflex",
+                            "sources": ["reflex", "moshi"],
+                            "authority": "hypothesis",
+                            "attach_to_interpreter_bundle": True,
+                            "schedule_oracle_from_transcript": False,
+                            "promote_without_interpreter": False,
+                        },
                         "oracle": {
                             "mode": "hermes_active_oracle",
                             "provider": "custom",
@@ -7763,6 +7819,20 @@ class TestRealtimeVoiceWebSocket:
         assert config.metadata["interface_max_output_tokens"] == 96
         assert config.metadata["interface_timeout_seconds"] == 0.7
         assert config.metadata["interface_max_audio_seconds"] == 18.0
+        assert config.metadata["interpreter"] == {
+            "provider": "gemma4",
+            "model": "gemma-4-E4B-it",
+            "base_url": "http://spark.local:8002/v1",
+            "audio_input": "native_audio",
+        }
+        assert config.metadata["transcript_evidence"] == {
+            "mode": "from_reflex",
+            "sources": ["reflex", "moshi"],
+            "authority": "hypothesis",
+            "attach_to_interpreter_bundle": True,
+            "schedule_oracle_from_transcript": False,
+            "promote_without_interpreter": False,
+        }
         assert config.metadata["oracle_provider"] == "custom"
         assert config.metadata["oracle_provider_name"] == "Spark Oracle"
         assert config.metadata["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
@@ -7810,7 +7880,18 @@ class TestRealtimeVoiceWebSocket:
             "role": "low_latency_floor_control",
         }
         assert status["kame_stack"]["transcript_evidence"]["authority"] == "hypothesis"
+        assert status["kame_stack"]["transcript_evidence"]["mode"] == "from_reflex"
+        assert status["kame_stack"]["transcript_evidence"]["sources"] == ["reflex", "moshi"]
+        assert status["kame_stack"]["transcript_evidence"]["attach_to_interpreter_bundle"] is True
         assert status["kame_stack"]["transcript_evidence"]["schedule_oracle_from_transcript"] is False
+        assert status["kame_stack"]["transcript_evidence"]["promote_without_interpreter"] is False
+        assert status["kame_stack"]["interpreter"] == {
+            "provider": "gemma4",
+            "model": "gemma-4-E4B-it",
+            "audio_input": "native_audio",
+            "base_url_configured": True,
+            "role": "raw_audio_evidence_adjudicator",
+        }
         assert status["kame_stack"]["oracle"] == {
             "mode": "hermes_active_model",
             "preferred_local_model": "gemma-4-26B-A4B-it",
@@ -8444,7 +8525,9 @@ class TestRealtimeVoiceWebSocket:
                 "sources": [],
                 "base_url_configured": False,
                 "authority": "hypothesis",
+                "attach_to_interpreter_bundle": True,
                 "schedule_oracle_from_transcript": False,
+                "promote_without_interpreter": False,
             },
             "oracle": {
                 "mode": "hermes_active_model",
