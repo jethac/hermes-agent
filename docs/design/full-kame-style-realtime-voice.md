@@ -150,6 +150,32 @@ approval before interpreter/oracle promotion. When raw audio is missing, the
 same adapter may still submit a degraded compatibility request, but the request
 must be labeled text-only and cannot count as full KAME readiness.
 
+2026-07-04 interpreter-context decision: if a Moshi/OpenClaw/VoiceClaw-style
+frontend can emit transcript-like text for the same speech cut as the raw
+audio, send that text to the Gemma interpreter as context in
+`transcript_hypotheses[]`. Do not run a separate STT-first turn and do not wait
+for that text before acknowledging the user. The interpreter prompt should see
+the waveform first, then speaker/channel/VAD metadata, then the reflex route and
+spoken acknowledgement, then witness transcript hypotheses. This ordering is
+intentional: it lets Gemma use the witness as a clue while keeping raw voice as
+the higher-authority signal.
+
+The prompt and schema should make three outcomes explicit for every witness
+transcript:
+
+- `accepted_as_supporting_evidence`: the witness agrees with the waveform and
+  helps recover wording.
+- `corrected_by_audio`: the witness was useful but incomplete or slightly
+  wrong.
+- `rejected_or_diagnostic_only`: the witness appears clipped, hallucinated,
+  stale, wrong-speaker, or contradicted by the waveform.
+
+Only the first two outcomes may contribute to `interpreter_promoted` wording,
+and only after the interpreter emits the promoted fields. A rejected or
+diagnostic witness remains visible in the audit bundle but cannot become
+durable user text, a phone script, a spend reason, a provider choice, a memory
+write, a file write, or a tool argument.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
@@ -1372,6 +1398,8 @@ model = "gemma-4-E2B-it"
 audio_input = "required"
 include_reflex_transcript_hypothesis = true
 include_auxiliary_transcript_hypotheses = "when_available"
+witness_transcript_policy = "context_only"
+prompt_input_order = ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
 timeout_ms = 2000
 late_bind_to_oracle_jobs = true
 
@@ -1379,6 +1407,7 @@ late_bind_to_oracle_jobs = true
 mode = "from_reflex"
 dedicated_asr_mode = "disabled"
 sources = ["reflex", "moshi"]
+ambiguous_frontend_text_kind = "frontend_witness_hypothesis"
 # Add "asr" only for explicit fallback, diagnostics, or literal-evidence checks.
 attach_to_interpreter_bundle = true
 schedule_oracle_from_transcript = false

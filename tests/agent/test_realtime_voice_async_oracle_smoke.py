@@ -13,10 +13,10 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["worker_overlap_proved"] is True
     assert report["worker_overlap_within_capacity"] is True
     assert report["noncooperative_cancel_overlap_observed"] is False
-    assert report["started_jobs"] == 10
+    assert report["started_jobs"] == 9
     assert report["queued_jobs"] == 1
-    assert report["completed_jobs"] == 6
-    assert report["failed_jobs"] == 1
+    assert report["completed_jobs"] == 5
+    assert report["failed_jobs"] == 2
     assert report["cancelled_jobs"] == 2
     assert report["queued_cancel_smoke_ok"] is True
     assert report["queued_cancel_requested_observed"] is True
@@ -54,7 +54,9 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["approval_payload_redacted"] is True
     assert report["approval_secret_leaked"] is False
     assert report["approval_secret_canary_checked"] is True
-    assert report["approval_completed"] is True
+    assert report["approval_completed"] is False
+    assert report["approval_gate_failed_closed"] is True
+    assert report["approval_result_suppressed"] is True
     assert "1 waiting for approval" in report["approval_status_text"]
     assert "waiting_for_approval: Preparing spend approval." in report["approval_status_text"]
     assert report["cancel_drain_capacity_smoke_ok"] is True
@@ -192,7 +194,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["witness_fusion_started_counts"] == {"early": 1, "with": 1, "late": 1}
     assert report["witness_fusion_completed_counts"] == {"early": 1, "with": 1, "late": 1}
     assert report["runtime_kame_action_gate_smoke_ok"] is True
-    assert report["runtime_kame_action_gate_waiting_events"] == 3
+    assert report["runtime_kame_action_gate_waiting_events"] == 5
     assert report["runtime_kame_action_gate_hypothesis_only_ok"] is False
     assert "missing_promoted_evidence" in report["runtime_kame_action_gate_hypothesis_only_issues"]
     assert "interpreter_evidence_not_consumed_before_irreversible_action" in (
@@ -219,8 +221,30 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["runtime_kame_action_gate_promoted_issues"] == []
     assert report["runtime_kame_action_gate_promoted_authorities"] == ["interpreter_promoted"]
     assert report["runtime_kame_action_gate_promoted_consumed_before_action"] is True
+    assert report["runtime_kame_action_gate_self_attested_ok"] is False
+    assert "missing_promoted_evidence" in report["runtime_kame_action_gate_self_attested_issues"]
+    assert "interpreter_evidence_not_consumed_before_irreversible_action" not in (
+        report["runtime_kame_action_gate_self_attested_issues"]
+    )
+    assert report["runtime_kame_action_gate_self_attested_authorities"] == []
+    assert report["runtime_kame_action_gate_self_attested_consumed_before_action"] is True
+    assert report["runtime_kame_action_gate_missing_tool_disclosure_ok"] is False
+    assert "missing_tool_disclosure_ref" in report[
+        "runtime_kame_action_gate_missing_tool_disclosure_issues"
+    ]
+    assert "missing_promoted_evidence" not in report[
+        "runtime_kame_action_gate_missing_tool_disclosure_issues"
+    ]
+    assert "interpreter_evidence_not_consumed_before_irreversible_action" not in report[
+        "runtime_kame_action_gate_missing_tool_disclosure_issues"
+    ]
+    assert report["runtime_kame_action_gate_missing_tool_disclosure_authorities"] == [
+        "interpreter_promoted"
+    ]
     assert report["runtime_kame_action_gate_tool_disclosure_ref_observed"] is True
     assert report["runtime_kame_action_gate_schema_versions"] == [
+        "voiceops.runtime_kame_action_gate.v1",
+        "voiceops.runtime_kame_action_gate.v1",
         "voiceops.runtime_kame_action_gate.v1",
         "voiceops.runtime_kame_action_gate.v1",
         "voiceops.runtime_kame_action_gate.v1",

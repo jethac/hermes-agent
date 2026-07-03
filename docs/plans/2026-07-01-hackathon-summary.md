@@ -107,6 +107,13 @@ attach to that bundle with source and authority labels. A field called "Moshi
 STT" is still stored as a hypothesis: useful context for Gemma, not the user
 message of record.
 
+The practical interpreter rule is: include the Moshi/OpenClaw/VoiceClaw witness
+text when it exists, but place it after the raw waveform and timing metadata in
+the Gemma request. The witness can help recover clipped starts, names, numbers,
+and code-switched words; it can also be rejected when it is stale,
+wrong-speaker, or hallucinated. The demo artifact should show that adjudication
+explicitly rather than hiding the witness text or treating it as canonical STT.
+
 If a VoiceClaw/OpenClaw/Moshi-compatible frontend can only provide text, the
 demo should label that turn as degraded compatibility mode. That path can be
 useful for bring-up, but it is not full raw-audio KAME and should not be used
@@ -225,6 +232,9 @@ system heard the user.
 - When a Moshi/OpenClaw/VoiceClaw witness transcript is present, the artifact
   shows it sharing the raw-audio turn's `evidence_bundle_id` rather than
   creating a second Hermes turn. Text-only witness turns are labeled degraded.
+- The interpreter evidence artifact records whether each witness transcript was
+  accepted as support, corrected by raw audio, or rejected/diagnostic-only
+  before any Stripe/NemoClaw/phone/tool action uses the wording.
 - The active Hermes model routes to the local PGX Nemotron 3 Super endpoint.
 - Heavy planning/build/debug requests go directly through the active Hermes oracle, without the Gemma 12B + Nemotron Nano MoA path.
 - Stripe-linked provisioning is constrained by an explicit budget.

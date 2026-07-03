@@ -64,6 +64,14 @@ the hypothesis without being captured by it. A frontend that only provides text
 can be useful compatibility evidence, but it should not pass the full KAME
 raw-audio interpreter gate.
 
+The test should include both positive and adversarial cases. Positive cases
+should prove that a Moshi/open-S2S witness helps Gemma recover clipped prefixes,
+names, numbers, or code-switched terms. Adversarial cases should prove that
+Gemma rejects stale, hallucinated, wrong-speaker, or energy-gate-inconsistent
+witness text while preserving it in the audit bundle. A provider that produces
+fast text but routinely captures the interpreter into false wording fails the
+interpreter role even if transcript latency is good.
+
 Provider comparison must be role-based. A candidate can win one role without
 winning the system:
 
@@ -330,6 +338,12 @@ Gemma interpreter recover a clipped prefix, name, number, code-switched phrase,
 or intent, and whether Gemma rejected any hallucinated or wrong-speaker text.
 That measurement is the point of carrying Moshi text beside raw voice instead
 of treating it as the canonical user request.
+
+Track C artifacts should expose the interpreter prompt bundle order:
+`raw_audio`, speaker/channel/VAD metadata, reflex route and spoken
+acknowledgement, then `transcript_hypotheses[]`. That ordering is part of the
+evaluation contract because it prevents auxiliary text from becoming an
+unlabeled STT-first control path.
 
 Headless variables:
 

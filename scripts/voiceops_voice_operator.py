@@ -1684,6 +1684,22 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and (smoke.get("runtime_kame_action_gate_promoted_issues") or []) == []
         and smoke.get("runtime_kame_action_gate_promoted_authorities") == ["interpreter_promoted"]
         and smoke.get("runtime_kame_action_gate_promoted_consumed_before_action") is True
+        and smoke.get("runtime_kame_action_gate_self_attested_ok") is False
+        and "missing_promoted_evidence"
+        in (smoke.get("runtime_kame_action_gate_self_attested_issues") or [])
+        and "interpreter_evidence_not_consumed_before_irreversible_action"
+        not in (smoke.get("runtime_kame_action_gate_self_attested_issues") or [])
+        and (smoke.get("runtime_kame_action_gate_self_attested_authorities") or []) == []
+        and smoke.get("runtime_kame_action_gate_self_attested_consumed_before_action") is True
+        and smoke.get("runtime_kame_action_gate_missing_tool_disclosure_ok") is False
+        and "missing_tool_disclosure_ref"
+        in (smoke.get("runtime_kame_action_gate_missing_tool_disclosure_issues") or [])
+        and "missing_promoted_evidence"
+        not in (smoke.get("runtime_kame_action_gate_missing_tool_disclosure_issues") or [])
+        and (
+            smoke.get("runtime_kame_action_gate_missing_tool_disclosure_authorities") or []
+        )
+        == ["interpreter_promoted"]
         and smoke.get("runtime_kame_action_gate_tool_disclosure_ref_observed") is True,
         "approval_wait_holds_capacity": smoke.get("approval_capacity_smoke_ok") is True
         and smoke.get("approval_capacity_waiting_observed") is True
@@ -2672,6 +2688,28 @@ def build_voice_operator_report(
             ),
             "runtime_kame_action_gate_promoted_consumed_before_action": bool(
                 async_oracle_smoke.get("runtime_kame_action_gate_promoted_consumed_before_action")
+            ),
+            "runtime_kame_action_gate_self_attested_ok": async_oracle_smoke.get(
+                "runtime_kame_action_gate_self_attested_ok"
+            ),
+            "runtime_kame_action_gate_self_attested_issues": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_self_attested_issues") or []
+            ),
+            "runtime_kame_action_gate_self_attested_authorities": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_self_attested_authorities") or []
+            ),
+            "runtime_kame_action_gate_self_attested_consumed_before_action": bool(
+                async_oracle_smoke.get("runtime_kame_action_gate_self_attested_consumed_before_action")
+            ),
+            "runtime_kame_action_gate_missing_tool_disclosure_ok": async_oracle_smoke.get(
+                "runtime_kame_action_gate_missing_tool_disclosure_ok"
+            ),
+            "runtime_kame_action_gate_missing_tool_disclosure_issues": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_missing_tool_disclosure_issues") or []
+            ),
+            "runtime_kame_action_gate_missing_tool_disclosure_authorities": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_missing_tool_disclosure_authorities")
+                or []
             ),
             "runtime_kame_action_gate_tool_disclosure_ref_observed": bool(
                 async_oracle_smoke.get("runtime_kame_action_gate_tool_disclosure_ref_observed")

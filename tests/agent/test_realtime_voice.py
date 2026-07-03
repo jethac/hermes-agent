@@ -6337,6 +6337,51 @@ def test_oracle_job_approval_marks_hypothesis_only_action_gate_unsafe():
     asyncio.run(run())
 
 
+def test_oracle_job_approval_rejects_request_source_self_attested_promotion():
+    async def run():
+        release = asyncio.Event()
+
+        async def runner(_job):
+            await release.wait()
+            return "done"
+
+        manager = OracleJobManager(max_concurrent=1, runner=runner)
+        request = KameOracleRequest(
+            session_id="voice-123",
+            turn_id="voice-123:1",
+            source="discord_voice",
+            user_id="42",
+            intent="Spend money.",
+            intent_source="gemma_interpreter",
+            audio_segment_ref="artifact://voice/turn-1.wav",
+        )
+        job = await manager.submit(request)
+
+        waiting = await manager.mark_waiting_for_approval(
+            job.job_id,
+            reason="Spend approval required",
+            approval={
+                "approval_id": "approval-123",
+                "tool_name": "stripe_link_purchase",
+                "tool_call_id": "call-1",
+                "tool_disclosure_ref": "tool_disclosure",
+                "interpreter_evidence_consumed_before_irreversible_action": True,
+            },
+        )
+        gate = waiting.approval["kame_action_gate"]
+
+        assert gate["ok"] is False
+        assert "missing_promoted_evidence" in gate["issues"]
+        assert "interpreter_evidence_not_consumed_before_irreversible_action" not in gate["issues"]
+        assert gate["present_authorities"] == []
+        assert gate["tool_disclosure_ref"] == "tool_disclosure"
+
+        release.set()
+        await manager.shutdown(reason="test complete")
+
+    asyncio.run(run())
+
+
 def test_oracle_job_approval_accepts_consumed_promoted_interpreter_evidence():
     async def run():
         release = asyncio.Event()
@@ -6387,6 +6432,62 @@ def test_oracle_job_approval_accepts_consumed_promoted_interpreter_evidence():
         assert "reflex_hypothesis" in gate["rejected_present_authorities"]
         assert gate["interpreter_evidence_consumed_before_irreversible_action"] is True
         assert gate["tool_disclosure_ref"] == "tool_disclosure"
+
+        release.set()
+        await manager.shutdown(reason="test complete")
+
+    asyncio.run(run())
+
+
+def test_oracle_job_approval_rejects_promoted_evidence_without_tool_disclosure_ref():
+    async def run():
+        release = asyncio.Event()
+
+        async def runner(_job):
+            await release.wait()
+            return "done"
+
+        manager = OracleJobManager(max_concurrent=1, runner=runner)
+        request = KameOracleRequest(
+            session_id="voice-123",
+            turn_id="voice-123:1",
+            source="discord_voice",
+            user_id="42",
+            intent="Buy phone credits.",
+            audio_segment_ref="artifact://voice/turn-1.wav",
+        )
+        job = await manager.submit(request)
+        await manager.add_interpreter_evidence(
+            job.job_id,
+            corrected_transcript="buy twenty dollars of phone credits",
+            normalized_intent="prepare a Stripe approval for phone credits",
+            audio_segment_ref="artifact://voice/turn-1.wav",
+            source="gemma_interpreter",
+        )
+        await manager.mark_latest_interpreter_evidence_delivery(
+            job.job_id,
+            delivered_to_oracle=True,
+            consumed_before_irreversible_action=True,
+            delivery_status="included_before_spend_approval",
+        )
+
+        waiting = await manager.mark_waiting_for_approval(
+            job.job_id,
+            reason="Spend approval required",
+            approval={
+                "approval_id": "approval-123",
+                "tool_name": "stripe_link_purchase",
+                "tool_call_id": "call-1",
+            },
+        )
+        gate = waiting.approval["kame_action_gate"]
+
+        assert gate["ok"] is False
+        assert gate["present_authorities"] == ["interpreter_promoted"]
+        assert "missing_tool_disclosure_ref" in gate["issues"]
+        assert "missing_promoted_evidence" not in gate["issues"]
+        assert "interpreter_evidence_not_consumed_before_irreversible_action" not in gate["issues"]
+        assert gate["tool_disclosure_ref"] == ""
 
         release.set()
         await manager.shutdown(reason="test complete")

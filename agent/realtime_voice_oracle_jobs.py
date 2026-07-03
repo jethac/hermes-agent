@@ -1630,7 +1630,8 @@ def _compact_approval_payload(value: Mapping[str, Any], *, job: Optional[OracleJ
 
 def _approval_kame_action_gate(approval: Mapping[str, Any], job: OracleJob) -> dict[str, Any]:
     labels = _approval_evidence_labels(approval, job)
-    promoted = sorted(labels & KAME_ACTION_PROMOTED_AUTHORITIES)
+    action_labels = _job_action_evidence_labels(job)
+    promoted = sorted(action_labels & KAME_ACTION_PROMOTED_AUTHORITIES)
     rejected = sorted(labels & KAME_ACTION_REJECTED_AUTHORITIES)
     consumed_before_action = bool(
         approval.get("interpreter_evidence_consumed_before_irreversible_action")
@@ -1668,6 +1669,32 @@ def _approval_evidence_labels(approval: Mapping[str, Any], job: OracleJob) -> se
         authority = latest.get("evidence_authority")
         if isinstance(authority, Mapping):
             labels.update(str(value) for value in authority.values() if str(value).strip())
+    return labels
+
+
+def _job_action_evidence_labels(job: OracleJob) -> set[str]:
+    """Return authority labels that may satisfy an irreversible action gate.
+
+    Request metadata can describe where provisional text came from, but that
+    metadata is not proof that an interpreter or oracle consumed evidence before
+    a tool boundary. For action authorization, accept only state owned by the
+    job runtime: stored interpreter evidence or completed oracle output.
+    """
+
+    labels: set[str] = set()
+    if job.interpreter_corrected_transcript or job.interpreter_normalized_intent:
+        labels.add("interpreter_promoted")
+    if job.interpreter_evidence:
+        latest = job.interpreter_evidence[-1]
+        authority = latest.get("evidence_authority")
+        if isinstance(authority, Mapping):
+            labels.update(
+                str(value)
+                for value in authority.values()
+                if str(value).strip() in KAME_ACTION_PROMOTED_AUTHORITIES
+            )
+    if job.result_summary or job.result_text:
+        labels.add("oracle_promoted")
     return labels
 
 

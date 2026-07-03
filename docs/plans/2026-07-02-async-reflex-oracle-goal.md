@@ -272,6 +272,16 @@ approval gates until interpreter or oracle promotion exists. This is the
 enforcement counterpart to the Moshi-context rule: the text can help Gemma when
 the waveform exists; without the waveform, it is not full KAME evidence.
 
+2026-07-04 amendment: when the waveform exists, a Moshi/OpenClaw/VoiceClaw
+witness transcript should be passed to the interpreter, not discarded. The
+target is one interpreter request containing raw audio, speaker/channel/VAD
+metadata, reflex route, acknowledgement already spoken, and
+`transcript_hypotheses[]`. The witness transcript is context for Gemma's
+direct-audio judgment. It is not an ASR gate, not a scheduler, and not a
+parallel Hermes turn. Headless proof should include one fixture where witness
+text helps Gemma recover a clipped prefix or number, and another where Gemma
+rejects a hallucinated or wrong-speaker witness while preserving it for audit.
+
 The oracle is the worker. It owns:
 
 - tool execution
@@ -927,6 +937,10 @@ Add a local smoke report mode that proves:
 - the raw-audio-plus-Moshi witness fixture exposes one stable
   `evidence_bundle_id`, one interpreter merge path, and no duplicate oracle job
   when the witness transcript arrives before, with, or after the raw audio
+- interpreter prompt input ordering is visible in the smoke artifact: raw audio
+  first, metadata second, reflex state third, witness hypotheses last
+- witness transcript adjudication is recorded as accepted, corrected, or
+  rejected/diagnostic-only before any promoted action text is produced
 - degraded text-only VoiceClaw/OpenClaw/Moshi fixtures preserve hypothesis text
   for audit and clarification, but report `degraded_reason` and fail high-risk
   action gates until interpreter/oracle promotion exists

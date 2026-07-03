@@ -342,8 +342,17 @@ def _async_oracle_smoke_payload() -> dict:
         "runtime_kame_action_gate_promoted_issues": [],
         "runtime_kame_action_gate_promoted_authorities": ["interpreter_promoted"],
         "runtime_kame_action_gate_promoted_consumed_before_action": True,
+        "runtime_kame_action_gate_self_attested_ok": False,
+        "runtime_kame_action_gate_self_attested_issues": ["missing_promoted_evidence"],
+        "runtime_kame_action_gate_self_attested_authorities": [],
+        "runtime_kame_action_gate_self_attested_consumed_before_action": True,
+        "runtime_kame_action_gate_missing_tool_disclosure_ok": False,
+        "runtime_kame_action_gate_missing_tool_disclosure_issues": ["missing_tool_disclosure_ref"],
+        "runtime_kame_action_gate_missing_tool_disclosure_authorities": ["interpreter_promoted"],
         "runtime_kame_action_gate_tool_disclosure_ref_observed": True,
         "runtime_kame_action_gate_schema_versions": [
+            "voiceops.runtime_kame_action_gate.v1",
+            "voiceops.runtime_kame_action_gate.v1",
             "voiceops.runtime_kame_action_gate.v1",
             "voiceops.runtime_kame_action_gate.v1",
             "voiceops.runtime_kame_action_gate.v1",
@@ -895,6 +904,22 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_consumed_before_action"]
         is True
     )
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_self_attested_ok"] is False
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_self_attested_issues"] == [
+        "missing_promoted_evidence"
+    ]
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_self_attested_authorities"] == []
+    assert (
+        report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_self_attested_consumed_before_action"]
+        is True
+    )
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_missing_tool_disclosure_ok"] is False
+    assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_missing_tool_disclosure_issues"] == [
+        "missing_tool_disclosure_ref"
+    ]
+    assert report["proofs"]["async_oracle_jobs"][
+        "runtime_kame_action_gate_missing_tool_disclosure_authorities"
+    ] == ["interpreter_promoted"]
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_tool_disclosure_ref_observed"] is True
     runtime_action_gate = report["async_oracle_acceptance"][
         "runtime_kame_action_gate_enforces_promoted_evidence"

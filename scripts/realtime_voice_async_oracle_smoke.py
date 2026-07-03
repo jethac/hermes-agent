@@ -1961,7 +1961,7 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
         return f"done {key}"
 
     manager = OracleJobManager(
-        max_concurrent=3,
+        max_concurrent=5,
         runner=runner,
         event_callback=lambda event: events.append(event.to_status()),
     )
@@ -2075,7 +2075,75 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
     degraded_gate = dict(degraded_waiting.approval.get("kame_action_gate") or {})
     degraded_bundle = dict(degraded_status.get("evidence_bundle") or {})
 
-    for key in ("Spend hypothesis-only money.", "Buy phone credits.", "Spend degraded text-only money."):
+    self_attested = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-runtime-action-gate",
+            turn_id="runtime-action-gate:self-attested",
+            source="discord_voice",
+            user_id="42",
+            intent="Spend self-attested money.",
+            intent_source="gemma_interpreter",
+            route=KameRoute.DEFER,
+            audio_segment_ref="artifact://voice/action-gate-self-attested.wav",
+        )
+    )
+    self_attested_waiting = await manager.mark_waiting_for_approval(
+        self_attested.job_id,
+        reason="Spend approval required",
+        approval={
+            "approval_id": "approval-self-attested",
+            "tool_name": "stripe_link_purchase",
+            "tool_call_id": "call-self-attested",
+            "tool_disclosure_ref": "tool_disclosure",
+            "interpreter_evidence_consumed_before_irreversible_action": True,
+        },
+    )
+    self_attested_gate = dict(self_attested_waiting.approval.get("kame_action_gate") or {})
+
+    missing_tool_disclosure = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-runtime-action-gate",
+            turn_id="runtime-action-gate:missing-tool-disclosure",
+            source="discord_voice",
+            user_id="42",
+            intent="Buy credits without disclosure ref.",
+            route=KameRoute.DEFER,
+            audio_segment_ref="artifact://voice/action-gate-missing-tool-disclosure.wav",
+        )
+    )
+    await manager.add_interpreter_evidence(
+        missing_tool_disclosure.job_id,
+        corrected_transcript="buy twenty dollars of phone credits",
+        normalized_intent="prepare Stripe approval for phone credits",
+        audio_segment_ref="artifact://voice/action-gate-missing-tool-disclosure.wav",
+        source="gemma_interpreter",
+    )
+    await manager.mark_latest_interpreter_evidence_delivery(
+        missing_tool_disclosure.job_id,
+        delivered_to_oracle=True,
+        consumed_before_irreversible_action=True,
+        delivery_status="included_before_spend_approval",
+    )
+    missing_tool_disclosure_waiting = await manager.mark_waiting_for_approval(
+        missing_tool_disclosure.job_id,
+        reason="Spend approval required",
+        approval={
+            "approval_id": "approval-missing-tool-disclosure",
+            "tool_name": "stripe_link_purchase",
+            "tool_call_id": "call-missing-tool-disclosure",
+        },
+    )
+    missing_tool_disclosure_gate = dict(
+        missing_tool_disclosure_waiting.approval.get("kame_action_gate") or {}
+    )
+
+    for key in (
+        "Spend hypothesis-only money.",
+        "Buy phone credits.",
+        "Spend degraded text-only money.",
+        "Spend self-attested money.",
+        "Buy credits without disclosure ref.",
+    ):
         releases.setdefault(key, asyncio.Event()).set()
     await manager.shutdown(reason="runtime action gate smoke complete", timeout_seconds=0.2)
 
@@ -2088,6 +2156,10 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
     unsafe_rejected = list(unsafe_gate.get("rejected_present_authorities") or [])
     degraded_rejected = list(degraded_gate.get("rejected_present_authorities") or [])
     safe_present = list(safe_gate.get("present_authorities") or [])
+    self_attested_issues = list(self_attested_gate.get("issues") or [])
+    self_attested_present = list(self_attested_gate.get("present_authorities") or [])
+    missing_tool_disclosure_issues = list(missing_tool_disclosure_gate.get("issues") or [])
+    missing_tool_disclosure_present = list(missing_tool_disclosure_gate.get("present_authorities") or [])
     unsafe_ok = (
         unsafe_gate.get("schema_version") == "voiceops.runtime_kame_action_gate.v1"
         and unsafe_gate.get("ok") is False
@@ -2118,9 +2190,35 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
         and set(degraded_rejected) >= {"reflex_hypothesis", "auxiliary_hypothesis"}
         and degraded_gate.get("tool_disclosure_ref") == "tool_disclosure"
     )
+    self_attested_ok = (
+        self_attested_gate.get("schema_version") == "voiceops.runtime_kame_action_gate.v1"
+        and self_attested_gate.get("ok") is False
+        and "missing_promoted_evidence" in self_attested_issues
+        and "interpreter_evidence_not_consumed_before_irreversible_action" not in self_attested_issues
+        and self_attested_present == []
+        and self_attested_gate.get("tool_disclosure_ref") == "tool_disclosure"
+    )
+    missing_tool_disclosure_ok = (
+        missing_tool_disclosure_gate.get("schema_version") == "voiceops.runtime_kame_action_gate.v1"
+        and missing_tool_disclosure_gate.get("ok") is False
+        and "missing_tool_disclosure_ref" in missing_tool_disclosure_issues
+        and "missing_promoted_evidence" not in missing_tool_disclosure_issues
+        and "interpreter_evidence_not_consumed_before_irreversible_action"
+        not in missing_tool_disclosure_issues
+        and missing_tool_disclosure_present == ["interpreter_promoted"]
+        and missing_tool_disclosure_gate.get("tool_disclosure_ref") == ""
+    )
+    smoke_ok = (
+        unsafe_ok
+        and safe_ok
+        and degraded_ok
+        and self_attested_ok
+        and missing_tool_disclosure_ok
+        and len(waiting_events) == 5
+    )
     return {
-        "ok": unsafe_ok and safe_ok and degraded_ok and len(waiting_events) == 3,
-        "runtime_kame_action_gate_smoke_ok": unsafe_ok and safe_ok and degraded_ok and len(waiting_events) == 3,
+        "ok": smoke_ok,
+        "runtime_kame_action_gate_smoke_ok": smoke_ok,
         "runtime_kame_action_gate_waiting_events": len(waiting_events),
         "runtime_kame_action_gate_hypothesis_only_ok": unsafe_gate.get("ok"),
         "runtime_kame_action_gate_hypothesis_only_issues": unsafe_issues,
@@ -2143,15 +2241,28 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
         "runtime_kame_action_gate_promoted_consumed_before_action": bool(
             safe_gate.get("interpreter_evidence_consumed_before_irreversible_action")
         ),
+        "runtime_kame_action_gate_self_attested_ok": self_attested_gate.get("ok"),
+        "runtime_kame_action_gate_self_attested_issues": self_attested_issues,
+        "runtime_kame_action_gate_self_attested_authorities": self_attested_present,
+        "runtime_kame_action_gate_self_attested_consumed_before_action": bool(
+            self_attested_gate.get("interpreter_evidence_consumed_before_irreversible_action")
+        ),
+        "runtime_kame_action_gate_missing_tool_disclosure_ok": missing_tool_disclosure_gate.get("ok"),
+        "runtime_kame_action_gate_missing_tool_disclosure_issues": missing_tool_disclosure_issues,
+        "runtime_kame_action_gate_missing_tool_disclosure_authorities": missing_tool_disclosure_present,
         "runtime_kame_action_gate_tool_disclosure_ref_observed": (
             unsafe_gate.get("tool_disclosure_ref") == "tool_disclosure"
             and safe_gate.get("tool_disclosure_ref") == "tool_disclosure"
             and degraded_gate.get("tool_disclosure_ref") == "tool_disclosure"
+            and self_attested_gate.get("tool_disclosure_ref") == "tool_disclosure"
+            and missing_tool_disclosure_gate.get("tool_disclosure_ref") == ""
         ),
         "runtime_kame_action_gate_schema_versions": [
             unsafe_gate.get("schema_version"),
             degraded_gate.get("schema_version"),
             safe_gate.get("schema_version"),
+            self_attested_gate.get("schema_version"),
+            missing_tool_disclosure_gate.get("schema_version"),
         ],
     }
 
@@ -3394,6 +3505,27 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "runtime_kame_action_gate_promoted_consumed_before_action": runtime_kame_action_gate_smoke[
             "runtime_kame_action_gate_promoted_consumed_before_action"
+        ],
+        "runtime_kame_action_gate_self_attested_ok": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_self_attested_ok"
+        ],
+        "runtime_kame_action_gate_self_attested_issues": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_self_attested_issues"
+        ],
+        "runtime_kame_action_gate_self_attested_authorities": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_self_attested_authorities"
+        ],
+        "runtime_kame_action_gate_self_attested_consumed_before_action": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_self_attested_consumed_before_action"
+        ],
+        "runtime_kame_action_gate_missing_tool_disclosure_ok": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_missing_tool_disclosure_ok"
+        ],
+        "runtime_kame_action_gate_missing_tool_disclosure_issues": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_missing_tool_disclosure_issues"
+        ],
+        "runtime_kame_action_gate_missing_tool_disclosure_authorities": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_missing_tool_disclosure_authorities"
         ],
         "runtime_kame_action_gate_tool_disclosure_ref_observed": runtime_kame_action_gate_smoke[
             "runtime_kame_action_gate_tool_disclosure_ref_observed"

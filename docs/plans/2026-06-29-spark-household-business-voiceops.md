@@ -146,6 +146,14 @@ Target KAME layout:
   interpreter may use it to recover clipped prefixes, names, numbers,
   code-switches, or commands, but must also be free to reject it as hallucinated
   or wrong-speaker evidence.
+- Witness-adjudication rule: each witness transcript should receive an
+  interpreter outcome before it can influence durable/actionable wording:
+  `accepted_as_supporting_evidence`, `corrected_by_audio`, or
+  `rejected_or_diagnostic_only`. Only accepted or corrected witness text may
+  contribute to `interpreter_promoted` fields, and only after Gemma has compared
+  it against the raw waveform and metadata. Rejected/diagnostic witness text may
+  stay in the audit bundle, but it must not become a spend reason, phone script,
+  provider choice, file/memory content, durable user text, or tool argument.
 - Alternative-provider rule: Gemini Live-style hosted realtime APIs, Moshi,
   Ultravox, Qwen Omni, Nemotron/Riva ASR, Magpie/Riva TTS, Piper, Cartesia, and
   similar systems are provider candidates, not authority models. Each candidate
