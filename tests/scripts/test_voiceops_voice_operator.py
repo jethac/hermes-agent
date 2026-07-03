@@ -251,6 +251,8 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_evidence_bundle_propagated": True,
         "external_frontend_evidence_bundle_id": "kame-evidence-abc123",
         "external_frontend_evidence_bundle_id_stable": True,
+        "external_frontend_evidence_merge_key": "kame-merge-external-front-end",
+        "external_frontend_evidence_merge_key_propagated": True,
         "external_frontend_evidence_bundle_single_turn": True,
         "external_frontend_evidence_bundle_status": "primary_audio",
         "external_frontend_evidence_bundle_transcript_hypotheses_count": 1,
@@ -313,6 +315,11 @@ def _async_oracle_smoke_payload() -> dict:
             "early": "artifact://voice/witness-early.wav",
             "with": "artifact://voice/witness-with.wav",
             "late": "artifact://voice/witness-late.wav",
+        },
+        "witness_fusion_evidence_merge_keys": {
+            "early": "kame-merge-witness-early",
+            "with": "kame-merge-witness-with",
+            "late": "kame-merge-witness-late",
         },
         "witness_fusion_merge_key_observed": True,
         "witness_fusion_early_initial_bundle_id": "kame-evidence-witness-early",
@@ -808,6 +815,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_source_reached_oracle"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_input_source"] == "ask_brain"
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_evidence_bundle_propagated"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_evidence_merge_key"].startswith(
+        "kame-merge-"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_evidence_merge_key_propagated"] is True
     assert (
         report["proofs"]["async_oracle_jobs"]["external_frontend_audio_segment_ref"]
         == "artifact://voiceclaw/turn-1.wav"
@@ -855,6 +866,11 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "with": "artifact://voice/witness-with.wav",
         "late": "artifact://voice/witness-late.wav",
     }
+    assert all(
+        value.startswith("kame-merge-")
+        for value in report["proofs"]["async_oracle_jobs"]["witness_fusion_evidence_merge_keys"].values()
+    )
+    assert len(set(report["proofs"]["async_oracle_jobs"]["witness_fusion_evidence_merge_keys"].values())) == 3
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_merge_key_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_early_initial_bundle_id"] == (
         report["proofs"]["async_oracle_jobs"]["witness_fusion_early_final_bundle_id"]

@@ -2567,6 +2567,12 @@ def build_voice_operator_report(
             "external_frontend_evidence_bundle_id_stable": bool(
                 async_oracle_smoke.get("external_frontend_evidence_bundle_id_stable")
             ),
+            "external_frontend_evidence_merge_key": async_oracle_smoke.get(
+                "external_frontend_evidence_merge_key"
+            ),
+            "external_frontend_evidence_merge_key_propagated": bool(
+                async_oracle_smoke.get("external_frontend_evidence_merge_key_propagated")
+            ),
             "external_frontend_evidence_bundle_single_turn": bool(
                 async_oracle_smoke.get("external_frontend_evidence_bundle_single_turn")
             ),
@@ -2660,6 +2666,9 @@ def build_voice_operator_report(
             ),
             "witness_fusion_audio_segment_refs": dict(
                 async_oracle_smoke.get("witness_fusion_audio_segment_refs") or {}
+            ),
+            "witness_fusion_evidence_merge_keys": dict(
+                async_oracle_smoke.get("witness_fusion_evidence_merge_keys") or {}
             ),
             "witness_fusion_merge_key_observed": bool(
                 async_oracle_smoke.get("witness_fusion_merge_key_observed")

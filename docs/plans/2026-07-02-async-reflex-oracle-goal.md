@@ -308,6 +308,12 @@ direct-audio judgment. It is not an ASR gate, not a scheduler, and not a
 parallel Hermes turn. Headless proof should include one fixture where witness
 text helps Gemma recover a clipped prefix or number, and another where Gemma
 rejects a hallucinated or wrong-speaker witness while preserving it for audit.
+The Moshi/OpenClaw/VoiceClaw adapter should therefore pass transcript-looking
+text as `frontend_witness_hypothesis` with source, confidence, timing,
+speaker/channel guess, and partial/final state when present. The waveform and
+witness text should share one `turn_id`, one stable `evidence_bundle_id`, and
+one audio-aware `evidence_merge_key`; they should not create separate Hermes
+messages or separate oracle jobs.
 
 The oracle is the worker. It owns:
 

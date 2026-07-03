@@ -1295,6 +1295,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_oracle_text_absent"] is True
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_record_count"] >= 1
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_direct_tool_authority_exposed"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_evidence_merge_key"].startswith(
+        "kame-merge-"
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_evidence_merge_key_propagated"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_timing_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_arrival_phases"] == [
         "before_raw_audio",
@@ -1311,6 +1315,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "with": "artifact://voice/witness-with.wav",
         "late": "artifact://voice/witness-late.wav",
     }
+    assert all(
+        value.startswith("kame-merge-")
+        for value in voice_result["details"]["async_oracle_smoke"]["witness_fusion_evidence_merge_keys"].values()
+    )
+    assert len(set(voice_result["details"]["async_oracle_smoke"]["witness_fusion_evidence_merge_keys"].values())) == 3
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_merge_key_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_early_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True

@@ -2041,6 +2041,12 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_evidence_bundle_id_stable": bool(
                 async_smoke.get("external_frontend_evidence_bundle_id_stable")
             ),
+            "external_frontend_evidence_merge_key": async_smoke.get(
+                "external_frontend_evidence_merge_key"
+            ),
+            "external_frontend_evidence_merge_key_propagated": bool(
+                async_smoke.get("external_frontend_evidence_merge_key_propagated")
+            ),
             "external_frontend_evidence_bundle_single_turn": bool(
                 async_smoke.get("external_frontend_evidence_bundle_single_turn")
             ),
@@ -2070,6 +2076,7 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "witness_fusion_case_job_ids": async_smoke.get("witness_fusion_case_job_ids") or {},
             "witness_fusion_turn_ids": async_smoke.get("witness_fusion_turn_ids") or {},
             "witness_fusion_audio_segment_refs": async_smoke.get("witness_fusion_audio_segment_refs") or {},
+            "witness_fusion_evidence_merge_keys": async_smoke.get("witness_fusion_evidence_merge_keys") or {},
             "witness_fusion_merge_key_observed": bool(async_smoke.get("witness_fusion_merge_key_observed")),
             "witness_fusion_early_initial_bundle_id": async_smoke.get(
                 "witness_fusion_early_initial_bundle_id"

@@ -170,6 +170,14 @@ label. The interpreter packet must carry:
 - zero or more transcript hypotheses with source, timing, confidence when
   available, partial/final state, and `authority = "hypothesis"`
 
+For Moshi specifically, the adapter should preserve the vendor transcript text
+as `source = "moshi"` plus `kind = "frontend_witness_hypothesis"` and attach
+the frontend's timing, confidence, speaker/channel guess, and partial/final
+state when available. The same raw-audio `turn_id` and `evidence_merge_key`
+must be used for the waveform and the Moshi witness so the interpreter can
+compare them as one speech cut. A Moshi transcript without a matching waveform
+is degraded text-only evidence, not direct-audio KAME evidence.
+
 This packet is the only normal merge point. It is valid for the reflex to use a
 witness transcript for local narration, but invalid for that transcript to
 create a second Hermes user turn, patch `oracle_text`, or satisfy any action

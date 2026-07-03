@@ -199,9 +199,12 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_terminal_correlation_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_completion_tool_call_id"] = "wrong-call"
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_bundle_id_stable"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_merge_key"] = "kame-merge-wrong"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_merge_key_propagated"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_bundle_single_turn"] = False
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_single_bundle_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_early_single_bundle"] = False
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_evidence_merge_keys"] = {"early": "kame-merge-wrong"}
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_adjudication_outcomes_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_smoke_ok"] = False
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_degraded_text_only_status"] = (
@@ -241,6 +244,14 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
         in report["issues"]
     )
     assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_evidence_merge_key_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_evidence_merge_key_propagated_mismatch"
+        in report["issues"]
+    )
+    assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_evidence_bundle_single_turn_mismatch"
         in report["issues"]
     )
@@ -250,6 +261,10 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_early_single_bundle_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_evidence_merge_keys_mismatch"
         in report["issues"]
     )
     assert (

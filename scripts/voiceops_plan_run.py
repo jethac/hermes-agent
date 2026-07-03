@@ -1798,6 +1798,12 @@ async def build_plan_run_async(
                     "external_frontend_evidence_bundle_propagated": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_evidence_bundle_propagated"],
+                    "external_frontend_evidence_merge_key": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_evidence_merge_key"],
+                    "external_frontend_evidence_merge_key_propagated": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_evidence_merge_key_propagated"],
                     "external_frontend_hypothesis_not_durable_oracle_text": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_hypothesis_not_durable_oracle_text"],
@@ -1827,6 +1833,9 @@ async def build_plan_run_async(
                     ],
                     "witness_fusion_audio_segment_refs": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_audio_segment_refs"
+                    ],
+                    "witness_fusion_evidence_merge_keys": voice_operator["proofs"]["async_oracle_jobs"][
+                        "witness_fusion_evidence_merge_keys"
                     ],
                     "witness_fusion_merge_key_observed": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_merge_key_observed"
