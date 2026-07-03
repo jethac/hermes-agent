@@ -911,7 +911,8 @@ def kame_external_brain_request_to_oracle_request(
 
 
 def _external_transcript_source_is_promoted(source: str) -> bool:
-    return _transcript_source_is_promoted(source)
+    text = _optional_text(source).lower()
+    return text in {"human_verified", "user_verified", "verified"}
 
 
 def _transcript_source_is_promoted(source: str) -> bool:
